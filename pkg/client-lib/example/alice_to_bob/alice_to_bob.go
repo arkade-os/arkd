@@ -16,9 +16,10 @@ import (
 )
 
 var (
-	serverUrl  = "127.0.0.1:7070"
-	password   = "password"
-	walletType = arksdk.SingleKeyWallet
+	serverUrl   = "127.0.0.1:7070"
+	explorerUrl = "http://127.0.0.1:3000"
+	password    = "password"
+	walletType  = arksdk.SingleKeyWallet
 )
 
 func main() {
@@ -53,12 +54,12 @@ func main() {
 	defer aliceArkClient.Lock(ctx)
 
 	log.Info("alice is acquiring onchain funds...")
-	_, _, boardingAddress, err := aliceArkClient.Receive(ctx)
+	_, _, boardingAddr, err := aliceArkClient.Receive(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if _, err := runCommand("nigiri", "faucet", boardingAddress); err != nil {
+	if _, err := runCommand("nigiri", "faucet", boardingAddr.Address); err != nil {
 		log.Fatal(err)
 	}
 
@@ -76,12 +77,12 @@ func main() {
 	log.Infof("alice offchain balance: %d", aliceBalance.OffchainBalance.Total)
 
 	log.Infof("alice is settling the onboard funds...")
-	txid, err := aliceArkClient.Settle(ctx)
+	res, err := aliceArkClient.Settle(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Infof("alice settled the onboard funds in commitment tx %s", txid)
+	log.Infof("alice settled the onboard funds in commitment tx %s", res.CommitmentTxid)
 
 	fmt.Println("")
 	log.Info("bob is setting up his ark wallet...")
@@ -110,7 +111,7 @@ func main() {
 	log.Infof("bob offchain balance: %d", bobBalance.OffchainBalance.Total)
 
 	amount := uint64(1000)
-	receivers := []types.Receiver{{To: bobOffchainAddr, Amount: amount}}
+	receivers := []types.Receiver{{To: bobOffchainAddr.Address, Amount: amount}}
 
 	fmt.Println("")
 	log.Infof("alice is sending %d sats to bob offchain...", amount)
@@ -146,14 +147,12 @@ func main() {
 
 	fmt.Println("")
 	log.Info("bob is settling the received funds...")
-	commitmentTxid, err := bobArkClient.Settle(ctx)
+	res, err = bobArkClient.Settle(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Infof("bob settled the received funds in commitment tx %s", commitmentTxid)
-
-	time.Sleep(500 * time.Second)
+	log.Infof("bob settled the received funds in commitment tx %s", res.CommitmentTxid)
 }
 
 func setupArkClient() (arksdk.ArkClient, error) {
@@ -164,15 +163,16 @@ func setupArkClient() (arksdk.ArkClient, error) {
 		return nil, fmt.Errorf("failed to setup app data store: %s", err)
 	}
 
-	client, err := arksdk.NewArkClient(appDataStore)
+	client, err := arksdk.NewArkClient(appDataStore, arksdk.WithVerbose())
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup ark client: %s", err)
 	}
 
 	if err := client.Init(context.Background(), arksdk.InitArgs{
-		WalletType: walletType,
-		ServerUrl:  serverUrl,
-		Password:   password,
+		WalletType:  walletType,
+		ServerUrl:   serverUrl,
+		Password:    password,
+		ExplorerURL: explorerUrl,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to initialize wallet: %s", err)
 	}

@@ -12,24 +12,25 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 )
 
-func (a *service) Receive(ctx context.Context) (string, string, string, error) {
+func (a *service) Receive(ctx context.Context) (
+	onchainAddr string, offchainAddr, boardingAddr *types.Address, err error,
+) {
 	if a.wallet == nil {
-		return "", "", "", fmt.Errorf("wallet not initialized")
+		return "", nil, nil, fmt.Errorf("wallet not initialized")
 	}
 
-	onchainAddr, offchainAddr, boardingAddr, err := a.wallet.NewAddress(ctx, false)
+	onchainAddr, offchainAddr, boardingAddr, err = a.wallet.NewAddress(ctx, false)
 	if err != nil {
-		return "", "", "", err
+		return "", nil, nil, err
 	}
 
 	if a.UtxoMaxAmount == 0 {
-		boardingAddr.Address = ""
+		boardingAddr = nil
 	}
 
-	return onchainAddr, offchainAddr.Address, boardingAddr.Address, nil
+	return onchainAddr, offchainAddr, boardingAddr, nil
 }
 
 func (a *service) GetAddresses(
@@ -44,7 +45,7 @@ func (a *service) GetAddresses(
 		return nil, nil, nil, nil, err
 	}
 
-	toStringList := func(l []wallet.TapscriptsAddress) []string {
+	toStringList := func(l []types.Address) []string {
 		res := make([]string, 0, len(l))
 		for _, v := range l {
 			res = append(res, v.Address)
@@ -56,8 +57,20 @@ func (a *service) GetAddresses(
 		toStringList(boardingAddrs), toStringList(redemptionAddrs), nil
 }
 
-func (a *service) ListVtxos(ctx context.Context) ([]types.Vtxo, []types.Vtxo, error) {
-	return a.getVtxos(ctx)
+func (a *service) ListVtxos(
+	ctx context.Context, opts ...ListVtxosOption,
+) ([]types.Vtxo, []types.Vtxo, error) {
+	o, err := ApplyListVtxosOptions(opts...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var indexerOpts []indexer.GetVtxosOption
+	if o.Before > 0 || o.After > 0 {
+		indexerOpts = append(indexerOpts, indexer.WithTimeRange(o.Before, o.After))
+	}
+
+	return a.getVtxos(ctx, indexerOpts...)
 }
 
 func (a *service) Balance(ctx context.Context) (*Balance, error) {
@@ -278,15 +291,20 @@ func (a *service) NotifyIncomingFunds(ctx context.Context, addr string) ([]types
 		closeFn()
 	}()
 
-	event, ok := <-eventCh
-	if !ok {
-		return nil, fmt.Errorf("event chan closed")
-	}
+	for {
+		event, ok := <-eventCh
+		if !ok {
+			return nil, fmt.Errorf("event chan closed")
+		}
+		if event.Connection != nil {
+			continue
+		}
 
-	if event.Err != nil {
-		return nil, event.Err
+		if event.Err != nil {
+			return nil, event.Err
+		}
+		return event.Data.NewVtxos, nil
 	}
-	return event.NewVtxos, nil
 }
 
 func (a *service) getOffchainBalance(ctx context.Context) (
@@ -528,10 +546,7 @@ func (i *service) vtxosToTxs(
 		vtxo := getVtxo(resultedVtxos, vtxosBySpentBy[sb])
 		if resultedAmount == 0 {
 			// send all: fetch the created vtxo to source creation and expiration timestamps
-			opts := &indexer.GetVtxosRequestOption{}
-			// nolint
-			opts.WithOutpoints([]types.Outpoint{{Txid: sb, VOut: 0}})
-			resp, err := i.indexer.GetVtxos(ctx, *opts)
+			resp, err := i.indexer.GetVtxos(ctx, indexer.WithOutpoints([]types.Outpoint{{Txid: sb, VOut: 0}}))
 			if err != nil {
 				return nil, err
 			}

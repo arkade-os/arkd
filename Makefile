@@ -89,7 +89,7 @@ help:
 ## integrationtest: run integration tests
 integrationtest:
 	@echo "Running integration tests..."
-	@go test -v -count 1 -timeout 800s github.com/arkade-os/arkd/internal/test/e2e
+	@go test -v -count 1 -timeout 1200s github.com/arkade-os/arkd/internal/test/e2e
 
 ## lint: lint codebase
 lint:
@@ -208,7 +208,7 @@ run-simulation:
 		MIN="$${MIN:-$$CLIENTS}"; \
 		MAX="$${MAX:-128}"; \
 		echo "Running batch settlement test with $$CLIENTS clients (MIN=$$MIN, MAX=$$MAX)..."; \
-		go test -v -count=1 -timeout 1200s github.com/arkade-os/arkd/test/e2e -run TestBatchSettleMultipleClients -args -smoke -num-clients=$$CLIENTS; \
+		go test -v -count=1 -timeout 1200s github.com/arkade-os/arkd/internal/test/e2e -run TestBatchSettleMultipleClients -args -smoke -num-clients=$$CLIENTS; \
 	'
 	@echo "Test completed. Docker environment will remain running."
 	@echo "Run 'make docker-stop' to shut down the environment when finished."

@@ -54,6 +54,9 @@ type service struct {
 	macaroonSvc       *macaroons.Service
 	otelShutdown      func(context.Context) error
 	pyroscopeShutdown func() error
+	unaryConn         *grpc.ClientConn
+	streamConn        *grpc.ClientConn
+	adminConn         *grpc.ClientConn
 }
 
 func NewService(
@@ -200,6 +203,23 @@ func (s *service) stop() {
 	if s.adminGrpcSrvr != nil {
 		s.adminGrpcSrvr.Stop()
 	}
+
+	// Close gateway reverse-proxy client connections.
+	if s.unaryConn != nil {
+		if err := s.unaryConn.Close(); err != nil {
+			log.Warn("failed to close unary transport connection")
+		}
+	}
+	if s.streamConn != nil {
+		if err := s.streamConn.Close(); err != nil {
+			log.Warn("failed to close stream transport connection")
+		}
+	}
+	if s.adminConn != nil {
+		if err := s.adminConn.Close(); err != nil {
+			log.Warn("failed to close admin transport connection")
+		}
+	}
 }
 
 func (s *service) startAppServices() error {
@@ -263,11 +283,19 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
 	)
 
-	s.readinessSvc = interceptors.NewReadinessService(s.appConfig.WalletService())
+	s.readinessSvc = interceptors.NewReadinessService(ctx)
+	s.readinessSvc.ListenToWalletState(func() <-chan bool {
+		ch, err := s.appConfig.WalletService().GetReadyUpdate(context.Background())
+		if err != nil {
+			log.WithError(err).Error("failed to get wallet ready update stream")
+			return nil
+		}
+		return ch
+	})
 
 	grpcConfig := []grpc.ServerOption{
-		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc),
-		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc),
+		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc, s.version),
+		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc, s.version),
 		grpc.StatsHandler(otelHandler),
 	}
 	creds := insecure.NewCredentials()
@@ -290,8 +318,12 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	appHandler := handlers.NewAppServiceHandler(s.version, appSvc, s.config.HeartbeatInterval)
 	eventsCh := appSvc.GetIndexerTxChannel(ctx)
 	subscriptionTimeoutDuration := time.Minute
+	indexerSvc, err := s.appConfig.IndexerService()
+	if err != nil {
+		return fmt.Errorf("failed to create indexer service: %w", err)
+	}
 	indexerHandler := handlers.NewIndexerService(
-		s.appConfig.IndexerService(),
+		indexerSvc,
 		eventsCh,
 		subscriptionTimeoutDuration,
 		s.config.HeartbeatInterval,
@@ -333,17 +365,35 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		})
 	}
 	gatewayOpts := grpc.WithTransportCredentials(gatewayCreds)
-	conn, err := grpc.NewClient(
+
+	// Use separate connections for unary and streaming RPCs so that
+	// long-lived streams don't exhaust MaxConcurrentStreams and block
+	// unary calls on the same HTTP/2 transport.
+	unaryConn, err := grpc.NewClient(
 		s.config.gatewayAddress(), gatewayOpts,
 	)
 	if err != nil {
 		return err
 	}
+	streamConn, err := grpc.NewClient(
+		s.config.gatewayAddress(), gatewayOpts,
+	)
+	if err != nil {
+		if err := unaryConn.Close(); err != nil {
+			log.Warn("failed to close unary transport connection")
+		}
+		return err
+	}
+	s.unaryConn = unaryConn
+	s.streamConn = streamConn
+	conn := &splitConn{unary: unaryConn, stream: streamConn}
 
 	customMatcher := func(key string) (string, bool) {
 		switch key {
 		case "X-Macaroon":
 			return "macaroon", true
+		case "X-Build-Version":
+			return "x-build-version", true
 		default:
 			return key, false
 		}
@@ -351,19 +401,27 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	// Reverse proxy grpc-gateway.
 	gwmux := gateway.NewServeMux(
 		gateway.WithIncomingHeaderMatcher(customMatcher),
-		gateway.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
+		gateway.WithHealthzEndpoint(grpchealth.NewHealthClient(unaryConn)),
 	)
 
 	if !s.config.hasAdminPort() {
-		arkv1.RegisterAdminServiceHandler(ctx, gwmux, conn)
-		arkv1.RegisterWalletServiceHandler(ctx, gwmux, conn)
-		arkv1.RegisterWalletInitializerServiceHandler(ctx, gwmux, conn)
-		arkv1.RegisterSignerManagerServiceHandler(ctx, gwmux, conn)
+		arkv1.RegisterAdminServiceHandlerClient(ctx, gwmux, arkv1.NewAdminServiceClient(conn))
+		arkv1.RegisterWalletServiceHandlerClient(ctx, gwmux, arkv1.NewWalletServiceClient(conn))
+		arkv1.RegisterWalletInitializerServiceHandlerClient(
+			ctx,
+			gwmux,
+			arkv1.NewWalletInitializerServiceClient(conn),
+		)
+		arkv1.RegisterSignerManagerServiceHandlerClient(
+			ctx,
+			gwmux,
+			arkv1.NewSignerManagerServiceClient(conn),
+		)
 	}
 
 	// Register public services on main gateway.
-	arkv1.RegisterArkServiceHandler(ctx, gwmux, conn)
-	arkv1.RegisterIndexerServiceHandler(ctx, gwmux, conn)
+	arkv1.RegisterArkServiceHandlerClient(ctx, gwmux, arkv1.NewArkServiceClient(conn))
+	arkv1.RegisterIndexerServiceHandlerClient(ctx, gwmux, arkv1.NewIndexerServiceClient(conn))
 
 	grpcGateway := http.Handler(gwmux)
 	handler := router(grpcServer, grpcGateway)
@@ -371,9 +429,13 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 
 	mux.Handle("/", handler)
 
+	h2srv := &http2.Server{
+		MaxConcurrentStreams: s.config.MaxConcurrentStreams,
+	}
+
 	httpServerHandler := http.Handler(mux)
 	if s.config.insecure() {
-		httpServerHandler = h2c.NewHandler(httpServerHandler, &http2.Server{})
+		httpServerHandler = h2c.NewHandler(httpServerHandler, h2srv)
 	}
 
 	s.grpcServer = grpcServer
@@ -383,14 +445,29 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		TLSConfig: tlsConfig,
 	}
 
+	if !s.config.insecure() {
+		if err := http2.ConfigureServer(s.server, h2srv); err != nil {
+			return err
+		}
+	}
+
 	// Create separate admin server if admin port is configured
 	if s.config.hasAdminPort() {
 		adminConn, err := grpc.NewClient(
 			s.config.adminGatewayAddress(), gatewayOpts,
 		)
 		if err != nil {
+			if closeErr := s.unaryConn.Close(); closeErr != nil {
+				log.Warn("failed to close unary transport connection")
+			}
+			s.unaryConn = nil
+			if closeErr := s.streamConn.Close(); closeErr != nil {
+				log.Warn("failed to close stream transport connection")
+			}
+			s.streamConn = nil
 			return err
 		}
+		s.adminConn = adminConn
 
 		// Create admin gateway mux
 		adminGwmux := gateway.NewServeMux(
@@ -568,4 +645,22 @@ func isOptionRequest(req *http.Request) bool {
 func isHttpRequest(req *http.Request) bool {
 	return req.Method == http.MethodGet ||
 		strings.Contains(req.Header.Get("Content-Type"), "application/json")
+}
+
+// splitConn routes unary and streaming RPCs to separate grpc.ClientConn
+type splitConn struct {
+	unary  grpc.ClientConnInterface
+	stream grpc.ClientConnInterface
+}
+
+func (c *splitConn) Invoke(
+	ctx context.Context, method string, args, reply any, opts ...grpc.CallOption,
+) error {
+	return c.unary.Invoke(ctx, method, args, reply, opts...)
+}
+
+func (c *splitConn) NewStream(
+	ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption,
+) (grpc.ClientStream, error) {
+	return c.stream.NewStream(ctx, desc, method, opts...)
 }

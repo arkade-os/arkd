@@ -13,15 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: bufbuild/buf-setup-action@v1.50.0
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
 
       - name: Check proto linting
         run: buf lint
 
       - name: Publish protos
-        uses: bufbuild/buf-push-action@v1        
+        uses: bufbuild/buf-push-action@acb5d0e04ee52ea5b0484d453df2daea55d3f33c # v1.0.0
         with:
           input: api-spec/protobuf  
           buf_token: ${{ secrets.BUF_TOKEN }}
@@ -30,12 +30,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
-          go-version: 1.25.7
+          go-version: 1.26.1
 
       # Build binaries for all architectures
       - name: Build binaries
@@ -43,7 +43,7 @@ jobs:
 
       # arkd binary uploads
       - name: Upload arkd binary (Linux, AMD64)
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -53,7 +53,7 @@ jobs:
           asset_content_type: application/octet-stream
 
       - name: Upload arkd binary (Linux, ARM)
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -63,7 +63,7 @@ jobs:
           asset_content_type: application/octet-stream
 
       - name: Upload arkd binary (Darwin, AMD64)
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -73,7 +73,7 @@ jobs:
           asset_content_type: application/octet-stream
 
       - name: Upload arkd binary (Darwin, ARM)
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -84,7 +84,7 @@ jobs:
 
       # arkd wallet binary uploads
       - name: Upload arkd wallet binary (Linux, AMD64)
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -94,7 +94,7 @@ jobs:
           asset_content_type: application/octet-stream
 
       - name: Upload arkd wallet binary (Linux, ARM)
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -104,7 +104,7 @@ jobs:
           asset_content_type: application/octet-stream
 
       - name: Upload arkd wallet binary (Darwin, AMD64)
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -114,7 +114,7 @@ jobs:
           asset_content_type: application/octet-stream
 
       - name: Upload arkd wallet binary (Darwin, ARM)
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -125,7 +125,7 @@ jobs:
       
       # CLI binary uploads
       - name: Upload client binary (Linux, AMD64)
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -135,7 +135,7 @@ jobs:
           asset_content_type: application/octet-stream
 
       - name: Upload client binary (Linux, ARM)
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -145,7 +145,7 @@ jobs:
           asset_content_type: application/octet-stream
 
       - name: Upload client binary (Darwin, AMD64)
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -155,7 +155,7 @@ jobs:
           asset_content_type: application/octet-stream
 
       - name: Upload client binary (Darwin, ARM)
-        uses: actions/upload-release-asset@v1
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -168,20 +168,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push arkd wallet Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: ./arkdwallet.Dockerfile
@@ -194,7 +194,7 @@ jobs:
             VERSION=${{ github.event.release.tag_name }}
 
       - name: Build and push arkd Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: ./Dockerfile 

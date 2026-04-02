@@ -79,8 +79,8 @@ func TestBatchSession(t *testing.T) {
 		require.NoError(t, err)
 
 		// Faucet Alice and Bob boarding addresses
-		faucetOnchain(t, aliceBoardingAddr, 0.00021)
-		faucetOnchain(t, bobBoardingAddr, 0.00021)
+		faucetOnchain(t, aliceBoardingAddr.Address, 0.00021)
+		faucetOnchain(t, bobBoardingAddr.Address, 0.00021)
 		time.Sleep(6 * time.Second)
 
 		aliceBalance, err := alice.Balance(t.Context())
@@ -105,22 +105,22 @@ func TestBatchSession(t *testing.T) {
 		// They join the same batch to settle their funds
 		var aliceIncomingErr, bobIncomingErr error
 		go func() {
-			_, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr)
+			_, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr.Address)
 			wg.Done()
 		}()
 		go func() {
-			_, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr)
+			_, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
 			wg.Done()
 		}()
 
-		var aliceCommitmentTx, bobCommitmentTx string
+		var aliceBatchRes, bobBatchRes *arksdk.BatchTxRes
 		var aliceBatchErr, bobBatchErr error
 		go func() {
-			aliceCommitmentTx, aliceBatchErr = alice.Settle(ctx)
+			aliceBatchRes, aliceBatchErr = alice.Settle(ctx)
 			wg.Done()
 		}()
 		go func() {
-			bobCommitmentTx, bobBatchErr = bob.Settle(ctx)
+			bobBatchRes, bobBatchErr = bob.Settle(ctx)
 			wg.Done()
 		}()
 
@@ -130,9 +130,11 @@ func TestBatchSession(t *testing.T) {
 		require.NoError(t, bobIncomingErr)
 		require.NoError(t, aliceBatchErr)
 		require.NoError(t, bobBatchErr)
-		require.NotEmpty(t, aliceCommitmentTx)
-		require.NotEmpty(t, bobCommitmentTx)
-		require.Equal(t, aliceCommitmentTx, bobCommitmentTx)
+		require.NotNil(t, aliceBatchRes)
+		require.NotEmpty(t, aliceBatchRes.CommitmentTxid)
+		require.NotNil(t, bobBatchRes)
+		require.NotEmpty(t, bobBatchRes.CommitmentTxid)
+		require.Equal(t, aliceBatchRes.CommitmentTxid, bobBatchRes.CommitmentTxid)
 
 		time.Sleep(time.Second)
 
@@ -152,20 +154,20 @@ func TestBatchSession(t *testing.T) {
 		wg.Add(4)
 
 		go func() {
-			_, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr)
+			_, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr.Address)
 			wg.Done()
 		}()
 		go func() {
-			_, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr)
+			_, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
 			wg.Done()
 		}()
 
 		go func() {
-			aliceCommitmentTx, aliceBatchErr = alice.Settle(ctx)
+			aliceBatchRes, aliceBatchErr = alice.Settle(ctx)
 			wg.Done()
 		}()
 		go func() {
-			bobCommitmentTx, bobBatchErr = bob.Settle(ctx)
+			bobBatchRes, bobBatchErr = bob.Settle(ctx)
 			wg.Done()
 		}()
 
@@ -176,9 +178,10 @@ func TestBatchSession(t *testing.T) {
 		require.NoError(t, bobIncomingErr)
 		require.NoError(t, aliceBatchErr)
 		require.NoError(t, bobBatchErr)
-		require.NotEmpty(t, aliceCommitmentTx)
-		require.NotEmpty(t, bobCommitmentTx)
-		require.Equal(t, aliceCommitmentTx, bobCommitmentTx)
+		require.NotNil(t, aliceBatchRes)
+		require.NotNil(t, bobBatchRes)
+		require.NotEmpty(t, aliceBatchRes.CommitmentTxid)
+		require.Equal(t, aliceBatchRes.CommitmentTxid, bobBatchRes.CommitmentTxid)
 
 		aliceBalance, err = alice.Balance(t.Context())
 		require.NoError(t, err)
@@ -217,7 +220,7 @@ func TestBatchSession(t *testing.T) {
 		wg.Add(1)
 		var incomingErr error
 		go func() {
-			_, incomingErr = alice.NotifyIncomingFunds(t.Context(), offchainAddr)
+			_, incomingErr = alice.NotifyIncomingFunds(t.Context(), offchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -262,8 +265,9 @@ func TestUnilateralExit(t *testing.T) {
 		require.NotZero(t, balance.OffchainBalance.Total)
 		require.Empty(t, balance.OnchainBalance.LockedAmount)
 
-		err = alice.Unroll(t.Context())
+		res, err := alice.Unroll(t.Context())
 		require.NoError(t, err)
+		require.NotEmpty(t, res)
 
 		err = generateBlocks(1)
 		require.NoError(t, err)
@@ -301,11 +305,11 @@ func TestUnilateralExit(t *testing.T) {
 		wg.Add(1)
 		var incomingErr error
 		go func() {
-			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr)
+			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr.Address)
 			wg.Done()
 		}()
 		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
-			To:     bobOffchainAddr,
+			To:     bobOffchainAddr.Address,
 			Amount: 21000,
 		}})
 		require.NoError(t, err)
@@ -325,8 +329,9 @@ func TestUnilateralExit(t *testing.T) {
 		time.Sleep(5 * time.Second)
 
 		// Unroll the whole chain until the checkpoint tx
-		err = bob.Unroll(t.Context())
+		res, err := bob.Unroll(t.Context())
 		require.NoError(t, err)
+		require.NotEmpty(t, res)
 
 		// Generate some blocks to ensure the checkpoint tx is confirmed
 		err = generateBlocks(1)
@@ -337,8 +342,9 @@ func TestUnilateralExit(t *testing.T) {
 		time.Sleep(5 * time.Second)
 
 		// Finish the unroll and broadcast the ark tx
-		err = bob.Unroll(t.Context())
+		res, err = bob.Unroll(t.Context())
 		require.NoError(t, err)
+		require.NotEmpty(t, res)
 
 		err = generateBlocks(1)
 		require.NoError(t, err)
@@ -465,12 +471,11 @@ func TestCollaborativeExit(t *testing.T) {
 			require.NotEmpty(t, aliceBoardingAddr)
 
 			faucetOffchain(t, alice, 0.00021)
-			faucetOnchain(t, aliceBoardingAddr, 0.001)
+			faucetOnchain(t, aliceBoardingAddr.Address, 0.001)
 			time.Sleep(5 * time.Second)
 
 			_, err = alice.CollaborativeExit(t.Context(), bobOnchainAddr, 21000)
 			require.Error(t, err)
-
 			require.ErrorContains(t, err, "include onchain inputs and outputs")
 		})
 	})
@@ -496,10 +501,10 @@ func TestOffchainTx(t *testing.T) {
 		var incomingFunds []types.Vtxo
 		var incomingErr error
 		go func() {
-			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
+			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress.Address)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(ctx, []types.Receiver{{To: bobAddress, Amount: 1000}})
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{To: bobAddress.Address, Amount: 1000}})
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -513,10 +518,10 @@ func TestOffchainTx(t *testing.T) {
 
 		wg.Add(1)
 		go func() {
-			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
+			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress.Address)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(ctx, []types.Receiver{{To: bobAddress, Amount: 10000}})
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{To: bobAddress.Address, Amount: 10000}})
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -530,10 +535,13 @@ func TestOffchainTx(t *testing.T) {
 
 		wg.Add(1)
 		go func() {
-			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
+			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress.Address)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(ctx, []types.Receiver{{To: bobAddress, Amount: 10000}})
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{
+			To:     bobAddress.Address,
+			Amount: 10000,
+		}})
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -547,10 +555,10 @@ func TestOffchainTx(t *testing.T) {
 
 		wg.Add(1)
 		go func() {
-			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress)
+			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress.Address)
 			wg.Done()
 		}()
-		_, err = alice.SendOffChain(ctx, []types.Receiver{{To: bobAddress, Amount: 10000}})
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{To: bobAddress.Address, Amount: 10000}})
 		require.NoError(t, err)
 
 		wg.Wait()
@@ -594,11 +602,11 @@ func TestOffchainTx(t *testing.T) {
 			wg.Add(1)
 			var incomingErr error
 			go func() {
-				_, incomingErr = alice.NotifyIncomingFunds(t.Context(), aliceOffchainAddr)
+				_, incomingErr = alice.NotifyIncomingFunds(t.Context(), aliceOffchainAddr.Address)
 				wg.Done()
 			}()
 			_, err := alice.SendOffChain(t.Context(), []types.Receiver{{
-				To:     bobOffchainAddr,
+				To:     bobOffchainAddr.Address,
 				Amount: amount,
 			}})
 			require.NoError(t, err)
@@ -610,11 +618,11 @@ func TestOffchainTx(t *testing.T) {
 		wg.Add(1)
 		var incomingErr error
 		go func() {
-			_, incomingErr = alice.NotifyIncomingFunds(t.Context(), aliceOffchainAddr)
+			_, incomingErr = alice.NotifyIncomingFunds(t.Context(), aliceOffchainAddr.Address)
 			wg.Done()
 		}()
 		_, err = bob.SendOffChain(t.Context(), []types.Receiver{{
-			To:     aliceOffchainAddr,
+			To:     aliceOffchainAddr.Address,
 			Amount: numInputs * amount,
 		}})
 		require.NoError(t, err)
@@ -645,12 +653,12 @@ func TestOffchainTx(t *testing.T) {
 		// Alice sends 100 sats to Bob
 		var incomingErr error
 		go func() {
-			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr)
+			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr.Address)
 			wg.Done()
 		}()
 
 		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
-			To:     bobOffchainAddr,
+			To:     bobOffchainAddr.Address,
 			Amount: 100,
 		}})
 		require.NoError(t, err)
@@ -661,7 +669,7 @@ func TestOffchainTx(t *testing.T) {
 
 		// Bob can't spend his VTXO
 		_, err = bob.SendOffChain(t.Context(), []types.Receiver{{
-			To:     aliceOffchainAddr,
+			To:     aliceOffchainAddr.Address,
 			Amount: 100,
 		}})
 		require.Error(t, err)
@@ -673,12 +681,12 @@ func TestOffchainTx(t *testing.T) {
 		// Alice sends 250 sats more to Bob, another sub-dust amount
 		wg.Add(1)
 		go func() {
-			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr)
+			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr.Address)
 			wg.Done()
 		}()
 
 		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
-			To:     bobOffchainAddr,
+			To:     bobOffchainAddr.Address,
 			Amount: 250,
 		}})
 		require.NoError(t, err)
@@ -1014,6 +1022,132 @@ func TestOffchainTx(t *testing.T) {
 		require.Equal(t, txid, incomingFunds[0].Txid)
 	})
 
+	// In this test, we ensure that a tx with too many OP_RETURN outputs gets rejected.
+	// The server is configured with a max of 3 OP_RETURN outputs, so submitting 4 should fail.
+	t.Run("too many op return outputs", func(t *testing.T) {
+		ctx := t.Context()
+		explorer, err := mempool_explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest,
+			mempool_explorer.WithTracker(false),
+		)
+		require.NoError(t, err)
+
+		alice, aliceWallet, _, arkSvc := setupArkSDKwithPublicKey(t)
+		t.Cleanup(func() { alice.Stop() })
+		t.Cleanup(func() { arkSvc.Close() })
+
+		vtxo := faucetOffchain(t, alice, 0.00021)
+
+		_, offchainAddresses, _, _, err := aliceWallet.GetAddresses(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddresses)
+		offchainAddress := offchainAddresses[0]
+
+		serverParams, err := arkSvc.GetInfo(ctx)
+		require.NoError(t, err)
+
+		vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
+		require.NoError(t, err)
+		forfeitClosures := vtxoScript.ForfeitClosures()
+		require.Len(t, forfeitClosures, 1)
+		closure := forfeitClosures[0]
+
+		scriptBytes, err := closure.Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+		)
+		require.NoError(t, err)
+
+		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+		require.NoError(t, err)
+
+		tapscript := &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: merkleProof.Script,
+		}
+
+		checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		// Use alice's address script as the normal taproot output
+		addr, err := arklib.DecodeAddressV0(offchainAddress.Address)
+		require.NoError(t, err)
+		taprootPkScript, err := addr.GetPkScript()
+		require.NoError(t, err)
+
+		// Generate a random key for the sub-dust OP_RETURN outputs
+		randKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		subDustPkScript, err := script.SubDustScript(randKey.PubKey())
+		require.NoError(t, err)
+
+		const numOpRetOutputs = 4
+		const subDustAmount = int64(100)
+		taprootAmount := int64(vtxo.Amount) - numOpRetOutputs*subDustAmount
+
+		outputs := make([]*wire.TxOut, 0, numOpRetOutputs+1)
+		for range numOpRetOutputs {
+			outputs = append(outputs, &wire.TxOut{
+				Value:    subDustAmount,
+				PkScript: subDustPkScript,
+			})
+		}
+		outputs = append(outputs, &wire.TxOut{
+			Value:    taprootAmount,
+			PkScript: taprootPkScript,
+		})
+
+		ptx, checkpointsPtx, err := offchain.BuildTxs(
+			[]offchain.VtxoInput{
+				{
+					Outpoint: &wire.OutPoint{
+						Hash:  *vtxoHash,
+						Index: vtxo.VOut,
+					},
+					Tapscript:          tapscript,
+					Amount:             int64(vtxo.Amount),
+					RevealedTapscripts: offchainAddress.Tapscripts,
+				},
+			},
+			outputs,
+			checkpointTapscript,
+		)
+		require.NoError(t, err)
+
+		encodedCheckpoints := make([]string, 0, len(checkpointsPtx))
+		for _, checkpoint := range checkpointsPtx {
+			encoded, err := checkpoint.B64Encode()
+			require.NoError(t, err)
+			encodedCheckpoints = append(encodedCheckpoints, encoded)
+		}
+
+		encodedArkTx, err := ptx.B64Encode()
+		require.NoError(t, err)
+		signedArkTx, err := aliceWallet.SignTransaction(
+			ctx,
+			explorer,
+			encodedArkTx,
+		)
+		require.NoError(t, err)
+
+		txid, finalArkTx, signedCheckpoints, err := arkSvc.SubmitTx(
+			ctx, signedArkTx, encodedCheckpoints,
+		)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "tx has 4 OP_RETURN outputs")
+		require.Empty(t, txid)
+		require.Empty(t, finalArkTx)
+		require.Empty(t, signedCheckpoints)
+	})
+
 	// In this test, we ensure that a tx with a too big size gets rejected.
 	// TODO: move to unit tests and add also one for RegisterIntent
 	t.Run("invalid tx size", func(t *testing.T) {
@@ -1145,7 +1279,7 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, aliceAddr)
 
-	aliceArkAddr, err := arklib.DecodeAddressV0(aliceAddr)
+	aliceArkAddr, err := arklib.DecodeAddressV0(aliceAddr.Address)
 	require.NoError(t, err)
 	require.NotNil(t, aliceArkAddr)
 
@@ -1392,16 +1526,22 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NoError(t, err)
 	defer close()
 
-	commitmentTxid, err := arksdk.JoinBatchSession(ctx, stream, &delegateBatchEventsHandler{
-		signerSession:    bobTreeSigner,
-		partialForfeitTx: signedPartialForfeitTx,
-		delegatorWallet:  bobWallet,
-		client:           grpcClient,
-		forfeitPubKey:    aliceConfig.ForfeitPubKey,
-		intentId:         intentId,
-	})
+	commitmentTxid, commitmentTx, batchExpiry, forfeitTxs, vtxoTree, err := arksdk.JoinBatchSession(
+		ctx, stream, &delegateBatchEventsHandler{
+			signerSession:    bobTreeSigner,
+			partialForfeitTx: signedPartialForfeitTx,
+			delegatorWallet:  bobWallet,
+			client:           grpcClient,
+			forfeitPubKey:    aliceConfig.ForfeitPubKey,
+			intentId:         intentId,
+		},
+	)
 	require.NoError(t, err)
 	require.NotEmpty(t, commitmentTxid)
+	require.NotEmpty(t, commitmentTx)
+	require.NotEmpty(t, forfeitTxs)
+	require.NotNil(t, vtxoTree)
+	require.Greater(t, int64(batchExpiry), int64(0))
 }
 
 // TestSendToCLTVMultisigClosure shows how to send to an ark address that includes a closure locked
@@ -1436,7 +1576,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	_, offchainAddr, _, err := alice.Receive(ctx)
 	require.NoError(t, err)
 
-	aliceAddr, err := arklib.DecodeAddressV0(offchainAddr)
+	aliceAddr, err := arklib.DecodeAddressV0(offchainAddr.Address)
 	require.NoError(t, err)
 
 	faucetOffchain(t, alice, 0.00021)
@@ -1497,11 +1637,12 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 		_, incomingErr = alice.NotifyIncomingFunds(ctx, bobAddrStr)
 		wg.Done()
 	}()
-	txid, err := alice.SendOffChain(
+	res, err := alice.SendOffChain(
 		ctx, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
 	)
 	require.NoError(t, err)
-	require.NotEmpty(t, txid)
+	require.NotNil(t, res)
+	require.NotEmpty(t, res.Txid)
 
 	wg.Wait()
 	require.NoError(t, incomingErr)
@@ -1514,8 +1655,8 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	// Fetch the virtual transaction to extract the taproot tree
 	var virtualTx string
 	for _, vtxo := range spendable {
-		if vtxo.Txid == txid {
-			resp, err := indexerSvc.GetVirtualTxs(ctx, []string{txid})
+		if vtxo.Txid == res.Txid {
+			resp, err := indexerSvc.GetVirtualTxs(ctx, []string{res.Txid})
 			require.NoError(t, err)
 			require.NotNil(t, resp)
 			require.NotEmpty(t, resp.Txs)
@@ -1662,7 +1803,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	_, offchainAddr, _, err := alice.Receive(ctx)
 	require.NoError(t, err)
 
-	aliceAddr, err := arklib.DecodeAddressV0(offchainAddr)
+	aliceAddr, err := arklib.DecodeAddressV0(offchainAddr.Address)
 	require.NoError(t, err)
 
 	faucetOffchain(t, alice, 0.00021)
@@ -1738,11 +1879,12 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		defer wg.Done()
 	}()
 
-	txid, err := alice.SendOffChain(
+	res, err := alice.SendOffChain(
 		ctx, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
 	)
 	require.NoError(t, err)
-	require.NotEmpty(t, txid)
+	require.NotNil(t, res)
+	require.NotEmpty(t, res.Txid)
 
 	wg.Wait()
 	require.NoError(t, incomingErr)
@@ -1755,8 +1897,8 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	// Fetch the virtual transaction to extract the taproot tree
 	var virtualTx string
 	for _, vtxo := range spendable {
-		if vtxo.Txid == txid {
-			resp, err := indexerSvc.GetVirtualTxs(ctx, []string{txid})
+		if vtxo.Txid == res.Txid {
+			resp, err := indexerSvc.GetVirtualTxs(ctx, []string{res.Txid})
 			require.NoError(t, err)
 			require.NotNil(t, resp)
 			require.NotEmpty(t, resp.Txs)
@@ -1897,19 +2039,21 @@ func TestReactToFraud(t *testing.T) {
 			_, arkAddr, boardingAddress, err := sdkClient.Receive(ctx)
 			require.NoError(t, err)
 
-			faucetOnchain(t, boardingAddress, 0.00021)
+			faucetOnchain(t, boardingAddress.Address, 0.00021)
 			time.Sleep(5 * time.Second)
 
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr)
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
-			commitmentTxid, err := sdkClient.Settle(ctx)
+			res, err := sdkClient.Settle(ctx)
 			require.NoError(t, err)
+			require.NotNil(t, res)
+			require.NotEmpty(t, res.CommitmentTxid)
 
 			wg.Wait()
 			time.Sleep(5 * time.Second)
@@ -1917,7 +2061,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr)
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -1933,7 +2077,7 @@ func TestReactToFraud(t *testing.T) {
 
 			var vtxo types.Vtxo
 			for _, v := range spentVtxos {
-				if !v.Preconfirmed && v.CommitmentTxids[0] == commitmentTxid {
+				if !v.Preconfirmed && v.CommitmentTxids[0] == res.CommitmentTxid {
 					vtxo = v
 					break
 				}
@@ -1996,19 +2140,21 @@ func TestReactToFraud(t *testing.T) {
 			onchainAddr, arkAddr, boardingAddress, err := sdkClient.Receive(ctx)
 			require.NoError(t, err)
 
-			faucetOnchain(t, boardingAddress, 0.00021)
+			faucetOnchain(t, boardingAddress.Address, 0.00021)
 			time.Sleep(5 * time.Second)
 
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr)
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
-			commitmentTxid, err := sdkClient.Settle(ctx)
+			res, err := sdkClient.Settle(ctx)
 			require.NoError(t, err)
+			require.NotNil(t, res)
+			require.NotEmpty(t, res.CommitmentTxid)
 
 			wg.Wait()
 			time.Sleep(5 * time.Second)
@@ -2016,7 +2162,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr)
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, arkAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -2033,7 +2179,7 @@ func TestReactToFraud(t *testing.T) {
 
 			var vtxo types.Vtxo
 			for _, v := range spentVtxos {
-				if !v.Preconfirmed && v.CommitmentTxids[0] == commitmentTxid {
+				if !v.Preconfirmed && v.CommitmentTxids[0] == res.CommitmentTxid {
 					vtxo = v
 					break
 				}
@@ -2096,20 +2242,22 @@ func TestReactToFraud(t *testing.T) {
 			_, offchainAddress, boardingAddress, err := sdkClient.Receive(ctx)
 			require.NoError(t, err)
 
-			faucetOnchain(t, boardingAddress, 0.00021)
+			faucetOnchain(t, boardingAddress.Address, 0.00021)
 			time.Sleep(5 * time.Second)
 
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, offchainAddress)
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, offchainAddress.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
 
-			roundId, err := sdkClient.Settle(ctx)
+			res, err := sdkClient.Settle(ctx)
 			require.NoError(t, err)
+			require.NotNil(t, res)
+			require.NotEmpty(t, res.CommitmentTxid)
 
 			wg.Wait()
 			time.Sleep(5 * time.Second)
@@ -2120,13 +2268,13 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, offchainAddress)
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, offchainAddress.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
 
 			_, err = sdkClient.SendOffChain(
-				ctx, []types.Receiver{{To: offchainAddress, Amount: 1000}},
+				ctx, []types.Receiver{{To: offchainAddress.Address, Amount: 1000}},
 			)
 			require.NoError(t, err)
 
@@ -2137,7 +2285,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, offchainAddress)
+				vtxos, err := sdkClient.NotifyIncomingFunds(ctx, offchainAddress.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -2152,7 +2300,7 @@ func TestReactToFraud(t *testing.T) {
 
 			var vtxo types.Vtxo
 			for _, v := range spentVtxos {
-				if !v.Preconfirmed && v.CommitmentTxids[0] == roundId {
+				if !v.Preconfirmed && v.CommitmentTxids[0] == res.CommitmentTxid {
 					vtxo = v
 					break
 				}
@@ -2219,17 +2367,17 @@ func TestReactToFraud(t *testing.T) {
 			_, offchainAddr, boardingAddress, err := alice.Receive(ctx)
 			require.NoError(t, err)
 
-			aliceAddr, err := arklib.DecodeAddressV0(offchainAddr)
+			aliceAddr, err := arklib.DecodeAddressV0(offchainAddr.Address)
 			require.NoError(t, err)
 
-			faucetOnchain(t, boardingAddress, 0.00021)
+			faucetOnchain(t, boardingAddress.Address, 0.00021)
 			time.Sleep(5 * time.Second)
 
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
+				vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -2301,16 +2449,17 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
+				vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
 
-			txid, err := alice.SendOffChain(
+			res, err := alice.SendOffChain(
 				ctx, []types.Receiver{{To: bobAddrStr, Amount: sendAmount}},
 			)
 			require.NoError(t, err)
-			require.NotEmpty(t, txid)
+			require.NotNil(t, res)
+			require.NotEmpty(t, res.Txid)
 
 			wg.Wait()
 			time.Sleep(time.Second)
@@ -2322,8 +2471,8 @@ func TestReactToFraud(t *testing.T) {
 
 			var virtualTx string
 			for _, vtxo := range spendable {
-				if vtxo.Txid == txid {
-					resp, err := indexerSvc.GetVirtualTxs(ctx, []string{txid})
+				if vtxo.Txid == res.Txid {
+					resp, err := indexerSvc.GetVirtualTxs(ctx, []string{res.Txid})
 					require.NoError(t, err)
 					require.NotNil(t, resp)
 					require.NotEmpty(t, resp.Txs)
@@ -2428,7 +2577,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr)
+				vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -2466,16 +2615,14 @@ func TestReactToFraud(t *testing.T) {
 
 			// make sure the vtxo of bob is not redeemed
 			// the checkpoint is not the bob's virtual tx
-			opt := &indexer.GetVtxosRequestOption{}
 			bobScript, err := script.P2TRScript(bobAddr.VtxoTapKey)
 			require.NoError(t, err)
 			require.NotEmpty(t, bobScript)
-			// nolint
-			opt.WithScripts([]string{hex.EncodeToString(bobScript)})
-			// nolint
-			opt.WithSpentOnly()
 
-			resp, err := indexerSvc.GetVtxos(ctx, *opt)
+			resp, err := indexerSvc.GetVtxos(ctx,
+				indexer.WithScripts([]string{hex.EncodeToString(bobScript)}),
+				indexer.WithSpentOnly(),
+			)
 			require.NoError(t, err)
 			require.NotNil(t, resp)
 			require.Len(t, resp.Vtxos, 1)
@@ -2492,15 +2639,18 @@ func TestSweep(t *testing.T) {
 	// This test ensures the server is capable of sweeping a batch output once
 	// the timelock to claim the liquidity back expires
 	t.Run("batch", func(t *testing.T) {
-		alice := setupArkSDK(t)
-		defer alice.Stop()
+		alice, transport := setupArkSDKWithTransport(t)
+		t.Cleanup(func() {
+			alice.Stop()
+			transport.Close()
+		})
 
 		ctx := t.Context()
 
 		_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
 		require.NoError(t, err)
 
-		faucetOnchain(t, boardingAddr, 0.00021)
+		faucetOnchain(t, boardingAddr.Address, 0.00021)
 		time.Sleep(5 * time.Second)
 
 		wg := &sync.WaitGroup{}
@@ -2508,7 +2658,7 @@ func TestSweep(t *testing.T) {
 		var incominFunds []types.Vtxo
 		var incomingErr error
 		go func() {
-			incominFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			incominFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -2521,12 +2671,48 @@ func TestSweep(t *testing.T) {
 		require.Len(t, incominFunds, 1)
 		vtxo := incominFunds[0]
 
+		// open transaction stream before triggering sweep
+		// we'll listen to it in background in order to catch the sweep event
+		streamCtx, streamCancel := context.WithCancel(ctx)
+		t.Cleanup(streamCancel)
+
+		txStream, closeStream, err := transport.GetTransactionsStream(streamCtx)
+		require.NoError(t, err)
+		t.Cleanup(closeStream)
+
+		var sweepEvent *client.TxNotification
+		sweepCh := make(chan *client.TxNotification, 1)
+		go func() {
+			for ev := range txStream {
+				if ev.SweepTx == nil {
+					continue
+				}
+				for _, swept := range ev.SweepTx.SweptVtxos {
+					if swept.Txid == vtxo.Txid && swept.VOut == vtxo.VOut {
+						sweepCh <- ev.SweepTx
+						return
+					}
+				}
+			}
+		}()
+
 		// Generate 30 blocks to expire the batch output
 		err = generateBlocks(30)
 		require.NoError(t, err)
 
-		// Wait for server to process the sweep
-		time.Sleep(20 * time.Second)
+		// wait for sweep event from the stream
+		select {
+		case sweepEvent = <-sweepCh:
+		case <-time.After(40 * time.Second):
+			t.Fatal("timed out waiting for sweep tx event on stream")
+		}
+
+		require.NotEmpty(t, sweepEvent.Txid)
+		require.NotEmpty(t, sweepEvent.Tx)
+		require.NotEmpty(t, sweepEvent.SweptVtxos)
+
+		// give time to indexer to update its state
+		time.Sleep(5 * time.Second)
 
 		spendable, _, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
@@ -2537,13 +2723,15 @@ func TestSweep(t *testing.T) {
 
 		wg.Add(1)
 		go func() {
-			_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
 			wg.Done()
 		}()
 
 		// Test fund recovery
-		txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos())
+		res, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos())
 		require.NoError(t, err)
+		require.NotNil(t, res)
+		require.NotEmpty(t, res.CommitmentTxid)
 
 		wg.Wait()
 		require.NoError(t, incomingErr)
@@ -2554,7 +2742,7 @@ func TestSweep(t *testing.T) {
 		require.NotEmpty(t, spendable)
 		require.Len(t, spendable, 1)
 		require.Len(t, spent, 1)
-		require.Equal(t, txid, spent[0].SettledBy)
+		require.Equal(t, res.CommitmentTxid, spent[0].SettledBy)
 		require.Equal(t, vtxo.Txid, spent[0].Txid)
 		require.True(t, spent[0].Swept)
 		require.True(t, spent[0].Spent)
@@ -2571,7 +2759,7 @@ func TestSweep(t *testing.T) {
 		_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
 		require.NoError(t, err)
 
-		faucetOnchain(t, boardingAddr, 0.00021)
+		faucetOnchain(t, boardingAddr.Address, 0.00021)
 		time.Sleep(5 * time.Second)
 
 		wg := &sync.WaitGroup{}
@@ -2579,7 +2767,7 @@ func TestSweep(t *testing.T) {
 		var incomingFunds []types.Vtxo
 		var incomingErr error
 		go func() {
-			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -2598,17 +2786,18 @@ func TestSweep(t *testing.T) {
 		incomingErr = nil
 		wg.Add(1)
 		go func() {
-			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
 			wg.Done()
 		}()
 
 		// self-send the VTXO to create a checkpoint output
-		firstOffchainTxId, err := alice.SendOffChain(
+		res1, err := alice.SendOffChain(
 			ctx,
-			[]types.Receiver{{To: offchainAddr, Amount: boardedVtxo.Amount}},
+			[]types.Receiver{{To: offchainAddr.Address, Amount: boardedVtxo.Amount}},
 		)
 		require.NoError(t, err)
-		require.NotEmpty(t, firstOffchainTxId)
+		require.NotNil(t, res1)
+		require.NotEmpty(t, res1.Txid)
 
 		wg.Wait()
 		require.NoError(t, incomingErr)
@@ -2616,12 +2805,13 @@ func TestSweep(t *testing.T) {
 		time.Sleep(time.Second)
 
 		// self-send again to create a second checkpoint output
-		secondOffchainTxId, err := alice.SendOffChain(
+		res2, err := alice.SendOffChain(
 			ctx,
-			[]types.Receiver{{To: offchainAddr, Amount: boardedVtxo.Amount}},
+			[]types.Receiver{{To: offchainAddr.Address, Amount: boardedVtxo.Amount}},
 		)
 		require.NoError(t, err)
-		require.NotEmpty(t, secondOffchainTxId)
+		require.NotNil(t, res2)
+		require.NotEmpty(t, res2.Txid)
 
 		// unroll the spent VTXO to put checkpoint onchain
 		expl, err := mempool_explorer.NewExplorer(
@@ -2658,7 +2848,7 @@ func TestSweep(t *testing.T) {
 		var unrolledVtxo *types.Vtxo
 		for _, v := range spent {
 			switch v.Txid {
-			case firstOffchainTxId:
+			case res1.Txid:
 				firstOffchainTxVtxo = &v
 			case boardedVtxo.Txid:
 				unrolledVtxo = &v
@@ -2678,7 +2868,7 @@ func TestSweep(t *testing.T) {
 
 		// find second offchain tx vtxo, must be in spendable
 		secondOffchainTxVtxo := spendable[0]
-		require.Equal(t, secondOffchainTxId, secondOffchainTxVtxo.Txid)
+		require.Equal(t, res2.Txid, secondOffchainTxVtxo.Txid)
 
 		// should be swept but not unrolled nor spent
 		require.True(t, secondOffchainTxVtxo.Swept)
@@ -2695,7 +2885,7 @@ func TestSweep(t *testing.T) {
 		_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
 		require.NoError(t, err)
 
-		faucetOnchain(t, boardingAddr, 0.00021)
+		faucetOnchain(t, boardingAddr.Address, 0.00021)
 		time.Sleep(5 * time.Second)
 
 		wg := &sync.WaitGroup{}
@@ -2703,7 +2893,7 @@ func TestSweep(t *testing.T) {
 		var incominFunds []types.Vtxo
 		var incomingErr error
 		go func() {
-			incominFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			incominFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -2741,12 +2931,14 @@ func TestSweep(t *testing.T) {
 		require.False(t, spendable[0].Spent)
 
 		wg.Go(func() {
-			_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
 		})
 
 		// Test fund recovery
-		txid, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos())
+		res, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos())
 		require.NoError(t, err)
+		require.NotNil(t, res)
+		require.NotEmpty(t, res.CommitmentTxid)
 
 		wg.Wait()
 		require.NoError(t, incomingErr)
@@ -2757,7 +2949,7 @@ func TestSweep(t *testing.T) {
 		require.NotEmpty(t, spendable)
 		require.Len(t, spendable, 1)
 		require.Len(t, spent, 1)
-		require.Equal(t, txid, spent[0].SettledBy)
+		require.Equal(t, res.CommitmentTxid, spent[0].SettledBy)
 		require.Equal(t, vtxo.Txid, spent[0].Txid)
 		require.True(t, spent[0].Swept)
 		require.True(t, spent[0].Spent)
@@ -2789,29 +2981,33 @@ func TestSweep(t *testing.T) {
 		mikeNote := generateNote(t, 21000)
 
 		wg := &sync.WaitGroup{}
-		var aliceErr, bobErr, charlieErr, mikeErr error
-		var aliceTxid, bobTxid, charlieTxid, mikeTxid string
+		var aliceErr, bobErr, charlieErr, daveErr error
+		var aliceRes, bobRes, charlieRes, daveRes *arksdk.BatchTxRes
 		wg.Go(func() {
-			aliceTxid, aliceErr = alice.RedeemNotes(ctx, []string{aliceNote})
+			aliceRes, aliceErr = alice.RedeemNotes(ctx, []string{aliceNote})
 		})
 		wg.Go(func() {
-			bobTxid, bobErr = bob.RedeemNotes(ctx, []string{bobNote})
+			bobRes, bobErr = bob.RedeemNotes(ctx, []string{bobNote})
 		})
 		wg.Go(func() {
-			charlieTxid, charlieErr = charlie.RedeemNotes(ctx, []string{charlieNote})
+			charlieRes, charlieErr = charlie.RedeemNotes(ctx, []string{charlieNote})
 		})
 		wg.Go(func() {
-			mikeTxid, mikeErr = mike.RedeemNotes(ctx, []string{mikeNote})
+			daveRes, daveErr = mike.RedeemNotes(ctx, []string{mikeNote})
 		})
 		wg.Wait()
 		require.NoError(t, aliceErr)
 		require.NoError(t, bobErr)
 		require.NoError(t, charlieErr)
-		require.NoError(t, mikeErr)
-		require.NotEmpty(t, aliceTxid)
-		require.Equal(t, aliceTxid, bobTxid)
-		require.Equal(t, aliceTxid, charlieTxid)
-		require.Equal(t, aliceTxid, mikeTxid)
+		require.NoError(t, daveErr)
+		require.NotNil(t, aliceRes)
+		require.NotNil(t, bobRes)
+		require.NotNil(t, charlieRes)
+		require.NotNil(t, daveRes)
+		require.NotEmpty(t, aliceRes.CommitmentTxid)
+		require.Equal(t, aliceRes.CommitmentTxid, bobRes.CommitmentTxid)
+		require.Equal(t, aliceRes.CommitmentTxid, charlieRes.CommitmentTxid)
+		require.Equal(t, aliceRes.CommitmentTxid, daveRes.CommitmentTxid)
 
 		onchainAddr, _, _, err := alice.Receive(ctx)
 		require.NoError(t, err)
@@ -2831,8 +3027,9 @@ func TestSweep(t *testing.T) {
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
-		err = alice.Unroll(ctx)
+		res, err := alice.Unroll(ctx)
 		require.NoError(t, err)
+		require.NotEmpty(t, res)
 
 		time.Sleep(2 * time.Second)
 
@@ -2850,8 +3047,9 @@ func TestSweep(t *testing.T) {
 		err = generateBlocks(10)
 		require.NoError(t, err)
 
-		err = alice.Unroll(ctx)
+		res, err = alice.Unroll(ctx)
 		require.NoError(t, err)
+		require.NotEmpty(t, res)
 
 		time.Sleep(2 * time.Second)
 
@@ -2868,7 +3066,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// Wait for server to process the sweep
-		time.Sleep(20 * time.Second)
+		time.Sleep(30 * time.Second)
 
 		// alice vtxos should not be swept yet
 		aliceVtxos, _, err := alice.ListVtxos(ctx)
@@ -2906,7 +3104,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// give time for the server to process the sweep and indexer to sync the vtxo table
-		time.Sleep(45 * time.Second)
+		time.Sleep(60 * time.Second)
 
 		// verify that all vtxos have been swept
 		aliceVtxos, _, err = alice.ListVtxos(ctx)
@@ -2944,7 +3142,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// Faucet with a small amount that will result in a dust vtxo after fees
-		faucetOnchain(t, boardingAddr, 0.00000330)
+		faucetOnchain(t, boardingAddr.Address, 0.00000330)
 		time.Sleep(5 * time.Second)
 
 		wg := &sync.WaitGroup{}
@@ -2952,13 +3150,14 @@ func TestSweep(t *testing.T) {
 		var incomingFunds []types.Vtxo
 		var incomingErr error
 		go func() {
-			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr)
+			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
 			wg.Done()
 		}()
 
 		// Settle the boarding utxo to create a new batch output expiring in 20 blocks
-		commitmentTxid, err := alice.Settle(ctx)
+		res, err := alice.Settle(ctx)
 		require.NoError(t, err)
+		require.NotNil(t, res)
 
 		wg.Wait()
 		require.NoError(t, incomingErr)
@@ -2985,8 +3184,7 @@ func TestSweep(t *testing.T) {
 		}
 
 		reqBody := bytes.NewReader([]byte(fmt.Sprintf(
-			`{"connectors": true, "commitment_txids": ["%s"]}`,
-			commitmentTxid,
+			`{"connectors": true, "commitment_txids": ["%s"]}`, res.CommitmentTxid,
 		)))
 		req, err := http.NewRequest("POST", "http://localhost:7071/v1/admin/sweep", reqBody)
 		require.NoError(t, err)
@@ -3047,16 +3245,24 @@ func TestCollisionBetweenInRoundAndRedeemVtxo(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		txid, err := alice.Settle(ctx)
-		ch <- resp{txid, err}
+		res, err := alice.Settle(ctx)
+		if err != nil {
+			ch <- resp{"", err}
+			return
+		}
+		ch <- resp{res.CommitmentTxid, nil}
 	}()
 	// SDK Settle call is bit slower than Redeem so we introduce small delay so we make sure Settle is called before Redeem
 	// this timeout can vary depending on the environment
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		defer wg.Done()
-		txid, err := alice.SendOffChain(ctx, []types.Receiver{{To: bobAddr, Amount: 1000}})
-		ch <- resp{txid, err}
+		res, err := alice.SendOffChain(ctx, []types.Receiver{{To: bobAddr.Address, Amount: 1000}})
+		if err != nil {
+			ch <- resp{"", err}
+			return
+		}
+		ch <- resp{res.Txid, nil}
 	}()
 
 	go func() {
@@ -3100,7 +3306,7 @@ func TestIntent(t *testing.T) {
 		require.NoError(t, err)
 
 		cosigners := []string{hex.EncodeToString(cosignerKey.PubKey().SerializeCompressed())}
-		outs := []types.Receiver{{To: offchainAddr, Amount: 20000}}
+		outs := []types.Receiver{{To: offchainAddr.Address, Amount: 20000}}
 		_, err = alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, outs, cosigners)
 		require.NoError(t, err)
 
@@ -3136,10 +3342,10 @@ func TestIntent(t *testing.T) {
 		require.NoError(t, err)
 
 		cosigners := []string{hex.EncodeToString(cosignerKey.PubKey().SerializeCompressed())}
-		outs := []types.Receiver{{To: offchainAddr, Amount: 20000}}
+		outs := []types.Receiver{{To: offchainAddr.Address, Amount: 20000}}
 		outsBis := []types.Receiver{
-			{To: offchainAddr, Amount: 10000},
-			{To: offchainAddr, Amount: 10000},
+			{To: offchainAddr.Address, Amount: 10000},
+			{To: offchainAddr.Address, Amount: 10000},
 		}
 
 		wg := &sync.WaitGroup{}
@@ -3147,7 +3353,10 @@ func TestIntent(t *testing.T) {
 
 		errChan := make(chan error, 2)
 
-		doRegister := func(ctx context.Context, wg *sync.WaitGroup, errChan chan error, aliceVtxos []types.Vtxo, outs []types.Receiver, cosigners []string) {
+		doRegister := func(
+			ctx context.Context, wg *sync.WaitGroup, errChan chan error,
+			aliceVtxos []types.Vtxo, outs []types.Receiver, cosigners []string,
+		) {
 			_, err := alice.RegisterIntent(ctx, aliceVtxos, []types.Utxo{}, nil, outs, cosigners)
 			errChan <- err
 			wg.Done()
@@ -3204,7 +3413,7 @@ func TestBan(t *testing.T) {
 			[]types.Receiver{
 				{
 					Amount: aliceVtxo.Amount,
-					To:     aliceAddr,
+					To:     aliceAddr.Address,
 				},
 			},
 			[]string{signerSession.GetPublicKey()},
@@ -3219,23 +3428,23 @@ func TestBan(t *testing.T) {
 		defer close()
 
 		handlers := &customBatchEventsHandler{
-			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, time.Duration, error) {
 				buf := sha256.Sum256([]byte(intentId))
 				hashedIntentId := hex.EncodeToString(buf[:])
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
-					return false, err
+					return false, time.Duration(event.BatchExpiry) * time.Second, err
 				}
 
-				return true, nil
+				return true, -1, nil
 			},
 			onTreeSigningStarted: func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
 				return true, nil // just skip, do not submit nonces
 			},
 		}
 
-		_, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		_, _, _, _, _, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
 		require.Error(t, err)
 
 		// next settle should fail because the nonce has not been submitted
@@ -3245,7 +3454,7 @@ func TestBan(t *testing.T) {
 		// send should fail
 		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
 			Amount: aliceVtxo.Amount,
-			To:     aliceAddr,
+			To:     aliceAddr.Address,
 		}})
 		require.Error(t, err)
 	})
@@ -3280,7 +3489,7 @@ func TestBan(t *testing.T) {
 			[]types.Receiver{
 				{
 					Amount: aliceVtxo.Amount,
-					To:     aliceAddr,
+					To:     aliceAddr.Address,
 				},
 			},
 			[]string{signerSession.GetPublicKey()},
@@ -3296,17 +3505,17 @@ func TestBan(t *testing.T) {
 
 		var batchExpiry arklib.RelativeLocktime
 		handlers := &customBatchEventsHandler{
-			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, time.Duration, error) {
 				buf := sha256.Sum256([]byte(intentId))
 				hashedIntentId := hex.EncodeToString(buf[:])
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
 					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
-					return false, err
+					return false, time.Duration(event.BatchExpiry) * time.Second, err
 				}
 
-				return true, nil
+				return true, -1, nil
 			},
 			onTreeSigningStarted: func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
 				myPubkey := signerSession.GetPublicKey()
@@ -3343,7 +3552,11 @@ func TestBan(t *testing.T) {
 				sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
 				root := sweepTapTree.RootNode.TapHash()
 
-				if err := signerSession.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+				if err := signerSession.Init(
+					root.CloneBytes(),
+					batchOutputAmount,
+					vtxoTree,
+				); err != nil {
 					return false, err
 				}
 
@@ -3352,7 +3565,12 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+				if err = grpcAlice.SubmitTreeNonces(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					nonces,
+				); err != nil {
 					return false, err
 				}
 
@@ -3363,7 +3581,7 @@ func TestBan(t *testing.T) {
 			},
 		}
 
-		_, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		_, _, _, _, _, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
 		require.Error(t, err)
 
 		// next settle should fail because the signature has not been submitted
@@ -3373,7 +3591,7 @@ func TestBan(t *testing.T) {
 		// send should fail
 		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
 			Amount: aliceVtxo.Amount,
-			To:     aliceAddr,
+			To:     aliceAddr.Address,
 		}})
 		require.Error(t, err)
 	})
@@ -3407,7 +3625,7 @@ func TestBan(t *testing.T) {
 			[]types.Receiver{
 				{
 					Amount: aliceVtxo.Amount,
-					To:     aliceAddr,
+					To:     aliceAddr.Address,
 				},
 			},
 			[]string{signerSession.GetPublicKey()},
@@ -3422,16 +3640,16 @@ func TestBan(t *testing.T) {
 		defer close()
 
 		handlers := &customBatchEventsHandler{
-			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, time.Duration, error) {
 				buf := sha256.Sum256([]byte(intentId))
 				hashedIntentId := hex.EncodeToString(buf[:])
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
-					return false, err
+					return false, time.Duration(event.BatchExpiry) * time.Second, err
 				}
 
-				return true, nil
+				return true, -1, nil
 			},
 			onTreeSigningStarted: func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
 				myPubkey := signerSession.GetPublicKey()
@@ -3453,7 +3671,11 @@ func TestBan(t *testing.T) {
 				// use a fake sweep to create invalid signatures
 				fakeSweepTapHash := sha256.Sum256([]byte("random_sweep_tap_hash"))
 
-				if err := signerSession.Init(fakeSweepTapHash[:], batchOutputAmount, vtxoTree); err != nil {
+				if err := signerSession.Init(
+					fakeSweepTapHash[:],
+					batchOutputAmount,
+					vtxoTree,
+				); err != nil {
 					return false, err
 				}
 
@@ -3462,7 +3684,12 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+				if err = grpcAlice.SubmitTreeNonces(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					nonces,
+				); err != nil {
 					return false, err
 				}
 
@@ -3486,7 +3713,7 @@ func TestBan(t *testing.T) {
 			},
 		}
 
-		_, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		_, _, _, _, _, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
 		require.Error(t, err)
 
 		// next settle should fail because the signature was invalid
@@ -3496,7 +3723,7 @@ func TestBan(t *testing.T) {
 		// send should fail
 		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
 			Amount: aliceVtxo.Amount,
-			To:     aliceAddr,
+			To:     aliceAddr.Address,
 		}})
 		require.Error(t, err)
 	})
@@ -3530,7 +3757,7 @@ func TestBan(t *testing.T) {
 			[]types.Receiver{
 				{
 					Amount: aliceVtxo.Amount,
-					To:     aliceAddr,
+					To:     aliceAddr.Address,
 				},
 			},
 			[]string{signerSession.GetPublicKey()},
@@ -3546,17 +3773,17 @@ func TestBan(t *testing.T) {
 
 		var batchExpiry arklib.RelativeLocktime
 		handlers := &customBatchEventsHandler{
-			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, time.Duration, error) {
 				buf := sha256.Sum256([]byte(intentId))
 				hashedIntentId := hex.EncodeToString(buf[:])
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
 					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
-					return false, err
+					return false, time.Duration(event.BatchExpiry) * time.Second, err
 				}
 
-				return true, nil
+				return true, -1, nil
 			},
 			onTreeSigningStarted: func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
 				myPubkey := signerSession.GetPublicKey()
@@ -3593,7 +3820,11 @@ func TestBan(t *testing.T) {
 				sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
 				root := sweepTapTree.RootNode.TapHash()
 
-				if err := signerSession.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+				if err := signerSession.Init(
+					root.CloneBytes(),
+					batchOutputAmount,
+					vtxoTree,
+				); err != nil {
 					return false, err
 				}
 
@@ -3602,7 +3833,12 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+				if err = grpcAlice.SubmitTreeNonces(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					nonces,
+				); err != nil {
 					return false, err
 				}
 
@@ -3624,12 +3860,12 @@ func TestBan(t *testing.T) {
 				)
 				return err == nil, err
 			},
-			onBatchFinalization: func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree) error {
-				return nil // do not submit forfeit txs
+			onBatchFinalization: func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree) ([]string, error) {
+				return nil, nil // do not submit forfeit txs
 			},
 		}
 
-		_, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		_, _, _, _, _, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
 		require.Error(t, err)
 
 		// next settle should fail because the forfeit txs have not been submitted
@@ -3639,7 +3875,7 @@ func TestBan(t *testing.T) {
 		// send should fail
 		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
 			Amount: aliceVtxo.Amount,
-			To:     aliceAddr,
+			To:     aliceAddr.Address,
 		}})
 		require.Error(t, err)
 	})
@@ -3673,7 +3909,7 @@ func TestBan(t *testing.T) {
 			[]types.Receiver{
 				{
 					Amount: aliceVtxo.Amount,
-					To:     aliceAddr,
+					To:     aliceAddr.Address,
 				},
 			},
 			[]string{signerSession.GetPublicKey()},
@@ -3692,17 +3928,17 @@ func TestBan(t *testing.T) {
 		var batchExpiry arklib.RelativeLocktime
 
 		handlers := &customBatchEventsHandler{
-			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, time.Duration, error) {
 				buf := sha256.Sum256([]byte(intentId))
 				hashedIntentId := hex.EncodeToString(buf[:])
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
 					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
-					return false, err
+					return false, time.Duration(event.BatchExpiry) * time.Second, err
 				}
 
-				return true, nil
+				return true, -1, nil
 			},
 			onTreeSigningStarted: func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
 				myPubkey := signerSession.GetPublicKey()
@@ -3739,7 +3975,11 @@ func TestBan(t *testing.T) {
 				sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
 				root := sweepTapTree.RootNode.TapHash()
 
-				if err := signerSession.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+				if err := signerSession.Init(
+					root.CloneBytes(),
+					batchOutputAmount,
+					vtxoTree,
+				); err != nil {
 					return false, err
 				}
 
@@ -3748,7 +3988,12 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+				if err = grpcAlice.SubmitTreeNonces(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					nonces,
+				); err != nil {
 					return false, err
 				}
 
@@ -3770,10 +4015,10 @@ func TestBan(t *testing.T) {
 				)
 				return err == nil, err
 			},
-			onBatchFinalization: func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree) error {
+			onBatchFinalization: func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree) ([]string, error) {
 				txhash, err := chainhash.NewHashFromStr(aliceVtxo.Txid)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				// use a wrong script to create invalid signatures
@@ -3781,12 +4026,12 @@ func TestBan(t *testing.T) {
 
 				forfeitOutputAddr, err := btcutil.DecodeAddress(info.ForfeitAddress, nil)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				forfeitOutputScript, err := txscript.PayToAddrScript(forfeitOutputAddr)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				forfeitPtx, err := tree.BuildForfeitTx(
@@ -3800,12 +4045,12 @@ func TestBan(t *testing.T) {
 					0,
 				)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				encodedForfeitTx, err := forfeitPtx.B64Encode()
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				// sign the forfeit tx
@@ -3814,16 +4059,19 @@ func TestBan(t *testing.T) {
 					encodedForfeitTx,
 				)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
-				return grpcAlice.SubmitSignedForfeitTxs(
+				if err := grpcAlice.SubmitSignedForfeitTxs(
 					ctx, []string{signedForfeitTx}, "",
-				)
+				); err != nil {
+					return nil, err
+				}
+				return []string{signedForfeitTx}, nil
 			},
 		}
 
-		_, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		_, _, _, _, _, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
 		require.Error(t, err)
 
 		// next settle should fail because the forfeit txs have not been submitted
@@ -3833,7 +4081,7 @@ func TestBan(t *testing.T) {
 		// send should fail
 		_, err = alice.SendOffChain(t.Context(), []types.Receiver{{
 			Amount: aliceVtxo.Amount,
-			To:     aliceAddr,
+			To:     aliceAddr.Address,
 		}})
 		require.Error(t, err)
 	})
@@ -3900,17 +4148,17 @@ func TestBan(t *testing.T) {
 
 		var batchExpiry arklib.RelativeLocktime
 		handlers := &customBatchEventsHandler{
-			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, error) {
+			onBatchStarted: func(ctx context.Context, event client.BatchStartedEvent) (bool, time.Duration, error) {
 				buf := sha256.Sum256([]byte(intentId))
 				hashedIntentId := hex.EncodeToString(buf[:])
 
 				if slices.Contains(event.HashedIntentIds, hashedIntentId) {
 					err := grpcAlice.ConfirmRegistration(ctx, intentId)
 					batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
-					return false, err
+					return false, time.Duration(event.BatchExpiry) * time.Second, err
 				}
 
-				return true, nil
+				return true, -1, nil
 			},
 			onTreeSigningStarted: func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error) {
 				myPubkey := signerSession.GetPublicKey()
@@ -3947,7 +4195,11 @@ func TestBan(t *testing.T) {
 				sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
 				root := sweepTapTree.RootNode.TapHash()
 
-				if err := signerSession.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
+				if err := signerSession.Init(
+					root.CloneBytes(),
+					batchOutputAmount,
+					vtxoTree,
+				); err != nil {
 					return false, err
 				}
 
@@ -3956,7 +4208,12 @@ func TestBan(t *testing.T) {
 					return false, err
 				}
 
-				if err = grpcAlice.SubmitTreeNonces(ctx, event.Id, signerSession.GetPublicKey(), nonces); err != nil {
+				if err = grpcAlice.SubmitTreeNonces(
+					ctx,
+					event.Id,
+					signerSession.GetPublicKey(),
+					nonces,
+				); err != nil {
 					return false, err
 				}
 
@@ -3978,10 +4235,10 @@ func TestBan(t *testing.T) {
 				)
 				return err == nil, err
 			},
-			onBatchFinalization: func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree) error {
+			onBatchFinalization: func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree) ([]string, error) {
 				commitmentPtx, err := psbt.NewFromRawBytes(strings.NewReader(event.Tx), true)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				// modify the prevout amount to create invalid signature
@@ -3989,7 +4246,7 @@ func TestBan(t *testing.T) {
 
 				encodedCommitmentTx, err := commitmentPtx.B64Encode()
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				// sign the forfeit tx
@@ -3998,16 +4255,19 @@ func TestBan(t *testing.T) {
 					encodedCommitmentTx,
 				)
 				if err != nil {
-					return err
+					return nil, err
 				}
 
-				return grpcAlice.SubmitSignedForfeitTxs(
+				if err := grpcAlice.SubmitSignedForfeitTxs(
 					ctx, []string{}, signedCommitmentTx,
-				)
+				); err != nil {
+					return nil, err
+				}
+				return []string{signedCommitmentTx}, nil
 			},
 		}
 
-		_, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		_, _, _, _, _, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
 		require.Error(t, err)
 
 		// next settle should fail because the forfeit txs have not been submitted
@@ -4056,8 +4316,8 @@ func TestFee(t *testing.T) {
 	require.NoError(t, err)
 
 	// Faucet Alice and Bob boarding addresses
-	faucetOnchain(t, aliceBoardingAddr, 0.00021)
-	faucetOnchain(t, bobBoardingAddr, 0.00021)
+	faucetOnchain(t, aliceBoardingAddr.Address, 0.00021)
+	faucetOnchain(t, bobBoardingAddr.Address, 0.00021)
 	time.Sleep(6 * time.Second)
 
 	aliceBalance, err := alice.Balance(t.Context())
@@ -4083,22 +4343,24 @@ func TestFee(t *testing.T) {
 	var aliceIncomingErr, bobIncomingErr error
 	var aliceIncomingFunds, bobIncomingFunds []types.Vtxo
 	go func() {
-		aliceIncomingFunds, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr)
+		aliceIncomingFunds, aliceIncomingErr = alice.NotifyIncomingFunds(
+			ctx, aliceOffchainAddr.Address,
+		)
 		wg.Done()
 	}()
 	go func() {
-		bobIncomingFunds, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr)
+		bobIncomingFunds, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
 		wg.Done()
 	}()
 
-	var aliceCommitmentTx, bobCommitmentTx string
+	var aliceBatchRes, bobBatchRes *arksdk.BatchTxRes
 	var aliceBatchErr, bobBatchErr error
 	go func() {
-		aliceCommitmentTx, aliceBatchErr = alice.Settle(ctx)
+		aliceBatchRes, aliceBatchErr = alice.Settle(ctx)
 		wg.Done()
 	}()
 	go func() {
-		bobCommitmentTx, bobBatchErr = bob.Settle(ctx)
+		bobBatchRes, bobBatchErr = bob.Settle(ctx)
 		wg.Done()
 	}()
 
@@ -4112,9 +4374,10 @@ func TestFee(t *testing.T) {
 	require.Len(t, bobIncomingFunds, 1)
 	require.NoError(t, aliceBatchErr)
 	require.NoError(t, bobBatchErr)
-	require.NotEmpty(t, aliceCommitmentTx)
-	require.NotEmpty(t, bobCommitmentTx)
-	require.Equal(t, aliceCommitmentTx, bobCommitmentTx)
+	require.NotNil(t, aliceBatchRes)
+	require.NotNil(t, bobBatchRes)
+	require.NotEmpty(t, aliceBatchRes.CommitmentTxid)
+	require.Equal(t, aliceBatchRes.CommitmentTxid, bobBatchRes.CommitmentTxid)
 
 	aliceFirstVtxo := aliceIncomingFunds[0]
 	bobFirstVtxo := bobIncomingFunds[0]
@@ -4141,20 +4404,22 @@ func TestFee(t *testing.T) {
 	wg.Add(4)
 
 	go func() {
-		aliceIncomingFunds, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr)
+		aliceIncomingFunds, aliceIncomingErr = alice.NotifyIncomingFunds(
+			ctx, aliceOffchainAddr.Address,
+		)
 		wg.Done()
 	}()
 	go func() {
-		bobIncomingFunds, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr)
+		bobIncomingFunds, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
 		wg.Done()
 	}()
 
 	go func() {
-		aliceCommitmentTx, aliceBatchErr = alice.Settle(ctx)
+		aliceBatchRes, aliceBatchErr = alice.Settle(ctx)
 		wg.Done()
 	}()
 	go func() {
-		bobCommitmentTx, bobBatchErr = bob.Settle(ctx)
+		bobBatchRes, bobBatchErr = bob.Settle(ctx)
 		wg.Done()
 	}()
 
@@ -4177,9 +4442,10 @@ func TestFee(t *testing.T) {
 	require.Equal(t, 20582, int(aliceSecondVtxo.Amount))
 	require.Equal(t, 20582, int(bobSecondVtxo.Amount))
 
-	require.NotEmpty(t, aliceCommitmentTx)
-	require.NotEmpty(t, bobCommitmentTx)
-	require.Equal(t, aliceCommitmentTx, bobCommitmentTx)
+	require.NotNil(t, aliceBatchRes)
+	require.NotEmpty(t, aliceBatchRes.CommitmentTxid)
+	require.NotNil(t, bobBatchRes)
+	require.Equal(t, aliceBatchRes.CommitmentTxid, bobBatchRes.CommitmentTxid)
 
 	aliceBalance, err = alice.Balance(t.Context())
 	require.NoError(t, err)
@@ -4215,10 +4481,12 @@ func TestAsset(t *testing.T) {
 		})
 		wg.Wait()
 
-		txid, assetIds, err := alice.IssueAsset(ctx, supply, nil, nil)
+		res, err := alice.IssueAsset(ctx, supply, nil, nil)
 		require.NoError(t, err)
-		require.Len(t, assetIds, 1)
-		assetId := assetIds[0].String()
+		require.NotNil(t, res)
+		require.NotEmpty(t, res.Txid)
+		require.Len(t, res.IssuedAssets, 1)
+		assetId := res.IssuedAssets[0].String()
 
 		time.Sleep(3 * time.Second)
 
@@ -4226,7 +4494,7 @@ func TestAsset(t *testing.T) {
 		require.Len(t, assetVtxos, 1)
 		require.Len(t, assetVtxos[0].Assets, 1)
 		requireVtxoHasAsset(t, assetVtxos[0], assetId, uint64(supply))
-		require.Equal(t, txid, assetVtxos[0].Txid)
+		require.Equal(t, res.Txid, assetVtxos[0].Txid)
 
 		_, bobAddr, _, err := bob.Receive(ctx)
 		require.NoError(t, err)
@@ -4234,7 +4502,7 @@ func TestAsset(t *testing.T) {
 
 		_, err = alice.SendOffChain(
 			ctx, []types.Receiver{
-				{To: bobAddr, Amount: 400, Assets: []types.Asset{
+				{To: bobAddr.Address, Amount: 400, Assets: []types.Asset{
 					{AssetId: assetId, Amount: transferAmount},
 				}},
 			},
@@ -4292,9 +4560,10 @@ func TestAsset(t *testing.T) {
 			alice := setupArkSDK(t)
 			faucetOffchain(t, alice, 0.01)
 
-			_, assetIds, err := alice.IssueAsset(ctx, 1, nil, nil)
+			res, err := alice.IssueAsset(ctx, 1, nil, nil)
 			require.NoError(t, err)
-			require.Len(t, assetIds, 1)
+			require.NotNil(t, res)
+			require.Len(t, res.IssuedAssets, 1)
 		})
 
 		t.Run("with new control asset", func(t *testing.T) {
@@ -4302,12 +4571,13 @@ func TestAsset(t *testing.T) {
 			alice := setupArkSDK(t)
 			faucetOffchain(t, alice, 0.01)
 
-			_, assetIds, err := alice.IssueAsset(ctx, 1, types.NewControlAsset{Amount: 1}, nil)
+			res, err := alice.IssueAsset(ctx, 1, types.NewControlAsset{Amount: 1}, nil)
 			require.NoError(t, err)
-			require.Len(t, assetIds, 2)
+			require.NotNil(t, res)
+			require.Len(t, res.IssuedAssets, 2)
 
-			controlAssetId := assetIds[0].String()
-			assetId := assetIds[1].String()
+			controlAssetId := res.IssuedAssets[0].String()
+			assetId := res.IssuedAssets[1].String()
 			require.NotEqual(t, controlAssetId, assetId)
 		})
 
@@ -4317,24 +4587,25 @@ func TestAsset(t *testing.T) {
 			faucetOffchain(t, alice, 0.01)
 
 			// issue control asset
-			_, assetIds, err := alice.IssueAsset(ctx, 1, nil, nil)
+			res, err := alice.IssueAsset(ctx, 1, nil, nil)
 			require.NoError(t, err)
-			require.Len(t, assetIds, 1)
-			controlAssetId := assetIds[0].String()
+			require.NotNil(t, res)
+			require.Len(t, res.IssuedAssets, 1)
+			controlAssetId := res.IssuedAssets[0].String()
 
 			time.Sleep(3 * time.Second)
 
 			// issue another asset	 with existing control asset
-			_, assetIds2, err := alice.IssueAsset(
+			res2, err := alice.IssueAsset(
 				ctx,
 				1,
 				types.ExistingControlAsset{ID: controlAssetId},
 				nil,
 			)
 			require.NoError(t, err)
-			require.Len(t, assetIds2, 1)
-
-			require.NotEqual(t, assetIds[0].String(), assetIds2[0].String())
+			require.NotNil(t, res2)
+			require.Len(t, res2.IssuedAssets, 1)
+			require.NotEqual(t, res.IssuedAssets[0].String(), res2.IssuedAssets[0].String())
 		})
 	})
 
@@ -4347,12 +4618,13 @@ func TestAsset(t *testing.T) {
 		faucetOffchain(t, alice, 0.01)
 
 		// issue an asset with a control asset
-		_, assetIds, err := alice.IssueAsset(ctx, 1, types.NewControlAsset{Amount: 1}, nil)
+		res, err := alice.IssueAsset(ctx, 1, types.NewControlAsset{Amount: 1}, nil)
 		require.NoError(t, err)
-		require.Len(t, assetIds, 2)
+		require.NotNil(t, res)
+		require.Len(t, res.IssuedAssets, 2)
 
-		controlAssetId := assetIds[0].String()
-		assetId := assetIds[1].String()
+		controlAssetId := res.IssuedAssets[0].String()
+		assetId := res.IssuedAssets[1].String()
 		require.NotEqual(t, controlAssetId, assetId)
 
 		time.Sleep(3 * time.Second)
@@ -4383,10 +4655,11 @@ func TestAsset(t *testing.T) {
 		alice := setupArkSDK(t)
 		faucetOffchain(t, alice, 0.01)
 
-		_, assetIds, err := alice.IssueAsset(ctx, 5000, nil, nil)
+		res, err := alice.IssueAsset(ctx, 5000, nil, nil)
 		require.NoError(t, err)
-		require.Len(t, assetIds, 1)
-		assetId := assetIds[0].String()
+		require.NotNil(t, res)
+		require.Len(t, res.IssuedAssets, 1)
+		assetId := res.IssuedAssets[0].String()
 
 		time.Sleep(2 * time.Second)
 
@@ -4415,10 +4688,11 @@ func TestAsset(t *testing.T) {
 		faucetOffchain(t, alice, 0.00000330)
 
 		supply := uint64(6_000)
-		txid, assetIds, err := alice.IssueAsset(ctx, supply, nil, nil)
+		res, err := alice.IssueAsset(ctx, supply, nil, nil)
 		require.NoError(t, err)
-		require.Len(t, assetIds, 1)
-		assetId := assetIds[0].String()
+		require.NotNil(t, res)
+		require.Len(t, res.IssuedAssets, 1)
+		assetId := res.IssuedAssets[0].String()
 
 		time.Sleep(3 * time.Second)
 
@@ -4428,7 +4702,7 @@ func TestAsset(t *testing.T) {
 		require.Len(t, assetVtxos, 1)
 		require.Len(t, assetVtxos[0].Assets, 1)
 		requireVtxoHasAsset(t, assetVtxos[0], assetId, supply)
-		require.Equal(t, txid, assetVtxos[0].Txid)
+		require.Equal(t, res.Txid, assetVtxos[0].Txid)
 
 		// Fund alice's onchain address to cover network fees for the unroll
 		onchainAddr, _, _, err := alice.Receive(ctx)
@@ -4437,8 +4711,9 @@ func TestAsset(t *testing.T) {
 		faucetOnchain(t, onchainAddr, 0.01)
 		time.Sleep(5 * time.Second)
 
-		err = alice.Unroll(ctx)
+		unrollRes, err := alice.Unroll(ctx)
 		require.NoError(t, err)
+		require.NotEmpty(t, unrollRes)
 
 		// Generate a block to confirm the leaf tx just unrolled and make the server react by
 		// broadcasting the checkpoint tx that spent the vtxo offchain
@@ -4452,8 +4727,9 @@ func TestAsset(t *testing.T) {
 		time.Sleep(5 * time.Second)
 
 		// Finish the unroll and broadcast the ark issuance tx
-		err = alice.Unroll(ctx)
+		unrollRes, err = alice.Unroll(ctx)
 		require.NoError(t, err)
+		require.NotEmpty(t, unrollRes)
 
 		// Generate a block to confirm the issuance tx onchain
 		err = generateBlocks(1)
@@ -4473,6 +4749,106 @@ func TestAsset(t *testing.T) {
 
 		_, ok := aliceBalance.AssetBalances[assetId]
 		require.False(t, ok)
+	})
+
+	// This test ensures that an offchain tx can have both a regular asset output
+	// and a subdust output (multiple OP_RETURN in the same tx)
+	t.Run("asset and subdust", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupArkSDK(t)
+		bob := setupArkSDK(t)
+
+		faucetOffchain(t, alice, 0.002)
+
+		res, err := alice.IssueAsset(ctx, 5_000, nil, nil)
+		require.NoError(t, err)
+		assetId := res.IssuedAssets[0].String()
+
+		time.Sleep(3 * time.Second)
+
+		_, bobAddr, _, err := bob.Receive(ctx)
+		require.NoError(t, err)
+
+		// tx with a regular asset output greater than dust + a subdust output
+		_, err = alice.SendOffChain(ctx, []types.Receiver{
+			{To: bobAddr.Address, Amount: 400, Assets: []types.Asset{
+				{AssetId: assetId, Amount: 1_200},
+			}},
+			{To: bobAddr.Address, Amount: 100},
+		})
+		require.NoError(t, err)
+
+		time.Sleep(3 * time.Second)
+
+		bobAssetVtxos := listVtxosWithAsset(t, bob, assetId)
+		require.Len(t, bobAssetVtxos, 1)
+		requireVtxoHasAsset(t, bobAssetVtxos[0], assetId, 1_200)
+	})
+
+	// This test ensures that an asset on a subdust output survives settlement
+	t.Run("asset subdust settle", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupArkSDK(t)
+		bob := setupArkSDK(t)
+
+		faucetOffchain(t, alice, 0.002)
+
+		res, err := alice.IssueAsset(ctx, 5_000, nil, nil)
+		require.NoError(t, err)
+		assetId := res.IssuedAssets[0].String()
+
+		time.Sleep(3 * time.Second)
+
+		_, bobAddr, _, err := bob.Receive(ctx)
+		require.NoError(t, err)
+
+		// send asset to Bob with a subdust sat amount (100 sats)
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{
+			To: bobAddr.Address, Amount: 100,
+			Assets: []types.Asset{{AssetId: assetId, Amount: 1_200}},
+		}})
+		require.NoError(t, err)
+
+		time.Sleep(3 * time.Second)
+
+		requireVtxoHasAsset(t, listVtxosWithAsset(t, bob, assetId)[0], assetId, 1_200)
+
+		// send more to bob so he can settle
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		var incomingErr error
+		go func() {
+			_, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddr.Address)
+			wg.Done()
+		}()
+
+		_, err = alice.SendOffChain(ctx, []types.Receiver{{
+			To: bobAddr.Address, Amount: 1000,
+		}})
+		require.NoError(t, err)
+
+		wg.Wait()
+		require.NoError(t, incomingErr)
+		time.Sleep(time.Second)
+
+		var aliceErr, bobErr error
+		wg = &sync.WaitGroup{}
+		wg.Go(func() { _, aliceErr = alice.Settle(ctx) })
+		wg.Go(func() { _, bobErr = bob.Settle(ctx) })
+		wg.Wait()
+		require.NoError(t, aliceErr)
+		require.NoError(t, bobErr)
+
+		time.Sleep(2 * time.Second)
+
+		// asset must survive settlement
+		bobBalance, err := bob.Balance(ctx)
+		require.NoError(t, err)
+		assetBalance, ok := bobBalance.AssetBalances[assetId]
+		require.True(t, ok)
+		require.Equal(t, 1_200, int(assetBalance))
 	})
 }
 
@@ -4690,8 +5066,8 @@ func TestTxListenerChurn(t *testing.T) {
 					return
 				}
 
-				txid, err := sender.SendOffChain(stressCtx, []types.Receiver{{
-					To:     receiverOffchainAddr,
+				res, err := sender.SendOffChain(stressCtx, []types.Receiver{{
+					To:     receiverOffchainAddr.Address,
 					Amount: sendAmount,
 				}})
 				if err != nil {
@@ -4701,7 +5077,7 @@ func TestTxListenerChurn(t *testing.T) {
 					reportErr(fmt.Errorf("tx producer send offchain: %w", err))
 					return
 				}
-				if txid == "" {
+				if res.Txid == "" {
 					reportErr(fmt.Errorf("tx producer got empty txid"))
 					return
 				}
@@ -4798,7 +5174,7 @@ func TestEventListenerChurn(t *testing.T) {
 	for _, participant := range participants {
 		_, offchainAddr, _, err := participant.Receive(ctx)
 		require.NoError(t, err)
-		offchainAddrs = append(offchainAddrs, offchainAddr)
+		offchainAddrs = append(offchainAddrs, offchainAddr.Address)
 		faucetOffchain(t, participant, 0.001)
 	}
 
@@ -4976,7 +5352,7 @@ func TestEventListenerChurn(t *testing.T) {
 			roundCtx, cancelRound := context.WithTimeout(stressCtx, roundTimeout)
 			notifyErrors := make([]error, len(participants))
 			settleErrors := make([]error, len(participants))
-			commitmentTxids := make([]string, len(participants))
+			batchRes := make([]*arksdk.BatchTxRes, len(participants))
 
 			// Kick off Settle + NotifyIncomingFunds for every participant
 			// in parallel — this is what triggers event-stream events.
@@ -4993,7 +5369,7 @@ func TestEventListenerChurn(t *testing.T) {
 				}()
 				go func() {
 					defer roundWG.Done()
-					commitmentTxids[idx], settleErrors[idx] = participants[idx].Settle(roundCtx)
+					batchRes[idx], settleErrors[idx] = participants[idx].Settle(roundCtx)
 				}()
 			}
 
@@ -5030,15 +5406,15 @@ func TestEventListenerChurn(t *testing.T) {
 					roundOK = false
 					break
 				}
-				if commitmentTxids[i] == "" {
+				if batchRes[i].CommitmentTxid == "" {
 					roundOK = false
 					break
 				}
 				if expectedCommitmentTxid == "" {
-					expectedCommitmentTxid = commitmentTxids[i]
+					expectedCommitmentTxid = batchRes[i].CommitmentTxid
 					continue
 				}
-				if commitmentTxids[i] != expectedCommitmentTxid {
+				if batchRes[i].CommitmentTxid != expectedCommitmentTxid {
 					roundOK = false
 					break
 				}

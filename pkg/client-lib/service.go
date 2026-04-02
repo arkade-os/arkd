@@ -187,6 +187,22 @@ func LoadArkClientWithWallet(
 	return client, nil
 }
 
+func (a *service) Wallet() wallet.WalletService {
+	return a.wallet
+}
+
+func (a *service) Transport() client.TransportClient {
+	return a.client
+}
+
+func (a *service) Indexer() indexer.Indexer {
+	return a.indexer
+}
+
+func (a *service) Explorer() explorer.Explorer {
+	return a.explorer
+}
+
 func (a *service) GetVersion() string {
 	return Version
 }
@@ -283,7 +299,7 @@ func (a *service) safeCheck() error {
 }
 
 func (a *service) getVtxos(
-	ctx context.Context,
+	ctx context.Context, extraOpts ...indexer.GetVtxosOption,
 ) (spendableVtxos, spentVtxos []types.Vtxo, err error) {
 	if a.wallet == nil {
 		return nil, nil, ErrNotInitialized
@@ -306,24 +322,20 @@ func (a *service) getVtxos(
 		}
 		scripts = append(scripts, hex.EncodeToString(vtxoScript))
 	}
-	opt := indexer.GetVtxosRequestOption{}
-	if err = opt.WithScripts(scripts); err != nil {
-		return
-	}
-
-	resp, err := a.indexer.GetVtxos(ctx, opt)
+	opts := append([]indexer.GetVtxosOption{indexer.WithScripts(scripts)}, extraOpts...)
+	resp, err := a.indexer.GetVtxos(ctx, opts...)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	for _, vtxo := range resp.Vtxos {
-		if vtxo.IsRecoverable() {
-			spendableVtxos = append(spendableVtxos, vtxo)
+		if vtxo.Spent || vtxo.Unrolled {
+			spentVtxos = append(spentVtxos, vtxo)
 			continue
 		}
 
-		if vtxo.Spent || vtxo.Unrolled {
-			spentVtxos = append(spentVtxos, vtxo)
+		if vtxo.IsRecoverable() {
+			spendableVtxos = append(spendableVtxos, vtxo)
 			continue
 		}
 
@@ -383,10 +395,6 @@ func (a *service) getSpendableVtxos(
 		}
 	}
 
-	if opts != nil && opts.expiryThreshold > 0 {
-		allVtxos = utils.FilterVtxosByExpiry(allVtxos, opts.expiryThreshold)
-	}
-
 	if opts == nil || !opts.withoutExpirySorting {
 		allVtxos = utils.SortVtxosByExpiry(allVtxos)
 	}
@@ -426,12 +434,7 @@ func (a *service) fetchPendingSpentVtxos(ctx context.Context) ([]types.Vtxo, err
 		}
 		scripts = append(scripts, hex.EncodeToString(vtxoScript))
 	}
-	opt := indexer.GetVtxosRequestOption{}
-	opt.WithPendingOnly()
-	if err = opt.WithScripts(scripts); err != nil {
-		return nil, err
-	}
-	resp, err := a.indexer.GetVtxos(ctx, opt)
+	resp, err := a.indexer.GetVtxos(ctx, indexer.WithPendingOnly(), indexer.WithScripts(scripts))
 	if err != nil {
 		return nil, err
 	}

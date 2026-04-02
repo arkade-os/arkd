@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd/pkg/client-lib
 
-go 1.25.7
+go 1.26.1
 
 replace github.com/arkade-os/arkd/api-spec => ../../api-spec
 
@@ -26,7 +26,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/vulpemventures/go-bip32 v0.0.0-20200624192635-867c159da4d7
 	golang.org/x/crypto v0.48.0
-	google.golang.org/grpc v1.79.1
+	google.golang.org/grpc v1.79.3
 )
 
 require (

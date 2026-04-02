@@ -3,7 +3,6 @@ package indexer
 import (
 	"context"
 	"fmt"
-	"io"
 	"strings"
 	"sync"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
@@ -24,6 +22,8 @@ import (
 type grpcClient struct {
 	conn   *grpc.ClientConn
 	connMu *sync.RWMutex
+	// TODO: drop me in https://github.com/arkade-os/arkd/pull/951
+	scripts *scriptsCache
 }
 
 func NewClient(serverUrl string) (indexer.Indexer, error) {
@@ -63,8 +63,9 @@ func NewClient(serverUrl string) (indexer.Indexer, error) {
 	}
 
 	client := &grpcClient{
-		conn:   conn,
-		connMu: &sync.RWMutex{},
+		conn:    conn,
+		connMu:  &sync.RWMutex{},
+		scripts: newScriptsCache(),
 	}
 
 	return client, nil
@@ -103,14 +104,17 @@ func (a *grpcClient) GetCommitmentTx(
 }
 
 func (a *grpcClient) GetVtxoTree(
-	ctx context.Context, batchOutpoint types.Outpoint, opts ...indexer.RequestOption,
+	ctx context.Context, batchOutpoint types.Outpoint, opts ...indexer.PageOption,
 ) (*indexer.VtxoTreeResponse, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
 	var page *arkv1.IndexerPageRequest
-	if len(opts) > 0 {
-		opt := opts[0]
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 
@@ -142,8 +146,13 @@ func (a *grpcClient) GetVtxoTree(
 }
 
 func (a *grpcClient) GetFullVtxoTree(
-	ctx context.Context, batchOutpoint types.Outpoint, opts ...indexer.RequestOption,
+	ctx context.Context, batchOutpoint types.Outpoint, opts ...indexer.PageOption,
 ) ([]tree.TxTreeNode, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
+
 	resp, err := a.GetVtxoTree(ctx, batchOutpoint, opts...)
 	if err != nil {
 		return nil, err
@@ -151,11 +160,11 @@ func (a *grpcClient) GetFullVtxoTree(
 
 	var allTxs indexer.TxNodes = resp.Tree
 	for resp.Page != nil && resp.Page.Next != resp.Page.Total {
-		opt := indexer.RequestOption{}
-		opt.WithPage(&indexer.PageRequest{
-			Index: resp.Page.Next,
-		})
-		resp, err = a.GetVtxoTree(ctx, batchOutpoint, opts...)
+		nextPage := &indexer.PageRequest{Index: resp.Page.Next}
+		if o.Page != nil {
+			nextPage.Size = o.Page.Size
+		}
+		resp, err = a.GetVtxoTree(ctx, batchOutpoint, indexer.WithPage(nextPage))
 		if err != nil {
 			return nil, err
 		}
@@ -175,14 +184,17 @@ func (a *grpcClient) GetFullVtxoTree(
 }
 
 func (a *grpcClient) GetVtxoTreeLeaves(
-	ctx context.Context, batchOutpoint types.Outpoint, opts ...indexer.RequestOption,
+	ctx context.Context, batchOutpoint types.Outpoint, opts ...indexer.PageOption,
 ) (*indexer.VtxoTreeLeavesResponse, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
 	var page *arkv1.IndexerPageRequest
-	if len(opts) > 0 {
-		opt := opts[0]
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 
@@ -214,14 +226,17 @@ func (a *grpcClient) GetVtxoTreeLeaves(
 }
 
 func (a *grpcClient) GetForfeitTxs(
-	ctx context.Context, txid string, opts ...indexer.RequestOption,
+	ctx context.Context, txid string, opts ...indexer.PageOption,
 ) (*indexer.ForfeitTxsResponse, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
 	var page *arkv1.IndexerPageRequest
-	if len(opts) > 0 {
-		opt := opts[0]
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 
@@ -242,14 +257,17 @@ func (a *grpcClient) GetForfeitTxs(
 }
 
 func (a *grpcClient) GetConnectors(
-	ctx context.Context, txid string, opts ...indexer.RequestOption,
+	ctx context.Context, txid string, opts ...indexer.PageOption,
 ) (*indexer.ConnectorsResponse, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
 	var page *arkv1.IndexerPageRequest
-	if len(opts) > 0 {
-		opt := opts[0]
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 
@@ -278,31 +296,33 @@ func (a *grpcClient) GetConnectors(
 }
 
 func (a *grpcClient) GetVtxos(
-	ctx context.Context, opts ...indexer.GetVtxosRequestOption,
+	ctx context.Context, opts ...indexer.GetVtxosOption,
 ) (*indexer.VtxosResponse, error) {
-	if len(opts) <= 0 {
+	o, err := indexer.ApplyGetVtxosOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
+	if len(o.Scripts) == 0 && len(o.Outpoints) == 0 {
 		return nil, fmt.Errorf("missing opts")
 	}
-	opt := opts[0]
 
 	var page *arkv1.IndexerPageRequest
-	if opt.GetPage() != nil {
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 
-	after, before := opt.GetTimeRange()
 	req := &arkv1.GetVtxosRequest{
-		Scripts:         opt.GetScripts(),
-		Outpoints:       opt.GetOutpoints(),
-		SpendableOnly:   opt.GetSpendableOnly(),
-		SpentOnly:       opt.GetSpentOnly(),
-		RecoverableOnly: opt.GetRecoverableOnly(),
-		PendingOnly:     opt.GetPendingOnly(),
-		After:           after,
-		Before:          before,
+		Scripts:         o.Scripts,
+		Outpoints:       o.FormattedOutpoints(),
+		SpendableOnly:   o.SpendableOnly,
+		SpentOnly:       o.SpentOnly,
+		RecoverableOnly: o.RecoverableOnly,
+		PendingOnly:     o.PendingOnly,
+		After:           o.After,
+		Before:          o.Before,
 		Page:            page,
 	}
 
@@ -311,26 +331,24 @@ func (a *grpcClient) GetVtxos(
 		return nil, err
 	}
 
-	vtxos := make([]types.Vtxo, 0, len(resp.GetVtxos()))
-	for _, vtxo := range resp.GetVtxos() {
-		vtxos = append(vtxos, newIndexerVtxo(vtxo))
-	}
-
 	return &indexer.VtxosResponse{
-		Vtxos: vtxos,
+		Vtxos: newIndexerVtxos(resp.GetVtxos()),
 		Page:  parsePage(resp.GetPage()),
 	}, nil
 }
 
 func (a *grpcClient) GetVtxoChain(
-	ctx context.Context, outpoint types.Outpoint, opts ...indexer.RequestOption,
+	ctx context.Context, outpoint types.Outpoint, opts ...indexer.PageOption,
 ) (*indexer.VtxoChainResponse, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
 	var page *arkv1.IndexerPageRequest
-	if len(opts) > 0 {
-		opt := opts[0]
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 
@@ -378,14 +396,17 @@ func (a *grpcClient) GetVtxoChain(
 }
 
 func (a *grpcClient) GetVirtualTxs(
-	ctx context.Context, txids []string, opts ...indexer.RequestOption,
+	ctx context.Context, txids []string, opts ...indexer.PageOption,
 ) (*indexer.VirtualTxsResponse, error) {
+	o, err := indexer.ApplyPageOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
 	var page *arkv1.IndexerPageRequest
-	if len(opts) > 0 {
-		opt := opts[0]
+	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
-			Size:  opt.GetPage().Size,
-			Index: opt.GetPage().Index,
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
 		}
 	}
 
@@ -426,80 +447,42 @@ func (a *grpcClient) GetBatchSweepTxs(
 func (a *grpcClient) GetSubscription(
 	ctx context.Context, subscriptionId string,
 ) (<-chan indexer.ScriptEvent, func(), error) {
-	ctx, cancel := context.WithCancel(ctx)
-
-	req := &arkv1.GetSubscriptionRequest{
-		SubscriptionId: subscriptionId,
-	}
-
-	stream, err := a.svc().GetSubscription(ctx, req)
-	if err != nil {
-		cancel()
-		return nil, nil, err
-	}
-	eventsCh := make(chan indexer.ScriptEvent)
-	streamMu := sync.Mutex{}
-
-	go func() {
-		defer close(eventsCh)
-		backoffDelay := utils.GrpcReconnectConfig.InitialDelay
-
-		for {
-			streamMu.Lock()
-			currentStream := stream
-			streamMu.Unlock()
-
-			resp, err := currentStream.Recv()
+	return utils.StartReconnectingStream(ctx, utils.ReconnectingStreamConfig[
+		arkv1.IndexerService_GetSubscriptionClient,
+		*arkv1.GetSubscriptionResponse,
+		indexer.ScriptEvent,
+	]{
+		Connect: func(ctx context.Context) (arkv1.IndexerService_GetSubscriptionClient, error) {
+			return a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
+				SubscriptionId: subscriptionId,
+			})
+		},
+		Reconnect: func(ctx context.Context) (arkv1.IndexerService_GetSubscriptionClient, error) {
+			scripts := a.scripts.get()
+			resp, err := a.svc().SubscribeForScripts(ctx, &arkv1.SubscribeForScriptsRequest{
+				Scripts: scripts,
+			})
 			if err != nil {
-				shouldRetry, retryDelay := utils.ShouldReconnect(err)
-				if !shouldRetry {
-					select {
-					case <-ctx.Done():
-					case eventsCh <- indexer.ScriptEvent{Err: err}:
-					}
-					return
-				}
-
-				if err == io.EOF {
-					log.Debug("indexer subscription stream closed by server; reconnecting")
-				}
-
-				sleepDuration := max(retryDelay, backoffDelay)
-				log.Debugf("subscription stream error, reconnecting in %v: %v", sleepDuration, err)
-
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(sleepDuration):
-				}
-
-				newStream, dialErr := a.svc().GetSubscription(ctx, req)
-				if dialErr != nil {
-					shouldRetryDial, _ := utils.ShouldReconnect(dialErr)
-					if !shouldRetryDial {
-						select {
-						case <-ctx.Done():
-						case eventsCh <- indexer.ScriptEvent{Err: dialErr}:
-						}
-						return
-					}
-					backoffDelay = min(
-						time.Duration(float64(backoffDelay)*utils.GrpcReconnectConfig.Multiplier),
-						utils.GrpcReconnectConfig.MaxDelay,
-					)
-					log.Debugf("subscription stream reconnect failed, retrying: %v", dialErr)
-					continue
-				}
-
-				streamMu.Lock()
-				stream = newStream
-				streamMu.Unlock()
-				backoffDelay = utils.GrpcReconnectConfig.InitialDelay
-				continue
+				return nil, err
 			}
-
-			backoffDelay = utils.GrpcReconnectConfig.InitialDelay
-
+			return a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
+				SubscriptionId: resp.GetSubscriptionId(),
+			})
+		},
+		Recv: func(
+			stream arkv1.IndexerService_GetSubscriptionClient,
+		) (**arkv1.GetSubscriptionResponse, error) {
+			st, err := stream.Recv()
+			if err != nil {
+				return nil, err
+			}
+			return &st, nil
+		},
+		HandleResp: func(
+			ctx context.Context,
+			eventsCh chan<- indexer.ScriptEvent,
+			resp *arkv1.GetSubscriptionResponse,
+		) error {
 			var checkpointTxs map[string]indexer.TxData
 			var event *arkv1.IndexerSubscriptionEvent
 			switch data := resp.GetData().(type) {
@@ -515,30 +498,40 @@ func (a *grpcClient) GetSubscription(
 					}
 				}
 			}
-			if event != nil {
-				eventsCh <- indexer.ScriptEvent{
+			if event == nil {
+				return nil
+			}
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case eventsCh <- indexer.ScriptEvent{
+				Data: &indexer.ScriptEventData{
 					Txid:          event.GetTxid(),
 					Tx:            event.GetTx(),
 					Scripts:       event.GetScripts(),
 					NewVtxos:      newIndexerVtxos(event.GetNewVtxos()),
 					SpentVtxos:    newIndexerVtxos(event.GetSpentVtxos()),
 					CheckpointTxs: checkpointTxs,
-				}
+				},
+			}:
+				return nil
 			}
-
-		}
-	}()
-
-	closeFn := func() {
-		cancel()
-		streamMu.Lock()
-		defer streamMu.Unlock()
-		if err := stream.CloseSend(); err != nil {
-			log.Warnf("failed to close subscription stream: %v", err)
-		}
-	}
-
-	return eventsCh, closeFn, nil
+		},
+		ErrorEvent: func(err error) indexer.ScriptEvent {
+			return indexer.ScriptEvent{Err: err}
+		},
+		ConnectionEvent: func(event utils.ReconnectingStreamStateEvent) indexer.ScriptEvent {
+			return indexer.ScriptEvent{
+				Connection: &types.StreamConnectionEvent{
+					State:          toStreamConnectionState(event.State),
+					At:             event.At,
+					DisconnectedAt: event.DisconnectedAt,
+					Err:            event.Err,
+				},
+			}
+		},
+	})
 }
 
 func (a *grpcClient) SubscribeForScripts(
@@ -555,6 +548,9 @@ func (a *grpcClient) SubscribeForScripts(
 	if err != nil {
 		return "", err
 	}
+
+	a.scripts.add(scripts)
+
 	return resp.GetSubscriptionId(), nil
 }
 
@@ -567,10 +563,14 @@ func (a *grpcClient) UnsubscribeForScripts(
 	if len(subscriptionId) > 0 {
 		req.SubscriptionId = subscriptionId
 	}
+
 	_, err := a.svc().UnsubscribeForScripts(ctx, req)
 	if err != nil {
 		return err
 	}
+
+	a.scripts.remove(scripts)
+
 	return nil
 }
 
@@ -613,6 +613,19 @@ func (a *grpcClient) svc() arkv1.IndexerServiceClient {
 	a.connMu.RLock()
 	defer a.connMu.RUnlock()
 	return arkv1.NewIndexerServiceClient(a.conn)
+}
+
+func toStreamConnectionState(
+	state utils.ReconnectingStreamState,
+) types.StreamConnectionState {
+	switch state {
+	case utils.ReconnectingStreamStateDisconnected:
+		return types.StreamConnectionStateDisconnected
+	case utils.ReconnectingStreamStateReconnected:
+		return types.StreamConnectionStateReconnected
+	default:
+		return types.StreamConnectionState(state)
+	}
 }
 
 func parsePage(page *arkv1.IndexerPageResponse) *indexer.PageResponse {

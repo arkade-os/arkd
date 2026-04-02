@@ -16,12 +16,12 @@ type mockedWallet struct {
 	mock.Mock
 }
 
-func (m *mockedWallet) GetReadyUpdate(ctx context.Context) (<-chan struct{}, error) {
+func (m *mockedWallet) GetReadyUpdate(ctx context.Context) (<-chan bool, error) {
 	args := m.Called(ctx)
 
-	var res chan struct{}
+	var res chan bool
 	if a := args.Get(0); a != nil {
-		res = a.(chan struct{})
+		res = a.(chan bool)
 	}
 	return res, args.Error(1)
 }
@@ -379,4 +379,23 @@ func (m *mockedWallet) LoadSignerKey(ctx context.Context, privateKey string) err
 func (m *mockedWallet) RescanUtxos(ctx context.Context, outs []wire.OutPoint) error {
 	args := m.Called(ctx, outs)
 	return args.Error(0)
+}
+
+// staticSigner is a minimal SignerService that always returns the given pubkey.
+type staticSigner struct {
+	pubkey *btcec.PublicKey
+}
+
+func (s *staticSigner) IsReady(_ context.Context) (bool, error)          { return true, nil }
+func (s *staticSigner) GetPubkey(_ context.Context) (*btcec.PublicKey, error) {
+	return s.pubkey, nil
+}
+func (s *staticSigner) SignTransaction(_ context.Context, _ string, _ bool) (string, error) {
+	return "", nil
+}
+func (s *staticSigner) SignTransactionTapscript(_ context.Context, _ string, _ []int) (string, error) {
+	return "", nil
+}
+func (s *staticSigner) SignMessage(_ context.Context, _ []byte) ([]byte, error) {
+	return nil, nil
 }

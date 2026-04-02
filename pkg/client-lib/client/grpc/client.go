@@ -3,7 +3,6 @@ package grpcclient
 import (
 	"context"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,13 +15,10 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/btcsuite/btcd/wire"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
 )
 
 type grpcClient struct {
@@ -133,6 +129,8 @@ func (a *grpcClient) GetInfo(ctx context.Context) (*client.Info, error) {
 		VtxoMaxAmount:             resp.GetVtxoMaxAmount(),
 		CheckpointTapscript:       resp.GetCheckpointTapscript(),
 		DeprecatedSignerPubKeys:   deprecatedSigners,
+		MaxTxWeight:               resp.GetMaxTxWeight(),
+		MaxOpReturnOutputs:        resp.GetMaxOpReturnOutputs(),
 		Fees:                      fees,
 		ServiceStatus:             resp.GetServiceStatus(),
 		Digest:                    resp.GetDigest(),
@@ -251,121 +249,67 @@ func (a *grpcClient) SubmitSignedForfeitTxs(
 func (a *grpcClient) GetEventStream(
 	ctx context.Context, topics []string,
 ) (<-chan client.BatchEventChannel, func(), error) {
-	ctx, cancel := context.WithCancel(ctx)
-
 	req := &arkv1.GetEventStreamRequest{Topics: topics}
 
-	stream, err := a.svc().GetEventStream(ctx, req)
-	if err != nil {
-		cancel()
-		return nil, nil, err
-	}
-
-	eventsCh := make(chan client.BatchEventChannel)
-	streamMu := sync.Mutex{}
-
-	go func() {
-		defer close(eventsCh)
-		backoffDelay := utils.GrpcReconnectConfig.InitialDelay
-
-		for {
-			streamMu.Lock()
-			currentStream := stream
-			streamMu.Unlock()
-
-			resp, err := currentStream.Recv()
+	return utils.StartReconnectingStream(ctx, utils.ReconnectingStreamConfig[
+		arkv1.ArkService_GetEventStreamClient,
+		*arkv1.GetEventStreamResponse,
+		client.BatchEventChannel,
+	]{
+		Connect: func(ctx context.Context) (arkv1.ArkService_GetEventStreamClient, error) {
+			return a.svc().GetEventStream(ctx, req)
+		},
+		Reconnect: func(ctx context.Context) (arkv1.ArkService_GetEventStreamClient, error) {
+			return a.svc().GetEventStream(ctx, req)
+		},
+		Recv: func(stream arkv1.ArkService_GetEventStreamClient) (**arkv1.GetEventStreamResponse, error) {
+			str, err := stream.Recv()
 			if err != nil {
-				shouldRetry, retryDelay := utils.ShouldReconnect(err)
-				if !shouldRetry {
-					select {
-					case <-ctx.Done():
-						return
-					case eventsCh <- client.BatchEventChannel{Err: err}:
-					}
-					return
-				}
-
-				if err == io.EOF {
-					log.Debug("event stream closed by server; reconnecting")
-				}
-
-				a.setListenerID("")
-
-				sleepDuration := max(retryDelay, backoffDelay)
-				log.Debugf("event stream error, reconnecting in %v: %v", sleepDuration, err)
-
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(sleepDuration):
-				}
-
-				newStream, dialErr := a.svc().GetEventStream(ctx, req)
-				if dialErr != nil {
-					shouldRetryDial, _ := utils.ShouldReconnect(dialErr)
-					if !shouldRetryDial {
-						select {
-						case <-ctx.Done():
-							return
-						case eventsCh <- client.BatchEventChannel{Err: dialErr}:
-						}
-						return
-					}
-					backoffDelay = min(
-						time.Duration(float64(backoffDelay)*utils.GrpcReconnectConfig.Multiplier),
-						utils.GrpcReconnectConfig.MaxDelay,
-					)
-					log.Debugf("event stream reconnect failed, retrying: %v", dialErr)
-					continue
-				}
-
-				streamMu.Lock()
-				stream = newStream
-				streamMu.Unlock()
-				backoffDelay = utils.GrpcReconnectConfig.InitialDelay
-				continue
+				return nil, err
 			}
-
-			backoffDelay = utils.GrpcReconnectConfig.InitialDelay
-
-			switch resp.Event.(type) {
-			case *arkv1.GetEventStreamResponse_StreamStarted:
-				a.setListenerID(resp.Event.(*arkv1.GetEventStreamResponse_StreamStarted).StreamStarted.Id)
-			default:
+			return &str, nil
+		},
+		HandleResp: func(
+			ctx context.Context,
+			eventsCh chan<- client.BatchEventChannel,
+			resp *arkv1.GetEventStreamResponse,
+		) error {
+			if started := resp.GetStreamStarted(); started != nil {
+				a.setListenerID(started.GetId())
 			}
 
 			ev, err := event{resp}.toBatchEvent()
 			if err != nil {
-				select {
-				case <-ctx.Done():
-					return
-				case eventsCh <- client.BatchEventChannel{Err: err}:
-				}
-				return
+				return err
 			}
-
 			if ev == nil {
-				continue
+				return nil
 			}
 
 			select {
 			case <-ctx.Done():
-				return
+				return ctx.Err()
 			case eventsCh <- client.BatchEventChannel{Event: ev}:
+				return nil
 			}
-		}
-	}()
-
-	closeFn := func() {
-		cancel()
-		streamMu.Lock()
-		defer streamMu.Unlock()
-		if err := stream.CloseSend(); err != nil {
-			log.Warnf("failed to close event stream: %s", err)
-		}
-	}
-
-	return eventsCh, closeFn, nil
+		},
+		ErrorEvent: func(err error) client.BatchEventChannel {
+			return client.BatchEventChannel{Err: err}
+		},
+		ConnectionEvent: func(event utils.ReconnectingStreamStateEvent) client.BatchEventChannel {
+			return client.BatchEventChannel{
+				Connection: &types.StreamConnectionEvent{
+					State:          toClientStreamConnectionState(event.State),
+					At:             event.At,
+					DisconnectedAt: event.DisconnectedAt,
+					Err:            event.Err,
+				},
+			}
+		},
+		OnDisconnect: func(error) {
+			a.setListenerID("")
+		},
+	})
 }
 
 func (a *grpcClient) SubmitTx(
@@ -431,94 +375,41 @@ func (a *grpcClient) GetPendingTx(
 func (c *grpcClient) GetTransactionsStream(
 	ctx context.Context,
 ) (<-chan client.TransactionEvent, func(), error) {
-	ctx, cancel := context.WithCancel(ctx)
-
 	req := &arkv1.GetTransactionsStreamRequest{}
 
-	stream, err := c.svc().GetTransactionsStream(ctx, req)
-	if err != nil {
-		cancel()
-		return nil, nil, err
-	}
-
-	eventsCh := make(chan client.TransactionEvent)
-	streamMu := sync.Mutex{}
-
-	go func() {
-		defer close(eventsCh)
-		backoffDelay := utils.GrpcReconnectConfig.InitialDelay
-
-		for {
-			streamMu.Lock()
-			currentStream := stream
-			streamMu.Unlock()
-
-			resp, err := currentStream.Recv()
+	return utils.StartReconnectingStream(ctx, utils.ReconnectingStreamConfig[
+		arkv1.ArkService_GetTransactionsStreamClient,
+		*arkv1.GetTransactionsStreamResponse,
+		client.TransactionEvent,
+	]{
+		Connect: func(ctx context.Context) (arkv1.ArkService_GetTransactionsStreamClient, error) {
+			return c.svc().GetTransactionsStream(ctx, req)
+		},
+		Reconnect: func(
+			ctx context.Context,
+		) (arkv1.ArkService_GetTransactionsStreamClient, error) {
+			return c.svc().GetTransactionsStream(ctx, req)
+		},
+		Recv: func(
+			stream arkv1.ArkService_GetTransactionsStreamClient,
+		) (**arkv1.GetTransactionsStreamResponse, error) {
+			str, err := stream.Recv()
 			if err != nil {
-				shouldRetry, retryDelay := utils.ShouldReconnect(err)
-				if !shouldRetry {
-					select {
-					case <-ctx.Done():
-						return
-					case eventsCh <- client.TransactionEvent{Err: err}:
-					}
-					return
-				}
-
-				if err == io.EOF {
-					log.Debug("transactions stream closed by server; reconnecting")
-				}
-
-				sleepDuration := max(retryDelay, backoffDelay)
-				if st, ok := status.FromError(err); ok && st.Code() == codes.FailedPrecondition {
-					log.Debugf(
-						"transactions stream server reachable but not ready yet, retrying in %v: %v",
-						sleepDuration,
-						err,
-					)
-				} else {
-					log.Debugf("transactions stream error, reconnecting in %v: %v", sleepDuration, err)
-				}
-
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(sleepDuration):
-				}
-
-				newStream, dialErr := c.svc().GetTransactionsStream(ctx, req)
-				if dialErr != nil {
-					shouldRetryDial, _ := utils.ShouldReconnect(dialErr)
-					if !shouldRetryDial {
-						select {
-						case <-ctx.Done():
-							return
-						case eventsCh <- client.TransactionEvent{Err: dialErr}:
-						}
-						return
-					}
-					backoffDelay = min(
-						time.Duration(float64(backoffDelay)*utils.GrpcReconnectConfig.Multiplier),
-						utils.GrpcReconnectConfig.MaxDelay,
-					)
-					log.Debugf("transactions stream reconnect failed, retrying: %v", dialErr)
-					continue
-				} else {
-					log.Debug("transactions stream transport reconnected; waiting for server readiness")
-				}
-
-				streamMu.Lock()
-				stream = newStream
-				streamMu.Unlock()
-				backoffDelay = utils.GrpcReconnectConfig.InitialDelay
-				continue
+				return nil, err
 			}
-
-			backoffDelay = utils.GrpcReconnectConfig.InitialDelay
-
+			return &str, nil
+		},
+		HandleResp: func(
+			ctx context.Context,
+			eventsCh chan<- client.TransactionEvent,
+			resp *arkv1.GetTransactionsStreamResponse,
+		) error {
 			switch tx := resp.GetData().(type) {
 			case *arkv1.GetTransactionsStreamResponse_CommitmentTx:
-				eventsCh <- client.TransactionEvent{
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case eventsCh <- client.TransactionEvent{
 					CommitmentTx: &client.TxNotification{
 						TxData: client.TxData{
 							Txid: tx.CommitmentTx.GetTxid(),
@@ -527,20 +418,15 @@ func (c *grpcClient) GetTransactionsStream(
 						SpentVtxos:     vtxos(tx.CommitmentTx.SpentVtxos).toVtxos(),
 						SpendableVtxos: vtxos(tx.CommitmentTx.SpendableVtxos).toVtxos(),
 					},
+				}:
+					return nil
 				}
 			case *arkv1.GetTransactionsStreamResponse_ArkTx:
 				checkpointTxs := make(map[types.Outpoint]client.TxData)
 				for k, v := range tx.ArkTx.CheckpointTxs {
 					out, parseErr := wire.NewOutPointFromString(k)
 					if parseErr != nil {
-						select {
-						case <-ctx.Done():
-							return
-						case eventsCh <- client.TransactionEvent{
-							Err: fmt.Errorf("invalid checkpoint outpoint %q: %w", k, parseErr),
-						}:
-						}
-						return
+						return fmt.Errorf("invalid checkpoint outpoint %q: %w", k, parseErr)
 					}
 					checkpointTxs[types.Outpoint{
 						Txid: out.Hash.String(),
@@ -552,7 +438,7 @@ func (c *grpcClient) GetTransactionsStream(
 				}
 				select {
 				case <-ctx.Done():
-					return
+					return ctx.Err()
 				case eventsCh <- client.TransactionEvent{
 					ArkTx: &client.TxNotification{
 						TxData: client.TxData{
@@ -564,21 +450,50 @@ func (c *grpcClient) GetTransactionsStream(
 						CheckpointTxs:  checkpointTxs,
 					},
 				}:
+					return nil
 				}
+			case *arkv1.GetTransactionsStreamResponse_SweepTx:
+				sweptVtxos := make([]types.Outpoint, 0, len(tx.SweepTx.SweptVtxos))
+				for _, o := range tx.SweepTx.SweptVtxos {
+					sweptVtxos = append(sweptVtxos, types.Outpoint{
+						Txid: o.GetTxid(),
+						VOut: o.GetVout(),
+					})
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case eventsCh <- client.TransactionEvent{
+					SweepTx: &client.TxNotification{
+						TxData: client.TxData{
+							Txid: tx.SweepTx.GetTxid(),
+							Tx:   tx.SweepTx.GetTx(),
+						},
+						SpentVtxos:     vtxos(tx.SweepTx.SpentVtxos).toVtxos(),
+						SpendableVtxos: vtxos(tx.SweepTx.SpendableVtxos).toVtxos(),
+						SweptVtxos:     sweptVtxos,
+					},
+				}:
+					return nil
+				}
+			default:
+				return nil
 			}
-		}
-	}()
-
-	closeFn := func() {
-		cancel()
-		streamMu.Lock()
-		defer streamMu.Unlock()
-		if err := stream.CloseSend(); err != nil {
-			log.Warnf("failed to close transaction stream: %v", err)
-		}
-	}
-
-	return eventsCh, closeFn, nil
+		},
+		ErrorEvent: func(err error) client.TransactionEvent {
+			return client.TransactionEvent{Err: err}
+		},
+		ConnectionEvent: func(event utils.ReconnectingStreamStateEvent) client.TransactionEvent {
+			return client.TransactionEvent{
+				Connection: &types.StreamConnectionEvent{
+					State:          toClientStreamConnectionState(event.State),
+					At:             event.At,
+					DisconnectedAt: event.DisconnectedAt,
+					Err:            event.Err,
+				},
+			}
+		},
+	})
 }
 
 func (c *grpcClient) ModifyStreamTopics(
@@ -656,6 +571,19 @@ func (a *grpcClient) setListenerID(id string) {
 	defer a.listenerMu.Unlock()
 
 	a.listenerId = id
+}
+
+func toClientStreamConnectionState(
+	state utils.ReconnectingStreamState,
+) types.StreamConnectionState {
+	switch state {
+	case utils.ReconnectingStreamStateDisconnected:
+		return types.StreamConnectionStateDisconnected
+	case utils.ReconnectingStreamStateReconnected:
+		return types.StreamConnectionStateReconnected
+	default:
+		return types.StreamConnectionState(state)
+	}
 }
 
 func parseFees(fees *arkv1.FeeInfo) (types.FeeInfo, error) {
