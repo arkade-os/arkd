@@ -53,7 +53,7 @@ func (c *tokenCache) close() {
 	close(c.stop)
 }
 
-func (c *tokenCache) add(hash string, outpoints []Outpoint) {
+func (c *tokenCache) add(hash string, outpoints []Outpoint, now time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -61,35 +61,39 @@ func (c *tokenCache) add(hash string, outpoints []Outpoint) {
 		return
 	}
 
-	expiresAt := time.Now().Add(c.invalidationDuration)
+	expiry := now.Add(c.invalidationDuration)
 	if c.outpointsByHash[hash] == nil {
 		c.outpointsByHash[hash] = make(map[Outpoint]time.Time)
 	}
 	for _, outpoint := range outpoints {
-		c.outpointsByHash[hash][outpoint] = expiresAt
+		c.outpointsByHash[hash][outpoint] = expiry
 	}
 }
 
-func (c *tokenCache) getOutpoints(hash string) (map[string]struct{}, bool) {
+func (c *tokenCache) getOutpoints(hash string) (map[string]struct{}, *time.Time, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	outpoints, ok := c.outpointsByHash[hash]
 	if !ok {
-		return nil, false
+		return nil, nil, false
 	}
 	for _, expiresAt := range outpoints {
 		if time.Now().After(expiresAt) {
-			return nil, false
+			return nil, nil, false
 		}
 		break
 	}
 
 	res := make(map[string]struct{})
+	expiry := time.Time{}
 	for outpoint := range outpoints {
+		if expiry.IsZero() {
+			expiry = outpoints[outpoint]
+		}
 		res[outpoint.String()] = struct{}{}
 	}
-	return res, true
+	return res, &expiry, true
 }
 
 func (c *tokenCache) getTxids(hash string) (map[string]struct{}, bool) {
@@ -100,8 +104,8 @@ func (c *tokenCache) getTxids(hash string) (map[string]struct{}, bool) {
 	if !ok {
 		return nil, false
 	}
-	for _, expiresAt := range outpoints {
-		if time.Now().After(expiresAt) {
+	for _, expiry := range outpoints {
+		if time.Now().After(expiry) {
 			return nil, false
 		}
 		break

@@ -334,7 +334,7 @@ func (i *indexerService) GetVtxoChain(
 				return nil, err
 			}
 
-			outpoints, ok := i.tokenCache.getOutpoints(hash)
+			outpoints, _, ok := i.tokenCache.getOutpoints(hash)
 			if !ok {
 				return nil, fmt.Errorf("auth token not found")
 			}
@@ -349,7 +349,7 @@ func (i *indexerService) GetVtxoChain(
 			return nil, err
 		}
 
-		outpoints, ok := i.tokenCache.getOutpoints(hash)
+		outpoints, _, ok := i.tokenCache.getOutpoints(hash)
 		if !ok {
 			return nil, fmt.Errorf("auth token not found")
 		}
@@ -873,6 +873,13 @@ func (i *indexerService) createAuthToken(outpoints []Outpoint) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to hash outpoints: %s", err)
 	}
+	hashStr := hex.EncodeToString(hash)
+
+	_, expiry, tokenExists := i.tokenCache.getOutpoints(hashStr)
+	if tokenExists {
+		// If token already exists, reuse the original timestamp to generate the same token
+		now = expiry.Add(-i.tokenCache.invalidationDuration)
+	}
 
 	msg := make([]byte, 32+8)
 	copy(msg[0:32], hash)
@@ -891,7 +898,11 @@ func (i *indexerService) createAuthToken(outpoints []Outpoint) (string, error) {
 	copy(token[0:len(msg)], msg)
 	copy(token[len(msg):], sigBytes)
 
-	i.tokenCache.add(hex.EncodeToString(hash), outpoints)
+	// Even if tokenCache.add is no-op if hash already exists,
+	// we explicitly prevent invoking it as best practice
+	if !tokenExists {
+		i.tokenCache.add(hashStr, outpoints, now)
+	}
 
 	return base64.StdEncoding.EncodeToString(token), nil
 }
