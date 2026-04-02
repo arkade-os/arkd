@@ -357,7 +357,7 @@ func (i *indexerService) GetVtxoChain(
 			return nil, fmt.Errorf("auth token is not for outpoint %s", outpoint)
 		}
 	}
-	resp, _, err := i.getVtxoChain(ctx, outpoint, page, "")
+	resp, _, err := i.getVtxoChain(ctx, outpoint, page)
 	if err != nil {
 		return nil, err
 	}
@@ -384,7 +384,7 @@ func (i *indexerService) GetVtxoChainByIntent(
 		}
 	}
 
-	resp, allOutpoints, err := i.getVtxoChain(ctx, outpoint, page, "")
+	resp, allOutpoints, err := i.getVtxoChain(ctx, outpoint, page)
 	if err != nil {
 		return nil, err
 	}
@@ -502,7 +502,7 @@ func (i *indexerService) GetBatchSweepTxs(
 }
 
 func (i *indexerService) getVtxoChain(
-	ctx context.Context, vtxoKey Outpoint, page *Page, token string,
+	ctx context.Context, vtxoKey Outpoint, page *Page,
 ) (*VtxoChainResp, []Outpoint, error) {
 	chain, allOutpoints, err := i.buildVtxoChain(ctx, vtxoKey)
 	if err != nil {
@@ -511,9 +511,8 @@ func (i *indexerService) getVtxoChain(
 
 	txChain, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
 	return &VtxoChainResp{
-		Chain:     txChain,
-		Page:      pageResp,
-		AuthToken: token,
+		Chain: txChain,
+		Page:  pageResp,
 	}, allOutpoints, nil
 }
 
@@ -937,7 +936,7 @@ func (i *indexerService) validateAuthToken(authToken string) (string, error) {
 	return hex.EncodeToString(msg[:32]), nil
 }
 
-// hashOutpoints clones the given outpoints, sorts them lexycographically by txid and vout,
+// hashOutpoints clones the given outpoints, sorts them lexicographically by txid and vout,
 // and returns the sha256 hash of the concatenation of their txid and vout.
 func hashOutpoints(outpoints []Outpoint) ([]byte, error) {
 	outs := slices.Clone(outpoints)
