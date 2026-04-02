@@ -393,6 +393,7 @@ type TxNotification struct {
 	SpendableVtxos []*Vtxo                `protobuf:"bytes,4,rep,name=spendable_vtxos,json=spendableVtxos,proto3" json:"spendable_vtxos,omitempty"`
 	// This field is set only in case of offchain tx.
 	CheckpointTxs map[string]*TxData `protobuf:"bytes,5,rep,name=checkpoint_txs,json=checkpointTxs,proto3" json:"checkpoint_txs,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // key: outpoint, value: checkpoint txid
+	SweptVtxos    []*Outpoint        `protobuf:"bytes,6,rep,name=swept_vtxos,json=sweptVtxos,proto3" json:"swept_vtxos,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -458,6 +459,13 @@ func (x *TxNotification) GetSpendableVtxos() []*Vtxo {
 func (x *TxNotification) GetCheckpointTxs() map[string]*TxData {
 	if x != nil {
 		return x.CheckpointTxs
+	}
+	return nil
+}
+
+func (x *TxNotification) GetSweptVtxos() []*Outpoint {
+	if x != nil {
+		return x.SweptVtxos
 	}
 	return nil
 }
@@ -1607,14 +1615,16 @@ const file_ark_v1_types_proto_rawDesc = "" +
 	"\x06amount\x18\x02 \x01(\x04R\x06amount\",\n" +
 	"\x06TxData\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x0e\n" +
-	"\x02tx\x18\x02 \x01(\tR\x02tx\"\xbe\x02\n" +
+	"\x02tx\x18\x02 \x01(\tR\x02tx\"\xf1\x02\n" +
 	"\x0eTxNotification\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x0e\n" +
 	"\x02tx\x18\x02 \x01(\tR\x02tx\x12-\n" +
 	"\vspent_vtxos\x18\x03 \x03(\v2\f.ark.v1.VtxoR\n" +
 	"spentVtxos\x125\n" +
 	"\x0fspendable_vtxos\x18\x04 \x03(\v2\f.ark.v1.VtxoR\x0espendableVtxos\x12P\n" +
-	"\x0echeckpoint_txs\x18\x05 \x03(\v2).ark.v1.TxNotification.CheckpointTxsEntryR\rcheckpointTxs\x1aP\n" +
+	"\x0echeckpoint_txs\x18\x05 \x03(\v2).ark.v1.TxNotification.CheckpointTxsEntryR\rcheckpointTxs\x121\n" +
+	"\vswept_vtxos\x18\x06 \x03(\v2\x10.ark.v1.OutpointR\n" +
+	"sweptVtxos\x1aP\n" +
 	"\x12CheckpointTxsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12$\n" +
 	"\x05value\x18\x02 \x01(\v2\x0e.ark.v1.TxDataR\x05value:\x028\x01\"&\n" +
@@ -1766,18 +1776,19 @@ var file_ark_v1_types_proto_depIdxs = []int32{
 	2,  // 4: ark.v1.TxNotification.spent_vtxos:type_name -> ark.v1.Vtxo
 	2,  // 5: ark.v1.TxNotification.spendable_vtxos:type_name -> ark.v1.Vtxo
 	25, // 6: ark.v1.TxNotification.checkpoint_txs:type_name -> ark.v1.TxNotification.CheckpointTxsEntry
-	9,  // 7: ark.v1.ScheduledSession.fees:type_name -> ark.v1.FeeInfo
-	10, // 8: ark.v1.FeeInfo.intent_fee:type_name -> ark.v1.IntentFeeInfo
-	26, // 9: ark.v1.TreeNoncesAggregatedEvent.tree_nonces:type_name -> ark.v1.TreeNoncesAggregatedEvent.TreeNoncesEntry
-	27, // 10: ark.v1.TreeNoncesEvent.nonces:type_name -> ark.v1.TreeNoncesEvent.NoncesEntry
-	28, // 11: ark.v1.TreeTxEvent.children:type_name -> ark.v1.TreeTxEvent.ChildrenEntry
-	29, // 12: ark.v1.ErrorDetails.metadata:type_name -> ark.v1.ErrorDetails.MetadataEntry
-	4,  // 13: ark.v1.TxNotification.CheckpointTxsEntry.value:type_name -> ark.v1.TxData
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	0,  // 7: ark.v1.TxNotification.swept_vtxos:type_name -> ark.v1.Outpoint
+	9,  // 8: ark.v1.ScheduledSession.fees:type_name -> ark.v1.FeeInfo
+	10, // 9: ark.v1.FeeInfo.intent_fee:type_name -> ark.v1.IntentFeeInfo
+	26, // 10: ark.v1.TreeNoncesAggregatedEvent.tree_nonces:type_name -> ark.v1.TreeNoncesAggregatedEvent.TreeNoncesEntry
+	27, // 11: ark.v1.TreeNoncesEvent.nonces:type_name -> ark.v1.TreeNoncesEvent.NoncesEntry
+	28, // 12: ark.v1.TreeTxEvent.children:type_name -> ark.v1.TreeTxEvent.ChildrenEntry
+	29, // 13: ark.v1.ErrorDetails.metadata:type_name -> ark.v1.ErrorDetails.MetadataEntry
+	4,  // 14: ark.v1.TxNotification.CheckpointTxsEntry.value:type_name -> ark.v1.TxData
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_ark_v1_types_proto_init() }

@@ -395,10 +395,6 @@ func (a *service) getSpendableVtxos(
 		}
 	}
 
-	if opts != nil && opts.expiryThreshold > 0 {
-		allVtxos = utils.FilterVtxosByExpiry(allVtxos, opts.expiryThreshold)
-	}
-
 	if opts == nil || !opts.withoutExpirySorting {
 		allVtxos = utils.SortVtxosByExpiry(allVtxos)
 	}

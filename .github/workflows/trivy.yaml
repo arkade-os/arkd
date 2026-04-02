@@ -25,7 +25,7 @@ jobs:
           tags: ${{ github.repository }}:${{ github.sha }}
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         env:
           # avoid GHCR rate limits, see https://github.com/aquasecurity/trivy-db/pull/440 and https://github.com/aquasecurity/trivy-action/issues/389
           TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2

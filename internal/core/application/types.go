@@ -144,6 +144,7 @@ type VtxoChainResp struct {
 	Chain         []ChainTx
 	Page          PageResp
 	NextPageToken string
+	AuthToken     string
 }
 
 type vtxoChainCursor struct {
@@ -192,8 +193,9 @@ type GetVtxosResp struct {
 }
 
 type VirtualTxsResp struct {
-	Txs  []string
-	Page PageResp
+	Txs       []string
+	Page      PageResp
+	AuthToken string
 }
 
 type Asset = domain.Asset

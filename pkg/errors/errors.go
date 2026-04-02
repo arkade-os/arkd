@@ -204,7 +204,7 @@ type OffchainTxInsufficientFeeMetadata struct {
 }
 
 type TxTooLargeMetadata struct {
-	Weight int `json:"weight"`
+	Weight    int `json:"weight"`
 	MaxWeight int `json:"max_weight"`
 }
 
@@ -454,4 +454,15 @@ var VTXO_WITH_TOO_MANY_ASSETS = Code[VtxoWithTooManyAssetsMetadata]{47, "VTXO_WI
 type VtxoWithTooManyAssetsMetadata struct {
 	AssetCount int `json:"asset_count"`
 	MaxAssets  int `json:"max_assets"`
+}
+
+type BuildVersionMetadata struct {
+	ClientVersion string `json:"client_version"`
+	MinVersion    string `json:"min_version"`
+}
+
+var BUILD_VERSION_TOO_OLD = Code[BuildVersionMetadata]{
+	48,
+	"BUILD_VERSION_TOO_OLD",
+	grpccodes.FailedPrecondition,
 }
