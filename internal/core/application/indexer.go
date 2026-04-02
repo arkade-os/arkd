@@ -378,6 +378,8 @@ func (i *indexerService) GetVtxoChainByIntent(
 
 	switch i.txExposure {
 	case exposurePublic:
+		resp, _, err := i.getVtxoChain(ctx, outpoint, page)
+		return resp, err
 	case exposureWithheld, exposurePrivate:
 		if err := i.validateIntent(ctx, intent); err != nil {
 			return nil, err
@@ -471,6 +473,7 @@ func (i *indexerService) GetVirtualTxsByIntent(
 
 	switch i.txExposure {
 	case exposurePublic:
+		return i.getVirtualTxs(ctx, txids, page, "")
 	case exposureWithheld, exposurePrivate:
 		if err := i.validateIntent(ctx, intent); err != nil {
 			return nil, err
