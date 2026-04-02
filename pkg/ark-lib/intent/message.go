@@ -185,8 +185,11 @@ func (m GetDataMessage) Encode() (string, error) {
 	return string(encoded), nil
 }
 
-func (m GetDataMessage) Decode(data string) error {
-	if err := json.Unmarshal([]byte(data), &m); err != nil {
+func (m GetDataMessage) GetExpireAt() int64          { return m.ExpireAt }
+func (m GetDataMessage) GetBaseMessage() BaseMessage { return m.BaseMessage }
+
+func (m *GetDataMessage) Decode(data string) error {
+	if err := json.Unmarshal([]byte(data), m); err != nil {
 		return err
 	}
 

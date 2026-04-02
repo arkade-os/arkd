@@ -62,7 +62,7 @@ var (
 		"inmemory": {},
 		"redis":    {},
 	}
-	supportedIndexerTxExposures = supportedType{
+	supportedIndexerExposures = supportedType{
 		"public":   {},
 		"withheld": {},
 		"private":  {},
@@ -620,10 +620,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("utxo min amount must be greater than 0")
 	}
 
-	if !supportedIndexerTxExposures.supports(c.IndexerExposure) {
+	if !supportedIndexerExposures.supports(c.IndexerExposure) {
 		return fmt.Errorf(
 			"indexer exposure type not supported, please select one of: %s",
-			supportedIndexerTxExposures,
+			supportedIndexerExposures,
 		)
 	}
 
@@ -633,8 +633,7 @@ func (c *Config) Validate() error {
 
 	if c.IndexerExposure != "public" && c.IndexerSigningKey == "" {
 		return fmt.Errorf(
-			"indexer signing key is required when tx exposure is %q",
-			c.IndexerExposure,
+			"indexer signing key is required when exposure is %q", c.IndexerExposure,
 		)
 	}
 

@@ -99,7 +99,7 @@ func NewIndexerService(
 	switch exposure(txExposure) {
 	case exposurePublic, exposureWithheld, exposurePrivate:
 	default:
-		return nil, fmt.Errorf("invalid tx exposure value: %q", txExposure)
+		return nil, fmt.Errorf("invalid exposure value: %q", txExposure)
 	}
 
 	ttl := defaultAuthTokenTTL
@@ -343,7 +343,7 @@ func (i *indexerService) GetVtxoChain(
 			}
 		}
 	case exposurePrivate:
-		// Auth token is mandatatory, always validate it
+		// Auth token is mandatory, always validate it
 		hash, err := i.validateAuthToken(authToken)
 		if err != nil {
 			return nil, err
@@ -402,7 +402,6 @@ func (i *indexerService) GetVtxoChainByIntent(
 func (i *indexerService) GetVirtualTxs(
 	ctx context.Context, authToken string, txids []string, page *Page,
 ) (*VirtualTxsResp, error) {
-	// Helpers to
 	var valid bool
 	switch i.txExposure {
 	case exposurePublic:
@@ -429,7 +428,7 @@ func (i *indexerService) GetVirtualTxs(
 			}
 		}
 	case exposurePrivate:
-		// Auth token is mandatatory, always validate it
+		// Auth token is mandatory, always validate it
 		hash, err := i.validateAuthToken(authToken)
 		if err != nil {
 			return nil, err
@@ -933,7 +932,7 @@ func (i *indexerService) validateAuthToken(authToken string) (string, error) {
 	}
 
 	if !sig.Verify(msgHash, i.authPrvkey.PubKey()) {
-		return "", fmt.Errorf("signature verififcation failed")
+		return "", fmt.Errorf("signature verification failed")
 	}
 
 	return hex.EncodeToString(msg[:32]), nil

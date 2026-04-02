@@ -203,7 +203,7 @@ func TestGetVirtualTxs(t *testing.T) {
 				wantTxs: 0,
 			},
 			{
-				// public + bad token: TxExposurePublic branch has no body — authToken is
+				// public + bad token: exposurePublic branch has no body — authToken is
 				// never read regardless of value, valid=false → stripArkdSignatures called.
 				// Return empty list to avoid PSBT parse error.
 				name:      "public, bad token is ignored",
