@@ -60,3 +60,4 @@ func (h *signerHandler) SignTransactionTapscript(
 	}
 	return &signerv1.SignTransactionTapscriptResponse{SignedTx: tx}, nil
 }
+

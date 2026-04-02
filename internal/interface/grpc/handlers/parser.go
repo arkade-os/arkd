@@ -244,12 +244,22 @@ func (t txEvent) toProto() *arkv1.TxNotification {
 			}
 		}
 	}
+
+	sweptVtxos := make([]*arkv1.Outpoint, 0, len(t.SweptVtxos))
+	for _, outpoint := range t.SweptVtxos {
+		sweptVtxos = append(sweptVtxos, &arkv1.Outpoint{
+			Txid: outpoint.Txid,
+			Vout: outpoint.VOut,
+		})
+	}
+
 	return &arkv1.TxNotification{
 		Txid:           t.Txid,
 		Tx:             t.Tx,
 		CheckpointTxs:  checkpointTxs,
 		SpentVtxos:     vtxoList(t.SpentVtxos).toProto(),
 		SpendableVtxos: vtxoList(t.SpendableVtxos).toProto(),
+		SweptVtxos:     sweptVtxos,
 	}
 }
 

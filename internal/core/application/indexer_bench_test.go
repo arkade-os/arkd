@@ -331,7 +331,7 @@ func BenchmarkGetVtxoChain(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				resp, err := svc.GetVtxoChain(ctx, start, nil, "")
+				resp, err := svc.GetVtxoChain(ctx, "", start, nil, "")
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -347,7 +347,7 @@ func BenchmarkGetVtxoChain(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				resp, err := svc.GetVtxoChain(ctx, start, nil, "")
+				resp, err := svc.GetVtxoChain(ctx, "", start, nil, "")
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -363,7 +363,7 @@ func BenchmarkGetVtxoChain(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			resp, err := svc.GetVtxoChain(ctx, start, nil, "")
+			resp, err := svc.GetVtxoChain(ctx, "", start, nil, "")
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -384,7 +384,7 @@ func BenchmarkGetVtxoChain(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			resp, err := svc.GetVtxoChain(ctx, start, nil, "")
+			resp, err := svc.GetVtxoChain(ctx, "", start, nil, "")
 			if err != nil {
 				b.Fatal(err)
 			}

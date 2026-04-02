@@ -339,7 +339,7 @@ func (m *mockRepoManagerForIndexer) Fees() domain.FeeRepository               { 
 func (m *mockRepoManagerForIndexer) Close()                                   {}
 
 // newTestIndexer creates a fresh set of mock repos and an indexerService for testing.
-func newTestIndexer() (
+func newChainTestIndexer() (
 	*mockVtxoRepoForIndexer,
 	*mockMarkerRepoForIndexer,
 	*indexerService,
@@ -352,7 +352,7 @@ func newTestIndexer() (
 }
 
 // newTestIndexerWithOffchain creates mock repos including offchain tx repo.
-func newTestIndexerWithOffchain() (
+func newChainTestIndexerWithOffchain() (
 	*mockVtxoRepoForIndexer,
 	*mockMarkerRepoForIndexer,
 	*mockOffchainTxRepoForIndexer,
@@ -438,7 +438,7 @@ func TestDecodeChainCursor_InvalidJSON(t *testing.T) {
 // TestEnsureVtxosCached_AllCacheHits verifies that when all outpoints are already
 // in the cache, no DB call is made.
 func TestEnsureVtxosCached_AllCacheHits(t *testing.T) {
-	vtxoRepo, _, indexer := newTestIndexer()
+	vtxoRepo, _, indexer := newChainTestIndexer()
 
 	ctx := context.Background()
 	cache := map[string]domain.Vtxo{
@@ -462,7 +462,7 @@ func TestEnsureVtxosCached_AllCacheHits(t *testing.T) {
 // TestEnsureVtxosCached_CacheMissLoadsFromDBAndMarkerWindow verifies that cache
 // misses trigger a DB lookup and marker window prefetch.
 func TestEnsureVtxosCached_CacheMissLoadsFromDBAndMarkerWindow(t *testing.T) {
-	vtxoRepo, markerRepo, indexer := newTestIndexer()
+	vtxoRepo, markerRepo, indexer := newChainTestIndexer()
 
 	ctx := context.Background()
 	cache := make(map[string]domain.Vtxo)
@@ -526,7 +526,7 @@ func TestEnsureVtxosCached_NilMarkerRepo(t *testing.T) {
 // TestEnsureVtxosCached_DBErrorPropagated verifies that database errors
 // are properly propagated.
 func TestEnsureVtxosCached_DBErrorPropagated(t *testing.T) {
-	vtxoRepo, _, indexer := newTestIndexer()
+	vtxoRepo, _, indexer := newChainTestIndexer()
 
 	ctx := context.Background()
 	cache := make(map[string]domain.Vtxo)
@@ -545,7 +545,7 @@ func TestEnsureVtxosCached_DBErrorPropagated(t *testing.T) {
 // loadedMarkers prevents redundant GetVtxosByMarker calls when the same
 // marker is encountered across multiple ensureVtxosCached invocations.
 func TestEnsureVtxosCached_MarkerDedupAvoidsDuplicateLoad(t *testing.T) {
-	vtxoRepo, markerRepo, indexer := newTestIndexer()
+	vtxoRepo, markerRepo, indexer := newChainTestIndexer()
 
 	ctx := context.Background()
 	cache := make(map[string]domain.Vtxo)
@@ -598,7 +598,7 @@ func TestEnsureVtxosCached_MarkerDedupAvoidsDuplicateLoad(t *testing.T) {
 // from GetVtxosByMarker is gracefully swallowed — the VTXO itself is still
 // cached and the function returns no error.
 func TestEnsureVtxosCached_GetVtxosByMarkerErrorSwallowed(t *testing.T) {
-	vtxoRepo, markerRepo, indexer := newTestIndexer()
+	vtxoRepo, markerRepo, indexer := newChainTestIndexer()
 
 	ctx := context.Background()
 	cache := make(map[string]domain.Vtxo)
@@ -633,20 +633,20 @@ func TestEnsureVtxosCached_GetVtxosByMarkerErrorSwallowed(t *testing.T) {
 // but a pageToken is provided, the default page size (maxPageSizeVtxoChain=100)
 // is used instead of returning the full chain.
 func TestGetVtxoChain_DefaultPageSizeWithTokenOnly(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
 	ctx := context.Background()
 
 	vtxoKey := setupPreconfirmedChain(t, ctx, vtxoRepo, markerRepo, offchainTxRepo)
 
 	// Get the first page with an explicit page size to obtain a token
 	page := &Page{PageSize: 2}
-	resp1, err := indexer.GetVtxoChain(ctx, vtxoKey, page, "")
+	resp1, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, resp1.NextPageToken)
 
 	// Resume with token but nil page — should use default page size (100),
 	// which is large enough to return the remaining chain in one shot.
-	resp2, err := indexer.GetVtxoChain(ctx, vtxoKey, nil, resp1.NextPageToken)
+	resp2, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, resp1.NextPageToken)
 	require.NoError(t, err)
 	// Remaining chain: B(ark+cp) + C(ark) = 3 items, all fit in default page
 	require.Equal(t, 3, len(resp2.Chain))
@@ -656,12 +656,12 @@ func TestGetVtxoChain_DefaultPageSizeWithTokenOnly(t *testing.T) {
 // TestGetVtxoChain_InvalidPageToken verifies that an invalid page_token
 // returns an error.
 func TestGetVtxoChain_InvalidPageToken(t *testing.T) {
-	_, _, indexer := newTestIndexer()
+	_, _, indexer := newChainTestIndexer()
 
 	ctx := context.Background()
 	vtxoKey := Outpoint{Txid: "abc123", VOut: 0}
 
-	_, err := indexer.GetVtxoChain(ctx, vtxoKey, nil, "invalid-token!!!")
+	_, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, "invalid-token!!!")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid page_token")
 }
@@ -670,7 +670,7 @@ func TestGetVtxoChain_InvalidPageToken(t *testing.T) {
 // page is nil and pageToken is empty, the VTXO not found error comes from
 // the DB lookup (not from pagination parsing), confirming backward compat.
 func TestGetVtxoChain_BackwardCompat_NilPageEmptyToken(t *testing.T) {
-	vtxoRepo, markerRepo, indexer := newTestIndexer()
+	vtxoRepo, markerRepo, indexer := newChainTestIndexer()
 
 	ctx := context.Background()
 	vtxoKey := Outpoint{Txid: "root-vtxo", VOut: 0}
@@ -681,7 +681,7 @@ func TestGetVtxoChain_BackwardCompat_NilPageEmptyToken(t *testing.T) {
 	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
 		Return([]domain.Vtxo{}, nil).Maybe()
 
-	_, err := indexer.GetVtxoChain(ctx, vtxoKey, nil, "")
+	_, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, "")
 
 	// Error should be from the chain walk, not from pagination setup
 	require.Error(t, err)
@@ -751,7 +751,7 @@ func setupPreconfirmedChain(
 // the expected number of items and a non-empty next_page_token when the chain
 // exceeds the page size.
 func TestGetVtxoChain_PaginationFirstPage(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
 	ctx := context.Background()
 
 	vtxoKey := setupPreconfirmedChain(t, ctx, vtxoRepo, markerRepo, offchainTxRepo)
@@ -759,7 +759,7 @@ func TestGetVtxoChain_PaginationFirstPage(t *testing.T) {
 	// Page size 2: vtxo-A produces 2 chain items (ark + checkpoint),
 	// then vtxo-B triggers early termination.
 	page := &Page{PageSize: 2}
-	resp, err := indexer.GetVtxoChain(ctx, vtxoKey, page, "")
+	resp, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
 
 	require.NoError(t, err)
 	require.Len(t, resp.Chain, 2)
@@ -772,7 +772,7 @@ func TestGetVtxoChain_PaginationFirstPage(t *testing.T) {
 // page token continues the chain from where the previous page left off,
 // eventually exhausting the chain with an empty token.
 func TestGetVtxoChain_PaginationResumeWithToken(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
 	ctx := context.Background()
 
 	vtxoKey := setupPreconfirmedChain(t, ctx, vtxoRepo, markerRepo, offchainTxRepo)
@@ -782,19 +782,19 @@ func TestGetVtxoChain_PaginationResumeWithToken(t *testing.T) {
 	page := &Page{PageSize: 2}
 
 	// Page 1
-	resp1, err := indexer.GetVtxoChain(ctx, vtxoKey, page, "")
+	resp1, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
 	require.NoError(t, err)
 	require.Len(t, resp1.Chain, 2)
 	require.NotEmpty(t, resp1.NextPageToken)
 
 	// Page 2: resume with token from page 1
-	resp2, err := indexer.GetVtxoChain(ctx, vtxoKey, page, resp1.NextPageToken)
+	resp2, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, resp1.NextPageToken)
 	require.NoError(t, err)
 	require.Len(t, resp2.Chain, 2)
 	require.NotEmpty(t, resp2.NextPageToken)
 
 	// Page 3: resume with token from page 2
-	resp3, err := indexer.GetVtxoChain(ctx, vtxoKey, page, resp2.NextPageToken)
+	resp3, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, resp2.NextPageToken)
 	require.NoError(t, err)
 	require.Len(t, resp3.Chain, 1)
 	require.Empty(t, resp3.NextPageToken, "last page should have empty token")
@@ -811,7 +811,7 @@ func TestGetVtxoChain_PaginationResumeWithToken(t *testing.T) {
 // TestGetVtxoChain_ShortChainNoToken verifies that when the chain is shorter
 // than the page size, all items are returned with an empty next_page_token.
 func TestGetVtxoChain_ShortChainNoToken(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
 	ctx := context.Background()
 
 	txidA := strings.Repeat("a", 64)
@@ -831,7 +831,7 @@ func TestGetVtxoChain_ShortChainNoToken(t *testing.T) {
 
 	// Page size larger than chain
 	page := &Page{PageSize: 100}
-	resp, err := indexer.GetVtxoChain(ctx, Outpoint{Txid: txidA, VOut: 0}, page, "")
+	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, page, "")
 
 	require.NoError(t, err)
 	require.Len(t, resp.Chain, 1) // Just the ark tx
@@ -842,7 +842,7 @@ func TestGetVtxoChain_ShortChainNoToken(t *testing.T) {
 // TestGetVtxoChain_PageSizeRespected verifies that each page never exceeds the
 // page size (with allowance for grouped items from a single VTXO).
 func TestGetVtxoChain_PageSizeRespected(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
 	ctx := context.Background()
 
 	vtxoKey := setupPreconfirmedChain(t, ctx, vtxoRepo, markerRepo, offchainTxRepo)
@@ -851,7 +851,7 @@ func TestGetVtxoChain_PageSizeRespected(t *testing.T) {
 	// so pages will slightly overflow since items for one VTXO are emitted together.
 	page := &Page{PageSize: 1}
 
-	resp, err := indexer.GetVtxoChain(ctx, vtxoKey, page, "")
+	resp, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
 	require.NoError(t, err)
 
 	// vtxo-A emits 2 items (ark + checkpoint) even though pageSize=1,
@@ -912,7 +912,7 @@ func matchIDs(expected ...string) interface{} {
 // TestPreloadVtxosByMarkers_WalksMarkerChain verifies that preloadVtxosByMarkers
 // follows the marker DAG upward and populates the cache with all discovered VTXOs.
 func TestPreloadVtxosByMarkers_WalksMarkerChain(t *testing.T) {
-	_, markerRepo, indexer := newTestIndexer()
+	_, markerRepo, indexer := newChainTestIndexer()
 	ctx := context.Background()
 
 	// Chain: vtxo-leaf has marker-200, which has parent marker-100, which has parent marker-0.
@@ -970,7 +970,7 @@ func TestPreloadVtxosByMarkers_WalksMarkerChain(t *testing.T) {
 // TestPreloadVtxosByMarkers_NoCycleLoop verifies that the visited set prevents
 // infinite loops when markers form a cycle.
 func TestPreloadVtxosByMarkers_NoCycleLoop(t *testing.T) {
-	_, markerRepo, indexer := newTestIndexer()
+	_, markerRepo, indexer := newChainTestIndexer()
 	ctx := context.Background()
 
 	vtxo := domain.Vtxo{
@@ -1016,7 +1016,7 @@ func TestPreloadVtxosByMarkers_NoCycleLoop(t *testing.T) {
 // preloadVtxosByMarkers when VTXOs have markers, and that the main loop
 // hits the cache instead of making additional DB calls.
 func TestGetVtxoChain_WithMarkers_UsesPreload(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
 	ctx := context.Background()
 
 	txidA := strings.Repeat("a", 64)
@@ -1076,7 +1076,7 @@ func TestGetVtxoChain_WithMarkers_UsesPreload(t *testing.T) {
 	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
 		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
 
-	resp, err := indexer.GetVtxoChain(ctx, Outpoint{Txid: txidA, VOut: 0}, nil, "")
+	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, nil, "")
 	require.NoError(t, err)
 	require.Equal(t, 5, len(resp.Chain)) // A(ark+cp) + B(ark+cp) + C(ark)
 
@@ -1096,7 +1096,7 @@ func TestGetVtxoChain_PreloadReducesDBCalls(t *testing.T) {
 	const chainLen = 500
 	const markersCount = chainLen / int(domain.MarkerInterval) // 5
 
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
 	ctx := context.Background()
 
 	// Generate txids and VTXOs grouped by marker bucket.
@@ -1151,7 +1151,7 @@ func TestGetVtxoChain_PreloadReducesDBCalls(t *testing.T) {
 	offchainTxRepo.On("GetOffchainTx", ctx, txids[chainLen-1]).
 		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
 
-	resp, err := indexer.GetVtxoChain(ctx, Outpoint{Txid: txids[0], VOut: 0}, nil, "")
+	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txids[0], VOut: 0}, nil, "")
 	require.NoError(t, err)
 
 	// Each non-terminal VTXO produces 2 items (ark + checkpoint), terminal produces 1.
@@ -1173,7 +1173,7 @@ func TestGetVtxoChain_PreloadReducesDBCalls(t *testing.T) {
 //	A --(cp1)--> B
 //	A --(cp2)--> C
 func TestGetVtxoChain_Fanout(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
 	ctx := context.Background()
 
 	txidA := strings.Repeat("a", 64)
@@ -1204,7 +1204,7 @@ func TestGetVtxoChain_Fanout(t *testing.T) {
 	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
 		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
 
-	resp, err := indexer.GetVtxoChain(ctx, Outpoint{Txid: txidA, VOut: 0}, nil, "")
+	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, nil, "")
 	require.NoError(t, err)
 
 	// A: ark + 2 checkpoints = 3. B: ark = 1. C: ark = 1. Total: 5.
@@ -1235,7 +1235,7 @@ func TestGetVtxoChain_Fanout(t *testing.T) {
 //	A --(cp1)--> B --(cp)--> D
 //	A --(cp2)--> C --(cp)--> D  (same D)
 func TestGetVtxoChain_Diamond(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
 	ctx := context.Background()
 
 	txidA := strings.Repeat("a", 64)
@@ -1287,7 +1287,7 @@ func TestGetVtxoChain_Diamond(t *testing.T) {
 	offchainTxRepo.On("GetOffchainTx", ctx, txidD).
 		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
 
-	resp, err := indexer.GetVtxoChain(ctx, Outpoint{Txid: txidA, VOut: 0}, nil, "")
+	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, nil, "")
 	require.NoError(t, err)
 
 	// A: ark + 2cp = 3. B: ark + 1cp = 2. C: ark + 1cp = 2. D: ark = 1. Total: 8.
@@ -1306,7 +1306,7 @@ func TestGetVtxoChain_Diamond(t *testing.T) {
 // TestGetVtxoChain_MarkerBoundaryStart verifies that a chain starting exactly
 // at marker boundary depth 0 preloads correctly (no parents to walk).
 func TestGetVtxoChain_MarkerBoundaryStart(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
 	ctx := context.Background()
 
 	txidA := strings.Repeat("a", 64)
@@ -1340,7 +1340,7 @@ func TestGetVtxoChain_MarkerBoundaryStart(t *testing.T) {
 	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
 		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
 
-	resp, err := indexer.GetVtxoChain(ctx, Outpoint{Txid: txidA, VOut: 0}, nil, "")
+	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, nil, "")
 	require.NoError(t, err)
 	require.Equal(t, 3, len(resp.Chain)) // A(ark) + cp + B(ark)
 
@@ -1355,7 +1355,7 @@ func TestGetVtxoChain_MarkerBoundaryStart(t *testing.T) {
 //	A (markers: m-a, m-b) -> B (marker: m-b) -> C (no markers)
 //	m-a has parent m-b, so m-b is already visited when discovered as parent.
 func TestGetVtxoChain_OverlappingMarkers(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newTestIndexerWithOffchain()
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
 	ctx := context.Background()
 
 	txidA := strings.Repeat("a", 64)
@@ -1402,7 +1402,7 @@ func TestGetVtxoChain_OverlappingMarkers(t *testing.T) {
 	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
 		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
 
-	resp, err := indexer.GetVtxoChain(ctx, Outpoint{Txid: txidA, VOut: 0}, nil, "")
+	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, nil, "")
 	require.NoError(t, err)
 	require.Equal(t, 5, len(resp.Chain))
 

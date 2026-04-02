@@ -394,6 +394,12 @@
               "$ref": "#/components/schemas/Vtxo"
             }
           },
+          "sweptVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Outpoint"
+            }
+          },
           "tx": {
             "type": "string"
           },

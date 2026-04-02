@@ -1,17 +1,29 @@
 package intent_test
 
 import (
+	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"os"
 	"testing"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
+	"github.com/arkade-os/arkd/pkg/ark-lib/note"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
+
+const noteProofMessage = "test-note-closure-parity"
 
 func TestNewIntent(t *testing.T) {
 	validFixtures, invalidFixtures := parseProofFixtures(t)
@@ -60,7 +72,8 @@ func TestVerifyIntent(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		for _, fixture := range validFixtures {
 			t.Run(fixture.Name, func(t *testing.T) {
-				err := intent.Verify(fixture.Proof, fixture.Message)
+				skip := parseSkipKeys(t, fixture.SkipKeys)
+				err := intent.Verify(fixture.Proof, fixture.Message, skip)
 				require.NoError(t, err)
 			})
 		}
@@ -69,11 +82,73 @@ func TestVerifyIntent(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		for _, fixture := range invalidFixtures {
 			t.Run(fixture.Name, func(t *testing.T) {
-				err := intent.Verify(fixture.Proof, fixture.Message)
+				skip := parseSkipKeys(t, fixture.SkipKeys)
+				err := intent.Verify(fixture.Proof, fixture.Message, skip)
 				require.Error(t, err)
 				require.ErrorContains(t, err, fixture.ExpectedError)
 			})
 		}
+	})
+
+	t.Run("notes", func(t *testing.T) {
+		t.Run("valid", func(t *testing.T) {
+			t.Run("correct control block and preimage", func(t *testing.T) {
+				s := newNoteClosureSetup(t)
+				p := buildNoteProof(t, s, s.cbBytes)
+				setNotePreimage(t, p, 1, s.preimage)
+
+				err := intent.Verify(serializeProof(t, p), noteProofMessage, nil)
+				require.NoError(t, err)
+			})
+		})
+
+		t.Run("invalid", func(t *testing.T) {
+			t.Run("wrong parity bit in control block", func(t *testing.T) {
+				s := newNoteClosureSetup(t)
+				corrupted := make([]byte, len(s.cbBytes))
+				copy(corrupted, s.cbBytes)
+				corrupted[0] ^= 0x01
+
+				p := buildNoteProof(t, s, corrupted)
+				// Parity is checked before the preimage, so no preimage needed.
+				err := intent.Verify(serializeProof(t, p), noteProofMessage, nil)
+				require.ErrorContains(t, err, "parity")
+			})
+
+			t.Run("wrong x-coordinate from tampered merkle path", func(t *testing.T) {
+				s := newNoteClosureSetup(t)
+				fakeNode := make([]byte, 32)
+				_, err := rand.Read(fakeNode)
+				require.NoError(t, err)
+
+				corrupted := append(append([]byte{}, s.cbBytes...), fakeNode...)
+				p := buildNoteProof(t, s, corrupted)
+				err = intent.Verify(serializeProof(t, p), noteProofMessage, nil)
+				require.ErrorContains(t, err, "invalid control block")
+			})
+
+			t.Run("missing preimage", func(t *testing.T) {
+				s := newNoteClosureSetup(t)
+				p := buildNoteProof(t, s, s.cbBytes)
+				// No preimage set; control block is valid so execution reaches preimage check.
+
+				err := intent.Verify(serializeProof(t, p), noteProofMessage, nil)
+				require.ErrorContains(t, err, "preimage")
+			})
+
+			t.Run("wrong preimage", func(t *testing.T) {
+				s := newNoteClosureSetup(t)
+				p := buildNoteProof(t, s, s.cbBytes)
+
+				wrong := make([]byte, 32)
+				_, err := rand.Read(wrong)
+				require.NoError(t, err)
+				setNotePreimage(t, p, 1, wrong)
+
+				err = intent.Verify(serializeProof(t, p), noteProofMessage, nil)
+				require.ErrorContains(t, err, "preimage")
+			})
+		})
 	})
 }
 
@@ -248,10 +323,11 @@ func parseProofFixtures(t *testing.T) ([]proofFixture, []invalidProofFixture) {
 }
 
 type verifyFixture struct {
-	Name          string `json:"name"`
-	Proof         string `json:"proof"`
-	Message       string `json:"message"`
-	ExpectedError string `json:"expected_error"`
+	Name          string   `json:"name"`
+	Proof         string   `json:"proof"`
+	Message       string   `json:"message"`
+	SkipKeys      []string `json:"skip_keys,omitempty"`
+	ExpectedError string   `json:"expected_error"`
 }
 
 type verifyFixturesJSON struct {
@@ -268,4 +344,105 @@ func parseVerifyFixtures(t *testing.T) ([]verifyFixture, []verifyFixture) {
 	require.NoError(t, err)
 
 	return jsonData.Valid, jsonData.Invalid
+}
+
+func parseSkipKeys(t *testing.T, keys []string) []*btcec.PublicKey {
+	t.Helper()
+	if len(keys) == 0 {
+		return nil
+	}
+	result := make([]*btcec.PublicKey, 0, len(keys))
+	for _, k := range keys {
+		b, err := hex.DecodeString(k)
+		require.NoError(t, err)
+		pk, err := schnorr.ParsePubKey(b)
+		require.NoError(t, err)
+		result = append(result, pk)
+	}
+	return result
+}
+
+type noteClosureSetup struct {
+	preimage   []byte
+	noteScript []byte
+	p2trScript []byte
+	cbBytes    []byte
+}
+
+func newNoteClosureSetup(t *testing.T) noteClosureSetup {
+	t.Helper()
+
+	preimage := make([]byte, 32)
+	_, err := rand.Read(preimage)
+	require.NoError(t, err)
+
+	hash := sha256.Sum256(preimage)
+	nc := &note.NoteClosure{PreimageHash: hash}
+
+	noteScript, err := nc.Script()
+	require.NoError(t, err)
+
+	leaf := txscript.NewBaseTapLeaf(noteScript)
+	tapTree := txscript.AssembleTaprootScriptTree(leaf)
+	root := tapTree.RootNode.TapHash()
+
+	unspendableKey := script.UnspendableKey()
+	taprootKey := txscript.ComputeTaprootOutputKey(unspendableKey, root[:])
+
+	p2trScript, err := script.P2TRScript(taprootKey)
+	require.NoError(t, err)
+
+	leafIndex := tapTree.LeafProofIndex[leaf.TapHash()]
+	cb := tapTree.LeafMerkleProofs[leafIndex].ToControlBlock(unspendableKey)
+	cbBytes, err := cb.ToBytes()
+	require.NoError(t, err)
+
+	return noteClosureSetup{
+		preimage:   preimage,
+		noteScript: noteScript,
+		p2trScript: p2trScript,
+		cbBytes:    cbBytes,
+	}
+}
+
+// buildNoteProof creates an intent proof with a single note closure as the ownership input.
+// cb is the raw control block bytes to embed (may be a corrupted copy for negative tests).
+func buildNoteProof(t *testing.T, s noteClosureSetup, cb []byte) *intent.Proof {
+	t.Helper()
+
+	var prevHash [32]byte
+	_, err := rand.Read(prevHash[:])
+	require.NoError(t, err)
+
+	p, err := intent.New(noteProofMessage, []intent.Input{{
+		OutPoint:    &wire.OutPoint{Hash: prevHash, Index: 0},
+		WitnessUtxo: &wire.TxOut{Value: 1_000, PkScript: s.p2trScript},
+	}}, nil)
+	require.NoError(t, err)
+
+	// Index 0 is the toSpend spending input; index 1 is the ownership input.
+	p.Inputs[1].TaprootLeafScript = []*psbt.TaprootTapLeafScript{{
+		ControlBlock: cb,
+		Script:       s.noteScript,
+		LeafVersion:  txscript.BaseLeafVersion,
+	}}
+
+	return p
+}
+
+// setNotePreimage stores the preimage in the PSBT's condition witness field for the given input.
+func setNotePreimage(t *testing.T, p *intent.Proof, inputIndex int, preimage []byte) {
+	t.Helper()
+	err := txutils.SetArkPsbtField(
+		&p.Packet, inputIndex, txutils.ConditionWitnessField,
+		wire.TxWitness{preimage},
+	)
+	require.NoError(t, err)
+}
+
+func serializeProof(t *testing.T, p *intent.Proof) string {
+	t.Helper()
+	var buf bytes.Buffer
+	require.NoError(t, p.Serialize(&buf))
+	return base64.StdEncoding.EncodeToString(buf.Bytes())
 }

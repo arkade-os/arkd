@@ -15,6 +15,7 @@ const (
 	IntentMessageTypeGetPendingTx IntentMessageType = "get-pending-tx"
 	IntentMessageTypeEstimateFee  IntentMessageType = "estimate-intent-fee"
 	IntentMessageTypeGetIntent    IntentMessageType = "get-intent"
+	IntentMessageTypeGetData      IntentMessageType = "get-data"
 )
 
 var tagHashMessage = []byte("ark-intent-proof-message")
@@ -97,7 +98,7 @@ func (m DeleteMessage) Encode() (string, error) {
 	return string(encoded), nil
 }
 
-func (m DeleteMessage) GetExpireAt() int64      { return m.ExpireAt }
+func (m DeleteMessage) GetExpireAt() int64          { return m.ExpireAt }
 func (m DeleteMessage) GetBaseMessage() BaseMessage { return m.BaseMessage }
 
 func (m *DeleteMessage) Decode(data string) error {
@@ -138,6 +139,7 @@ func (m *GetPendingTxMessage) Decode(data string) error {
 
 	return nil
 }
+
 type GetIntentMessage struct {
 	BaseMessage
 	// ExpireAt is the timestamp (in seconds) at which the proof should be considered invalid
@@ -153,7 +155,7 @@ func (m GetIntentMessage) Encode() (string, error) {
 	return string(encoded), nil
 }
 
-func (m GetIntentMessage) GetExpireAt() int64      { return m.ExpireAt }
+func (m GetIntentMessage) GetExpireAt() int64          { return m.ExpireAt }
 func (m GetIntentMessage) GetBaseMessage() BaseMessage { return m.BaseMessage }
 
 func (m *GetIntentMessage) Decode(data string) error {
@@ -162,6 +164,36 @@ func (m *GetIntentMessage) Decode(data string) error {
 	}
 
 	if m.Type != IntentMessageTypeGetIntent {
+		return fmt.Errorf("invalid intent message type: %s", m.Type)
+	}
+
+	return nil
+}
+
+type GetDataMessage struct {
+	BaseMessage
+	// ExpireAt is the timestamp (in seconds) at which the proof should be considered invalid
+	// if set to 0, the proof will be considered valid indefinitely
+	ExpireAt int64 `json:"expire_at"`
+}
+
+func (m GetDataMessage) Encode() (string, error) {
+	encoded, err := json.Marshal(m)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+func (m GetDataMessage) GetExpireAt() int64          { return m.ExpireAt }
+func (m GetDataMessage) GetBaseMessage() BaseMessage { return m.BaseMessage }
+
+func (m *GetDataMessage) Decode(data string) error {
+	if err := json.Unmarshal([]byte(data), m); err != nil {
+		return err
+	}
+
+	if m.Type != IntentMessageTypeGetData {
 		return fmt.Errorf("invalid intent message type: %s", m.Type)
 	}
 
