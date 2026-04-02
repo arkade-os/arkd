@@ -14,8 +14,10 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	arkscript "github.com/arkade-os/arkd/pkg/ark-lib/script"
 	arktree "github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -161,8 +163,7 @@ func TestAuthToken(t *testing.T) {
 			signer := newTestIndexer(t, key1, exposurePublic, nil, nil, nil)
 			// token signed with key1; validator expects key2 — deliberate mismatch
 			validator := &indexerService{
-				privkey:      key1,
-				authPubkey:   schnorr.SerializePubKey(key2.PubKey()),
+				authPrvkey:   key2,
 				authTokenTTL: defaultAuthTokenTTL,
 				tokenCache:   newTokenCache(defaultAuthTokenTTL),
 			}
@@ -350,17 +351,15 @@ func TestGetVirtualTxsByIntent(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("valid", func(t *testing.T) {
-		vtxoPubkey, err := btcec.NewPrivateKey()
-		require.NoError(t, err)
-		pkScript, err := arkscript.P2TRScript(vtxoPubkey.PubKey())
+		vtxoKey, err := btcec.NewPrivateKey()
 		require.NoError(t, err)
 
 		const vtxoAmount = int64(21000)
-		validIntent := buildTestIntent(t, testVtxoTxid, testVtxoVout, pkScript, vtxoAmount)
+		validIntent, vtxoTaprootKey := buildTestIntent(t, testVtxoTxid, testVtxoVout, vtxoKey, vtxoAmount)
 		validVtxo := domain.Vtxo{
 			Outpoint:           domain.Outpoint{Txid: testVtxoTxid, VOut: testVtxoVout},
 			Amount:             uint64(vtxoAmount),
-			PubKey:             hex.EncodeToString(schnorr.SerializePubKey(vtxoPubkey.PubKey())),
+			PubKey:             hex.EncodeToString(schnorr.SerializePubKey(vtxoTaprootKey)),
 			RootCommitmentTxid: testTxids[0],
 		}
 
@@ -418,16 +417,17 @@ func TestGetVirtualTxsByIntent(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
-		vtxoPubkey, err := btcec.NewPrivateKey()
-		require.NoError(t, err)
-		pkScript, err := arkscript.P2TRScript(vtxoPubkey.PubKey())
+		vtxoKey, err := btcec.NewPrivateKey()
 		require.NoError(t, err)
 
 		const vtxoAmount = int64(21000)
+		// validVtxo uses a matching taprootKey so that amount-check tests reach the
+		// right error before any script comparison.
+		_, vtxoTaprootKey := buildTestIntent(t, testVtxoTxid, testVtxoVout, vtxoKey, vtxoAmount)
 		validVtxo := domain.Vtxo{
 			Outpoint: domain.Outpoint{Txid: testVtxoTxid, VOut: testVtxoVout},
 			Amount:   uint64(vtxoAmount),
-			PubKey:   hex.EncodeToString(schnorr.SerializePubKey(vtxoPubkey.PubKey())),
+			PubKey:   hex.EncodeToString(schnorr.SerializePubKey(vtxoTaprootKey)),
 		}
 
 		tests := []struct {
@@ -455,7 +455,8 @@ func TestGetVirtualTxsByIntent(t *testing.T) {
 				name:     "private, unknown vtxo — wallet also fails",
 				exposure: exposurePrivate,
 				makeIntent: func() Intent {
-					return buildTestIntent(t, testVtxoTxid, testVtxoVout, pkScript, vtxoAmount)
+					intent, _ := buildTestIntent(t, testVtxoTxid, testVtxoVout, vtxoKey, vtxoAmount)
+					return intent
 				},
 				setupMocks: func(vtxos *mockedVtxoRepo, wallet *mockedWallet) {
 					vtxos.On("GetVtxos", mock.Anything, mock.Anything).
@@ -470,7 +471,8 @@ func TestGetVirtualTxsByIntent(t *testing.T) {
 				exposure: exposurePrivate,
 				makeIntent: func() Intent {
 					// intent claims 99999 but vtxo has 21000
-					return buildTestIntent(t, testVtxoTxid, testVtxoVout, pkScript, 99999)
+					intent, _ := buildTestIntent(t, testVtxoTxid, testVtxoVout, vtxoKey, 99999)
+					return intent
 				},
 				setupMocks: func(vtxos *mockedVtxoRepo, _ *mockedWallet) {
 					vtxos.On("GetVtxos", mock.Anything, mock.Anything).
@@ -482,7 +484,8 @@ func TestGetVirtualTxsByIntent(t *testing.T) {
 				name:     "private, script mismatch",
 				exposure: exposurePrivate,
 				makeIntent: func() Intent {
-					return buildTestIntent(t, testVtxoTxid, testVtxoVout, pkScript, vtxoAmount)
+					intent, _ := buildTestIntent(t, testVtxoTxid, testVtxoVout, vtxoKey, vtxoAmount)
+					return intent
 				},
 				setupMocks: func(vtxos *mockedVtxoRepo, _ *mockedWallet) {
 					wrongKey, _ := btcec.NewPrivateKey()
@@ -529,7 +532,7 @@ func TestGetVtxoChain(t *testing.T) {
 			// Build a 2-node PSBT tree: root_tx → vtxo_tx (leaf).
 			// buildVtxoChain collects allOutpoints = [vtxoOutpoint, vtxoOutpoint (dup),
 			// rootTxid:0, vtxoTxid:0] so the auth token covers both the vtxo and the tree tx.
-			rootTxid, vtxoTxid, flatTree := buildTestPSBTTree(t)
+			rootTxid, vtxoTxid, flatTree := buildTestTreeTxs(t)
 
 			commitmentTxid := differentTxid
 			vtxoOutpoint := Outpoint{Txid: vtxoTxid, VOut: 0}
@@ -672,21 +675,19 @@ func TestGetVtxoChainByIntent(t *testing.T) {
 			// proves ownership of. GetVtxoChainByIntent should produce a token whose
 			// txid whitelist includes both the leaf txid and the root tree tx txid,
 			// so GetVirtualTxs can be called for the whole chain without errors.
-			rootTxid, leafTxid, flatTree := buildTestPSBTTree(t)
+			rootTxid, leafTxid, flatTree := buildTestTreeTxs(t)
 
-			vtxoPubkey, err := btcec.NewPrivateKey()
-			require.NoError(t, err)
-			pkScript, err := arkscript.P2TRScript(vtxoPubkey.PubKey())
+			vtxoKey, err := btcec.NewPrivateKey()
 			require.NoError(t, err)
 
 			const vtxoAmount = int64(21000)
 			commitmentTxid := differentTxid
 
-			vtxoIntent := buildTestIntent(t, leafTxid, 0, pkScript, vtxoAmount)
+			vtxoIntent, vtxoTaprootKey := buildTestIntent(t, leafTxid, 0, vtxoKey, vtxoAmount)
 			vtxoData := domain.Vtxo{
 				Outpoint:           domain.Outpoint{Txid: leafTxid, VOut: 0},
 				Amount:             uint64(vtxoAmount),
-				PubKey:             hex.EncodeToString(schnorr.SerializePubKey(vtxoPubkey.PubKey())),
+				PubKey:             hex.EncodeToString(schnorr.SerializePubKey(vtxoTaprootKey)),
 				RootCommitmentTxid: commitmentTxid,
 				Preconfirmed:       false,
 			}
@@ -726,9 +727,7 @@ func TestGetVtxoChainByIntent(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
-		vtxoPubkey, err := btcec.NewPrivateKey()
-		require.NoError(t, err)
-		pkScript, err := arkscript.P2TRScript(vtxoPubkey.PubKey())
+		vtxoKey, err := btcec.NewPrivateKey()
 		require.NoError(t, err)
 
 		const vtxoAmount = int64(21000)
@@ -758,7 +757,8 @@ func TestGetVtxoChainByIntent(t *testing.T) {
 				name:     "private, unknown vtxo",
 				exposure: exposurePrivate,
 				makeIntent: func() Intent {
-					return buildTestIntent(t, testVtxoTxid, testVtxoVout, pkScript, vtxoAmount)
+					intent, _ := buildTestIntent(t, testVtxoTxid, testVtxoVout, vtxoKey, vtxoAmount)
+					return intent
 				},
 				setupMocks: func(vtxos *mockedVtxoRepo, wallet *mockedWallet) {
 					vtxos.On("GetVtxos", mock.Anything, mock.Anything).
@@ -815,10 +815,9 @@ func TestGetVtxoChainByIntent(t *testing.T) {
 	})
 }
 
-func TestStripArkdSignatures(t *testing.T) {
+func TestStripSignerSignatures(t *testing.T) {
 	signerKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-	signerXOnly := schnorr.SerializePubKey(signerKey.PubKey())
 
 	otherKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
@@ -870,7 +869,7 @@ func TestStripArkdSignatures(t *testing.T) {
 		return ptx.Inputs[0].TaprootKeySpendSig
 	}
 
-	indexer := &indexerService{signerPubkey: signerXOnly}
+	indexer := &indexerService{signerPubkey: signerKey.PubKey()}
 
 	t.Run("valid", func(t *testing.T) {
 		t.Run("empty slice is a no-op", func(t *testing.T) {
@@ -894,7 +893,7 @@ func TestStripArkdSignatures(t *testing.T) {
 
 		t.Run("strips signer sig and keeps other party sig", func(t *testing.T) {
 			signerSig := &psbt.TaprootScriptSpendSig{
-				XOnlyPubKey: signerXOnly,
+				XOnlyPubKey: schnorr.SerializePubKey(signerKey.PubKey()),
 				LeafHash:    make([]byte, 32),
 				Signature:   make([]byte, 64),
 			}
@@ -930,6 +929,9 @@ func newTestIndexer(
 ) *indexerService {
 	t.Helper()
 
+	signerKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
 	repo := &mockedRepoManager{}
 	if rounds != nil {
 		repo.On("Rounds").Return(rounds)
@@ -943,8 +945,8 @@ func newTestIndexer(
 
 	svc := &indexerService{
 		repoManager:  repo,
-		privkey:      privkey,
-		authPubkey:   schnorr.SerializePubKey(privkey.PubKey()),
+		authPrvkey:   privkey,
+		signerPubkey: signerKey.PubKey(),
 		txExposure:   exposure,
 		authTokenTTL: defaultAuthTokenTTL,
 		tokenCache:   cache,
@@ -955,10 +957,10 @@ func newTestIndexer(
 	return svc
 }
 
-// buildTestPSBTTree creates a minimal 2-node PSBT tree: root_tx → leaf_tx.
+// buildTestTreeTxs creates a minimal 2-node tx tree: root_tx → leaf_tx.
 // root_tx spends a fixed dummy input; leaf_tx spends root_tx output 0.
-// Returns the txids (computed from the PSBTs) and the FlatTxTree ready for mocking.
-func buildTestPSBTTree(t *testing.T) (rootTxid, leafTxid string, flatTree arktree.FlatTxTree) {
+// Returns the txids and the FlatTxTree ready for mocking.
+func buildTestTreeTxs(t *testing.T) (rootTxid, leafTxid string, flatTree arktree.FlatTxTree) {
 	t.Helper()
 
 	// Root PSBT: spends a fixed dummy input.
@@ -992,54 +994,85 @@ func buildTestPSBTTree(t *testing.T) (rootTxid, leafTxid string, flatTree arktre
 	return
 }
 
-// buildTestIntent creates a minimal valid intent PSBT.
-// PSBT layout: input[0] = toSpend dummy, input[1] = vtxo being proved.
+// buildTestIntent creates a valid signed intent proof that passes intent.Verify.
+// It builds a MultisigClosure with vtxoKey, derives the taproot output key from
+// that closure, signs input 1, and returns the intent plus the taproot key (so
+// callers can set up vtxo mocks with the correct PubKey).
 func buildTestIntent(
-	t *testing.T, vtxoTxid string, vtxoVout uint32, pkScript []byte, amount int64,
-) Intent {
+	t *testing.T, vtxoTxid string, vtxoVout uint32, vtxoKey *btcec.PrivateKey, amount int64,
+) (Intent, *btcec.PublicKey) {
 	t.Helper()
 
+	// Build a single-key closure for the vtxo spending leaf.
+	closure := &arkscript.MultisigClosure{
+		PubKeys: []*btcec.PublicKey{vtxoKey.PubKey()},
+		Type:    arkscript.MultisigTypeChecksig,
+	}
+	closureScript, err := closure.Script()
+	require.NoError(t, err)
+
+	// Taproot output key: unspendable internal key tweaked with the single leaf.
+	unspendable := arkscript.UnspendableKey()
+	leaf := txscript.NewBaseTapLeaf(closureScript)
+	leafHash := leaf.TapHash()
+	taprootKey := txscript.ComputeTaprootOutputKey(unspendable, leafHash[:])
+
+	pkScript, err := arkscript.P2TRScript(taprootKey)
+	require.NoError(t, err)
+
+	// Build the GetData message.
+	intentMessage := intent.GetDataMessage{
+		BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeGetData},
+	}
+	message, err := intentMessage.Encode()
+	require.NoError(t, err)
+
+	// Build the intent proof PSBT.
 	vtxoHash, err := chainhash.NewHashFromStr(vtxoTxid)
 	require.NoError(t, err)
+	inputs := []intent.Input{{
+		OutPoint:    &wire.OutPoint{Hash: *vtxoHash, Index: vtxoVout},
+		WitnessUtxo: &wire.TxOut{Value: amount, PkScript: pkScript},
+	}}
+	outputs := []*wire.TxOut{{Value: amount, PkScript: pkScript}}
+	proof, err := intent.New(message, inputs, outputs)
+	require.NoError(t, err)
 
-	unsignedTx := &wire.MsgTx{
-		Version: 2,
-		TxIn: []*wire.TxIn{
-			{PreviousOutPoint: wire.OutPoint{Hash: chainhash.Hash{0x01}, Index: 0}},
-			{PreviousOutPoint: wire.OutPoint{Hash: *vtxoHash, Index: vtxoVout}},
-		},
-		TxOut: []*wire.TxOut{{Value: amount, PkScript: pkScript}},
+	// Control block for a single-leaf tree: [LeafVersion | outputKeyParity][internalKey_32].
+	isOdd := taprootKey.SerializeCompressed()[0] == 0x03
+	parityBit := byte(0)
+	if isOdd {
+		parityBit = 0x01
 	}
-
-	ptx, err := psbt.New(
-		[]*wire.OutPoint{
-			{Hash: chainhash.Hash{0x01}, Index: 0},
-			{Hash: *vtxoHash, Index: vtxoVout},
-		},
-		unsignedTx.TxOut,
-		unsignedTx.Version,
-		unsignedTx.LockTime,
-		[]uint32{wire.MaxTxInSequenceNum, wire.MaxTxInSequenceNum},
-	)
-	require.NoError(t, err)
-
-	dummyKey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
 	controlBlock := make([]byte, 33)
-	controlBlock[0] = byte(txscript.BaseLeafVersion)
-	copy(controlBlock[1:], schnorr.SerializePubKey(dummyKey.PubKey()))
-
-	ptx.Inputs[1].WitnessUtxo = &wire.TxOut{Value: amount, PkScript: pkScript}
-	ptx.Inputs[1].TaprootLeafScript = []*psbt.TaprootTapLeafScript{{
+	controlBlock[0] = byte(txscript.BaseLeafVersion) | parityBit
+	copy(controlBlock[1:], schnorr.SerializePubKey(unspendable))
+	proof.Inputs[1].TaprootLeafScript = []*psbt.TaprootTapLeafScript{{
 		ControlBlock: controlBlock,
-		Script:       []byte{txscript.OP_TRUE},
+		Script:       closureScript,
 		LeafVersion:  txscript.BaseLeafVersion,
 	}}
 
-	b64, err := ptx.B64Encode()
+	// Sign input 1 (the vtxo input) with vtxoKey to prove ownership.
+	prevoutFetcher, err := txutils.GetPrevOutputFetcher(&proof.Packet)
+	require.NoError(t, err)
+	txSigHashes := txscript.NewTxSigHashes(proof.UnsignedTx, prevoutFetcher)
+	sighash, err := txscript.CalcTapscriptSignaturehash(
+		txSigHashes, txscript.SigHashDefault, proof.UnsignedTx, 1, prevoutFetcher, leaf,
+	)
+	require.NoError(t, err)
+	sig, err := schnorr.Sign(vtxoKey, sighash)
+	require.NoError(t, err)
+	proof.Inputs[1].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{{
+		XOnlyPubKey: schnorr.SerializePubKey(vtxoKey.PubKey()),
+		Signature:   sig.Serialize(),
+		LeafHash:    leafHash[:],
+	}}
+
+	b64, err := proof.B64Encode()
 	require.NoError(t, err)
 
-	return Intent{Proof: b64, Message: "test-message"}
+	return Intent{Proof: b64, Message: message}, taprootKey
 }
 
 // buildExpiredToken constructs a signed auth token with a timestamp one hour

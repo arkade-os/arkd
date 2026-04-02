@@ -12,6 +12,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
@@ -325,7 +326,7 @@ func (e *indexerService) GetVtxoChain(
 	var resp *application.VtxoChainResp
 
 	if request.GetIntent() != nil {
-		intent, parseErr := parseIndexerIntentProof(request.GetIntent())
+		intent, parseErr := parseIndexerIntent(request.GetIntent())
 		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
@@ -380,7 +381,7 @@ func (e *indexerService) GetVirtualTxs(
 
 	var resp *application.VirtualTxsResp
 	if request.GetIntent() != nil {
-		intent, parseErr := parseIndexerIntentProof(request.GetIntent())
+		intent, parseErr := parseIndexerIntent(request.GetIntent())
 		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
@@ -778,7 +779,7 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 	}
 }
 
-func parseIndexerIntentProof(i *arkv1.IndexerIntent) (*application.Intent, error) {
+func parseIndexerIntent(i *arkv1.IndexerIntent) (*application.Intent, error) {
 	if i == nil {
 		return nil, nil
 	}
@@ -789,5 +790,13 @@ func parseIndexerIntentProof(i *arkv1.IndexerIntent) (*application.Intent, error
 	if _, err := psbt.NewFromRawBytes(strings.NewReader(proof), true); err != nil {
 		return nil, fmt.Errorf("failed to parse intent proof tx: %s", err)
 	}
-	return &application.Intent{Proof: proof}, nil
+	message := i.GetMessage()
+	if len(message) <= 0 {
+		return nil, fmt.Errorf("missing intent message")
+	}
+	intentMessage := intent.GetDataMessage{}
+	if err := intentMessage.Decode(message); err != nil {
+		return nil, err
+	}
+	return &application.Intent{Proof: proof, Message: message}, nil
 }

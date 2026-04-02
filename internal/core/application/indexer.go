@@ -80,9 +80,8 @@ type IndexerService interface {
 type indexerService struct {
 	repoManager  ports.RepoManager
 	wallet       ports.WalletService
-	privkey      *btcec.PrivateKey
-	authPubkey   []byte // indexer's own key, used for auth token signing/verification
-	signerPubkey []byte // server's signing key, used for stripping arkd signatures from PSBTs
+	authPrvkey   *btcec.PrivateKey // key used to sign auth tokens
+	signerPubkey *btcec.PublicKey  // server's signing key, used for stripping signatures from txs
 	txExposure   exposure
 	authTokenTTL time.Duration
 	tokenCache   *tokenCache
@@ -111,16 +110,14 @@ func NewIndexerService(
 	svc := &indexerService{
 		repoManager:  repoManager,
 		wallet:       wallet,
-		privkey:      privkey,
+		authPrvkey:   privkey,
 		txExposure:   exposure(txExposure),
 		authTokenTTL: ttl,
 		tokenCache:   newTokenCache(ttl),
 	}
-	if privkey != nil {
-		svc.authPubkey = schnorr.SerializePubKey(privkey.PubKey())
-	}
+
 	if signerPubkey != nil {
-		svc.signerPubkey = schnorr.SerializePubKey(signerPubkey)
+		svc.signerPubkey = signerPubkey
 	}
 	return svc, nil
 }
@@ -679,6 +676,8 @@ func (i *indexerService) getVirtualTxs(
 }
 
 func (i *indexerService) stripSignerSignatures(virtualTxs []string) error {
+	signerPubkey := schnorr.SerializePubKey(i.signerPubkey)
+
 	for idx := range virtualTxs {
 		ptx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTxs[idx]), true)
 		if err != nil {
@@ -695,7 +694,7 @@ func (i *indexerService) stripSignerSignatures(virtualTxs []string) error {
 
 			newSigs := make([]*psbt.TaprootScriptSpendSig, 0)
 			for _, sig := range ptx.Inputs[j].TaprootScriptSpendSig {
-				if !bytes.Equal(sig.XOnlyPubKey, i.signerPubkey) {
+				if !bytes.Equal(sig.XOnlyPubKey, signerPubkey) {
 					newSigs = append(newSigs, sig)
 				}
 			}
@@ -833,7 +832,9 @@ func (i *indexerService) validateIntent(ctx context.Context, intentToValidate In
 		}
 	}
 
-	return nil
+	return intent.Verify(
+		intentToValidate.Proof, intentToValidate.Message, []*btcec.PublicKey{i.signerPubkey},
+	)
 }
 
 // extractOutpointFromIntent parses the intent proof and returns all input outpoints
@@ -878,7 +879,7 @@ func (i *indexerService) createAuthToken(outpoints []Outpoint) (string, error) {
 
 	// Sign the message
 	msgHash := chainhash.HashB(msg)
-	sig, err := schnorr.Sign(i.privkey, msgHash)
+	sig, err := schnorr.Sign(i.authPrvkey, msgHash)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign auth token: %w", err)
 	}
@@ -929,12 +930,7 @@ func (i *indexerService) validateAuthToken(authToken string) (string, error) {
 		return "", fmt.Errorf("failed to parse auth token signature: %w", err)
 	}
 
-	pubkey, err := schnorr.ParsePubKey(i.authPubkey)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse signer pubkey: %w", err)
-	}
-
-	if !sig.Verify(msgHash, pubkey) {
+	if !sig.Verify(msgHash, i.authPrvkey.PubKey()) {
 		return "", fmt.Errorf("signature verififcation failed")
 	}
 
