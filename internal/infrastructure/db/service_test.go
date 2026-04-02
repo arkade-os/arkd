@@ -2033,8 +2033,15 @@ func (m *mockTxDecoder) DecodeTx(tx string) (string, []ports.TxIn, []ports.TxOut
 }
 
 // taprootPkScript returns a 34-byte taproot pkscript (OP_1 + PUSH32 + key).
-func taprootPkScript(pubkeyHex string) []byte {
-	pk, _ := hex.DecodeString(pubkeyHex)
+func taprootPkScript(t *testing.T, pubkeyHex string) []byte {
+	t.Helper()
+	pk, err := hex.DecodeString(pubkeyHex)
+	if err != nil {
+		t.Fatalf("taprootPkScript: invalid hex %q: %v", pubkeyHex, err)
+	}
+	if len(pk) != 32 {
+		t.Fatalf("taprootPkScript: expected 32-byte key, got %d bytes", len(pk))
+	}
 	script := make([]byte, 34)
 	script[0] = 0x51 // OP_1
 	script[1] = 0x20 // PUSH32
@@ -2055,7 +2062,7 @@ func taprootPkScript(pubkeyHex string) []byte {
 //   - Input vtxos were NOT swept (round expired but server hasn't reclaimed yet)
 //     -> output vtxos should NOT be marked swept.
 func TestFinalizePendingTxProjection(t *testing.T) {
-	outputPkScript := taprootPkScript(pubkey)
+	outputPkScript := taprootPkScript(t, pubkey)
 
 	checkpointTxid1 := randomString(32)
 	checkpointTxid2 := randomString(32)
