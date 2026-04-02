@@ -1,6 +1,8 @@
 package config
 
 import (
+	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -24,6 +26,7 @@ import (
 	fileunlocker "github.com/arkade-os/arkd/internal/infrastructure/unlocker/file"
 	walletclient "github.com/arkade-os/arkd/internal/infrastructure/wallet"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -58,6 +61,11 @@ var (
 	supportedLiveStores = supportedType{
 		"inmemory": {},
 		"redis":    {},
+	}
+	supportedIndexerExposures = supportedType{
+		"public":   {},
+		"withheld": {},
+		"private":  {},
 	}
 )
 
@@ -130,7 +138,14 @@ type Config struct {
 	AssetTxMaxWeightRatio     float64
 	MaxOpReturnOutputs        uint32
 
-	EnablePprof          bool
+	EnablePprof            bool
+	IndexerExposure        string
+	IndexerAuthTokenExpiry int64
+	// IndexerSigningKey is a hex-encoded private key used by the indexer to sign
+	// auth tokens. This is separate from the server's main signing key.
+	// Rotating this key invalidates all outstanding auth tokens.
+	// SENSITIVE: must never be logged.
+	IndexerSigningKey    string
 	MaxConcurrentStreams uint32
 
 	fee            ports.FeeManager
@@ -153,6 +168,9 @@ func (c *Config) String() string {
 	clone := *c
 	if clone.UnlockerPassword != "" {
 		clone.UnlockerPassword = "••••••"
+	}
+	if clone.IndexerSigningKey != "" {
+		clone.IndexerSigningKey = "••••••"
 	}
 	json, err := json.MarshalIndent(clone, "", "  ")
 	if err != nil {
@@ -224,7 +242,11 @@ var (
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
-	MaxConcurrentStreams          = "MAX_CONCURRENT_STREAMS"
+	IndexerExposure               = "INDEXER_EXPOSURE"
+	IndexerAuthTokenExpiry        = "INDEXER_AUTH_TOKEN_EXPIRY" // #nosec G101
+	// IndexerSigningKey is a hex-encoded private key. SENSITIVE: never log this value.
+	IndexerSigningKey    = "INDEXER_SIGNING_PRIVKEY" // #nosec G101
+	MaxConcurrentStreams = "MAX_CONCURRENT_STREAMS"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -263,6 +285,8 @@ var (
 	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
+	defaultIndexerExposure               = "public"
+	defaultIndexerAuthTokenExpiry        = 300 // 5 minutes in seconds
 	defaultMaxConcurrentStreams          = uint32(1000)
 	defaultMaxOpReturnOuts               = uint32(3)
 )
@@ -308,6 +332,8 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
+	viper.SetDefault(IndexerExposure, defaultIndexerExposure)
+	viper.SetDefault(IndexerAuthTokenExpiry, defaultIndexerAuthTokenExpiry)
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
 	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
 
@@ -423,6 +449,9 @@ func LoadConfig() (*Config, error) {
 		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
+		IndexerExposure:               viper.GetString(IndexerExposure),
+		IndexerAuthTokenExpiry:        viper.GetInt64(IndexerAuthTokenExpiry),
+		IndexerSigningKey:             viper.GetString(IndexerSigningKey),
 		MaxConcurrentStreams:          viper.GetUint32(MaxConcurrentStreams),
 		// Default to 1 if set to 0
 		MaxOpReturnOutputs: max(1, viper.GetUint32(MaxOpReturnOutputs)),
@@ -591,6 +620,23 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("utxo min amount must be greater than 0")
 	}
 
+	if !supportedIndexerExposures.supports(c.IndexerExposure) {
+		return fmt.Errorf(
+			"indexer exposure type not supported, please select one of: %s",
+			supportedIndexerExposures,
+		)
+	}
+
+	if c.IndexerExposure != "public" && c.IndexerAuthTokenExpiry <= 0 {
+		return fmt.Errorf("indexer auth token expiry must be greater than 0")
+	}
+
+	if c.IndexerExposure != "public" && c.IndexerSigningKey == "" {
+		return fmt.Errorf(
+			"indexer signing key is required when exposure is %q", c.IndexerExposure,
+		)
+	}
+
 	if c.MaxTxWeight > bitcoinBlockWeight {
 		return fmt.Errorf(
 			"max tx weight can't exceed bitcoin block weight (%d)",
@@ -666,8 +712,35 @@ func (c *Config) UnlockerService() ports.Unlocker {
 	return c.unlocker
 }
 
-func (c *Config) IndexerService() application.IndexerService {
-	return application.NewIndexerService(c.repo)
+func (c *Config) IndexerService() (application.IndexerService, error) {
+	if c.wallet == nil {
+		if err := c.walletService(); err != nil {
+			return nil, err
+		}
+	}
+	if c.signer == nil {
+		if err := c.signerService(); err != nil {
+			return nil, err
+		}
+	}
+
+	var privkey *btcec.PrivateKey
+	if c.IndexerSigningKey != "" {
+		keyBytes, err := hex.DecodeString(c.IndexerSigningKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode indexer signing key: %w", err)
+		}
+		privkey, _ = btcec.PrivKeyFromBytes(keyBytes)
+	}
+
+	signerPubkey, err := c.signer.GetPubkey(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server signing pubkey: %w", err)
+	}
+
+	return application.NewIndexerService(
+		c.repo, c.wallet, privkey, signerPubkey, c.IndexerExposure, c.IndexerAuthTokenExpiry,
+	)
 }
 
 func (c *Config) SignerService() (ports.SignerService, error) {
