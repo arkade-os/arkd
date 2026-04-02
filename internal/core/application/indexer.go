@@ -322,7 +322,6 @@ func (i *indexerService) GetVtxosByOutpoint(
 	}, nil
 }
 
-
 func (i *indexerService) GetVtxoChain(
 	ctx context.Context, authToken string, vtxoKey Outpoint, page *Page, pageToken string,
 ) (*VtxoChainResp, error) {
@@ -629,7 +628,10 @@ func (i *indexerService) walkVtxoChain(
 				for _, b64 := range offchainTx.CheckpointTxs {
 					ptx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
 					if err != nil {
-						return nil, nil, "", fmt.Errorf("failed to deserialize checkpoint tx: %s", err)
+						return nil, nil, "", fmt.Errorf(
+							"failed to deserialize checkpoint tx: %s",
+							err,
+						)
 					}
 
 					txid := ptx.UnsignedTx.TxID()

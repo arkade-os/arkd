@@ -336,7 +336,13 @@ func (e *indexerService) GetVtxoChain(
 		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
-		resp, err = e.indexerSvc.GetVtxoChain(ctx, request.GetToken(), *outpoint, page, request.GetPageToken())
+		resp, err = e.indexerSvc.GetVtxoChain(
+			ctx,
+			request.GetToken(),
+			*outpoint,
+			page,
+			request.GetPageToken(),
+		)
 	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
