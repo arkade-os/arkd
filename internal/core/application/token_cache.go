@@ -6,7 +6,9 @@ import (
 )
 
 type tokenCache struct {
-	mu                   sync.RWMutex
+	mu sync.RWMutex
+	// Stores outpoints by hash (hash of outpoints), with a shared expiration time for all
+	// outpoints of the same hash
 	outpointsByHash      map[string]map[Outpoint]time.Time
 	invalidationDuration time.Duration
 	stop                 chan struct{}
