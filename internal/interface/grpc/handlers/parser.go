@@ -84,6 +84,24 @@ func parseDeleteIntent(
 	return proof, &message, nil
 }
 
+func parseGetIntent(
+	intentProof *arkv1.Intent,
+) (*intent.Proof, *intent.GetIntentMessage, error) {
+	proof, err := parseIntentProofTx(intentProof)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if len(intentProof.GetMessage()) <= 0 {
+		return nil, nil, fmt.Errorf("missing message")
+	}
+	var message intent.GetIntentMessage
+	if err := message.Decode(intentProof.GetMessage()); err != nil {
+		return nil, nil, fmt.Errorf("invalid get-intent message")
+	}
+	return proof, &message, nil
+}
+
 func parseGetPendingTxIntent(
 	intentProof *arkv1.Intent,
 ) (*intent.Proof, *intent.GetPendingTxMessage, error) {
@@ -225,12 +243,22 @@ func (t txEvent) toProto() *arkv1.TxNotification {
 			}
 		}
 	}
+
+	sweptVtxos := make([]*arkv1.Outpoint, 0, len(t.SweptVtxos))
+	for _, outpoint := range t.SweptVtxos {
+		sweptVtxos = append(sweptVtxos, &arkv1.Outpoint{
+			Txid: outpoint.Txid,
+			Vout: outpoint.VOut,
+		})
+	}
+
 	return &arkv1.TxNotification{
 		Txid:           t.Txid,
 		Tx:             t.Tx,
 		CheckpointTxs:  checkpointTxs,
 		SpentVtxos:     vtxoList(t.SpentVtxos).toProto(),
 		SpendableVtxos: vtxoList(t.SpendableVtxos).toProto(),
+		SweptVtxos:     sweptVtxos,
 	}
 }
 
