@@ -2,12 +2,17 @@ package intent
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -49,7 +54,8 @@ type Input struct {
 }
 
 // Verify takes an encoded b64 proof tx and a message to validate the proof
-func Verify(proofB64, message string) error {
+// skip lists public keys whose signatures are not required (e.g. the signer key)
+func Verify(proofB64, message string, skip []*btcec.PublicKey) error {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(proofB64), true)
 	if err != nil {
 		return fmt.Errorf("failed to parse proof tx: %s", err)
@@ -95,32 +101,42 @@ func Verify(proofB64, message string) error {
 		return ErrInvalidTxWrongOutputIndex
 	}
 
-	tx, err := proof.FinalizeAndExtract()
+	signedInputs, err := script.VerifyTapscriptSigs(ptx, prevoutFetcher, skip)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid intent proof: %w", err)
 	}
 
-	txSigHashes := txscript.NewTxSigHashes(tx, prevoutFetcher)
-	sigCache := txscript.NewSigCache(1000)
-
-	for i, input := range tx.TxIn {
-		prevout := prevoutFetcher.FetchPrevOutput(input.PreviousOutPoint)
-		if prevout == nil {
-			return ErrPrevoutNotFound
+	// Ensure every ownership input (index 1+) was actually validated.
+	// VerifyTapscriptSigs silently skips unsigned inputs, so we must check
+	// that no applicable input slipped through without a signature.
+	signedSet := make(map[int]struct{}, len(signedInputs))
+	for _, idx := range signedInputs {
+		signedSet[idx] = struct{}{}
+	}
+	for i := 1; i < len(ptx.Inputs); i++ {
+		if _, ok := signedSet[i]; ok {
+			continue
 		}
 
-		engine, err := txscript.NewEngine(
-			prevout.PkScript, tx, i, txscript.StandardVerifyFlags,
-			sigCache, txSigHashes, prevout.Value, prevoutFetcher,
-		)
-		if err != nil {
-			return fmt.Errorf("invalid intent proof: failed to create script engine for input %d: %w", i, err)
+		in := ptx.Inputs[i]
+		if len(in.TaprootLeafScript) == 1 {
+			// Note closures use hash-locks, not signatures — verify the
+			// preimage and control block instead.
+			if script.IsNoteClosureScript(in.TaprootLeafScript[0].Script) {
+				if err := verifyNoteInput(ptx, i, prevoutFetcher); err != nil {
+					return fmt.Errorf("invalid intent proof: %w", err)
+				}
+				continue
+			}
+
+			// For unsigned condition closures, the input is valid only if
+			// every expected signer is in the skip list.
+			if allSignersSkipped(in.TaprootLeafScript[0].Script, skip) {
+				continue
+			}
 		}
 
-		if err := engine.Execute(); err != nil {
-			return fmt.Errorf("invalid intent proof: failed to execute script for input %d: %w", i, err)
-		}
-
+		return fmt.Errorf("missing signature for input %d", i)
 	}
 
 	return nil
@@ -208,7 +224,7 @@ func (p Proof) ContainsOutputs() bool {
 	return true
 }
 
-func (p Proof) FinalizeAndExtract() (*wire.MsgTx, error) {
+func (p Proof) FinalizeAndExtract(signer *btcec.PublicKey) (*wire.MsgTx, error) {
 	if len(p.Inputs) < 2 {
 		return nil, ErrInvalidTxNumberOfInputs
 	}
@@ -230,7 +246,16 @@ func (p Proof) FinalizeAndExtract() (*wire.MsgTx, error) {
 	// in order to have the condition witness also in the first "fake" proof input
 	ptx.Inputs[0].Unknowns = ptx.Inputs[1].Unknowns
 
+	// we add fakeSignerSignature to make the finalization possible
+	// the signer is never signing intent proof but we need the finalization to estimate the right tx weight
+	fakeSignerSig := psbt.TaprootScriptSpendSig{
+		XOnlyPubKey: schnorr.SerializePubKey(signer),
+		Signature:   make([]byte, 64),
+	}
+
 	for i := range p.Inputs {
+		ptx.Inputs[i].TaprootScriptSpendSig = append(ptx.Inputs[i].TaprootScriptSpendSig, &fakeSignerSig)
+
 		if err := finalizeInput(ptx, i); err != nil {
 			return nil, err
 		}
@@ -348,41 +373,118 @@ func finalizeInput(ptx *psbt.Packet, inputIndex int) error {
 		return nil
 	}
 
-	// check if the input is a note first
-	var noteClosure note.NoteClosure
-	valid, err := noteClosure.Decode(in.TaprootLeafScript[0].Script)
-	if valid && err == nil {
-		arkConditionWitnessFields, err := txutils.GetArkPsbtFields(
-			ptx, inputIndex, txutils.ConditionWitnessField,
-		)
-		if err != nil {
-			return err
+	if err := note.FinalizeNoteClosure(ptx, inputIndex, in.TaprootLeafScript[0]); err != nil {
+		if errors.Is(err, note.ErrInvalidNoteScript) {
+			// if it's not a note, finalize as vtxo script
+			return script.FinalizeVtxoScript(ptx, inputIndex)
 		}
-
-		if len(arkConditionWitnessFields) != 1 || len(arkConditionWitnessFields[0]) == 0 {
-			return fmt.Errorf("invalid condition witness, expected 1 witness for note vtxo")
-		}
-
-		witness, err := noteClosure.Witness(in.TaprootLeafScript[0].ControlBlock, map[string][]byte{
-			"preimage": arkConditionWitnessFields[0][0],
-		})
-		if err != nil {
-			return err
-		}
-
-		var witnessBuf bytes.Buffer
-		if err := psbt.WriteTxWitness(&witnessBuf, witness); err != nil {
-			return err
-		}
-
-		ptx.Inputs[inputIndex].FinalScriptWitness = witnessBuf.Bytes()
-		return nil
-	}
-
-	// if it's not a note, finalize as vtxo script
-	if err := script.FinalizeVtxoScript(ptx, inputIndex); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// verifyNoteInput verifies a note closure input by checking the control block
+// against the prevout and validating that the provided preimage hashes to the
+// value embedded in the script.
+func verifyNoteInput(
+	ptx *psbt.Packet, inputIndex int, prevoutFetcher txscript.PrevOutputFetcher,
+) error {
+	in := ptx.Inputs[inputIndex]
+	tapscriptLeaf := in.TaprootLeafScript[0]
+
+	// verify the control block matches the prevout pkscript
+	prevout := prevoutFetcher.FetchPrevOutput(
+		ptx.UnsignedTx.TxIn[inputIndex].PreviousOutPoint,
+	)
+	if prevout == nil {
+		return fmt.Errorf("prevout not found for note input %d", inputIndex)
+	}
+
+	controlBlock, err := txscript.ParseControlBlock(tapscriptLeaf.ControlBlock)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to parse control block for note input %d: %w", inputIndex, err,
+		)
+	}
+
+	rootHash := controlBlock.RootHash(tapscriptLeaf.Script)
+	unspendableKey := script.UnspendableKey()
+	taprootKey := txscript.ComputeTaprootOutputKey(unspendableKey, rootHash[:])
+	expectedTaprootKey := prevout.PkScript[2:]
+
+	if !bytes.Equal(schnorr.SerializePubKey(taprootKey), expectedTaprootKey) {
+		return fmt.Errorf("invalid control block for note input %d", inputIndex)
+	}
+
+	computedKeyIsOdd := taprootKey.SerializeCompressed()[0] == 0x03
+	if controlBlock.OutputKeyYIsOdd != computedKeyIsOdd {
+		return fmt.Errorf("invalid control block parity for note input %d", inputIndex)
+	}
+
+	// decode the note closure to extract the expected preimage hash
+	var noteClosure note.NoteClosure
+	valid, err := noteClosure.Decode(tapscriptLeaf.Script)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to decode note closure for input %d: %w", inputIndex, err,
+		)
+	}
+	if !valid {
+		return fmt.Errorf("invalid note closure script for input %d", inputIndex)
+	}
+
+	// retrieve the preimage from the PSBT condition witness field
+	conditionWitnessFields, err := txutils.GetArkPsbtFields(
+		ptx, inputIndex, txutils.ConditionWitnessField,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to get condition witness for note input %d: %w", inputIndex, err,
+		)
+	}
+
+	if len(conditionWitnessFields) != 1 || len(conditionWitnessFields[0]) == 0 {
+		return fmt.Errorf("missing preimage for note input %d", inputIndex)
+	}
+
+	preimage := conditionWitnessFields[0][0]
+	preimageHash := sha256.Sum256(preimage)
+
+	if preimageHash != noteClosure.PreimageHash {
+		return fmt.Errorf("invalid preimage for note input %d", inputIndex)
+	}
+
+	return nil
+}
+
+// allSignersSkipped returns true if every public key in the closure
+// is present in the skip list.
+func allSignersSkipped(closureScript []byte, skip []*btcec.PublicKey) bool {
+	closure, err := script.DecodeClosure(closureScript)
+	if err != nil {
+		return false
+	}
+
+	var pubKeys []*btcec.PublicKey
+	switch c := closure.(type) {
+	case *script.ConditionMultisigClosure:
+		pubKeys = c.PubKeys
+	case *script.ConditionCSVMultisigClosure:
+		pubKeys = c.PubKeys
+	default:
+		return false
+	}
+
+	skipSet := make(map[string]struct{}, len(skip))
+	for _, k := range skip {
+		skipSet[hex.EncodeToString(schnorr.SerializePubKey(k))] = struct{}{}
+	}
+
+	for _, k := range pubKeys {
+		if _, ok := skipSet[hex.EncodeToString(schnorr.SerializePubKey(k))]; !ok {
+			return false
+		}
+	}
+	return len(pubKeys) > 0
 }

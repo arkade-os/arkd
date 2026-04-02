@@ -142,8 +142,9 @@ type TeleportAsset struct {
 }
 
 type VtxoChainResp struct {
-	Chain []ChainTx
-	Page  PageResp
+	Chain     []ChainTx
+	Page      PageResp
+	AuthToken string
 }
 
 type VOut int
@@ -188,8 +189,9 @@ type GetVtxosResp struct {
 }
 
 type VirtualTxsResp struct {
-	Txs  []string
-	Page PageResp
+	Txs       []string
+	Page      PageResp
+	AuthToken string
 }
 
 type Asset = domain.Asset

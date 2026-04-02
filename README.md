@@ -98,6 +98,9 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_ALLOW_CSV_BLOCK_TYPE`        | Allow CSV block type                                                            | `false`                        |
 | `ARKD_HEARTBEAT_INTERVAL`          | Heartbeat interval in seconds                                                   | `60`                           |
 | `ARKD_ROUND_REPORT_ENABLED`        | Enable round report service                                                     | `false`                        |
+| `ARKD_INDEXER_EXPOSURE`.           | Require intent for getting vtxo chain (public, private, withheld)               | `public`                       |
+| `ARKD_INDEXER_SIGNING_PRIVKEY`     | Hex-encoded private key for indexer auth token signing (sensitive)              | -                              |
+| `ARKD_INDEXER_AUTH_TOKEN_EXPIRY`   | Auth token TTL in seconds                                                       | `300` (5 minutes)              |
 
 #### Admin Settings
 
