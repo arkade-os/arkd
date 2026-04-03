@@ -75,6 +75,8 @@ type IndexerService interface {
 	GetVirtualTxsByIntent(ctx context.Context, intent Intent, page *Page) (*VirtualTxsResp, error)
 	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error)
 	GetAsset(ctx context.Context, assetID string) ([]Asset, error)
+	ListTokens(ctx context.Context, token, hash, outpoint, txid string) ([]TokenEntry, error)
+	RevokeTokens(ctx context.Context, token, hash, outpoint, txid string) (int, error)
 }
 
 type indexerService struct {
@@ -947,6 +949,48 @@ func (i *indexerService) validateAuthToken(authToken string) (string, error) {
 	}
 
 	return hex.EncodeToString(msg[:32]), nil
+}
+
+// extractTokenHash decodes an auth token and returns the outpoints hash
+// without checking expiry or signature. This is for admin introspection.
+func (i *indexerService) extractTokenHash(authToken string) (string, error) {
+	tokenBytes, err := base64.StdEncoding.DecodeString(authToken)
+	if err != nil {
+		return "", fmt.Errorf("invalid auth token format, must be base64")
+	}
+	if len(tokenBytes) != 40+64 {
+		return "", fmt.Errorf("invalid auth token length")
+	}
+	return hex.EncodeToString(tokenBytes[:32]), nil
+}
+
+func (i *indexerService) resolveTokenFilter(
+	token, hash string,
+) (string, error) {
+	if token != "" {
+		return i.extractTokenHash(token)
+	}
+	return hash, nil
+}
+
+func (i *indexerService) ListTokens(
+	_ context.Context, token, hash, outpoint, txid string,
+) ([]TokenEntry, error) {
+	h, err := i.resolveTokenFilter(token, hash)
+	if err != nil {
+		return nil, err
+	}
+	return i.tokenCache.list(h, outpoint, txid), nil
+}
+
+func (i *indexerService) RevokeTokens(
+	_ context.Context, token, hash, outpoint, txid string,
+) (int, error) {
+	h, err := i.resolveTokenFilter(token, hash)
+	if err != nil {
+		return 0, err
+	}
+	return i.tokenCache.revoke(h, outpoint, txid), nil
 }
 
 // hashOutpoints clones the given outpoints, sorts them lexicographically by txid and vout,

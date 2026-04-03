@@ -26,16 +26,19 @@ import (
 
 type adminHandler struct {
 	adminService    application.AdminService
+	indexerService  application.IndexerService
 	macaroonSvc     *macaroons.Service
 	macaroonDatadir string
 	noteUriPrefix   string
 }
 
 func NewAdminHandler(
-	adminService application.AdminService, macaroonSvc *macaroons.Service,
+	adminService application.AdminService,
+	indexerService application.IndexerService,
+	macaroonSvc *macaroons.Service,
 	macaroonDatadir, noteUriPrefix string,
 ) arkv1.AdminServiceServer {
-	return &adminHandler{adminService, macaroonSvc, macaroonDatadir, noteUriPrefix}
+	return &adminHandler{adminService, indexerService, macaroonSvc, macaroonDatadir, noteUriPrefix}
 }
 
 func (a *adminHandler) GetRoundDetails(
@@ -500,6 +503,45 @@ func (a *adminHandler) RevokeAuth(
 	return &arkv1.RevokeAuthResponse{
 		Token: hex.EncodeToString(macBytes),
 	}, nil
+}
+
+func (a *adminHandler) ListTokens(
+	ctx context.Context, req *arkv1.ListTokensRequest,
+) (*arkv1.ListTokensResponse, error) {
+	tokens, err := a.indexerService.ListTokens(
+		ctx, req.GetToken(), req.GetHash(), req.GetOutpoint(), req.GetTxid(),
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	protoTokens := make([]*arkv1.TokenInfo, 0, len(tokens))
+	for _, t := range tokens {
+		outpoints := make([]string, 0, len(t.Outpoints))
+		for _, op := range t.Outpoints {
+			outpoints = append(outpoints, op.String())
+		}
+		protoTokens = append(protoTokens, &arkv1.TokenInfo{
+			Hash:      t.Hash,
+			Outpoints: outpoints,
+			ExpiresAt: t.ExpiresAt.Unix(),
+		})
+	}
+
+	return &arkv1.ListTokensResponse{Tokens: protoTokens}, nil
+}
+
+func (a *adminHandler) RevokeTokens(
+	ctx context.Context, req *arkv1.RevokeTokensRequest,
+) (*arkv1.RevokeTokensResponse, error) {
+	count, err := a.indexerService.RevokeTokens(
+		ctx, req.GetToken(), req.GetHash(), req.GetOutpoint(), req.GetTxid(),
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.RevokeTokensResponse{RevokedCount: int32(count)}, nil
 }
 
 func (a *adminHandler) GetIntentFees(

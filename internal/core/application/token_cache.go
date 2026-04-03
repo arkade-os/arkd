@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+type TokenEntry struct {
+	Hash      string
+	Outpoints []Outpoint
+	ExpiresAt time.Time
+}
+
 type tokenCache struct {
 	mu sync.RWMutex
 	// Stores outpoints by hash (hash of outpoints), with a shared expiration time for all
@@ -118,4 +124,128 @@ func (c *tokenCache) getTxids(hash string) (map[string]struct{}, bool) {
 		res[outpoint.Txid] = struct{}{}
 	}
 	return res, true
+}
+
+func (c *tokenCache) list(hash, outpointStr, txid string) []TokenEntry {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	now := time.Now()
+	var result []TokenEntry
+
+	for h, outpoints := range c.outpointsByHash {
+		// Check expiry.
+		var expiresAt time.Time
+		for _, exp := range outpoints {
+			expiresAt = exp
+			break
+		}
+		if now.After(expiresAt) {
+			continue
+		}
+
+		// Filter by hash.
+		if hash != "" && h != hash {
+			continue
+		}
+
+		// Collect outpoints for this entry.
+		entry := TokenEntry{
+			Hash:      h,
+			ExpiresAt: expiresAt,
+		}
+		for op := range outpoints {
+			entry.Outpoints = append(entry.Outpoints, op)
+		}
+
+		// Filter by outpoint.
+		if outpointStr != "" {
+			found := false
+			for _, op := range entry.Outpoints {
+				if op.String() == outpointStr {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+
+		// Filter by txid.
+		if txid != "" {
+			found := false
+			for _, op := range entry.Outpoints {
+				if op.Txid == txid {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+
+		result = append(result, entry)
+	}
+
+	return result
+}
+
+func (c *tokenCache) revoke(hash, outpointStr, txid string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+	count := 0
+
+	for h, outpoints := range c.outpointsByHash {
+		// Check expiry.
+		var expiresAt time.Time
+		for _, exp := range outpoints {
+			expiresAt = exp
+			break
+		}
+		if now.After(expiresAt) {
+			continue
+		}
+
+		// Filter by hash.
+		if hash != "" && h != hash {
+			continue
+		}
+
+		// Filter by outpoint.
+		if outpointStr != "" {
+			found := false
+			for op := range outpoints {
+				if op.String() == outpointStr {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+
+		// Filter by txid.
+		if txid != "" {
+			found := false
+			for op := range outpoints {
+				if op.Txid == txid {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+
+		delete(c.outpointsByHash, h)
+		count++
+	}
+
+	return count
 }
