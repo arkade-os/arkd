@@ -22,8 +22,7 @@ func TestGetTxHex(t *testing.T) {
 		ts := newTestServer(t)
 		ts.handle(fmt.Sprintf("/tx/%s/hex", txid), ts.textResponse(http.StatusOK, "deadbeef"))
 
-		svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-		require.NoError(t, err)
+		svc := makeExplorer(t, ts.URL)
 
 		got, err := svc.GetTxHex(txid)
 		require.NoError(t, err)
@@ -32,12 +31,13 @@ func TestGetTxHex(t *testing.T) {
 
 	t.Run("invalid", func(t *testing.T) {
 		ts := newTestServer(t)
-		ts.handle(fmt.Sprintf("/tx/%s/hex", txid), ts.textResponse(http.StatusNotFound, "not found"))
+		ts.handle(fmt.Sprintf("/tx/%s/hex", txid), ts.textResponse(
+			http.StatusNotFound, "not found",
+		))
 
-		svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-		require.NoError(t, err)
+		svc := makeExplorer(t, ts.URL)
 
-		_, err = svc.GetTxHex(txid)
+		_, err := svc.GetTxHex(txid)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get tx hex")
 	})
@@ -55,8 +55,7 @@ func TestGetTxBlockTime(t *testing.T) {
 			},
 		}))
 
-		svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-		require.NoError(t, err)
+		svc := makeExplorer(t, ts.URL)
 
 		confirmed, blocktime, err := svc.GetTxBlockTime(txid)
 		require.NoError(t, err)
@@ -67,12 +66,13 @@ func TestGetTxBlockTime(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		t.Run("non-200", func(t *testing.T) {
 			ts := newTestServer(t)
-			ts.handle(fmt.Sprintf("/tx/%s", txid), ts.textResponse(http.StatusInternalServerError, "error"))
+			ts.handle(fmt.Sprintf("/tx/%s", txid), ts.textResponse(
+				http.StatusInternalServerError, "error",
+			))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, _, err = svc.GetTxBlockTime(txid)
+			_, _, err := svc.GetTxBlockTime(txid)
 			require.Error(t, err)
 		})
 
@@ -82,8 +82,7 @@ func TestGetTxBlockTime(t *testing.T) {
 				"status": map[string]any{"confirmed": false},
 			}))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
 			confirmed, blocktime, err := svc.GetTxBlockTime(txid)
 			require.NoError(t, err)
@@ -95,10 +94,9 @@ func TestGetTxBlockTime(t *testing.T) {
 			ts := newTestServer(t)
 			ts.handle(fmt.Sprintf("/tx/%s", txid), ts.textResponse(http.StatusOK, "{not json}"))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, _, err = svc.GetTxBlockTime(txid)
+			_, _, err := svc.GetTxBlockTime(txid)
 			require.Error(t, err)
 		})
 	})
@@ -109,42 +107,52 @@ func TestGetTxOutspends(t *testing.T) {
 
 	t.Run("valid", func(t *testing.T) {
 		ts := newTestServer(t)
-		ts.handle(fmt.Sprintf("/tx/%s/outspends", txid), ts.jsonResponse(http.StatusOK, []map[string]any{
-			{"spent": true, "txid": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
-			{"spent": false},
-		}))
+		ts.handle(fmt.Sprintf("/tx/%s/outspends", txid), ts.jsonResponse(
+			http.StatusOK, []map[string]any{
+				{
+					"spent": true,
+					"txid":  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+				},
+				{"spent": false},
+			},
+		))
 
-		svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-		require.NoError(t, err)
+		svc := makeExplorer(t, ts.URL)
 
 		result, err := svc.GetTxOutspends(txid)
 		require.NoError(t, err)
 		require.Len(t, result, 2)
 		require.True(t, result[0].Spent)
-		require.Equal(t, "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", result[0].SpentBy)
+		require.Equal(
+			t,
+			"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+			result[0].SpentBy,
+		)
 		require.False(t, result[1].Spent)
 	})
 
 	t.Run("invalid", func(t *testing.T) {
 		t.Run("non-200", func(t *testing.T) {
 			ts := newTestServer(t)
-			ts.handle(fmt.Sprintf("/tx/%s/outspends", txid), ts.textResponse(http.StatusNotFound, "not found"))
+			ts.handle(fmt.Sprintf("/tx/%s/outspends", txid), ts.textResponse(
+				http.StatusNotFound, "not found",
+			))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, err = svc.GetTxOutspends(txid)
+			_, err := svc.GetTxOutspends(txid)
 			require.Error(t, err)
 		})
 
 		t.Run("malformed json", func(t *testing.T) {
 			ts := newTestServer(t)
-			ts.handle(fmt.Sprintf("/tx/%s/outspends", txid), ts.textResponse(http.StatusOK, "[not json]"))
+			ts.handle(fmt.Sprintf("/tx/%s/outspends", txid), ts.textResponse(
+				http.StatusOK, "[not json]",
+			))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, err = svc.GetTxOutspends(txid)
+			_, err := svc.GetTxOutspends(txid)
 			require.Error(t, err)
 		})
 	})
@@ -155,25 +163,28 @@ func TestGetTxs(t *testing.T) {
 
 	t.Run("valid", func(t *testing.T) {
 		ts := newTestServer(t)
-		ts.handle(fmt.Sprintf("/address/%s/txs", addr), ts.jsonResponse(http.StatusOK, []map[string]any{
-			{
-				"txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-				"vin":  []any{},
-				"vout": []any{},
-				"status": map[string]any{
-					"confirmed":  true,
-					"block_time": int64(1700000000),
+		ts.handle(fmt.Sprintf("/address/%s/txs", addr), ts.jsonResponse(
+			http.StatusOK, []map[string]any{
+				{
+					"txid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					"vin":  []any{},
+					"vout": []any{},
+					"status": map[string]any{
+						"confirmed":  true,
+						"block_time": int64(1700000000),
+					},
 				},
 			},
-		}))
+		))
 
-		svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-		require.NoError(t, err)
+		svc := makeExplorer(t, ts.URL)
 
 		txs, err := svc.GetTxs(addr)
 		require.NoError(t, err)
 		require.Len(t, txs, 1)
-		require.Equal(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", txs[0].Txid)
+		require.Equal(
+			t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", txs[0].Txid,
+		)
 		require.True(t, txs[0].Status.Confirmed)
 		require.Equal(t, int64(1700000000), txs[0].Status.BlockTime)
 	})
@@ -181,23 +192,25 @@ func TestGetTxs(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		t.Run("non-200", func(t *testing.T) {
 			ts := newTestServer(t)
-			ts.handle(fmt.Sprintf("/address/%s/txs", addr), ts.textResponse(http.StatusInternalServerError, "internal error"))
+			ts.handle(fmt.Sprintf("/address/%s/txs", addr), ts.textResponse(
+				http.StatusInternalServerError, "internal error",
+			))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, err = svc.GetTxs(addr)
+			_, err := svc.GetTxs(addr)
 			require.Error(t, err)
 		})
 
 		t.Run("malformed json", func(t *testing.T) {
 			ts := newTestServer(t)
-			ts.handle(fmt.Sprintf("/address/%s/txs", addr), ts.textResponse(http.StatusOK, "[not json}"))
+			ts.handle(fmt.Sprintf("/address/%s/txs", addr), ts.textResponse(
+				http.StatusOK, "[not json}",
+			))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, err = svc.GetTxs(addr)
+			_, err := svc.GetTxs(addr)
 			require.Error(t, err)
 		})
 	})
@@ -208,26 +221,30 @@ func TestGetUtxos(t *testing.T) {
 
 	t.Run("valid", func(t *testing.T) {
 		ts := newTestServer(t)
-		ts.handle(fmt.Sprintf("/address/%s/utxo", addr), ts.jsonResponse(http.StatusOK, []map[string]any{
-			{
-				"txid":  "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-				"vout":  0,
-				"value": uint64(10000),
-				"status": map[string]any{
-					"confirmed":  true,
-					"block_time": int64(1700000001),
+		ts.handle(fmt.Sprintf("/address/%s/utxo", addr), ts.jsonResponse(
+			http.StatusOK, []map[string]any{
+				{
+					"txid":  "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+					"vout":  0,
+					"value": uint64(10000),
+					"status": map[string]any{
+						"confirmed":  true,
+						"block_time": int64(1700000001),
+					},
 				},
 			},
-		}))
+		))
 
-		svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-		require.NoError(t, err)
+		svc := makeExplorer(t, ts.URL)
 
 		utxos, err := svc.GetUtxos(addr)
 		require.NoError(t, err)
 		require.Len(t, utxos, 1)
-		require.Equal(t, "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", utxos[0].Txid)
+		require.Equal(
+			t, "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", utxos[0].Txid,
+		)
 		require.Equal(t, uint64(10000), utxos[0].Amount)
+		require.Equal(t, int(10000), utxos[0].Amount)
 		require.True(t, utxos[0].Status.Confirmed)
 	})
 
@@ -235,33 +252,34 @@ func TestGetUtxos(t *testing.T) {
 		t.Run("invalid address", func(t *testing.T) {
 			ts := newTestServer(t)
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, err = svc.GetUtxos("not-a-valid-bitcoin-address")
+			_, err := svc.GetUtxos("not-a-valid-bitcoin-address")
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid address")
 		})
 
 		t.Run("non-200", func(t *testing.T) {
 			ts := newTestServer(t)
-			ts.handle(fmt.Sprintf("/address/%s/utxo", addr), ts.textResponse(http.StatusInternalServerError, "error"))
+			ts.handle(fmt.Sprintf("/address/%s/utxo", addr), ts.textResponse(
+				http.StatusInternalServerError, "error",
+			))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, err = svc.GetUtxos(addr)
+			_, err := svc.GetUtxos(addr)
 			require.Error(t, err)
 		})
 
 		t.Run("malformed json", func(t *testing.T) {
 			ts := newTestServer(t)
-			ts.handle(fmt.Sprintf("/address/%s/utxo", addr), ts.textResponse(http.StatusOK, "[not json}"))
+			ts.handle(fmt.Sprintf("/address/%s/utxo", addr), ts.textResponse(
+				http.StatusOK, "[not json}",
+			))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, err = svc.GetUtxos(addr)
+			_, err := svc.GetUtxos(addr)
 			require.Error(t, err)
 		})
 	})
@@ -271,10 +289,11 @@ func TestGetFeeRate(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		t.Run("populated map", func(t *testing.T) {
 			ts := newTestServer(t)
-			ts.handle("/fee-estimates", ts.jsonResponse(http.StatusOK, map[string]float64{"1": 5.5}))
+			ts.handle("/fee-estimates", ts.jsonResponse(
+				http.StatusOK, map[string]float64{"1": 5.5},
+			))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
 			fee, err := svc.GetFeeRate()
 			require.NoError(t, err)
@@ -285,8 +304,7 @@ func TestGetFeeRate(t *testing.T) {
 			ts := newTestServer(t)
 			ts.handle("/fee-estimates", ts.jsonResponse(http.StatusOK, map[string]float64{}))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
 			fee, err := svc.GetFeeRate()
 			require.NoError(t, err)
@@ -299,10 +317,9 @@ func TestGetFeeRate(t *testing.T) {
 			ts := newTestServer(t)
 			ts.handle("/fee-estimates", ts.textResponse(http.StatusInternalServerError, "error"))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, err = svc.GetFeeRate()
+			_, err := svc.GetFeeRate()
 			require.Error(t, err)
 		})
 
@@ -310,10 +327,9 @@ func TestGetFeeRate(t *testing.T) {
 			ts := newTestServer(t)
 			ts.handle("/fee-estimates", ts.textResponse(http.StatusOK, "not-json"))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, err = svc.GetFeeRate()
+			_, err := svc.GetFeeRate()
 			require.Error(t, err)
 		})
 	})
@@ -327,20 +343,21 @@ func TestGetRedeemedVtxosBalance(t *testing.T) {
 			ts := newTestServer(t)
 			// Block time far in the past — delay has long passed.
 			pastTime := int64(1000000)
-			ts.handle(fmt.Sprintf("/address/%s/utxo", addr), ts.jsonResponse(http.StatusOK, []map[string]any{
-				{
-					"txid":  "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-					"vout":  0,
-					"value": uint64(5000),
-					"status": map[string]any{
-						"confirmed":  true,
-						"block_time": pastTime,
+			ts.handle(fmt.Sprintf("/address/%s/utxo", addr), ts.jsonResponse(
+				http.StatusOK, []map[string]any{
+					{
+						"txid":  "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+						"vout":  0,
+						"value": uint64(5000),
+						"status": map[string]any{
+							"confirmed":  true,
+							"block_time": pastTime,
+						},
 					},
 				},
-			}))
+			))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
 			delay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 1}
 			spendable, locked, err := svc.GetRedeemedVtxosBalance(addr, delay)
@@ -353,20 +370,21 @@ func TestGetRedeemedVtxosBalance(t *testing.T) {
 			ts := newTestServer(t)
 			// Block time far in the future — delay has NOT passed yet.
 			nowTime := int64(9999999999)
-			ts.handle(fmt.Sprintf("/address/%s/utxo", addr), ts.jsonResponse(http.StatusOK, []map[string]any{
-				{
-					"txid":  "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-					"vout":  0,
-					"value": uint64(3000),
-					"status": map[string]any{
-						"confirmed":  true,
-						"block_time": nowTime,
+			ts.handle(fmt.Sprintf("/address/%s/utxo", addr), ts.jsonResponse(
+				http.StatusOK, []map[string]any{
+					{
+						"txid":  "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+						"vout":  0,
+						"value": uint64(3000),
+						"status": map[string]any{
+							"confirmed":  true,
+							"block_time": nowTime,
+						},
 					},
 				},
-			}))
+			))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
 			delay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144}
 			spendable, locked, err := svc.GetRedeemedVtxosBalance(addr, delay)
@@ -384,24 +402,24 @@ func TestGetRedeemedVtxosBalance(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		t.Run("upstream utxo error", func(t *testing.T) {
 			ts := newTestServer(t)
-			ts.handle(fmt.Sprintf("/address/%s/utxo", addr), ts.textResponse(http.StatusInternalServerError, "error"))
+			ts.handle(fmt.Sprintf("/address/%s/utxo", addr), ts.textResponse(
+				http.StatusInternalServerError, "error",
+			))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
 			delay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 1}
-			_, _, err = svc.GetRedeemedVtxosBalance(addr, delay)
+			_, _, err := svc.GetRedeemedVtxosBalance(addr, delay)
 			require.Error(t, err)
 		})
 
 		t.Run("invalid address", func(t *testing.T) {
 			ts := newTestServer(t)
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
 			delay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 1}
-			_, _, err = svc.GetRedeemedVtxosBalance("not-an-address", delay)
+			_, _, err := svc.GetRedeemedVtxosBalance("not-an-address", delay)
 			require.Error(t, err)
 		})
 	})
@@ -414,8 +432,7 @@ func TestBroadcast(t *testing.T) {
 			const expectedTxid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 			ts.handle("/tx", ts.textResponse(http.StatusOK, expectedTxid))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
 			txHex := validTxHex(t)
 			txid, err := svc.Broadcast(txHex)
@@ -428,8 +445,7 @@ func TestBroadcast(t *testing.T) {
 			const expectedTxid = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 			ts.handle("/txs/package", ts.textResponse(http.StatusOK, expectedTxid))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
 			txHex := validTxHex(t)
 			txid, err := svc.Broadcast(txHex, txHex)
@@ -442,10 +458,9 @@ func TestBroadcast(t *testing.T) {
 		t.Run("no txs", func(t *testing.T) {
 			ts := newTestServer(t)
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, err = svc.Broadcast()
+			_, err := svc.Broadcast()
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "no txs to broadcast")
 		})
@@ -453,10 +468,9 @@ func TestBroadcast(t *testing.T) {
 		t.Run("unparseable tx hex", func(t *testing.T) {
 			ts := newTestServer(t)
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, err = svc.Broadcast("zzznotahex")
+			_, err := svc.Broadcast("zzznotahex")
 			require.Error(t, err)
 		})
 
@@ -464,23 +478,23 @@ func TestBroadcast(t *testing.T) {
 			ts := newTestServer(t)
 			ts.handle("/tx", ts.textResponse(http.StatusInternalServerError, "mempool full"))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
-			_, err = svc.Broadcast(validTxHex(t))
+			_, err := svc.Broadcast(validTxHex(t))
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "failed to broadcast")
 		})
 
 		t.Run("server error on package", func(t *testing.T) {
 			ts := newTestServer(t)
-			ts.handle("/txs/package", ts.textResponse(http.StatusInternalServerError, "package error"))
+			ts.handle("/txs/package", ts.textResponse(
+				http.StatusInternalServerError, "package error",
+			))
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 
 			txHex := validTxHex(t)
-			_, err = svc.Broadcast(txHex, txHex)
+			_, err := svc.Broadcast(txHex, txHex)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "failed to broadcast package")
 		})
@@ -492,14 +506,13 @@ func TestSubscribeForAddresses(t *testing.T) {
 		ts := newTestServer(t)
 		ts.handleWS(keepAliveWS)
 
-		svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-		require.NoError(t, err)
+		svc := makeExplorer(t, ts.URL)
 		svc.Start()
 		t.Cleanup(svc.Stop)
 
 		time.Sleep(50 * time.Millisecond)
 
-		err = svc.SubscribeForAddresses([]string{wsTestAddr})
+		err := svc.SubscribeForAddresses([]string{wsTestAddr})
 		require.NoError(t, err)
 
 		require.True(t, svc.IsAddressSubscribed(wsTestAddr))
@@ -512,8 +525,7 @@ func TestSubscribeForAddresses(t *testing.T) {
 			ts := newTestServer(t)
 			ts.handleWS(keepAliveWS)
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 			svc.Start()
 			t.Cleanup(svc.Stop)
 
@@ -536,14 +548,13 @@ func TestSubscribeForAddresses(t *testing.T) {
 			ts := newTestServer(t)
 			ts.handleWS(keepAliveWS)
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 			svc.Start()
 			t.Cleanup(svc.Stop)
 
 			time.Sleep(50 * time.Millisecond)
 
-			err = svc.SubscribeForAddresses([]string{})
+			err := svc.SubscribeForAddresses([]string{})
 			require.NoError(t, err)
 			require.Empty(t, svc.GetSubscribedAddresses())
 		})
@@ -555,8 +566,7 @@ func TestUnsubscribeForAddresses(t *testing.T) {
 		ts := newTestServer(t)
 		ts.handleWS(keepAliveWS)
 
-		svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-		require.NoError(t, err)
+		svc := makeExplorer(t, ts.URL)
 		svc.Start()
 		t.Cleanup(svc.Stop)
 
@@ -575,14 +585,15 @@ func TestUnsubscribeForAddresses(t *testing.T) {
 			ts := newTestServer(t)
 			ts.handleWS(keepAliveWS)
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 			svc.Start()
 			t.Cleanup(svc.Stop)
 
 			time.Sleep(50 * time.Millisecond)
 
-			err = svc.UnsubscribeForAddresses([]string{"bc1qnotsubscribed000000000000000000000000000"})
+			err := svc.UnsubscribeForAddresses(
+				[]string{"bc1qnotsubscribed000000000000000000000000000"},
+			)
 			require.NoError(t, err, "unsubscribing unknown address must not error")
 		})
 
@@ -590,14 +601,13 @@ func TestUnsubscribeForAddresses(t *testing.T) {
 			ts := newTestServer(t)
 			ts.handleWS(keepAliveWS)
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 			svc.Start()
 			t.Cleanup(svc.Stop)
 
 			time.Sleep(50 * time.Millisecond)
 
-			err = svc.UnsubscribeForAddresses([]string{})
+			err := svc.UnsubscribeForAddresses([]string{})
 			require.NoError(t, err)
 		})
 	})
@@ -635,8 +645,7 @@ func TestAddressEventReceived(t *testing.T) {
 				keepAliveWS(connNum, conn)
 			})
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 			svc.Start()
 			t.Cleanup(svc.Stop)
 
@@ -648,7 +657,11 @@ func TestAddressEventReceived(t *testing.T) {
 			case ev := <-events:
 				require.NoError(t, ev.Error)
 				require.Len(t, ev.NewUtxos, 1)
-				require.Equal(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ev.NewUtxos[0].Outpoint.Txid)
+				require.Equal(
+					t,
+					"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					ev.NewUtxos[0].Outpoint.Txid,
+				)
 			case <-time.After(3 * time.Second):
 				t.Fatal("timed out waiting for address event")
 			}
@@ -685,8 +698,7 @@ func TestAddressEventReceived(t *testing.T) {
 				keepAliveWS(connNum, conn)
 			})
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 			svc.Start()
 			t.Cleanup(svc.Stop)
 
@@ -698,7 +710,11 @@ func TestAddressEventReceived(t *testing.T) {
 			case ev := <-events:
 				require.NoError(t, ev.Error)
 				require.Len(t, ev.ConfirmedUtxos, 1)
-				require.Equal(t, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", ev.ConfirmedUtxos[0].Outpoint.Txid)
+				require.Equal(
+					t,
+					"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+					ev.ConfirmedUtxos[0].Outpoint.Txid,
+				)
 			case <-time.After(3 * time.Second):
 				t.Fatal("timed out waiting for confirmed utxo event")
 			}
@@ -718,8 +734,7 @@ func TestAddressEventReceived(t *testing.T) {
 				keepAliveWS(connNum, conn)
 			})
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 			svc.Start()
 			t.Cleanup(svc.Stop)
 
@@ -746,8 +761,7 @@ func TestAddressEventReceived(t *testing.T) {
 				keepAliveWS(connNum, conn)
 			})
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 			svc.Start()
 			t.Cleanup(svc.Stop)
 
@@ -778,33 +792,86 @@ func TestReconnectionBehaviour(t *testing.T) {
 
 	t.Run("reconnectable errors (isTimeoutError)", func(t *testing.T) {
 		t.Run("TCP drop without WS close frame (CloseAbnormalClosure)", func(t *testing.T) {
-			reconnected := make(chan struct{}, 1)
+			subscribed := make(chan struct{}, 1)
 
 			ts := newTestServer(t)
 			ts.handleWS(func(connNum int, conn *websocket.Conn) {
-				if connNum == 1 {
-					// Drop TCP without WS close frame → client sees CloseAbnormalClosure.
-					time.Sleep(20 * time.Millisecond)
-					conn.UnderlyingConn().Close()
-				} else {
+				switch connNum {
+				case 1:
+					// Wait for the client to subscribe, then drop TCP.
+					_, _, _ = conn.ReadMessage() // track-addresses
 					select {
-					case reconnected <- struct{}{}:
+					case subscribed <- struct{}{}:
 					default:
 					}
+					time.Sleep(20 * time.Millisecond)
+					conn.UnderlyingConn().Close()
+				case 2:
+					// Spare connection created by addConnection — just keep alive.
+					keepAliveWS(connNum, conn)
+				case 3:
+					// After reconnect the client resubscribes (pushAddress).
+					// Read the resubscription message, then send an event to
+					// prove the address was re-tracked.
+					_, _, _ = conn.ReadMessage() // track-addresses (resubscription)
+					time.Sleep(50 * time.Millisecond)
+					payload := map[string]any{
+						"multi-address-transactions": map[string]any{
+							wsTestAddr: map[string]any{
+								"mempool": []map[string]any{
+									{
+										"txid":    "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+										"version": 1,
+										"vin":     []any{},
+										"vout": []map[string]any{
+											{
+												"scriptpubkey_address": wsTestAddr,
+												"value":                uint64(3000),
+												"scriptpubkey":         "0014ee8f7d4fc3dc18a3e4fd22e0e43b90fce5e5d77d",
+											},
+										},
+										"status": map[string]any{"confirmed": false},
+									},
+								},
+							},
+						},
+					}
+					_ = conn.WriteJSON(payload)
+					keepAliveWS(connNum, conn)
+				default:
 					keepAliveWS(connNum, conn)
 				}
 			})
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 			svc.Start()
 			t.Cleanup(svc.Stop)
 
+			// Subscribe to an address so the connection has one when dropped.
+			time.Sleep(50 * time.Millisecond)
+			events := svc.GetAddressesEvents()
+			require.NoError(t, svc.SubscribeForAddresses([]string{wsTestAddr}))
+
+			// Wait for subscription to be acknowledged by server.
 			select {
-			case <-reconnected:
-				// reconnected — pass
+			case <-subscribed:
+			case <-time.After(3 * time.Second):
+				t.Fatal("server did not receive subscription")
+			}
+
+			// After TCP drop + reconnect + resubscription, expect the event
+			// sent by connNum==3, proving pushAddress re-tracked the address.
+			select {
+			case ev := <-events:
+				require.NoError(t, ev.Error)
+				require.Len(t, ev.NewUtxos, 1)
+				require.Equal(
+					t,
+					"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+					ev.NewUtxos[0].Outpoint.Txid,
+				)
 			case <-time.After(5 * time.Second):
-				t.Fatal("explorer did not reconnect within 5s after TCP drop")
+				t.Fatal("explorer did not receive event after reconnect + resubscription")
 			}
 		})
 
@@ -835,8 +902,7 @@ func TestReconnectionBehaviour(t *testing.T) {
 				}
 			})
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 			svc.Start()
 			t.Cleanup(svc.Stop)
 
@@ -862,14 +928,15 @@ func TestReconnectionBehaviour(t *testing.T) {
 					time.Sleep(20 * time.Millisecond)
 					_ = conn.WriteMessage(
 						websocket.CloseMessage,
-						websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"),
+						websocket.FormatCloseMessage(
+							websocket.CloseGoingAway, "server shutting down",
+						),
 					)
 					_ = conn.Close()
 				}
 			})
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 			svc.Start()
 			t.Cleanup(svc.Stop)
 
@@ -943,8 +1010,7 @@ func TestReconnectionBehaviour(t *testing.T) {
 				keepAliveWS(connNum, conn)
 			})
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 			svc.Start()
 			t.Cleanup(svc.Stop)
 
@@ -967,9 +1033,12 @@ func TestReconnectionBehaviour(t *testing.T) {
 			select {
 			case ev := <-events:
 				require.NoError(t, ev.Error)
-				require.Len(t, ev.NewUtxos, 1, "goroutine must continue reading after non-fatal error")
+				require.Len(t, ev.NewUtxos, 1)
 			case <-time.After(3 * time.Second):
-				t.Fatal("timed out waiting for valid event after malformed JSON — goroutine didn't continue")
+				t.Fatal(
+					"timed out waiting for valid event after malformed JSON - " +
+						"goroutine didn't continue",
+				)
 			}
 
 			// Verify no reconnect happened.
@@ -988,8 +1057,7 @@ func TestStopClearsSubscriptions(t *testing.T) {
 		ts := newTestServer(t)
 		ts.handleWS(keepAliveWS)
 
-		svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-		require.NoError(t, err)
+		svc := makeExplorer(t, ts.URL)
 		svc.Start()
 
 		time.Sleep(50 * time.Millisecond)
@@ -1006,8 +1074,7 @@ func TestStopClearsSubscriptions(t *testing.T) {
 			ts := newTestServer(t)
 			ts.handleWS(keepAliveWS)
 
-			svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-			require.NoError(t, err)
+			svc := makeExplorer(t, ts.URL)
 			svc.Start()
 
 			time.Sleep(50 * time.Millisecond)
@@ -1022,8 +1089,7 @@ func TestStartIsIdempotent(t *testing.T) {
 		ts := newTestServer(t)
 		ts.handleWS(keepAliveWS)
 
-		svc, err := mempool.NewExplorer(ts.URL, arklib.Bitcoin)
-		require.NoError(t, err)
+		svc := makeExplorer(t, ts.URL)
 
 		svc.Start()
 		t.Cleanup(svc.Stop)

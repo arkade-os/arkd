@@ -10,6 +10,9 @@ import (
 	"sync"
 	"testing"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer"
+	mempool_explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
@@ -99,4 +102,12 @@ func keepAliveWS(_ int, conn *websocket.Conn) {
 			return
 		}
 	}
+}
+
+func makeExplorer(t *testing.T, url string) explorer.Explorer {
+	t.Helper()
+
+	svc, err := mempool_explorer.NewExplorer(url, arklib.Bitcoin)
+	require.NoError(t, err)
+	return svc
 }
