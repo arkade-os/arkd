@@ -952,8 +952,12 @@ func (i *indexerService) validateAuthToken(authToken string) (string, error) {
 }
 
 // extractTokenHash decodes an auth token and returns the outpoints hash
-// without checking expiry or signature. This is for admin introspection.
+// without checking expiry. Signature is still verified.
 func (i *indexerService) extractTokenHash(authToken string) (string, error) {
+	if i.authPrvkey == nil {
+		return "", fmt.Errorf("token filter not available in public exposure mode")
+	}
+
 	tokenBytes, err := base64.StdEncoding.DecodeString(authToken)
 	if err != nil {
 		return "", fmt.Errorf("invalid auth token format, must be base64")
@@ -961,7 +965,20 @@ func (i *indexerService) extractTokenHash(authToken string) (string, error) {
 	if len(tokenBytes) != 40+64 {
 		return "", fmt.Errorf("invalid auth token length")
 	}
-	return hex.EncodeToString(tokenBytes[:32]), nil
+
+	msg := tokenBytes[0:40]
+	sigBytes := tokenBytes[40:]
+
+	msgHash := chainhash.HashB(msg)
+	sig, err := schnorr.ParseSignature(sigBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse auth token signature: %w", err)
+	}
+	if !sig.Verify(msgHash, i.authPrvkey.PubKey()) {
+		return "", fmt.Errorf("signature verification failed")
+	}
+
+	return hex.EncodeToString(msg[:32]), nil
 }
 
 func (i *indexerService) resolveTokenFilter(
@@ -973,6 +990,19 @@ func (i *indexerService) resolveTokenFilter(
 	return hash, nil
 }
 
+// normalizeOutpoint validates and normalizes an outpoint string (txid:vout).
+// Returns empty string if input is empty.
+func normalizeOutpoint(outpoint string) (string, error) {
+	if outpoint == "" {
+		return "", nil
+	}
+	var op Outpoint
+	if err := op.FromString(outpoint); err != nil {
+		return "", fmt.Errorf("invalid outpoint filter: %w", err)
+	}
+	return op.String(), nil
+}
+
 func (i *indexerService) ListTokens(
 	_ context.Context, token, hash, outpoint, txid string,
 ) ([]TokenEntry, error) {
@@ -980,7 +1010,11 @@ func (i *indexerService) ListTokens(
 	if err != nil {
 		return nil, err
 	}
-	return i.tokenCache.list(h, outpoint, txid), nil
+	op, err := normalizeOutpoint(outpoint)
+	if err != nil {
+		return nil, err
+	}
+	return i.tokenCache.list(h, op, txid), nil
 }
 
 func (i *indexerService) RevokeTokens(
@@ -990,7 +1024,11 @@ func (i *indexerService) RevokeTokens(
 	if err != nil {
 		return 0, err
 	}
-	return i.tokenCache.revoke(h, outpoint, txid), nil
+	op, err := normalizeOutpoint(outpoint)
+	if err != nil {
+		return 0, err
+	}
+	return i.tokenCache.revoke(h, op, txid), nil
 }
 
 // hashOutpoints clones the given outpoints, sorts them lexicographically by txid and vout,
