@@ -243,8 +243,7 @@ func TestGetUtxos(t *testing.T) {
 		require.Equal(
 			t, "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", utxos[0].Txid,
 		)
-		require.Equal(t, uint64(10000), utxos[0].Amount)
-		require.Equal(t, int(10000), utxos[0].Amount)
+		require.Equal(t, int(10000), int(utxos[0].Amount))
 		require.True(t, utxos[0].Status.Confirmed)
 	})
 
@@ -362,7 +361,7 @@ func TestGetRedeemedVtxosBalance(t *testing.T) {
 			delay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 1}
 			spendable, locked, err := svc.GetRedeemedVtxosBalance(addr, delay)
 			require.NoError(t, err)
-			require.Equal(t, uint64(5000), spendable)
+			require.Equal(t, int(5000), int(spendable))
 			require.Empty(t, locked)
 		})
 
@@ -389,13 +388,13 @@ func TestGetRedeemedVtxosBalance(t *testing.T) {
 			delay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144}
 			spendable, locked, err := svc.GetRedeemedVtxosBalance(addr, delay)
 			require.NoError(t, err)
-			require.Equal(t, uint64(0), spendable)
+			require.Equal(t, int(0), int(spendable))
 			require.NotEmpty(t, locked)
 			var totalLocked uint64
 			for _, v := range locked {
 				totalLocked += v
 			}
-			require.Equal(t, uint64(3000), totalLocked)
+			require.Equal(t, int(3000), int(totalLocked))
 		})
 	})
 
@@ -1101,8 +1100,7 @@ func TestStartIsIdempotent(t *testing.T) {
 		svc.Start()
 		time.Sleep(50 * time.Millisecond)
 
-		require.Equal(t, countAfterFirst, svc.GetConnectionCount(),
-			"second Start must not create additional connections")
+		require.Equal(t, countAfterFirst, svc.GetConnectionCount())
 	})
 
 	t.Run("invalid", func(t *testing.T) {
