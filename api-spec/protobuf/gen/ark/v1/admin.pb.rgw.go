@@ -347,21 +347,12 @@ func request_AdminService_RevokeAuth_0(ctx context.Context, marshaler gateway.Ma
 
 }
 
-var (
-	query_params_AdminService_ListTokens_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New(),
-	}
-)
-
 func request_AdminService_ListTokens_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client AdminServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
 	var protoReq ListTokensRequest
 	var metadata gateway.ServerMetadata
 
-	if err := req.ParseForm(); err != nil {
-		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
-	}
-	if err := mux.PopulateQueryParameters(&protoReq, req.Form, query_params_AdminService_ListTokens_0); err != nil {
-		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
+		return nil, metadata, gateway.ErrMarshal{Err: err, Inbound: true}
 	}
 
 	msg, err := client.ListTokens(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
@@ -883,7 +874,7 @@ func RegisterAdminServiceHandlerClient(ctx context.Context, mux *gateway.ServeMu
 		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
 	})
 
-	mux.HandleWithParams("GET", "/v1/admin/tokens", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+	mux.HandleWithParams("POST", "/v1/admin/tokens", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)

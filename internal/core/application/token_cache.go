@@ -184,7 +184,7 @@ func (c *tokenCache) list(hash, outpointStr, txid string) []TokenEntry {
 			}
 		}
 
-		// Collect outpoints as strings.
+		// Collect outpoints as sorted strings for deterministic output.
 		entry := TokenEntry{
 			Hash:      h,
 			ExpiresAt: expiresAt,
@@ -192,6 +192,7 @@ func (c *tokenCache) list(hash, outpointStr, txid string) []TokenEntry {
 		for op := range outpoints {
 			entry.Outpoints = append(entry.Outpoints, op.String())
 		}
+		sort.Strings(entry.Outpoints)
 
 		result = append(result, entry)
 	}

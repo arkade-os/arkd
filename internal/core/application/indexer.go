@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -35,6 +36,8 @@ const (
 
 	defaultAuthTokenTTL = 5 * time.Minute
 )
+
+var ErrInvalidInput = errors.New("invalid input")
 
 type exposure string
 
@@ -955,15 +958,18 @@ func (i *indexerService) validateAuthToken(authToken string) (string, error) {
 // without checking expiry. Signature is still verified.
 func (i *indexerService) extractTokenHash(authToken string) (string, error) {
 	if i.authPrvkey == nil {
-		return "", fmt.Errorf("token filter not available in public exposure mode")
+		return "", fmt.Errorf(
+			"%w: token filter not available in public exposure mode",
+			ErrInvalidInput,
+		)
 	}
 
 	tokenBytes, err := base64.StdEncoding.DecodeString(authToken)
 	if err != nil {
-		return "", fmt.Errorf("invalid auth token format, must be base64")
+		return "", fmt.Errorf("%w: invalid auth token format, must be base64", ErrInvalidInput)
 	}
 	if len(tokenBytes) != 40+64 {
-		return "", fmt.Errorf("invalid auth token length")
+		return "", fmt.Errorf("%w: invalid auth token length", ErrInvalidInput)
 	}
 
 	msg := tokenBytes[0:40]
@@ -972,10 +978,10 @@ func (i *indexerService) extractTokenHash(authToken string) (string, error) {
 	msgHash := chainhash.HashB(msg)
 	sig, err := schnorr.ParseSignature(sigBytes)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse auth token signature: %w", err)
+		return "", fmt.Errorf("%w: failed to parse auth token signature: %w", ErrInvalidInput, err)
 	}
 	if !sig.Verify(msgHash, i.authPrvkey.PubKey()) {
-		return "", fmt.Errorf("signature verification failed")
+		return "", fmt.Errorf("%w: signature verification failed", ErrInvalidInput)
 	}
 
 	return hex.EncodeToString(msg[:32]), nil
@@ -998,7 +1004,7 @@ func normalizeOutpoint(outpoint string) (string, error) {
 	}
 	var op Outpoint
 	if err := op.FromString(outpoint); err != nil {
-		return "", fmt.Errorf("invalid outpoint filter: %w", err)
+		return "", fmt.Errorf("%w: invalid outpoint filter: %w", ErrInvalidInput, err)
 	}
 	return op.String(), nil
 }
@@ -1027,6 +1033,9 @@ func (i *indexerService) RevokeTokens(
 	op, err := normalizeOutpoint(outpoint)
 	if err != nil {
 		return 0, err
+	}
+	if h == "" && op == "" && txid == "" {
+		return 0, fmt.Errorf("%w: at least one filter is required", ErrInvalidInput)
 	}
 	return i.tokenCache.revoke(h, op, txid), nil
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -512,6 +513,9 @@ func (a *adminHandler) ListTokens(
 		ctx, req.GetToken(), req.GetHash(), req.GetOutpoint(), req.GetTxid(),
 	)
 	if err != nil {
+		if errors.Is(err, application.ErrInvalidInput) {
+			return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
+		}
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
@@ -539,6 +543,9 @@ func (a *adminHandler) RevokeTokens(
 		ctx, req.GetToken(), req.GetHash(), req.GetOutpoint(), req.GetTxid(),
 	)
 	if err != nil {
+		if errors.Is(err, application.ErrInvalidInput) {
+			return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
+		}
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 

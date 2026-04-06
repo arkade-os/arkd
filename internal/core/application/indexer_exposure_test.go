@@ -921,18 +921,16 @@ func TestStripSignerSignatures(t *testing.T) {
 }
 
 func TestListAndRevokeTokens(t *testing.T) {
-	privkey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-
-	indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
-
 	outpoints1 := []Outpoint{{Txid: testTxids[0], VOut: 0}}
 	outpoints2 := []Outpoint{{Txid: testVtxoTxid, VOut: testVtxoVout}}
 	outpoints3 := []Outpoint{{Txid: differentTxid, VOut: 0}}
 
-	ctx := t.Context()
-
 	t.Run("list returns tokens created via createAuthToken", func(t *testing.T) {
+		privkey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+		ctx := t.Context()
+
 		token1, err := indexer.createAuthToken(outpoints1)
 		require.NoError(t, err)
 		_, err = indexer.createAuthToken(outpoints2)
@@ -953,26 +951,54 @@ func TestListAndRevokeTokens(t *testing.T) {
 	})
 
 	t.Run("list filters by outpoint", func(t *testing.T) {
+		privkey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+		ctx := t.Context()
+
+		_, err = indexer.createAuthToken(outpoints1)
+		require.NoError(t, err)
+		_, err = indexer.createAuthToken(outpoints2)
+		require.NoError(t, err)
+
 		entries, err := indexer.ListTokens(ctx, "", "", testVtxoTxid+":0", "")
 		require.NoError(t, err)
 		require.Len(t, entries, 1)
 	})
 
 	t.Run("list filters by txid", func(t *testing.T) {
+		privkey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+		ctx := t.Context()
+
+		_, err = indexer.createAuthToken(outpoints1)
+		require.NoError(t, err)
+		_, err = indexer.createAuthToken(outpoints2)
+		require.NoError(t, err)
+
 		entries, err := indexer.ListTokens(ctx, "", "", "", testTxids[0])
 		require.NoError(t, err)
 		require.Len(t, entries, 1)
 	})
 
 	t.Run("list rejects invalid outpoint format", func(t *testing.T) {
-		_, err := indexer.ListTokens(ctx, "", "", "garbage", "")
+		privkey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+
+		_, err = indexer.ListTokens(t.Context(), "", "", "garbage", "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid outpoint")
 	})
 
 	t.Run("revoke by hash removes token and list no longer returns it", func(t *testing.T) {
-		// Get the hash for outpoints3 by creating a token.
-		_, err := indexer.createAuthToken(outpoints3)
+		privkey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+		ctx := t.Context()
+
+		_, err = indexer.createAuthToken(outpoints3)
 		require.NoError(t, err)
 
 		entries, err := indexer.ListTokens(ctx, "", "", "", differentTxid)
@@ -991,9 +1017,15 @@ func TestListAndRevokeTokens(t *testing.T) {
 	})
 
 	t.Run("revoke by txid", func(t *testing.T) {
-		before, err := indexer.ListTokens(ctx, "", "", "", "")
+		privkey, err := btcec.NewPrivateKey()
 		require.NoError(t, err)
-		countBefore := len(before)
+		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+		ctx := t.Context()
+
+		_, err = indexer.createAuthToken(outpoints1)
+		require.NoError(t, err)
+		_, err = indexer.createAuthToken(outpoints2)
+		require.NoError(t, err)
 
 		count, err := indexer.RevokeTokens(ctx, "", "", "", testTxids[0])
 		require.NoError(t, err)
@@ -1001,17 +1033,17 @@ func TestListAndRevokeTokens(t *testing.T) {
 
 		after, err := indexer.ListTokens(ctx, "", "", "", "")
 		require.NoError(t, err)
-		require.Equal(t, countBefore-1, len(after))
+		require.Len(t, after, 1)
 	})
 
 	t.Run("revoke by token string", func(t *testing.T) {
-		// The remaining token is outpoints2.
-		entries, err := indexer.ListTokens(ctx, "", "", "", "")
+		privkey, err := btcec.NewPrivateKey()
 		require.NoError(t, err)
-		require.Len(t, entries, 1)
+		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+		ctx := t.Context()
 
-		// Create a fresh token for outpoints2 — createAuthToken returns the
-		// same token since the hash already exists in the cache.
+		_, err = indexer.createAuthToken(outpoints1)
+		require.NoError(t, err)
 		token2, err := indexer.createAuthToken(outpoints2)
 		require.NoError(t, err)
 
@@ -1019,24 +1051,39 @@ func TestListAndRevokeTokens(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 1, count)
 
-		entries, err = indexer.ListTokens(ctx, "", "", "", "")
+		entries, err := indexer.ListTokens(ctx, "", "", "", "")
 		require.NoError(t, err)
-		require.Empty(t, entries)
+		require.Len(t, entries, 1)
 	})
 
 	t.Run("revoke rejects invalid outpoint format", func(t *testing.T) {
-		_, err := indexer.RevokeTokens(ctx, "", "", "bad", "")
+		privkey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+
+		_, err = indexer.RevokeTokens(t.Context(), "", "", "bad", "")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid outpoint")
 	})
 
-	t.Run("list and revoke with nil privkey errors on token filter", func(t *testing.T) {
+	t.Run("revoke rejects empty filters", func(t *testing.T) {
+		privkey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+
+		_, err = indexer.RevokeTokens(t.Context(), "", "", "", "")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "at least one filter")
+	})
+
+	t.Run("nil privkey errors on token filter", func(t *testing.T) {
 		publicIndexer := &indexerService{
 			authPrvkey:   nil,
 			authTokenTTL: defaultAuthTokenTTL,
 			tokenCache:   newTokenCache(defaultAuthTokenTTL),
 		}
 		t.Cleanup(publicIndexer.tokenCache.close)
+		ctx := t.Context()
 
 		_, err := publicIndexer.ListTokens(ctx, "sometoken", "", "", "")
 		require.Error(t, err)

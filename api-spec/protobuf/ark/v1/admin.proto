@@ -112,7 +112,8 @@ service AdminService {
   }
   rpc ListTokens(ListTokensRequest) returns (ListTokensResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/admin/tokens"
+      post: "/v1/admin/tokens"
+      body: "*"
     };
   }
   rpc RevokeTokens(RevokeTokensRequest) returns (RevokeTokensResponse) {

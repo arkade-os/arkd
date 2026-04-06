@@ -161,28 +161,39 @@ func TestNormalizeOutpoint(t *testing.T) {
 	})
 
 	t.Run("valid outpoint is normalized", func(t *testing.T) {
-		out, err := normalizeOutpoint("aabb:0")
+		txid := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		out, err := normalizeOutpoint(txid + ":0")
 		require.NoError(t, err)
-		require.Equal(t, "aabb:0", out)
+		require.Equal(t, txid+":0", out)
 	})
 
 	t.Run("rejects missing vout", func(t *testing.T) {
-		_, err := normalizeOutpoint("aabb")
+		_, err := normalizeOutpoint("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid outpoint")
 	})
 
 	t.Run("rejects non-numeric vout", func(t *testing.T) {
-		_, err := normalizeOutpoint("aabb:xyz")
+		_, err := normalizeOutpoint("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:xyz")
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid")
 	})
 
-	t.Run("rejects empty txid with vout", func(t *testing.T) {
-		// FromString doesn't validate txid content, but ":0" splits into ["", "0"]
-		// which is technically valid per FromString. This tests current behavior.
-		out, err := normalizeOutpoint(":0")
-		require.NoError(t, err)
-		require.Equal(t, ":0", out)
+	t.Run("rejects short txid", func(t *testing.T) {
+		_, err := normalizeOutpoint("aabb:0")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "txid length")
+	})
+
+	t.Run("rejects non-hex txid", func(t *testing.T) {
+		_, err := normalizeOutpoint("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz:0")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "txid hex")
+	})
+
+	t.Run("rejects empty txid", func(t *testing.T) {
+		_, err := normalizeOutpoint(":0")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "txid length")
 	})
 }

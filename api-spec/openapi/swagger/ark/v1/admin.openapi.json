@@ -904,44 +904,21 @@
       }
     },
     "/v1/admin/tokens": {
-      "get": {
+      "post": {
         "tags": [
           "AdminService"
         ],
         "operationId": "AdminService_ListTokens",
-        "parameters": [
-          {
-            "name": "token",
-            "in": "query",
-            "description": "base64 auth token",
-            "schema": {
-              "type": "string"
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListTokensRequest"
+              }
             }
           },
-          {
-            "name": "hash",
-            "in": "query",
-            "description": "hex-encoded hash of outpoints",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "outpoint",
-            "in": "query",
-            "description": "txid:vout format",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "txid",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "a successful response.",
