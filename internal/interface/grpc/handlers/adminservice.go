@@ -517,13 +517,9 @@ func (a *adminHandler) ListTokens(
 
 	protoTokens := make([]*arkv1.TokenInfo, 0, len(tokens))
 	for _, t := range tokens {
-		outpoints := make([]string, 0, len(t.Outpoints))
-		for _, op := range t.Outpoints {
-			outpoints = append(outpoints, op.String())
-		}
 		protoTokens = append(protoTokens, &arkv1.TokenInfo{
 			Hash:      t.Hash,
-			Outpoints: outpoints,
+			Outpoints: t.Outpoints,
 			ExpiresAt: t.ExpiresAt.Unix(),
 		})
 	}

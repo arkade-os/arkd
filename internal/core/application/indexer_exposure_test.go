@@ -949,7 +949,7 @@ func TestListAndRevokeTokens(t *testing.T) {
 
 		// That entry's outpoints should match outpoints1.
 		require.Len(t, entries[0].Outpoints, 1)
-		require.Equal(t, outpoints1[0].String(), entries[0].Outpoints[0].String())
+		require.Equal(t, outpoints1[0].String(), entries[0].Outpoints[0])
 	})
 
 	t.Run("list filters by outpoint", func(t *testing.T) {

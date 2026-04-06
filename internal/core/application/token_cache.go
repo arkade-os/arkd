@@ -10,7 +10,7 @@ const maxTokenListSize = 50
 
 type TokenEntry struct {
 	Hash      string
-	Outpoints []Outpoint
+	Outpoints []string
 	ExpiresAt time.Time
 }
 
@@ -152,19 +152,10 @@ func (c *tokenCache) list(hash, outpointStr, txid string) []TokenEntry {
 			continue
 		}
 
-		// Collect outpoints for this entry.
-		entry := TokenEntry{
-			Hash:      h,
-			ExpiresAt: expiresAt,
-		}
-		for op := range outpoints {
-			entry.Outpoints = append(entry.Outpoints, op)
-		}
-
 		// Filter by outpoint.
 		if outpointStr != "" {
 			found := false
-			for _, op := range entry.Outpoints {
+			for op := range outpoints {
 				if op.String() == outpointStr {
 					found = true
 					break
@@ -178,7 +169,7 @@ func (c *tokenCache) list(hash, outpointStr, txid string) []TokenEntry {
 		// Filter by txid.
 		if txid != "" {
 			found := false
-			for _, op := range entry.Outpoints {
+			for op := range outpoints {
 				if op.Txid == txid {
 					found = true
 					break
@@ -187,6 +178,15 @@ func (c *tokenCache) list(hash, outpointStr, txid string) []TokenEntry {
 			if !found {
 				continue
 			}
+		}
+
+		// Collect outpoints as strings.
+		entry := TokenEntry{
+			Hash:      h,
+			ExpiresAt: expiresAt,
+		}
+		for op := range outpoints {
+			entry.Outpoints = append(entry.Outpoints, op.String())
 		}
 
 		result = append(result, entry)
