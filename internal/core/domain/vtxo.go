@@ -27,14 +27,15 @@ func (k *Outpoint) FromString(s string) error {
 	if len(txid) != 64 {
 		return fmt.Errorf("invalid txid length: expected 64 hex chars, got %d", len(txid))
 	}
-	if _, err := hex.DecodeString(txid); err != nil {
+	txidBytes, err := hex.DecodeString(txid)
+	if err != nil {
 		return fmt.Errorf("invalid txid hex: %s", txid)
 	}
 	vout, err := strconv.ParseUint(parts[1], 10, 32)
 	if err != nil {
 		return fmt.Errorf("invalid vout string: %s", parts[1])
 	}
-	k.Txid = txid
+	k.Txid = hex.EncodeToString(txidBytes)
 	k.VOut = uint32(vout)
 	return nil
 }
