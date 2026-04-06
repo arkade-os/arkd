@@ -530,8 +530,9 @@ func (a *adminHandler) ListTokens(
 func (a *adminHandler) RevokeTokens(
 	ctx context.Context, req *arkv1.RevokeTokensRequest,
 ) (*arkv1.RevokeTokensResponse, error) {
-	if req.GetFilter() == nil {
-		return nil, status.Error(codes.InvalidArgument, "a filter is required")
+	if req.GetToken() == "" && req.GetHash() == "" && req.GetOutpoint() == "" &&
+		req.GetTxid() == "" {
+		return nil, status.Error(codes.InvalidArgument, "at least one filter is required")
 	}
 
 	count, err := a.indexerService.RevokeTokens(

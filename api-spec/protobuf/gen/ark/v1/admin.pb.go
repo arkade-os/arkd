@@ -2763,14 +2763,11 @@ func (x *SweepResponse) GetHex() string {
 }
 
 type ListTokensRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Filter:
-	//
-	//	*ListTokensRequest_Token
-	//	*ListTokensRequest_Hash
-	//	*ListTokensRequest_Outpoint
-	//	*ListTokensRequest_Txid
-	Filter        isListTokensRequest_Filter `protobuf_oneof:"filter"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`       // base64 auth token
+	Hash          string                 `protobuf:"bytes,2,opt,name=hash,proto3" json:"hash,omitempty"`         // hex-encoded hash of outpoints
+	Outpoint      string                 `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"` // txid:vout format
+	Txid          string                 `protobuf:"bytes,4,opt,name=txid,proto3" json:"txid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2805,76 +2802,33 @@ func (*ListTokensRequest) Descriptor() ([]byte, []int) {
 	return file_ark_v1_admin_proto_rawDescGZIP(), []int{52}
 }
 
-func (x *ListTokensRequest) GetFilter() isListTokensRequest_Filter {
-	if x != nil {
-		return x.Filter
-	}
-	return nil
-}
-
 func (x *ListTokensRequest) GetToken() string {
 	if x != nil {
-		if x, ok := x.Filter.(*ListTokensRequest_Token); ok {
-			return x.Token
-		}
+		return x.Token
 	}
 	return ""
 }
 
 func (x *ListTokensRequest) GetHash() string {
 	if x != nil {
-		if x, ok := x.Filter.(*ListTokensRequest_Hash); ok {
-			return x.Hash
-		}
+		return x.Hash
 	}
 	return ""
 }
 
 func (x *ListTokensRequest) GetOutpoint() string {
 	if x != nil {
-		if x, ok := x.Filter.(*ListTokensRequest_Outpoint); ok {
-			return x.Outpoint
-		}
+		return x.Outpoint
 	}
 	return ""
 }
 
 func (x *ListTokensRequest) GetTxid() string {
 	if x != nil {
-		if x, ok := x.Filter.(*ListTokensRequest_Txid); ok {
-			return x.Txid
-		}
+		return x.Txid
 	}
 	return ""
 }
-
-type isListTokensRequest_Filter interface {
-	isListTokensRequest_Filter()
-}
-
-type ListTokensRequest_Token struct {
-	Token string `protobuf:"bytes,1,opt,name=token,proto3,oneof"` // base64 auth token
-}
-
-type ListTokensRequest_Hash struct {
-	Hash string `protobuf:"bytes,2,opt,name=hash,proto3,oneof"` // hex-encoded hash of outpoints
-}
-
-type ListTokensRequest_Outpoint struct {
-	Outpoint string `protobuf:"bytes,3,opt,name=outpoint,proto3,oneof"` // txid:vout format
-}
-
-type ListTokensRequest_Txid struct {
-	Txid string `protobuf:"bytes,4,opt,name=txid,proto3,oneof"`
-}
-
-func (*ListTokensRequest_Token) isListTokensRequest_Filter() {}
-
-func (*ListTokensRequest_Hash) isListTokensRequest_Filter() {}
-
-func (*ListTokensRequest_Outpoint) isListTokensRequest_Filter() {}
-
-func (*ListTokensRequest_Txid) isListTokensRequest_Filter() {}
 
 type ListTokensResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2981,14 +2935,11 @@ func (x *TokenInfo) GetExpiresAt() int64 {
 }
 
 type RevokeTokensRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Filter:
-	//
-	//	*RevokeTokensRequest_Token
-	//	*RevokeTokensRequest_Hash
-	//	*RevokeTokensRequest_Outpoint
-	//	*RevokeTokensRequest_Txid
-	Filter        isRevokeTokensRequest_Filter `protobuf_oneof:"filter"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`       // base64 auth token
+	Hash          string                 `protobuf:"bytes,2,opt,name=hash,proto3" json:"hash,omitempty"`         // hex-encoded hash of outpoints
+	Outpoint      string                 `protobuf:"bytes,3,opt,name=outpoint,proto3" json:"outpoint,omitempty"` // txid:vout format
+	Txid          string                 `protobuf:"bytes,4,opt,name=txid,proto3" json:"txid,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3023,76 +2974,33 @@ func (*RevokeTokensRequest) Descriptor() ([]byte, []int) {
 	return file_ark_v1_admin_proto_rawDescGZIP(), []int{55}
 }
 
-func (x *RevokeTokensRequest) GetFilter() isRevokeTokensRequest_Filter {
-	if x != nil {
-		return x.Filter
-	}
-	return nil
-}
-
 func (x *RevokeTokensRequest) GetToken() string {
 	if x != nil {
-		if x, ok := x.Filter.(*RevokeTokensRequest_Token); ok {
-			return x.Token
-		}
+		return x.Token
 	}
 	return ""
 }
 
 func (x *RevokeTokensRequest) GetHash() string {
 	if x != nil {
-		if x, ok := x.Filter.(*RevokeTokensRequest_Hash); ok {
-			return x.Hash
-		}
+		return x.Hash
 	}
 	return ""
 }
 
 func (x *RevokeTokensRequest) GetOutpoint() string {
 	if x != nil {
-		if x, ok := x.Filter.(*RevokeTokensRequest_Outpoint); ok {
-			return x.Outpoint
-		}
+		return x.Outpoint
 	}
 	return ""
 }
 
 func (x *RevokeTokensRequest) GetTxid() string {
 	if x != nil {
-		if x, ok := x.Filter.(*RevokeTokensRequest_Txid); ok {
-			return x.Txid
-		}
+		return x.Txid
 	}
 	return ""
 }
-
-type isRevokeTokensRequest_Filter interface {
-	isRevokeTokensRequest_Filter()
-}
-
-type RevokeTokensRequest_Token struct {
-	Token string `protobuf:"bytes,1,opt,name=token,proto3,oneof"` // base64 auth token
-}
-
-type RevokeTokensRequest_Hash struct {
-	Hash string `protobuf:"bytes,2,opt,name=hash,proto3,oneof"` // hex-encoded hash of outpoints
-}
-
-type RevokeTokensRequest_Outpoint struct {
-	Outpoint string `protobuf:"bytes,3,opt,name=outpoint,proto3,oneof"` // txid:vout format
-}
-
-type RevokeTokensRequest_Txid struct {
-	Txid string `protobuf:"bytes,4,opt,name=txid,proto3,oneof"`
-}
-
-func (*RevokeTokensRequest_Token) isRevokeTokensRequest_Filter() {}
-
-func (*RevokeTokensRequest_Hash) isRevokeTokensRequest_Filter() {}
-
-func (*RevokeTokensRequest_Outpoint) isRevokeTokensRequest_Filter() {}
-
-func (*RevokeTokensRequest_Txid) isRevokeTokensRequest_Filter() {}
 
 type RevokeTokensResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -3302,26 +3210,24 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x10commitment_txids\x18\x02 \x03(\tR\x0fcommitmentTxids\"5\n" +
 	"\rSweepResponse\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x10\n" +
-	"\x03hex\x18\x02 \x01(\tR\x03hex\"\x7f\n" +
-	"\x11ListTokensRequest\x12\x16\n" +
-	"\x05token\x18\x01 \x01(\tH\x00R\x05token\x12\x14\n" +
-	"\x04hash\x18\x02 \x01(\tH\x00R\x04hash\x12\x1c\n" +
-	"\boutpoint\x18\x03 \x01(\tH\x00R\boutpoint\x12\x14\n" +
-	"\x04txid\x18\x04 \x01(\tH\x00R\x04txidB\b\n" +
-	"\x06filter\"?\n" +
+	"\x03hex\x18\x02 \x01(\tR\x03hex\"m\n" +
+	"\x11ListTokensRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12\x12\n" +
+	"\x04hash\x18\x02 \x01(\tR\x04hash\x12\x1a\n" +
+	"\boutpoint\x18\x03 \x01(\tR\boutpoint\x12\x12\n" +
+	"\x04txid\x18\x04 \x01(\tR\x04txid\"?\n" +
 	"\x12ListTokensResponse\x12)\n" +
 	"\x06tokens\x18\x01 \x03(\v2\x11.ark.v1.TokenInfoR\x06tokens\"\\\n" +
 	"\tTokenInfo\x12\x12\n" +
 	"\x04hash\x18\x01 \x01(\tR\x04hash\x12\x1c\n" +
 	"\toutpoints\x18\x02 \x03(\tR\toutpoints\x12\x1d\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\x03R\texpiresAt\"\x81\x01\n" +
-	"\x13RevokeTokensRequest\x12\x16\n" +
-	"\x05token\x18\x01 \x01(\tH\x00R\x05token\x12\x14\n" +
-	"\x04hash\x18\x02 \x01(\tH\x00R\x04hash\x12\x1c\n" +
-	"\boutpoint\x18\x03 \x01(\tH\x00R\boutpoint\x12\x14\n" +
-	"\x04txid\x18\x04 \x01(\tH\x00R\x04txidB\b\n" +
-	"\x06filter\";\n" +
+	"expires_at\x18\x03 \x01(\x03R\texpiresAt\"o\n" +
+	"\x13RevokeTokensRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12\x12\n" +
+	"\x04hash\x18\x02 \x01(\tR\x04hash\x12\x1a\n" +
+	"\boutpoint\x18\x03 \x01(\tR\boutpoint\x12\x12\n" +
+	"\x04txid\x18\x04 \x01(\tR\x04txid\";\n" +
 	"\x14RevokeTokensResponse\x12#\n" +
 	"\rrevoked_count\x18\x01 \x01(\x05R\frevokedCount*\xb6\x02\n" +
 	"\tCrimeType\x12\x1a\n" +
@@ -3529,18 +3435,6 @@ func file_ark_v1_admin_proto_init() {
 	file_ark_v1_admin_proto_msgTypes[44].OneofWrappers = []any{
 		(*Output_VtxoScript)(nil),
 		(*Output_OnchainAddress)(nil),
-	}
-	file_ark_v1_admin_proto_msgTypes[52].OneofWrappers = []any{
-		(*ListTokensRequest_Token)(nil),
-		(*ListTokensRequest_Hash)(nil),
-		(*ListTokensRequest_Outpoint)(nil),
-		(*ListTokensRequest_Txid)(nil),
-	}
-	file_ark_v1_admin_proto_msgTypes[55].OneofWrappers = []any{
-		(*RevokeTokensRequest_Token)(nil),
-		(*RevokeTokensRequest_Hash)(nil),
-		(*RevokeTokensRequest_Outpoint)(nil),
-		(*RevokeTokensRequest_Txid)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
