@@ -373,10 +373,12 @@ message SweepResponse {
 }
 
 message ListTokensRequest {
-  string token = 1;    // base64 auth token
-  string hash = 2;     // hex-encoded hash of outpoints
-  string outpoint = 3; // txid:vout format
-  string txid = 4;
+  oneof filter {
+    string token = 1;    // base64 auth token
+    string hash = 2;     // hex-encoded hash of outpoints
+    string outpoint = 3; // txid:vout format
+    string txid = 4;
+  }
 }
 message ListTokensResponse {
   repeated TokenInfo tokens = 1;
@@ -389,10 +391,12 @@ message TokenInfo {
 }
 
 message RevokeTokensRequest {
-  string token = 1;    // base64 auth token
-  string hash = 2;     // hex-encoded hash of outpoints
-  string outpoint = 3; // txid:vout format
-  string txid = 4;
+  oneof filter {
+    string token = 1;    // base64 auth token
+    string hash = 2;     // hex-encoded hash of outpoints
+    string outpoint = 3; // txid:vout format
+    string txid = 4;
+  }
 }
 message RevokeTokensResponse {
   int32 revoked_count = 1;

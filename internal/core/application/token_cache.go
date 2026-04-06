@@ -1,9 +1,12 @@
 package application
 
 import (
+	"sort"
 	"sync"
 	"time"
 )
+
+const maxTokenListSize = 50
 
 type TokenEntry struct {
 	Hash      string
@@ -187,6 +190,15 @@ func (c *tokenCache) list(hash, outpointStr, txid string) []TokenEntry {
 		}
 
 		result = append(result, entry)
+	}
+
+	// Sort oldest first (earliest expiry = earliest creation).
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ExpiresAt.Before(result[j].ExpiresAt)
+	})
+
+	if len(result) > maxTokenListSize {
+		result = result[:maxTokenListSize]
 	}
 
 	return result

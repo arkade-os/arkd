@@ -1,6 +1,7 @@
 package application
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -243,6 +244,37 @@ func TestTokenCache(t *testing.T) {
 					require.Len(t, entries, 1)
 					require.Len(t, entries[0].Outpoints, 2)
 					require.False(t, entries[0].ExpiresAt.IsZero())
+				},
+			},
+			{
+				name: "ordered by expiry oldest first",
+				setup: func(c *tokenCache) {
+					now := time.Now()
+					c.add("newer", []Outpoint{op1}, now.Add(10*time.Millisecond))
+					c.add("older", []Outpoint{op2}, now)
+				},
+				assert: func(t *testing.T, c *tokenCache) {
+					entries := c.list("", "", "")
+					require.Len(t, entries, 2)
+					require.Equal(t, "older", entries[0].Hash)
+					require.Equal(t, "newer", entries[1].Hash)
+				},
+			},
+			{
+				name: "capped at maxTokenListSize",
+				setup: func(c *tokenCache) {
+					now := time.Now()
+					for i := 0; i < maxTokenListSize+10; i++ {
+						op := Outpoint{
+							Txid: fmt.Sprintf("%064d", i),
+							VOut: 0,
+						}
+						c.add(fmt.Sprintf("hash%d", i), []Outpoint{op}, now)
+					}
+				},
+				assert: func(t *testing.T, c *tokenCache) {
+					entries := c.list("", "", "")
+					require.Len(t, entries, maxTokenListSize)
 				},
 			},
 		}
