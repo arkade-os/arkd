@@ -129,6 +129,10 @@ func (c *tokenCache) getTxids(hash string) (map[string]struct{}, bool) {
 	return res, true
 }
 
+// list returns non-expired token entries matching the given filters.
+// Filters are ANDed: an entry must match all non-empty filters.
+// Results are sorted oldest-first and capped at maxTokenListSize to
+// bound response size.
 func (c *tokenCache) list(hash, outpointStr, txid string) []TokenEntry {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -204,6 +208,8 @@ func (c *tokenCache) list(hash, outpointStr, txid string) []TokenEntry {
 	return result
 }
 
+// revoke deletes non-expired token entries matching the given filters
+// and returns the number of entries removed. Filters are ANDed.
 func (c *tokenCache) revoke(hash, outpointStr, txid string) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
