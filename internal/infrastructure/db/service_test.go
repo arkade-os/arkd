@@ -3434,6 +3434,15 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		require.NotNil(t, offchainTx)
 		require.True(t, gotOffchainTx.IsFinalized())
 		require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
+
+		bulkFetchedTxs, err := repo.GetOffchainTxsByTxids(ctx, []string{arkTxid})
+		require.NoError(t, err)
+		require.Len(t, bulkFetchedTxs, 1)
+		require.Equal(t, arkTxid, bulkFetchedTxs[0].ArkTxid)
+
+		bulkFetchedTxs, err = repo.GetOffchainTxsByTxids(ctx, []string{"missing-txid"})
+		require.NoError(t, err)
+		require.Empty(t, bulkFetchedTxs)
 	})
 }
 

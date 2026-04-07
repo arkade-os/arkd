@@ -277,6 +277,9 @@ WHERE EXISTS (
 -- name: SelectOffchainTx :many
 SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid AND COALESCE(fail_reason, '') = '';
 
+-- name: SelectOffchainTxsByTxids :many
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = ANY(@txids::varchar[]) AND COALESCE(fail_reason, '') = '';
+
 -- name: SelectLatestScheduledSession :one
 SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
 

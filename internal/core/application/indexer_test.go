@@ -303,6 +303,16 @@ func (m *mockOffchainTxRepoForIndexer) GetOffchainTx(
 	return args.Get(0).(*domain.OffchainTx), args.Error(1)
 }
 
+func (m *mockOffchainTxRepoForIndexer) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	args := m.Called(ctx, txids)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*domain.OffchainTx), args.Error(1)
+}
+
 func (m *mockOffchainTxRepoForIndexer) AddOrUpdateOffchainTx(
 	ctx context.Context, offchainTx *domain.OffchainTx,
 ) error {
@@ -361,6 +371,10 @@ func newChainTestIndexerWithOffchain() (
 	vtxoRepo := &mockVtxoRepoForIndexer{}
 	markerRepo := &mockMarkerRepoForIndexer{}
 	offchainTxRepo := &mockOffchainTxRepoForIndexer{}
+	// Default: bulk fetch returns empty so the fallback to GetOffchainTx is used.
+	// Tests that want to verify bulk behavior can override with a more specific expectation.
+	offchainTxRepo.On("GetOffchainTxsByTxids", mock.Anything, mock.Anything).
+		Return([]*domain.OffchainTx{}, nil).Maybe()
 	repoManager := &mockRepoManagerForIndexer{
 		vtxos: vtxoRepo, markers: markerRepo, offchainTxs: offchainTxRepo,
 	}
@@ -737,12 +751,23 @@ func setupPreconfirmedChain(
 	cpA := makeCheckpointPSBT(t, txidB, 0)
 	cpB := makeCheckpointPSBT(t, txidC, 0)
 
+	offchainTxA := &domain.OffchainTx{ArkTxid: txidA, CheckpointTxs: map[string]string{"cp-a": cpA}}
+	offchainTxB := &domain.OffchainTx{ArkTxid: txidB, CheckpointTxs: map[string]string{"cp-b": cpB}}
+	offchainTxC := &domain.OffchainTx{ArkTxid: txidC, CheckpointTxs: map[string]string{}}
+
+	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidA}).
+		Return([]*domain.OffchainTx{offchainTxA}, nil).Maybe()
+	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidB}).
+		Return([]*domain.OffchainTx{offchainTxB}, nil).Maybe()
+	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidC}).
+		Return([]*domain.OffchainTx{offchainTxC}, nil).Maybe()
+
 	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-a": cpA}}, nil)
+		Return(offchainTxA, nil).Maybe()
 	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-b": cpB}}, nil)
+		Return(offchainTxB, nil).Maybe()
 	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+		Return(offchainTxC, nil).Maybe()
 
 	return Outpoint{Txid: txidA, VOut: 0}
 }
@@ -826,8 +851,11 @@ func TestGetVtxoChain_ShortChainNoToken(t *testing.T) {
 		Return([]domain.Vtxo{vtxo}, nil)
 	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
 		Return([]domain.Vtxo{}, nil).Maybe()
+	offchainTxA := &domain.OffchainTx{ArkTxid: txidA, CheckpointTxs: map[string]string{}}
+	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidA}).
+		Return([]*domain.OffchainTx{offchainTxA}, nil)
 	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+		Return(offchainTxA, nil).Maybe()
 
 	// Page size larger than chain
 	page := &Page{PageSize: 100}

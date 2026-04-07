@@ -569,6 +569,7 @@ func (i *indexerService) walkVtxoChain(
 	chain := make([]ChainTx, 0)
 	nextVtxos := frontier
 	visited := make(map[string]bool)
+	offchainTxCache := make(map[string]*domain.OffchainTx)
 	allOutpoints := make([]Outpoint, 0)
 
 	// Lazy cache for VTXOs loaded during this page.
@@ -601,6 +602,33 @@ func (i *indexerService) walkVtxoChain(
 			return nil, nil, "", fmt.Errorf("vtxo not found for outpoint: %v", nextVtxos)
 		}
 
+		missingOffchainTxids := make(map[string]struct{})
+		for _, vtxo := range vtxos {
+			if !vtxo.Preconfirmed {
+				continue
+			}
+			if _, ok := offchainTxCache[vtxo.Txid]; ok {
+				continue
+			}
+			missingOffchainTxids[vtxo.Txid] = struct{}{}
+		}
+
+		if len(missingOffchainTxids) > 0 {
+			txids := make([]string, 0, len(missingOffchainTxids))
+			for txid := range missingOffchainTxids {
+				txids = append(txids, txid)
+			}
+
+			offchainTxs, err := i.repoManager.OffchainTxs().GetOffchainTxsByTxids(ctx, txids)
+			if err != nil {
+				return nil, nil, "", fmt.Errorf("failed to retrieve offchain txs: %s", err)
+			}
+
+			for _, tx := range offchainTxs {
+				offchainTxCache[tx.ArkTxid] = tx
+			}
+		}
+
 		newNextVtxos := make([]domain.Outpoint, 0)
 		for _, vtxo := range vtxos {
 			key := vtxo.Outpoint.String()
@@ -630,9 +658,14 @@ func (i *indexerService) walkVtxoChain(
 			// also, we have to populate the newNextVtxos with the checkpoints inputs
 			// in order to continue the chain in the next iteration
 			if vtxo.Preconfirmed {
-				offchainTx, err := i.repoManager.OffchainTxs().GetOffchainTx(ctx, vtxo.Txid)
-				if err != nil {
-					return nil, nil, "", fmt.Errorf("failed to retrieve offchain tx: %s", err)
+				offchainTx, ok := offchainTxCache[vtxo.Txid]
+				if !ok {
+					var err error
+					offchainTx, err = i.repoManager.OffchainTxs().GetOffchainTx(ctx, vtxo.Txid)
+					if err != nil {
+						return nil, nil, "", fmt.Errorf("failed to retrieve offchain tx: %s", err)
+					}
+					offchainTxCache[vtxo.Txid] = offchainTx
 				}
 
 				chainTx := ChainTx{
