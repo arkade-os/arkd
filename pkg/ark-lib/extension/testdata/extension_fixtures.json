@@ -201,7 +201,7 @@
     "getPacketByType": {
         "found": [
             {
-                "name": "asset packet by type 0x00",
+                "name": "asset type",
                 "hex": "6a1941524b000e01020200000001010000c0de810a0304deadbeef",
                 "queryType": 0,
                 "expectedPacketHex": "01020200000001010000c0de810a"
