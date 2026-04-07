@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/btcsuite/btcd/txscript"
@@ -32,6 +33,16 @@ func NewExtensionFromPackets(pkts ...Packet) (Extension, error) {
 	for _, p := range pkts {
 		if p == nil {
 			return nil, fmt.Errorf("extension packet must not be nil")
+		}
+		v := reflect.ValueOf(p)
+		if !v.IsValid() {
+			return nil, fmt.Errorf("extension packet must not be nil")
+		}
+		switch v.Kind() {
+		case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+			if v.IsNil() {
+				return nil, fmt.Errorf("extension packet must not be nil")
+			}
 		}
 		t := p.Type()
 		if _, dup := seen[t]; dup {
@@ -127,9 +138,9 @@ func (e Extension) GetAssetPacket() asset.Packet {
 // GetPacketByType returns the first Packet in the extension whose type byte equals t.
 // It returns nil if no match is present and is safe to call on a nil Extension.
 //
-// - For type 0x00 (asset), prefer GetAssetPacket for the concrete asset.Packet type.
-// - NewExtensionFromBytes rejects duplicate type bytes; if an Extension is constructed manually with
-//   duplicates, the first match in slice order is returned.
+//   - For type 0x00 (asset), prefer GetAssetPacket for the concrete asset.Packet type.
+//   - NewExtensionFromBytes rejects duplicate type bytes; if an Extension is constructed manually with
+//     duplicates, the first match in slice order is returned.
 func (e Extension) GetPacketByType(t uint8) Packet {
 	for _, p := range e {
 		if p.Type() == t {

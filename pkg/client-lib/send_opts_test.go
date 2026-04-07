@@ -23,6 +23,46 @@ func newTestPsbtWithP2A(t *testing.T) *psbt.Packet {
 	return ptx
 }
 
+func newTestAssetPacket(t *testing.T) asset.Packet {
+	t.Helper()
+	out, err := asset.NewAssetOutput(0, 100)
+	require.NoError(t, err)
+	grp, err := asset.NewAssetGroup(nil, nil, nil, []asset.AssetOutput{*out}, nil)
+	require.NoError(t, err)
+	pkt, err := asset.NewPacket([]asset.AssetGroup{*grp})
+	require.NoError(t, err)
+	return pkt
+}
+
+type psbtSnapshot struct {
+	txOuts     []wire.TxOut
+	outputsLen int
+}
+
+func snapshotPsbt(ptx *psbt.Packet) psbtSnapshot {
+	s := psbtSnapshot{
+		txOuts:     make([]wire.TxOut, 0, len(ptx.UnsignedTx.TxOut)),
+		outputsLen: len(ptx.Outputs),
+	}
+	for _, out := range ptx.UnsignedTx.TxOut {
+		s.txOuts = append(s.txOuts, wire.TxOut{
+			Value:    out.Value,
+			PkScript: append([]byte(nil), out.PkScript...),
+		})
+	}
+	return s
+}
+
+func assertPsbtUnchanged(t *testing.T, before psbtSnapshot, after *psbt.Packet) {
+	t.Helper()
+	require.Equal(t, len(before.txOuts), len(after.UnsignedTx.TxOut))
+	require.Equal(t, before.outputsLen, len(after.Outputs))
+	for i := range before.txOuts {
+		require.Equal(t, before.txOuts[i].Value, after.UnsignedTx.TxOut[i].Value)
+		require.Equal(t, before.txOuts[i].PkScript, after.UnsignedTx.TxOut[i].PkScript)
+	}
+}
+
 // TestWithExtraCustomPacket exercises the validation rules of the new
 // WithExtraCustomPacket option: rejecting nil packets, rejecting type
 // 0x00 (reserved for the asset packet), and successfully appending valid
@@ -84,15 +124,9 @@ func TestAddExtension(t *testing.T) {
 		ptx := newTestPsbtWithP2A(t)
 		p2aBefore := ptx.UnsignedTx.TxOut[len(ptx.UnsignedTx.TxOut)-1]
 
-		// Build a minimal valid asset packet containing a single group.
-		out, err := asset.NewAssetOutput(0, 100)
-		require.NoError(t, err)
-		grp, err := asset.NewAssetGroup(nil, nil, nil, []asset.AssetOutput{*out}, nil)
-		require.NoError(t, err)
-		pkt, err := asset.NewPacket([]asset.AssetGroup{*grp})
-		require.NoError(t, err)
+		pkt := newTestAssetPacket(t)
 
-		err = addExtension(ptx, pkt, nil)
+		err := addExtension(ptx, pkt, nil)
 		require.NoError(t, err)
 
 		require.Len(t, ptx.UnsignedTx.TxOut, 2)
@@ -107,18 +141,13 @@ func TestAddExtension(t *testing.T) {
 	t.Run("asset + extra packets produce parseable extension", func(t *testing.T) {
 		ptx := newTestPsbtWithP2A(t)
 
-		out, err := asset.NewAssetOutput(0, 100)
-		require.NoError(t, err)
-		grp, err := asset.NewAssetGroup(nil, nil, nil, []asset.AssetOutput{*out}, nil)
-		require.NoError(t, err)
-		pkt, err := asset.NewPacket([]asset.AssetGroup{*grp})
-		require.NoError(t, err)
+		pkt := newTestAssetPacket(t)
 
 		extras := []extension.Packet{
 			extension.UnknownPacket{PacketType: 0x03, Data: []byte{0xde, 0xad, 0xbe, 0xef}},
 		}
 
-		err = addExtension(ptx, pkt, extras)
+		err := addExtension(ptx, pkt, extras)
 		require.NoError(t, err)
 		require.Len(t, ptx.UnsignedTx.TxOut, 2)
 
@@ -149,6 +178,7 @@ func TestAddExtension(t *testing.T) {
 
 	t.Run("duplicate types rejected", func(t *testing.T) {
 		ptx := newTestPsbtWithP2A(t)
+		before := snapshotPsbt(ptx)
 		extras := []extension.Packet{
 			extension.UnknownPacket{PacketType: 0x03, Data: []byte{0x01}},
 			extension.UnknownPacket{PacketType: 0x03, Data: []byte{0x02}},
@@ -156,31 +186,31 @@ func TestAddExtension(t *testing.T) {
 		err := addExtension(ptx, nil, extras)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "duplicate")
+		assertPsbtUnchanged(t, before, ptx)
 	})
 
 	t.Run("nil extra packet rejected", func(t *testing.T) {
 		ptx := newTestPsbtWithP2A(t)
+		before := snapshotPsbt(ptx)
 		extras := []extension.Packet{nil}
 		err := addExtension(ptx, nil, extras)
 		require.Error(t, err)
+		assertPsbtUnchanged(t, before, ptx)
 	})
 
 	t.Run("asset packet type 0x00 + extra type 0x00 rejected", func(t *testing.T) {
 		ptx := newTestPsbtWithP2A(t)
+		before := snapshotPsbt(ptx)
 
-		out, err := asset.NewAssetOutput(0, 100)
-		require.NoError(t, err)
-		grp, err := asset.NewAssetGroup(nil, nil, nil, []asset.AssetOutput{*out}, nil)
-		require.NoError(t, err)
-		pkt, err := asset.NewPacket([]asset.AssetGroup{*grp})
-		require.NoError(t, err)
+		pkt := newTestAssetPacket(t)
 
 		// Caller should not be able to bypass the option-level check.
 		extras := []extension.Packet{
 			extension.UnknownPacket{PacketType: asset.PacketType, Data: []byte{0xff}},
 		}
-		err = addExtension(ptx, pkt, extras)
+		err := addExtension(ptx, pkt, extras)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "duplicate")
+		assertPsbtUnchanged(t, before, ptx)
 	})
 }
