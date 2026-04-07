@@ -159,6 +159,53 @@ func TestExtension(t *testing.T) {
 			}
 		})
 	})
+
+	t.Run("GetPacketByType", func(t *testing.T) {
+		t.Run("found", func(t *testing.T) {
+			for _, v := range fixtures.GetPacketByType.Found {
+				t.Run(v.Name, func(t *testing.T) {
+					data, err := hex.DecodeString(v.Hex)
+					require.NoError(t, err)
+
+					ext, err := extension.NewExtensionFromBytes(data)
+					require.NoError(t, err)
+
+					p := ext.GetPacketByType(v.QueryType)
+					require.NotNil(t, p)
+					require.Equal(t, v.QueryType, p.Type())
+
+					got, err := p.Serialize()
+					require.NoError(t, err)
+					require.Equal(t, v.ExpectedPacketHex, hex.EncodeToString(got))
+				})
+			}
+		})
+
+		t.Run("not found", func(t *testing.T) {
+			for _, v := range fixtures.GetPacketByType.NotFound {
+				t.Run(v.Name, func(t *testing.T) {
+					data, err := hex.DecodeString(v.Hex)
+					require.NoError(t, err)
+
+					ext, err := extension.NewExtensionFromBytes(data)
+					require.NoError(t, err)
+
+					require.Nil(t, ext.GetPacketByType(v.QueryType))
+				})
+			}
+		})
+
+		t.Run("nil extension does not panic", func(t *testing.T) {
+			require.Nil(t, extension.Extension(nil).GetPacketByType(0x00))
+			require.Nil(t, extension.Extension(nil).GetPacketByType(0x03))
+			require.Nil(t, extension.Extension(nil).GetPacketByType(0xff))
+		})
+
+		t.Run("empty extension does not panic", func(t *testing.T) {
+			ext := extension.Extension{}
+			require.Nil(t, ext.GetPacketByType(0x00))
+		})
+	})
 }
 
 func TestNewExtensionFromTx(t *testing.T) {
@@ -262,4 +309,17 @@ type extensionFixtures struct {
 			Hex  string `json:"hex"`
 		} `json:"notFound"`
 	} `json:"getAssetPacket"`
+	GetPacketByType struct {
+		Found []struct {
+			Name              string `json:"name"`
+			Hex               string `json:"hex"`
+			QueryType         uint8  `json:"queryType"`
+			ExpectedPacketHex string `json:"expectedPacketHex"`
+		} `json:"found"`
+		NotFound []struct {
+			Name      string `json:"name"`
+			Hex       string `json:"hex"`
+			QueryType uint8  `json:"queryType"`
+		} `json:"notFound"`
+	} `json:"getPacketByType"`
 }

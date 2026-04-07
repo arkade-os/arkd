@@ -232,6 +232,8 @@ type Transaction struct {
 	Hex         string
 	SettledBy   string
 	AssetPacket asset.Packet
+	// Assets is derived (read time) from AssetPacket, not persisted; nil/empty => pure BTC or unparsed.
+	Assets []Asset
 }
 
 func (t Transaction) String() string {
