@@ -190,6 +190,13 @@ func (a *service) createOffchainTx(
 		}
 	}
 
+	// ensure asset-carrying receivers have at least dust sats as a carrier
+	for i, receiver := range receivers {
+		if len(receiver.Assets) > 0 && receiver.Amount < a.Dust {
+			receivers[i].Amount = a.Dust
+		}
+	}
+
 	btcAmountToSelect := int64(0)
 	selectedCoins := make([]types.VtxoWithTapTree, 0)
 	assetChanges := make(map[string]uint64)
