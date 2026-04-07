@@ -213,7 +213,7 @@
                 "expectedPacketHex": "deadbeef"
             },
             {
-                "name": "single unknown packet type 0x03",
+                "name": "unknown type",
                 "hex": "6a0941524b0304deadbeef",
                 "queryType": 3,
                 "expectedPacketHex": "deadbeef"
