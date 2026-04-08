@@ -124,7 +124,7 @@ func newOrchestrator(t *testing.T, config singleBatchConfig) *orchestrator {
 		for i := range config.NumClients {
 			go func(wg *sync.WaitGroup, id int) {
 				defer wg.Done()
-				client := setupArkSDK(t)
+				client := setupClient(t)
 				chClients <- struct {
 					id     int
 					client arksdk.ArkClient
