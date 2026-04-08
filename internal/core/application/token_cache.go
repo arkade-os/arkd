@@ -1,12 +1,9 @@
 package application
 
 import (
-	"sort"
 	"sync"
 	"time"
 )
-
-const maxTokenListSize = 50
 
 type TokenEntry struct {
 	Hash      string
@@ -130,10 +127,12 @@ func (c *tokenCache) getTxids(hash string) (map[string]struct{}, bool) {
 }
 
 // list returns non-expired token entries matching the given filters.
-// Filters are ANDed: an entry must match all non-empty filters.
-// Results are sorted oldest-first and capped at maxTokenListSize to
-// bound response size.
 func (c *tokenCache) list(hash, outpointStr, txid string) []TokenEntry {
+	// Fast path: hash is known, do a direct lookup.
+	if hash != "" {
+		return c.listByHash(hash)
+	}
+
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -148,11 +147,6 @@ func (c *tokenCache) list(hash, outpointStr, txid string) []TokenEntry {
 			break
 		}
 		if now.After(expiresAt) {
-			continue
-		}
-
-		// Filter by hash.
-		if hash != "" && h != hash {
 			continue
 		}
 
@@ -184,7 +178,6 @@ func (c *tokenCache) list(hash, outpointStr, txid string) []TokenEntry {
 			}
 		}
 
-		// Collect outpoints as sorted strings for deterministic output.
 		entry := TokenEntry{
 			Hash:      h,
 			ExpiresAt: expiresAt,
@@ -192,26 +185,48 @@ func (c *tokenCache) list(hash, outpointStr, txid string) []TokenEntry {
 		for op := range outpoints {
 			entry.Outpoints = append(entry.Outpoints, op.String())
 		}
-		sort.Strings(entry.Outpoints)
 
 		result = append(result, entry)
-	}
-
-	// Sort oldest first (earliest expiry = earliest creation).
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].ExpiresAt.Before(result[j].ExpiresAt)
-	})
-
-	if len(result) > maxTokenListSize {
-		result = result[:maxTokenListSize]
 	}
 
 	return result
 }
 
+func (c *tokenCache) listByHash(hash string) []TokenEntry {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	outpoints, ok := c.outpointsByHash[hash]
+	if !ok {
+		return nil
+	}
+	var expiresAt time.Time
+	for _, exp := range outpoints {
+		expiresAt = exp
+		break
+	}
+	if time.Now().After(expiresAt) {
+		return nil
+	}
+
+	entry := TokenEntry{
+		Hash:      hash,
+		ExpiresAt: expiresAt,
+	}
+	for op := range outpoints {
+		entry.Outpoints = append(entry.Outpoints, op.String())
+	}
+	return []TokenEntry{entry}
+}
+
 // revoke deletes non-expired token entries matching the given filters
-// and returns the number of entries removed. Filters are ANDed.
+// and returns the number of entries removed.
 func (c *tokenCache) revoke(hash, outpointStr, txid string) int {
+	// Fast path: hash is known, do a direct delete.
+	if hash != "" {
+		return c.revokeByHash(hash)
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -226,11 +241,6 @@ func (c *tokenCache) revoke(hash, outpointStr, txid string) int {
 			break
 		}
 		if now.After(expiresAt) {
-			continue
-		}
-
-		// Filter by hash.
-		if hash != "" && h != hash {
 			continue
 		}
 
@@ -267,4 +277,22 @@ func (c *tokenCache) revoke(hash, outpointStr, txid string) int {
 	}
 
 	return count
+}
+
+func (c *tokenCache) revokeByHash(hash string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	outpoints, ok := c.outpointsByHash[hash]
+	if !ok {
+		return 0
+	}
+	for _, expiry := range outpoints {
+		if time.Now().After(expiry) {
+			return 0
+		}
+		break
+	}
+	delete(c.outpointsByHash, hash)
+	return 1
 }

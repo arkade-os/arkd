@@ -24,12 +24,12 @@ func (k *Outpoint) FromString(s string) error {
 		return fmt.Errorf("invalid outpoint string: %s", s)
 	}
 	txid := parts[0]
-	if len(txid) != 64 {
-		return fmt.Errorf("invalid txid length: expected 64 hex chars, got %d", len(txid))
-	}
 	txidBytes, err := hex.DecodeString(txid)
 	if err != nil {
 		return fmt.Errorf("invalid txid hex: %s", txid)
+	}
+	if len(txidBytes) != 32 {
+		return fmt.Errorf("invalid txid length: expected 32 bytes, got %d", len(txidBytes))
 	}
 	vout, err := strconv.ParseUint(parts[1], 10, 32)
 	if err != nil {

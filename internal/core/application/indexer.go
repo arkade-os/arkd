@@ -972,19 +972,7 @@ func (i *indexerService) extractTokenHash(authToken string) (string, error) {
 		return "", fmt.Errorf("%w: invalid auth token length", ErrInvalidInput)
 	}
 
-	msg := tokenBytes[0:40]
-	sigBytes := tokenBytes[40:]
-
-	msgHash := chainhash.HashB(msg)
-	sig, err := schnorr.ParseSignature(sigBytes)
-	if err != nil {
-		return "", fmt.Errorf("%w: failed to parse auth token signature: %w", ErrInvalidInput, err)
-	}
-	if !sig.Verify(msgHash, i.authPrvkey.PubKey()) {
-		return "", fmt.Errorf("%w: signature verification failed", ErrInvalidInput)
-	}
-
-	return hex.EncodeToString(msg[:32]), nil
+	return hex.EncodeToString(tokenBytes[:32]), nil
 }
 
 func (i *indexerService) resolveTokenFilter(

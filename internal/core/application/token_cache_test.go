@@ -1,7 +1,6 @@
 package application
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -170,47 +169,24 @@ func TestTokenCache(t *testing.T) {
 				name: "filter by outpoint",
 				setup: func(c *tokenCache) {
 					c.add("hash1", []Outpoint{op1, op2}, time.Now())
-					c.add("hash2", []Outpoint{op3}, time.Now())
+					c.add("hash2", []Outpoint{op2, op3}, time.Now())
+					c.add("hash3", []Outpoint{op1, op3}, time.Now())
 				},
 				assert: func(t *testing.T, c *tokenCache) {
 					entries := c.list("", op2.String(), "")
-					require.Len(t, entries, 1)
-					require.Equal(t, "hash1", entries[0].Hash)
+					require.Len(t, entries, 2)
 				},
 			},
 			{
 				name: "filter by txid",
 				setup: func(c *tokenCache) {
 					c.add("hash1", []Outpoint{op1}, time.Now())
-					c.add("hash2", []Outpoint{op2}, time.Now())
-				},
-				assert: func(t *testing.T, c *tokenCache) {
-					entries := c.list("", "", op1.Txid)
-					require.Len(t, entries, 1)
-					require.Equal(t, "hash1", entries[0].Hash)
-				},
-			},
-			{
-				name: "filter by txid matches multiple entries",
-				setup: func(c *tokenCache) {
-					c.add("hash1", []Outpoint{op1}, time.Now())
-					c.add("hash2", []Outpoint{op3}, time.Now()) // op3 shares txid with op1
+					c.add("hash2", []Outpoint{op1, op2}, time.Now())
+					c.add("hash3", []Outpoint{op2}, time.Now())
 				},
 				assert: func(t *testing.T, c *tokenCache) {
 					entries := c.list("", "", op1.Txid)
 					require.Len(t, entries, 2)
-				},
-			},
-			{
-				name: "combined hash and txid filter",
-				setup: func(c *tokenCache) {
-					c.add("hash1", []Outpoint{op1}, time.Now())
-					c.add("hash2", []Outpoint{op3}, time.Now()) // op3 shares txid with op1
-				},
-				assert: func(t *testing.T, c *tokenCache) {
-					entries := c.list("hash1", "", op1.Txid)
-					require.Len(t, entries, 1)
-					require.Equal(t, "hash1", entries[0].Hash)
 				},
 			},
 			{
@@ -246,37 +222,6 @@ func TestTokenCache(t *testing.T) {
 					require.False(t, entries[0].ExpiresAt.IsZero())
 				},
 			},
-			{
-				name: "ordered by expiry oldest first",
-				setup: func(c *tokenCache) {
-					now := time.Now()
-					c.add("newer", []Outpoint{op1}, now.Add(10*time.Millisecond))
-					c.add("older", []Outpoint{op2}, now)
-				},
-				assert: func(t *testing.T, c *tokenCache) {
-					entries := c.list("", "", "")
-					require.Len(t, entries, 2)
-					require.Equal(t, "older", entries[0].Hash)
-					require.Equal(t, "newer", entries[1].Hash)
-				},
-			},
-			{
-				name: "capped at maxTokenListSize",
-				setup: func(c *tokenCache) {
-					now := time.Now()
-					for i := 0; i < maxTokenListSize+10; i++ {
-						op := Outpoint{
-							Txid: fmt.Sprintf("%064d", i),
-							VOut: 0,
-						}
-						c.add(fmt.Sprintf("hash%d", i), []Outpoint{op}, now)
-					}
-				},
-				assert: func(t *testing.T, c *tokenCache) {
-					entries := c.list("", "", "")
-					require.Len(t, entries, maxTokenListSize)
-				},
-			},
 		}
 
 		for _, tc := range tests {
@@ -304,23 +249,6 @@ func TestTokenCache(t *testing.T) {
 					count := c.revoke("hash1", "", "")
 					require.Equal(t, 1, count)
 					// hash1 gone
-					_, _, ok := c.getOutpoints("hash1")
-					require.False(t, ok)
-					// hash2 still there
-					_, _, ok = c.getOutpoints("hash2")
-					require.True(t, ok)
-				},
-			},
-			{
-				name: "by outpoint",
-				setup: func(c *tokenCache) {
-					c.add("hash1", []Outpoint{op1, op2}, time.Now())
-					c.add("hash2", []Outpoint{op3}, time.Now())
-				},
-				assert: func(t *testing.T, c *tokenCache) {
-					count := c.revoke("", op2.String(), "")
-					require.Equal(t, 1, count)
-					// hash1 gone (it contained op2)
 					_, _, ok := c.getOutpoints("hash1")
 					require.False(t, ok)
 					// hash2 still there

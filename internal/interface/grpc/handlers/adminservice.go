@@ -25,9 +25,17 @@ import (
 	"gopkg.in/macaroon.v2"
 )
 
+type tokenAdminInterface interface {
+	ListTokens(
+		ctx context.Context,
+		token, hash, outpoint, txid string,
+	) ([]application.TokenEntry, error)
+	RevokeTokens(ctx context.Context, token, hash, outpoint, txid string) (int, error)
+}
+
 type adminHandler struct {
 	adminService    application.AdminService
-	indexerService  application.IndexerService
+	tokenAdminSvc   tokenAdminInterface
 	macaroonSvc     *macaroons.Service
 	macaroonDatadir string
 	noteUriPrefix   string
@@ -39,7 +47,13 @@ func NewAdminHandler(
 	macaroonSvc *macaroons.Service,
 	macaroonDatadir, noteUriPrefix string,
 ) arkv1.AdminServiceServer {
-	return &adminHandler{adminService, indexerService, macaroonSvc, macaroonDatadir, noteUriPrefix}
+	return &adminHandler{
+		adminService:    adminService,
+		tokenAdminSvc:   indexerService,
+		macaroonSvc:     macaroonSvc,
+		macaroonDatadir: macaroonDatadir,
+		noteUriPrefix:   noteUriPrefix,
+	}
 }
 
 func (a *adminHandler) GetRoundDetails(
@@ -506,10 +520,11 @@ func (a *adminHandler) RevokeAuth(
 	}, nil
 }
 
+// TODO: move ListTokens and RevokeTokens to the indexer's own admin interface when we detach it.
 func (a *adminHandler) ListTokens(
 	ctx context.Context, req *arkv1.ListTokensRequest,
 ) (*arkv1.ListTokensResponse, error) {
-	tokens, err := a.indexerService.ListTokens(
+	tokens, err := a.tokenAdminSvc.ListTokens(
 		ctx, req.GetToken(), req.GetHash(), req.GetOutpoint(), req.GetTxid(),
 	)
 	if err != nil {
@@ -539,7 +554,7 @@ func (a *adminHandler) RevokeTokens(
 		return nil, status.Error(codes.InvalidArgument, "at least one filter is required")
 	}
 
-	count, err := a.indexerService.RevokeTokens(
+	count, err := a.tokenAdminSvc.RevokeTokens(
 		ctx, req.GetToken(), req.GetHash(), req.GetOutpoint(), req.GetTxid(),
 	)
 	if err != nil {
