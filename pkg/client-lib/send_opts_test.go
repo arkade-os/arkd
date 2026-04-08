@@ -1,6 +1,7 @@
 package arksdk
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
@@ -10,17 +11,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newTestPsbtWithP2A returns a minimal PSBT with a single P2A-shaped anchor
-// output. The anchor's actual script content is irrelevant for these tests;
-// addExtension only cares that there is at least one output and that the
-// last one is treated as the P2A anchor.
+// anchorMarkerKey / anchorMarkerValue stamp a distinctive Unknowns entry on
+// the P2A anchor's POutput so tests can verify ptx.Outputs[i] stays aligned
+// with ptx.UnsignedTx.TxOut[i] across addExtension.
+var (
+	anchorMarkerKey   = []byte{0xaa, 0xbb}
+	anchorMarkerValue = []byte{0xde, 0xad, 0xbe, 0xef}
+)
+
 func newTestPsbtWithP2A(t *testing.T) *psbt.Packet {
 	t.Helper()
 	tx := wire.NewMsgTx(2)
 	tx.AddTxOut(wire.NewTxOut(330, []byte{0x51, 0x02, 0x4e, 0x73})) // fake p2a-ish
 	ptx, err := psbt.NewFromUnsignedTx(tx)
 	require.NoError(t, err)
+	ptx.Outputs[len(ptx.Outputs)-1].Unknowns = []*psbt.Unknown{
+		{Key: anchorMarkerKey, Value: anchorMarkerValue},
+	}
 	return ptx
+}
+
+func hasAnchorMarker(po psbt.POutput) bool {
+	for _, u := range po.Unknowns {
+		if u != nil && bytes.Equal(u.Key, anchorMarkerKey) && bytes.Equal(u.Value, anchorMarkerValue) {
+			return true
+		}
+	}
+	return false
 }
 
 func newTestAssetPacket(t *testing.T) asset.Packet {
@@ -35,14 +52,14 @@ func newTestAssetPacket(t *testing.T) asset.Packet {
 }
 
 type psbtSnapshot struct {
-	txOuts     []wire.TxOut
-	outputsLen int
+	txOuts          []wire.TxOut
+	anchorMarkerIdx int
 }
 
 func snapshotPsbt(ptx *psbt.Packet) psbtSnapshot {
 	s := psbtSnapshot{
-		txOuts:     make([]wire.TxOut, 0, len(ptx.UnsignedTx.TxOut)),
-		outputsLen: len(ptx.Outputs),
+		txOuts:          make([]wire.TxOut, 0, len(ptx.UnsignedTx.TxOut)),
+		anchorMarkerIdx: -1,
 	}
 	for _, out := range ptx.UnsignedTx.TxOut {
 		s.txOuts = append(s.txOuts, wire.TxOut{
@@ -50,17 +67,25 @@ func snapshotPsbt(ptx *psbt.Packet) psbtSnapshot {
 			PkScript: append([]byte(nil), out.PkScript...),
 		})
 	}
+	for i, po := range ptx.Outputs {
+		if hasAnchorMarker(po) {
+			s.anchorMarkerIdx = i
+			break
+		}
+	}
 	return s
 }
 
 func assertPsbtUnchanged(t *testing.T, before psbtSnapshot, after *psbt.Packet) {
 	t.Helper()
 	require.Equal(t, len(before.txOuts), len(after.UnsignedTx.TxOut))
-	require.Equal(t, before.outputsLen, len(after.Outputs))
+	require.Equal(t, len(before.txOuts), len(after.Outputs))
 	for i := range before.txOuts {
 		require.Equal(t, before.txOuts[i].Value, after.UnsignedTx.TxOut[i].Value)
 		require.Equal(t, before.txOuts[i].PkScript, after.UnsignedTx.TxOut[i].PkScript)
 	}
+	require.GreaterOrEqual(t, before.anchorMarkerIdx, 0)
+	require.True(t, hasAnchorMarker(after.Outputs[before.anchorMarkerIdx]))
 }
 
 // TestWithExtraCustomPacket exercises the validation rules of the new
@@ -196,6 +221,7 @@ func TestAddExtension(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				ptx := newTestPsbtWithP2A(t)
 				beforeLen := len(ptx.UnsignedTx.TxOut)
+				anchorIdxBefore := len(ptx.Outputs) - 1
 
 				var pkt asset.Packet
 				if tc.includeAssetPacket {
@@ -212,10 +238,17 @@ func TestAddExtension(t *testing.T) {
 
 				if tc.expectNoOpOutputCount {
 					require.Equal(t, beforeLen, len(ptx.UnsignedTx.TxOut))
+					require.Len(t, ptx.Outputs, beforeLen)
+					require.True(t, hasAnchorMarker(ptx.Outputs[anchorIdxBefore]))
 					return
 				}
 
 				require.Len(t, ptx.UnsignedTx.TxOut, tc.expectedTxOutLen)
+				require.Len(t, ptx.Outputs, tc.expectedTxOutLen)
+				// The anchor POutput must follow its TxOut to the new last
+				// index, and the slot it vacated must be empty (for the EXT).
+				require.True(t, hasAnchorMarker(ptx.Outputs[len(ptx.Outputs)-1]))
+				require.False(t, hasAnchorMarker(ptx.Outputs[anchorIdxBefore]))
 
 				if tc.checkP2AAnchor {
 					// Last output must still be the original P2A anchor (same bytes).

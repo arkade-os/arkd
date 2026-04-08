@@ -803,11 +803,17 @@ func addExtension(
 	if err != nil {
 		return fmt.Errorf("building extension txout: %w", err)
 	}
-	// add the extension packet output, P2A should stay as last output
-	ptx.Outputs = append(ptx.Outputs, psbt.POutput{})
-	p2aOutput := ptx.UnsignedTx.TxOut[len(ptx.UnsignedTx.TxOut)-1]
-	ptx.UnsignedTx.TxOut[len(ptx.UnsignedTx.TxOut)-1] = packetOut
-	ptx.UnsignedTx.TxOut = append(ptx.UnsignedTx.TxOut, p2aOutput)
+	// Insert the extension output immediately before the P2A anchor, keeping
+	// ptx.Outputs[i] aligned with ptx.UnsignedTx.TxOut[i]. The anchor's own
+	// PSBT-level metadata must follow its TxOut to the new last index; the
+	// fresh empty POutput goes next to the EXT TxOut.
+	lastIdx := len(ptx.UnsignedTx.TxOut) - 1
+	p2aTxOut := ptx.UnsignedTx.TxOut[lastIdx]
+	p2aPOutput := ptx.Outputs[lastIdx]
+	ptx.UnsignedTx.TxOut[lastIdx] = packetOut
+	ptx.Outputs[lastIdx] = psbt.POutput{}
+	ptx.UnsignedTx.TxOut = append(ptx.UnsignedTx.TxOut, p2aTxOut)
+	ptx.Outputs = append(ptx.Outputs, p2aPOutput)
 	return nil
 }
 
