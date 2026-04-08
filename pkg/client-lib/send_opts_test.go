@@ -68,42 +68,76 @@ func assertPsbtUnchanged(t *testing.T, before psbtSnapshot, after *psbt.Packet) 
 // 0x00 (reserved for the asset packet), and successfully appending valid
 // UnknownPacket entries to the sendOptions.
 func TestWithExtraCustomPacket(t *testing.T) {
-	t.Run("rejects type 0x00", func(t *testing.T) {
-		opts := newDefaultSendOptions()
-		badPkt := extension.UnknownPacket{PacketType: asset.PacketType, Data: []byte{0x01}}
-		err := WithExtraCustomPacket(badPkt)(opts)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "reserved")
-		require.Empty(t, opts.extraExtensionPackets)
+	t.Run("invalid", func(t *testing.T) {
+		testCases := []struct {
+			name                 string
+			packets              []extension.Packet
+			expectErrorContains string
+		}{
+			{
+				name: "rejects type 0x00",
+				packets: []extension.Packet{
+					extension.UnknownPacket{PacketType: asset.PacketType, Data: []byte{0x01}},
+				},
+				expectErrorContains: "reserved",
+			},
+			{
+				name:    "rejects nil packet",
+				packets: []extension.Packet{nil},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				opts := newDefaultSendOptions()
+				err := WithExtraCustomPacket(tc.packets...)(opts)
+				require.Error(t, err)
+				if tc.expectErrorContains != "" {
+					require.Contains(t, err.Error(), tc.expectErrorContains)
+				}
+				require.Empty(t, opts.extraExtensionPackets)
+			})
+		}
 	})
 
-	t.Run("rejects nil packet", func(t *testing.T) {
-		opts := newDefaultSendOptions()
-		err := WithExtraCustomPacket(nil)(opts)
-		require.Error(t, err)
-		require.Empty(t, opts.extraExtensionPackets)
-	})
-
-	t.Run("appends valid packets", func(t *testing.T) {
-		opts := newDefaultSendOptions()
+	t.Run("valid", func(t *testing.T) {
 		p1 := extension.UnknownPacket{PacketType: 0x03, Data: []byte{0xde, 0xad}}
 		p2 := extension.UnknownPacket{PacketType: 0x04, Data: []byte{0xbe, 0xef}}
-		err := WithExtraCustomPacket(p1, p2)(opts)
-		require.NoError(t, err)
-		require.Len(t, opts.extraExtensionPackets, 2)
-		require.Equal(t, uint8(0x03), opts.extraExtensionPackets[0].Type())
-		require.Equal(t, uint8(0x04), opts.extraExtensionPackets[1].Type())
-	})
+		p1A := extension.UnknownPacket{PacketType: 0x03, Data: []byte{0x01}}
+		p2A := extension.UnknownPacket{PacketType: 0x04, Data: []byte{0x02}}
 
-	t.Run("multiple calls accumulate", func(t *testing.T) {
-		opts := newDefaultSendOptions()
-		require.NoError(t, WithExtraCustomPacket(
-			extension.UnknownPacket{PacketType: 0x03, Data: []byte{0x01}},
-		)(opts))
-		require.NoError(t, WithExtraCustomPacket(
-			extension.UnknownPacket{PacketType: 0x04, Data: []byte{0x02}},
-		)(opts))
-		require.Len(t, opts.extraExtensionPackets, 2)
+		testCases := []struct {
+			name         string
+			applyPackets [][]extension.Packet
+			expectTypes  []uint8
+		}{
+			{
+				name:          "appends valid packets",
+				applyPackets:  [][]extension.Packet{[]extension.Packet{p1, p2}},
+				expectTypes:   []uint8{0x03, 0x04},
+			},
+			{
+				name: "multiple calls accumulate",
+				applyPackets: [][]extension.Packet{
+					[]extension.Packet{p1A},
+					[]extension.Packet{p2A},
+				},
+				expectTypes: []uint8{0x03, 0x04},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				opts := newDefaultSendOptions()
+				for _, callPackets := range tc.applyPackets {
+					require.NoError(t, WithExtraCustomPacket(callPackets...)(opts))
+				}
+				require.Len(t, opts.extraExtensionPackets, len(tc.expectTypes))
+				for i, wantType := range tc.expectTypes {
+					require.Equal(t, wantType, opts.extraExtensionPackets[i].Type())
+				}
+			})
+		}
 	})
 }
 
@@ -112,105 +146,153 @@ func TestWithExtraCustomPacket(t *testing.T) {
 // nil-packet cases, and asserts that the resulting PSBT's output layout has
 // the extension TxOut immediately before the original last (P2A) output.
 func TestAddExtension(t *testing.T) {
-	t.Run("no-op when empty", func(t *testing.T) {
-		ptx := newTestPsbtWithP2A(t)
-		before := len(ptx.UnsignedTx.TxOut)
-		err := addExtension(ptx, nil, nil)
-		require.NoError(t, err)
-		require.Equal(t, before, len(ptx.UnsignedTx.TxOut))
-	})
-
-	t.Run("asset packet only inserts one output before P2A", func(t *testing.T) {
-		ptx := newTestPsbtWithP2A(t)
-		p2aBefore := ptx.UnsignedTx.TxOut[len(ptx.UnsignedTx.TxOut)-1]
-
-		pkt := newTestAssetPacket(t)
-
-		err := addExtension(ptx, pkt, nil)
-		require.NoError(t, err)
-
-		require.Len(t, ptx.UnsignedTx.TxOut, 2)
-		// Last output must still be the original P2A anchor (same bytes).
-		require.Equal(t, p2aBefore.PkScript, ptx.UnsignedTx.TxOut[1].PkScript)
-		require.Equal(t, p2aBefore.Value, ptx.UnsignedTx.TxOut[1].Value)
-		// New output at position [len-2] should be an OP_RETURN extension.
-		require.True(t, len(ptx.UnsignedTx.TxOut[0].PkScript) > 0)
-		require.Equal(t, byte(0x6a), ptx.UnsignedTx.TxOut[0].PkScript[0])
-	})
-
-	t.Run("asset + extra packets produce parseable extension", func(t *testing.T) {
-		ptx := newTestPsbtWithP2A(t)
-
-		pkt := newTestAssetPacket(t)
-
-		extras := []extension.Packet{
-			extension.UnknownPacket{PacketType: 0x03, Data: []byte{0xde, 0xad, 0xbe, 0xef}},
+	t.Run("valid", func(t *testing.T) {
+		testCases := []struct {
+			name                     string
+			includeAssetPacket       bool
+			extraPkts                []extension.Packet
+			expectNoOpOutputCount   bool
+			expectedTxOutLen        int
+			checkP2AAnchor          bool
+			checkParseExtension     bool
+			expectedPacketType      uint8
+			expectedPacketBytes     []byte
+		}{
+			{
+				name:                   "no-op when empty",
+				includeAssetPacket:    false,
+				extraPkts:              nil,
+				expectNoOpOutputCount: true,
+			},
+			{
+				name:                "asset packet only inserts one output before P2A",
+				includeAssetPacket: true,
+				extraPkts:           nil,
+				expectedTxOutLen:   2,
+				checkP2AAnchor:     true,
+			},
+			{
+				name:                "asset + extra packets produce parseable extension",
+				includeAssetPacket: true,
+				extraPkts: []extension.Packet{
+					extension.UnknownPacket{PacketType: 0x03, Data: []byte{0xde, 0xad, 0xbe, 0xef}},
+				},
+				expectedTxOutLen:    2,
+				checkParseExtension: true,
+				expectedPacketType:  0x03,
+				expectedPacketBytes: []byte{0xde, 0xad, 0xbe, 0xef},
+			},
+			{
+				name:                "extras-only (no asset packet) works",
+				includeAssetPacket: false,
+				extraPkts: []extension.Packet{
+					extension.UnknownPacket{PacketType: 0x03, Data: []byte{0x01, 0x02}},
+				},
+				expectedTxOutLen: 2,
+			},
 		}
 
-		err := addExtension(ptx, pkt, extras)
-		require.NoError(t, err)
-		require.Len(t, ptx.UnsignedTx.TxOut, 2)
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				ptx := newTestPsbtWithP2A(t)
+				beforeLen := len(ptx.UnsignedTx.TxOut)
 
-		// Round-trip the OP_RETURN output through the extension parser to
-		// confirm both packets landed in the envelope.
-		extTx := wire.NewMsgTx(2)
-		extTx.AddTxOut(ptx.UnsignedTx.TxOut[0])
-		extTx.AddTxOut(ptx.UnsignedTx.TxOut[1])
-		parsed, err := extension.NewExtensionFromTx(extTx)
-		require.NoError(t, err)
-		require.NotNil(t, parsed.GetAssetPacket())
-		got := parsed.GetPacketByType(0x03)
-		require.NotNil(t, got)
-		gotBytes, err := got.Serialize()
-		require.NoError(t, err)
-		require.Equal(t, []byte{0xde, 0xad, 0xbe, 0xef}, gotBytes)
-	})
+				var pkt asset.Packet
+				if tc.includeAssetPacket {
+					pkt = newTestAssetPacket(t)
+				}
 
-	t.Run("extras-only (no asset packet) works", func(t *testing.T) {
-		ptx := newTestPsbtWithP2A(t)
-		extras := []extension.Packet{
-			extension.UnknownPacket{PacketType: 0x03, Data: []byte{0x01, 0x02}},
+				var p2aBefore *wire.TxOut
+				if tc.checkP2AAnchor {
+					p2aBefore = ptx.UnsignedTx.TxOut[len(ptx.UnsignedTx.TxOut)-1]
+				}
+
+				err := addExtension(ptx, pkt, tc.extraPkts)
+				require.NoError(t, err)
+
+				if tc.expectNoOpOutputCount {
+					require.Equal(t, beforeLen, len(ptx.UnsignedTx.TxOut))
+					return
+				}
+
+				require.Len(t, ptx.UnsignedTx.TxOut, tc.expectedTxOutLen)
+
+				if tc.checkP2AAnchor {
+					// Last output must still be the original P2A anchor (same bytes).
+					require.Equal(t, p2aBefore.PkScript, ptx.UnsignedTx.TxOut[1].PkScript)
+					require.Equal(t, p2aBefore.Value, ptx.UnsignedTx.TxOut[1].Value)
+					// New output at position [len-2] should be an OP_RETURN extension.
+					require.True(t, len(ptx.UnsignedTx.TxOut[0].PkScript) > 0)
+					require.Equal(t, byte(0x6a), ptx.UnsignedTx.TxOut[0].PkScript[0])
+				}
+
+				if tc.checkParseExtension {
+					// Round-trip the OP_RETURN output through the extension parser to
+					// confirm both packets landed in the envelope.
+					extTx := wire.NewMsgTx(2)
+					extTx.AddTxOut(ptx.UnsignedTx.TxOut[0])
+					extTx.AddTxOut(ptx.UnsignedTx.TxOut[1])
+					parsed, err := extension.NewExtensionFromTx(extTx)
+					require.NoError(t, err)
+					require.NotNil(t, parsed.GetAssetPacket())
+
+					got := parsed.GetPacketByType(tc.expectedPacketType)
+					require.NotNil(t, got)
+					gotBytes, err := got.Serialize()
+					require.NoError(t, err)
+					require.Equal(t, tc.expectedPacketBytes, gotBytes)
+				}
+			})
 		}
-		err := addExtension(ptx, nil, extras)
-		require.NoError(t, err)
-		require.Len(t, ptx.UnsignedTx.TxOut, 2)
 	})
 
-	t.Run("duplicate types rejected", func(t *testing.T) {
-		ptx := newTestPsbtWithP2A(t)
-		before := snapshotPsbt(ptx)
-		extras := []extension.Packet{
-			extension.UnknownPacket{PacketType: 0x03, Data: []byte{0x01}},
-			extension.UnknownPacket{PacketType: 0x03, Data: []byte{0x02}},
+	t.Run("invalid", func(t *testing.T) {
+		testCases := []struct {
+			name                 string
+			includeAssetPacket   bool
+			extraPkts            []extension.Packet
+			expectErrorContains string
+		}{
+			{
+				name: "duplicate types rejected",
+				extraPkts: []extension.Packet{
+					extension.UnknownPacket{PacketType: 0x03, Data: []byte{0x01}},
+					extension.UnknownPacket{PacketType: 0x03, Data: []byte{0x02}},
+				},
+				expectErrorContains: "duplicate",
+			},
+			{
+				name:               "nil extra packet rejected",
+				extraPkts:          []extension.Packet{nil},
+				expectErrorContains: "",
+			},
+			{
+				name:               "asset packet type 0x00 + extra type 0x00 rejected",
+				includeAssetPacket: true,
+				extraPkts: []extension.Packet{
+					extension.UnknownPacket{PacketType: asset.PacketType, Data: []byte{0xff}},
+				},
+				expectErrorContains: "duplicate",
+			},
 		}
-		err := addExtension(ptx, nil, extras)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "duplicate")
-		assertPsbtUnchanged(t, before, ptx)
-	})
 
-	t.Run("nil extra packet rejected", func(t *testing.T) {
-		ptx := newTestPsbtWithP2A(t)
-		before := snapshotPsbt(ptx)
-		extras := []extension.Packet{nil}
-		err := addExtension(ptx, nil, extras)
-		require.Error(t, err)
-		assertPsbtUnchanged(t, before, ptx)
-	})
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				ptx := newTestPsbtWithP2A(t)
+				before := snapshotPsbt(ptx)
 
-	t.Run("asset packet type 0x00 + extra type 0x00 rejected", func(t *testing.T) {
-		ptx := newTestPsbtWithP2A(t)
-		before := snapshotPsbt(ptx)
+				var pkt asset.Packet
+				if tc.includeAssetPacket {
+					pkt = newTestAssetPacket(t)
+				}
 
-		pkt := newTestAssetPacket(t)
-
-		// Caller should not be able to bypass the option-level check.
-		extras := []extension.Packet{
-			extension.UnknownPacket{PacketType: asset.PacketType, Data: []byte{0xff}},
+				err := addExtension(ptx, pkt, tc.extraPkts)
+				require.Error(t, err)
+				if tc.expectErrorContains != "" {
+					require.Contains(t, err.Error(), tc.expectErrorContains)
+				}
+				assertPsbtUnchanged(t, before, ptx)
+			})
 		}
-		err := addExtension(ptx, pkt, extras)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "duplicate")
-		assertPsbtUnchanged(t, before, ptx)
 	})
 }
