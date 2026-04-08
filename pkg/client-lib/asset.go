@@ -20,7 +20,7 @@ func (a *service) IssueAsset(
 		return nil, err
 	}
 
-	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +228,7 @@ func (a *service) ReissueAsset(
 		return nil, err
 	}
 
-	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +400,7 @@ func (a *service) BurnAsset(
 		return nil, fmt.Errorf("amount must be > 0")
 	}
 
-	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}

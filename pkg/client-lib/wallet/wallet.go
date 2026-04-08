@@ -5,7 +5,7 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/btcsuite/btcd/btcec/v2"
 )
 
 const (
@@ -18,17 +18,10 @@ type WalletService interface {
 	Lock(ctx context.Context) (err error)
 	Unlock(ctx context.Context, password string) (alreadyUnlocked bool, err error)
 	IsLocked() bool
-	GetAddresses(ctx context.Context) (
-		onchainAddresses []string,
-		offchainAddresses, boardingAddresses, redemptionAddresses []types.Address, err error,
-	)
-	NewAddress(ctx context.Context, change bool) (
-		onchainAddr string, offchainAddr, boardingAddr *types.Address, err error,
-	)
-	NewAddresses(ctx context.Context, change bool, num int) (
-		onchainAddresses []string,
-		offchainAddresses, boardingAddresses []types.Address, err error,
-	)
+	GetKeyPair(
+		ctx context.Context, path string,
+	) (prvkey *btcec.PrivateKey, pubkey *btcec.PublicKey, err error)
+	NewKeyPair(ctx context.Context) (prvkey *btcec.PrivateKey, pubkey *btcec.PublicKey, err error)
 	SignTransaction(
 		ctx context.Context, explorerSvc explorer.Explorer, tx string,
 	) (signedTx string, err error)

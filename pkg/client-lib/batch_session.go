@@ -93,7 +93,7 @@ func (a *service) RedeemNotes(
 		amount += uint64(v.Value)
 	}
 
-	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +242,7 @@ func (a *service) getFundsToSettle(
 	ctx context.Context,
 	outputs []types.Receiver, feeEstimator *arkfee.Estimator, opts getVtxosFilter,
 ) ([]types.Utxo, []types.VtxoWithTapTree, []types.Receiver, error) {
-	_, offchainAddrs, boardingAddrs, _, err := a.wallet.GetAddresses(ctx)
+	_, offchainAddrs, boardingAddrs, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}

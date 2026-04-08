@@ -44,6 +44,30 @@ func NewBitcoinWallet(
 	}, nil
 }
 
+func (w *bitcoinWallet) GetKeyPair(
+	ctx context.Context, _ string,
+) (*btcec.PrivateKey, *btcec.PublicKey, error) {
+	if w.walletData == nil {
+		return nil, nil, fmt.Errorf("wallet not initialized")
+	}
+	if w.IsLocked() {
+		return nil, nil, fmt.Errorf("wallet is locked")
+	}
+	return w.privateKey, w.privateKey.PubKey(), nil
+}
+
+func (w *bitcoinWallet) NewKeyPair(
+	ctx context.Context,
+) (*btcec.PrivateKey, *btcec.PublicKey, error) {
+	if w.walletData == nil {
+		return nil, nil, fmt.Errorf("wallet not initialized")
+	}
+	if w.IsLocked() {
+		return nil, nil, fmt.Errorf("wallet is locked")
+	}
+	return w.privateKey, w.privateKey.PubKey(), nil
+}
+
 func (w *bitcoinWallet) GetAddresses(
 	ctx context.Context,
 ) ([]string, []types.Address, []types.Address, []types.Address, error) {
@@ -168,6 +192,14 @@ func (w *bitcoinWallet) NewAddresses(
 func (s *bitcoinWallet) SignTransaction(
 	ctx context.Context, explorerSvc explorer.Explorer, tx string,
 ) (string, error) {
+	if s.walletData == nil {
+		return "", fmt.Errorf("wallet not initialized")
+	}
+
+	if s.IsLocked() {
+		return "", fmt.Errorf("wallet is locked")
+	}
+
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
 		return "", err
@@ -389,6 +421,9 @@ func (w *bitcoinWallet) signTaprootKeySpend(
 func (w *bitcoinWallet) NewVtxoTreeSigner(
 	ctx context.Context, derivationPath string,
 ) (tree.SignerSession, error) {
+	if w.walletData == nil {
+		return nil, fmt.Errorf("wallet not initialized")
+	}
 	if w.IsLocked() {
 		return nil, fmt.Errorf("wallet is locked")
 	}
@@ -436,6 +471,9 @@ func (w *bitcoinWallet) NewVtxoTreeSigner(
 func (w *bitcoinWallet) SignMessage(
 	ctx context.Context, message []byte,
 ) (string, error) {
+	if w.walletData == nil {
+		return "", fmt.Errorf("wallet not initialized")
+	}
 	if w.IsLocked() {
 		return "", fmt.Errorf("wallet is locked")
 	}

@@ -37,8 +37,8 @@ type ArkClient interface {
 		ctx context.Context,
 	) (onchainAddr string, offchainAddr, boardingAddr *types.Address, err error)
 	GetAddresses(ctx context.Context) (
-		onchainAddresses, offchainAddresses, boardingAddresses, redemptionAddresses []string,
-		err error,
+		onchainAddresses []string,
+		offchainAddresses, boardingAddresses, redemptionAddresses []types.Address, err error,
 	)
 	Balance(ctx context.Context) (*Balance, error)
 	ListVtxos(ctx context.Context, opts ...ListVtxosOption) (spendable, spent []types.Vtxo, err error)

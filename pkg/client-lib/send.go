@@ -124,7 +124,7 @@ func (a *service) createOffchainTx(
 		return "", nil, nil, nil, fmt.Errorf("missing receivers")
 	}
 
-	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return "", nil, nil, nil, err
 	}

@@ -134,7 +134,7 @@ func (a *service) CompleteUnroll(ctx context.Context, to string) (string, error)
 	}
 
 	if len(to) == 0 {
-		newAddr, _, _, err := a.wallet.NewAddress(ctx, false)
+		newAddr, _, _, err := a.newAddress(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -170,7 +170,7 @@ func (a *service) OnboardAgainAllExpiredBoardings(ctx context.Context) (string, 
 		return "", fmt.Errorf("operation not allowed by the server")
 	}
 
-	_, _, boardingAddr, err := a.wallet.NewAddress(ctx, false)
+	_, _, boardingAddr, err := a.newAddress(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -207,7 +207,7 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 
 	fees := uint64(math.Ceil(float64(packageSize) * feeRate))
 
-	addresses, _, _, _, err := a.wallet.GetAddresses(ctx)
+	addresses, _, _, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return "", "", err
 	}
@@ -237,7 +237,7 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 
 	changeAmount := selectedAmount - fees
 
-	newAddr, _, _, err := a.wallet.NewAddress(ctx, true)
+	newAddr, _, _, err := a.newAddress(ctx)
 	if err != nil {
 		return "", "", err
 	}
@@ -477,7 +477,7 @@ func (a *service) sendExpiredBoardingUtxos(ctx context.Context, to string) (stri
 func (a *service) getExpiredBoardingUtxos(
 	ctx context.Context, opts *getVtxosFilter,
 ) ([]types.Utxo, error) {
-	_, _, boardingAddrs, _, err := a.wallet.GetAddresses(ctx)
+	_, _, boardingAddrs, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -534,7 +534,7 @@ func (a *service) addInputs(
 	ctx context.Context, updater *psbt.Updater, utxos []types.Utxo,
 ) error {
 	// TODO works only with single-key wallet
-	_, offchain, _, err := a.wallet.NewAddress(ctx, false)
+	_, offchain, _, err := a.newAddress(ctx)
 	if err != nil {
 		return err
 	}
@@ -601,7 +601,7 @@ func (a *service) addInputs(
 }
 
 func (a *service) getMatureUtxos(ctx context.Context) ([]types.Utxo, error) {
-	_, _, _, redemptionAddrs, err := a.wallet.GetAddresses(ctx)
+	_, _, _, redemptionAddrs, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
