@@ -232,7 +232,10 @@ type Transaction struct {
 	Hex         string
 	SettledBy   string
 	AssetPacket asset.Packet
-	// Assets is derived (read time) from AssetPacket, not persisted; nil/empty => pure BTC or unparsed.
+	// Assets is the per-asset breakdown for this transaction. Populated at
+	// construction (e.g. by funding.vtxosToTxs from indexer-supplied vtxo
+	// asset data) or by upstream session/settlement handlers. Nil for
+	// pure-BTC transactions.
 	Assets []Asset
 }
 

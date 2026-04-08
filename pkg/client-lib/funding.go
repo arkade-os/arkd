@@ -484,6 +484,7 @@ func (i *service) vtxosToTxs(
 			Type:      types.TxReceived,
 			CreatedAt: vtxo.CreatedAt,
 			SettledBy: settledBy,
+			Assets:    netVtxoAssets([]types.Vtxo{vtxo}, append(settleVtxos, spentVtxos...)),
 		})
 	}
 
@@ -532,6 +533,7 @@ func (i *service) vtxosToTxs(
 				Amount:    forfeitAmount - resultedAmount,
 				Type:      types.TxSent,
 				CreatedAt: vtxo.CreatedAt,
+				Assets:    netVtxoAssets(vtxosBySettledBy[sb], resultedVtxos),
 			})
 		}
 	}
@@ -574,6 +576,7 @@ func (i *service) vtxosToTxs(
 			Type:      types.TxSent,
 			CreatedAt: vtxo.CreatedAt,
 			SettledBy: vtxo.SettledBy,
+			Assets:    netVtxoAssets(vtxosBySpentBy[sb], resultedVtxos),
 		})
 	}
 
