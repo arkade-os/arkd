@@ -372,9 +372,8 @@ func (s *service) registerEventHandlers() {
 			// Make sure to mark new vtxos as swept if any of the spent inputs is swept as well or
 			// expired
 			sweptIns := false
-			now := time.Now()
 			for _, vtxo := range spentVtxos {
-				if vtxo.Swept || now.After(time.Unix(vtxo.ExpiresAt, 0)) {
+				if vtxo.Swept || !s.sweeper.scheduler.AfterNow(vtxo.ExpiresAt) {
 					sweptIns = true
 					break
 				}

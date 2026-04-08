@@ -3220,8 +3220,8 @@ func TestSweep(t *testing.T) {
 		err = generateBlocks(30)
 		require.NoError(t, err)
 
-		// Wait for server to process the sweep
-		time.Sleep(10 * time.Second)
+		// Wait for server to process the sweep (needs extra time after restart)
+		time.Sleep(20 * time.Second)
 
 		spendable, _, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
