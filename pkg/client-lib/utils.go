@@ -869,44 +869,6 @@ func reduceVtxosAmount(vtxos []types.Vtxo) uint64 {
 	return total
 }
 
-// netVtxoAssets returns the per-asset balance of `gross` minus `subtract`,
-// preserving the asset id order as first encountered in `gross` and dropping
-// any entries whose net amount is zero. Returns nil when `gross` carries no
-// asset data — which is the common pure-BTC case.
-func netVtxoAssets(gross, subtract []types.Vtxo) []types.Asset {
-	grossSums := make(map[string]uint64)
-	order := make([]string, 0)
-	for _, v := range gross {
-		for _, a := range v.Assets {
-			if _, seen := grossSums[a.AssetId]; !seen {
-				order = append(order, a.AssetId)
-			}
-			grossSums[a.AssetId] += a.Amount
-		}
-	}
-	if len(grossSums) == 0 {
-		return nil
-	}
-	subSums := make(map[string]uint64)
-	for _, v := range subtract {
-		for _, a := range v.Assets {
-			subSums[a.AssetId] += a.Amount
-		}
-	}
-	out := make([]types.Asset, 0, len(order))
-	for _, id := range order {
-		g := grossSums[id]
-		s := subSums[id]
-		if g > s {
-			out = append(out, types.Asset{AssetId: id, Amount: g - s})
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
 func findVtxosSpentInPayment(vtxos []types.Vtxo, vtxo types.Vtxo) []types.Vtxo {
 	return findVtxosSpent(vtxos, vtxo.Txid)
 }
