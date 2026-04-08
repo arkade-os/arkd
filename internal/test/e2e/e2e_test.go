@@ -1141,7 +1141,7 @@ func TestOffchainTx(t *testing.T) {
 			require.NoError(t, err)
 
 			// Givetime to the server to sweep the vtxo
-			time.Sleep(30 * time.Second)
+			time.Sleep(15 * time.Second)
 
 			// Ensure the vtxo is pending and swept
 			scriptStr := hex.EncodeToString(pkscript)
@@ -1280,6 +1280,9 @@ func TestOffchainTx(t *testing.T) {
 			txid, _, _, err := arkSvc.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
 			require.NoError(t, err)
 			require.NotEmpty(t, txid)
+
+			// Make the tx expire (the tx has 20 block expiration converted to 20 seconds in timestamp)
+			time.Sleep(30 * time.Second)
 
 			// Make the vtxo expire
 			err = generateBlocks(21)
@@ -2760,9 +2763,8 @@ func TestReactToFraud(t *testing.T) {
 			require.NotEmpty(t, res.Txid)
 
 			wg.Wait()
-			time.Sleep(time.Second)
+			time.Sleep(3 * time.Second)
 
-			time.Sleep(2 * time.Second)
 			spendable, _, err := alice.ListVtxos(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, spendable)
@@ -3132,7 +3134,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// give time for the server to process the sweep
-		time.Sleep(20 * time.Second)
+		time.Sleep(10 * time.Second)
 
 		// verify that the checkpoint output has been put onchain
 		// and that the VTXO has been swept
@@ -3219,7 +3221,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// Wait for server to process the sweep
-		time.Sleep(20 * time.Second)
+		time.Sleep(10 * time.Second)
 
 		spendable, _, err := alice.ListVtxos(ctx)
 		require.NoError(t, err)
@@ -3364,7 +3366,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// Wait for server to process the sweep
-		time.Sleep(30 * time.Second)
+		time.Sleep(10 * time.Second)
 
 		// alice vtxos should not be swept yet
 		aliceVtxos, _, err := alice.ListVtxos(ctx)
@@ -3402,7 +3404,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// give time for the server to process the sweep and indexer to sync the vtxo table
-		time.Sleep(60 * time.Second)
+		time.Sleep(10 * time.Second)
 
 		// verify that all vtxos have been swept
 		aliceVtxos, _, err = alice.ListVtxos(ctx)
@@ -3467,7 +3469,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// Wait for server to attempt the sweep (it should fail due to dust amount)
-		time.Sleep(25 * time.Second)
+		time.Sleep(10 * time.Second)
 
 		// Verify the vtxo is not swept yet (automatic sweep failed)
 		spendable, _, err := alice.ListVtxos(ctx)

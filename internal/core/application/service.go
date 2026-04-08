@@ -369,6 +369,23 @@ func (s *service) registerEventHandlers() {
 				return
 			}
 
+			// Make sure to mark new vtxos as swept if any of the spent inputs is swept as well or
+			// expired
+			sweptIns := false
+			now := time.Now()
+			for _, vtxo := range spentVtxos {
+				if vtxo.Swept || now.After(time.Unix(vtxo.ExpiresAt, 0)) {
+					sweptIns = true
+					break
+				}
+			}
+
+			if sweptIns {
+				for i := range newVtxos {
+					newVtxos[i].Swept = true
+				}
+			}
+
 			checkpointTxsByOutpoint := make(map[string]TxData)
 			for txid, tx := range offchainTx.CheckpointTxs {
 				// nolint

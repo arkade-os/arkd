@@ -521,7 +521,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		}
 		log.Debugf("spent %d vtxos", len(spentVtxos))
 	case offchainTx.IsFinalized():
-		txid, ins, outs, err := s.txDecoder.DecodeTx(offchainTx.ArkTx)
+		txid, _, outs, err := s.txDecoder.DecodeTx(offchainTx.ArkTx)
 		if err != nil {
 			log.WithError(err).Warn("failed to decode ark tx")
 			return
@@ -534,22 +534,14 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		}
 
 		txSwept := false
-		// if the tx is expired at finalization step, it may be possible the new outputs should be marked swept
-		// it depends if the inputs are swept or not
-		if offchainTx.ExpiryTimestamp > 0 &&
-			time.Now().After(time.Unix(offchainTx.ExpiryTimestamp, 0)) {
-			inputVtxos, err := s.vtxoStore.GetVtxos(ctx, ins)
-			// if an error happened, we assume the vtxo is swept. it should never happen but it's to avoid skipping adding vtxo to db
-			txSwept = err != nil
-
-			for _, inputVtxo := range inputVtxos {
-				if inputVtxo.Swept {
-					txSwept = true
-					break
-				}
-			}
-		}
-
+		batch, err := s.roundStore.GetRoundWithCommitmentTxid(ctx, offchainTx.RootCommitmentTxId)
+		// We consider the tx swept if:
+		// - there is an error fetching the batch (this is just fallback, should never happen)
+		// - the batch is swept
+		// - the tx expired (meaning one or all its inputs expired and are already swept or about
+		// to be swept)
+		txSwept = err != nil || (batch != nil && len(batch.SweepTxs) > 0) ||
+			time.Now().After(time.Unix(offchainTx.ExpiryTimestamp, 0))
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
