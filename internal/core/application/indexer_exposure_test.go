@@ -920,6 +920,202 @@ func TestStripSignerSignatures(t *testing.T) {
 	})
 }
 
+func TestListTokens(t *testing.T) {
+	outpoints1 := []Outpoint{{Txid: testTxids[0], VOut: 0}}
+	outpoints2 := []Outpoint{{Txid: testVtxoTxid, VOut: testVtxoVout}}
+
+	t.Run("valid", func(t *testing.T) {
+		t.Run("returns tokens created via createAuthToken", func(t *testing.T) {
+			privkey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+			ctx := t.Context()
+
+			token1, err := indexer.createAuthToken(outpoints1)
+			require.NoError(t, err)
+			_, err = indexer.createAuthToken(outpoints2)
+			require.NoError(t, err)
+
+			entries, err := indexer.ListTokens(ctx, "", "", "", "")
+			require.NoError(t, err)
+			require.Len(t, entries, 2)
+
+			// Verify filtering by the token string resolves to the right hash.
+			entries, err = indexer.ListTokens(ctx, token1, "", "", "")
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+
+			// That entry's outpoints should match outpoints1.
+			require.Len(t, entries[0].Outpoints, 1)
+			require.Equal(t, outpoints1[0].String(), entries[0].Outpoints[0])
+		})
+
+		t.Run("filters by outpoint", func(t *testing.T) {
+			privkey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+			ctx := t.Context()
+
+			_, err = indexer.createAuthToken(outpoints1)
+			require.NoError(t, err)
+			_, err = indexer.createAuthToken(outpoints2)
+			require.NoError(t, err)
+
+			entries, err := indexer.ListTokens(ctx, "", "", testVtxoTxid+":0", "")
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+		})
+
+		t.Run("filters by txid", func(t *testing.T) {
+			privkey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+			ctx := t.Context()
+
+			_, err = indexer.createAuthToken(outpoints1)
+			require.NoError(t, err)
+			_, err = indexer.createAuthToken(outpoints2)
+			require.NoError(t, err)
+
+			entries, err := indexer.ListTokens(ctx, "", "", "", testTxids[0])
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+		})
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		t.Run("rejects invalid outpoint format", func(t *testing.T) {
+			privkey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+
+			_, err = indexer.ListTokens(t.Context(), "", "", "garbage", "")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid outpoint")
+		})
+
+		t.Run("nil privkey errors on token filter", func(t *testing.T) {
+			publicIndexer := &indexerService{
+				authPrvkey:   nil,
+				authTokenTTL: defaultAuthTokenTTL,
+				tokenCache:   newTokenCache(defaultAuthTokenTTL),
+			}
+			t.Cleanup(publicIndexer.tokenCache.close)
+
+			_, err := publicIndexer.ListTokens(t.Context(), "sometoken", "", "", "")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "public exposure")
+		})
+	})
+}
+
+func TestRevokeTokens(t *testing.T) {
+	outpoints1 := []Outpoint{{Txid: testTxids[0], VOut: 0}}
+	outpoints2 := []Outpoint{{Txid: testVtxoTxid, VOut: testVtxoVout}}
+	outpoints3 := []Outpoint{{Txid: differentTxid, VOut: 0}}
+
+	t.Run("valid", func(t *testing.T) {
+		t.Run("by hash removes token", func(t *testing.T) {
+			privkey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+			ctx := t.Context()
+
+			_, err = indexer.createAuthToken(outpoints3)
+			require.NoError(t, err)
+
+			entries, err := indexer.ListTokens(ctx, "", "", "", differentTxid)
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+			hash := entries[0].Hash
+
+			count, err := indexer.RevokeTokens(ctx, "", hash, "", "")
+			require.NoError(t, err)
+			require.Equal(t, 1, count)
+
+			// Verify it's gone.
+			entries, err = indexer.ListTokens(ctx, "", hash, "", "")
+			require.NoError(t, err)
+			require.Empty(t, entries)
+		})
+
+		t.Run("by txid", func(t *testing.T) {
+			privkey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+			ctx := t.Context()
+
+			_, err = indexer.createAuthToken(outpoints1)
+			require.NoError(t, err)
+			_, err = indexer.createAuthToken(outpoints2)
+			require.NoError(t, err)
+
+			count, err := indexer.RevokeTokens(ctx, "", "", "", testTxids[0])
+			require.NoError(t, err)
+			require.Equal(t, 1, count)
+
+			after, err := indexer.ListTokens(ctx, "", "", "", "")
+			require.NoError(t, err)
+			require.Len(t, after, 1)
+		})
+
+		t.Run("by token string", func(t *testing.T) {
+			privkey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+			ctx := t.Context()
+
+			_, err = indexer.createAuthToken(outpoints1)
+			require.NoError(t, err)
+			token2, err := indexer.createAuthToken(outpoints2)
+			require.NoError(t, err)
+
+			count, err := indexer.RevokeTokens(ctx, token2, "", "", "")
+			require.NoError(t, err)
+			require.Equal(t, 1, count)
+
+			entries, err := indexer.ListTokens(ctx, "", "", "", "")
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+		})
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		t.Run("rejects invalid outpoint format", func(t *testing.T) {
+			privkey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+
+			_, err = indexer.RevokeTokens(t.Context(), "", "", "bad", "")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid outpoint")
+		})
+
+		t.Run("rejects empty filters", func(t *testing.T) {
+			privkey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+
+			_, err = indexer.RevokeTokens(t.Context(), "", "", "", "")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "at least one filter")
+		})
+
+		t.Run("nil privkey errors on token filter", func(t *testing.T) {
+			publicIndexer := &indexerService{
+				authPrvkey:   nil,
+				authTokenTTL: defaultAuthTokenTTL,
+				tokenCache:   newTokenCache(defaultAuthTokenTTL),
+			}
+			t.Cleanup(publicIndexer.tokenCache.close)
+
+			_, err := publicIndexer.RevokeTokens(t.Context(), "sometoken", "", "", "")
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "public exposure")
+		})
+	})
+}
+
 // newTestIndexer builds a minimal indexerService for unit tests.
 // Pass nil for repos/wallet that the test does not need — calling an
 // unconfigured mock method will panic, surfacing unexpected calls immediately.
