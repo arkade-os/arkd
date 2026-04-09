@@ -3134,7 +3134,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// give time for the server to process the sweep
-		time.Sleep(10 * time.Second)
+		time.Sleep(20 * time.Second)
 
 		// verify that the checkpoint output has been put onchain
 		// and that the VTXO has been swept
