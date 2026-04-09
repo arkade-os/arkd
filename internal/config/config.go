@@ -467,15 +467,26 @@ func (c *Config) Validate() error {
 	if c.BanThreshold < 1 {
 		log.Debugf("autoban is disabled")
 	}
-	if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeSecond {
-		// vtxo tree expiry must be a multiple of 512 if expressed in seconds
-		if c.VtxoTreeExpiry.Value%minAllowedSequence != 0 {
-			c.VtxoTreeExpiry.Value -= c.VtxoTreeExpiry.Value % minAllowedSequence
-			log.Infof(
-				"vtxo tree expiry must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.VtxoTreeExpiry,
-			)
-		}
+
+	// Ensure vtxo tree expiry and checkpoint exit delay are of the same type
+	if c.CheckpointExitDelay.Type != c.VtxoTreeExpiry.Type {
+		return fmt.Errorf(
+			"all delays must be above or below value 512 " +
+				"(checkpoint exit delay and vtxo tree expiry type mismatch)",
+		)
+	}
+
+	if c.UnilateralExitDelay.Type != c.VtxoTreeExpiry.Type {
+		return fmt.Errorf(
+			"all delays must be above or below value 512 " +
+				"(unilateral exit delay and vtxo tree expiry type mismatch)",
+		)
+	}
+	if c.BoardingExitDelay.Type != c.VtxoTreeExpiry.Type {
+		return fmt.Errorf(
+			"all delays must be above or below value 512 " +
+				"(boarding exit delay and vtxo tree expiry type mismatch)",
+		)
 	}
 
 	// Make sure the public unilateral exit delay type matches the internal one
@@ -485,21 +496,17 @@ func (c *Config) Validate() error {
 		)
 	}
 
-	if c.UnilateralExitDelay.Type == arklib.LocktimeTypeBlock {
-		return fmt.Errorf(
-			"invalid unilateral exit delay, must at least %d", minAllowedSequence,
-		)
-	}
-
-	if c.BoardingExitDelay.Type == arklib.LocktimeTypeBlock {
-		return fmt.Errorf(
-			"invalid boarding exit delay, must at least %d", minAllowedSequence,
-		)
-	}
-
-	// Ensure vtxo tree expiry and checkpoint exit delay are of the same type
-	if c.CheckpointExitDelay.Type != c.VtxoTreeExpiry.Type {
-		return fmt.Errorf("checkpoint and vtxo tree locktimes must be of the same type")
+	// Round seconds-based delays to multiples of minAllowedSequence (BIP68 requirement).
+	// Block-based delays don't need rounding.
+	if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeSecond {
+		// vtxo tree expiry must be a multiple of 512 if expressed in seconds
+		if c.VtxoTreeExpiry.Value%minAllowedSequence != 0 {
+			c.VtxoTreeExpiry.Value -= c.VtxoTreeExpiry.Value % minAllowedSequence
+			log.Infof(
+				"vtxo tree expiry must be a multiple of %d, rounded to %d",
+				minAllowedSequence, c.VtxoTreeExpiry,
+			)
+		}
 	}
 
 	if c.CheckpointExitDelay.Type == arklib.LocktimeTypeSecond {
@@ -512,28 +519,34 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	if c.UnilateralExitDelay.Value%minAllowedSequence != 0 {
-		c.UnilateralExitDelay.Value -= c.UnilateralExitDelay.Value % minAllowedSequence
-		log.Infof(
-			"unilateral exit delay must be a multiple of %d, rounded to %d",
-			minAllowedSequence, c.UnilateralExitDelay,
-		)
+	if c.UnilateralExitDelay.Type == arklib.LocktimeTypeSecond {
+		if c.UnilateralExitDelay.Value%minAllowedSequence != 0 {
+			c.UnilateralExitDelay.Value -= c.UnilateralExitDelay.Value % minAllowedSequence
+			log.Infof(
+				"unilateral exit delay must be a multiple of %d, rounded to %d",
+				minAllowedSequence, c.UnilateralExitDelay,
+			)
+		}
 	}
 
-	if c.PublicUnilateralExitDelay.Value%minAllowedSequence != 0 {
-		c.PublicUnilateralExitDelay.Value -= c.PublicUnilateralExitDelay.Value % minAllowedSequence
-		log.Infof(
-			"public unilateral exit delay must be a multiple of %d, rounded to %d",
-			minAllowedSequence, c.PublicUnilateralExitDelay.Value,
-		)
+	if c.PublicUnilateralExitDelay.Type == arklib.LocktimeTypeSecond {
+		if c.PublicUnilateralExitDelay.Value%minAllowedSequence != 0 {
+			c.PublicUnilateralExitDelay.Value -= c.PublicUnilateralExitDelay.Value % minAllowedSequence
+			log.Infof(
+				"public unilateral exit delay must be a multiple of %d, rounded to %d",
+				minAllowedSequence, c.PublicUnilateralExitDelay.Value,
+			)
+		}
 	}
 
-	if c.BoardingExitDelay.Value%minAllowedSequence != 0 {
-		c.BoardingExitDelay.Value -= c.BoardingExitDelay.Value % minAllowedSequence
-		log.Infof(
-			"boarding exit delay must be a multiple of %d, rounded to %d",
-			minAllowedSequence, c.BoardingExitDelay,
-		)
+	if c.BoardingExitDelay.Type == arklib.LocktimeTypeSecond {
+		if c.BoardingExitDelay.Value%minAllowedSequence != 0 {
+			c.BoardingExitDelay.Value -= c.BoardingExitDelay.Value % minAllowedSequence
+			log.Infof(
+				"boarding exit delay must be a multiple of %d, rounded to %d",
+				minAllowedSequence, c.BoardingExitDelay,
+			)
+		}
 	}
 
 	if c.UnilateralExitDelay == c.BoardingExitDelay {
@@ -609,13 +622,22 @@ func (c *Config) Validate() error {
 	// Enforce that if the network is not regtest, the locktimes must be expressed in seconds.
 	// These checks must be done after the wallet service is initialized, as it is needed to
 	// determine the network.
-	if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock &&
-		c.network.Name != arklib.BitcoinRegTest.Name {
-		return fmt.Errorf("vtxo tree expiry expressed in blocks is allowed only on regtest")
-	}
-	if c.CheckpointExitDelay.Type == arklib.LocktimeTypeBlock &&
-		c.network.Name != arklib.BitcoinRegTest.Name {
-		return fmt.Errorf("checkpoint exit delay expressed in blocks is allowed only on regtest")
+	if c.network.Name != arklib.BitcoinRegTest.Name {
+		if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock {
+			return fmt.Errorf("vtxo tree expiry expressed in blocks is allowed only on regtest")
+		}
+		if c.CheckpointExitDelay.Type == arklib.LocktimeTypeBlock {
+			return fmt.Errorf("checkpoint exit delay expressed in blocks is allowed only on regtest")
+		}
+		if c.UnilateralExitDelay.Type == arklib.LocktimeTypeBlock {
+			return fmt.Errorf("unilateral exit delay expressed in blocks is allowed only on regtest")
+		}
+		if c.PublicUnilateralExitDelay.Type == arklib.LocktimeTypeBlock {
+			return fmt.Errorf("public unilateral exit delay expressed in blocks is allowed only on regtest")
+		}
+		if c.BoardingExitDelay.Type == arklib.LocktimeTypeBlock {
+			return fmt.Errorf("boarding exit delay expressed in blocks is allowed only on regtest")
+		}
 	}
 
 	return nil

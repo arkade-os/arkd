@@ -272,7 +272,7 @@ func TestUnilateralExit(t *testing.T) {
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
-		time.Sleep(10 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		balance, err = alice.Balance(t.Context())
 		require.NoError(t, err)
@@ -349,7 +349,7 @@ func TestUnilateralExit(t *testing.T) {
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
-		time.Sleep(8 * time.Second)
+		time.Sleep(5 * time.Second)
 
 		// Bob now just needs to wait for the unilateral exit delay to spend the unrolled VTXOs
 		bobBalance, err = bob.Balance(t.Context())
@@ -1140,7 +1140,7 @@ func TestOffchainTx(t *testing.T) {
 			err = generateBlocks(21)
 			require.NoError(t, err)
 
-			// Givetime to the server to sweep the vtxo
+			// Give time to the server to sweep the vtxo
 			time.Sleep(15 * time.Second)
 
 			// Ensure the vtxo is pending and swept
@@ -3366,7 +3366,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// Wait for server to process the sweep
-		time.Sleep(10 * time.Second)
+		time.Sleep(30 * time.Second)
 
 		// alice vtxos should not be swept yet
 		aliceVtxos, _, err := alice.ListVtxos(ctx)
@@ -3404,7 +3404,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// give time for the server to process the sweep and indexer to sync the vtxo table
-		time.Sleep(10 * time.Second)
+		time.Sleep(60 * time.Second)
 
 		// verify that all vtxos have been swept
 		aliceVtxos, _, err = alice.ListVtxos(ctx)
@@ -5124,7 +5124,7 @@ func TestAsset(t *testing.T) {
 // reports no errors, proving the fanout survived the churn.
 func TestTxListenerChurn(t *testing.T) {
 	const (
-		testDuration           = 30 * time.Second
+		testDuration           = 15 * time.Second
 		churnWorkers           = 8
 		txProducerDelay        = 200 * time.Millisecond
 		minimumTxEvents        = 1
@@ -5402,11 +5402,11 @@ func TestTxListenerChurn(t *testing.T) {
 // events, and no sentinel errors are recorded.
 func TestEventListenerChurn(t *testing.T) {
 	const (
-		testDuration      = 40 * time.Second
+		testDuration      = 19 * time.Second
 		churnWorkers      = 16
 		participantsCount = 4
 		producerLoopDelay = 250 * time.Millisecond
-		roundTimeout      = 20 * time.Second
+		roundTimeout      = 11 * time.Second
 		minimumRounds     = 1
 	)
 

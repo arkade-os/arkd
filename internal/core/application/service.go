@@ -370,10 +370,12 @@ func (s *service) registerEventHandlers() {
 			}
 
 			// Make sure to mark new vtxos as swept if any of the spent inputs is swept as well or
-			// expired
+			// expired. ExpiresAt is always a Unix timestamp (set by Round.ExpiryTimestamp),
+			// so we compare it with time.Now() directly.
 			sweptIns := false
+			now := time.Now()
 			for _, vtxo := range spentVtxos {
-				if vtxo.Swept || !s.sweeper.scheduler.AfterNow(vtxo.ExpiresAt) {
+				if vtxo.Swept || now.After(time.Unix(vtxo.ExpiresAt, 0)) {
 					sweptIns = true
 					break
 				}
@@ -602,6 +604,7 @@ func (s *service) SubmitOffchainTx(
 
 	// index by ark input index for asset packet validation
 	assetInputs := make(map[int][]domain.AssetDenomination)
+	now := time.Now()
 
 	// Loop over the inputs of the given ark tx to ensure the order of inputs is preserved when
 	// rebuilding the txs.
@@ -707,7 +710,7 @@ func (s *service) SubmitOffchainTx(
 				"%s already unrolled", vtxo.Outpoint,
 			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
 		}
-		if vtxo.Swept || !s.sweeper.scheduler.AfterNow(vtxo.ExpiresAt) {
+		if vtxo.Swept || now.After(time.Unix(vtxo.ExpiresAt, 0)) {
 			// if we reach this point, it means vtxo.Spent = false so the vtxo is recoverable
 			return nil, errors.VTXO_RECOVERABLE.New("%s is recoverable", vtxo.Outpoint).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
