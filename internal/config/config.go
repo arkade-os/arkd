@@ -627,13 +627,19 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("vtxo tree expiry expressed in blocks is allowed only on regtest")
 		}
 		if c.CheckpointExitDelay.Type == arklib.LocktimeTypeBlock {
-			return fmt.Errorf("checkpoint exit delay expressed in blocks is allowed only on regtest")
+			return fmt.Errorf(
+				"checkpoint exit delay expressed in blocks is allowed only on regtest",
+			)
 		}
 		if c.UnilateralExitDelay.Type == arklib.LocktimeTypeBlock {
-			return fmt.Errorf("unilateral exit delay expressed in blocks is allowed only on regtest")
+			return fmt.Errorf(
+				"unilateral exit delay expressed in blocks is allowed only on regtest",
+			)
 		}
 		if c.PublicUnilateralExitDelay.Type == arklib.LocktimeTypeBlock {
-			return fmt.Errorf("public unilateral exit delay expressed in blocks is allowed only on regtest")
+			return fmt.Errorf(
+				"public unilateral exit delay expressed in blocks is allowed only on regtest",
+			)
 		}
 		if c.BoardingExitDelay.Type == arklib.LocktimeTypeBlock {
 			return fmt.Errorf("boarding exit delay expressed in blocks is allowed only on regtest")
