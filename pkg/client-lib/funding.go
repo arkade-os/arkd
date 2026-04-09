@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"sort"
 	"sync"
 	"time"
@@ -601,9 +602,16 @@ func NetVtxoAssets(gross, subtract []types.Vtxo) []types.Asset {
 	}
 	subSums, _ := sumVtxoAssets(subtract)
 	out := make([]types.Asset, 0, len(order))
+	zero := new(big.Int)
 	for _, id := range order {
-		if g := grossSums[id]; g > subSums[id] {
-			out = append(out, types.Asset{AssetId: id, Amount: g - subSums[id]})
+		g := grossSums[id]
+		s := subSums[id]
+		if s == nil {
+			s = zero
+		}
+		if g.Cmp(s) > 0 {
+			diff := new(big.Int).Sub(g, s)
+			out = append(out, types.Asset{AssetId: id, Amount: diff.Uint64()})
 		}
 	}
 	if len(out) == 0 {
@@ -615,15 +623,16 @@ func NetVtxoAssets(gross, subtract []types.Vtxo) []types.Asset {
 // sumVtxoAssets aggregates per-asset amounts across the given vtxos, returning
 // a map of asset id → total amount together with the asset ids in first-seen
 // order (useful for deterministic output).
-func sumVtxoAssets(vtxos []types.Vtxo) (map[string]uint64, []string) {
-	sums := make(map[string]uint64)
+func sumVtxoAssets(vtxos []types.Vtxo) (map[string]*big.Int, []string) {
+	sums := make(map[string]*big.Int)
 	order := make([]string, 0)
 	for _, v := range vtxos {
 		for _, a := range v.Assets {
 			if _, seen := sums[a.AssetId]; !seen {
+				sums[a.AssetId] = new(big.Int)
 				order = append(order, a.AssetId)
 			}
-			sums[a.AssetId] += a.Amount
+			sums[a.AssetId].Add(sums[a.AssetId], new(big.Int).SetUint64(a.Amount))
 		}
 	}
 	return sums, order

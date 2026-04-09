@@ -35,9 +35,6 @@ func NewExtensionFromPackets(pkts ...Packet) (Extension, error) {
 			return nil, fmt.Errorf("extension packet must not be nil")
 		}
 		v := reflect.ValueOf(p)
-		if !v.IsValid() {
-			return nil, fmt.Errorf("extension packet must not be nil")
-		}
 		switch v.Kind() {
 		case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
 			if v.IsNil() {
