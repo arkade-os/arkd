@@ -272,7 +272,7 @@ func TestUnilateralExit(t *testing.T) {
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 
 		balance, err = alice.Balance(t.Context())
 		require.NoError(t, err)
@@ -349,7 +349,7 @@ func TestUnilateralExit(t *testing.T) {
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(8 * time.Second)
 
 		// Bob now just needs to wait for the unilateral exit delay to spend the unrolled VTXOs
 		bobBalance, err = bob.Balance(t.Context())
@@ -1137,11 +1137,11 @@ func TestOffchainTx(t *testing.T) {
 			require.NotEmpty(t, txid)
 
 			// Make the vtxo expire
-			err = generateBlocks(21)
+			err = generateBlocks(41)
 			require.NoError(t, err)
 
 			// Give time to the server to sweep the vtxo
-			time.Sleep(15 * time.Second)
+			time.Sleep(30 * time.Second)
 
 			// Ensure the vtxo is pending and swept
 			scriptStr := hex.EncodeToString(pkscript)
@@ -1281,11 +1281,11 @@ func TestOffchainTx(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, txid)
 
-			// Make the tx expire (the tx has 20 block expiration converted to 20 seconds in timestamp)
-			time.Sleep(30 * time.Second)
+			// Make the tx expire (the tx has 40 block expiration converted to 40 seconds in timestamp)
+			time.Sleep(50 * time.Second)
 
 			// Make the vtxo expire
-			err = generateBlocks(21)
+			err = generateBlocks(41)
 			require.NoError(t, err)
 
 			// Don't give time to the server to mark the vtxo as swept
@@ -2621,7 +2621,7 @@ func TestReactToFraud(t *testing.T) {
 				bumpAndBroadcastTx(t, parentTx, expl)
 			}
 
-			err = generateBlocks(30)
+			err = generateBlocks(50)
 			require.NoError(t, err)
 
 			// Give time for the server to detect and process the fraud
@@ -2910,7 +2910,7 @@ func TestReactToFraud(t *testing.T) {
 			}
 
 			// give time for the server to detect and process the fraud
-			err = generateBlocks(30)
+			err = generateBlocks(50)
 			require.NoError(t, err)
 
 			// make sure the vtxo of bob is not redeemed
@@ -2962,7 +2962,7 @@ func TestSweep(t *testing.T) {
 			wg.Done()
 		}()
 
-		// Settle the boarding utxo to create a new batch output expiring in 20 blocks
+		// Settle the boarding utxo to create a new batch output expiring in 40 blocks
 		_, err = alice.Settle(ctx)
 		require.NoError(t, err)
 
@@ -2996,8 +2996,8 @@ func TestSweep(t *testing.T) {
 			}
 		}()
 
-		// Generate 30 blocks to expire the batch output
-		err = generateBlocks(30)
+		// Generate 50 blocks to expire the batch output
+		err = generateBlocks(50)
 		require.NoError(t, err)
 
 		// wait for sweep event from the stream
@@ -3197,7 +3197,7 @@ func TestSweep(t *testing.T) {
 			wg.Done()
 		}()
 
-		// Settle the boarding utxo to create a new batch output expiring in 20 blocks
+		// Settle the boarding utxo to create a new batch output expiring in 40 blocks
 		_, err = alice.Settle(ctx)
 		require.NoError(t, err)
 
@@ -3216,8 +3216,8 @@ func TestSweep(t *testing.T) {
 		err = restartArkd()
 		require.NoError(t, err)
 
-		// Generate 30 blocks to expire the batch output
-		err = generateBlocks(30)
+		// Generate 50 blocks to expire the batch output
+		err = generateBlocks(50)
 		require.NoError(t, err)
 
 		// Wait for server to process the sweep (needs extra time after restart)
@@ -3323,7 +3323,7 @@ func TestSweep(t *testing.T) {
 		require.Empty(t, balance.OnchainBalance.LockedAmount)
 
 		// confirm the commitment tx (time t)
-		// sweeper schedules a sweep task at t+20 blocks
+		// sweeper schedules a sweep task at t+40 blocks
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
@@ -3335,7 +3335,7 @@ func TestSweep(t *testing.T) {
 
 		// t + 1 to confirm the first unroll tx
 		// split the root batch in two, "reset" the CSV
-		// sweeper schedules 2 sweep tasks at t+20+1 and t+20+1
+		// sweeper schedules 2 sweep tasks at t+40+1 and t+40+1
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
@@ -3343,7 +3343,7 @@ func TestSweep(t *testing.T) {
 		time.Sleep(5 * time.Second)
 
 		// wait 10 blocks to unroll again
-		// at this point, batches expires in 11 blocks
+		// at this point, batches expires in 31 blocks
 		err = generateBlocks(10)
 		require.NoError(t, err)
 
@@ -3354,15 +3354,15 @@ func TestSweep(t *testing.T) {
 		time.Sleep(2 * time.Second)
 
 		// split one of the batches in two, "reset" the CSV
-		// 1 expires in 10 blocks, the other in 20 blocks
+		// 1 expires in 20 blocks, the other in 40 blocks
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
 		// give time for the server to process the unroll
 		time.Sleep(2 * time.Second)
 
-		// Generate 11 blocks to expire the first batch outputs
-		err = generateBlocks(11)
+		// Generate 21 blocks to expire the first batch outputs
+		err = generateBlocks(21)
 		require.NoError(t, err)
 
 		// Wait for server to process the sweep
@@ -3454,7 +3454,7 @@ func TestSweep(t *testing.T) {
 			wg.Done()
 		}()
 
-		// Settle the boarding utxo to create a new batch output expiring in 20 blocks
+		// Settle the boarding utxo to create a new batch output expiring in 40 blocks
 		res, err := alice.Settle(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, res)
@@ -3464,8 +3464,8 @@ func TestSweep(t *testing.T) {
 		require.Len(t, incomingFunds, 1)
 		vtxo := incomingFunds[0]
 
-		// Generate 30 blocks to expire the batch output
-		err = generateBlocks(30)
+		// Generate 50 blocks to expire the batch output
+		err = generateBlocks(50)
 		require.NoError(t, err)
 
 		// Wait for server to attempt the sweep (it should fail due to dust amount)
@@ -5124,7 +5124,7 @@ func TestAsset(t *testing.T) {
 // reports no errors, proving the fanout survived the churn.
 func TestTxListenerChurn(t *testing.T) {
 	const (
-		testDuration           = 15 * time.Second
+		testDuration           = 30 * time.Second
 		churnWorkers           = 8
 		txProducerDelay        = 200 * time.Millisecond
 		minimumTxEvents        = 1
@@ -5402,11 +5402,11 @@ func TestTxListenerChurn(t *testing.T) {
 // events, and no sentinel errors are recorded.
 func TestEventListenerChurn(t *testing.T) {
 	const (
-		testDuration      = 19 * time.Second
+		testDuration      = 40 * time.Second
 		churnWorkers      = 16
 		participantsCount = 4
 		producerLoopDelay = 250 * time.Millisecond
-		roundTimeout      = 11 * time.Second
+		roundTimeout      = 20 * time.Second
 		minimumRounds     = 1
 	)
 
