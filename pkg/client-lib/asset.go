@@ -9,6 +9,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 )
 
@@ -20,7 +21,7 @@ func (a *service) IssueAsset(
 		return nil, err
 	}
 
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+	_, changeAddr, _, err := a.newAddress(ctx, wallet.KeyBranchChange)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +44,7 @@ func (a *service) IssueAsset(
 	}
 
 	receiver := types.Receiver{
-		To: offchainAddrs[0].Address, Amount: a.Dust,
+		To: changeAddr.Address, Amount: a.Dust,
 		Assets: receiverAsset,
 	}
 
@@ -228,7 +229,7 @@ func (a *service) ReissueAsset(
 		return nil, err
 	}
 
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+	_, changeAddr, _, err := a.newAddress(ctx, wallet.KeyBranchChange)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +251,7 @@ func (a *service) ReissueAsset(
 	defer a.txLock.Unlock()
 
 	receiver := types.Receiver{
-		To: offchainAddrs[0].Address, Amount: a.Dust,
+		To: changeAddr.Address, Amount: a.Dust,
 		Assets: []types.Asset{{
 			AssetId: controlAssetId,
 			Amount:  1, // TODO: should send all denominated amount of the asset vtxo
@@ -400,11 +401,11 @@ func (a *service) BurnAsset(
 		return nil, fmt.Errorf("amount must be > 0")
 	}
 
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+	_, changeAddr, _, err := a.newAddress(ctx, wallet.KeyBranchChange)
 	if err != nil {
 		return nil, err
 	}
-	if len(offchainAddrs) <= 0 {
+	if len(changeAddr.Address) <= 0 {
 		return nil, fmt.Errorf("no offchain addresses")
 	}
 
@@ -412,7 +413,7 @@ func (a *service) BurnAsset(
 	defer a.txLock.Unlock()
 
 	burnReceiver := types.Receiver{
-		To:     offchainAddrs[0].Address,
+		To:     changeAddr.Address,
 		Amount: a.Dust,
 		Assets: []types.Asset{{
 			AssetId: assetId,

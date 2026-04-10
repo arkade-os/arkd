@@ -76,6 +76,10 @@ type DeprecatedSigner struct {
 }
 
 type Address struct {
+	// KeyID identifies which wallet key produced this address.
+	// Single-key wallets populate it with their fixed key handle; HD wallets can
+	// use the derivation path.
+	KeyID      string
 	Tapscripts []string
 	Address    string
 }

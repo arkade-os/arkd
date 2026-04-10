@@ -14,6 +14,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
@@ -124,7 +125,7 @@ func (a *service) createOffchainTx(
 		return "", nil, nil, nil, fmt.Errorf("missing receivers")
 	}
 
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getOwnedAddresses(ctx)
 	if err != nil {
 		return "", nil, nil, nil, err
 	}
@@ -344,8 +345,13 @@ func (a *service) createOffchainTx(
 	}
 
 	if changeAmount > 0 {
+		_, changeAddr, _, err := a.newAddress(ctx, wallet.KeyBranchChange)
+		if err != nil {
+			return "", nil, nil, nil, err
+		}
+
 		changeReceiver = &types.Receiver{
-			To: offchainAddrs[0].Address, Amount: changeAmount,
+			To: changeAddr.Address, Amount: changeAmount,
 		}
 		if len(assetChanges) > 0 {
 			for assetID, amount := range assetChanges {

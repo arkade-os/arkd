@@ -12,16 +12,30 @@ const (
 	SingleKeyWallet = "singlekey"
 )
 
+type KeyBranch string
+
+const (
+	KeyBranchReceive KeyBranch = "receive"
+	KeyBranchChange  KeyBranch = "change"
+)
+
+type KeyRef struct {
+	// ID is the stable wallet-local handle for this key.
+	// Single-key wallets use a fixed constant; HD wallets can use a derivation
+	// path or another persistent key identifier.
+	ID     string
+	PubKey *btcec.PublicKey
+}
+
 type WalletService interface {
 	GetType() string
 	Create(ctx context.Context, password, seed string) (walletSeed string, err error)
 	Lock(ctx context.Context) (err error)
 	Unlock(ctx context.Context, password string) (alreadyUnlocked bool, err error)
 	IsLocked() bool
-	GetKeyPair(
-		ctx context.Context, path string,
-	) (prvkey *btcec.PrivateKey, pubkey *btcec.PublicKey, err error)
-	NewKeyPair(ctx context.Context) (prvkey *btcec.PrivateKey, pubkey *btcec.PublicKey, err error)
+	GetKey(ctx context.Context, id string) (key KeyRef, err error)
+	NewKey(ctx context.Context, branch KeyBranch) (key KeyRef, err error)
+	ListKeys(ctx context.Context, branch KeyBranch) (keys []KeyRef, err error)
 	SignTransaction(
 		ctx context.Context, explorerSvc explorer.Explorer, tx string,
 	) (signedTx string, err error)
