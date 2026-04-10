@@ -117,9 +117,7 @@ func NewService(
 	sessionDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
 	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64,
 	maxTxWeight uint64, assetTxMaxWeightRatio float64,
-	network arklib.Network,
-	allowCSVBlockType bool,
-	noteUriPrefix string,
+	network arklib.Network, noteUriPrefix string,
 	scheduledSessionStartTime, scheduledSessionEndTime time.Time,
 	scheduledSessionPeriod, scheduledSessionDuration time.Duration,
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
@@ -170,6 +168,8 @@ func NewService(
 	if roundReportSvc == nil {
 		roundReportSvc = roundReportUnimplemented{}
 	}
+
+	allowCSVBlockType := vtxoTreeExpiry.Type == arklib.LocktimeTypeBlock
 
 	ctx, cancel := context.WithCancel(ctx)
 

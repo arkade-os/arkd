@@ -869,7 +869,6 @@ func (c *Config) appService() error {
 	if err != nil {
 		return err
 	}
-	allowCSVBlockType := c.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock
 
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
@@ -879,7 +878,7 @@ func (c *Config) appService() error {
 		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
 		c.BanDuration, c.BanThreshold, c.MaxTxWeight, c.AssetTxMaxWeightRatio,
-		*c.network, allowCSVBlockType, c.NoteUriPrefix,
+		*c.network, c.NoteUriPrefix,
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
