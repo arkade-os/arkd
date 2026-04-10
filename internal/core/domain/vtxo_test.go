@@ -15,7 +15,10 @@ const validVtxoPubkey = "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543
 func TestOutpoint(t *testing.T) {
 	t.Run("FromString", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
-			original := domain.Outpoint{Txid: "0123456789abcdef", VOut: 42}
+			original := domain.Outpoint{
+				Txid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				VOut: 42,
+			}
 			var parsed domain.Outpoint
 			err := parsed.FromString(original.String())
 			require.NoError(t, err)
