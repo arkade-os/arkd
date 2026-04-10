@@ -1608,7 +1608,7 @@ func TestDelegateRefresh(t *testing.T) {
 
 	exitLocktime := arklib.RelativeLocktime{
 		Type:  arklib.LocktimeTypeBlock,
-		Value: 10,
+		Value: 20,
 	}
 
 	delegationVtxoScript := script.TapscriptsVtxoScript{
@@ -1811,7 +1811,7 @@ func TestDelegateRefresh(t *testing.T) {
 	signedPartialForfeitTx, err := alice.SignTransaction(ctx, b64partialForfeitTx)
 	require.NoError(t, err)
 
-	// 10 blocks later, Bob registers Alice's intent, signs the tree and submit,
+	// 11 blocks later, Bob registers Alice's intent, signs the tree and submit,
 	// completes the forfeit tx by adding the connector, signs and finally submits it to complete
 	// the batch session in behalf of Alice
 	err = generateBlocks(11)
@@ -3361,8 +3361,8 @@ func TestSweep(t *testing.T) {
 		// give time for the server to process the unroll
 		time.Sleep(2 * time.Second)
 
-		// Generate 21 blocks to expire the first batch outputs
-		err = generateBlocks(21)
+		// Generate 30 blocks to expire the first batch outputs
+		err = generateBlocks(30)
 		require.NoError(t, err)
 
 		// Wait for server to process the sweep
