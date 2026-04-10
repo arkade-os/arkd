@@ -1251,13 +1251,14 @@ func TestDelegateRefresh(t *testing.T) {
 
 	aliceClient := alice.Transport()
 
-	_, alicePubkey, err := alice.Wallet().GetKeyPair(ctx, "")
-	require.NoError(t, err)
-	require.NotNil(t, alicePubkey)
-
 	_, aliceAddr, _, err := alice.Receive(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, aliceAddr)
+	require.NotEmpty(t, aliceAddr.KeyID)
+
+	aliceKey, err := alice.Wallet().GetKey(ctx, aliceAddr.KeyID)
+	require.NoError(t, err)
+	require.NotNil(t, aliceKey.PubKey)
 
 	aliceArkAddr, err := arklib.DecodeAddressV0(aliceAddr.Address)
 	require.NoError(t, err)
@@ -1281,7 +1282,7 @@ func TestDelegateRefresh(t *testing.T) {
 		Locktime: delegateLocktime,
 		MultisigClosure: script.MultisigClosure{
 			// both alice and bob must sign the transaction
-			PubKeys: []*btcec.PublicKey{alicePubkey, bobPubKey, signerPubKey},
+			PubKeys: []*btcec.PublicKey{aliceKey.PubKey, bobPubKey, signerPubKey},
 		},
 	}
 
@@ -1296,13 +1297,13 @@ func TestDelegateRefresh(t *testing.T) {
 			collaborativeAliceBobClosure,
 			// classic collaborative closure, alice only
 			&script.MultisigClosure{
-				PubKeys: []*btcec.PublicKey{alicePubkey, signerPubKey},
+				PubKeys: []*btcec.PublicKey{aliceKey.PubKey, signerPubKey},
 			},
 			// alice exit script
 			&script.CSVMultisigClosure{
 				Locktime: exitLocktime,
 				MultisigClosure: script.MultisigClosure{
-					PubKeys: []*btcec.PublicKey{alicePubkey},
+					PubKeys: []*btcec.PublicKey{aliceKey.PubKey},
 				},
 			},
 		},

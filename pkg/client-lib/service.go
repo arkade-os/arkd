@@ -305,7 +305,7 @@ func (a *service) getVtxos(
 		return nil, nil, ErrNotInitialized
 	}
 
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getOwnedAddresses(ctx)
 	if err != nil {
 		return
 	}
@@ -417,7 +417,7 @@ func (a *service) fetchPendingSpentVtxos(ctx context.Context) ([]types.Vtxo, err
 		return nil, ErrNotInitialized
 	}
 
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getOwnedAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +444,7 @@ func (a *service) fetchPendingSpentVtxos(ctx context.Context) ([]types.Vtxo, err
 func (a *service) populateVtxosWithTapscripts(
 	ctx context.Context, vtxos []types.Vtxo,
 ) ([]types.VtxoWithTapTree, error) {
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getOwnedAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}

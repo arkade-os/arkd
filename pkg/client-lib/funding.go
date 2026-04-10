@@ -13,6 +13,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
@@ -25,7 +26,7 @@ func (a *service) Receive(ctx context.Context) (
 		return "", nil, nil, fmt.Errorf("wallet not initialized")
 	}
 
-	onchainAddr, offchainAddr, boardingAddr, err = a.newAddress(ctx)
+	onchainAddr, offchainAddr, boardingAddr, err = a.newAddress(ctx, wallet.KeyBranchReceive)
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -68,7 +69,7 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 		return nil, fmt.Errorf("wallet not initialized")
 	}
 
-	onchainAddrs, offchainAddrs, boardingAddrs, redeemAddrs, err := a.getAddresses(ctx)
+	onchainAddrs, offchainAddrs, boardingAddrs, redeemAddrs, err := a.getOwnedAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -297,90 +298,88 @@ func (a *service) NotifyIncomingFunds(ctx context.Context, addr string) ([]types
 	}
 }
 
-func (a *service) newAddress(ctx context.Context) (string, *types.Address, *types.Address, error) {
-	_, pubkey, err := a.wallet.NewKeyPair(ctx)
+func (a *service) newAddress(
+	ctx context.Context, branch wallet.KeyBranch,
+) (string, *types.Address, *types.Address, error) {
+	key, err := a.wallet.NewKey(ctx, branch)
 	if err != nil {
 		return "", nil, nil, err
 	}
 
-	netParams := utils.ToBitcoinNetwork(a.Network)
-
-	defaultVtxoScript := script.NewDefaultVtxoScript(
-		pubkey, a.SignerPubKey, a.UnilateralExitDelay,
-	)
-	vtxoTapKey, _, err := defaultVtxoScript.TapTree()
+	onchainAddr, offchainAddr, boardingAddr, _, err := a.deriveDefaultAddresses(key)
 	if err != nil {
 		return "", nil, nil, err
 	}
 
-	offchainAddress := &arklib.Address{
-		HRP:        a.Network.Addr,
-		Signer:     a.SignerPubKey,
-		VtxoTapKey: vtxoTapKey,
-	}
-	encodedOffchainAddr, err := offchainAddress.EncodeV0()
-	if err != nil {
-		return "", nil, nil, err
-	}
-
-	tapscripts, err := defaultVtxoScript.Encode()
-	if err != nil {
-		return "", nil, nil, err
-	}
-
-	boardingVtxoScript := script.NewDefaultVtxoScript(
-		pubkey, a.SignerPubKey, a.BoardingExitDelay,
-	)
-	boardingTapKey, _, err := boardingVtxoScript.TapTree()
-	if err != nil {
-		return "", nil, nil, err
-	}
-
-	boardingAddr, err := btcutil.NewAddressTaproot(
-		schnorr.SerializePubKey(boardingTapKey), &netParams,
-	)
-	if err != nil {
-		return "", nil, nil, err
-	}
-
-	boardingTapscripts, err := boardingVtxoScript.Encode()
-	if err != nil {
-		return "", nil, nil, err
-	}
-
-	onchainTapKey := txscript.ComputeTaprootKeyNoScript(pubkey)
-	onchainAddr, err := btcutil.NewAddressTaproot(
-		schnorr.SerializePubKey(onchainTapKey), &netParams,
-	)
-	if err != nil {
-		return "", nil, nil, err
-	}
-
-	return onchainAddr.EncodeAddress(), &types.Address{
-			Tapscripts: tapscripts,
-			Address:    encodedOffchainAddr,
-		}, &types.Address{
-			Tapscripts: boardingTapscripts,
-			Address:    boardingAddr.EncodeAddress(),
-		}, nil
+	return onchainAddr, &offchainAddr, &boardingAddr, nil
 }
 
 func (a *service) getAddresses(
 	ctx context.Context,
 ) ([]string, []types.Address, []types.Address, []types.Address, error) {
-	_, pubkey, err := a.wallet.GetKeyPair(ctx, "")
-	if err != nil {
-		return nil, nil, nil, nil, err
+	return a.getAddressesForBranches(ctx, wallet.KeyBranchReceive)
+}
+
+func (a *service) getOwnedAddresses(
+	ctx context.Context,
+) ([]string, []types.Address, []types.Address, []types.Address, error) {
+	return a.getAddressesForBranches(
+		ctx, wallet.KeyBranchReceive, wallet.KeyBranchChange,
+	)
+}
+
+func (a *service) getAddressesForBranches(
+	ctx context.Context, branches ...wallet.KeyBranch,
+) ([]string, []types.Address, []types.Address, []types.Address, error) {
+	keys := make([]wallet.KeyRef, 0)
+	seenKeys := make(map[string]struct{})
+
+	for _, branch := range branches {
+		branchKeys, err := a.wallet.ListKeys(ctx, branch)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+
+		for _, key := range branchKeys {
+			if _, ok := seenKeys[key.ID]; ok {
+				continue
+			}
+			seenKeys[key.ID] = struct{}{}
+			keys = append(keys, key)
+		}
 	}
 
+	onchainAddrs := make([]string, 0, len(keys))
+	offchainAddrs := make([]types.Address, 0, len(keys))
+	boardingAddrs := make([]types.Address, 0, len(keys))
+	redemptionAddrs := make([]types.Address, 0, len(keys))
+
+	for _, key := range keys {
+		onchainAddr, offchainAddr, boardingAddr, redemptionAddr, err := a.deriveDefaultAddresses(key)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+
+		onchainAddrs = append(onchainAddrs, onchainAddr)
+		offchainAddrs = append(offchainAddrs, offchainAddr)
+		boardingAddrs = append(boardingAddrs, boardingAddr)
+		redemptionAddrs = append(redemptionAddrs, redemptionAddr)
+	}
+
+	return onchainAddrs, offchainAddrs, boardingAddrs, redemptionAddrs, nil
+}
+
+func (a *service) deriveDefaultAddresses(
+	key wallet.KeyRef,
+) (string, types.Address, types.Address, types.Address, error) {
 	netParams := utils.ToBitcoinNetwork(a.Network)
 
 	defaultVtxoScript := script.NewDefaultVtxoScript(
-		pubkey, a.SignerPubKey, a.UnilateralExitDelay,
+		key.PubKey, a.SignerPubKey, a.UnilateralExitDelay,
 	)
 	vtxoTapKey, _, err := defaultVtxoScript.TapTree()
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return "", types.Address{}, types.Address{}, types.Address{}, err
 	}
 
 	offchainAddress := &arklib.Address{
@@ -390,60 +389,62 @@ func (a *service) getAddresses(
 	}
 	encodedOffchainAddr, err := offchainAddress.EncodeV0()
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return "", types.Address{}, types.Address{}, types.Address{}, err
 	}
 
 	tapscripts, err := defaultVtxoScript.Encode()
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return "", types.Address{}, types.Address{}, types.Address{}, err
 	}
 
 	boardingVtxoScript := script.NewDefaultVtxoScript(
-		pubkey, a.SignerPubKey, a.BoardingExitDelay,
+		key.PubKey, a.SignerPubKey, a.BoardingExitDelay,
 	)
 	boardingTapKey, _, err := boardingVtxoScript.TapTree()
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return "", types.Address{}, types.Address{}, types.Address{}, err
 	}
 
 	boardingAddr, err := btcutil.NewAddressTaproot(
 		schnorr.SerializePubKey(boardingTapKey), &netParams,
 	)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return "", types.Address{}, types.Address{}, types.Address{}, err
 	}
 
 	boardingTapscripts, err := boardingVtxoScript.Encode()
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return "", types.Address{}, types.Address{}, types.Address{}, err
 	}
 
 	redemptionAddr, err := btcutil.NewAddressTaproot(
 		schnorr.SerializePubKey(vtxoTapKey), &netParams,
 	)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return "", types.Address{}, types.Address{}, types.Address{}, err
 	}
 
-	onchainTapKey := txscript.ComputeTaprootKeyNoScript(pubkey)
+	onchainTapKey := txscript.ComputeTaprootKeyNoScript(key.PubKey)
 	onchainAddr, err := btcutil.NewAddressTaproot(
 		schnorr.SerializePubKey(onchainTapKey), &netParams,
 	)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return "", types.Address{}, types.Address{}, types.Address{}, err
 	}
 
-	offchainAddrs := []types.Address{
-		{Tapscripts: tapscripts, Address: encodedOffchainAddr},
-	}
-	boardingAddrs := []types.Address{
-		{Tapscripts: boardingTapscripts, Address: boardingAddr.EncodeAddress()},
-	}
-	redemptionAddrs := []types.Address{
-		{Tapscripts: tapscripts, Address: redemptionAddr.EncodeAddress()},
-	}
-
-	return []string{onchainAddr.EncodeAddress()}, offchainAddrs, boardingAddrs, redemptionAddrs, nil
+	return onchainAddr.EncodeAddress(), types.Address{
+			KeyID:      key.ID,
+			Tapscripts: tapscripts,
+			Address:    encodedOffchainAddr,
+		}, types.Address{
+			KeyID:      key.ID,
+			Tapscripts: boardingTapscripts,
+			Address:    boardingAddr.EncodeAddress(),
+		}, types.Address{
+			KeyID:      key.ID,
+			Tapscripts: tapscripts,
+			Address:    redemptionAddr.EncodeAddress(),
+		}, nil
 }
 
 func (a *service) getOffchainBalance(ctx context.Context) (
@@ -514,7 +515,7 @@ func (a *service) getBoardingTxs(ctx context.Context) ([]types.Transaction, erro
 }
 
 func (a *service) getAllBoardingUtxos(ctx context.Context) ([]types.Utxo, error) {
-	_, _, boardingAddrs, _, err := a.getAddresses(ctx)
+	_, _, boardingAddrs, _, err := a.getOwnedAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}

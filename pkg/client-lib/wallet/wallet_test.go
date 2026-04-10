@@ -8,6 +8,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
 	inmemorywalletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,14 +60,18 @@ func TestLockUnlock(t *testing.T) {
 	})
 }
 
-func TestGetKeyPair(t *testing.T) {
+func TestGetKey(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		walletSvc, seed := newUnlockedTestWallet(t)
-		prvkey, pubkey, err := walletSvc.GetKeyPair(t.Context(), "")
+		key, err := walletSvc.GetKey(t.Context(), "single")
 		require.NoError(t, err)
-		require.NotNil(t, prvkey)
-		require.NotNil(t, pubkey)
-		require.Equal(t, seed, hex.EncodeToString(prvkey.Serialize()))
+		require.Equal(t, "single", key.ID)
+		require.NotNil(t, key.PubKey)
+
+		prvkeyBytes, err := hex.DecodeString(seed)
+		require.NoError(t, err)
+		expectedPrvkey, _ := btcec.PrivKeyFromBytes(prvkeyBytes)
+		require.True(t, key.PubKey.IsEqual(expectedPrvkey.PubKey()))
 	})
 
 	t.Run("invalid", func(t *testing.T) {
@@ -93,23 +98,27 @@ func TestGetKeyPair(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				prvkey, pubkey, err := tt.setup(t).GetKeyPair(t.Context(), "")
+				key, err := tt.setup(t).GetKey(t.Context(), "single")
 				require.ErrorContains(t, err, tt.expErr)
-				require.Nil(t, prvkey)
-				require.Nil(t, pubkey)
+				require.Empty(t, key.ID)
+				require.Nil(t, key.PubKey)
 			})
 		}
 	})
 }
 
-func TestNewKeyPair(t *testing.T) {
+func TestNewKey(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		walletSvc, seed := newUnlockedTestWallet(t)
-		prvkey, pubkey, err := walletSvc.NewKeyPair(t.Context())
+		key, err := walletSvc.NewKey(t.Context(), wallet.KeyBranchReceive)
 		require.NoError(t, err)
-		require.NotNil(t, prvkey)
-		require.NotNil(t, pubkey)
-		require.Equal(t, seed, hex.EncodeToString(prvkey.Serialize()))
+		require.Equal(t, "single", key.ID)
+		require.NotNil(t, key.PubKey)
+
+		prvkeyBytes, err := hex.DecodeString(seed)
+		require.NoError(t, err)
+		expectedPrvkey, _ := btcec.PrivKeyFromBytes(prvkeyBytes)
+		require.True(t, key.PubKey.IsEqual(expectedPrvkey.PubKey()))
 	})
 
 	t.Run("invalid", func(t *testing.T) {
@@ -136,12 +145,29 @@ func TestNewKeyPair(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				prvkey, pubkey, err := tt.setup(t).NewKeyPair(t.Context())
+				key, err := tt.setup(t).NewKey(t.Context(), wallet.KeyBranchReceive)
 				require.ErrorContains(t, err, tt.expErr)
-				require.Nil(t, prvkey)
-				require.Nil(t, pubkey)
+				require.Empty(t, key.ID)
+				require.Nil(t, key.PubKey)
 			})
 		}
+	})
+}
+
+func TestListKeys(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		walletSvc, seed := newUnlockedTestWallet(t)
+
+		keys, err := walletSvc.ListKeys(t.Context(), wallet.KeyBranchReceive)
+		require.NoError(t, err)
+		require.Len(t, keys, 1)
+		require.Equal(t, "single", keys[0].ID)
+		require.NotNil(t, keys[0].PubKey)
+
+		prvkeyBytes, err := hex.DecodeString(seed)
+		require.NoError(t, err)
+		expectedPrvkey, _ := btcec.PrivKeyFromBytes(prvkeyBytes)
+		require.True(t, keys[0].PubKey.IsEqual(expectedPrvkey.PubKey()))
 	})
 }
 

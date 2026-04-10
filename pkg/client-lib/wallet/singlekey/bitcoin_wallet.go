@@ -28,6 +28,8 @@ type bitcoinWallet struct {
 	*singlekeyWallet
 }
 
+const singleKeyID = "single"
+
 func NewBitcoinWallet(
 	configStore types.ConfigStore, walletStore walletstore.WalletStore,
 ) (wallet.WalletService, error) {
@@ -44,28 +46,47 @@ func NewBitcoinWallet(
 	}, nil
 }
 
-func (w *bitcoinWallet) GetKeyPair(
-	ctx context.Context, _ string,
-) (*btcec.PrivateKey, *btcec.PublicKey, error) {
+func (w *bitcoinWallet) GetKey(
+	ctx context.Context, id string,
+) (wallet.KeyRef, error) {
 	if w.walletData == nil {
-		return nil, nil, fmt.Errorf("wallet not initialized")
+		return wallet.KeyRef{}, fmt.Errorf("wallet not initialized")
 	}
 	if w.IsLocked() {
-		return nil, nil, fmt.Errorf("wallet is locked")
+		return wallet.KeyRef{}, fmt.Errorf("wallet is locked")
 	}
-	return w.privateKey, w.privateKey.PubKey(), nil
+	if len(id) > 0 && id != singleKeyID {
+		return wallet.KeyRef{}, fmt.Errorf("unknown key id %q", id)
+	}
+	return wallet.KeyRef{
+		ID:     singleKeyID,
+		PubKey: w.privateKey.PubKey(),
+	}, nil
 }
 
-func (w *bitcoinWallet) NewKeyPair(
-	ctx context.Context,
-) (*btcec.PrivateKey, *btcec.PublicKey, error) {
+func (w *bitcoinWallet) NewKey(
+	ctx context.Context, _ wallet.KeyBranch,
+) (wallet.KeyRef, error) {
 	if w.walletData == nil {
-		return nil, nil, fmt.Errorf("wallet not initialized")
+		return wallet.KeyRef{}, fmt.Errorf("wallet not initialized")
 	}
 	if w.IsLocked() {
-		return nil, nil, fmt.Errorf("wallet is locked")
+		return wallet.KeyRef{}, fmt.Errorf("wallet is locked")
 	}
-	return w.privateKey, w.privateKey.PubKey(), nil
+	return wallet.KeyRef{
+		ID:     singleKeyID,
+		PubKey: w.privateKey.PubKey(),
+	}, nil
+}
+
+func (w *bitcoinWallet) ListKeys(
+	ctx context.Context, _ wallet.KeyBranch,
+) ([]wallet.KeyRef, error) {
+	key, err := w.GetKey(ctx, singleKeyID)
+	if err != nil {
+		return nil, err
+	}
+	return []wallet.KeyRef{key}, nil
 }
 
 func (w *bitcoinWallet) GetAddresses(
@@ -98,18 +119,21 @@ func (w *bitcoinWallet) GetAddresses(
 
 	offchainAddrs := []types.Address{
 		{
+			KeyID:      singleKeyID,
 			Tapscripts: offchainAddr.Tapscripts,
 			Address:    encodedOffchainAddr,
 		},
 	}
 	boardingAddrs := []types.Address{
 		{
+			KeyID:      singleKeyID,
 			Tapscripts: boardingAddr.Tapscripts,
 			Address:    boardingAddr.Address,
 		},
 	}
 	redemptionAddrs := []types.Address{
 		{
+			KeyID:      singleKeyID,
 			Tapscripts: offchainAddr.Tapscripts,
 			Address:    redemptionAddr.EncodeAddress(),
 		},
@@ -142,6 +166,7 @@ func (w *bitcoinWallet) NewAddress(
 	}
 
 	return onchainAddr.EncodeAddress(), &types.Address{
+		KeyID:      singleKeyID,
 		Tapscripts: offchainAddr.Tapscripts,
 		Address:    encodedOffchainAddr,
 	}, boardingAddr, nil
@@ -168,10 +193,12 @@ func (w *bitcoinWallet) NewAddresses(
 		}
 
 		offchainAddrs = append(offchainAddrs, types.Address{
+			KeyID:      singleKeyID,
 			Tapscripts: offchainAddr.Tapscripts,
 			Address:    encodedOffchainAddr,
 		})
 		boardingAddrs = append(boardingAddrs, types.Address{
+			KeyID:      singleKeyID,
 			Tapscripts: boardingAddr.Tapscripts,
 			Address:    boardingAddr.Address,
 		})
@@ -586,6 +613,7 @@ func (w *bitcoinWallet) getArkAddresses(
 			Tapscripts: tapscripts,
 		},
 		&types.Address{
+			KeyID:      singleKeyID,
 			Tapscripts: boardingTapscripts,
 			Address:    boardingAddr.EncodeAddress(),
 		},

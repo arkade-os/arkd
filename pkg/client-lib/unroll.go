@@ -14,6 +14,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	"github.com/arkade-os/arkd/pkg/client-lib/redemption"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -134,7 +135,7 @@ func (a *service) CompleteUnroll(ctx context.Context, to string) (string, error)
 	}
 
 	if len(to) == 0 {
-		newAddr, _, _, err := a.newAddress(ctx)
+		newAddr, _, _, err := a.newAddress(ctx, wallet.KeyBranchChange)
 		if err != nil {
 			return "", err
 		}
@@ -170,7 +171,7 @@ func (a *service) OnboardAgainAllExpiredBoardings(ctx context.Context) (string, 
 		return "", fmt.Errorf("operation not allowed by the server")
 	}
 
-	_, _, boardingAddr, err := a.newAddress(ctx)
+	_, _, boardingAddr, err := a.newAddress(ctx, wallet.KeyBranchChange)
 	if err != nil {
 		return "", err
 	}
@@ -207,7 +208,7 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 
 	fees := uint64(math.Ceil(float64(packageSize) * feeRate))
 
-	addresses, _, _, _, err := a.getAddresses(ctx)
+	addresses, _, _, _, err := a.getOwnedAddresses(ctx)
 	if err != nil {
 		return "", "", err
 	}
@@ -237,7 +238,7 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 
 	changeAmount := selectedAmount - fees
 
-	newAddr, _, _, err := a.newAddress(ctx)
+	newAddr, _, _, err := a.newAddress(ctx, wallet.KeyBranchChange)
 	if err != nil {
 		return "", "", err
 	}
@@ -477,7 +478,7 @@ func (a *service) sendExpiredBoardingUtxos(ctx context.Context, to string) (stri
 func (a *service) getExpiredBoardingUtxos(
 	ctx context.Context, opts *getVtxosFilter,
 ) ([]types.Utxo, error) {
-	_, _, boardingAddrs, _, err := a.getAddresses(ctx)
+	_, _, boardingAddrs, _, err := a.getOwnedAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -533,18 +534,12 @@ func (a *service) getExpiredBoardingUtxos(
 func (a *service) addInputs(
 	ctx context.Context, updater *psbt.Updater, utxos []types.Utxo,
 ) error {
-	// TODO works only with single-key wallet
-	_, offchain, _, err := a.newAddress(ctx)
-	if err != nil {
-		return err
-	}
-
-	vtxoScript, err := script.ParseVtxoScript(offchain.Tapscripts)
-	if err != nil {
-		return err
-	}
-
 	for _, utxo := range utxos {
+		vtxoScript, err := script.ParseVtxoScript(utxo.Tapscripts)
+		if err != nil {
+			return err
+		}
+
 		previousHash, err := chainhash.NewHashFromStr(utxo.Txid)
 		if err != nil {
 			return err
@@ -601,7 +596,7 @@ func (a *service) addInputs(
 }
 
 func (a *service) getMatureUtxos(ctx context.Context) ([]types.Utxo, error) {
-	_, _, _, redemptionAddrs, err := a.getAddresses(ctx)
+	_, _, _, redemptionAddrs, err := a.getOwnedAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
