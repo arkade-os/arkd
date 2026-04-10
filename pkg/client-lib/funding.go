@@ -26,7 +26,7 @@ func (a *service) Receive(ctx context.Context) (
 		return "", nil, nil, fmt.Errorf("wallet not initialized")
 	}
 
-	onchainAddr, offchainAddr, boardingAddr, err = a.newAddress(ctx, wallet.KeyBranchReceive)
+	onchainAddr, offchainAddr, boardingAddr, err = a.newAddress(ctx)
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -69,7 +69,7 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 		return nil, fmt.Errorf("wallet not initialized")
 	}
 
-	onchainAddrs, offchainAddrs, boardingAddrs, redeemAddrs, err := a.getOwnedAddresses(ctx)
+	onchainAddrs, offchainAddrs, boardingAddrs, redeemAddrs, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -299,60 +299,38 @@ func (a *service) NotifyIncomingFunds(ctx context.Context, addr string) ([]types
 }
 
 func (a *service) newAddress(
-	ctx context.Context, branch wallet.KeyBranch,
-) (string, *types.Address, *types.Address, error) {
-	key, err := a.wallet.NewKey(ctx, branch)
+	ctx context.Context,
+) (onchainAddr string, offchainAddr, boardingAddr *types.Address, err error) {
+	key, err := a.wallet.NewKey(ctx)
 	if err != nil {
 		return "", nil, nil, err
 	}
 
-	onchainAddr, offchainAddr, boardingAddr, _, err := a.deriveDefaultAddresses(key)
-	if err != nil {
-		return "", nil, nil, err
-	}
+	onchainAddr, offchainAddr, boardingAddr, _, err = a.deriveDefaultAddresses(*key)
 
-	return onchainAddr, &offchainAddr, &boardingAddr, nil
+	return onchainAddr, offchainAddr, boardingAddr, nil
 }
 
-func (a *service) getAddresses(
-	ctx context.Context,
-) ([]string, []types.Address, []types.Address, []types.Address, error) {
-	return a.getAddressesForBranches(ctx, wallet.KeyBranchReceive)
-}
-
-func (a *service) getOwnedAddresses(
-	ctx context.Context,
-) ([]string, []types.Address, []types.Address, []types.Address, error) {
-	return a.getAddressesForBranches(
-		ctx, wallet.KeyBranchReceive, wallet.KeyBranchChange,
-	)
-}
-
-func (a *service) getAddressesForBranches(
-	ctx context.Context, branches ...wallet.KeyBranch,
-) ([]string, []types.Address, []types.Address, []types.Address, error) {
+func (a *service) getAddresses(ctx context.Context) (
+	onchainAddrs []string,
+	offchainAddrs, boardingAddrs, redemptionAddrs []types.Address,
+	err error,
+) {
 	keys := make([]wallet.KeyRef, 0)
 	seenKeys := make(map[string]struct{})
 
-	for _, branch := range branches {
-		branchKeys, err := a.wallet.ListKeys(ctx, branch)
-		if err != nil {
-			return nil, nil, nil, nil, err
-		}
-
-		for _, key := range branchKeys {
-			if _, ok := seenKeys[key.ID]; ok {
-				continue
-			}
-			seenKeys[key.ID] = struct{}{}
-			keys = append(keys, key)
-		}
+	keyRefs, err := a.wallet.ListKeys(ctx)
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
 
-	onchainAddrs := make([]string, 0, len(keys))
-	offchainAddrs := make([]types.Address, 0, len(keys))
-	boardingAddrs := make([]types.Address, 0, len(keys))
-	redemptionAddrs := make([]types.Address, 0, len(keys))
+	for _, key := range keyRefs {
+		if _, ok := seenKeys[key.Id]; ok {
+			continue
+		}
+		seenKeys[key.Id] = struct{}{}
+		keys = append(keys, key)
+	}
 
 	for _, key := range keys {
 		onchainAddr, offchainAddr, boardingAddr, redemptionAddr, err := a.deriveDefaultAddresses(key)
@@ -361,9 +339,9 @@ func (a *service) getAddressesForBranches(
 		}
 
 		onchainAddrs = append(onchainAddrs, onchainAddr)
-		offchainAddrs = append(offchainAddrs, offchainAddr)
-		boardingAddrs = append(boardingAddrs, boardingAddr)
-		redemptionAddrs = append(redemptionAddrs, redemptionAddr)
+		offchainAddrs = append(offchainAddrs, *offchainAddr)
+		boardingAddrs = append(boardingAddrs, *boardingAddr)
+		redemptionAddrs = append(redemptionAddrs, *redemptionAddr)
 	}
 
 	return onchainAddrs, offchainAddrs, boardingAddrs, redemptionAddrs, nil
@@ -371,7 +349,7 @@ func (a *service) getAddressesForBranches(
 
 func (a *service) deriveDefaultAddresses(
 	key wallet.KeyRef,
-) (string, types.Address, types.Address, types.Address, error) {
+) (onchainAddr string, offchainAddr, boardingAddr, redemptionAddr *types.Address, err error) {
 	netParams := utils.ToBitcoinNetwork(a.Network)
 
 	defaultVtxoScript := script.NewDefaultVtxoScript(
@@ -379,7 +357,7 @@ func (a *service) deriveDefaultAddresses(
 	)
 	vtxoTapKey, _, err := defaultVtxoScript.TapTree()
 	if err != nil {
-		return "", types.Address{}, types.Address{}, types.Address{}, err
+		return "", nil, nil, nil, err
 	}
 
 	offchainAddress := &arklib.Address{
@@ -389,12 +367,12 @@ func (a *service) deriveDefaultAddresses(
 	}
 	encodedOffchainAddr, err := offchainAddress.EncodeV0()
 	if err != nil {
-		return "", types.Address{}, types.Address{}, types.Address{}, err
+		return "", nil, nil, nil, err
 	}
 
 	tapscripts, err := defaultVtxoScript.Encode()
 	if err != nil {
-		return "", types.Address{}, types.Address{}, types.Address{}, err
+		return "", nil, nil, nil, err
 	}
 
 	boardingVtxoScript := script.NewDefaultVtxoScript(
@@ -402,49 +380,54 @@ func (a *service) deriveDefaultAddresses(
 	)
 	boardingTapKey, _, err := boardingVtxoScript.TapTree()
 	if err != nil {
-		return "", types.Address{}, types.Address{}, types.Address{}, err
+		return "", nil, nil, nil, err
 	}
 
-	boardingAddr, err := btcutil.NewAddressTaproot(
+	boardingTaprootAddr, err := btcutil.NewAddressTaproot(
 		schnorr.SerializePubKey(boardingTapKey), &netParams,
 	)
 	if err != nil {
-		return "", types.Address{}, types.Address{}, types.Address{}, err
+		return "", nil, nil, nil, err
 	}
 
 	boardingTapscripts, err := boardingVtxoScript.Encode()
 	if err != nil {
-		return "", types.Address{}, types.Address{}, types.Address{}, err
+		return "", nil, nil, nil, err
 	}
 
-	redemptionAddr, err := btcutil.NewAddressTaproot(
+	redemptionTaprootAddr, err := btcutil.NewAddressTaproot(
 		schnorr.SerializePubKey(vtxoTapKey), &netParams,
 	)
 	if err != nil {
-		return "", types.Address{}, types.Address{}, types.Address{}, err
+		return "", nil, nil, nil, err
 	}
 
 	onchainTapKey := txscript.ComputeTaprootKeyNoScript(key.PubKey)
-	onchainAddr, err := btcutil.NewAddressTaproot(
+	onchainTaprootAddr, err := btcutil.NewAddressTaproot(
 		schnorr.SerializePubKey(onchainTapKey), &netParams,
 	)
 	if err != nil {
-		return "", types.Address{}, types.Address{}, types.Address{}, err
+		return "", nil, nil, nil, err
 	}
 
-	return onchainAddr.EncodeAddress(), types.Address{
-			KeyID:      key.ID,
-			Tapscripts: tapscripts,
-			Address:    encodedOffchainAddr,
-		}, types.Address{
-			KeyID:      key.ID,
-			Tapscripts: boardingTapscripts,
-			Address:    boardingAddr.EncodeAddress(),
-		}, types.Address{
-			KeyID:      key.ID,
-			Tapscripts: tapscripts,
-			Address:    redemptionAddr.EncodeAddress(),
-		}, nil
+	onchainAddr = onchainTaprootAddr.EncodeAddress()
+	offchainAddr = &types.Address{
+		KeyID:      key.Id,
+		Tapscripts: tapscripts,
+		Address:    encodedOffchainAddr,
+	}
+	boardingAddr = &types.Address{
+		KeyID:      key.Id,
+		Tapscripts: boardingTapscripts,
+		Address:    boardingTaprootAddr.EncodeAddress(),
+	}
+	redemptionAddr = &types.Address{
+		KeyID:      key.Id,
+		Tapscripts: tapscripts,
+		Address:    redemptionTaprootAddr.EncodeAddress(),
+	}
+
+	return
 }
 
 func (a *service) getOffchainBalance(ctx context.Context) (
@@ -515,7 +498,7 @@ func (a *service) getBoardingTxs(ctx context.Context) ([]types.Transaction, erro
 }
 
 func (a *service) getAllBoardingUtxos(ctx context.Context) ([]types.Utxo, error) {
-	_, _, boardingAddrs, _, err := a.getOwnedAddresses(ctx)
+	_, _, boardingAddrs, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}

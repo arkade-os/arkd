@@ -9,7 +9,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 )
 
@@ -21,7 +20,7 @@ func (a *service) IssueAsset(
 		return nil, err
 	}
 
-	_, changeAddr, _, err := a.newAddress(ctx, wallet.KeyBranchChange)
+	_, changeAddr, _, err := a.newAddress(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +228,7 @@ func (a *service) ReissueAsset(
 		return nil, err
 	}
 
-	_, changeAddr, _, err := a.newAddress(ctx, wallet.KeyBranchChange)
+	_, changeAddr, _, err := a.newAddress(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +400,7 @@ func (a *service) BurnAsset(
 		return nil, fmt.Errorf("amount must be > 0")
 	}
 
-	_, changeAddr, _, err := a.newAddress(ctx, wallet.KeyBranchChange)
+	_, changeAddr, _, err := a.newAddress(ctx)
 	if err != nil {
 		return nil, err
 	}

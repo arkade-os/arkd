@@ -18,7 +18,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
@@ -94,7 +93,7 @@ func (a *service) RedeemNotes(
 		amount += uint64(v.Value)
 	}
 
-	_, offchainAddrs, _, _, err := a.getOwnedAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +101,7 @@ func (a *service) RedeemNotes(
 		return nil, fmt.Errorf("no funds detected")
 	}
 
-	_, changeAddr, _, err := a.newAddress(ctx, wallet.KeyBranchChange)
+	_, changeAddr, _, err := a.newAddress(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +247,7 @@ func (a *service) getFundsToSettle(
 	ctx context.Context,
 	outputs []types.Receiver, feeEstimator *arkfee.Estimator, opts getVtxosFilter,
 ) ([]types.Utxo, []types.VtxoWithTapTree, []types.Receiver, error) {
-	_, offchainAddrs, boardingAddrs, _, err := a.getOwnedAddresses(ctx)
+	_, offchainAddrs, boardingAddrs, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -309,7 +308,7 @@ func (a *service) getFundsToSettle(
 			})
 		}
 
-		_, changeAddr, _, err := a.newAddress(ctx, wallet.KeyBranchChange)
+		_, changeAddr, _, err := a.newAddress(ctx)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -355,7 +354,7 @@ func (a *service) getFundsToSettle(
 	}
 
 	if changeAmount > 0 {
-		_, changeAddr, _, err := a.newAddress(ctx, wallet.KeyBranchChange)
+		_, changeAddr, _, err := a.newAddress(ctx)
 		if err != nil {
 			return nil, nil, nil, err
 		}

@@ -63,9 +63,8 @@ func TestLockUnlock(t *testing.T) {
 func TestGetKey(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		walletSvc, seed := newUnlockedTestWallet(t)
-		key, err := walletSvc.GetKey(t.Context(), "single")
+		key, err := walletSvc.GetKey(t.Context())
 		require.NoError(t, err)
-		require.Equal(t, "single", key.ID)
 		require.NotNil(t, key.PubKey)
 
 		prvkeyBytes, err := hex.DecodeString(seed)
@@ -98,10 +97,9 @@ func TestGetKey(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				key, err := tt.setup(t).GetKey(t.Context(), "single")
+				key, err := tt.setup(t).GetKey(t.Context())
 				require.ErrorContains(t, err, tt.expErr)
-				require.Empty(t, key.ID)
-				require.Nil(t, key.PubKey)
+				require.Nil(t, key)
 			})
 		}
 	})
@@ -110,9 +108,8 @@ func TestGetKey(t *testing.T) {
 func TestNewKey(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		walletSvc, seed := newUnlockedTestWallet(t)
-		key, err := walletSvc.NewKey(t.Context(), wallet.KeyBranchReceive)
+		key, err := walletSvc.NewKey(t.Context())
 		require.NoError(t, err)
-		require.Equal(t, "single", key.ID)
 		require.NotNil(t, key.PubKey)
 
 		prvkeyBytes, err := hex.DecodeString(seed)
@@ -145,10 +142,9 @@ func TestNewKey(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				key, err := tt.setup(t).NewKey(t.Context(), wallet.KeyBranchReceive)
+				key, err := tt.setup(t).NewKey(t.Context())
 				require.ErrorContains(t, err, tt.expErr)
-				require.Empty(t, key.ID)
-				require.Nil(t, key.PubKey)
+				require.Nil(t, key)
 			})
 		}
 	})
@@ -158,10 +154,9 @@ func TestListKeys(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		walletSvc, seed := newUnlockedTestWallet(t)
 
-		keys, err := walletSvc.ListKeys(t.Context(), wallet.KeyBranchReceive)
+		keys, err := walletSvc.ListKeys(t.Context())
 		require.NoError(t, err)
 		require.Len(t, keys, 1)
-		require.Equal(t, "single", keys[0].ID)
 		require.NotNil(t, keys[0].PubKey)
 
 		prvkeyBytes, err := hex.DecodeString(seed)

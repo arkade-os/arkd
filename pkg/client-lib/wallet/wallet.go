@@ -12,20 +12,14 @@ const (
 	SingleKeyWallet = "singlekey"
 )
 
-type KeyBranch string
-
-const (
-	KeyBranchReceive KeyBranch = "receive"
-	KeyBranchChange  KeyBranch = "change"
-)
-
 type KeyRef struct {
-	// ID is the stable wallet-local handle for this key.
-	// Single-key wallets use a fixed constant; HD wallets can use a derivation
-	// path or another persistent key identifier.
-	ID     string
+	// Id can be anything and it's up to implementation whether it is, for example, a derivation
+	// path or just a derivation index
+	Id     string
 	PubKey *btcec.PublicKey
 }
+
+type KeyOption func(options any) error
 
 type WalletService interface {
 	GetType() string
@@ -33,9 +27,9 @@ type WalletService interface {
 	Lock(ctx context.Context) (err error)
 	Unlock(ctx context.Context, password string) (alreadyUnlocked bool, err error)
 	IsLocked() bool
-	GetKey(ctx context.Context, id string) (key KeyRef, err error)
-	NewKey(ctx context.Context, branch KeyBranch) (key KeyRef, err error)
-	ListKeys(ctx context.Context, branch KeyBranch) (keys []KeyRef, err error)
+	NewKey(ctx context.Context, opts ...KeyOption) (key *KeyRef, err error)
+	GetKey(ctx context.Context, opts ...KeyOption) (key *KeyRef, err error)
+	ListKeys(ctx context.Context) (keys []KeyRef, err error)
 	SignTransaction(
 		ctx context.Context, explorerSvc explorer.Explorer, tx string,
 	) (signedTx string, err error)

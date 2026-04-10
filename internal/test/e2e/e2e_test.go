@@ -1256,7 +1256,7 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NotEmpty(t, aliceAddr)
 	require.NotEmpty(t, aliceAddr.KeyID)
 
-	aliceKey, err := alice.Wallet().GetKey(ctx, aliceAddr.KeyID)
+	aliceKey, err := alice.Wallet().GetKey(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, aliceKey.PubKey)
 
