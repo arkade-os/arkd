@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -75,7 +76,7 @@ func (v Vtxo) IsNote() bool {
 }
 
 func (v Vtxo) RequiresForfeit() bool {
-	return !v.Swept && !v.IsNote()
+	return !v.Swept && !v.IsExpired() && !v.IsNote()
 }
 
 func (v Vtxo) IsSettled() bool {
@@ -96,4 +97,8 @@ func (v Vtxo) OutputScript() ([]byte, error) {
 		return nil, err
 	}
 	return script.P2TRScript(pubkey)
+}
+
+func (v Vtxo) IsExpired() bool {
+	return time.Now().After(time.Unix(v.ExpiresAt, 0))
 }
