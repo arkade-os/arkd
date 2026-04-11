@@ -307,8 +307,7 @@ func (a *service) newAddress(
 	}
 
 	onchainAddr, offchainAddr, boardingAddr, _, err = a.deriveDefaultAddresses(*key)
-
-	return onchainAddr, offchainAddr, boardingAddr, nil
+	return onchainAddr, offchainAddr, boardingAddr, err
 }
 
 func (a *service) getAddresses(ctx context.Context) (

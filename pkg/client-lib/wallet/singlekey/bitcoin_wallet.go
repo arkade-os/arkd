@@ -25,8 +25,6 @@ type bitcoinWallet struct {
 	*singlekeyWallet
 }
 
-const singleKeyID = "single"
-
 func NewBitcoinWallet(
 	configStore types.ConfigStore, walletStore walletstore.WalletStore,
 ) (wallet.WalletService, error) {

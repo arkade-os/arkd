@@ -1026,15 +1026,11 @@ func TestOffchainTx(t *testing.T) {
 	t.Run("finalize pending swept tx", func(t *testing.T) {
 		t.Run("vtxo already swept", func(t *testing.T) {
 			ctx := t.Context()
-			explorer, err := mempool_explorer.NewExplorer(
-				"http://localhost:3000", arklib.BitcoinRegTest,
-				mempool_explorer.WithTracker(false),
-			)
-			require.NoError(t, err)
 
-			alice, aliceWallet, _, arkSvc := setupArkSDKwithPublicKey(t)
-			t.Cleanup(func() { alice.Stop() })
-			t.Cleanup(func() { arkSvc.Close() })
+			alice := setupClient(t)
+			t.Cleanup(alice.Stop)
+
+			aliceClient := alice.Transport()
 
 			vtxo := faucetOffchain(t, alice, 0.00021)
 
@@ -1042,12 +1038,12 @@ func TestOffchainTx(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, finalizedPendingTxs)
 
-			_, offchainAddresses, _, _, err := aliceWallet.GetAddresses(ctx)
+			_, offchainAddresses, _, _, err := alice.GetAddresses(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, offchainAddresses)
 			offchainAddress := offchainAddresses[0]
 
-			serverParams, err := arkSvc.GetInfo(ctx)
+			serverParams, err := aliceClient.GetInfo(ctx)
 			require.NoError(t, err)
 
 			vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
@@ -1118,14 +1114,10 @@ func TestOffchainTx(t *testing.T) {
 			// sign the ark transaction
 			encodedArkTx, err := ptx.B64Encode()
 			require.NoError(t, err)
-			signedArkTx, err := aliceWallet.SignTransaction(
-				ctx,
-				explorer,
-				encodedArkTx,
-			)
+			signedArkTx, err := alice.SignTransaction(ctx, encodedArkTx)
 			require.NoError(t, err)
 
-			txid, _, _, err := arkSvc.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
+			txid, _, _, err := aliceClient.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
 			require.NoError(t, err)
 			require.NotEmpty(t, txid)
 
@@ -1171,15 +1163,11 @@ func TestOffchainTx(t *testing.T) {
 
 		t.Run("vtxo expired but not swept", func(t *testing.T) {
 			ctx := t.Context()
-			explorer, err := mempool_explorer.NewExplorer(
-				"http://localhost:3000", arklib.BitcoinRegTest,
-				mempool_explorer.WithTracker(false),
-			)
-			require.NoError(t, err)
 
-			alice, aliceWallet, _, arkSvc := setupArkSDKwithPublicKey(t)
-			t.Cleanup(func() { alice.Stop() })
-			t.Cleanup(func() { arkSvc.Close() })
+			alice := setupClient(t)
+			t.Cleanup(alice.Stop)
+
+			aliceClient := alice.Transport()
 
 			vtxo := faucetOffchain(t, alice, 0.00021)
 
@@ -1187,12 +1175,12 @@ func TestOffchainTx(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, finalizedPendingTxs)
 
-			_, offchainAddresses, _, _, err := aliceWallet.GetAddresses(ctx)
+			_, offchainAddresses, _, _, err := alice.GetAddresses(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, offchainAddresses)
 			offchainAddress := offchainAddresses[0]
 
-			serverParams, err := arkSvc.GetInfo(ctx)
+			serverParams, err := aliceClient.GetInfo(ctx)
 			require.NoError(t, err)
 
 			vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
@@ -1263,14 +1251,10 @@ func TestOffchainTx(t *testing.T) {
 			// sign the ark transaction
 			encodedArkTx, err := ptx.B64Encode()
 			require.NoError(t, err)
-			signedArkTx, err := aliceWallet.SignTransaction(
-				ctx,
-				explorer,
-				encodedArkTx,
-			)
+			signedArkTx, err := alice.SignTransaction(ctx, encodedArkTx)
 			require.NoError(t, err)
 
-			txid, _, _, err := arkSvc.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
+			txid, _, _, err := aliceClient.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
 			require.NoError(t, err)
 			require.NotEmpty(t, txid)
 

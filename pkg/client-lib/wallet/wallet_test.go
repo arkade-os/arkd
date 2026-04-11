@@ -65,6 +65,7 @@ func TestGetKey(t *testing.T) {
 		walletSvc, seed := newUnlockedTestWallet(t)
 		key, err := walletSvc.GetKey(t.Context())
 		require.NoError(t, err)
+		require.NotNil(t, key)
 		require.NotNil(t, key.PubKey)
 
 		prvkeyBytes, err := hex.DecodeString(seed)
