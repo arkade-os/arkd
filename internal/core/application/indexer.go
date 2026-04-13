@@ -572,6 +572,10 @@ func (i *indexerService) walkVtxoChain(
 	offchainTxCache := make(map[string]*domain.OffchainTx)
 	allOutpoints := make([]Outpoint, 0)
 
+	// Timing accumulators.
+	var tEnsureVtxos, tBulkOffchain, tSingleOffchain, tPsbtDeser, tVtxoTree time.Duration
+	walkStart := time.Now()
+
 	// Lazy cache for VTXOs loaded during this page.
 	vtxoCache := make(map[string]domain.Vtxo)
 	loadedMarkers := make(map[string]bool)
@@ -588,9 +592,11 @@ func (i *indexerService) walkVtxoChain(
 	}
 
 	for len(nextVtxos) > 0 {
+		t0 := time.Now()
 		if err := i.ensureVtxosCached(ctx, nextVtxos, vtxoCache, loadedMarkers); err != nil {
 			return nil, nil, "", err
 		}
+		tEnsureVtxos += time.Since(t0)
 
 		vtxos := make([]domain.Vtxo, 0, len(nextVtxos))
 		for _, op := range nextVtxos {
@@ -619,7 +625,9 @@ func (i *indexerService) walkVtxoChain(
 				txids = append(txids, txid)
 			}
 
+			t1 := time.Now()
 			offchainTxs, err := i.repoManager.OffchainTxs().GetOffchainTxsByTxids(ctx, txids)
+			tBulkOffchain += time.Since(t1)
 			if err != nil {
 				return nil, nil, "", fmt.Errorf("failed to retrieve offchain txs: %s", err)
 			}
@@ -660,8 +668,10 @@ func (i *indexerService) walkVtxoChain(
 			if vtxo.Preconfirmed {
 				offchainTx, ok := offchainTxCache[vtxo.Txid]
 				if !ok {
+					t2 := time.Now()
 					var err error
 					offchainTx, err = i.repoManager.OffchainTxs().GetOffchainTx(ctx, vtxo.Txid)
+					tSingleOffchain += time.Since(t2)
 					if err != nil {
 						return nil, nil, "", fmt.Errorf("failed to retrieve offchain tx: %s", err)
 					}
@@ -675,6 +685,7 @@ func (i *indexerService) walkVtxoChain(
 				}
 
 				checkpointTxs := make([]ChainTx, 0, len(offchainTx.CheckpointTxs))
+				t3 := time.Now()
 				for _, b64 := range offchainTx.CheckpointTxs {
 					ptx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
 					if err != nil {
@@ -704,6 +715,7 @@ func (i *indexerService) walkVtxoChain(
 						}
 					}
 				}
+				tPsbtDeser += time.Since(t3)
 
 				chain = append(chain, chainTx)
 				chain = append(chain, checkpointTxs...)
@@ -712,6 +724,7 @@ func (i *indexerService) walkVtxoChain(
 
 			// if the vtxo is not preconfirmed, it means it's a leaf of a batch tree
 			// add the branch until the commitment tx
+			t4 := time.Now()
 			flatVtxoTree, err := i.GetVtxoTree(ctx, Outpoint{
 				Txid: vtxo.RootCommitmentTxid, VOut: 0,
 			}, nil)
@@ -735,6 +748,7 @@ func (i *indexerService) walkVtxoChain(
 			}); err != nil {
 				return nil, nil, "", err
 			}
+			tVtxoTree += time.Since(t4)
 
 			// reverse fromRootToVtxo
 			fromVtxoToRoot := make([]ChainTx, 0, len(fromRootToVtxo))
@@ -775,6 +789,18 @@ func (i *indexerService) walkVtxoChain(
 	}
 
 	// Chain exhausted — no more pages.
+	walkTotal := time.Since(walkStart)
+	tOther := walkTotal - tEnsureVtxos - tBulkOffchain - tSingleOffchain - tPsbtDeser - tVtxoTree
+	log.WithFields(log.Fields{
+		"total":           walkTotal,
+		"ensureVtxos":     tEnsureVtxos,
+		"bulkOffchainTx":  tBulkOffchain,
+		"singleOffchainTx": tSingleOffchain,
+		"psbtDeser":       tPsbtDeser,
+		"vtxoTree":        tVtxoTree,
+		"other":           tOther,
+		"chainLen":        len(chain),
+	}).Info("walkVtxoChain timing breakdown")
 	return chain, allOutpoints, "", nil
 }
 
