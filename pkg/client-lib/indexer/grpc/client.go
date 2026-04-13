@@ -19,6 +19,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const (
+	maxPageSize   = 1000
+	maxReqsPerSec = 20
+)
+
 type grpcClient struct {
 	conn   *grpc.ClientConn
 	connMu *sync.RWMutex
@@ -306,6 +311,10 @@ func (a *grpcClient) GetVtxos(
 		return nil, fmt.Errorf("missing opts")
 	}
 
+	if len(o.Scripts) > maxPageSize || len(o.Outpoints) > maxPageSize {
+		return a.paginatedGetVtxos(ctx, opts...)
+	}
+
 	var page *arkv1.IndexerPageRequest
 	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
@@ -398,6 +407,10 @@ func (a *grpcClient) GetVtxoChain(
 func (a *grpcClient) GetVirtualTxs(
 	ctx context.Context, txids []string, opts ...indexer.PageOption,
 ) (*indexer.VirtualTxsResponse, error) {
+	if len(txids) > maxPageSize {
+		return a.paginatedGetVirtualTxs(ctx, txids)
+	}
+
 	o, err := indexer.ApplyPageOptions(opts...)
 	if err != nil {
 		return nil, err
@@ -613,6 +626,97 @@ func (a *grpcClient) svc() arkv1.IndexerServiceClient {
 	a.connMu.RLock()
 	defer a.connMu.RUnlock()
 	return arkv1.NewIndexerServiceClient(a.conn)
+}
+
+func (a *grpcClient) paginatedGetVtxos(
+	ctx context.Context, opts ...indexer.GetVtxosOption,
+) (*indexer.VtxosResponse, error) {
+	// nolint
+	o, _ := indexer.ApplyGetVtxosOptions(opts...)
+	svc := a.svc()
+
+	vtxos, err := paginatedFetch(ctx, func(
+		ctx context.Context, page *arkv1.IndexerPageRequest,
+	) ([]types.Vtxo, *arkv1.IndexerPageResponse, error) {
+		resp, err := svc.GetVtxos(ctx, &arkv1.GetVtxosRequest{
+			Scripts:         o.Scripts,
+			Outpoints:       o.FormattedOutpoints(),
+			SpendableOnly:   o.SpendableOnly,
+			SpentOnly:       o.SpentOnly,
+			RecoverableOnly: o.RecoverableOnly,
+			PendingOnly:     o.PendingOnly,
+			After:           o.After,
+			Before:          o.Before,
+			Page:            page,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return newIndexerVtxos(resp.GetVtxos()), resp.GetPage(), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &indexer.VtxosResponse{Vtxos: vtxos}, nil
+}
+
+func (a *grpcClient) paginatedGetVirtualTxs(
+	ctx context.Context, txids []string,
+) (*indexer.VirtualTxsResponse, error) {
+	svc := a.svc()
+
+	txs, err := paginatedFetch(ctx, func(
+		ctx context.Context, page *arkv1.IndexerPageRequest,
+	) ([]string, *arkv1.IndexerPageResponse, error) {
+		resp, err := svc.GetVirtualTxs(ctx, &arkv1.GetVirtualTxsRequest{
+			Txids: txids,
+			Page:  page,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return resp.GetTxs(), resp.GetPage(), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &indexer.VirtualTxsResponse{Txs: txs}, nil
+}
+
+// paginatedFetch fetches all pages from a paginated endpoint, throttling
+// requests to stay under the rate limit (20 req/sec).
+func paginatedFetch[T any](
+	ctx context.Context,
+	fetch func(
+		ctx context.Context, page *arkv1.IndexerPageRequest,
+	) ([]T, *arkv1.IndexerPageResponse, error),
+) ([]T, error) {
+	var all []T
+	pageIndex := int32(0)
+	reqCount := 0
+	for {
+		items, page, err := fetch(ctx, &arkv1.IndexerPageRequest{
+			Size:  maxPageSize,
+			Index: pageIndex,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		all = append(all, items...)
+		reqCount++
+
+		if page == nil || page.GetNext() == page.GetTotal() {
+			break
+		}
+		pageIndex = page.GetNext()
+
+		// Throttle to avoid hitting the rate limit (20 req/sec).
+		if reqCount%maxReqsPerSec == 0 {
+			time.Sleep(time.Second)
+		}
+	}
+	return all, nil
 }
 
 func toStreamConnectionState(
