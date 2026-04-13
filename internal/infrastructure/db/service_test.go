@@ -3443,6 +3443,58 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		bulkFetchedTxs, err = repo.GetOffchainTxsByTxids(ctx, []string{"missing-txid"})
 		require.NoError(t, err)
 		require.Empty(t, bulkFetchedTxs)
+
+		// Insert a second offchain tx so we can exercise multi-txid bulk fetch.
+		secondArkTxid := txidb
+		secondCheckpointTxid := "0000000000000000000000000000000000000000000000000000000000000005"
+		secondCheckpointPtx := "cHNldP8BAgQCAAAAAQQBAAEFAQABBgEDAfsEAgAAAAA=signed-2"
+		secondEvents := []domain.Event{
+			domain.OffchainTxRequested{
+				OffchainTxEvent: domain.OffchainTxEvent{
+					Id:   secondArkTxid,
+					Type: domain.EventTypeOffchainTxRequested,
+				},
+				StartingTimestamp: now.Unix(),
+			},
+			domain.OffchainTxAccepted{
+				OffchainTxEvent: domain.OffchainTxEvent{
+					Id:   secondArkTxid,
+					Type: domain.EventTypeOffchainTxAccepted,
+				},
+				CommitmentTxids: map[string]string{
+					secondCheckpointTxid: rootCommitmentTxid,
+				},
+				SignedCheckpointTxs: map[string]string{
+					secondCheckpointTxid: secondCheckpointPtx,
+				},
+				RootCommitmentTxid: rootCommitmentTxid,
+			},
+		}
+		secondOffchainTx := domain.NewOffchainTxFromEvents(secondEvents)
+		require.NoError(t, repo.AddOrUpdateOffchainTx(ctx, secondOffchainTx))
+
+		// Multi-txid fetch returns both, plus tolerates a missing entry.
+		bulkFetchedTxs, err = repo.GetOffchainTxsByTxids(
+			ctx, []string{arkTxid, secondArkTxid, "missing-txid"},
+		)
+		require.NoError(t, err)
+		require.Len(t, bulkFetchedTxs, 2)
+
+		got := make(map[string]*domain.OffchainTx, len(bulkFetchedTxs))
+		for _, tx := range bulkFetchedTxs {
+			got[tx.ArkTxid] = tx
+		}
+		require.Contains(t, got, arkTxid)
+		require.Contains(t, got, secondArkTxid)
+
+		// Each result must carry its own checkpoint mapping — guards the
+		// row-grouping logic against cross-txid contamination.
+		require.Contains(t, got[arkTxid].CheckpointTxs, checkpointTxid1)
+		require.Contains(t, got[arkTxid].CheckpointTxs, checkpointTxid2)
+		require.NotContains(t, got[arkTxid].CheckpointTxs, secondCheckpointTxid)
+		require.Contains(t, got[secondArkTxid].CheckpointTxs, secondCheckpointTxid)
+		require.NotContains(t, got[secondArkTxid].CheckpointTxs, checkpointTxid1)
+		require.NotContains(t, got[secondArkTxid].CheckpointTxs, checkpointTxid2)
 	})
 }
 

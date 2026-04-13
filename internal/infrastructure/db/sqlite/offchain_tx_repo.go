@@ -9,6 +9,11 @@ import (
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
 )
 
+// sqliteMaxBulkTxids caps the per-query batch for GetOffchainTxsByTxids to stay
+// well under SQLITE_MAX_VARIABLE_NUMBER (default 999 on SQLite < 3.32). The
+// SLICE expansion in the generated query emits one bound parameter per txid.
+const sqliteMaxBulkTxids = 500
+
 type offchainTxRepository struct {
 	db      *sql.DB
 	querier *queries.Queries
@@ -121,14 +126,16 @@ func (v *offchainTxRepository) GetOffchainTxsByTxids(
 		return []*domain.OffchainTx{}, nil
 	}
 
-	rows, err := v.querier.SelectOffchainTxsByTxids(ctx, txids)
-	if err != nil {
-		return nil, err
-	}
-
 	grouped := make(map[string][]queries.OffchainTxVw)
-	for _, row := range rows {
-		grouped[row.OffchainTxVw.Txid] = append(grouped[row.OffchainTxVw.Txid], row.OffchainTxVw)
+	for start := 0; start < len(txids); start += sqliteMaxBulkTxids {
+		end := min(start+sqliteMaxBulkTxids, len(txids))
+		rows, err := v.querier.SelectOffchainTxsByTxids(ctx, txids[start:end])
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			grouped[row.OffchainTxVw.Txid] = append(grouped[row.OffchainTxVw.Txid], row.OffchainTxVw)
+		}
 	}
 
 	txs := make([]*domain.OffchainTx, 0, len(grouped))
