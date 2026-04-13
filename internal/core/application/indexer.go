@@ -580,13 +580,13 @@ func (i *indexerService) walkVtxoChain(
 	vtxoCache := make(map[string]domain.Vtxo)
 	loadedMarkers := make(map[string]bool)
 
-	// Eagerly preload VTXOs by walking the marker DAG upward.
+	// Eagerly preload VTXOs and offchain txs by walking the marker DAG upward.
 	if i.repoManager.Markers() != nil {
 		startVtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, nextVtxos)
 		if err != nil {
 			return nil, nil, "", err
 		}
-		if err := i.preloadVtxosByMarkers(ctx, startVtxos, vtxoCache); err != nil {
+		if err := i.preloadByMarkers(ctx, startVtxos, vtxoCache, offchainTxCache); err != nil {
 			return nil, nil, "", err
 		}
 	}
@@ -834,20 +834,22 @@ func decodeChainCursor(token string) ([]domain.Outpoint, error) {
 	return outpoints, nil
 }
 
-// preloadVtxosByMarkers bulk-fetches VTXOs by walking the marker DAG upward
-// from the markers of startVtxos. This reduces DB round-trips from O(chain_length)
-// to O(chain_length / MarkerInterval).
-func (i *indexerService) preloadVtxosByMarkers(
+// preloadByMarkers bulk-fetches VTXOs and their offchain txs by walking the
+// marker DAG upward from the markers of startVtxos. This reduces DB round-trips
+// from O(chain_length) to O(chain_length / MarkerInterval) for both layers.
+func (i *indexerService) preloadByMarkers(
 	ctx context.Context,
 	startVtxos []domain.Vtxo,
-	cache map[string]domain.Vtxo,
+	vtxoCache map[string]domain.Vtxo,
+	offchainTxCache map[string]*domain.OffchainTx,
 ) error {
 	markerRepo := i.repoManager.Markers()
+	offchainTxRepo := i.repoManager.OffchainTxs()
 
 	// Seed cache and collect initial marker IDs.
 	currentMarkerIDs := make(map[string]bool)
 	for _, v := range startVtxos {
-		cache[v.Outpoint.String()] = v
+		vtxoCache[v.Outpoint.String()] = v
 		for _, mid := range v.MarkerIDs {
 			currentMarkerIDs[mid] = true
 		}
@@ -868,8 +870,35 @@ func (i *indexerService) preloadVtxosByMarkers(
 			return err
 		}
 		for _, v := range vtxos {
-			if _, ok := cache[v.Outpoint.String()]; !ok {
-				cache[v.Outpoint.String()] = v
+			if _, ok := vtxoCache[v.Outpoint.String()]; !ok {
+				vtxoCache[v.Outpoint.String()] = v
+			}
+		}
+
+		// Piggyback: bulk-fetch the offchain txs for the preconfirmed VTXOs
+		// in this window, so the walk loop never has to hit the DB per-hop.
+		missingTxids := make([]string, 0, len(vtxos))
+		seen := make(map[string]bool, len(vtxos))
+		for _, v := range vtxos {
+			if !v.Preconfirmed {
+				continue
+			}
+			if seen[v.Txid] {
+				continue
+			}
+			seen[v.Txid] = true
+			if _, ok := offchainTxCache[v.Txid]; ok {
+				continue
+			}
+			missingTxids = append(missingTxids, v.Txid)
+		}
+		if len(missingTxids) > 0 {
+			offchainTxs, err := offchainTxRepo.GetOffchainTxsByTxids(ctx, missingTxids)
+			if err != nil {
+				return err
+			}
+			for _, tx := range offchainTxs {
+				offchainTxCache[tx.ArkTxid] = tx
 			}
 		}
 
