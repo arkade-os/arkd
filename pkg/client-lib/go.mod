@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd/pkg/client-lib
 
-go 1.26.1
+go 1.26.2
 
 replace github.com/arkade-os/arkd/api-spec => ../../api-spec
 
