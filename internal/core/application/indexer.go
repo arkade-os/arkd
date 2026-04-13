@@ -792,14 +792,14 @@ func (i *indexerService) walkVtxoChain(
 	walkTotal := time.Since(walkStart)
 	tOther := walkTotal - tEnsureVtxos - tBulkOffchain - tSingleOffchain - tPsbtDeser - tVtxoTree
 	log.WithFields(log.Fields{
-		"total":           walkTotal,
-		"ensureVtxos":     tEnsureVtxos,
-		"bulkOffchainTx":  tBulkOffchain,
+		"total":            walkTotal,
+		"ensureVtxos":      tEnsureVtxos,
+		"bulkOffchainTx":   tBulkOffchain,
 		"singleOffchainTx": tSingleOffchain,
-		"psbtDeser":       tPsbtDeser,
-		"vtxoTree":        tVtxoTree,
-		"other":           tOther,
-		"chainLen":        len(chain),
+		"psbtDeser":        tPsbtDeser,
+		"vtxoTree":         tVtxoTree,
+		"other":            tOther,
+		"chainLen":         len(chain),
 	}).Info("walkVtxoChain timing breakdown")
 	return chain, allOutpoints, "", nil
 }

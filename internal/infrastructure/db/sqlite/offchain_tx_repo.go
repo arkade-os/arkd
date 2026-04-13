@@ -134,7 +134,10 @@ func (v *offchainTxRepository) GetOffchainTxsByTxids(
 			return nil, err
 		}
 		for _, row := range rows {
-			grouped[row.OffchainTxVw.Txid] = append(grouped[row.OffchainTxVw.Txid], row.OffchainTxVw)
+			grouped[row.OffchainTxVw.Txid] = append(
+				grouped[row.OffchainTxVw.Txid],
+				row.OffchainTxVw,
+			)
 		}
 	}
 
