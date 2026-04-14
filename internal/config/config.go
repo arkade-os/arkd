@@ -1,6 +1,8 @@
 package config
 
 import (
+	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -24,6 +26,7 @@ import (
 	fileunlocker "github.com/arkade-os/arkd/internal/infrastructure/unlocker/file"
 	walletclient "github.com/arkade-os/arkd/internal/infrastructure/wallet"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -44,10 +47,6 @@ var (
 		"sqlite":   {},
 		"postgres": {},
 	}
-	supportedSchedulers = supportedType{
-		"gocron": {},
-		"block":  {},
-	}
 	supportedTxBuilders = supportedType{
 		"covenantless": {},
 	}
@@ -58,6 +57,11 @@ var (
 	supportedLiveStores = supportedType{
 		"inmemory": {},
 		"redis":    {},
+	}
+	supportedIndexerExposures = supportedType{
+		"public":   {},
+		"withheld": {},
+		"private":  {},
 	}
 )
 
@@ -82,7 +86,6 @@ type Config struct {
 	SessionDuration           int64
 	BanDuration               int64
 	BanThreshold              int64 // number of crimes to trigger a ban
-	SchedulerType             string
 	TxBuilderType             string
 	LiveStoreType             string
 	RedisUrl                  string
@@ -95,7 +98,6 @@ type Config struct {
 	CheckpointExitDelay       arklib.RelativeLocktime
 	BoardingExitDelay         arklib.RelativeLocktime
 	NoteUriPrefix             string
-	AllowCSVBlockType         bool
 	HeartbeatInterval         int64
 
 	VtxoNoCsvValidationCutoffDate int64
@@ -131,7 +133,14 @@ type Config struct {
 	AssetTxMaxWeightRatio       float64
 	MaxOpReturnOutputs          uint32
 
-	EnablePprof          bool
+	EnablePprof            bool
+	IndexerExposure        string
+	IndexerAuthTokenExpiry int64
+	// IndexerSigningKey is a hex-encoded private key used by the indexer to sign
+	// auth tokens. This is separate from the server's main signing key.
+	// Rotating this key invalidates all outstanding auth tokens.
+	// SENSITIVE: must never be logged.
+	IndexerSigningKey    string
 	MaxConcurrentStreams uint32
 
 	fee            ports.FeeManager
@@ -155,6 +164,9 @@ func (c *Config) String() string {
 	if clone.UnlockerPassword != "" {
 		clone.UnlockerPassword = "••••••"
 	}
+	if clone.IndexerSigningKey != "" {
+		clone.IndexerSigningKey = "••••••"
+	}
 	json, err := json.MarshalIndent(clone, "", "  ")
 	if err != nil {
 		return fmt.Sprintf("error while marshalling config JSON: %s", err)
@@ -176,7 +188,6 @@ var (
 	DbUrl                                = "PG_DB_URL"
 	PostgresAutoCreateDB                 = "PG_DB_AUTOCREATE"
 	EventDbUrl                           = "PG_EVENT_DB_URL"
-	SchedulerType                        = "SCHEDULER_TYPE"
 	TxBuilderType                        = "TX_BUILDER_TYPE"
 	LiveStoreType                        = "LIVE_STORE_TYPE"
 	RedisUrl                             = "REDIS_URL"
@@ -213,7 +224,6 @@ var (
 	VtxoMaxAmount                        = "VTXO_MAX_AMOUNT"
 	UtxoMinAmount                        = "UTXO_MIN_AMOUNT"
 	VtxoMinAmount                        = "VTXO_MIN_AMOUNT"
-	AllowCSVBlockType                    = "ALLOW_CSV_BLOCK_TYPE"
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
@@ -228,7 +238,11 @@ var (
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
-	MaxConcurrentStreams          = "MAX_CONCURRENT_STREAMS"
+	IndexerExposure               = "INDEXER_EXPOSURE"
+	IndexerAuthTokenExpiry        = "INDEXER_AUTH_TOKEN_EXPIRY" // #nosec G101
+	// IndexerSigningKey is a hex-encoded private key. SENSITIVE: never log this value.
+	IndexerSigningKey    = "INDEXER_SIGNING_PRIVKEY" // #nosec G101
+	MaxConcurrentStreams = "MAX_CONCURRENT_STREAMS"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -238,7 +252,6 @@ var (
 	DefaultAdminPort           = 7071
 	defaultDbType              = "postgres"
 	defaultEventDbType         = "postgres"
-	defaultSchedulerType       = "gocron"
 	defaultTxBuilderType       = "covenantless"
 	defaultLiveStoreType       = "redis"
 	defaultRedisTxNumOfRetries = 10
@@ -255,7 +268,6 @@ var (
 	defaultUtxoMinAmount       = -1 // -1 means native dust limit (default)
 	defaultVtxoMinAmount       = -1 // -1 means native dust limit (default)
 	defaultVtxoMaxAmount       = -1 // -1 means no limit (default)
-	defaultAllowCSVBlockType   = false
 
 	defaultRoundMaxParticipantsCount     = 128
 	defaultRoundMinParticipantsCount     = 1
@@ -268,6 +280,8 @@ var (
 	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
+	defaultIndexerExposure               = "public"
+	defaultIndexerAuthTokenExpiry        = 300 // 5 minutes in seconds
 	defaultMaxConcurrentStreams          = uint32(1000)
 	defaultMaxOpReturnOuts               = uint32(3)
 )
@@ -286,7 +300,6 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(BanDuration, defaultBanDuration)
 	viper.SetDefault(BanThreshold, defaultBanThreshold)
 	viper.SetDefault(VtxoTreeExpiry, defaultVtxoTreeExpiry)
-	viper.SetDefault(SchedulerType, defaultSchedulerType)
 	viper.SetDefault(EventDbType, defaultEventDbType)
 	viper.SetDefault(TxBuilderType, defaultTxBuilderType)
 	viper.SetDefault(UnilateralExitDelay, defaultUnilateralExitDelay)
@@ -304,7 +317,6 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(VtxoMinAmount, defaultVtxoMinAmount)
 	viper.SetDefault(LiveStoreType, defaultLiveStoreType)
 	viper.SetDefault(RedisTxNumOfRetries, defaultRedisTxNumOfRetries)
-	viper.SetDefault(AllowCSVBlockType, defaultAllowCSVBlockType)
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
@@ -314,6 +326,8 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
+	viper.SetDefault(IndexerExposure, defaultIndexerExposure)
+	viper.SetDefault(IndexerAuthTokenExpiry, defaultIndexerAuthTokenExpiry)
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
 	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
 
@@ -347,11 +361,6 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 
-	allowCSVBlockType := viper.GetBool(AllowCSVBlockType)
-	if viper.GetString(SchedulerType) == "block" {
-		allowCSVBlockType = true
-	}
-
 	signerAddr := viper.GetString(SignerAddr)
 	if signerAddr == "" {
 		signerAddr = viper.GetString(WalletAddr)
@@ -374,7 +383,6 @@ func LoadConfig() (*Config, error) {
 		AdminPort:                 adminPort,
 		EventDbType:               viper.GetString(EventDbType),
 		DbType:                    viper.GetString(DbType),
-		SchedulerType:             viper.GetString(SchedulerType),
 		TxBuilderType:             viper.GetString(TxBuilderType),
 		LiveStoreType:             viper.GetString(LiveStoreType),
 		RedisUrl:                  redisUrl,
@@ -422,7 +430,6 @@ func LoadConfig() (*Config, error) {
 		UtxoMinAmount:                 viper.GetInt64(UtxoMinAmount),
 		VtxoMaxAmount:                 viper.GetInt64(VtxoMaxAmount),
 		VtxoMinAmount:                 viper.GetInt64(VtxoMinAmount),
-		AllowCSVBlockType:             allowCSVBlockType,
 		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		UnrolledVtxoMinExpiryMargin:   viper.GetInt64(UnrolledVtxoMinExpiryMargin),
@@ -430,6 +437,9 @@ func LoadConfig() (*Config, error) {
 		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
+		IndexerExposure:               viper.GetString(IndexerExposure),
+		IndexerAuthTokenExpiry:        viper.GetInt64(IndexerAuthTokenExpiry),
+		IndexerSigningKey:             viper.GetString(IndexerSigningKey),
 		MaxConcurrentStreams:          viper.GetUint32(MaxConcurrentStreams),
 		// Default to 1 if set to 0
 		MaxOpReturnOutputs: max(1, viper.GetUint32(MaxOpReturnOutputs)),
@@ -466,12 +476,6 @@ func (c *Config) Validate() error {
 	if !supportedDbs.supports(c.DbType) {
 		return fmt.Errorf("db type not supported, please select one of: %s", supportedDbs)
 	}
-	if !supportedSchedulers.supports(c.SchedulerType) {
-		return fmt.Errorf(
-			"scheduler type not supported, please select one of: %s",
-			supportedSchedulers,
-		)
-	}
 	if !supportedTxBuilders.supports(c.TxBuilderType) {
 		return fmt.Errorf(
 			"tx builder type not supported, please select one of: %s",
@@ -499,32 +503,26 @@ func (c *Config) Validate() error {
 	if c.BanThreshold < 1 {
 		log.Debugf("autoban is disabled")
 	}
-	if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock {
-		if c.SchedulerType != "block" {
-			return fmt.Errorf(
-				"scheduler type must be block if vtxo tree expiry is expressed in blocks",
-			)
-		}
-		if !c.AllowCSVBlockType {
-			return fmt.Errorf(
-				"CSV block type must be allowed if vtxo tree expiry is expressed in blocks",
-			)
-		}
-	} else { // seconds
-		if c.SchedulerType != "gocron" {
-			return fmt.Errorf(
-				"scheduler type must be gocron if vtxo tree expiry is expressed in seconds",
-			)
-		}
 
-		// vtxo tree expiry must be a multiple of 512 if expressed in seconds
-		if c.VtxoTreeExpiry.Value%minAllowedSequence != 0 {
-			c.VtxoTreeExpiry.Value -= c.VtxoTreeExpiry.Value % minAllowedSequence
-			log.Infof(
-				"vtxo tree expiry must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.VtxoTreeExpiry,
-			)
-		}
+	// Ensure vtxo tree expiry and checkpoint exit delay are of the same type
+	if c.CheckpointExitDelay.Type != c.VtxoTreeExpiry.Type {
+		return fmt.Errorf(
+			"all delays must be above or below value 512 " +
+				"(checkpoint exit delay and vtxo tree expiry type mismatch)",
+		)
+	}
+
+	if c.UnilateralExitDelay.Type != c.VtxoTreeExpiry.Type {
+		return fmt.Errorf(
+			"all delays must be above or below value 512 " +
+				"(unilateral exit delay and vtxo tree expiry type mismatch)",
+		)
+	}
+	if c.BoardingExitDelay.Type != c.VtxoTreeExpiry.Type {
+		return fmt.Errorf(
+			"all delays must be above or below value 512 " +
+				"(boarding exit delay and vtxo tree expiry type mismatch)",
+		)
 	}
 
 	// Make sure the public unilateral exit delay type matches the internal one
@@ -534,16 +532,17 @@ func (c *Config) Validate() error {
 		)
 	}
 
-	if c.UnilateralExitDelay.Type == arklib.LocktimeTypeBlock {
-		return fmt.Errorf(
-			"invalid unilateral exit delay, must at least %d", minAllowedSequence,
-		)
-	}
-
-	if c.BoardingExitDelay.Type == arklib.LocktimeTypeBlock {
-		return fmt.Errorf(
-			"invalid boarding exit delay, must at least %d", minAllowedSequence,
-		)
+	// Round seconds-based delays to multiples of minAllowedSequence (BIP68 requirement).
+	// Block-based delays don't need rounding.
+	if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeSecond {
+		// vtxo tree expiry must be a multiple of 512 if expressed in seconds
+		if c.VtxoTreeExpiry.Value%minAllowedSequence != 0 {
+			c.VtxoTreeExpiry.Value -= c.VtxoTreeExpiry.Value % minAllowedSequence
+			log.Infof(
+				"vtxo tree expiry must be a multiple of %d, rounded to %d",
+				minAllowedSequence, c.VtxoTreeExpiry,
+			)
+		}
 	}
 
 	if c.CheckpointExitDelay.Type == arklib.LocktimeTypeSecond {
@@ -556,28 +555,34 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	if c.UnilateralExitDelay.Value%minAllowedSequence != 0 {
-		c.UnilateralExitDelay.Value -= c.UnilateralExitDelay.Value % minAllowedSequence
-		log.Infof(
-			"unilateral exit delay must be a multiple of %d, rounded to %d",
-			minAllowedSequence, c.UnilateralExitDelay,
-		)
+	if c.UnilateralExitDelay.Type == arklib.LocktimeTypeSecond {
+		if c.UnilateralExitDelay.Value%minAllowedSequence != 0 {
+			c.UnilateralExitDelay.Value -= c.UnilateralExitDelay.Value % minAllowedSequence
+			log.Infof(
+				"unilateral exit delay must be a multiple of %d, rounded to %d",
+				minAllowedSequence, c.UnilateralExitDelay,
+			)
+		}
 	}
 
-	if c.PublicUnilateralExitDelay.Value%minAllowedSequence != 0 {
-		c.PublicUnilateralExitDelay.Value -= c.PublicUnilateralExitDelay.Value % minAllowedSequence
-		log.Infof(
-			"public unilateral exit delay must be a multiple of %d, rounded to %d",
-			minAllowedSequence, c.PublicUnilateralExitDelay.Value,
-		)
+	if c.PublicUnilateralExitDelay.Type == arklib.LocktimeTypeSecond {
+		if c.PublicUnilateralExitDelay.Value%minAllowedSequence != 0 {
+			c.PublicUnilateralExitDelay.Value -= c.PublicUnilateralExitDelay.Value % minAllowedSequence
+			log.Infof(
+				"public unilateral exit delay must be a multiple of %d, rounded to %d",
+				minAllowedSequence, c.PublicUnilateralExitDelay.Value,
+			)
+		}
 	}
 
-	if c.BoardingExitDelay.Value%minAllowedSequence != 0 {
-		c.BoardingExitDelay.Value -= c.BoardingExitDelay.Value % minAllowedSequence
-		log.Infof(
-			"boarding exit delay must be a multiple of %d, rounded to %d",
-			minAllowedSequence, c.BoardingExitDelay,
-		)
+	if c.BoardingExitDelay.Type == arklib.LocktimeTypeSecond {
+		if c.BoardingExitDelay.Value%minAllowedSequence != 0 {
+			c.BoardingExitDelay.Value -= c.BoardingExitDelay.Value % minAllowedSequence
+			log.Infof(
+				"boarding exit delay must be a multiple of %d, rounded to %d",
+				minAllowedSequence, c.BoardingExitDelay,
+			)
+		}
 	}
 
 	if c.UnilateralExitDelay == c.BoardingExitDelay {
@@ -596,6 +601,23 @@ func (c *Config) Validate() error {
 
 	if c.UtxoMinAmount == 0 {
 		return fmt.Errorf("utxo min amount must be greater than 0")
+	}
+
+	if !supportedIndexerExposures.supports(c.IndexerExposure) {
+		return fmt.Errorf(
+			"indexer exposure type not supported, please select one of: %s",
+			supportedIndexerExposures,
+		)
+	}
+
+	if c.IndexerExposure != "public" && c.IndexerAuthTokenExpiry <= 0 {
+		return fmt.Errorf("indexer auth token expiry must be greater than 0")
+	}
+
+	if c.IndexerExposure != "public" && c.IndexerSigningKey == "" {
+		return fmt.Errorf(
+			"indexer signing key is required when exposure is %q", c.IndexerExposure,
+		)
 	}
 
 	if c.MaxTxWeight > bitcoinBlockWeight {
@@ -649,6 +671,34 @@ func (c *Config) Validate() error {
 	if err := c.alertsService(); err != nil {
 		return err
 	}
+
+	// Enforce that if the network is not regtest, the locktimes must be expressed in seconds.
+	// These checks must be done after the wallet service is initialized, as it is needed to
+	// determine the network.
+	if c.network.Name != arklib.BitcoinRegTest.Name {
+		if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock {
+			return fmt.Errorf("vtxo tree expiry expressed in blocks is allowed only on regtest")
+		}
+		if c.CheckpointExitDelay.Type == arklib.LocktimeTypeBlock {
+			return fmt.Errorf(
+				"checkpoint exit delay expressed in blocks is allowed only on regtest",
+			)
+		}
+		if c.UnilateralExitDelay.Type == arklib.LocktimeTypeBlock {
+			return fmt.Errorf(
+				"unilateral exit delay expressed in blocks is allowed only on regtest",
+			)
+		}
+		if c.PublicUnilateralExitDelay.Type == arklib.LocktimeTypeBlock {
+			return fmt.Errorf(
+				"public unilateral exit delay expressed in blocks is allowed only on regtest",
+			)
+		}
+		if c.BoardingExitDelay.Type == arklib.LocktimeTypeBlock {
+			return fmt.Errorf("boarding exit delay expressed in blocks is allowed only on regtest")
+		}
+	}
+
 	return nil
 }
 
@@ -673,8 +723,35 @@ func (c *Config) UnlockerService() ports.Unlocker {
 	return c.unlocker
 }
 
-func (c *Config) IndexerService() application.IndexerService {
-	return application.NewIndexerService(c.repo)
+func (c *Config) IndexerService() (application.IndexerService, error) {
+	if c.wallet == nil {
+		if err := c.walletService(); err != nil {
+			return nil, err
+		}
+	}
+	if c.signer == nil {
+		if err := c.signerService(); err != nil {
+			return nil, err
+		}
+	}
+
+	var privkey *btcec.PrivateKey
+	if c.IndexerSigningKey != "" {
+		keyBytes, err := hex.DecodeString(c.IndexerSigningKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode indexer signing key: %w", err)
+		}
+		privkey, _ = btcec.PrivKeyFromBytes(keyBytes)
+	}
+
+	signerPubkey, err := c.signer.GetPubkey(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server signing pubkey: %w", err)
+	}
+
+	return application.NewIndexerService(
+		c.repo, c.wallet, privkey, signerPubkey, c.IndexerExposure, c.IndexerAuthTokenExpiry,
+	)
 }
 
 func (c *Config) SignerService() (ports.SignerService, error) {
@@ -832,10 +909,10 @@ func (c *Config) liveStoreService() error {
 func (c *Config) schedulerService() error {
 	var svc ports.SchedulerService
 	var err error
-	switch c.SchedulerType {
-	case "gocron":
+	switch c.VtxoTreeExpiry.Type {
+	case arklib.LocktimeTypeSecond:
 		svc = timescheduler.NewScheduler()
-	case "block":
+	case arklib.LocktimeTypeBlock:
 		svc, err = blockscheduler.NewScheduler(c.EsploraURL)
 	default:
 		err = fmt.Errorf("unknown scheduler type")
@@ -868,7 +945,6 @@ func (c *Config) appService() error {
 	if err := c.txBuilderService(); err != nil {
 		return err
 	}
-
 	roundReportSvc, err := c.RoundReportService()
 	if err != nil {
 		return err
@@ -882,7 +958,7 @@ func (c *Config) appService() error {
 		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
 		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
 		c.BanDuration, c.BanThreshold, c.MaxTxWeight, c.AssetTxMaxWeightRatio,
-		*c.network, c.AllowCSVBlockType, c.NoteUriPrefix,
+		*c.network, c.NoteUriPrefix,
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,

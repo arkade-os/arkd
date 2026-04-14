@@ -528,6 +528,14 @@
             }
           },
           {
+            "name": "token",
+            "in": "query",
+            "description": "Valid auth_token can also be used if the ownership has already been proved.\nA valid token obtained from GetVtxoChain rpc can be recycled for this request.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "page.size",
             "in": "query",
             "schema": {
@@ -541,6 +549,20 @@
             "schema": {
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "intent.proof",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "intent.message",
+            "in": "query",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -594,6 +616,14 @@
             }
           },
           {
+            "name": "token",
+            "in": "query",
+            "description": "Valid auth_token can also be used if the ownership has already been proved.\nA valid token obtained from GetVirtualTxs rpc can be recycled for this request.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "page.size",
             "in": "query",
             "schema": {
@@ -607,6 +637,20 @@
             "schema": {
               "type": "integer",
               "format": "int32"
+            }
+          },
+          {
+            "name": "intent.proof",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "intent.message",
+            "in": "query",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -956,8 +1000,16 @@
         "title": "GetVirtualTxsRequest",
         "type": "object",
         "properties": {
+          "intent": {
+            "$ref": "#/components/schemas/IndexerIntent",
+            "description": "Intent that directly proves ownership of the transaction inputs.\nIf passed, the txids field is ignored."
+          },
           "page": {
             "$ref": "#/components/schemas/IndexerPageRequest"
+          },
+          "token": {
+            "type": "string",
+            "description": "Valid auth_token can also be used if the ownership has already been proved.\nA valid token obtained from GetVtxoChain rpc can be recycled for this request."
           },
           "txids": {
             "type": "array",
@@ -971,6 +1023,10 @@
         "title": "GetVirtualTxsResponse",
         "type": "object",
         "properties": {
+          "authToken": {
+            "type": "string",
+            "description": "Auth token can be used for other rpcs related to this vtxo/tx that require proof of ownership."
+          },
           "page": {
             "$ref": "#/components/schemas/IndexerPageResponse"
           },
@@ -986,11 +1042,19 @@
         "title": "GetVtxoChainRequest",
         "type": "object",
         "properties": {
+          "intent": {
+            "$ref": "#/components/schemas/IndexerIntent",
+            "description": "Intent that directly proves ownership of the vtxo. If passed, the outpoint field is ignored."
+          },
           "outpoint": {
             "$ref": "#/components/schemas/IndexerOutpoint"
           },
           "page": {
             "$ref": "#/components/schemas/IndexerPageRequest"
+          },
+          "token": {
+            "type": "string",
+            "description": "Valid auth_token can also be used if the ownership has already been proved.\nA valid token obtained from GetVirtualTxs rpc can be recycled for this request."
           }
         }
       },
@@ -998,6 +1062,10 @@
         "title": "GetVtxoChainResponse",
         "type": "object",
         "properties": {
+          "authToken": {
+            "type": "string",
+            "description": "Auth token can be used for other rpcs related to this vtxo/tx that require proof of ownership."
+          },
           "chain": {
             "type": "array",
             "items": {
@@ -1199,6 +1267,18 @@
       "IndexerHeartbeat": {
         "title": "IndexerHeartbeat",
         "type": "object"
+      },
+      "IndexerIntent": {
+        "title": "IndexerIntent",
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "proof": {
+            "type": "string"
+          }
+        }
       },
       "IndexerNode": {
         "title": "IndexerNode",

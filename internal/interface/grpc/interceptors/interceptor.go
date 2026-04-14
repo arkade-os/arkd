@@ -14,11 +14,11 @@ func UnaryInterceptor(
 	readiness *ReadinessService,
 	serverVersion string,
 ) grpc.ServerOption {
-	major, _ := parseMajorVersion(serverVersion)
+	major, minor, _ := parseVersion(serverVersion)
 	return grpc.UnaryInterceptor(middleware.ChainUnaryServer(
 		unaryPanicRecoveryInterceptor(),
 		unaryLogger,
-		unaryVersionCompatHandler(major, serverVersion),
+		unaryVersionCompatHandler(major, minor, serverVersion),
 		unaryMacaroonAuthHandler(svc),
 		unaryReadinessHandler(readiness),
 		errorConverter,
@@ -33,11 +33,11 @@ func StreamInterceptor(
 	readiness *ReadinessService,
 	serverVersion string,
 ) grpc.ServerOption {
-	major, _ := parseMajorVersion(serverVersion)
+	major, minor, _ := parseVersion(serverVersion)
 	return grpc.StreamInterceptor(middleware.ChainStreamServer(
 		streamPanicRecoveryInterceptor(),
 		streamLogger,
-		streamVersionCompatHandler(major, serverVersion),
+		streamVersionCompatHandler(major, minor, serverVersion),
 		streamMacaroonAuthHandler(svc),
 		streamReadinessHandler(readiness),
 	))

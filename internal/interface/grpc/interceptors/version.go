@@ -14,20 +14,28 @@ import (
 
 const buildVersionHeader = "x-build-version"
 
-// parseMajorVersion extracts the major version component from a semver string.
+// parseVersion extracts the major and minor version components from a semver string.
 // Accepts formats like "1.0.0", "v1.0.0", or just "1".
-func parseMajorVersion(ver string) (int64, error) {
+func parseVersion(ver string) (int64, int64, error) {
 	ver = strings.TrimPrefix(ver, "v")
-	parts := strings.SplitN(ver, ".", 2)
+	parts := strings.Split(ver, ".")
 	major, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("cannot parse major version from %q: %w", ver, err)
+		return 0, 0, fmt.Errorf("cannot parse major version from %q: %w", ver, err)
 	}
-	return major, nil
+	if len(parts) < 2 {
+		return major, 0, nil
+	}
+
+	minor, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("cannot parse minor version from %q: %w", ver, err)
+	}
+	return major, minor, nil
 }
 
 func checkVersionCompat(
-	ctx context.Context, serverMajor int64, serverVersion string,
+	ctx context.Context, serverMajor, serverMinor int64, serverVersion string,
 ) error {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
@@ -39,20 +47,35 @@ func checkVersionCompat(
 		return nil
 	}
 
-	clientMajor, err := parseMajorVersion(vals[0])
+	clientMajor, clientMinor, err := parseVersion(vals[0])
 	if err != nil {
 		// Don't break clients with malformed version strings.
 		return nil
 	}
 
+	minAllowedVersion := fmt.Sprintf("%d.%d.0", serverMajor, serverMinor)
 	if clientMajor < serverMajor {
-		log.Debugf("rejecting request: build version header %d below server major version %d",
-			clientMajor, serverMajor)
+		log.Debugf(
+			"rejecting request: build version header %d below server major version %d",
+			clientMajor, serverMajor,
+		)
 		return errors.BUILD_VERSION_TOO_OLD.
-			New("server requires build version header >= %d", serverMajor).
+			New("server requires build version header >= %s", serverVersion).
 			WithMetadata(errors.BuildVersionMetadata{
 				ClientVersion: vals[0],
-				MinVersion:    serverVersion,
+				MinVersion:    minAllowedVersion,
+			})
+	}
+	if clientMajor == serverMajor && clientMinor < serverMinor {
+		log.Debugf(
+			"rejecting request: build version header %d below server minor version %d",
+			clientMinor, serverMinor,
+		)
+		return errors.BUILD_VERSION_TOO_OLD.
+			New("server requires build version header >= %s", serverVersion).
+			WithMetadata(errors.BuildVersionMetadata{
+				ClientVersion: vals[0],
+				MinVersion:    minAllowedVersion,
 			})
 	}
 
@@ -60,13 +83,13 @@ func checkVersionCompat(
 }
 
 func unaryVersionCompatHandler(
-	serverMajor int64, serverVersion string,
+	serverMajor, serverMinor int64, serverVersion string,
 ) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context, req interface{},
 		info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 	) (interface{}, error) {
-		if err := checkVersionCompat(ctx, serverMajor, serverVersion); err != nil {
+		if err := checkVersionCompat(ctx, serverMajor, serverMinor, serverVersion); err != nil {
 			return nil, err
 		}
 		return handler(ctx, req)
@@ -74,13 +97,15 @@ func unaryVersionCompatHandler(
 }
 
 func streamVersionCompatHandler(
-	serverMajor int64, serverVersion string,
+	serverMajor, serverMinor int64, serverVersion string,
 ) grpc.StreamServerInterceptor {
 	return func(
 		srv interface{}, ss grpc.ServerStream,
 		info *grpc.StreamServerInfo, handler grpc.StreamHandler,
 	) error {
-		if err := checkVersionCompat(ss.Context(), serverMajor, serverVersion); err != nil {
+		if err := checkVersionCompat(
+			ss.Context(), serverMajor, serverMinor, serverVersion,
+		); err != nil {
 			return err
 		}
 		return handler(srv, ss)

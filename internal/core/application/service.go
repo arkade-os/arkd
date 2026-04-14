@@ -118,9 +118,7 @@ func NewService(
 	sessionDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
 	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64,
 	maxTxWeight uint64, assetTxMaxWeightRatio float64,
-	network arklib.Network,
-	allowCSVBlockType bool,
-	noteUriPrefix string,
+	network arklib.Network, noteUriPrefix string,
 	scheduledSessionStartTime, scheduledSessionEndTime time.Time,
 	scheduledSessionPeriod, scheduledSessionDuration time.Duration,
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
@@ -172,6 +170,8 @@ func NewService(
 	if roundReportSvc == nil {
 		roundReportSvc = roundReportUnimplemented{}
 	}
+
+	allowCSVBlockType := vtxoTreeExpiry.Type == arklib.LocktimeTypeBlock
 
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -370,6 +370,22 @@ func (s *service) registerEventHandlers() {
 			if err != nil {
 				log.WithError(err).Warn("failed to get spent vtxos")
 				return
+			}
+
+			// Make sure to mark new vtxos as swept if any of the spent inputs is swept as well or
+			// expired.
+			sweptIns := false
+			for _, vtxo := range spentVtxos {
+				if vtxo.Swept || vtxo.IsExpired() {
+					sweptIns = true
+					break
+				}
+			}
+
+			if sweptIns {
+				for i := range newVtxos {
+					newVtxos[i].Swept = true
+				}
 			}
 
 			checkpointTxsByOutpoint := make(map[string]TxData)
@@ -694,7 +710,7 @@ func (s *service) SubmitOffchainTx(
 				"%s already unrolled", vtxo.Outpoint,
 			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
 		}
-		if vtxo.Swept || !s.sweeper.scheduler.AfterNow(vtxo.ExpiresAt) {
+		if vtxo.Swept || vtxo.IsExpired() {
 			// if we reach this point, it means vtxo.Spent = false so the vtxo is recoverable
 			return nil, errors.VTXO_RECOVERABLE.New("%s is recoverable", vtxo.Outpoint).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
@@ -1375,23 +1391,18 @@ func (s *service) GetPendingOffchainTxs(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
-	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
-	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
-			WithMetadata(map[string]any{
-				"proof": proof.UnsignedTx.TxID(),
-			})
-	}
-
-	if err := intent.Verify(signedProof, encodedMessage); err != nil {
+	if err := intent.Verify(
+		encodedProof,
+		encodedMessage,
+		[]*btcec.PublicKey{s.signerPubkey},
+	); err != nil {
 		log.
-			WithField("unsignedProof", encodedProof).
-			WithField("signedProof", signedProof).
-			WithField("encodedMessage", encodedMessage).
+			WithField("proof", encodedProof).
+			WithField("message", encodedMessage).
 			Tracef("failed to verify intent proof: %s", err)
 		return nil, errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
 			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   signedProof,
+				Proof:   encodedProof,
 				Message: encodedMessage,
 			})
 	}
@@ -1694,36 +1705,33 @@ func (s *service) RegisterIntent(
 		}
 	}
 
-	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
-	if err != nil {
-		return "", errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
-			WithMetadata(map[string]any{
-				"proof": proof.UnsignedTx.TxID(),
-			})
-	}
-
-	if err := intent.Verify(signedProof, encodedMessage); err != nil {
+	if err := intent.Verify(
+		encodedProof,
+		encodedMessage,
+		[]*btcec.PublicKey{s.signerPubkey},
+	); err != nil {
 		log.
-			WithField("unsignedProof", encodedProof).
-			WithField("signedProof", signedProof).
-			WithField("encodedMessage", encodedMessage).
+			WithField("proof", encodedProof).
+			WithField("message", encodedMessage).
 			Tracef("failed to verify intent proof: %s", err)
 		return "", errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
 			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   signedProof,
+				Proof:   encodedProof,
 				Message: encodedMessage,
 			})
 	}
 
-	signedProofPtx, err := psbt.NewFromRawBytes(strings.NewReader(signedProof), true)
+	signedProofPtx, err := psbt.NewFromRawBytes(strings.NewReader(encodedProof), true)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to create psbt from signed proof: %w", err).
 			WithMetadata(map[string]any{
-				"signed_proof": signedProof,
+				"signed_proof": encodedProof,
 			})
 	}
 
-	finalizedProofTx, err := intent.Proof{Packet: *signedProofPtx}.FinalizeAndExtract()
+	finalizedProofTx, err := intent.Proof{
+		Packet: *signedProofPtx,
+	}.FinalizeAndExtract(s.signerPubkey)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to finalize proof: %w", err).
 			WithMetadata(map[string]any{
@@ -1744,7 +1752,7 @@ func (s *service) RegisterIntent(
 	if !proof.ContainsOutputs() {
 		return "", errors.INVALID_INTENT_PROOF.New("proof does not contain outputs").
 			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   signedProof,
+				Proof:   encodedProof,
 				Message: encodedMessage,
 			})
 	}
@@ -1906,7 +1914,7 @@ func (s *service) RegisterIntent(
 		if hasIssuance(intentAssetPacket) {
 			return "", errors.INVALID_INTENT_PROOF.New("intent contains asset issuance").
 				WithMetadata(errors.InvalidIntentProofMetadata{
-					Proof:   signedProof,
+					Proof:   encodedProof,
 					Message: encodedMessage,
 				})
 		}
@@ -1915,12 +1923,12 @@ func (s *service) RegisterIntent(
 	}
 
 	intent, err := domain.NewIntent(
-		proofTxid, signedProof, encodedMessage, vtxoInputs, leafTxPacket,
+		proofTxid, encodedProof, encodedMessage, vtxoInputs, leafTxPacket,
 	)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to create intent: %w", err).
 			WithMetadata(map[string]any{
-				"proof":       signedProof,
+				"proof":       encodedProof,
 				"message":     encodedMessage,
 				"vtxo_inputs": vtxoInputs,
 			})
@@ -4252,23 +4260,18 @@ func (s *service) verifyIntentProofAndFindMatches(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
-	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
-	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
-			WithMetadata(map[string]any{
-				"proof": proof.UnsignedTx.TxID(),
-			})
-	}
-
-	if err := intent.Verify(signedProof, encodedMessage); err != nil {
+	if err := intent.Verify(
+		encodedProof,
+		encodedMessage,
+		[]*btcec.PublicKey{s.signerPubkey},
+	); err != nil {
 		log.
-			WithField("unsignedProof", encodedProof).
-			WithField("signedProof", signedProof).
-			WithField("encodedMessage", encodedMessage).
+			WithField("proof", encodedProof).
+			WithField("message", encodedMessage).
 			Tracef("failed to verify intent proof: %s", err)
 		return nil, errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
 			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   signedProof,
+				Proof:   encodedProof,
 				Message: encodedMessage,
 			})
 	}

@@ -3,7 +3,6 @@ syntax = "proto3";
 package ark.v1;
 
 import "meshapi/gateway/annotations.proto";
-
 service IndexerService {
   // GetCommitmentTx returns information about a specific commitment transaction identified by the
   // provided txid.
@@ -210,20 +209,41 @@ message GetVtxosResponse {
 message GetVtxoChainRequest {
   IndexerOutpoint outpoint = 1;
   IndexerPageRequest page = 2;
+  // Either auth_token or intent can be provided to prove ownership.
+  oneof auth {
+    // Intent that directly proves ownership of the vtxo. If passed, the outpoint field is ignored.
+    IndexerIntent intent = 3;
+    // Valid auth_token can also be used if the ownership has already been proved.
+    // A valid token obtained from GetVirtualTxs rpc can be recycled for this request.
+    string token = 4;
+  }
 }
 message GetVtxoChainResponse {
   repeated IndexerChain chain = 1;
   IndexerPageResponse page = 2;
+  // Auth token can be used for other rpcs related to this vtxo/tx that require proof of ownership.
+  string auth_token = 3;
 }
 
 message GetVirtualTxsRequest {
   repeated string txids = 1;
   IndexerPageRequest page = 2;
+  // Either auth_token or intent can be provided to prove ownership.
+  oneof auth {
+    // Intent that directly proves ownership of the transaction inputs.
+    // If passed, the txids field is ignored.
+    IndexerIntent intent = 3;
+    // Valid auth_token can also be used if the ownership has already been proved.
+    // A valid token obtained from GetVtxoChain rpc can be recycled for this request.
+    string token = 4;
+  }
 }
 
 message GetVirtualTxsResponse {
   repeated string txs = 1;
   IndexerPageResponse page = 2;
+  // Auth token can be used for other rpcs related to this vtxo/tx that require proof of ownership.
+  string auth_token = 3;
 }
 
 message GetAssetRequest {
@@ -321,6 +341,11 @@ enum IndexerChainedTxType {
   INDEXER_CHAINED_TX_TYPE_ARK = 2;
   INDEXER_CHAINED_TX_TYPE_TREE = 3;
   INDEXER_CHAINED_TX_TYPE_CHECKPOINT = 4;
+}
+
+message IndexerIntent {
+  string proof = 1;
+  string message = 2;
 }
 
 message IndexerPageRequest {
