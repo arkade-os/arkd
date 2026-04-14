@@ -708,7 +708,7 @@ func paginatedFetch[T any](
 		all = append(all, items...)
 		reqCount++
 
-		if page == nil || page.GetNext() == page.GetTotal() {
+		if page == nil || page.GetNext() >= page.GetTotal() {
 			break
 		}
 		if reqCount >= maxPages {
