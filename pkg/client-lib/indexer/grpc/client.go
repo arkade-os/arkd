@@ -21,7 +21,7 @@ import (
 
 const (
 	maxPageSize   = 1000
-	maxReqsPerSec = 20
+	maxReqsPerSec = 10
 	maxPages      = 100
 )
 
