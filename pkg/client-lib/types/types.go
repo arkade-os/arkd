@@ -64,8 +64,7 @@ type StreamConnectionEvent struct {
 	DisconnectedAt time.Time
 	Err            error
 	// Temporary field to be able to pass the new subscription id back to clients after reconnection
-	// TOOD: Drop me in https://github.com/arkade-os/arkd/pull/951
-	Metadata map[string]string
+	// TODO: Drop me in https://github.com/arkade-os/arkd/pull/951
 }
 
 type FeeInfo struct {

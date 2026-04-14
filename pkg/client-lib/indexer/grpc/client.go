@@ -545,7 +545,6 @@ func (a *grpcClient) NewSubscription(
 					At:             event.At,
 					DisconnectedAt: event.DisconnectedAt,
 					Err:            event.Err,
-					// Metadata:       event.Metadata,
 				},
 			}
 		},

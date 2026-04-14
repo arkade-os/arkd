@@ -8,9 +8,13 @@ import (
 
 // TODO: drop me in https://github.com/arkade-os/arkd/pull/951
 type scriptsCache struct {
-	lock           *sync.Mutex
+	lock *sync.Mutex
+	// Keeps track of the scripts watched by every subscriptions
+	// subscription id -> (indexed) scripts
 	scriptsBySubId map[string]map[string]struct{}
-	replacements   map[string]string
+	// Keeps track of subs replacements after reconnection
+	// old subscription id -> new subscription id
+	replacements map[string]string
 }
 
 func newScriptsCache() *scriptsCache {

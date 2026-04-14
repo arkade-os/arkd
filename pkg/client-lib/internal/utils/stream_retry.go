@@ -67,7 +67,6 @@ type ReconnectingStreamStateEvent struct {
 	At             time.Time
 	DisconnectedAt time.Time
 	Err            error
-	Metadata       map[string]string
 }
 
 // recvResult holds the outcome of a single cfg.Recv call made by startRecvLoop.
@@ -324,7 +323,7 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 					case <-time.After(sleepDuration):
 					}
 
-					newId, newStream, dialErr := cfg.Reconnect(ctx)
+					_, newStream, dialErr := cfg.Reconnect(ctx)
 					if dialErr != nil {
 						shouldRetryDial, dialRetryDelay := ShouldReconnect(dialErr)
 						if !shouldRetryDial {
@@ -354,7 +353,6 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 								State:          ReconnectingStreamStateReconnected,
 								At:             time.Now(),
 								DisconnectedAt: disconnectedAt,
-								Metadata:       map[string]string{"id": newId},
 							}) {
 								return
 							}
