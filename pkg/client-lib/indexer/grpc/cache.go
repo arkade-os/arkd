@@ -72,6 +72,41 @@ func (s *scriptsCache) removeSubscription(id string) {
 		return
 	}
 	delete(s.scriptsBySubId, subId)
+
+	// Walk the replacement chain in both directions starting from the given id and
+	// delete every entry — both downstream hops (id -> ... -> resolved) and any
+	// upstream hops (older ids that were replaced into this one) — to avoid
+	// unbounded growth of the replacements map across repeated reconnections.
+	cur := id
+	for {
+		next, ok := s.replacements[cur]
+		if !ok {
+			break
+		}
+		delete(s.replacements, cur)
+		cur = next
+	}
+	cur = id
+	for {
+		prev, ok := s.findAncestor(cur)
+		if !ok {
+			break
+		}
+		delete(s.replacements, prev)
+		cur = prev
+	}
+}
+
+// findAncestor returns the key in replacements that maps to id, if any.
+// Each id appears at most once as a value (enforced by replace()), so the
+// lookup is unambiguous.
+func (s *scriptsCache) findAncestor(id string) (string, bool) {
+	for k, v := range s.replacements {
+		if v == id {
+			return k, true
+		}
+	}
+	return "", false
 }
 
 func (s *scriptsCache) replace(oldId, newId string) {

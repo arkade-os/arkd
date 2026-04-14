@@ -270,6 +270,24 @@ func TestScriptsCache(t *testing.T) {
 					otherScripts: []string{"script2"},
 				},
 				{
+					name: "remove from middle of chain cleans upstream and downstream",
+					setup: func(c *scriptsCache) {
+						c.add("sub1", []string{"script1"})
+						c.replace("sub1", "sub2")
+						c.replace("sub2", "sub3")
+					},
+					id: "sub2",
+				},
+				{
+					name: "remove from tail of chain cleans upstream hops",
+					setup: func(c *scriptsCache) {
+						c.add("sub1", []string{"script1"})
+						c.replace("sub1", "sub2")
+						c.replace("sub2", "sub3")
+					},
+					id: "sub3",
+				},
+				{
 					name:  "remove non-existent subscription is no-op",
 					setup: func(_ *scriptsCache) {},
 					id:    "sub1",
@@ -288,6 +306,8 @@ func TestScriptsCache(t *testing.T) {
 						sort.Strings(tc.otherScripts)
 						require.Equal(t, tc.otherScripts, got)
 					}
+					// Make sure the replacement chain is cleaned
+					require.Empty(t, c.replacements)
 				})
 			}
 		})
