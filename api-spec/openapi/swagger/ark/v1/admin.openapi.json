@@ -1010,6 +1010,86 @@
           }
         }
       }
+    },
+    "/v1/admin/tokens": {
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_ListTokens",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ListTokensRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListTokensResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/tokens/revoke": {
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_RevokeTokens",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeTokensRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeTokensResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1593,6 +1673,39 @@
           }
         }
       },
+      "ListTokensRequest": {
+        "title": "ListTokensRequest",
+        "type": "object",
+        "properties": {
+          "hash": {
+            "type": "string",
+            "description": "hex-encoded hash of outpoints"
+          },
+          "outpoint": {
+            "type": "string",
+            "description": "txid:vout format"
+          },
+          "token": {
+            "type": "string",
+            "description": "base64 auth token"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "ListTokensResponse": {
+        "title": "ListTokensResponse",
+        "type": "object",
+        "properties": {
+          "tokens": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TokenInfo"
+            }
+          }
+        }
+      },
       "Output": {
         "title": "Output",
         "type": "object",
@@ -1638,6 +1751,37 @@
         "properties": {
           "token": {
             "type": "string"
+          }
+        }
+      },
+      "RevokeTokensRequest": {
+        "title": "RevokeTokensRequest",
+        "type": "object",
+        "properties": {
+          "hash": {
+            "type": "string",
+            "description": "hex-encoded hash of outpoints"
+          },
+          "outpoint": {
+            "type": "string",
+            "description": "txid:vout format"
+          },
+          "token": {
+            "type": "string",
+            "description": "base64 auth token"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "RevokeTokensResponse": {
+        "title": "RevokeTokensResponse",
+        "type": "object",
+        "properties": {
+          "revokedCount": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -1832,6 +1976,27 @@
           }
         }
       },
+      "TokenInfo": {
+        "title": "TokenInfo",
+        "type": "object",
+        "properties": {
+          "expiresAt": {
+            "type": "integer",
+            "description": "unix timestamp",
+            "format": "int64"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "outpoints": {
+            "type": "array",
+            "description": "txid:vout format",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "UpdateIntentFeesRequest": {
         "title": "UpdateIntentFeesRequest",
         "type": "object",
@@ -1867,7 +2032,7 @@
           },
           "updateFields": {
             "type": "array",
-            "description": "Specifies which settings fields to update. If non-empty, only the\nlisted fields are written from the request; all other fields remain\nunchanged. If empty, every field in the settings message is written\nas-is — fields not set in the request default to 0, so callers must\npopulate all fields. Use snake_case field names (e.g. \"ban_threshold\").",
+            "description": "Specifies which settings fields to update. If non-empty, only the\nlisted fields are written from the request; all other fields remain\nunchanged. If empty, every field in the settings message is written\nas-is. Fields not set in the request default to 0, so callers must\npopulate all fields. Use snake_case field names (e.g. \"ban_threshold\").",
             "items": {
               "type": "string"
             }

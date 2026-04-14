@@ -117,9 +117,7 @@ func NewService(
 	sessionDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
 	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64,
 	maxTxWeight uint64, assetTxMaxWeightRatio float64,
-	network arklib.Network,
-	allowCSVBlockType bool,
-	noteUriPrefix string,
+	network arklib.Network, noteUriPrefix string,
 	scheduledSessionStartTime, scheduledSessionEndTime time.Time,
 	scheduledSessionPeriod, scheduledSessionDuration time.Duration,
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
@@ -170,6 +168,8 @@ func NewService(
 	if roundReportSvc == nil {
 		roundReportSvc = roundReportUnimplemented{}
 	}
+
+	allowCSVBlockType := vtxoTreeExpiry.Type == arklib.LocktimeTypeBlock
 
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -454,6 +454,22 @@ func (s *service) registerEventHandlers() {
 			if err != nil {
 				log.WithError(err).Warn("failed to get spent vtxos")
 				return
+			}
+
+			// Make sure to mark new vtxos as swept if any of the spent inputs is swept as well or
+			// expired.
+			sweptIns := false
+			for _, vtxo := range spentVtxos {
+				if vtxo.Swept || vtxo.IsExpired() {
+					sweptIns = true
+					break
+				}
+			}
+
+			if sweptIns {
+				for i := range newVtxos {
+					newVtxos[i].Swept = true
+				}
 			}
 
 			checkpointTxsByOutpoint := make(map[string]TxData)
@@ -778,7 +794,7 @@ func (s *service) SubmitOffchainTx(
 				"%s already unrolled", vtxo.Outpoint,
 			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
 		}
-		if vtxo.Swept || !s.sweeper.scheduler.AfterNow(vtxo.ExpiresAt) {
+		if vtxo.Swept || vtxo.IsExpired() {
 			// if we reach this point, it means vtxo.Spent = false so the vtxo is recoverable
 			return nil, errors.VTXO_RECOVERABLE.New("%s is recoverable", vtxo.Outpoint).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
