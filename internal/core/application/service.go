@@ -1613,6 +1613,9 @@ func (s *service) RegisterIntent(
 
 			// Also add to vtxoInputs for state tracking (settled after batch finalization)
 			vtxoInputs = append(vtxoInputs, vtxo)
+			if len(vtxo.Assets) > 0 {
+				assetInputs[i+1] = vtxo.Assets
+			}
 
 			continue
 		}
@@ -2265,6 +2268,16 @@ func (s *service) EstimateIntentFee(
 				PkScript: psbtInput.WitnessUtxo.PkScript,
 			}
 			onchainInputs = append(onchainInputs, boardingInput)
+			continue
+		}
+
+		// Mirror RegisterIntent: unrolled VTXOs re-enter as boarding inputs and
+		// are counted as onchain for fee purposes.
+		if vtxosResult[0].Unrolled {
+			onchainInputs = append(onchainInputs, wire.TxOut{
+				Value:    psbtInput.WitnessUtxo.Value,
+				PkScript: psbtInput.WitnessUtxo.PkScript,
+			})
 			continue
 		}
 
@@ -3891,7 +3904,7 @@ func (s *service) validateBoardingInput(
 	// For unrolled VTXOs, ensure the CSV is far enough from expiring so the
 	// batch has time to finalize before the exit path becomes available.
 	if input.isUnrolledVtxo {
-		if err := s.checkUnrolledVtxoExpiry(csvExpiresAt, now); err != nil {
+		if err := s.checkUnrolledVtxoExpiry(ctx, csvExpiresAt, now); err != nil {
 			return nil, err
 		}
 	}
@@ -3933,8 +3946,21 @@ func (s *service) validateBoardingInput(
 	return &tx, nil
 }
 
-func (s *service) checkUnrolledVtxoExpiry(csvExpiresAt, now time.Time) error {
+func (s *service) checkUnrolledVtxoExpiry(
+	ctx context.Context, csvExpiresAt, now time.Time,
+) error {
 	margin := s.sessionDuration
+	// startRound switches the active round duration to scheduledSession.Duration
+	// when a scheduled session window is active. We don't know which window the
+	// next round will land in, so use the larger of the two to stay safe.
+	if s.repoManager != nil {
+		if scheduledSession, _ := s.repoManager.ScheduledSession().
+			Get(ctx); scheduledSession != nil {
+			if scheduledSession.Duration > margin {
+				margin = scheduledSession.Duration
+			}
+		}
+	}
 	if s.unrolledVtxoMinExpiryMargin > 0 {
 		margin = s.unrolledVtxoMinExpiryMargin
 	}

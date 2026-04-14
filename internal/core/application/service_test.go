@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -201,7 +202,7 @@ func TestCheckUnrolledVtxoExpiry(t *testing.T) {
 				unrolledVtxoMinExpiryMargin: tc.unrolledVtxoMinExpiryMargin,
 			}
 
-			err := svc.checkUnrolledVtxoExpiry(tc.csvExpiresAt, now)
+			err := svc.checkUnrolledVtxoExpiry(context.Background(), tc.csvExpiresAt, now)
 			if tc.expectErr {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), "unrolled vtxo CSV expires too soon")
