@@ -105,12 +105,44 @@ func TestPaginatedFetch(t *testing.T) {
 				},
 				wantErr: "context canceled",
 			},
+			{
+				name: "exceeds max pages",
+				ctx:  context.Background(),
+				fetch: func(_ context.Context, page *arkv1.IndexerPageRequest) ([]int, *arkv1.IndexerPageResponse, error) {
+					idx := page.GetIndex()
+					return []int{int(idx)}, &arkv1.IndexerPageResponse{
+						Current: idx, Next: idx + 1, Total: int32(maxPages + 10),
+					}, nil
+				},
+				wantErr: "too many pages",
+			},
+			{
+				name: "context cancelled during throttle",
+				ctx: func() context.Context {
+					ctx, cancel := context.WithCancel(context.Background())
+					// Cancel after a short delay so the throttle sleep gets interrupted.
+					go func() {
+						time.Sleep(50 * time.Millisecond)
+						cancel()
+					}()
+					return ctx
+				}(),
+				fetch: func(_ context.Context, page *arkv1.IndexerPageRequest) ([]int, *arkv1.IndexerPageResponse, error) {
+					idx := page.GetIndex()
+					return []int{int(idx)}, &arkv1.IndexerPageResponse{
+						Current: idx, Next: idx + 1, Total: int32(maxReqsPerSec + 5),
+					}, nil
+				},
+				wantErr: "context canceled",
+			},
 		}
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				_, err := paginatedFetch(tt.ctx, tt.fetch)
+				resp, err := paginatedFetch(tt.ctx, tt.fetch)
+				require.Error(t, err)
 				require.ErrorContains(t, err, tt.wantErr)
+				require.Nil(t, resp)
 			})
 		}
 	})

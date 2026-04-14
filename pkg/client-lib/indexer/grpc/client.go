@@ -22,6 +22,7 @@ import (
 const (
 	maxPageSize   = 1000
 	maxReqsPerSec = 20
+	maxPages      = 100
 )
 
 type grpcClient struct {
@@ -311,7 +312,7 @@ func (a *grpcClient) GetVtxos(
 		return nil, fmt.Errorf("missing opts")
 	}
 
-	if len(o.Scripts) > maxPageSize || len(o.Outpoints) > maxPageSize {
+	if o.Page == nil && (len(o.Scripts)+len(o.Outpoints) > maxPageSize) {
 		return a.paginatedGetVtxos(ctx, opts...)
 	}
 
@@ -407,14 +408,15 @@ func (a *grpcClient) GetVtxoChain(
 func (a *grpcClient) GetVirtualTxs(
 	ctx context.Context, txids []string, opts ...indexer.PageOption,
 ) (*indexer.VirtualTxsResponse, error) {
-	if len(txids) > maxPageSize {
-		return a.paginatedGetVirtualTxs(ctx, txids)
-	}
-
 	o, err := indexer.ApplyPageOptions(opts...)
 	if err != nil {
 		return nil, err
 	}
+
+	if o.Page == nil && len(txids) > maxPageSize {
+		return a.paginatedGetVirtualTxs(ctx, txids)
+	}
+
 	var page *arkv1.IndexerPageRequest
 	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
@@ -709,11 +711,18 @@ func paginatedFetch[T any](
 		if page == nil || page.GetNext() == page.GetTotal() {
 			break
 		}
+		if reqCount >= maxPages {
+			return nil, fmt.Errorf("too many pages (%d), aborting", maxPages)
+		}
 		pageIndex = page.GetNext()
 
 		// Throttle to avoid hitting the rate limit (20 req/sec).
 		if reqCount%maxReqsPerSec == 0 {
-			time.Sleep(time.Second)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Second):
+			}
 		}
 	}
 	return all, nil
