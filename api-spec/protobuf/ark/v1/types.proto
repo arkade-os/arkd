@@ -48,6 +48,7 @@ message TxNotification {
   repeated Vtxo spendable_vtxos = 4;
   // This field is set only in case of offchain tx.
   map<string, TxData> checkpoint_txs = 5; // key: outpoint, value: checkpoint txid
+  repeated Outpoint swept_vtxos = 6;
 }
 
 message Tapscripts {

@@ -982,7 +982,7 @@
       "GetIntentResponse": {
         "title": "GetIntentResponse",
         "type": "object",
-        "description": "If response coming from GetIntentRequest call by txid, both fields here will be populated.\nIf response coming from GetIntentRequest call by intent, only intents will be populated.",
+        "description": "The repeated intents field is always populated with the matching results.\nThe singular intent field is only set for backward compatibility when the\nrequest uses the txid filter, in which case it mirrors intents[0].",
         "properties": {
           "intent": {
             "$ref": "#/components/schemas/Intent"
@@ -1032,6 +1032,9 @@
           },
           "heartbeat": {
             "$ref": "#/components/schemas/Heartbeat"
+          },
+          "sweepTx": {
+            "$ref": "#/components/schemas/TxNotification"
           }
         }
       },
@@ -1448,6 +1451,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Vtxo"
+            }
+          },
+          "sweptVtxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Outpoint"
             }
           },
           "tx": {

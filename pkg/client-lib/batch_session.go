@@ -274,6 +274,10 @@ func (a *service) getFundsToSettle(
 		}
 	}
 
+	if opts.expiryThreshold > 0 {
+		vtxos = utils.FilterVtxosByExpiry(vtxos, opts.expiryThreshold)
+	}
+
 	boardingUtxos := opts.utxos
 	if len(opts.vtxos) <= 0 && len(opts.utxos) <= 0 {
 		boardingUtxos, err = a.getClaimableBoardingUtxos(ctx, boardingAddrs, nil)

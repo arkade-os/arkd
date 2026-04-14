@@ -3,6 +3,7 @@ package domain_test
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -26,6 +27,7 @@ var (
 					Amount:             2000,
 					CommitmentTxids:    []string{txid},
 					RootCommitmentTxid: txid,
+					ExpiresAt:          time.Now().Add(time.Hour).Unix(),
 				},
 			},
 			Receivers: []domain.Receiver{
@@ -58,6 +60,7 @@ var (
 					Amount:             1000,
 					CommitmentTxids:    []string{txid},
 					RootCommitmentTxid: txid,
+					ExpiresAt:          time.Now().Add(time.Hour).Unix(),
 				},
 				{
 					Outpoint: domain.Outpoint{
@@ -68,6 +71,7 @@ var (
 					Amount:             1000,
 					CommitmentTxids:    []string{txid},
 					RootCommitmentTxid: txid,
+					ExpiresAt:          time.Now().Add(time.Hour).Unix(),
 				},
 			},
 			Receivers: []domain.Receiver{{
@@ -495,11 +499,13 @@ func testEndFinalization(t *testing.T) {
 				intentsById[p.Id] = p
 			}
 			fixtures := []struct {
+				name        string
 				round       *domain.Round
 				forfeitTxs  []domain.ForfeitTx
 				expectedErr string
 			}{
 				{
+					name: "missing forfeit txs",
 					round: &domain.Round{
 						Id: "0",
 						Stage: domain.Stage{
@@ -511,6 +517,7 @@ func testEndFinalization(t *testing.T) {
 					expectedErr: "missing list of signed forfeit txs",
 				},
 				{
+					name: "invalid stage (undefined)",
 					round: &domain.Round{
 						Id: "0",
 					},
@@ -518,6 +525,7 @@ func testEndFinalization(t *testing.T) {
 					expectedErr: "not in a valid stage to end finalization",
 				},
 				{
+					name: "invalid stage (registration)",
 					round: &domain.Round{
 						Id: "0",
 						Stage: domain.Stage{
@@ -528,6 +536,7 @@ func testEndFinalization(t *testing.T) {
 					expectedErr: "not in a valid stage to end finalization",
 				},
 				{
+					name: "invalid stage (failed)",
 					round: &domain.Round{
 						Id: "0",
 						Stage: domain.Stage{
@@ -544,6 +553,7 @@ func testEndFinalization(t *testing.T) {
 					expectedErr: "not in a valid stage to end finalization",
 				},
 				{
+					name: "already finalized",
 					round: &domain.Round{
 						Id: "0",
 						Stage: domain.Stage{
@@ -562,9 +572,11 @@ func testEndFinalization(t *testing.T) {
 			}
 
 			for _, f := range fixtures {
-				events, err := f.round.EndFinalization(f.forfeitTxs, finalCommitmentTx, 0)
-				require.EqualError(t, err, f.expectedErr)
-				require.Empty(t, events)
+				t.Run(f.name, func(t *testing.T) {
+					events, err := f.round.EndFinalization(f.forfeitTxs, finalCommitmentTx, 0)
+					require.EqualError(t, err, f.expectedErr)
+					require.Empty(t, events)
+				})
 			}
 		})
 	})

@@ -294,8 +294,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	})
 
 	grpcConfig := []grpc.ServerOption{
-		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc),
-		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc),
+		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc, s.version),
+		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc, s.version),
 		grpc.StatsHandler(otelHandler),
 	}
 	creds := insecure.NewCredentials()
@@ -318,8 +318,12 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	appHandler := handlers.NewAppServiceHandler(s.version, appSvc, s.config.HeartbeatInterval)
 	eventsCh := appSvc.GetIndexerTxChannel(ctx)
 	subscriptionTimeoutDuration := time.Minute
+	indexerSvc, err := s.appConfig.IndexerService()
+	if err != nil {
+		return fmt.Errorf("failed to create indexer service: %w", err)
+	}
 	indexerHandler := handlers.NewIndexerService(
-		s.appConfig.IndexerService(),
+		indexerSvc,
 		eventsCh,
 		subscriptionTimeoutDuration,
 		s.config.HeartbeatInterval,
@@ -329,7 +333,7 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 
 	walletSvc := s.appConfig.WalletService()
 	adminHandler := handlers.NewAdminHandler(
-		s.appConfig.AdminService(), s.macaroonSvc,
+		s.appConfig.AdminService(), indexerSvc, s.macaroonSvc,
 		s.config.macaroonsDatadir(), s.appConfig.NoteUriPrefix,
 	)
 	walletHandler := handlers.NewWalletHandler(walletSvc)
@@ -388,6 +392,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		switch key {
 		case "X-Macaroon":
 			return "macaroon", true
+		case "X-Build-Version":
+			return "x-build-version", true
 		default:
 			return key, false
 		}

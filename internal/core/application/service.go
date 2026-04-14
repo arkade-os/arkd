@@ -117,9 +117,7 @@ func NewService(
 	sessionDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
 	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64,
 	maxTxWeight uint64, assetTxMaxWeightRatio float64,
-	network arklib.Network,
-	allowCSVBlockType bool,
-	noteUriPrefix string,
+	network arklib.Network, noteUriPrefix string,
 	scheduledSessionStartTime, scheduledSessionEndTime time.Time,
 	scheduledSessionPeriod, scheduledSessionDuration time.Duration,
 	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
@@ -170,6 +168,8 @@ func NewService(
 	if roundReportSvc == nil {
 		roundReportSvc = roundReportUnimplemented{}
 	}
+
+	allowCSVBlockType := vtxoTreeExpiry.Type == arklib.LocktimeTypeBlock
 
 	ctx, cancel := context.WithCancel(ctx)
 
@@ -367,6 +367,22 @@ func (s *service) registerEventHandlers() {
 			if err != nil {
 				log.WithError(err).Warn("failed to get spent vtxos")
 				return
+			}
+
+			// Make sure to mark new vtxos as swept if any of the spent inputs is swept as well or
+			// expired.
+			sweptIns := false
+			for _, vtxo := range spentVtxos {
+				if vtxo.Swept || vtxo.IsExpired() {
+					sweptIns = true
+					break
+				}
+			}
+
+			if sweptIns {
+				for i := range newVtxos {
+					newVtxos[i].Swept = true
+				}
 			}
 
 			checkpointTxsByOutpoint := make(map[string]TxData)
@@ -691,7 +707,7 @@ func (s *service) SubmitOffchainTx(
 				"%s already unrolled", vtxo.Outpoint,
 			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
 		}
-		if vtxo.Swept || !s.sweeper.scheduler.AfterNow(vtxo.ExpiresAt) {
+		if vtxo.Swept || vtxo.IsExpired() {
 			// if we reach this point, it means vtxo.Spent = false so the vtxo is recoverable
 			return nil, errors.VTXO_RECOVERABLE.New("%s is recoverable", vtxo.Outpoint).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
@@ -940,107 +956,14 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.INTERNAL_ERROR.New("get dust amount failed: %w", err)
 	}
 
-	outputs := make([]*wire.TxOut, 0) // outputs excluding the P2A
-	foundAnchor := false
-	foundExtension := false
-	var rebuiltArkTx *psbt.Packet
-	var rebuiltCheckpointTxs []*psbt.Packet
-	ext := make(extension.Extension, 0)
-	opRetCount := 0
-
-	for outIndex, out := range arkPtx.UnsignedTx.TxOut {
-		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
-			if foundAnchor {
-				return nil, errors.MALFORMED_ARK_TX.New(
-					"tx %s has multiple anchor outputs", txid,
-				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
-			}
-			foundAnchor = true
-			continue
-		}
-
-		if len(out.PkScript) > 0 && out.PkScript[0] == txscript.OP_RETURN {
-			opRetCount++
-		}
-
-		// if the OP_RETURN is extension, decode it and add it to outputs list
-		// skip other checks related to vtxo output
-		if extension.IsExtension(out.PkScript) {
-			if foundExtension {
-				return nil, errors.MALFORMED_ARK_TX.New(
-					"tx %s has multiple extension outputs", txid,
-				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
-			}
-			foundExtension = true
-			outputs = append(outputs, out)
-
-			ext, err = extension.NewExtensionFromBytes(out.PkScript)
-			if err != nil {
-				return nil, errors.MALFORMED_ARK_TX.New(
-					"tx %s has malformed extension output %x", txid, out.PkScript,
-				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
-			}
-			continue
-		}
-
-		if s.vtxoMaxAmount >= 0 {
-			if out.Value > s.vtxoMaxAmount {
-				return nil, errors.AMOUNT_TOO_HIGH.New(
-					"output #%d amount (%d) is higher than max vtxo amount: %d",
-					outIndex, out.Value, s.vtxoMaxAmount,
-				).WithMetadata(errors.AmountTooHighMetadata{
-					OutputIndex: outIndex,
-					Amount:      int(out.Value),
-					MaxAmount:   int(s.vtxoMaxAmount),
-				})
-			}
-		}
-		if out.Value < s.vtxoMinAmount {
-			return nil, errors.AMOUNT_TOO_LOW.New(
-				"output #%d amount is lower than min vtxo amount: %d",
-				outIndex, s.vtxoMinAmount,
-			).WithMetadata(errors.AmountTooLowMetadata{
-				OutputIndex: outIndex,
-				Amount:      int(out.Value),
-				MinAmount:   int(s.vtxoMinAmount),
-			})
-		}
-
-		if out.Value < int64(dust) {
-			// if the output is below dust limit, it must be using OP_RETURN-style vtxo pkscript
-			if !script.IsSubDustScript(out.PkScript) {
-				return nil, errors.AMOUNT_TOO_LOW.New(
-					"output #%d amount is below dust limit (%d < %d) but is not using "+
-						"OP_RETURN output script", outIndex, out.Value, dust,
-				).WithMetadata(errors.AmountTooLowMetadata{
-					OutputIndex: outIndex,
-					Amount:      int(out.Value),
-					MinAmount:   int(dust),
-				})
-			}
-		} else {
-			// all output with amount > dust must be valid taproot scripts
-			scriptClass := txscript.GetScriptClass(out.PkScript)
-			if scriptClass != txscript.WitnessV1TaprootTy {
-				return nil, errors.MALFORMED_ARK_TX.New(
-					"output #%d has amount greater than dust but is not a taproot pkscript",
-					outIndex,
-				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
-			}
-		}
-
-		outputs = append(outputs, out)
-	}
-
-	if !foundAnchor {
-		return nil, errors.MALFORMED_ARK_TX.New("missing anchor output in ark tx %s", txid).
-			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
-	}
-
-	if opRetCount > int(s.maxOpReturnOutputs) {
-		return nil, errors.MALFORMED_ARK_TX.New(
-			"tx has %d OP_RETURN outputs, max %d are allowed", opRetCount, s.maxOpReturnOutputs,
-		).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+	outputs, ext, outputsErr := validateOffchainTxOutputs(
+		arkPtx.UnsignedTx.TxOut, dust,
+		s.vtxoMaxAmount, s.vtxoMinAmount,
+		int64(s.maxOpReturnOutputs),
+		signedArkTx, txid,
+	)
+	if outputsErr != nil {
+		return nil, outputsErr
 	}
 
 	// validate assets
@@ -1048,6 +971,8 @@ func (s *service) SubmitOffchainTx(
 		return nil, err
 	}
 
+	var rebuiltArkTx *psbt.Packet
+	var rebuiltCheckpointTxs []*psbt.Packet
 	// recompute all txs (checkpoint txs + ark tx)
 	rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildTxs(
 		ins, outputs, s.checkpointTapscript,
@@ -1463,23 +1388,18 @@ func (s *service) GetPendingOffchainTxs(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
-	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
-	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
-			WithMetadata(map[string]any{
-				"proof": proof.UnsignedTx.TxID(),
-			})
-	}
-
-	if err := intent.Verify(signedProof, encodedMessage); err != nil {
+	if err := intent.Verify(
+		encodedProof,
+		encodedMessage,
+		[]*btcec.PublicKey{s.signerPubkey},
+	); err != nil {
 		log.
-			WithField("unsignedProof", encodedProof).
-			WithField("signedProof", signedProof).
-			WithField("encodedMessage", encodedMessage).
+			WithField("proof", encodedProof).
+			WithField("message", encodedMessage).
 			Tracef("failed to verify intent proof: %s", err)
 		return nil, errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
 			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   signedProof,
+				Proof:   encodedProof,
 				Message: encodedMessage,
 			})
 	}
@@ -1771,36 +1691,33 @@ func (s *service) RegisterIntent(
 		}
 	}
 
-	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
-	if err != nil {
-		return "", errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
-			WithMetadata(map[string]any{
-				"proof": proof.UnsignedTx.TxID(),
-			})
-	}
-
-	if err := intent.Verify(signedProof, encodedMessage); err != nil {
+	if err := intent.Verify(
+		encodedProof,
+		encodedMessage,
+		[]*btcec.PublicKey{s.signerPubkey},
+	); err != nil {
 		log.
-			WithField("unsignedProof", encodedProof).
-			WithField("signedProof", signedProof).
-			WithField("encodedMessage", encodedMessage).
+			WithField("proof", encodedProof).
+			WithField("message", encodedMessage).
 			Tracef("failed to verify intent proof: %s", err)
 		return "", errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
 			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   signedProof,
+				Proof:   encodedProof,
 				Message: encodedMessage,
 			})
 	}
 
-	signedProofPtx, err := psbt.NewFromRawBytes(strings.NewReader(signedProof), true)
+	signedProofPtx, err := psbt.NewFromRawBytes(strings.NewReader(encodedProof), true)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to create psbt from signed proof: %w", err).
 			WithMetadata(map[string]any{
-				"signed_proof": signedProof,
+				"signed_proof": encodedProof,
 			})
 	}
 
-	finalizedProofTx, err := intent.Proof{Packet: *signedProofPtx}.FinalizeAndExtract()
+	finalizedProofTx, err := intent.Proof{
+		Packet: *signedProofPtx,
+	}.FinalizeAndExtract(s.signerPubkey)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to finalize proof: %w", err).
 			WithMetadata(map[string]any{
@@ -1821,7 +1738,7 @@ func (s *service) RegisterIntent(
 	if !proof.ContainsOutputs() {
 		return "", errors.INVALID_INTENT_PROOF.New("proof does not contain outputs").
 			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   signedProof,
+				Proof:   encodedProof,
 				Message: encodedMessage,
 			})
 	}
@@ -1837,6 +1754,13 @@ func (s *service) RegisterIntent(
 			if len(ext) > 0 {
 				return "", errors.INVALID_INTENT_PSBT.New(
 					"intent proof has several extension outputs",
+				)
+			}
+
+			if output.Value != 0 {
+				return "", errors.INVALID_INTENT_PSBT.New(
+					"extension output #%d has non-zero value (%d)",
+					outputIndex, output.Value,
 				)
 			}
 
@@ -1976,7 +1900,7 @@ func (s *service) RegisterIntent(
 		if hasIssuance(intentAssetPacket) {
 			return "", errors.INVALID_INTENT_PROOF.New("intent contains asset issuance").
 				WithMetadata(errors.InvalidIntentProofMetadata{
-					Proof:   signedProof,
+					Proof:   encodedProof,
 					Message: encodedMessage,
 				})
 		}
@@ -1985,12 +1909,12 @@ func (s *service) RegisterIntent(
 	}
 
 	intent, err := domain.NewIntent(
-		proofTxid, signedProof, encodedMessage, vtxoInputs, leafTxPacket,
+		proofTxid, encodedProof, encodedMessage, vtxoInputs, leafTxPacket,
 	)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to create intent: %w", err).
 			WithMetadata(map[string]any{
-				"proof":       signedProof,
+				"proof":       encodedProof,
 				"message":     encodedMessage,
 				"vtxo_inputs": vtxoInputs,
 			})
@@ -4285,23 +4209,18 @@ func (s *service) verifyIntentProofAndFindMatches(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
-	signedProof, err := s.signer.SignTransactionTapscript(ctx, encodedProof, nil)
-	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to sign proof: %w", err).
-			WithMetadata(map[string]any{
-				"proof": proof.UnsignedTx.TxID(),
-			})
-	}
-
-	if err := intent.Verify(signedProof, encodedMessage); err != nil {
+	if err := intent.Verify(
+		encodedProof,
+		encodedMessage,
+		[]*btcec.PublicKey{s.signerPubkey},
+	); err != nil {
 		log.
-			WithField("unsignedProof", encodedProof).
-			WithField("signedProof", signedProof).
-			WithField("encodedMessage", encodedMessage).
+			WithField("proof", encodedProof).
+			WithField("message", encodedMessage).
 			Tracef("failed to verify intent proof: %s", err)
 		return nil, errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
 			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   signedProof,
+				Proof:   encodedProof,
 				Message: encodedMessage,
 			})
 	}
@@ -4327,6 +4246,161 @@ func (s *service) verifyIntentProofAndFindMatches(
 	}
 
 	return matches, nil
+}
+
+func validateOffchainTxOutputs(
+	txOuts []*wire.TxOut,
+	dust uint64,
+	vtxoMaxAmount int64,
+	vtxoMinOffchainTxAmount int64,
+	maxOpReturnOutputs int64,
+	signedArkTx string,
+	txid string,
+) ([]*wire.TxOut, extension.Extension, errors.Error) {
+	outputs := make([]*wire.TxOut, 0)
+	foundAnchor := false
+	foundExtension := false
+	ext := make(extension.Extension, 0)
+	opRetCount := 0
+
+	for outIndex, out := range txOuts {
+		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) {
+			if foundAnchor {
+				return nil, nil, errors.MALFORMED_ARK_TX.New(
+					"tx %s has multiple anchor outputs", txid,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
+			foundAnchor = true
+			continue
+		}
+
+		if len(out.PkScript) > 0 && out.PkScript[0] == txscript.OP_RETURN {
+			opRetCount++
+		}
+
+		// if the OP_RETURN is extension, decode it and add it to outputs list
+		// skip other checks related to vtxo output
+		if extension.IsExtension(out.PkScript) {
+			if foundExtension {
+				return nil, nil, errors.MALFORMED_ARK_TX.New(
+					"tx %s has multiple extension outputs", txid,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
+			foundExtension = true
+
+			if out.Value != 0 {
+				return nil, nil, errors.MALFORMED_ARK_TX.New(
+					"extension OP_RETURN output #%d has non-zero value (%d)",
+					outIndex, out.Value,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
+
+			outputs = append(outputs, out)
+
+			var err error
+			ext, err = extension.NewExtensionFromBytes(out.PkScript)
+			if err != nil {
+				return nil, nil, errors.MALFORMED_ARK_TX.New(
+					"tx %s has malformed extension output %x", txid, out.PkScript,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
+			continue
+		}
+
+		// handle non-extension OP_RETURN outputs
+		if len(out.PkScript) > 0 && out.PkScript[0] == txscript.OP_RETURN {
+			// subdust OP_RETURN: must have value < dust
+			if script.IsSubDustScript(out.PkScript) {
+				if out.Value >= int64(dust) {
+					return nil, nil, errors.MALFORMED_ARK_TX.New(
+						"subdust OP_RETURN output #%d has value (%d) >= dust limit (%d)",
+						outIndex, out.Value, dust,
+					).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+				}
+				if out.Value < vtxoMinOffchainTxAmount {
+					return nil, nil, errors.AMOUNT_TOO_LOW.New(
+						"output #%d amount is lower than min vtxo amount: %d",
+						outIndex, vtxoMinOffchainTxAmount,
+					).WithMetadata(errors.AmountTooLowMetadata{
+						OutputIndex: outIndex,
+						Amount:      int(out.Value),
+						MinAmount:   int(vtxoMinOffchainTxAmount),
+					})
+				}
+				outputs = append(outputs, out)
+				continue
+			}
+
+			// not subdust format but has value is invalid
+			if out.Value > 0 {
+				return nil, nil, errors.MALFORMED_ARK_TX.New(
+					"OP_RETURN output #%d has non-zero value (%d) but is not a subdust output",
+					outIndex, out.Value,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
+			outputs = append(outputs, out)
+			continue
+		}
+
+		if vtxoMaxAmount >= 0 {
+			if out.Value > vtxoMaxAmount {
+				return nil, nil, errors.AMOUNT_TOO_HIGH.New(
+					"output #%d amount (%d) is higher than max vtxo amount: %d",
+					outIndex, out.Value, vtxoMaxAmount,
+				).WithMetadata(errors.AmountTooHighMetadata{
+					OutputIndex: outIndex,
+					Amount:      int(out.Value),
+					MaxAmount:   int(vtxoMaxAmount),
+				})
+			}
+		}
+		if out.Value < vtxoMinOffchainTxAmount {
+			return nil, nil, errors.AMOUNT_TOO_LOW.New(
+				"output #%d amount is lower than min vtxo amount: %d",
+				outIndex, vtxoMinOffchainTxAmount,
+			).WithMetadata(errors.AmountTooLowMetadata{
+				OutputIndex: outIndex,
+				Amount:      int(out.Value),
+				MinAmount:   int(vtxoMinOffchainTxAmount),
+			})
+		}
+
+		if out.Value < int64(dust) {
+			// non-OP_RETURN outputs below dust are invalid (OP_RETURN outputs are handled above and continue)
+			return nil, nil, errors.AMOUNT_TOO_LOW.New(
+				"output #%d amount is below dust limit (%d < %d) but is not using "+
+					"OP_RETURN output script", outIndex, out.Value, dust,
+			).WithMetadata(errors.AmountTooLowMetadata{
+				OutputIndex: outIndex,
+				Amount:      int(out.Value),
+				MinAmount:   int(dust),
+			})
+		} else {
+			// all output with amount > dust must be valid taproot scripts
+			scriptClass := txscript.GetScriptClass(out.PkScript)
+			if scriptClass != txscript.WitnessV1TaprootTy {
+				return nil, nil, errors.MALFORMED_ARK_TX.New(
+					"output #%d has amount greater than dust but is not a taproot pkscript",
+					outIndex,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
+		}
+
+		outputs = append(outputs, out)
+	}
+
+	if !foundAnchor {
+		return nil, nil, errors.MALFORMED_ARK_TX.New("missing anchor output in ark tx %s", txid).
+			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+	}
+
+	if opRetCount > int(maxOpReturnOutputs) {
+		return nil, nil, errors.MALFORMED_ARK_TX.New(
+			"tx has %d OP_RETURN outputs, max %d are allowed", opRetCount, maxOpReturnOutputs,
+		).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+	}
+
+	return outputs, ext, nil
 }
 
 func extractVtxoScriptFromSignedForfeitTx(tx string) (string, error) {

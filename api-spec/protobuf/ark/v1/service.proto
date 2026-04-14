@@ -326,6 +326,7 @@ message GetTransactionsStreamResponse {
     TxNotification commitment_tx = 1;
     TxNotification ark_tx = 2;
     Heartbeat heartbeat = 3;
+    TxNotification sweep_tx = 4;
   }
 }
 
