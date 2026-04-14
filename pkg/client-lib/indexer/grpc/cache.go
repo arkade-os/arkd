@@ -25,11 +25,20 @@ func newScriptsCache() *scriptsCache {
 	}
 }
 
+func (s *scriptsCache) exists(id string) bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	subId := s.resolveIdLocked(id)
+	_, ok := s.scriptsBySubId[subId]
+	return ok
+}
+
 func (s *scriptsCache) get(id string) []string {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	subId := s.resolveId(id)
+	subId := s.resolveIdLocked(id)
 	scripts, ok := s.scriptsBySubId[subId]
 	if !ok {
 		return nil
@@ -41,7 +50,7 @@ func (s *scriptsCache) add(id string, scripts []string) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	subId := s.resolveId(id)
+	subId := s.resolveIdLocked(id)
 	if _, ok := s.scriptsBySubId[subId]; !ok {
 		s.scriptsBySubId[subId] = make(map[string]struct{})
 	}
@@ -54,7 +63,7 @@ func (s *scriptsCache) removeScripts(id string, scripts []string) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	subId := s.resolveId(id)
+	subId := s.resolveIdLocked(id)
 	if _, ok := s.scriptsBySubId[subId]; !ok {
 		return
 	}
@@ -67,7 +76,7 @@ func (s *scriptsCache) removeSubscription(id string) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	subId := s.resolveId(id)
+	subId := s.resolveIdLocked(id)
 	if _, ok := s.scriptsBySubId[subId]; !ok {
 		return
 	}
@@ -99,7 +108,7 @@ func (s *scriptsCache) removeSubscription(id string) {
 
 // findAncestor returns the key in replacements that maps to id, if any.
 // Each id appears at most once as a value (enforced by replace()), so the
-// lookup is unambiguous.
+// lookup is unambiguous. Caller must hold s.lock.
 func (s *scriptsCache) findAncestor(id string) (string, bool) {
 	for k, v := range s.replacements {
 		if v == id {
@@ -127,7 +136,7 @@ func (s *scriptsCache) replace(oldId, newId string) {
 		return
 	}
 
-	subId := s.resolveId(oldId)
+	subId := s.resolveIdLocked(oldId)
 	scripts, ok := s.scriptsBySubId[subId]
 	if !ok {
 		return
@@ -137,13 +146,22 @@ func (s *scriptsCache) replace(oldId, newId string) {
 	s.replacements[subId] = newId
 }
 
+// resolveId walks the replacement chain to the tip. Safe for external callers.
 func (s *scriptsCache) resolveId(id string) string {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	return s.resolveIdLocked(id)
+}
+
+// resolveIdLocked is the internal, unlocked variant of resolveId. Caller must hold s.lock.
+func (s *scriptsCache) resolveIdLocked(id string) string {
 	subId := id
 	for {
-		if _, ok := s.replacements[subId]; !ok {
-			break
+		next, ok := s.replacements[subId]
+		if !ok {
+			return subId
 		}
-		subId = s.replacements[subId]
+		subId = next
 	}
-	return subId
 }

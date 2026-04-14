@@ -572,8 +572,7 @@ func (a *grpcClient) UpdateSubscription(
 		return fmt.Errorf("missing scripts to add or remove")
 	}
 
-	scripts := a.scripts.get(subscriptionId)
-	if len(scripts) <= 0 {
+	if !a.scripts.exists(subscriptionId) {
 		return fmt.Errorf("subscription not found with id %s", subscriptionId)
 	}
 
@@ -634,18 +633,18 @@ func (a *grpcClient) svc() arkv1.IndexerServiceClient {
 func (a *grpcClient) subscribeForScripts(
 	ctx context.Context, subscriptionId string, scripts []string,
 ) error {
+	subId := a.scripts.resolveId(subscriptionId)
+
 	req := &arkv1.SubscribeForScriptsRequest{
-		Scripts: scripts,
-	}
-	if len(subscriptionId) > 0 {
-		req.SubscriptionId = subscriptionId
+		Scripts:        scripts,
+		SubscriptionId: subId,
 	}
 
 	if _, err := a.svc().SubscribeForScripts(ctx, req); err != nil {
 		return err
 	}
 
-	a.scripts.add(subscriptionId, scripts)
+	a.scripts.add(subId, scripts)
 
 	return nil
 }
@@ -653,18 +652,18 @@ func (a *grpcClient) subscribeForScripts(
 func (a *grpcClient) unsubscribeForScripts(
 	ctx context.Context, subscriptionId string, scripts []string,
 ) error {
+	subId := a.scripts.resolveId(subscriptionId)
+
 	req := &arkv1.UnsubscribeForScriptsRequest{
-		Scripts: scripts,
-	}
-	if len(subscriptionId) > 0 {
-		req.SubscriptionId = subscriptionId
+		Scripts:        scripts,
+		SubscriptionId: subId,
 	}
 
 	if _, err := a.svc().UnsubscribeForScripts(ctx, req); err != nil {
 		return err
 	}
 
-	a.scripts.removeScripts(subscriptionId, scripts)
+	a.scripts.removeScripts(subId, scripts)
 
 	return nil
 }

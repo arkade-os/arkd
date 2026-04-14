@@ -147,6 +147,92 @@ func TestScriptsCache(t *testing.T) {
 		})
 	})
 
+	t.Run("exists", func(t *testing.T) {
+		t.Run("valid", func(t *testing.T) {
+			testCases := []struct {
+				name  string
+				setup func(*scriptsCache)
+				id    string
+			}{
+				{
+					name: "subscription with scripts exists",
+					setup: func(c *scriptsCache) {
+						c.add("sub1", []string{"script1"})
+					},
+					id: "sub1",
+				},
+				{
+					name: "subscription with no scripts still exists",
+					setup: func(c *scriptsCache) {
+						c.add("sub1", []string{"script1"})
+						c.removeScripts("sub1", []string{"script1"})
+					},
+					id: "sub1",
+				},
+				{
+					name: "subscription exists via replacement chain",
+					setup: func(c *scriptsCache) {
+						c.add("sub1", []string{"script1"})
+						c.replace("sub1", "sub2")
+					},
+					id: "sub1",
+				},
+				{
+					name: "subscription exists via multi-hop replacement chain",
+					setup: func(c *scriptsCache) {
+						c.add("sub1", []string{"script1"})
+						c.replace("sub1", "sub2")
+						c.replace("sub2", "sub3")
+					},
+					id: "sub1",
+				},
+			}
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					c := newScriptsCache()
+					tc.setup(c)
+					require.True(t, c.exists(tc.id))
+				})
+			}
+		})
+
+		t.Run("invalid", func(t *testing.T) {
+			testCases := []struct {
+				name  string
+				setup func(*scriptsCache)
+				id    string
+			}{
+				{
+					name:  "empty cache",
+					setup: func(_ *scriptsCache) {},
+					id:    "sub1",
+				},
+				{
+					name: "non-existent subscription",
+					setup: func(c *scriptsCache) {
+						c.add("sub1", []string{"script1"})
+					},
+					id: "sub2",
+				},
+				{
+					name: "removed subscription does not exist",
+					setup: func(c *scriptsCache) {
+						c.add("sub1", []string{"script1"})
+						c.removeSubscription("sub1")
+					},
+					id: "sub1",
+				},
+			}
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					c := newScriptsCache()
+					tc.setup(c)
+					require.False(t, c.exists(tc.id))
+				})
+			}
+		})
+	})
+
 	t.Run("removeScripts", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
 			testCases := []struct {
@@ -452,5 +538,84 @@ func TestScriptsCache(t *testing.T) {
 			}()
 		}
 		wg.Wait()
+	})
+
+	// Run every mutating method concurrently against the same cache. The cache is protected by a
+	// single mutex, so this test ensures there are no data races and that no invariant-breaking
+	// interleaving blows up — e.g. replace() racing with removeSubscription() while the underlying
+	// scriptsBySubId / replacements maps are being walked in two directions.
+	t.Run("concurrent access with replace and removeSubscription", func(t *testing.T) {
+		t.Run("distinct subscription ids", func(t *testing.T) {
+			c := newScriptsCache()
+
+			const workers = 50
+			var wg sync.WaitGroup
+			wg.Add(workers)
+			for i := range workers {
+				go func() {
+					defer wg.Done()
+					oldId := fmt.Sprintf("sub_%d", i)
+					newId := fmt.Sprintf("sub_%d_replaced", i)
+					script := fmt.Sprintf("script_%d", i)
+
+					c.add(oldId, []string{script})
+					c.get(oldId)
+					c.replace(oldId, newId)
+					c.get(newId)
+					c.add(newId, []string{script + "_extra"})
+					c.removeScripts(newId, []string{script})
+					c.removeSubscription(oldId)
+				}()
+			}
+			wg.Wait()
+
+			// After all goroutines complete, every subscription should have been removed
+			// and the replacements map should be fully drained.
+			require.Empty(t, c.scriptsBySubId)
+			require.Empty(t, c.replacements)
+		})
+
+		// Hammer every mutating method on the same shared id concurrently. Unlike the previous
+		// test (distinct ids per worker), here all 50 goroutines contend on "sub1", so the final
+		// state is non-deterministic. We assert internal consistency rather than an exact final
+		// state: no self-replacements and no dangling chain tails.
+		t.Run("same subscription id", func(t *testing.T) {
+			c := newScriptsCache()
+			c.add("sub1", []string{"seed"})
+
+			const workers = 50
+			var wg sync.WaitGroup
+			wg.Add(workers)
+			for i := range workers {
+				go func() {
+					defer wg.Done()
+					id := "sub1"
+					script := fmt.Sprintf("script_%d", i)
+					newId := fmt.Sprintf("sub1_replaced_%d", i)
+
+					c.add(id, []string{script})
+					c.get(id)
+					c.exists(id)
+					c.replace(id, newId)
+					c.removeScripts(id, []string{script})
+					c.removeSubscription(id)
+				}()
+			}
+			wg.Wait()
+
+			// Every surviving entry in replacements must point at something still
+			// reachable — either a live scriptsBySubId bucket or a further
+			// replacement hop. No self-replacements are allowed.
+			for oldId, newId := range c.replacements {
+				require.NotEqual(t, oldId, newId, "self-replacement leaked into chain")
+				_, directHit := c.scriptsBySubId[newId]
+				_, viaChain := c.replacements[newId]
+				require.True(
+					t, directHit || viaChain,
+					"replacement %q -> %q dangles: newId has no scripts entry and no further replacement",
+					oldId, newId,
+				)
+			}
+		})
 	})
 }
