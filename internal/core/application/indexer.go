@@ -892,7 +892,10 @@ func (i *indexerService) preloadByMarkers(
 			}
 			missingTxids = append(missingTxids, v.Txid)
 		}
-		if len(missingTxids) > 0 {
+		// offchainTxRepo may be nil in test helpers that do not wire up the
+		// offchain-tx repo. Skip the piggyback in that case — the walk loop
+		// will fall back to its own in-loop bulk fetch for any cache misses.
+		if len(missingTxids) > 0 && offchainTxRepo != nil {
 			offchainTxs, err := offchainTxRepo.GetOffchainTxsByTxids(ctx, missingTxids)
 			if err != nil {
 				return err
