@@ -27,8 +27,8 @@ const (
 
 type grpcClient struct {
 	conn           *grpc.ClientConn
-	connMu         *sync.RWMutex
-	subscriptionMu *sync.RWMutex
+	connMu         sync.RWMutex
+	subscriptionMu sync.RWMutex
 	subscriptionId string
 }
 
@@ -69,9 +69,7 @@ func NewClient(serverUrl string) (indexer.Indexer, error) {
 	}
 
 	client := &grpcClient{
-		conn:           conn,
-		connMu:         &sync.RWMutex{},
-		subscriptionMu: &sync.RWMutex{},
+		conn: conn,
 	}
 
 	return client, nil
@@ -473,11 +471,14 @@ func (a *grpcClient) GetSubscription(
 				Scripts:        scripts,
 			})
 		},
-		Reconnect: func(ctx context.Context) (arkv1.IndexerService_GetSubscriptionClient, error) {
-			return a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
-				SubscriptionId: subscriptionId,
+		Reconnect: func(
+			ctx context.Context,
+		) (string, arkv1.IndexerService_GetSubscriptionClient, error) {
+			stream, err := a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
+				SubscriptionId: a.getSubscriptionID(),
 				Scripts:        scripts,
 			})
+			return "", stream, err
 		},
 		Recv: func(
 			stream arkv1.IndexerService_GetSubscriptionClient,

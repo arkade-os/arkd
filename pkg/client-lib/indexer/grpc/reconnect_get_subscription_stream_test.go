@@ -113,8 +113,7 @@ func TestSubscriptionLifecycleEventsAndDeltaFetchByTimestamp(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	c := &grpcClient{
-		conn:    conn,
-		connMu:  &sync.RWMutex{},
+		conn: conn,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
