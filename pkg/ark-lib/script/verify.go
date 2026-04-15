@@ -190,7 +190,7 @@ func VerifyTapscriptSigs(
 				continue
 			}
 
-			// if options.skipUnsignedInputs = false, return an error 
+			// if options.skipUnsignedInputs = false, return an error
 			// only if one of the expected signer is not in skipPublicKeys
 			// otherwise it means we skip all signers
 			for key := range expectedSigners {
@@ -200,6 +200,8 @@ func VerifyTapscriptSigs(
 					)
 				}
 			}
+			// all signers are skipped, treat input as not signed
+			continue
 		}
 
 		leaf := txscript.NewBaseTapLeaf(tapscriptLeaf.Script)
