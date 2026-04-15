@@ -12,12 +12,52 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
-// VerifyTapscriptSigs verifies the tapscript signatures of the given tx
-// it skips inputs that are not signed or do not specify a taproot leaf script
-func VerifyTapscriptSigs(tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetcher, skip []*secp256k1.PublicKey) (signedInputs []int, err error) {
+
+
+type VerifyTapscriptOption func(*verifyTapscriptOptions)
+
+type verifyTapscriptOptions struct {
+	skipPublicKeys     []string // x-only hex encoded
+	skipUnsignedInputs bool
+}
+
+// WithSkipPublicKeys sets the key to ignore in signature validation
+func WithSkipPublicKeys(keys ...*btcec.PublicKey) VerifyTapscriptOption {
+	return func(o *verifyTapscriptOptions) {
+		encoded := make([]string, 0, len(keys))
+		for _, pubkey := range keys {
+			xonly := hex.EncodeToString(schnorr.SerializePubKey(pubkey))
+
+			if slices.Contains(encoded, xonly) {
+				continue // avoid duplication
+			}
+
+			encoded = append(encoded, xonly)
+		}
+
+		o.skipPublicKeys = encoded
+	}
+}
+
+// WithoutSkipUnsignedInput makes the func returns an error if any input is unsigned
+func WithoutSkipUnsignedInput() VerifyTapscriptOption {
+	return func(o *verifyTapscriptOptions) {
+		o.skipUnsignedInputs = false
+	}
+}
+
+// VerifyTapscriptSigs verifies the tapscript signatures of the given tx.
+func VerifyTapscriptSigs(
+	tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetcher,
+	opts ...VerifyTapscriptOption,
+) (signedInputs []int, err error) {
+	// skip unsigned input by default
+	options := &verifyTapscriptOptions{skipUnsignedInputs: true}
+	for _, opt := range opts {
+		opt(options)
+	}
 	if len(tx.Inputs) != len(tx.UnsignedTx.TxIn) {
 		return nil, fmt.Errorf(
 			"malformed tx: number of psbt inputs (%d) does not match number of tx inputs (%d)",
@@ -145,9 +185,21 @@ func VerifyTapscriptSigs(tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetc
 			)
 		}
 
-		// skip if not signed
 		if len(input.TaprootScriptSpendSig) == 0 {
-			continue
+			if options.skipUnsignedInputs {
+				continue
+			}
+
+			// if options.skipUnsignedInputs = false, return an error 
+			// only if one of the expected signer is not in skipPublicKeys
+			// otherwise it means we skip all signers
+			for key := range expectedSigners {
+				if !slices.Contains(options.skipPublicKeys, key) {
+					return nil, fmt.Errorf(
+						"input %d has no tapscript signatures", inputIndex,
+					)
+				}
+			}
 		}
 
 		leaf := txscript.NewBaseTapLeaf(tapscriptLeaf.Script)
@@ -208,13 +260,8 @@ func VerifyTapscriptSigs(tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetc
 
 		signedInputs = append(signedInputs, inputIndex)
 
-		ignore := make([]string, 0, len(skip))
-		for _, pubkey := range skip {
-			ignore = append(ignore, hex.EncodeToString(schnorr.SerializePubKey(pubkey)))
-		}
-
 		for key, hasSig := range expectedSigners {
-			if slices.Contains(ignore, key) {
+			if slices.Contains(options.skipPublicKeys, key) {
 				continue
 			}
 

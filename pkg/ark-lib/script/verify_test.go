@@ -23,7 +23,7 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 			sig := makeSignature(t, setup.privKey, packet, 0, setup.leaf, prevoutFetcher)
 			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig}
 
-			signedInputs, err := script.VerifyTapscriptSigs(packet, prevoutFetcher, nil)
+			signedInputs, err := script.VerifyTapscriptSigs(packet, prevoutFetcher)
 			require.NoError(t, err)
 			require.Equal(t, []int{0}, signedInputs)
 		})
@@ -33,7 +33,7 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 			packet, prevoutFetcher := buildTx(t, setup)
 			// No signatures added.
 
-			signedInputs, err := script.VerifyTapscriptSigs(packet, prevoutFetcher, nil)
+			signedInputs, err := script.VerifyTapscriptSigs(packet, prevoutFetcher)
 			require.NoError(t, err)
 			require.Empty(t, signedInputs)
 		})
@@ -47,7 +47,7 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig1}
 
 			signedInputs, err := script.VerifyTapscriptSigs(
-				packet, prevoutFetcher, []*btcec.PublicKey{privKey2.PubKey()},
+				packet, prevoutFetcher, script.WithSkipPublicKeys(privKey2.PubKey()),
 			)
 			require.NoError(t, err)
 			require.Equal(t, []int{0}, signedInputs)
@@ -68,7 +68,7 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 			prevoutFetcher, err := txutils.GetPrevOutputFetcher(packet)
 			require.NoError(t, err)
 
-			signedInputs, err := script.VerifyTapscriptSigs(packet, prevoutFetcher, nil)
+			signedInputs, err := script.VerifyTapscriptSigs(packet, prevoutFetcher)
 			require.NoError(t, err)
 			require.Empty(t, signedInputs)
 		})
@@ -87,7 +87,7 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 
 			packet.Inputs[0].TaprootLeafScript[0].Script = noteScript
 
-			signedInputs, err := script.VerifyTapscriptSigs(packet, prevoutFetcher, nil)
+			signedInputs, err := script.VerifyTapscriptSigs(packet, prevoutFetcher)
 			require.NoError(t, err)
 			require.Empty(t, signedInputs)
 		})
@@ -98,7 +98,7 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 
 			packet.Inputs[0].TaprootLeafScript = nil
 
-			signedInputs, err := script.VerifyTapscriptSigs(packet, prevoutFetcher, nil)
+			signedInputs, err := script.VerifyTapscriptSigs(packet, prevoutFetcher)
 			require.NoError(t, err)
 			require.Empty(t, signedInputs)
 		})
@@ -115,7 +115,7 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 			corrupted[0] ^= 0x01
 			packet.Inputs[0].TaprootLeafScript[0].ControlBlock = corrupted
 
-			_, err := script.VerifyTapscriptSigs(packet, prevoutFetcher, nil)
+			_, err := script.VerifyTapscriptSigs(packet, prevoutFetcher)
 			require.Error(t, err)
 		})
 
@@ -132,7 +132,7 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 			corrupted := append(append([]byte{}, setup.controlBlockBytes...), fakeNode...)
 			packet.Inputs[0].TaprootLeafScript[0].ControlBlock = corrupted
 
-			_, err = script.VerifyTapscriptSigs(packet, prevoutFetcher, nil)
+			_, err = script.VerifyTapscriptSigs(packet, prevoutFetcher)
 			require.Error(t, err)
 		})
 
@@ -145,7 +145,7 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 			sig.Signature[0] ^= 0xff
 			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig}
 
-			_, err := script.VerifyTapscriptSigs(packet, prevoutFetcher, nil)
+			_, err := script.VerifyTapscriptSigs(packet, prevoutFetcher)
 			require.Error(t, err)
 		})
 
@@ -157,7 +157,18 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 			sig1 := makeSignature(t, setup.privKey, packet, 0, setup.leaf, prevoutFetcher)
 			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig1}
 
-			_, err := script.VerifyTapscriptSigs(packet, prevoutFetcher, nil)
+			_, err := script.VerifyTapscriptSigs(packet, prevoutFetcher)
+			require.Error(t, err)
+		})
+
+		t.Run("WithoutSkipUnsignedInput errors on unsigned input", func(t *testing.T) {
+			setup := newSingleKeySetup(t)
+			packet, prevoutFetcher := buildTx(t, setup)
+			// No signatures added.
+
+			_, err := script.VerifyTapscriptSigs(
+				packet, prevoutFetcher, script.WithoutSkipUnsignedInput(),
+			)
 			require.Error(t, err)
 		})
 
@@ -171,7 +182,7 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 			require.NoError(t, err)
 			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig}
 
-			_, err = script.VerifyTapscriptSigs(packet, prevoutFetcher, nil)
+			_, err = script.VerifyTapscriptSigs(packet, prevoutFetcher)
 			require.Error(t, err)
 		})
 	})
