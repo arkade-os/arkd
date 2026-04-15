@@ -442,6 +442,15 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 	balance, err = alice.Balance(ctx)
 	require.NoError(t, err)
 	require.NotZero(t, balance.OffchainBalance.Total)
+
+	// Once the unrolled VTXO has been accepted into a batch, the onchain
+	// UTXO is spent. Mining past the unilateral exit delay and calling
+	// CompleteUnroll should find no mature funds to claim.
+	err = generateBlocks(20)
+	require.NoError(t, err)
+
+	_, err = alice.CompleteUnroll(ctx, "")
+	require.ErrorContains(t, err, "no mature funds available")
 }
 
 func TestCollaborativeExit(t *testing.T) {
