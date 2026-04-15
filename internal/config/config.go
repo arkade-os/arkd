@@ -514,6 +514,12 @@ func (c *Config) loadSettings() error {
 	}
 	if settings == nil {
 		settings = c.defaultSettings()
+		// Run the same validation the admin UpdateSettings path enforces so a
+		// bad env-var combination (e.g. PublicUnilateral < Unilateral,
+		// RoundMin > RoundMax) can't be silently persisted on first boot.
+		if err := settings.Validate(); err != nil {
+			return fmt.Errorf("invalid default settings: %w", err)
+		}
 		if err := c.repo.Settings().Upsert(ctx, *settings); err != nil {
 			return fmt.Errorf("failed to seed default settings: %w", err)
 		}
