@@ -113,8 +113,9 @@ func Verify(proofB64, message string, skip []*btcec.PublicKey) error {
 	for i := 1; i < len(ptx.Inputs); i++ {
 		in := ptx.Inputs[i]
 		if len(in.TaprootLeafScript) != 1 {
-			continue
+			return fmt.Errorf("malformed input %d: missing TaprootLeafScript", i)
 		}
+		
 		if !script.IsNoteClosureScript(in.TaprootLeafScript[0].Script) {
 			continue
 		}
