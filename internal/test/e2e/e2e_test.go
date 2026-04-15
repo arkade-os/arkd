@@ -389,14 +389,22 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 
 	err = generateBlocks(1)
 	require.NoError(t, err)
-	time.Sleep(10 * time.Second)
 
-	// Verify funds moved from offchain to onchain (locked)
+	// Poll for the wallet to index the new block instead of sleeping a fixed
+	// interval — every second spent here eats into the unrolled VTXO's CSV
+	// runway before the subsequent Settle call.
+	require.Eventually(t, func() bool {
+		b, err := alice.Balance(ctx)
+		if err != nil {
+			return false
+		}
+		return b.OffchainBalance.Total == 0 &&
+			len(b.OnchainBalance.LockedAmount) > 0 &&
+			b.OnchainBalance.LockedAmount[0].Amount > 0
+	}, 15*time.Second, 200*time.Millisecond, "unroll did not settle onchain in time")
+
 	balance, err = alice.Balance(ctx)
 	require.NoError(t, err)
-	require.Zero(t, balance.OffchainBalance.Total)
-	require.NotEmpty(t, balance.OnchainBalance.LockedAmount)
-	require.NotZero(t, balance.OnchainBalance.LockedAmount[0].Amount)
 
 	// Find the unrolled VTXO in the spent list
 	_, spentVtxos, err := alice.ListVtxos(ctx)

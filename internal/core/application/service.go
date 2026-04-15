@@ -3904,7 +3904,7 @@ func (s *service) validateBoardingInput(
 	// For unrolled VTXOs, ensure the CSV is far enough from expiring so the
 	// batch has time to finalize before the exit path becomes available.
 	if input.isUnrolledVtxo {
-		if err := s.checkUnrolledVtxoExpiry(ctx, csvExpiresAt, now); err != nil {
+		if err := s.checkUnrolledVtxoExpiry(csvExpiresAt, now); err != nil {
 			return nil, err
 		}
 	}
@@ -3946,24 +3946,8 @@ func (s *service) validateBoardingInput(
 	return &tx, nil
 }
 
-func (s *service) checkUnrolledVtxoExpiry(
-	ctx context.Context, csvExpiresAt, now time.Time,
-) error {
-	margin := s.sessionDuration
-	// startRound switches the active round duration to scheduledSession.Duration
-	// when a scheduled session window is active. We don't know which window the
-	// next round will land in, so use the larger of the two to stay safe.
-	if s.repoManager != nil {
-		if scheduledSession, _ := s.repoManager.ScheduledSession().
-			Get(ctx); scheduledSession != nil {
-			if scheduledSession.Duration > margin {
-				margin = scheduledSession.Duration
-			}
-		}
-	}
-	if s.unrolledVtxoMinExpiryMargin > 0 {
-		margin = s.unrolledVtxoMinExpiryMargin
-	}
+func (s *service) checkUnrolledVtxoExpiry(csvExpiresAt, now time.Time) error {
+	margin := s.unrolledVtxoMinExpiryMargin
 	if csvExpiresAt.Before(now.Add(margin)) {
 		return fmt.Errorf(
 			"unrolled vtxo CSV expires too soon (within %s)", margin,

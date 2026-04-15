@@ -274,8 +274,8 @@ var (
 	defaultOtelPushInterval              = 10 // seconds
 	defaultHeartbeatInterval             = 60 // seconds
 	defaultRoundReportServiceEnabled     = false
-	defaultSettlementMinExpiryGap        = 0 // disabled by default
-	defaultUnrolledVtxoMinExpiryMargin   = 0 // 0 means fallback to sessionDuration
+	defaultSettlementMinExpiryGap        = 0   // disabled by default
+	defaultUnrolledVtxoMinExpiryMargin   = 300 // 5 minutes in seconds
 	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
 	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
@@ -496,6 +496,19 @@ func (c *Config) Validate() error {
 	}
 	if c.SessionDuration < 2 {
 		return fmt.Errorf("invalid session duration, must be at least 2 seconds")
+	}
+	if c.UnrolledVtxoMinExpiryMargin <= 0 {
+		return fmt.Errorf(
+			"invalid unrolled vtxo min expiry margin, must be greater than 0 seconds",
+		)
+	}
+	if c.UnrolledVtxoMinExpiryMargin < c.SessionDuration {
+		return fmt.Errorf(
+			"invalid unrolled vtxo min expiry margin (%d), "+
+				"must be at least session duration (%d) so the batch has "+
+				"enough time to finalize before the CSV expires",
+			c.UnrolledVtxoMinExpiryMargin, c.SessionDuration,
+		)
 	}
 	if c.BanDuration < 1 {
 		return fmt.Errorf("invalid ban duration, must be at least 1 second")
