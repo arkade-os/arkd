@@ -235,6 +235,17 @@ var (
 	IndexerSigningKey    = "INDEXER_SIGNING_PRIVKEY" // #nosec G101
 	MaxConcurrentStreams = "MAX_CONCURRENT_STREAMS"
 
+	// First-boot seed overrides for DB-backed settings. When no settings row
+	// exists yet, defaultSettings() reads these env vars; at runtime the DB
+	// (mutated via the admin UpdateSettings API) is the source of truth.
+	BanThreshold              = "BAN_THRESHOLD"
+	BanDuration               = "BAN_DURATION"
+	VtxoTreeExpiry            = "VTXO_TREE_EXPIRY"
+	UnilateralExitDelay       = "UNILATERAL_EXIT_DELAY"
+	PublicUnilateralExitDelay = "PUBLIC_UNILATERAL_EXIT_DELAY"
+	CheckpointExitDelay       = "CHECKPOINT_EXIT_DELAY"
+	BoardingExitDelay         = "BOARDING_EXIT_DELAY"
+
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
 	DefaultPort                = 7070
@@ -290,6 +301,14 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(IndexerAuthTokenExpiry, defaultIndexerAuthTokenExpiry)
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
 	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
+
+	// First-boot seed defaults for DB-backed settings (production values).
+	// Only consulted in defaultSettings() when no settings row exists yet.
+	viper.SetDefault(BanThreshold, 3)
+	viper.SetDefault(BanDuration, 300)                 // 10 * 30s
+	viper.SetDefault(UnilateralExitDelay, 86400)       // 24 hours
+	viper.SetDefault(PublicUnilateralExitDelay, 86400) // 24 hours
+	viper.SetDefault(BoardingExitDelay, 7776000)       // 3 months
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -414,29 +433,75 @@ func determineLocktimeType(locktime int64) arklib.RelativeLocktime {
 	return domain.ToRelativeLocktime(locktime)
 }
 
+// defaultSettings builds the first-boot seed for DB-backed settings. It is
+// only consulted when the settings table is empty. Env vars (ARKD_*) override
+// the hardcoded production defaults so test environments and operators can
+// seed the DB deterministically before the round scheduler comes online.
+// After the first boot, this function is no longer consulted — the admin
+// UpdateSettings API is the only way to mutate the stored settings.
 func (c *Config) defaultSettings() *domain.Settings {
+	// Scheduler-aware fallbacks for the two fields that have no env var:
+	// with the block scheduler we want short block-based delays, otherwise
+	// reasonable second-based production defaults.
 	vtxoTreeExpiry := int64(604672)     // ~7 days in seconds
 	checkpointExitDelay := int64(86400) // 24 hours in seconds
 	if c.SchedulerType == "block" {
 		vtxoTreeExpiry = 20      // 20 blocks
 		checkpointExitDelay = 10 // 10 blocks
 	}
+	if viper.IsSet(VtxoTreeExpiry) {
+		vtxoTreeExpiry = viper.GetInt64(VtxoTreeExpiry)
+	}
+	if viper.IsSet(CheckpointExitDelay) {
+		checkpointExitDelay = viper.GetInt64(CheckpointExitDelay)
+	}
+
+	// Wiring env-var reads for the remaining fields that already had env
+	// var constants prior to the DB-backed-settings refactor.
+	roundMin := int64(1)
+	if viper.IsSet(RoundMinParticipantsCount) {
+		roundMin = viper.GetInt64(RoundMinParticipantsCount)
+	}
+	roundMax := int64(128)
+	if viper.IsSet(RoundMaxParticipantsCount) {
+		roundMax = viper.GetInt64(RoundMaxParticipantsCount)
+	}
+	vtxoMin := int64(-1)
+	if viper.IsSet(VtxoMinAmount) {
+		vtxoMin = viper.GetInt64(VtxoMinAmount)
+	}
+	vtxoMax := int64(-1)
+	if viper.IsSet(VtxoMaxAmount) {
+		vtxoMax = viper.GetInt64(VtxoMaxAmount)
+	}
+	utxoMin := int64(-1)
+	if viper.IsSet(UtxoMinAmount) {
+		utxoMin = viper.GetInt64(UtxoMinAmount)
+	}
+	utxoMax := int64(-1)
+	if viper.IsSet(UtxoMaxAmount) {
+		utxoMax = viper.GetInt64(UtxoMaxAmount)
+	}
+	maxTxWeight := int64(0.01 * bitcoinBlockWeight)
+	if viper.IsSet(MaxTxWeight) {
+		maxTxWeight = viper.GetInt64(MaxTxWeight)
+	}
 
 	return &domain.Settings{
-		BanThreshold:              3,
-		BanDuration:               300, // 10 * 30s
+		BanThreshold:              viper.GetInt64(BanThreshold),
+		BanDuration:               viper.GetInt64(BanDuration),
 		VtxoTreeExpiry:            vtxoTreeExpiry,
-		UnilateralExitDelay:       86400, // 24 hours
-		PublicUnilateralExitDelay: 86400, // 24 hours
+		UnilateralExitDelay:       viper.GetInt64(UnilateralExitDelay),
+		PublicUnilateralExitDelay: viper.GetInt64(PublicUnilateralExitDelay),
 		CheckpointExitDelay:       checkpointExitDelay,
-		BoardingExitDelay:         7776000, // 3 months
-		RoundMinParticipantsCount: 1,
-		RoundMaxParticipantsCount: 128,
-		UtxoMaxAmount:             -1,
-		UtxoMinAmount:             -1,
-		VtxoMaxAmount:             -1,
-		VtxoMinAmount:             -1,
-		MaxTxWeight:               int64(0.01 * bitcoinBlockWeight),
+		BoardingExitDelay:         viper.GetInt64(BoardingExitDelay),
+		RoundMinParticipantsCount: roundMin,
+		RoundMaxParticipantsCount: roundMax,
+		UtxoMaxAmount:             utxoMax,
+		UtxoMinAmount:             utxoMin,
+		VtxoMaxAmount:             vtxoMax,
+		VtxoMinAmount:             vtxoMin,
+		MaxTxWeight:               maxTxWeight,
 		UpdatedAt:                 time.Now(),
 	}
 }
