@@ -303,6 +303,16 @@ func (m *mockOffchainTxRepoForIndexer) GetOffchainTx(
 	return args.Get(0).(*domain.OffchainTx), args.Error(1)
 }
 
+func (m *mockOffchainTxRepoForIndexer) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	args := m.Called(ctx, txids)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*domain.OffchainTx), args.Error(1)
+}
+
 func (m *mockOffchainTxRepoForIndexer) AddOrUpdateOffchainTx(
 	ctx context.Context, offchainTx *domain.OffchainTx,
 ) error {
@@ -361,6 +371,10 @@ func newChainTestIndexerWithOffchain() (
 	vtxoRepo := &mockVtxoRepoForIndexer{}
 	markerRepo := &mockMarkerRepoForIndexer{}
 	offchainTxRepo := &mockOffchainTxRepoForIndexer{}
+	// Default: bulk fetch returns empty so the fallback to GetOffchainTx is used.
+	// Tests that want to verify bulk behavior can override with a more specific expectation.
+	offchainTxRepo.On("GetOffchainTxsByTxids", mock.Anything, mock.Anything).
+		Return([]*domain.OffchainTx{}, nil).Maybe()
 	repoManager := &mockRepoManagerForIndexer{
 		vtxos: vtxoRepo, markers: markerRepo, offchainTxs: offchainTxRepo,
 	}
@@ -737,12 +751,23 @@ func setupPreconfirmedChain(
 	cpA := makeCheckpointPSBT(t, txidB, 0)
 	cpB := makeCheckpointPSBT(t, txidC, 0)
 
+	offchainTxA := &domain.OffchainTx{ArkTxid: txidA, CheckpointTxs: map[string]string{"cp-a": cpA}}
+	offchainTxB := &domain.OffchainTx{ArkTxid: txidB, CheckpointTxs: map[string]string{"cp-b": cpB}}
+	offchainTxC := &domain.OffchainTx{ArkTxid: txidC, CheckpointTxs: map[string]string{}}
+
+	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidA}).
+		Return([]*domain.OffchainTx{offchainTxA}, nil).Maybe()
+	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidB}).
+		Return([]*domain.OffchainTx{offchainTxB}, nil).Maybe()
+	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidC}).
+		Return([]*domain.OffchainTx{offchainTxC}, nil).Maybe()
+
 	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-a": cpA}}, nil)
+		Return(offchainTxA, nil).Maybe()
 	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-b": cpB}}, nil)
+		Return(offchainTxB, nil).Maybe()
 	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+		Return(offchainTxC, nil).Maybe()
 
 	return Outpoint{Txid: txidA, VOut: 0}
 }
@@ -826,8 +851,11 @@ func TestGetVtxoChain_ShortChainNoToken(t *testing.T) {
 		Return([]domain.Vtxo{vtxo}, nil)
 	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
 		Return([]domain.Vtxo{}, nil).Maybe()
+	offchainTxA := &domain.OffchainTx{ArkTxid: txidA, CheckpointTxs: map[string]string{}}
+	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidA}).
+		Return([]*domain.OffchainTx{offchainTxA}, nil)
 	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+		Return(offchainTxA, nil).Maybe()
 
 	// Page size larger than chain
 	page := &Page{PageSize: 100}
@@ -888,7 +916,7 @@ func matchOutpoints(expected ...domain.Outpoint) interface{} {
 
 // matchIDs returns a mock.MatchedBy matcher that matches a []string argument
 // containing exactly the given IDs, regardless of order. This avoids flakes from
-// non-deterministic map iteration in preloadVtxosByMarkers.
+// non-deterministic map iteration in preloadByMarkers.
 func matchIDs(expected ...string) interface{} {
 	sorted := make([]string, len(expected))
 	copy(sorted, expected)
@@ -909,7 +937,7 @@ func matchIDs(expected ...string) interface{} {
 	})
 }
 
-// TestPreloadVtxosByMarkers_WalksMarkerChain verifies that preloadVtxosByMarkers
+// TestPreloadVtxosByMarkers_WalksMarkerChain verifies that preloadByMarkers
 // follows the marker DAG upward and populates the cache with all discovered VTXOs.
 func TestPreloadVtxosByMarkers_WalksMarkerChain(t *testing.T) {
 	_, markerRepo, indexer := newChainTestIndexer()
@@ -952,7 +980,8 @@ func TestPreloadVtxosByMarkers_WalksMarkerChain(t *testing.T) {
 		}, nil)
 
 	cache := make(map[string]domain.Vtxo)
-	err := indexer.preloadVtxosByMarkers(ctx, []domain.Vtxo{vtxoLeaf}, cache)
+	offchainCache := make(map[string]*domain.OffchainTx)
+	err := indexer.preloadByMarkers(ctx, []domain.Vtxo{vtxoLeaf}, cache, offchainCache)
 	require.NoError(t, err)
 
 	// Cache should contain the seed vtxo plus all vtxos from all marker levels.
@@ -999,7 +1028,8 @@ func TestPreloadVtxosByMarkers_NoCycleLoop(t *testing.T) {
 		}, nil)
 
 	cache := make(map[string]domain.Vtxo)
-	err := indexer.preloadVtxosByMarkers(ctx, []domain.Vtxo{vtxo}, cache)
+	offchainCache := make(map[string]*domain.OffchainTx)
+	err := indexer.preloadByMarkers(ctx, []domain.Vtxo{vtxo}, cache, offchainCache)
 	require.NoError(t, err)
 
 	// Should terminate without looping forever.
@@ -1013,7 +1043,7 @@ func TestPreloadVtxosByMarkers_NoCycleLoop(t *testing.T) {
 }
 
 // TestGetVtxoChain_WithMarkers_UsesPreload verifies that GetVtxoChain uses
-// preloadVtxosByMarkers when VTXOs have markers, and that the main loop
+// preloadByMarkers when VTXOs have markers, and that the main loop
 // hits the cache instead of making additional DB calls.
 func TestGetVtxoChain_WithMarkers_UsesPreload(t *testing.T) {
 	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()

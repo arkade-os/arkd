@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -232,6 +233,28 @@ func (r *arkRepository) GetOffchainTx(
 	ctx context.Context, txid string,
 ) (*domain.OffchainTx, error) {
 	return r.getOffchainTx(ctx, txid)
+}
+
+func (r *arkRepository) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	if len(txids) == 0 {
+		return []*domain.OffchainTx{}, nil
+	}
+
+	txs := make([]*domain.OffchainTx, 0, len(txids))
+	for _, txid := range txids {
+		tx, err := r.getOffchainTx(ctx, txid)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				continue
+			}
+			return nil, err
+		}
+		txs = append(txs, tx)
+	}
+
+	return txs, nil
 }
 
 func (r *arkRepository) Close() {

@@ -585,6 +585,71 @@ func TestGetVtxoChain(t *testing.T) {
 			rounds.AssertExpectations(t)
 			vtxos.AssertExpectations(t)
 		})
+
+		t.Run("preconfirmed chain bulk-loads offchain txs", func(t *testing.T) {
+			vtxoOutpoint := Outpoint{Txid: testTxids[0], VOut: 0}
+			offchainTxid := vtxoOutpoint.Txid
+			checkpointB64 := buildCheckpointTxSpending(t, vtxoOutpoint.Txid, vtxoOutpoint.VOut)
+
+			vtxos := &mockedVtxoRepo{}
+			vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{vtxoOutpoint}).
+				Return([]domain.Vtxo{{
+					Outpoint:     domain.Outpoint{Txid: vtxoOutpoint.Txid, VOut: vtxoOutpoint.VOut},
+					Preconfirmed: true,
+				}}, nil)
+
+			offchainRepo := &mockedOffchainTxRepo{}
+			offchainRepo.On("GetOffchainTxsByTxids", mock.Anything, []string{offchainTxid}).
+				Return([]*domain.OffchainTx{{
+					ArkTxid: offchainTxid,
+					CheckpointTxs: map[string]string{
+						"cp": checkpointB64,
+					},
+				}}, nil)
+
+			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, vtxos, nil, offchainRepo)
+
+			chain, _, _, err := indexer.walkVtxoChain(t.Context(), []domain.Outpoint{vtxoOutpoint}, 1000)
+			require.NoError(t, err)
+			require.NotEmpty(t, chain)
+
+			offchainRepo.AssertNotCalled(t, "GetOffchainTx", mock.Anything, offchainTxid)
+			offchainRepo.AssertExpectations(t)
+			vtxos.AssertExpectations(t)
+		})
+
+		t.Run("preconfirmed chain falls back to single fetch on cache miss", func(t *testing.T) {
+			vtxoOutpoint := Outpoint{Txid: testTxids[0], VOut: 0}
+			offchainTxid := vtxoOutpoint.Txid
+			checkpointB64 := buildCheckpointTxSpending(t, vtxoOutpoint.Txid, vtxoOutpoint.VOut)
+
+			vtxos := &mockedVtxoRepo{}
+			vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{vtxoOutpoint}).
+				Return([]domain.Vtxo{{
+					Outpoint:     domain.Outpoint{Txid: vtxoOutpoint.Txid, VOut: vtxoOutpoint.VOut},
+					Preconfirmed: true,
+				}}, nil)
+
+			offchainRepo := &mockedOffchainTxRepo{}
+			offchainRepo.On("GetOffchainTxsByTxids", mock.Anything, []string{offchainTxid}).
+				Return([]*domain.OffchainTx{}, nil)
+			offchainRepo.On("GetOffchainTx", mock.Anything, offchainTxid).
+				Return(&domain.OffchainTx{
+					ArkTxid: offchainTxid,
+					CheckpointTxs: map[string]string{
+						"cp": checkpointB64,
+					},
+				}, nil)
+
+			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, vtxos, nil, offchainRepo)
+
+			chain, _, _, err := indexer.walkVtxoChain(t.Context(), []domain.Outpoint{vtxoOutpoint}, 1000)
+			require.NoError(t, err)
+			require.NotEmpty(t, chain)
+
+			offchainRepo.AssertExpectations(t)
+			vtxos.AssertExpectations(t)
+		})
 	})
 
 	t.Run("invalid", func(t *testing.T) {
@@ -927,6 +992,7 @@ func TestStripSignerSignatures(t *testing.T) {
 func newTestIndexer(
 	t *testing.T, privkey *btcec.PrivateKey, exposure exposure,
 	rounds *mockedRoundRepo, vtxos *mockedVtxoRepo, wallet *mockedWallet,
+	offchainRepos ...*mockedOffchainTxRepo,
 ) *indexerService {
 	t.Helper()
 
@@ -939,6 +1005,9 @@ func newTestIndexer(
 	}
 	if vtxos != nil {
 		repo.On("Vtxos").Return(vtxos)
+	}
+	if len(offchainRepos) > 0 && offchainRepos[0] != nil {
+		repo.On("OffchainTxs").Return(offchainRepos[0])
 	}
 
 	cache := newTokenCache(defaultAuthTokenTTL)
@@ -993,6 +1062,25 @@ func buildTestTreeTxs(t *testing.T) (rootTxid, leafTxid string, flatTree arktree
 		{Txid: leafTxid, Tx: leafB64, Children: nil},
 	}
 	return
+}
+
+func buildCheckpointTxSpending(t *testing.T, prevTxid string, prevVout uint32) string {
+	t.Helper()
+
+	prevHash, err := chainhash.NewHashFromStr(prevTxid)
+	require.NoError(t, err)
+
+	ptx, err := psbt.New(
+		[]*wire.OutPoint{{Hash: *prevHash, Index: prevVout}},
+		[]*wire.TxOut{{Value: 1000, PkScript: []byte{txscript.OP_TRUE}}},
+		2, 0, []uint32{wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+
+	b64, err := ptx.B64Encode()
+	require.NoError(t, err)
+
+	return b64
 }
 
 // buildTestIntent creates a valid signed intent proof that passes intent.Verify.
@@ -1150,6 +1238,36 @@ func (m *mockedRepoManager) Vtxos() domain.VtxoRepository {
 		return v.(domain.VtxoRepository)
 	}
 	return nil
+}
+
+func (m *mockedRepoManager) OffchainTxs() domain.OffchainTxRepository {
+	if v := m.Called().Get(0); v != nil {
+		return v.(domain.OffchainTxRepository)
+	}
+	return nil
+}
+
+type mockedOffchainTxRepo struct {
+	mock.Mock
+	domain.OffchainTxRepository // unimplemented methods panic on call
+}
+
+func (m *mockedOffchainTxRepo) GetOffchainTx(ctx context.Context, txid string) (*domain.OffchainTx, error) {
+	args := m.Called(ctx, txid)
+	if v := args.Get(0); v != nil {
+		return v.(*domain.OffchainTx), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+func (m *mockedOffchainTxRepo) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	args := m.Called(ctx, txids)
+	if v := args.Get(0); v != nil {
+		return v.([]*domain.OffchainTx), args.Error(1)
+	}
+	return nil, args.Error(1)
 }
 
 type mockedWallet struct {

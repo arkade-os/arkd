@@ -3,13 +3,18 @@ package application
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/stretchr/testify/require"
 )
 
 // Lightweight fake repos for benchmarks — no testify/mock overhead.
@@ -92,12 +97,24 @@ func (r *benchOffchainTxRepo) GetOffchainTx(
 	return &domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil
 }
 
+func (r *benchOffchainTxRepo) GetOffchainTxsByTxids(
+	_ context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	result := make([]*domain.OffchainTx, 0, len(txids))
+	for _, txid := range txids {
+		if tx, ok := r.txs[txid]; ok {
+			result = append(result, tx)
+		}
+	}
+	return result, nil
+}
+
 func (r *benchOffchainTxRepo) Close() {}
 
 type benchRepoManager struct {
 	vtxoRepo     *benchVtxoRepo
 	markerRepo   *benchMarkerRepo
-	offchainRepo *benchOffchainTxRepo
+	offchainRepo domain.OffchainTxRepository
 }
 
 func (m *benchRepoManager) Events() domain.EventRepository   { return nil }
@@ -172,12 +189,16 @@ func buildLinearChain(n int, withMarkers bool) (*indexerService, domain.Outpoint
 
 		if i < n-1 {
 			offchainRepo.txs[tid] = &domain.OffchainTx{
+				ArkTxid: tid,
 				CheckpointTxs: map[string]string{
 					fmt.Sprintf("cp-%d", i): benchCheckpointPSBT(benchTxid(i+1), 0),
 				},
 			}
 		} else {
-			offchainRepo.txs[tid] = &domain.OffchainTx{CheckpointTxs: map[string]string{}}
+			offchainRepo.txs[tid] = &domain.OffchainTx{
+				ArkTxid:       tid,
+				CheckpointTxs: map[string]string{},
+			}
 		}
 	}
 
@@ -414,3 +435,441 @@ func BenchmarkCheckpointPSBTParse(b *testing.B) {
 		}
 	}
 }
+
+// countingOffchainTxRepo wraps benchOffchainTxRepo and counts calls.
+type countingOffchainTxRepo struct {
+	inner          *benchOffchainTxRepo
+	singleCalls    atomic.Int64
+	bulkCalls      atomic.Int64
+	latencyPerCall time.Duration
+}
+
+func (r *countingOffchainTxRepo) GetOffchainTx(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	r.singleCalls.Add(1)
+	if r.latencyPerCall > 0 {
+		time.Sleep(r.latencyPerCall)
+	}
+	return r.inner.GetOffchainTx(ctx, txid)
+}
+
+func (r *countingOffchainTxRepo) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	r.bulkCalls.Add(1)
+	if r.latencyPerCall > 0 {
+		time.Sleep(r.latencyPerCall) // one round-trip regardless of batch size
+	}
+	return r.inner.GetOffchainTxsByTxids(ctx, txids)
+}
+
+func (r *countingOffchainTxRepo) AddOrUpdateOffchainTx(
+	_ context.Context, _ *domain.OffchainTx,
+) error {
+	return nil
+}
+
+func (r *countingOffchainTxRepo) Close() {}
+
+func (r *countingOffchainTxRepo) reset() {
+	r.singleCalls.Store(0)
+	r.bulkCalls.Store(0)
+}
+
+// noBulkOffchainTxRepo is like benchOffchainTxRepo but GetOffchainTxsByTxids
+// always returns empty, forcing the fallback to individual GetOffchainTx calls.
+// This simulates the pre-optimization behavior.
+type noBulkOffchainTxRepo struct {
+	countingOffchainTxRepo
+}
+
+func (r *noBulkOffchainTxRepo) GetOffchainTxsByTxids(
+	_ context.Context, _ []string,
+) ([]*domain.OffchainTx, error) {
+	r.bulkCalls.Add(1)
+	return []*domain.OffchainTx{}, nil
+}
+
+// TestBulkOffchainTxReducesDBCalls verifies that the bulk prefetch reduces the
+// number of DB round-trips. Uses a fanout tree where each iteration processes
+// multiple VTXOs — bulk fetches all offchain txs in one call per iteration
+// instead of one call per VTXO.
+func TestBulkOffchainTxReducesDBCalls(t *testing.T) {
+	const depth = 8 // 2^9 - 1 = 511 VTXOs
+	ctx := context.Background()
+
+	// Build fanout tree data (reuse the helper's repo setup).
+	n := (1 << (depth + 1)) - 1
+	vtxoRepo := &benchVtxoRepo{vtxos: make(map[string]domain.Vtxo, n)}
+	innerRepo := &benchOffchainTxRepo{txs: make(map[string]*domain.OffchainTx, n)}
+
+	for i := 0; i < n; i++ {
+		tid := benchTxid(i)
+		vtxoRepo.vtxos[fmt.Sprintf("%s:0", tid)] = domain.Vtxo{
+			Outpoint:     domain.Outpoint{Txid: tid, VOut: 0},
+			Preconfirmed: true,
+			ExpiresAt:    int64(1000 + i),
+		}
+		left := 2*i + 1
+		right := 2*i + 2
+		if left < n && right < n {
+			innerRepo.txs[tid] = &domain.OffchainTx{
+				ArkTxid: tid,
+				CheckpointTxs: map[string]string{
+					fmt.Sprintf("cp-l-%d", i): benchCheckpointPSBT(benchTxid(left), 0),
+					fmt.Sprintf("cp-r-%d", i): benchCheckpointPSBT(benchTxid(right), 0),
+				},
+			}
+		} else {
+			innerRepo.txs[tid] = &domain.OffchainTx{
+				ArkTxid:       tid,
+				CheckpointTxs: map[string]string{},
+			}
+		}
+	}
+
+	start := Outpoint{Txid: benchTxid(0), VOut: 0}
+
+	// With bulk fetch (current behavior).
+	bulkRepo := &countingOffchainTxRepo{inner: innerRepo}
+	svc := &indexerService{repoManager: &benchRepoManager{
+		vtxoRepo: vtxoRepo, offchainRepo: bulkRepo,
+	}}
+	resp, err := svc.GetVtxoChain(ctx, "", start, nil, "")
+	require.NoError(t, err)
+
+	bulkSingle := bulkRepo.singleCalls.Load()
+	bulkBulk := bulkRepo.bulkCalls.Load()
+
+	// Without bulk fetch (simulated pre-optimization: bulk returns empty).
+	noBulkRepo := &noBulkOffchainTxRepo{countingOffchainTxRepo{inner: innerRepo}}
+	svc2 := &indexerService{repoManager: &benchRepoManager{
+		vtxoRepo: vtxoRepo, offchainRepo: noBulkRepo,
+	}}
+	resp2, err := svc2.GetVtxoChain(ctx, "", start, nil, "")
+	require.NoError(t, err)
+	require.Equal(t, len(resp.Chain), len(resp2.Chain))
+
+	noBulkSingle := noBulkRepo.singleCalls.Load()
+
+	t.Logf("fanout tree: depth=%d, %d VTXOs", depth, n)
+	t.Logf("WITH bulk:    %d bulk calls, %d individual calls (total round-trips: %d)",
+		bulkBulk, bulkSingle, bulkBulk+bulkSingle)
+	t.Logf("WITHOUT bulk: %d individual calls (total round-trips: %d)",
+		noBulkSingle, noBulkSingle)
+
+	// With bulk fetch, individual calls should be 0 (all served from cache).
+	require.Zero(t, bulkSingle, "bulk prefetch should eliminate individual GetOffchainTx calls")
+	// Bulk calls = depth+1 iterations (one per tree level), much fewer than N VTXOs.
+	require.LessOrEqual(t, bulkBulk, int64(depth+1),
+		"bulk calls should equal tree depth (one per iteration)")
+	// Without bulk, individual calls == N (one per preconfirmed VTXO).
+	require.Equal(t, int64(n), noBulkSingle,
+		"without bulk, every VTXO triggers an individual call")
+}
+
+// BenchmarkOffchainTxBulkVsSingle compares chain traversal with and without
+// the bulk offchain tx prefetch, using simulated DB latency to make the
+// round-trip reduction visible in wall-clock time. Uses a fanout tree
+// (depth 8, 511 VTXOs) where each iteration processes an exponentially
+// growing number of VTXOs — the bulk path does 9 round-trips vs 511
+// individual calls without it.
+func BenchmarkOffchainTxBulkVsSingle(b *testing.B) {
+	const depth = 8
+	const simulatedLatency = 50 * time.Microsecond
+
+	n := (1 << (depth + 1)) - 1
+	vtxoRepo := &benchVtxoRepo{vtxos: make(map[string]domain.Vtxo, n)}
+	innerRepo := &benchOffchainTxRepo{txs: make(map[string]*domain.OffchainTx, n)}
+
+	for i := 0; i < n; i++ {
+		tid := benchTxid(i)
+		vtxoRepo.vtxos[fmt.Sprintf("%s:0", tid)] = domain.Vtxo{
+			Outpoint:     domain.Outpoint{Txid: tid, VOut: 0},
+			Preconfirmed: true,
+			ExpiresAt:    int64(1000 + i),
+		}
+		left := 2*i + 1
+		right := 2*i + 2
+		if left < n && right < n {
+			innerRepo.txs[tid] = &domain.OffchainTx{
+				ArkTxid: tid,
+				CheckpointTxs: map[string]string{
+					fmt.Sprintf("cp-l-%d", i): benchCheckpointPSBT(benchTxid(left), 0),
+					fmt.Sprintf("cp-r-%d", i): benchCheckpointPSBT(benchTxid(right), 0),
+				},
+			}
+		} else {
+			innerRepo.txs[tid] = &domain.OffchainTx{
+				ArkTxid:       tid,
+				CheckpointTxs: map[string]string{},
+			}
+		}
+	}
+
+	start := Outpoint{Txid: benchTxid(0), VOut: 0}
+	ctx := context.Background()
+
+	b.Run(fmt.Sprintf("bulk_prefetch/%d_vtxos", n), func(b *testing.B) {
+		repo := &countingOffchainTxRepo{inner: innerRepo, latencyPerCall: simulatedLatency}
+		svc := &indexerService{repoManager: &benchRepoManager{
+			vtxoRepo: vtxoRepo, offchainRepo: repo,
+		}}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			repo.reset()
+			_, err := svc.GetVtxoChain(ctx, "", start, nil, "")
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+		b.StopTimer()
+		b.ReportMetric(float64(repo.bulkCalls.Load())/float64(b.N), "bulk_calls/op")
+		b.ReportMetric(float64(repo.singleCalls.Load())/float64(b.N), "single_calls/op")
+	})
+
+	b.Run(fmt.Sprintf("no_bulk_fallback/%d_vtxos", n), func(b *testing.B) {
+		repo := &noBulkOffchainTxRepo{countingOffchainTxRepo{inner: innerRepo, latencyPerCall: simulatedLatency}}
+		svc := &indexerService{repoManager: &benchRepoManager{
+			vtxoRepo: vtxoRepo, offchainRepo: repo,
+		}}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			repo.reset()
+			_, err := svc.GetVtxoChain(ctx, "", start, nil, "")
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+		b.StopTimer()
+		b.ReportMetric(float64(repo.bulkCalls.Load())/float64(b.N), "bulk_calls/op")
+		b.ReportMetric(float64(repo.singleCalls.Load())/float64(b.N), "single_calls/op")
+	})
+}
+
+// phaseTimings accumulates per-phase wall-clock time and call counts across
+// the wrapped repo methods. Safe for concurrent recording.
+type phaseTimings struct {
+	mu     sync.Mutex
+	totals map[string]time.Duration
+	counts map[string]int
+}
+
+func newPhaseTimings() *phaseTimings {
+	return &phaseTimings{
+		totals: make(map[string]time.Duration),
+		counts: make(map[string]int),
+	}
+}
+
+func (p *phaseTimings) record(phase string, d time.Duration) {
+	p.mu.Lock()
+	p.totals[phase] += d
+	p.counts[phase]++
+	p.mu.Unlock()
+}
+
+func (p *phaseTimings) log(t *testing.T, header string, wall time.Duration) {
+	t.Helper()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	phases := make([]string, 0, len(p.totals))
+	var repoTotal time.Duration
+	for name, d := range p.totals {
+		phases = append(phases, name)
+		repoTotal += d
+	}
+	sort.Strings(phases)
+
+	t.Logf("%s", header)
+	t.Logf("  %-32s %12s", "wall clock (GetVtxoChain)", wall)
+	for _, name := range phases {
+		t.Logf("  %-32s %12s  (%d calls)", name, p.totals[name], p.counts[name])
+	}
+	t.Logf("  %-32s %12s", "sum of repo phases", repoTotal)
+	t.Logf("  %-32s %12s", "other (psbt parse + overhead)", wall-repoTotal)
+}
+
+// timingVtxoRepo wraps a VtxoRepository and records per-call latency into a
+// shared phaseTimings. An optional per-call latency simulates DB round-trip
+// cost so the relative phase times are visible when running against fakes.
+type timingVtxoRepo struct {
+	domain.VtxoRepository
+	inner          domain.VtxoRepository
+	t              *phaseTimings
+	latencyPerCall time.Duration
+}
+
+func (r *timingVtxoRepo) GetVtxos(
+	ctx context.Context, outpoints []domain.Outpoint,
+) ([]domain.Vtxo, error) {
+	start := time.Now()
+	defer func() { r.t.record("Vtxos.GetVtxos", time.Since(start)) }()
+	if r.latencyPerCall > 0 {
+		time.Sleep(r.latencyPerCall)
+	}
+	return r.inner.GetVtxos(ctx, outpoints)
+}
+
+func (r *timingVtxoRepo) Close() {}
+
+type timingMarkerRepo struct {
+	domain.MarkerRepository
+	inner          domain.MarkerRepository
+	t              *phaseTimings
+	latencyPerCall time.Duration
+}
+
+func (r *timingMarkerRepo) GetVtxoChainByMarkers(
+	ctx context.Context, markerIDs []string,
+) ([]domain.Vtxo, error) {
+	start := time.Now()
+	defer func() { r.t.record("Markers.GetVtxoChainByMarkers", time.Since(start)) }()
+	if r.latencyPerCall > 0 {
+		time.Sleep(r.latencyPerCall)
+	}
+	return r.inner.GetVtxoChainByMarkers(ctx, markerIDs)
+}
+
+func (r *timingMarkerRepo) GetMarkersByIds(
+	ctx context.Context, ids []string,
+) ([]domain.Marker, error) {
+	start := time.Now()
+	defer func() { r.t.record("Markers.GetMarkersByIds", time.Since(start)) }()
+	if r.latencyPerCall > 0 {
+		time.Sleep(r.latencyPerCall)
+	}
+	return r.inner.GetMarkersByIds(ctx, ids)
+}
+
+func (r *timingMarkerRepo) GetVtxosByMarker(
+	ctx context.Context, markerID string,
+) ([]domain.Vtxo, error) {
+	start := time.Now()
+	defer func() { r.t.record("Markers.GetVtxosByMarker", time.Since(start)) }()
+	if r.latencyPerCall > 0 {
+		time.Sleep(r.latencyPerCall)
+	}
+	return r.inner.GetVtxosByMarker(ctx, markerID)
+}
+
+func (r *timingMarkerRepo) Close() {}
+
+type timingOffchainTxRepo struct {
+	domain.OffchainTxRepository
+	inner          domain.OffchainTxRepository
+	t              *phaseTimings
+	latencyPerCall time.Duration
+}
+
+func (r *timingOffchainTxRepo) GetOffchainTx(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	start := time.Now()
+	defer func() { r.t.record("OffchainTxs.GetOffchainTx", time.Since(start)) }()
+	if r.latencyPerCall > 0 {
+		time.Sleep(r.latencyPerCall)
+	}
+	return r.inner.GetOffchainTx(ctx, txid)
+}
+
+func (r *timingOffchainTxRepo) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	start := time.Now()
+	defer func() { r.t.record("OffchainTxs.GetOffchainTxsByTxids", time.Since(start)) }()
+	if r.latencyPerCall > 0 {
+		time.Sleep(r.latencyPerCall)
+	}
+	return r.inner.GetOffchainTxsByTxids(ctx, txids)
+}
+
+func (r *timingOffchainTxRepo) AddOrUpdateOffchainTx(
+	_ context.Context, _ *domain.OffchainTx,
+) error {
+	return nil
+}
+
+func (r *timingOffchainTxRepo) Close() {}
+
+// TestVtxoChainTimingBreakdown builds a deep linear chain and runs
+// GetVtxoChain against it with timing-decorated repos, logging a per-phase
+// wall-clock breakdown. This is the in-process replacement for the server-side
+// timing log that previously lived in walkVtxoChain.
+//
+// The repos use an in-memory backing store and inject a fixed per-call
+// simulatedLatency via time.Sleep, so the absolute numbers in the breakdown
+// do NOT reflect real DB cost — they are only meaningful as relative phase
+// proportions under a uniform latency assumption.
+//
+// Run with:
+//
+//	go test -v -run TestVtxoChainTimingBreakdown ./internal/core/application/...
+func TestVtxoChainTimingBreakdown(t *testing.T) {
+	const (
+		chainLen         = 10000
+		simulatedLatency = 50 * time.Microsecond
+	)
+
+	ctx := context.Background()
+
+	// Reuse buildLinearChain to get the same data layout the perf test produces,
+	// then swap its repo manager for a timing-decorated one.
+	svc, start := buildLinearChain(chainLen, true)
+	inner := svc.repoManager.(*benchRepoManager)
+
+	timings := newPhaseTimings()
+	svc.repoManager = &wrappedRepoManager{
+		vtxos: &timingVtxoRepo{
+			inner: inner.vtxoRepo, t: timings, latencyPerCall: simulatedLatency,
+		},
+		markers: &timingMarkerRepo{
+			inner: inner.markerRepo, t: timings, latencyPerCall: simulatedLatency,
+		},
+		offchainTxs: &timingOffchainTxRepo{
+			inner: inner.offchainRepo, t: timings, latencyPerCall: simulatedLatency,
+		},
+	}
+
+	wallStart := time.Now()
+	resp, err := svc.GetVtxoChain(ctx, "", start, nil, "")
+	wall := time.Since(wallStart)
+	require.NoError(t, err)
+	require.Equal(t, 2*chainLen-1, len(resp.Chain))
+
+	timings.log(t, fmt.Sprintf(
+		"GetVtxoChain timing breakdown: linear chain n=%d, simulated repo latency=%s",
+		chainLen, simulatedLatency,
+	), wall)
+}
+
+// wrappedRepoManager is a minimal RepoManager that exposes only the repos
+// walkVtxoChain touches. Unwired accessors panic with a descriptive message
+// instead of returning nil, so an accidental dependency on one of them
+// surfaces as a clear failure rather than a nil-pointer dereference.
+type wrappedRepoManager struct {
+	vtxos       domain.VtxoRepository
+	markers     domain.MarkerRepository
+	offchainTxs domain.OffchainTxRepository
+}
+
+func (m *wrappedRepoManager) Events() domain.EventRepository { panic("Events: not wired") }
+func (m *wrappedRepoManager) Rounds() domain.RoundRepository { panic("Rounds: not wired") }
+func (m *wrappedRepoManager) Vtxos() domain.VtxoRepository   { return m.vtxos }
+func (m *wrappedRepoManager) Markers() domain.MarkerRepository {
+	return m.markers
+}
+func (m *wrappedRepoManager) ScheduledSession() domain.ScheduledSessionRepo {
+	panic("ScheduledSession: not wired")
+}
+func (m *wrappedRepoManager) OffchainTxs() domain.OffchainTxRepository { return m.offchainTxs }
+func (m *wrappedRepoManager) Convictions() domain.ConvictionRepository {
+	panic("Convictions: not wired")
+}
+func (m *wrappedRepoManager) Assets() domain.AssetRepository { panic("Assets: not wired") }
+func (m *wrappedRepoManager) Fees() domain.FeeRepository     { panic("Fees: not wired") }
+func (m *wrappedRepoManager) Close()                         {}
