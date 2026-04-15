@@ -137,7 +137,7 @@ func (a *service) IssueAsset(
 		return nil, err
 	}
 
-	if err := addExtension(arkPtx, assetPacket, sendOpts.extraExtensionPackets); err != nil {
+	if err := addExtension(arkPtx, assetPacket, sendOpts.extraPackets); err != nil {
 		return nil, err
 	}
 
@@ -217,7 +217,7 @@ func (a *service) IssueAsset(
 		outs = append(outs, *changeReceiver)
 	}
 
-	ext := append(extension.Extension{assetPacket}, sendOpts.extraExtensionPackets...)
+	ext := append(extension.Extension{assetPacket}, sendOpts.extraPackets...)
 
 	return &IssueAssetRes{
 		OffchainTxRes: OffchainTxRes{
@@ -342,7 +342,7 @@ func (a *service) ReissueAsset(
 		assetPacket[groupIndex].Outputs = append(assetPacket[groupIndex].Outputs, *issuedAssetOutput)
 	}
 
-	if err := addExtension(arkPtx, assetPacket, sendOpts.extraExtensionPackets); err != nil {
+	if err := addExtension(arkPtx, assetPacket, sendOpts.extraPackets); err != nil {
 		return nil, err
 	}
 
@@ -397,7 +397,7 @@ func (a *service) ReissueAsset(
 		outs = append(outs, *changeReceiver)
 	}
 
-	ext := append(extension.Extension{assetPacket}, sendOpts.extraExtensionPackets...)
+	ext := append(extension.Extension{assetPacket}, sendOpts.extraPackets...)
 
 	return &ReissueAssetRes{
 		Txid:        txid,
@@ -476,7 +476,7 @@ func (a *service) BurnAsset(
 		return nil, err
 	}
 
-	if err := addExtension(arkPtx, assetPacket, sendOpts.extraExtensionPackets); err != nil {
+	if err := addExtension(arkPtx, assetPacket, sendOpts.extraPackets); err != nil {
 		return nil, err
 	}
 
@@ -526,7 +526,7 @@ func (a *service) BurnAsset(
 		outs = append(outs, types.Receiver{To: changeReceiver.To, Amount: changeReceiver.Amount})
 	}
 
-	ext := append(extension.Extension{assetPacket}, sendOpts.extraExtensionPackets...)
+	ext := append(extension.Extension{assetPacket}, sendOpts.extraPackets...)
 
 	return &BurnAssetRes{
 		Txid:        txid,

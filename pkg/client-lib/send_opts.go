@@ -31,7 +31,7 @@ func WithVtxos(vtxos []types.VtxoWithTapTree) SendOption {
 	}
 }
 
-// WithExtraCustomPacket appends extra extension.Packet values to the
+// WithExtraPacket appends extra extension.Packet values to the
 // OP_RETURN extension blob that is included in the ark transaction alongside
 // the asset packet (type 0x00).
 //
@@ -39,7 +39,7 @@ func WithVtxos(vtxos []types.VtxoWithTapTree) SendOption {
 // Passing type 0x00 returns an error.
 //
 // Duplicate packet types are not permitted.
-func WithExtraCustomPacket(packets ...extension.Packet) SendOption {
+func WithExtraPacket(packets ...extension.Packet) SendOption {
 	return func(o *sendOptions) error {
 		for _, p := range packets {
 			if p == nil {
@@ -52,7 +52,7 @@ func WithExtraCustomPacket(packets ...extension.Packet) SendOption {
 				)
 			}
 		}
-		o.extraExtensionPackets = append(o.extraExtensionPackets, packets...)
+		o.extraPackets = append(o.extraPackets, packets...)
 		return nil
 	}
 }
@@ -60,7 +60,7 @@ func WithExtraCustomPacket(packets ...extension.Packet) SendOption {
 type sendOptions struct {
 	withoutExpirySorting  bool
 	vtxos                 []types.VtxoWithTapTree
-	extraExtensionPackets []extension.Packet
+	extraPackets []extension.Packet
 }
 
 func newDefaultSendOptions() *sendOptions {

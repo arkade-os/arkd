@@ -58,7 +58,7 @@ func (a *service) SendOffChain(
 		return nil, err
 	}
 
-	if err := addExtension(arkPtx, assetPacket, sendOpts.extraExtensionPackets); err != nil {
+	if err := addExtension(arkPtx, assetPacket, sendOpts.extraPackets); err != nil {
 		return nil, err
 	}
 
@@ -106,14 +106,11 @@ func (a *service) SendOffChain(
 		outs = append(outs, *changeReceiver)
 	}
 
-	// Build the returned extension view to mirror what was actually written
-	// into the on-chain tx: the asset packet first (when present) followed
-	// by any extra packets the caller attached via WithExtraCustomPacket.
-	ext := make(extension.Extension, 0, 1+len(sendOpts.extraExtensionPackets))
+	ext := make(extension.Extension, 0, 1+len(sendOpts.extraPackets))
 	if len(assetPacket) > 0 {
 		ext = append(ext, assetPacket)
 	}
-	ext = append(ext, sendOpts.extraExtensionPackets...)
+	ext = append(ext, sendOpts.extraPackets...)
 
 	return &SendOffChainRes{
 		Txid:        txid,

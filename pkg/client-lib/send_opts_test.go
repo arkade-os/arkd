@@ -88,11 +88,7 @@ func assertPsbtUnchanged(t *testing.T, before psbtSnapshot, after *psbt.Packet) 
 	require.True(t, hasAnchorMarker(after.Outputs[before.anchorMarkerIdx]))
 }
 
-// TestWithExtraCustomPacket exercises the validation rules of the new
-// WithExtraCustomPacket option: rejecting nil packets, rejecting type
-// 0x00 (reserved for the asset packet), and successfully appending valid
-// UnknownPacket entries to the sendOptions.
-func TestWithExtraCustomPacket(t *testing.T) {
+func TestWithExtraPacket(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		testCases := []struct {
 			name                 string
@@ -115,12 +111,12 @@ func TestWithExtraCustomPacket(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				opts := newDefaultSendOptions()
-				err := WithExtraCustomPacket(tc.packets...)(opts)
+				err := WithExtraPacket(tc.packets...)(opts)
 				require.Error(t, err)
 				if tc.expectErrorContains != "" {
 					require.Contains(t, err.Error(), tc.expectErrorContains)
 				}
-				require.Empty(t, opts.extraExtensionPackets)
+				require.Empty(t, opts.extraPackets)
 			})
 		}
 	})
@@ -155,11 +151,11 @@ func TestWithExtraCustomPacket(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				opts := newDefaultSendOptions()
 				for _, callPackets := range tc.applyPackets {
-					require.NoError(t, WithExtraCustomPacket(callPackets...)(opts))
+					require.NoError(t, WithExtraPacket(callPackets...)(opts))
 				}
-				require.Len(t, opts.extraExtensionPackets, len(tc.expectTypes))
+				require.Len(t, opts.extraPackets, len(tc.expectTypes))
 				for i, wantType := range tc.expectTypes {
-					require.Equal(t, wantType, opts.extraExtensionPackets[i].Type())
+					require.Equal(t, wantType, opts.extraPackets[i].Type())
 				}
 			})
 		}
