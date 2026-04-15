@@ -249,7 +249,6 @@ var (
 	defaultLogLevel            = 4
 	defaultNoMacaroons         = false
 	defaultNoTLS               = true
-	defaultAllowCSVBlockType   = false
 	defaultSchedulerType       = "gocron"
 
 	defaultOtelPushInterval          = 10 // seconds
