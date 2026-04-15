@@ -801,6 +801,11 @@ func (r *timingOffchainTxRepo) Close() {}
 // wall-clock breakdown. This is the in-process replacement for the server-side
 // timing log that previously lived in walkVtxoChain.
 //
+// The repos use an in-memory backing store and inject a fixed per-call
+// simulatedLatency via time.Sleep, so the absolute numbers in the breakdown
+// do NOT reflect real DB cost — they are only meaningful as relative phase
+// proportions under a uniform latency assumption.
+//
 // Run with:
 //
 //	go test -v -run TestVtxoChainTimingBreakdown ./internal/core/application/...
@@ -843,23 +848,28 @@ func TestVtxoChainTimingBreakdown(t *testing.T) {
 }
 
 // wrappedRepoManager is a minimal RepoManager that exposes only the repos
-// walkVtxoChain touches. Other accessors return nil / zero values since the
-// indexer never calls them in this test path.
+// walkVtxoChain touches. Unwired accessors panic with a descriptive message
+// instead of returning nil, so an accidental dependency on one of them
+// surfaces as a clear failure rather than a nil-pointer dereference.
 type wrappedRepoManager struct {
 	vtxos       domain.VtxoRepository
 	markers     domain.MarkerRepository
 	offchainTxs domain.OffchainTxRepository
 }
 
-func (m *wrappedRepoManager) Events() domain.EventRepository             { return nil }
-func (m *wrappedRepoManager) Rounds() domain.RoundRepository             { return nil }
-func (m *wrappedRepoManager) Vtxos() domain.VtxoRepository               { return m.vtxos }
-func (m *wrappedRepoManager) Markers() domain.MarkerRepository           { return m.markers }
+func (m *wrappedRepoManager) Events() domain.EventRepository { panic("Events: not wired") }
+func (m *wrappedRepoManager) Rounds() domain.RoundRepository { panic("Rounds: not wired") }
+func (m *wrappedRepoManager) Vtxos() domain.VtxoRepository   { return m.vtxos }
+func (m *wrappedRepoManager) Markers() domain.MarkerRepository {
+	return m.markers
+}
 func (m *wrappedRepoManager) ScheduledSession() domain.ScheduledSessionRepo {
-	return nil
+	panic("ScheduledSession: not wired")
 }
 func (m *wrappedRepoManager) OffchainTxs() domain.OffchainTxRepository { return m.offchainTxs }
-func (m *wrappedRepoManager) Convictions() domain.ConvictionRepository { return nil }
-func (m *wrappedRepoManager) Assets() domain.AssetRepository           { return nil }
-func (m *wrappedRepoManager) Fees() domain.FeeRepository               { return nil }
-func (m *wrappedRepoManager) Close()                                   {}
+func (m *wrappedRepoManager) Convictions() domain.ConvictionRepository {
+	panic("Convictions: not wired")
+}
+func (m *wrappedRepoManager) Assets() domain.AssetRepository { panic("Assets: not wired") }
+func (m *wrappedRepoManager) Fees() domain.FeeRepository     { panic("Fees: not wired") }
+func (m *wrappedRepoManager) Close()                         {}
