@@ -936,6 +936,60 @@ func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOf
 	return items, nil
 }
 
+const selectOffchainTxsByTxids = `-- name: SelectOffchainTxsByTxids :many
+SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid IN (/*SLICE:txids*/?) AND COALESCE(fail_reason, '') = ''
+`
+
+type SelectOffchainTxsByTxidsRow struct {
+	OffchainTxVw OffchainTxVw
+}
+
+func (q *Queries) SelectOffchainTxsByTxids(ctx context.Context, txids []string) ([]SelectOffchainTxsByTxidsRow, error) {
+	query := selectOffchainTxsByTxids
+	var queryParams []interface{}
+	if len(txids) > 0 {
+		for _, v := range txids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:txids*/?", strings.Repeat(",?", len(txids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:txids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectOffchainTxsByTxidsRow
+	for rows.Next() {
+		var i SelectOffchainTxsByTxidsRow
+		if err := rows.Scan(
+			&i.OffchainTxVw.Txid,
+			&i.OffchainTxVw.Tx,
+			&i.OffchainTxVw.StartingTimestamp,
+			&i.OffchainTxVw.EndingTimestamp,
+			&i.OffchainTxVw.ExpiryTimestamp,
+			&i.OffchainTxVw.FailReason,
+			&i.OffchainTxVw.StageCode,
+			&i.OffchainTxVw.CheckpointTxid,
+			&i.OffchainTxVw.CheckpointTx,
+			&i.OffchainTxVw.CommitmentTxid,
+			&i.OffchainTxVw.IsRootCommitmentTxid,
+			&i.OffchainTxVw.OffchainTxid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectPendingSpentVtxo = `-- name: SelectPendingSpentVtxo :many
 SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.depth, v.markers, v.commitments, v.swept, v.asset_id, v.asset_amount
 FROM vtxo_vw v
