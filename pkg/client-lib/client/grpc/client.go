@@ -259,8 +259,9 @@ func (a *grpcClient) GetEventStream(
 		Connect: func(ctx context.Context) (arkv1.ArkService_GetEventStreamClient, error) {
 			return a.svc().GetEventStream(ctx, req)
 		},
-		Reconnect: func(ctx context.Context) (arkv1.ArkService_GetEventStreamClient, error) {
-			return a.svc().GetEventStream(ctx, req)
+		Reconnect: func(ctx context.Context) (string, arkv1.ArkService_GetEventStreamClient, error) {
+			stream, err := a.svc().GetEventStream(ctx, req)
+			return "", stream, err
 		},
 		Recv: func(stream arkv1.ArkService_GetEventStreamClient) (**arkv1.GetEventStreamResponse, error) {
 			str, err := stream.Recv()
@@ -387,8 +388,9 @@ func (c *grpcClient) GetTransactionsStream(
 		},
 		Reconnect: func(
 			ctx context.Context,
-		) (arkv1.ArkService_GetTransactionsStreamClient, error) {
-			return c.svc().GetTransactionsStream(ctx, req)
+		) (string, arkv1.ArkService_GetTransactionsStreamClient, error) {
+			stream, err := c.svc().GetTransactionsStream(ctx, req)
+			return "", stream, err
 		},
 		Recv: func(
 			stream arkv1.ArkService_GetTransactionsStreamClient,
