@@ -19,75 +19,6 @@ var (
 	anchorMarkerValue = []byte{0xde, 0xad, 0xbe, 0xef}
 )
 
-func newTestPsbtWithP2A(t *testing.T) *psbt.Packet {
-	t.Helper()
-	tx := wire.NewMsgTx(2)
-	tx.AddTxOut(wire.NewTxOut(330, []byte{0x51, 0x02, 0x4e, 0x73})) // fake p2a-ish
-	ptx, err := psbt.NewFromUnsignedTx(tx)
-	require.NoError(t, err)
-	ptx.Outputs[len(ptx.Outputs)-1].Unknowns = []*psbt.Unknown{
-		{Key: anchorMarkerKey, Value: anchorMarkerValue},
-	}
-	return ptx
-}
-
-func hasAnchorMarker(po psbt.POutput) bool {
-	for _, u := range po.Unknowns {
-		if u != nil && bytes.Equal(u.Key, anchorMarkerKey) && bytes.Equal(u.Value, anchorMarkerValue) {
-			return true
-		}
-	}
-	return false
-}
-
-func newTestAssetPacket(t *testing.T) asset.Packet {
-	t.Helper()
-	out, err := asset.NewAssetOutput(0, 100)
-	require.NoError(t, err)
-	grp, err := asset.NewAssetGroup(nil, nil, nil, []asset.AssetOutput{*out}, nil)
-	require.NoError(t, err)
-	pkt, err := asset.NewPacket([]asset.AssetGroup{*grp})
-	require.NoError(t, err)
-	return pkt
-}
-
-type psbtSnapshot struct {
-	txOuts          []wire.TxOut
-	anchorMarkerIdx int
-}
-
-func snapshotPsbt(ptx *psbt.Packet) psbtSnapshot {
-	s := psbtSnapshot{
-		txOuts:          make([]wire.TxOut, 0, len(ptx.UnsignedTx.TxOut)),
-		anchorMarkerIdx: -1,
-	}
-	for _, out := range ptx.UnsignedTx.TxOut {
-		s.txOuts = append(s.txOuts, wire.TxOut{
-			Value:    out.Value,
-			PkScript: append([]byte(nil), out.PkScript...),
-		})
-	}
-	for i, po := range ptx.Outputs {
-		if hasAnchorMarker(po) {
-			s.anchorMarkerIdx = i
-			break
-		}
-	}
-	return s
-}
-
-func assertPsbtUnchanged(t *testing.T, before psbtSnapshot, after *psbt.Packet) {
-	t.Helper()
-	require.Equal(t, len(before.txOuts), len(after.UnsignedTx.TxOut))
-	require.Equal(t, len(before.txOuts), len(after.Outputs))
-	for i := range before.txOuts {
-		require.Equal(t, before.txOuts[i].Value, after.UnsignedTx.TxOut[i].Value)
-		require.Equal(t, before.txOuts[i].PkScript, after.UnsignedTx.TxOut[i].PkScript)
-	}
-	require.GreaterOrEqual(t, before.anchorMarkerIdx, 0)
-	require.True(t, hasAnchorMarker(after.Outputs[before.anchorMarkerIdx]))
-}
-
 func TestWithExtraPacket(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		testCases := []struct {
@@ -324,4 +255,73 @@ func TestAddExtension(t *testing.T) {
 			})
 		}
 	})
+}
+
+func newTestPsbtWithP2A(t *testing.T) *psbt.Packet {
+	t.Helper()
+	tx := wire.NewMsgTx(2)
+	tx.AddTxOut(wire.NewTxOut(330, []byte{0x51, 0x02, 0x4e, 0x73})) // fake p2a-ish
+	ptx, err := psbt.NewFromUnsignedTx(tx)
+	require.NoError(t, err)
+	ptx.Outputs[len(ptx.Outputs)-1].Unknowns = []*psbt.Unknown{
+		{Key: anchorMarkerKey, Value: anchorMarkerValue},
+	}
+	return ptx
+}
+
+func hasAnchorMarker(po psbt.POutput) bool {
+	for _, u := range po.Unknowns {
+		if u != nil && bytes.Equal(u.Key, anchorMarkerKey) && bytes.Equal(u.Value, anchorMarkerValue) {
+			return true
+		}
+	}
+	return false
+}
+
+func newTestAssetPacket(t *testing.T) asset.Packet {
+	t.Helper()
+	out, err := asset.NewAssetOutput(0, 100)
+	require.NoError(t, err)
+	grp, err := asset.NewAssetGroup(nil, nil, nil, []asset.AssetOutput{*out}, nil)
+	require.NoError(t, err)
+	pkt, err := asset.NewPacket([]asset.AssetGroup{*grp})
+	require.NoError(t, err)
+	return pkt
+}
+
+type psbtSnapshot struct {
+	txOuts          []wire.TxOut
+	anchorMarkerIdx int
+}
+
+func snapshotPsbt(ptx *psbt.Packet) psbtSnapshot {
+	s := psbtSnapshot{
+		txOuts:          make([]wire.TxOut, 0, len(ptx.UnsignedTx.TxOut)),
+		anchorMarkerIdx: -1,
+	}
+	for _, out := range ptx.UnsignedTx.TxOut {
+		s.txOuts = append(s.txOuts, wire.TxOut{
+			Value:    out.Value,
+			PkScript: append([]byte(nil), out.PkScript...),
+		})
+	}
+	for i, po := range ptx.Outputs {
+		if hasAnchorMarker(po) {
+			s.anchorMarkerIdx = i
+			break
+		}
+	}
+	return s
+}
+
+func assertPsbtUnchanged(t *testing.T, before psbtSnapshot, after *psbt.Packet) {
+	t.Helper()
+	require.Equal(t, len(before.txOuts), len(after.UnsignedTx.TxOut))
+	require.Equal(t, len(before.txOuts), len(after.Outputs))
+	for i := range before.txOuts {
+		require.Equal(t, before.txOuts[i].Value, after.UnsignedTx.TxOut[i].Value)
+		require.Equal(t, before.txOuts[i].PkScript, after.UnsignedTx.TxOut[i].PkScript)
+	}
+	require.GreaterOrEqual(t, before.anchorMarkerIdx, 0)
+	require.True(t, hasAnchorMarker(after.Outputs[before.anchorMarkerIdx]))
 }
