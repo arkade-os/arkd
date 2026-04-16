@@ -543,3 +543,7 @@ SELECT control_asset_id FROM asset WHERE id = ?;
 
 -- name: SelectAssetExists :one
 SELECT 1 FROM asset WHERE id = ? LIMIT 1;
+
+-- name: InsertSweptVtxo :exec
+INSERT OR IGNORE INTO swept_vtxo (txid, vout, swept_at)
+VALUES (?, ?, ?);

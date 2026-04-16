@@ -538,3 +538,13 @@ SELECT control_asset_id FROM asset WHERE id = $1;
 
 -- name: SelectAssetExists :one
 SELECT 1 FROM asset WHERE id = $1 LIMIT 1;
+
+-- name: InsertSweptVtxo :exec
+INSERT INTO swept_vtxo (txid, vout, swept_at)
+VALUES (@txid, @vout, @swept_at)
+ON CONFLICT(txid, vout) DO NOTHING;
+
+-- name: BulkInsertSweptVtxos :exec
+INSERT INTO swept_vtxo (txid, vout, swept_at)
+SELECT unnest(@txids::text[]), unnest(@vouts::integer[]), @swept_at
+ON CONFLICT(txid, vout) DO NOTHING;

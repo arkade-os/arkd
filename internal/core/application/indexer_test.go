@@ -288,6 +288,14 @@ func (m *mockMarkerRepoForIndexer) GetVtxosByArkTxid(
 ) ([]domain.Vtxo, error) {
 	return nil, nil
 }
+func (m *mockMarkerRepoForIndexer) SweepVtxoOutpoints(
+	ctx context.Context,
+	outpoints []domain.Outpoint,
+	sweptAt int64,
+) error {
+	return nil
+}
+
 func (m *mockMarkerRepoForIndexer) Close() {}
 
 type mockOffchainTxRepoForIndexer struct {

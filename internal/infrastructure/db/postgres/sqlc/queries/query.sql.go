@@ -79,6 +79,23 @@ func (q *Queries) BulkInsertSweptMarkers(ctx context.Context, arg BulkInsertSwep
 	return err
 }
 
+const bulkInsertSweptVtxos = `-- name: BulkInsertSweptVtxos :exec
+INSERT INTO swept_vtxo (txid, vout, swept_at)
+SELECT unnest($1::text[]), unnest($2::integer[]), $3
+ON CONFLICT(txid, vout) DO NOTHING
+`
+
+type BulkInsertSweptVtxosParams struct {
+	Txids   []string
+	Vouts   []int32
+	SweptAt int64
+}
+
+func (q *Queries) BulkInsertSweptVtxos(ctx context.Context, arg BulkInsertSweptVtxosParams) error {
+	_, err := q.db.ExecContext(ctx, bulkInsertSweptVtxos, pq.Array(arg.Txids), pq.Array(arg.Vouts), arg.SweptAt)
+	return err
+}
+
 const clearIntentFees = `-- name: ClearIntentFees :exec
 INSERT INTO intent_fees (
   offchain_input_fee_program,
@@ -191,6 +208,23 @@ type InsertSweptMarkerParams struct {
 
 func (q *Queries) InsertSweptMarker(ctx context.Context, arg InsertSweptMarkerParams) error {
 	_, err := q.db.ExecContext(ctx, insertSweptMarker, arg.MarkerID, arg.SweptAt)
+	return err
+}
+
+const insertSweptVtxo = `-- name: InsertSweptVtxo :exec
+INSERT INTO swept_vtxo (txid, vout, swept_at)
+VALUES ($1, $2, $3)
+ON CONFLICT(txid, vout) DO NOTHING
+`
+
+type InsertSweptVtxoParams struct {
+	Txid    string
+	Vout    int32
+	SweptAt int64
+}
+
+func (q *Queries) InsertSweptVtxo(ctx context.Context, arg InsertSweptVtxoParams) error {
+	_, err := q.db.ExecContext(ctx, insertSweptVtxo, arg.Txid, arg.Vout, arg.SweptAt)
 	return err
 }
 
@@ -1991,7 +2025,7 @@ SELECT txid, vout, pubkey, amount, expires_at, created_at, commitment_txid, spen
 `
 
 // Get all VTXOs created by a specific ark tx (offchain tx)
-func (q *Queries) SelectVtxosByArkTxid(ctx context.Context, arkTxid string) ([]VtxoVw, error) {
+func (q *Queries) SelectVtxosByArkTxid(ctx context.Context, arkTxid sql.NullString) ([]VtxoVw, error) {
 	rows, err := q.db.QueryContext(ctx, selectVtxosByArkTxid, arkTxid)
 	if err != nil {
 		return nil, err

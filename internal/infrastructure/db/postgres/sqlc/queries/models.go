@@ -220,6 +220,12 @@ type SweptMarker struct {
 	SweptAt  int64
 }
 
+type SweptVtxo struct {
+	Txid    string
+	Vout    int32
+	SweptAt int64
+}
+
 type Tx struct {
 	Txid     string
 	Tx       string
@@ -274,7 +280,7 @@ type VtxoVw struct {
 	Depth          int32
 	Markers        json.RawMessage
 	Commitments    []byte
-	Swept          bool
+	Swept          sql.NullBool
 	AssetID        string
 	AssetAmount    string
 }

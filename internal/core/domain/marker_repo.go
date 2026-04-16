@@ -38,6 +38,11 @@ type MarkerRepository interface {
 	// in a single transaction. Each VTXO gets a marker with ID equal to its outpoint string.
 	CreateRootMarkersForVtxos(ctx context.Context, vtxos []Vtxo) error
 
+	// SweepVtxoOutpoints marks specific VTXO outpoints as swept in the swept_vtxo
+	// table. Used by checkpoint sweeps where marker-based sweeping would over-reach
+	// across independent subtrees that share inherited markers.
+	SweepVtxoOutpoints(ctx context.Context, outpoints []Outpoint, sweptAt int64) error
+
 	// Chain traversal methods for GetVtxoChain optimization
 	// GetVtxosByDepthRange retrieves VTXOs within a depth range
 	GetVtxosByDepthRange(ctx context.Context, minDepth, maxDepth uint32) ([]Vtxo, error)

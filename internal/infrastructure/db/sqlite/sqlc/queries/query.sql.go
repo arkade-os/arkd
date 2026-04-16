@@ -177,6 +177,22 @@ func (q *Queries) InsertSweptMarker(ctx context.Context, arg InsertSweptMarkerPa
 	return err
 }
 
+const insertSweptVtxo = `-- name: InsertSweptVtxo :exec
+INSERT OR IGNORE INTO swept_vtxo (txid, vout, swept_at)
+VALUES (?, ?, ?)
+`
+
+type InsertSweptVtxoParams struct {
+	Txid    string
+	Vout    int64
+	SweptAt int64
+}
+
+func (q *Queries) InsertSweptVtxo(ctx context.Context, arg InsertSweptVtxoParams) error {
+	_, err := q.db.ExecContext(ctx, insertSweptVtxo, arg.Txid, arg.Vout, arg.SweptAt)
+	return err
+}
+
 const insertVtxoAssetProjection = `-- name: InsertVtxoAssetProjection :exec
 INSERT INTO asset_projection (asset_id, txid, vout, amount)
 VALUES (?1, ?2, ?3, ?4)
@@ -2459,7 +2475,7 @@ UPDATE vtxo SET markers = ?1 WHERE txid = ?2 AND vout = ?3
 `
 
 type UpdateVtxoMarkersParams struct {
-	Markers sql.NullString
+	Markers string
 	Txid    string
 	Vout    int64
 }
@@ -2866,7 +2882,7 @@ type UpsertVtxoParams struct {
 	ExpiresAt      int64
 	CreatedAt      int64
 	Depth          int64
-	Markers        sql.NullString
+	Markers        string
 }
 
 func (q *Queries) UpsertVtxo(ctx context.Context, arg UpsertVtxoParams) error {

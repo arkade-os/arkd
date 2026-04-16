@@ -527,7 +527,7 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 		SpentBy:            row.SpentBy.String,
 		Spent:              row.Spent,
 		Unrolled:           row.Unrolled,
-		Swept:              row.Swept,
+		Swept:              row.Swept.Bool,
 		Preconfirmed:       row.Preconfirmed,
 		ExpiresAt:          row.ExpiresAt,
 		CreatedAt:          row.CreatedAt,

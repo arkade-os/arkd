@@ -160,6 +160,27 @@ func (m *markerRepository) BulkSweepMarkers(
 	})
 }
 
+func (m *markerRepository) SweepVtxoOutpoints(
+	ctx context.Context,
+	outpoints []domain.Outpoint,
+	sweptAt int64,
+) error {
+	if len(outpoints) == 0 {
+		return nil
+	}
+	txids := make([]string, len(outpoints))
+	vouts := make([]int32, len(outpoints))
+	for i, op := range outpoints {
+		txids[i] = op.Txid
+		vouts[i] = int32(op.VOut)
+	}
+	return m.querier.BulkInsertSweptVtxos(ctx, queries.BulkInsertSweptVtxosParams{
+		Txids:   txids,
+		Vouts:   vouts,
+		SweptAt: sweptAt,
+	})
+}
+
 func (m *markerRepository) SweepMarkerWithDescendants(
 	ctx context.Context,
 	markerID string,
@@ -343,7 +364,10 @@ func (m *markerRepository) GetVtxosByArkTxid(
 	ctx context.Context,
 	arkTxid string,
 ) ([]domain.Vtxo, error) {
-	rows, err := m.querier.SelectVtxosByArkTxid(ctx, arkTxid)
+	rows, err := m.querier.SelectVtxosByArkTxid(
+		ctx,
+		sql.NullString{String: arkTxid, Valid: arkTxid != ""},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -391,7 +415,7 @@ func rowToVtxoFromVtxoVw(row queries.VtxoVw) domain.Vtxo {
 		SpentBy:            row.SpentBy.String,
 		Spent:              row.Spent,
 		Unrolled:           row.Unrolled,
-		Swept:              row.Swept,
+		Swept:              row.Swept.Bool,
 		Preconfirmed:       row.Preconfirmed,
 		ExpiresAt:          row.ExpiresAt,
 		CreatedAt:          row.CreatedAt,
@@ -430,7 +454,7 @@ func rowToVtxoFromMarkerQuery(row queries.SelectVtxosByMarkerIdRow) domain.Vtxo 
 		SpentBy:            row.VtxoVw.SpentBy.String,
 		Spent:              row.VtxoVw.Spent,
 		Unrolled:           row.VtxoVw.Unrolled,
-		Swept:              row.VtxoVw.Swept,
+		Swept:              row.VtxoVw.Swept.Bool,
 		Preconfirmed:       row.VtxoVw.Preconfirmed,
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
