@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -246,7 +245,7 @@ func (r *arkRepository) GetOffchainTxsByTxids(
 	for _, txid := range txids {
 		tx, err := r.getOffchainTx(ctx, txid)
 		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
+			if errors.Is(err, badgerhold.ErrNotFound) {
 				continue
 			}
 			return nil, err
@@ -369,10 +368,10 @@ func (r *arkRepository) getOffchainTx(
 		err = r.store.Get(txid, &offchainTx)
 	}
 	if err != nil && err == badgerhold.ErrNotFound {
-		return nil, fmt.Errorf("offchain tx %s not found", txid)
+		return nil, fmt.Errorf("offchain tx %s: %w", txid, badgerhold.ErrNotFound)
 	}
 	if offchainTx.Stage.Code == int(domain.OffchainTxUndefinedStage) {
-		return nil, fmt.Errorf("offchain tx %s not found", txid)
+		return nil, fmt.Errorf("offchain tx %s: %w", txid, badgerhold.ErrNotFound)
 	}
 
 	return &offchainTx, nil
