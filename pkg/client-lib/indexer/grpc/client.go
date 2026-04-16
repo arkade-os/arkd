@@ -19,6 +19,12 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const (
+	maxPageSize   = 1000
+	maxReqsPerSec = 10
+	maxPages      = 100
+)
+
 type grpcClient struct {
 	conn   *grpc.ClientConn
 	connMu *sync.RWMutex
@@ -306,6 +312,10 @@ func (a *grpcClient) GetVtxos(
 		return nil, fmt.Errorf("missing opts")
 	}
 
+	if o.Page == nil && (len(o.Scripts)+len(o.Outpoints) > maxPageSize) {
+		return a.paginatedGetVtxos(ctx, opts...)
+	}
+
 	var page *arkv1.IndexerPageRequest
 	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
@@ -402,6 +412,11 @@ func (a *grpcClient) GetVirtualTxs(
 	if err != nil {
 		return nil, err
 	}
+
+	if o.Page == nil && len(txids) > maxPageSize {
+		return a.paginatedGetVirtualTxs(ctx, txids)
+	}
+
 	var page *arkv1.IndexerPageRequest
 	if o.Page != nil {
 		page = &arkv1.IndexerPageRequest{
@@ -444,10 +459,18 @@ func (a *grpcClient) GetBatchSweepTxs(
 	return resp.GetSweptBy(), nil
 }
 
-func (a *grpcClient) GetSubscription(
-	ctx context.Context, subscriptionId string,
-) (<-chan indexer.ScriptEvent, func(), error) {
-	return utils.StartReconnectingStream(ctx, utils.ReconnectingStreamConfig[
+func (a *grpcClient) NewSubscription(
+	ctx context.Context, scripts []string,
+) (string, <-chan indexer.ScriptEvent, func(), error) {
+	resp, err := a.svc().SubscribeForScripts(ctx, &arkv1.SubscribeForScriptsRequest{
+		Scripts: scripts,
+	})
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	subscriptionId := resp.GetSubscriptionId()
+	stream, closeFn, err := utils.StartReconnectingStream(ctx, utils.ReconnectingStreamConfig[
 		arkv1.IndexerService_GetSubscriptionClient,
 		*arkv1.GetSubscriptionResponse,
 		indexer.ScriptEvent,
@@ -457,17 +480,26 @@ func (a *grpcClient) GetSubscription(
 				SubscriptionId: subscriptionId,
 			})
 		},
-		Reconnect: func(ctx context.Context) (arkv1.IndexerService_GetSubscriptionClient, error) {
-			scripts := a.scripts.get()
+		Reconnect: func(
+			ctx context.Context,
+		) (string, arkv1.IndexerService_GetSubscriptionClient, error) {
+			scripts := a.scripts.get(subscriptionId)
 			resp, err := a.svc().SubscribeForScripts(ctx, &arkv1.SubscribeForScriptsRequest{
 				Scripts: scripts,
 			})
 			if err != nil {
-				return nil, err
+				return "", nil, err
 			}
-			return a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
-				SubscriptionId: resp.GetSubscriptionId(),
+			newSubscriptionId := resp.GetSubscriptionId()
+			stream, err := a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
+				SubscriptionId: newSubscriptionId,
 			})
+			if err != nil {
+				return "", nil, err
+			}
+			// Update the cache by replacing the subscription id for the watched scripts
+			a.scripts.replace(subscriptionId, newSubscriptionId)
+			return newSubscriptionId, stream, nil
 		},
 		Recv: func(
 			stream arkv1.IndexerService_GetSubscriptionClient,
@@ -532,45 +564,43 @@ func (a *grpcClient) GetSubscription(
 			}
 		},
 	})
-}
-
-func (a *grpcClient) SubscribeForScripts(
-	ctx context.Context, subscriptionId string, scripts []string,
-) (string, error) {
-	req := &arkv1.SubscribeForScriptsRequest{
-		Scripts: scripts,
-	}
-	if len(subscriptionId) > 0 {
-		req.SubscriptionId = subscriptionId
-	}
-
-	resp, err := a.svc().SubscribeForScripts(ctx, req)
 	if err != nil {
-		return "", err
+		return "", nil, nil, err
 	}
 
-	a.scripts.add(scripts)
+	a.scripts.add(subscriptionId, scripts)
 
-	return resp.GetSubscriptionId(), nil
+	cancelFn := func() {
+		closeFn()
+		a.scripts.removeSubscription(subscriptionId)
+	}
+	return subscriptionId, stream, cancelFn, nil
 }
 
-func (a *grpcClient) UnsubscribeForScripts(
-	ctx context.Context, subscriptionId string, scripts []string,
+func (a *grpcClient) UpdateSubscription(
+	ctx context.Context, subscriptionId string, scriptsToAdd, scriptsToRemove []string,
 ) error {
-	req := &arkv1.UnsubscribeForScriptsRequest{
-		Scripts: scripts,
+	if subscriptionId == "" {
+		return fmt.Errorf("missing subscription id to update")
 	}
-	if len(subscriptionId) > 0 {
-		req.SubscriptionId = subscriptionId
-	}
-
-	_, err := a.svc().UnsubscribeForScripts(ctx, req)
-	if err != nil {
-		return err
+	if len(scriptsToAdd) <= 0 && len(scriptsToRemove) <= 0 {
+		return fmt.Errorf("missing scripts to add or remove")
 	}
 
-	a.scripts.remove(scripts)
+	if !a.scripts.exists(subscriptionId) {
+		return fmt.Errorf("subscription not found with id %s", subscriptionId)
+	}
 
+	if len(scriptsToAdd) > 0 {
+		if err := a.subscribeForScripts(ctx, subscriptionId, scriptsToAdd); err != nil {
+			return err
+		}
+	}
+	if len(scriptsToRemove) > 0 {
+		if err := a.unsubscribeForScripts(ctx, subscriptionId, scriptsToRemove); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -613,6 +643,142 @@ func (a *grpcClient) svc() arkv1.IndexerServiceClient {
 	a.connMu.RLock()
 	defer a.connMu.RUnlock()
 	return arkv1.NewIndexerServiceClient(a.conn)
+}
+
+func (a *grpcClient) subscribeForScripts(
+	ctx context.Context, subscriptionId string, scripts []string,
+) error {
+	subId := a.scripts.resolveId(subscriptionId)
+
+	req := &arkv1.SubscribeForScriptsRequest{
+		Scripts:        scripts,
+		SubscriptionId: subId,
+	}
+
+	if _, err := a.svc().SubscribeForScripts(ctx, req); err != nil {
+		return err
+	}
+
+	a.scripts.add(subId, scripts)
+
+	return nil
+}
+
+func (a *grpcClient) unsubscribeForScripts(
+	ctx context.Context, subscriptionId string, scripts []string,
+) error {
+	subId := a.scripts.resolveId(subscriptionId)
+
+	req := &arkv1.UnsubscribeForScriptsRequest{
+		Scripts:        scripts,
+		SubscriptionId: subId,
+	}
+
+	if _, err := a.svc().UnsubscribeForScripts(ctx, req); err != nil {
+		return err
+	}
+
+	a.scripts.removeScripts(subId, scripts)
+
+	return nil
+}
+
+func (a *grpcClient) paginatedGetVtxos(
+	ctx context.Context, opts ...indexer.GetVtxosOption,
+) (*indexer.VtxosResponse, error) {
+	// nolint
+	o, _ := indexer.ApplyGetVtxosOptions(opts...)
+	svc := a.svc()
+
+	vtxos, err := paginatedFetch(ctx, func(
+		ctx context.Context, page *arkv1.IndexerPageRequest,
+	) ([]types.Vtxo, *arkv1.IndexerPageResponse, error) {
+		resp, err := svc.GetVtxos(ctx, &arkv1.GetVtxosRequest{
+			Scripts:         o.Scripts,
+			Outpoints:       o.FormattedOutpoints(),
+			SpendableOnly:   o.SpendableOnly,
+			SpentOnly:       o.SpentOnly,
+			RecoverableOnly: o.RecoverableOnly,
+			PendingOnly:     o.PendingOnly,
+			After:           o.After,
+			Before:          o.Before,
+			Page:            page,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return newIndexerVtxos(resp.GetVtxos()), resp.GetPage(), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &indexer.VtxosResponse{Vtxos: vtxos}, nil
+}
+
+func (a *grpcClient) paginatedGetVirtualTxs(
+	ctx context.Context, txids []string,
+) (*indexer.VirtualTxsResponse, error) {
+	svc := a.svc()
+
+	txs, err := paginatedFetch(ctx, func(
+		ctx context.Context, page *arkv1.IndexerPageRequest,
+	) ([]string, *arkv1.IndexerPageResponse, error) {
+		resp, err := svc.GetVirtualTxs(ctx, &arkv1.GetVirtualTxsRequest{
+			Txids: txids,
+			Page:  page,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return resp.GetTxs(), resp.GetPage(), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &indexer.VirtualTxsResponse{Txs: txs}, nil
+}
+
+// paginatedFetch fetches all pages from a paginated endpoint, throttling
+// requests to stay under the rate limit (20 req/sec).
+func paginatedFetch[T any](
+	ctx context.Context,
+	fetch func(
+		ctx context.Context, page *arkv1.IndexerPageRequest,
+	) ([]T, *arkv1.IndexerPageResponse, error),
+) ([]T, error) {
+	var all []T
+	pageIndex := int32(0)
+	reqCount := 0
+	for {
+		items, page, err := fetch(ctx, &arkv1.IndexerPageRequest{
+			Size:  maxPageSize,
+			Index: pageIndex,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		all = append(all, items...)
+		reqCount++
+
+		if page == nil || page.GetNext() >= page.GetTotal() {
+			break
+		}
+		if reqCount >= maxPages {
+			return nil, fmt.Errorf("too many pages (%d), aborting", maxPages)
+		}
+		pageIndex = page.GetNext()
+
+		// Throttle to avoid hitting the rate limit (20 req/sec).
+		if reqCount%maxReqsPerSec == 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Second):
+			}
+		}
+	}
+	return all, nil
 }
 
 func toStreamConnectionState(
