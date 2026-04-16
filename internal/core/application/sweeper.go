@@ -759,45 +759,28 @@ func (s *sweeper) createCheckpointSweepTask(
 			log.Debugf("sweeper: checkpoint %s swept by: %s", checkpointTxid, txid)
 		}
 
-		// mark all vtxos linked to the unrolled vtxo as swept
+		// Mark all vtxos linked to the unrolled vtxo as swept.
+		// Use per-outpoint sweeping instead of marker-based sweeping here
+		// because markers can be shared across independent subtrees when
+		// offchain txs consolidate inputs from different lineages. Sweeping
+		// by marker would over-reach and incorrectly mark unrelated VTXOs.
 		childrenVtxos, err := s.repoManager.Vtxos().GetAllChildrenVtxos(ctx, vtxo.Txid)
 		if err != nil {
 			return err
 		}
 
-		// Get the VTXOs to find their markers
-		vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, childrenVtxos)
-		if err != nil {
-			return err
-		}
-
-		// Collect all unique markers from all VTXOs
-		// Every VTXO is guaranteed to have at least 1 marker after migration
-		uniqueMarkers := make(map[string]struct{})
-		for _, v := range vtxos {
-			for _, markerID := range v.MarkerIDs {
-				uniqueMarkers[markerID] = struct{}{}
-			}
-		}
-
-		if len(uniqueMarkers) == 0 {
+		if len(childrenVtxos) == 0 {
 			return nil
 		}
 
-		// Convert marker set to slice for bulk sweeping
-		markerIDs := make([]string, 0, len(uniqueMarkers))
-		for markerID := range uniqueMarkers {
-			markerIDs = append(markerIDs, markerID)
-		}
-
 		sweptAt := time.Now().UnixMilli()
-		markerStore := s.repoManager.Markers()
-		if err := markerStore.BulkSweepMarkers(ctx, markerIDs, sweptAt); err != nil {
-			log.WithError(err).Warn("failed to bulk sweep markers")
+		if err := s.repoManager.Markers().
+			SweepVtxoOutpoints(ctx, childrenVtxos, sweptAt); err != nil {
+			log.WithError(err).Warn("failed to sweep vtxo outpoints")
 			return err
 		}
 
-		log.Debugf("bulk swept %d markers affecting %d vtxos", len(markerIDs), len(vtxos))
+		log.Debugf("swept %d vtxo outpoints for checkpoint %s", len(childrenVtxos), checkpointTxid)
 		return nil
 	}
 }

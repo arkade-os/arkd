@@ -51,7 +51,7 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 			if err != nil {
 				return fmt.Errorf("failed to marshal markers: %w", err)
 			}
-			markersJSON := sql.NullString{String: string(markersData), Valid: true}
+			markersJSON := string(markersData)
 
 			if err := querierWithTx.UpsertVtxo(
 				ctx, queries.UpsertVtxoParams{
@@ -551,12 +551,12 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 		SpentBy:            row.SpentBy.String,
 		Spent:              row.Spent,
 		Unrolled:           row.Unrolled,
-		Swept:              row.Swept != 0,
+		Swept:              toBool(row.Swept),
 		Preconfirmed:       row.Preconfirmed,
 		ExpiresAt:          row.ExpiresAt,
 		CreatedAt:          row.CreatedAt,
 		Depth:              uint32(row.Depth),
-		MarkerIDs:          parseMarkersJSONFromVtxo(row.Markers.String),
+		MarkerIDs:          parseMarkersJSONFromVtxo(row.Markers),
 		Assets:             assets,
 	}
 }
@@ -567,6 +567,21 @@ func rowToAsset(row queries.VtxoVw) domain.AssetDenomination {
 	return domain.AssetDenomination{
 		AssetId: row.AssetID,
 		Amount:  amount,
+	}
+}
+
+// toBool converts an interface{} (from a SQLite view expression that sqlc types
+// as interface{}) to a Go bool. Handles int64(0/1) from SQLite.
+func toBool(v interface{}) bool {
+	switch val := v.(type) {
+	case bool:
+		return val
+	case int64:
+		return val != 0
+	case int:
+		return val != 0
+	default:
+		return false
 	}
 }
 

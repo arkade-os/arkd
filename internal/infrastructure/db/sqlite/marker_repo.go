@@ -161,6 +161,29 @@ func (m *markerRepository) BulkSweepMarkers(
 	return execTx(ctx, m.db, txBody)
 }
 
+func (m *markerRepository) SweepVtxoOutpoints(
+	ctx context.Context,
+	outpoints []domain.Outpoint,
+	sweptAt int64,
+) error {
+	if len(outpoints) == 0 {
+		return nil
+	}
+	txBody := func(qtx *queries.Queries) error {
+		for _, op := range outpoints {
+			if err := qtx.InsertSweptVtxo(ctx, queries.InsertSweptVtxoParams{
+				Txid:    op.Txid,
+				Vout:    int64(op.VOut),
+				SweptAt: sweptAt,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return execTx(ctx, m.db, txBody)
+}
+
 func (m *markerRepository) SweepMarkerWithDescendants(
 	ctx context.Context,
 	markerID string,
@@ -233,7 +256,7 @@ func (m *markerRepository) UpdateVtxoMarkers(
 		return fmt.Errorf("failed to marshal markers: %w", err)
 	}
 	return m.querier.UpdateVtxoMarkers(ctx, queries.UpdateVtxoMarkersParams{
-		Markers: sql.NullString{String: string(markersJSON), Valid: len(markerIDs) > 0},
+		Markers: string(markersJSON),
 		Txid:    outpoint.Txid,
 		Vout:    int64(outpoint.VOut),
 	})
@@ -421,12 +444,12 @@ func rowToVtxoFromMarkerQuery(row queries.SelectVtxosByMarkerIdRow) domain.Vtxo 
 		SpentBy:            row.VtxoVw.SpentBy.String,
 		Spent:              row.VtxoVw.Spent,
 		Unrolled:           row.VtxoVw.Unrolled,
-		Swept:              row.VtxoVw.Swept != 0,
+		Swept:              toBool(row.VtxoVw.Swept),
 		Preconfirmed:       row.VtxoVw.Preconfirmed,
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
-		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers.String),
+		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers),
 	}
 }
 
@@ -449,12 +472,12 @@ func rowToVtxoFromDepthRangeQuery(row queries.SelectVtxosByDepthRangeRow) domain
 		SpentBy:            row.VtxoVw.SpentBy.String,
 		Spent:              row.VtxoVw.Spent,
 		Unrolled:           row.VtxoVw.Unrolled,
-		Swept:              row.VtxoVw.Swept != 0,
+		Swept:              toBool(row.VtxoVw.Swept),
 		Preconfirmed:       row.VtxoVw.Preconfirmed,
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
-		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers.String),
+		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers),
 	}
 }
 
@@ -477,12 +500,12 @@ func rowToVtxoFromArkTxidQuery(row queries.SelectVtxosByArkTxidRow) domain.Vtxo 
 		SpentBy:            row.VtxoVw.SpentBy.String,
 		Spent:              row.VtxoVw.Spent,
 		Unrolled:           row.VtxoVw.Unrolled,
-		Swept:              row.VtxoVw.Swept != 0,
+		Swept:              toBool(row.VtxoVw.Swept),
 		Preconfirmed:       row.VtxoVw.Preconfirmed,
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
-		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers.String),
+		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers),
 	}
 }
 
@@ -505,12 +528,12 @@ func rowToVtxoFromChainQuery(row queries.SelectVtxoChainByMarkerRow) domain.Vtxo
 		SpentBy:            row.VtxoVw.SpentBy.String,
 		Spent:              row.VtxoVw.Spent,
 		Unrolled:           row.VtxoVw.Unrolled,
-		Swept:              row.VtxoVw.Swept != 0,
+		Swept:              toBool(row.VtxoVw.Swept),
 		Preconfirmed:       row.VtxoVw.Preconfirmed,
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
-		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers.String),
+		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers),
 	}
 }
 

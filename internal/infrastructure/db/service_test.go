@@ -209,6 +209,8 @@ func TestService(t *testing.T) {
 			testListVtxosMarkerSweptFiltering(t, svc)
 			testAddMarkerFailureFallbackToParentMarkers(t, svc)
 			testSweepableUnrolledExcludesMarkerSwept(t, svc)
+			testSweepVtxoOutpointsNoOverreach(t, svc)
+			testSweepVtxoOutpointsEdgeCases(t, svc)
 			testConvergentMultiParentMarkerDAG(t, svc)
 			testSweepMarkerWithDescendantsDeepChain(t, svc)
 			testScheduledSessionRepository(t, svc)
@@ -4813,6 +4815,235 @@ func testSweepableUnrolledExcludesMarkerSwept(t *testing.T, svc ports.RepoManage
 		require.True(t, sweepableTxids[txid2], "vtxo-2 (marker-Y, not swept) should be sweepable")
 		require.True(t, sweepableTxids[txid3], "vtxo-3 (marker-Y, not swept) should be sweepable")
 		require.False(t, sweepableTxids[txid1], "vtxo-1 (marker-X, swept) should NOT be sweepable")
+	})
+}
+
+// testSweepVtxoOutpointsNoOverreach proves that per-outpoint sweeping via
+// SweepVtxoOutpoints does NOT over-reach across independent subtrees that share
+// a marker. This is the scenario where marker-based sweeping (BulkSweepMarkers)
+// would incorrectly sweep an unrelated sibling VTXO.
+//
+// Setup: two batch VTXOs (X, Y) from the same round share a marker M_root.
+// Sweeping X's outpoint via SweepVtxoOutpoints should mark X as swept but
+// leave Y unswept, even though both carry M_root.
+func testSweepVtxoOutpointsNoOverreach(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_sweep_vtxo_outpoints_no_overreach", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+		suffix := randomString(16)
+		testPubkey := "overreach-pk-" + suffix
+
+		// Create a finalized round.
+		roundId := uuid.New().String()
+		commitmentTxid := randomString(32)
+		round := domain.NewRoundFromEvents([]domain.Event{
+			domain.RoundStarted{
+				RoundEvent: domain.RoundEvent{Id: roundId, Type: domain.EventTypeRoundStarted},
+				Timestamp:  time.Now().Unix(),
+			},
+			domain.RoundFinalizationStarted{
+				RoundEvent: domain.RoundEvent{
+					Id:   roundId,
+					Type: domain.EventTypeRoundFinalizationStarted,
+				},
+				CommitmentTxid:     commitmentTxid,
+				CommitmentTx:       emptyTx,
+				VtxoTree:           vtxoTree,
+				Connectors:         connectorsTree,
+				VtxoTreeExpiration: 3600,
+			},
+			domain.RoundFinalized{
+				RoundEvent: domain.RoundEvent{
+					Id:   roundId,
+					Type: domain.EventTypeRoundFinalized,
+				},
+				FinalCommitmentTx: emptyTx,
+				Timestamp:         time.Now().Unix(),
+			},
+		})
+		require.NoError(t, svc.Rounds().AddOrUpdateRound(ctx, *round))
+
+		// Create a shared marker — simulates two sibling VTXOs from the same
+		// offchain tx inheriting the same parent marker.
+		sharedMarkerID := "overreach-shared-m-" + suffix
+		require.NoError(t, svc.Markers().AddMarker(ctx, domain.Marker{
+			ID: sharedMarkerID, Depth: 0,
+		}))
+
+		// VTXO X — will be swept via SweepVtxoOutpoints
+		vtxoX := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: "overreach-X-" + suffix, VOut: 0},
+			PubKey:             testPubkey,
+			Amount:             5000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			CreatedAt:          time.Now().Unix(),
+			ExpiresAt:          time.Now().Add(time.Hour).Unix(),
+			Depth:              1,
+			MarkerIDs:          []string{sharedMarkerID},
+		}
+
+		// VTXO Y — independent sibling sharing the same marker, should NOT be swept
+		vtxoY := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: "overreach-Y-" + suffix, VOut: 0},
+			PubKey:             testPubkey,
+			Amount:             3000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			CreatedAt:          time.Now().Unix(),
+			ExpiresAt:          time.Now().Add(time.Hour).Unix(),
+			Depth:              1,
+			MarkerIDs:          []string{sharedMarkerID},
+		}
+
+		require.NoError(t, svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{vtxoX, vtxoY}))
+		for _, v := range []domain.Vtxo{vtxoX, vtxoY} {
+			require.NoError(t, svc.Markers().UpdateVtxoMarkers(ctx, v.Outpoint, v.MarkerIDs))
+		}
+
+		// Sweep ONLY vtxoX via per-outpoint sweeping.
+		sweptAt := time.Now().UnixMilli()
+		err := svc.Markers().SweepVtxoOutpoints(ctx, []domain.Outpoint{vtxoX.Outpoint}, sweptAt)
+		require.NoError(t, err)
+
+		// Verify: X is swept, Y is NOT swept.
+		unspent, spent, err := svc.Vtxos().GetAllNonUnrolledVtxos(ctx, testPubkey)
+		require.NoError(t, err)
+
+		spentTxids := make(map[string]bool)
+		for _, v := range spent {
+			spentTxids[v.Txid] = true
+		}
+		unspentTxids := make(map[string]bool)
+		for _, v := range unspent {
+			unspentTxids[v.Txid] = true
+		}
+
+		require.True(t, spentTxids[vtxoX.Outpoint.Txid],
+			"vtxo X should be swept via SweepVtxoOutpoints")
+		require.True(t, unspentTxids[vtxoY.Outpoint.Txid],
+			"vtxo Y must NOT be swept — it shares a marker with X but was not in the sweep set")
+
+		// Contrast: if we had used BulkSweepMarkers(sharedMarkerID) instead,
+		// Y would also be swept. That's the over-reach this fix prevents.
+	})
+}
+
+// testSweepVtxoOutpointsEdgeCases covers edge cases for the dual sweep tracking:
+// - Double sweep: a VTXO swept via both marker AND outpoint stays swept
+// - Non-existent outpoints: SweepVtxoOutpoints silently ignores them
+// - Empty outpoints: no-op without error
+func testSweepVtxoOutpointsEdgeCases(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_sweep_vtxo_outpoints_edge_cases", func(t *testing.T) {
+		if svc.Markers() == nil {
+			t.Skip("marker repository not available for this data store")
+		}
+		ctx := context.Background()
+		suffix := randomString(16)
+		testPubkey := "edge-pk-" + suffix
+
+		// Create round.
+		roundId := uuid.New().String()
+		commitmentTxid := randomString(32)
+		round := domain.NewRoundFromEvents([]domain.Event{
+			domain.RoundStarted{
+				RoundEvent: domain.RoundEvent{Id: roundId, Type: domain.EventTypeRoundStarted},
+				Timestamp:  time.Now().Unix(),
+			},
+			domain.RoundFinalizationStarted{
+				RoundEvent: domain.RoundEvent{
+					Id:   roundId,
+					Type: domain.EventTypeRoundFinalizationStarted,
+				},
+				CommitmentTxid:     commitmentTxid,
+				CommitmentTx:       emptyTx,
+				VtxoTree:           vtxoTree,
+				Connectors:         connectorsTree,
+				VtxoTreeExpiration: 3600,
+			},
+			domain.RoundFinalized{
+				RoundEvent: domain.RoundEvent{
+					Id:   roundId,
+					Type: domain.EventTypeRoundFinalized,
+				},
+				FinalCommitmentTx: emptyTx,
+				Timestamp:         time.Now().Unix(),
+			},
+		})
+		require.NoError(t, svc.Rounds().AddOrUpdateRound(ctx, *round))
+
+		markerID := "edge-m-" + suffix
+		require.NoError(t, svc.Markers().AddMarker(ctx, domain.Marker{
+			ID: markerID, Depth: 0,
+		}))
+
+		vtxo := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: "edge-vtxo-" + suffix, VOut: 0},
+			PubKey:             testPubkey,
+			Amount:             5000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			CreatedAt:          time.Now().Unix(),
+			ExpiresAt:          time.Now().Add(time.Hour).Unix(),
+			Depth:              0,
+			MarkerIDs:          []string{markerID},
+		}
+		require.NoError(t, svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{vtxo}))
+		require.NoError(t, svc.Markers().UpdateVtxoMarkers(ctx, vtxo.Outpoint, vtxo.MarkerIDs))
+
+		sweptAt := time.Now().UnixMilli()
+
+		// Edge case 1: empty outpoints — should be a no-op
+		err := svc.Markers().SweepVtxoOutpoints(ctx, []domain.Outpoint{}, sweptAt)
+		require.NoError(t, err)
+
+		// Edge case 2: non-existent outpoints — should not error
+		err = svc.Markers().SweepVtxoOutpoints(ctx, []domain.Outpoint{
+			{Txid: "does-not-exist", VOut: 99},
+		}, sweptAt)
+		require.NoError(t, err)
+
+		// Verify VTXO is still unswept after those no-ops
+		unspent, _, err := svc.Vtxos().GetAllNonUnrolledVtxos(ctx, testPubkey)
+		require.NoError(t, err)
+		found := false
+		for _, v := range unspent {
+			if v.Txid == vtxo.Outpoint.Txid {
+				found = true
+			}
+		}
+		require.True(t, found, "vtxo should still be unswept after empty/nonexistent sweep calls")
+
+		// Edge case 3: double sweep — sweep via marker THEN via outpoint
+		require.NoError(t, svc.Markers().BulkSweepMarkers(ctx, []string{markerID}, sweptAt))
+
+		// VTXO is now swept via marker
+		_, spent, err := svc.Vtxos().GetAllNonUnrolledVtxos(ctx, testPubkey)
+		require.NoError(t, err)
+		foundInSpent := false
+		for _, v := range spent {
+			if v.Txid == vtxo.Outpoint.Txid {
+				foundInSpent = true
+			}
+		}
+		require.True(t, foundInSpent, "vtxo should be swept after BulkSweepMarkers")
+
+		// Now also sweep via outpoint — should not error (idempotent)
+		err = svc.Markers().SweepVtxoOutpoints(ctx, []domain.Outpoint{vtxo.Outpoint}, sweptAt)
+		require.NoError(t, err)
+
+		// VTXO should still be swept (via both paths now)
+		_, spent2, err := svc.Vtxos().GetAllNonUnrolledVtxos(ctx, testPubkey)
+		require.NoError(t, err)
+		foundInSpent2 := false
+		for _, v := range spent2 {
+			if v.Txid == vtxo.Outpoint.Txid {
+				foundInSpent2 = true
+			}
+		}
+		require.True(t, foundInSpent2, "vtxo should remain swept after double sweep via both paths")
 	})
 }
 

@@ -299,6 +299,27 @@ func (r *markerRepository) BulkSweepMarkers(
 	return nil
 }
 
+func (r *markerRepository) SweepVtxoOutpoints(
+	ctx context.Context,
+	outpoints []domain.Outpoint,
+	sweptAt int64,
+) error {
+	for _, op := range outpoints {
+		var dto vtxoDTO
+		if err := r.vtxoStore.Get(op.String(), &dto); err != nil {
+			if err == badgerhold.ErrNotFound {
+				continue
+			}
+			return err
+		}
+		dto.Swept = true
+		if err := r.vtxoStore.Update(op.String(), dto); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *markerRepository) SweepMarkerWithDescendants(
 	ctx context.Context,
 	markerID string,
