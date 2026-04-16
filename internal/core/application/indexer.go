@@ -353,32 +353,14 @@ func (i *indexerService) GetVtxoChain(
 	case exposureWithheld:
 		// Auth token is optional, validate it only if provided
 		if authToken != "" {
-			hash, err := i.validateAuthToken(authToken)
-			if err != nil {
+			if err := i.validateChainAuth(authToken, vtxoKey, pageToken != ""); err != nil {
 				return nil, err
-			}
-
-			outpoints, _, ok := i.tokenCache.getOutpoints(hash)
-			if !ok {
-				return nil, fmt.Errorf("auth token not found")
-			}
-			if _, ok := outpoints[vtxoKey.String()]; !ok {
-				return nil, fmt.Errorf("auth token is not for outpoint %s", vtxoKey)
 			}
 		}
 	case exposurePrivate:
 		// Auth token is mandatory, always validate it
-		hash, err := i.validateAuthToken(authToken)
-		if err != nil {
+		if err := i.validateChainAuth(authToken, vtxoKey, pageToken != ""); err != nil {
 			return nil, err
-		}
-
-		outpoints, _, ok := i.tokenCache.getOutpoints(hash)
-		if !ok {
-			return nil, fmt.Errorf("auth token not found")
-		}
-		if _, ok := outpoints[vtxoKey.String()]; !ok {
-			return nil, fmt.Errorf("auth token is not for outpoint %s", vtxoKey)
 		}
 	}
 
@@ -415,6 +397,40 @@ func (i *indexerService) GetVtxoChain(
 		Chain:         chain,
 		NextPageToken: nextToken,
 	}, nil
+}
+
+// validateChainAuth validates the auth token for GetVtxoChain. On pagination
+// continuations (isPaginating=true), if the signed timestamp has expired but
+// the session is still active in the token cache (kept alive by touch on each
+// page request), the token is accepted based on signature verification alone.
+func (i *indexerService) validateChainAuth(
+	authToken string, vtxoKey Outpoint, isPaginating bool,
+) error {
+	hash, err := i.validateAuthToken(authToken)
+	if err != nil && isPaginating {
+		// Token timestamp expired, but this is a pagination continuation.
+		// Verify signature only and check if the session is still live.
+		hash, err = i.verifyAuthTokenSignature(authToken)
+		if err != nil {
+			return err
+		}
+		if !i.tokenCache.isActive(hash) {
+			return fmt.Errorf("auth token expired")
+		}
+	} else if err != nil {
+		return err
+	}
+
+	outpoints, _, ok := i.tokenCache.getOutpoints(hash)
+	if !ok {
+		return fmt.Errorf("auth token not found")
+	}
+	if _, ok := outpoints[vtxoKey.String()]; !ok {
+		return fmt.Errorf("auth token is not for outpoint %s", vtxoKey)
+	}
+	// Keep the session alive for pagination continuations.
+	i.tokenCache.touch(hash)
+	return nil
 }
 
 func (i *indexerService) GetVtxoChainByIntent(
@@ -1235,6 +1251,39 @@ func (i *indexerService) validateAuthToken(authToken string) (string, error) {
 	}
 
 	// Verify schnorr signature
+	msgHash := chainhash.HashB(msg)
+	sig, err := schnorr.ParseSignature(sigBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse auth token signature: %w", err)
+	}
+
+	if !sig.Verify(msgHash, i.authPrvkey.PubKey()) {
+		return "", fmt.Errorf("signature verification failed")
+	}
+
+	return hex.EncodeToString(msg[:32]), nil
+}
+
+// verifyAuthTokenSignature validates the auth token signature without checking
+// the embedded timestamp. Used for pagination continuations where the session
+// is kept alive via tokenCache.touch instead of the signed timestamp.
+func (i *indexerService) verifyAuthTokenSignature(authToken string) (string, error) {
+	if authToken == "" {
+		return "", fmt.Errorf("missing auth")
+	}
+
+	tokenBytes, err := base64.StdEncoding.DecodeString(authToken)
+	if err != nil {
+		return "", fmt.Errorf("invalid auth token format, must be base64")
+	}
+
+	if len(tokenBytes) != 40+64 {
+		return "", fmt.Errorf("invalid auth token length")
+	}
+
+	msg := tokenBytes[0:40]
+	sigBytes := tokenBytes[40:]
+
 	msgHash := chainhash.HashB(msg)
 	sig, err := schnorr.ParseSignature(sigBytes)
 	if err != nil {

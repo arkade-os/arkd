@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS swept_marker (
 );
 
 -- Add markers column (JSON array, not single marker_id)
-ALTER TABLE vtxo ADD COLUMN markers TEXT;
+ALTER TABLE vtxo ADD COLUMN markers TEXT NOT NULL DEFAULT '[]';
 CREATE INDEX IF NOT EXISTS idx_vtxo_markers ON vtxo(markers);
 
 -- Recreate views to include the new columns
@@ -86,7 +86,7 @@ CREATE TABLE vtxo_new (
     intent_id TEXT,
     updated_at INTEGER,
     depth INTEGER NOT NULL DEFAULT 0,
-    markers TEXT,
+    markers TEXT NOT NULL DEFAULT '[]',
     PRIMARY KEY (txid, vout),
     FOREIGN KEY (intent_id) REFERENCES intent(id)
 );

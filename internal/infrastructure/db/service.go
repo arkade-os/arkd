@@ -86,7 +86,8 @@ var (
 )
 
 const (
-	sqliteDbFile = "sqlite.db"
+	sqliteDbFile       = "sqlite.db"
+	maxProjectionRetry = 5
 )
 
 type ServiceConfig struct {
@@ -504,9 +505,11 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	newVtxos := getNewVtxosFromRound(*round, s.txDecoder)
 
 	if len(spentVtxos) > 0 {
-		for {
+		for attempt := range maxProjectionRetry {
 			if err := repo.SettleVtxos(ctx, spentVtxos, round.CommitmentTxid); err != nil {
-				log.WithError(err).Warn("failed to spend vtxos, retrying...")
+				log.WithError(err).Warnf(
+					"failed to spend vtxos (attempt %d/%d)", attempt+1, maxProjectionRetry,
+				)
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
@@ -516,10 +519,12 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	}
 
 	if len(newVtxos) > 0 {
-		for {
+		for attempt := range maxProjectionRetry {
 			// this will take care of updating asset projections as well
 			if err := repo.AddVtxos(ctx, newVtxos); err != nil {
-				log.WithError(err).Warn("failed to add new vtxos, retrying soon")
+				log.WithError(err).Warnf(
+					"failed to add new vtxos (attempt %d/%d)", attempt+1, maxProjectionRetry,
+				)
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
@@ -529,10 +534,11 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		}
 
 		// Create root markers for batch VTXOs (depth 0 is always at marker boundary)
-		for {
+		for attempt := range maxProjectionRetry {
 			if err := s.markerStore.CreateRootMarkersForVtxos(ctx, newVtxos); err != nil {
 				log.WithError(err).Warnf(
-					"failed to create root markers for %d vtxos, retrying soon", len(newVtxos),
+					"failed to create root markers for %d vtxos (attempt %d/%d)",
+					len(newVtxos), attempt+1, maxProjectionRetry,
 				)
 				time.Sleep(100 * time.Millisecond)
 				continue
@@ -591,8 +597,14 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		marker, ids := domain.NewMarker(txid, newDepth, parentMarkerIDs)
 		if marker != nil {
 			if err := s.markerStore.AddMarker(ctx, *marker); err != nil {
-				log.WithError(err).Warn("failed to create marker for chained vtxo")
-				// Continue without marker - non-fatal
+				log.WithError(err).
+					Warn("failed to create marker for chained vtxo, falling back to parent markers")
+				// Fall back to parent markers so VTXOs are still sweepable.
+				// Without this, markerIDs stays nil and the VTXOs become
+				// permanently unsweepable — the swept column was removed and
+				// swept status is now derived from whether any of a VTXO's
+				// markers appear in the swept_marker table.
+				markerIDs = parentMarkerIDs
 			} else {
 				log.Debugf("created marker %s at depth %d", marker.ID, newDepth)
 				markerIDs = ids
