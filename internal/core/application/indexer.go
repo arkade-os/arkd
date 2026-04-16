@@ -3,6 +3,7 @@ package application
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
@@ -88,6 +89,7 @@ type indexerService struct {
 	repoManager     ports.RepoManager
 	wallet          ports.WalletService
 	authPrvkey      *btcec.PrivateKey // key used to sign auth tokens
+	cursorHMACKey   []byte            // HMAC key for signing pagination cursors
 	signerPubkey    *btcec.PublicKey  // server's signing key, used for stripping signatures from txs
 	txExposure      exposure
 	authTokenTTL    time.Duration
@@ -116,10 +118,19 @@ func NewIndexerService(
 		ttl = time.Duration(authTokenExpirySec) * time.Second
 	}
 
+	// Derive HMAC key for pagination cursors from the auth private key.
+	// This prevents clients from forging cursors with arbitrary outpoints.
+	var cursorKey []byte
+	if privkey != nil {
+		h := sha256.Sum256(append(privkey.Serialize(), []byte("cursor-hmac")...))
+		cursorKey = h[:]
+	}
+
 	svc := &indexerService{
 		repoManager:     repoManager,
 		wallet:          wallet,
 		authPrvkey:      privkey,
+		cursorHMACKey:   cursorKey,
 		txExposure:      exposure(txExposure),
 		authTokenTTL:    ttl,
 		tokenCache:      newTokenCache(ttl),
@@ -379,7 +390,7 @@ func (i *indexerService) GetVtxoChain(
 	// Determine frontier: decode pageToken, or use [vtxoKey] for first page.
 	var frontier []domain.Outpoint
 	if pageToken != "" {
-		decoded, err := decodeChainCursor(pageToken)
+		decoded, err := i.decodeChainCursor(pageToken)
 		if err != nil {
 			return nil, fmt.Errorf("invalid page_token: %w", err)
 		}
@@ -667,7 +678,7 @@ func (i *indexerService) walkVtxoChain(
 					}
 				}
 				remaining = append(remaining, newNextVtxos...)
-				token := encodeChainCursor(remaining)
+				token := i.encodeChainCursor(remaining)
 				return chain, allOutpoints, token, nil
 			}
 
@@ -798,32 +809,56 @@ func (i *indexerService) walkVtxoChain(
 	return chain, allOutpoints, "", nil
 }
 
-// encodeChainCursor encodes a frontier of outpoints into an opaque page token.
-func encodeChainCursor(frontier []domain.Outpoint) string {
+// encodeChainCursor encodes a frontier of outpoints into an HMAC-signed opaque
+// page token. The HMAC prevents clients from forging cursors with arbitrary
+// outpoints, which would bypass auth validation in exposurePrivate mode.
+func (i *indexerService) encodeChainCursor(frontier []domain.Outpoint) string {
 	if len(frontier) == 0 {
 		return ""
 	}
 	cur := vtxoChainCursor{Frontier: make([]Outpoint, len(frontier))}
-	for i, op := range frontier {
-		cur.Frontier[i] = Outpoint(op)
+	for idx, op := range frontier {
+		cur.Frontier[idx] = Outpoint(op)
 	}
-	data, _ := json.Marshal(cur)
-	return base64.RawURLEncoding.EncodeToString(data)
+	payload, _ := json.Marshal(cur)
+
+	if len(i.cursorHMACKey) > 0 {
+		mac := hmac.New(sha256.New, i.cursorHMACKey)
+		mac.Write(payload)
+		payload = append(payload, mac.Sum(nil)...)
+	}
+	return base64.RawURLEncoding.EncodeToString(payload)
 }
 
-// decodeChainCursor decodes a page token back into a frontier of outpoints.
-func decodeChainCursor(token string) ([]domain.Outpoint, error) {
-	data, err := base64.RawURLEncoding.DecodeString(token)
+// decodeChainCursor decodes and verifies an HMAC-signed page token.
+func (i *indexerService) decodeChainCursor(token string) ([]domain.Outpoint, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base64: %w", err)
 	}
+
+	payload := raw
+	if len(i.cursorHMACKey) > 0 {
+		if len(raw) < sha256.Size {
+			return nil, fmt.Errorf("invalid cursor: too short")
+		}
+		payload = raw[:len(raw)-sha256.Size]
+		sig := raw[len(raw)-sha256.Size:]
+
+		mac := hmac.New(sha256.New, i.cursorHMACKey)
+		mac.Write(payload)
+		if !hmac.Equal(sig, mac.Sum(nil)) {
+			return nil, fmt.Errorf("invalid cursor: signature mismatch")
+		}
+	}
+
 	var cur vtxoChainCursor
-	if err := json.Unmarshal(data, &cur); err != nil {
+	if err := json.Unmarshal(payload, &cur); err != nil {
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 	outpoints := make([]domain.Outpoint, len(cur.Frontier))
-	for i, op := range cur.Frontier {
-		outpoints[i] = domain.Outpoint(op)
+	for idx, op := range cur.Frontier {
+		outpoints[idx] = domain.Outpoint(op)
 	}
 	return outpoints, nil
 }

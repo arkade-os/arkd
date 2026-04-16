@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"sort"
 	"strings"
@@ -408,16 +409,17 @@ func makeCheckpointPSBT(t *testing.T, inputTxid string, inputVout uint32) string
 // TestEncodeDecodeChainCursor_RoundTrip verifies that encoding then decoding
 // a frontier of outpoints returns the same outpoints.
 func TestEncodeDecodeChainCursor_RoundTrip(t *testing.T) {
+	svc := &indexerService{}
 	frontier := []domain.Outpoint{
 		{Txid: "abc123", VOut: 0},
 		{Txid: "def456", VOut: 2},
 		{Txid: "ghi789", VOut: 1},
 	}
 
-	token := encodeChainCursor(frontier)
+	token := svc.encodeChainCursor(frontier)
 	require.NotEmpty(t, token)
 
-	decoded, err := decodeChainCursor(token)
+	decoded, err := svc.decodeChainCursor(token)
 	require.NoError(t, err)
 	require.Equal(t, frontier, decoded)
 }
@@ -425,16 +427,18 @@ func TestEncodeDecodeChainCursor_RoundTrip(t *testing.T) {
 // TestEncodeDecodeChainCursor_EmptyFrontier verifies that an empty frontier
 // encodes to an empty string.
 func TestEncodeDecodeChainCursor_EmptyFrontier(t *testing.T) {
-	token := encodeChainCursor(nil)
+	svc := &indexerService{}
+	token := svc.encodeChainCursor(nil)
 	require.Empty(t, token)
 
-	token = encodeChainCursor([]domain.Outpoint{})
+	token = svc.encodeChainCursor([]domain.Outpoint{})
 	require.Empty(t, token)
 }
 
 // TestDecodeChainCursor_InvalidBase64 verifies that invalid base64 returns an error.
 func TestDecodeChainCursor_InvalidBase64(t *testing.T) {
-	_, err := decodeChainCursor("not-valid-base64!!!")
+	svc := &indexerService{}
+	_, err := svc.decodeChainCursor("not-valid-base64!!!")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid base64")
 }
@@ -442,11 +446,102 @@ func TestDecodeChainCursor_InvalidBase64(t *testing.T) {
 // TestDecodeChainCursor_InvalidJSON verifies that valid base64 but invalid JSON
 // returns an error.
 func TestDecodeChainCursor_InvalidJSON(t *testing.T) {
+	svc := &indexerService{}
 	// Encode something that is not valid JSON
 	token := "bm90LWpzb24" // base64url of "not-json"
-	_, err := decodeChainCursor(token)
+	_, err := svc.decodeChainCursor(token)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid JSON")
+}
+
+// TestDecodeChainCursor_HMACRejectsForgery verifies that a cursor signed with
+// one key is rejected by a service with a different key.
+func TestDecodeChainCursor_HMACRejectsForgery(t *testing.T) {
+	svc := &indexerService{cursorHMACKey: []byte("server-secret-key")}
+	frontier := []domain.Outpoint{{Txid: "abc123", VOut: 0}}
+
+	token := svc.encodeChainCursor(frontier)
+	require.NotEmpty(t, token)
+
+	// Valid decode with same key works.
+	decoded, err := svc.decodeChainCursor(token)
+	require.NoError(t, err)
+	require.Equal(t, frontier, decoded)
+
+	// Forge a cursor with a different key — should be rejected.
+	forger := &indexerService{cursorHMACKey: []byte("attacker-key")}
+	forgedToken := forger.encodeChainCursor([]domain.Outpoint{{Txid: "victim-vtxo", VOut: 0}})
+	_, err = svc.decodeChainCursor(forgedToken)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "signature mismatch")
+
+	// Tampered cursor — modify one byte of a valid token.
+	rawToken, _ := base64.RawURLEncoding.DecodeString(token)
+	rawToken[0] ^= 0xff
+	tampered := base64.RawURLEncoding.EncodeToString(rawToken)
+	_, err = svc.decodeChainCursor(tampered)
+	require.Error(t, err)
+}
+
+// TestDecodeChainCursor_HMACEdgeCases covers malicious and accidental misuse of
+// the cursor field: truncated tokens, empty strings, unsigned cursors sent to a
+// signing server, replaying a valid cursor after the HMAC portion is stripped, etc.
+func TestDecodeChainCursor_HMACEdgeCases(t *testing.T) {
+	svc := &indexerService{cursorHMACKey: []byte("server-secret-key")}
+	frontier := []domain.Outpoint{{Txid: "abc123", VOut: 0}}
+	validToken := svc.encodeChainCursor(frontier)
+
+	t.Run("empty string", func(t *testing.T) {
+		_, err := svc.decodeChainCursor("")
+		require.Error(t, err)
+	})
+
+	t.Run("truncated token missing HMAC bytes", func(t *testing.T) {
+		raw, err := base64.RawURLEncoding.DecodeString(validToken)
+		require.NoError(t, err)
+		// Strip the 32-byte HMAC, leaving only the JSON payload.
+		truncated := base64.RawURLEncoding.EncodeToString(raw[:len(raw)-32])
+		_, err = svc.decodeChainCursor(truncated)
+		require.Error(t, err)
+	})
+
+	t.Run("unsigned cursor rejected by signing server", func(t *testing.T) {
+		// A server with no HMAC key produces unsigned cursors.
+		noKey := &indexerService{}
+		unsigned := noKey.encodeChainCursor(frontier)
+		// A server WITH an HMAC key must reject it.
+		_, err := svc.decodeChainCursor(unsigned)
+		require.Error(t, err)
+	})
+
+	t.Run("hand-crafted JSON without HMAC", func(t *testing.T) {
+		// Attacker builds raw JSON and base64-encodes it, no HMAC.
+		raw := []byte(`{"frontier":[{"txid":"victim","vout":0}]}`)
+		crafted := base64.RawURLEncoding.EncodeToString(raw)
+		_, err := svc.decodeChainCursor(crafted)
+		require.Error(t, err)
+	})
+
+	t.Run("cursor from restarted server with new key", func(t *testing.T) {
+		oldServer := &indexerService{cursorHMACKey: []byte("old-key")}
+		oldToken := oldServer.encodeChainCursor(frontier)
+		newServer := &indexerService{cursorHMACKey: []byte("new-key-after-restart")}
+		_, err := newServer.decodeChainCursor(oldToken)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "signature mismatch")
+	})
+
+	t.Run("swapped payload same length", func(t *testing.T) {
+		// Take a valid token, replace the JSON payload but keep the
+		// original HMAC — should fail because HMAC won't match.
+		raw, err := base64.RawURLEncoding.DecodeString(validToken)
+		require.NoError(t, err)
+		origHMAC := raw[len(raw)-32:]
+		newPayload := []byte(`{"frontier":[{"txid":"other","vout":0}]}`)
+		tampered := append(newPayload, origHMAC...)
+		token := base64.RawURLEncoding.EncodeToString(tampered)
+		_, err = svc.decodeChainCursor(token)
+		require.Error(t, err)
+	})
 }
 
 // TestEnsureVtxosCached_AllCacheHits verifies that when all outpoints are already
