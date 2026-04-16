@@ -38,6 +38,8 @@ const (
 	AdminService_PardonConviction_FullMethodName             = "/ark.v1.AdminService/PardonConviction"
 	AdminService_BanScript_FullMethodName                    = "/ark.v1.AdminService/BanScript"
 	AdminService_RevokeAuth_FullMethodName                   = "/ark.v1.AdminService/RevokeAuth"
+	AdminService_ListTokens_FullMethodName                   = "/ark.v1.AdminService/ListTokens"
+	AdminService_RevokeTokens_FullMethodName                 = "/ark.v1.AdminService/RevokeTokens"
 	AdminService_GetExpiringLiquidity_FullMethodName         = "/ark.v1.AdminService/GetExpiringLiquidity"
 	AdminService_GetRecoverableLiquidity_FullMethodName      = "/ark.v1.AdminService/GetRecoverableLiquidity"
 	AdminService_Sweep_FullMethodName                        = "/ark.v1.AdminService/Sweep"
@@ -66,6 +68,8 @@ type AdminServiceClient interface {
 	PardonConviction(ctx context.Context, in *PardonConvictionRequest, opts ...grpc.CallOption) (*PardonConvictionResponse, error)
 	BanScript(ctx context.Context, in *BanScriptRequest, opts ...grpc.CallOption) (*BanScriptResponse, error)
 	RevokeAuth(ctx context.Context, in *RevokeAuthRequest, opts ...grpc.CallOption) (*RevokeAuthResponse, error)
+	ListTokens(ctx context.Context, in *ListTokensRequest, opts ...grpc.CallOption) (*ListTokensResponse, error)
+	RevokeTokens(ctx context.Context, in *RevokeTokensRequest, opts ...grpc.CallOption) (*RevokeTokensResponse, error)
 	GetExpiringLiquidity(ctx context.Context, in *GetExpiringLiquidityRequest, opts ...grpc.CallOption) (*GetExpiringLiquidityResponse, error)
 	GetRecoverableLiquidity(ctx context.Context, in *GetRecoverableLiquidityRequest, opts ...grpc.CallOption) (*GetRecoverableLiquidityResponse, error)
 	Sweep(ctx context.Context, in *SweepRequest, opts ...grpc.CallOption) (*SweepResponse, error)
@@ -269,6 +273,26 @@ func (c *adminServiceClient) RevokeAuth(ctx context.Context, in *RevokeAuthReque
 	return out, nil
 }
 
+func (c *adminServiceClient) ListTokens(ctx context.Context, in *ListTokensRequest, opts ...grpc.CallOption) (*ListTokensResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListTokensResponse)
+	err := c.cc.Invoke(ctx, AdminService_ListTokens_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) RevokeTokens(ctx context.Context, in *RevokeTokensRequest, opts ...grpc.CallOption) (*RevokeTokensResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeTokensResponse)
+	err := c.cc.Invoke(ctx, AdminService_RevokeTokens_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) GetExpiringLiquidity(ctx context.Context, in *GetExpiringLiquidityRequest, opts ...grpc.CallOption) (*GetExpiringLiquidityResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetExpiringLiquidityResponse)
@@ -322,6 +346,8 @@ type AdminServiceServer interface {
 	PardonConviction(context.Context, *PardonConvictionRequest) (*PardonConvictionResponse, error)
 	BanScript(context.Context, *BanScriptRequest) (*BanScriptResponse, error)
 	RevokeAuth(context.Context, *RevokeAuthRequest) (*RevokeAuthResponse, error)
+	ListTokens(context.Context, *ListTokensRequest) (*ListTokensResponse, error)
+	RevokeTokens(context.Context, *RevokeTokensRequest) (*RevokeTokensResponse, error)
 	GetExpiringLiquidity(context.Context, *GetExpiringLiquidityRequest) (*GetExpiringLiquidityResponse, error)
 	GetRecoverableLiquidity(context.Context, *GetRecoverableLiquidityRequest) (*GetRecoverableLiquidityResponse, error)
 	Sweep(context.Context, *SweepRequest) (*SweepResponse, error)
@@ -390,6 +416,12 @@ func (UnimplementedAdminServiceServer) BanScript(context.Context, *BanScriptRequ
 }
 func (UnimplementedAdminServiceServer) RevokeAuth(context.Context, *RevokeAuthRequest) (*RevokeAuthResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RevokeAuth not implemented")
+}
+func (UnimplementedAdminServiceServer) ListTokens(context.Context, *ListTokensRequest) (*ListTokensResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListTokens not implemented")
+}
+func (UnimplementedAdminServiceServer) RevokeTokens(context.Context, *RevokeTokensRequest) (*RevokeTokensResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RevokeTokens not implemented")
 }
 func (UnimplementedAdminServiceServer) GetExpiringLiquidity(context.Context, *GetExpiringLiquidityRequest) (*GetExpiringLiquidityResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetExpiringLiquidity not implemented")
@@ -762,6 +794,42 @@ func _AdminService_RevokeAuth_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_ListTokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListTokensRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).ListTokens(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_ListTokens_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).ListTokens(ctx, req.(*ListTokensRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_RevokeTokens_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeTokensRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).RevokeTokens(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_RevokeTokens_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).RevokeTokens(ctx, req.(*RevokeTokensRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_GetExpiringLiquidity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetExpiringLiquidityRequest)
 	if err := dec(in); err != nil {
@@ -898,6 +966,14 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RevokeAuth",
 			Handler:    _AdminService_RevokeAuth_Handler,
+		},
+		{
+			MethodName: "ListTokens",
+			Handler:    _AdminService_ListTokens_Handler,
+		},
+		{
+			MethodName: "RevokeTokens",
+			Handler:    _AdminService_RevokeTokens_Handler,
 		},
 		{
 			MethodName: "GetExpiringLiquidity",

@@ -16,7 +16,9 @@ const (
 	SECONDS_MAX                    = SEQUENCE_LOCKTIME_MASK << SEQUENCE_LOCKTIME_GRANULARITY
 	SEQUENCE_LOCKTIME_DISABLE_FLAG = 1 << 31
 
-	SECONDS_PER_BLOCK = 10 * 60 // 10 minutes
+	// SECONDS_PER_BLOCK is used to convert block-based locktimes to seconds.
+	// The value of 1 sec/block is used so that number of blocks refers to number of seconds.
+	SECONDS_PER_BLOCK = 1
 
 	// before this value, nLocktime is interpreted as blockheight
 	nLocktimeMinSeconds = 500_000_000

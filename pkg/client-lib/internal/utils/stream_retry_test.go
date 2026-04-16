@@ -522,7 +522,7 @@ func TestStartReconnectingStream(t *testing.T) {
 
 		cfg := ReconnectingStreamConfig[*mockStream, string, testEvent]{
 			Connect:   func(ctx context.Context) (*mockStream, error) { return newMockStream(), nil },
-			Reconnect: func(ctx context.Context) (*mockStream, error) { return newMockStream(), nil },
+			Reconnect: func(ctx context.Context) (string, *mockStream, error) { return "", newMockStream(), nil },
 			Recv:      func(ms *mockStream) (*string, error) { return &msg, nil },
 			HandleResp: func(_ context.Context, _ chan<- testEvent, _ string) error {
 				return fatalErr()
@@ -606,8 +606,11 @@ func makeConfig(
 	recv func(*mockStream) (*string, error),
 ) ReconnectingStreamConfig[*mockStream, string, testEvent] {
 	return ReconnectingStreamConfig[*mockStream, string, testEvent]{
-		Connect:    connect,
-		Reconnect:  reconnect,
+		Connect: connect,
+		Reconnect: func(ctx context.Context) (string, *mockStream, error) {
+			stream, err := reconnect(ctx)
+			return "", stream, err
+		},
 		Recv:       recv,
 		HandleResp: func(_ context.Context, _ chan<- testEvent, _ string) error { return nil },
 		ErrorEvent: func(err error) testEvent { return testEvent{err: err} },

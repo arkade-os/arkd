@@ -333,7 +333,7 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 
 	walletSvc := s.appConfig.WalletService()
 	adminHandler := handlers.NewAdminHandler(
-		s.appConfig.AdminService(), s.macaroonSvc,
+		s.appConfig.AdminService(), indexerSvc, s.macaroonSvc,
 		s.config.macaroonsDatadir(), s.appConfig.NoteUriPrefix,
 	)
 	walletHandler := handlers.NewWalletHandler(walletSvc)

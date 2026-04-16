@@ -607,6 +607,15 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			return
 		}
 
+		txSwept := false
+		batch, err := s.roundStore.GetRoundWithCommitmentTxid(ctx, offchainTx.RootCommitmentTxId)
+		// We consider the tx swept if:
+		// - there is an error fetching the batch (this is just fallback, should never happen)
+		// - the batch is swept
+		// - the tx expired (meaning one or all its inputs expired and are already swept or about
+		// to be swept)
+		txSwept = err != nil || (batch != nil && len(batch.SweepTxs) > 0) ||
+			time.Now().After(time.Unix(offchainTx.ExpiryTimestamp, 0))
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
@@ -621,6 +630,11 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			// at that point, we should only have valid taproot script
 			if len(out.PkScript) != 34 {
 				continue
+			}
+
+			outputSwept := txSwept
+			if !outputSwept {
+				outputSwept = script.IsSubDustScript(out.PkScript)
 			}
 
 			outpoint := domain.Outpoint{
@@ -656,9 +670,13 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				RootCommitmentTxid: offchainTx.RootCommitmentTxId,
 				Preconfirmed:       true,
 				CreatedAt:          offchainTx.StartingTimestamp,
-				Depth:              newDepth,
-				MarkerIDs:          vtxoMarkerIDs,
-				Assets:             assets[uint32(outIndex)],
+				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
+				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
+				// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
+				Swept:     outputSwept,
+				Depth:     newDepth,
+				MarkerIDs: vtxoMarkerIDs,
+				Assets:    assets[uint32(outIndex)],
 			})
 		}
 
