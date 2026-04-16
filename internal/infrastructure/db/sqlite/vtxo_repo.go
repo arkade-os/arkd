@@ -43,14 +43,15 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 		for i := range vtxos {
 			vtxo := vtxos[i]
 
-			var markersJSON sql.NullString
-			if len(vtxo.MarkerIDs) > 0 {
-				data, err := json.Marshal(vtxo.MarkerIDs)
-				if err != nil {
-					return fmt.Errorf("failed to marshal markers: %w", err)
-				}
-				markersJSON = sql.NullString{String: string(data), Valid: true}
+			markersToMarshal := vtxo.MarkerIDs
+			if markersToMarshal == nil {
+				markersToMarshal = []string{}
 			}
+			markersData, err := json.Marshal(markersToMarshal)
+			if err != nil {
+				return fmt.Errorf("failed to marshal markers: %w", err)
+			}
+			markersJSON := sql.NullString{String: string(markersData), Valid: true}
 
 			if err := querierWithTx.UpsertVtxo(
 				ctx, queries.UpsertVtxoParams{

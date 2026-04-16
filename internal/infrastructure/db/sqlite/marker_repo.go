@@ -166,25 +166,29 @@ func (m *markerRepository) SweepMarkerWithDescendants(
 	markerID string,
 	sweptAt int64,
 ) (int64, error) {
-	// Get all descendant marker IDs (including the root marker) that are not already swept
-	descendantIDs, err := m.querier.GetDescendantMarkerIds(ctx, markerID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get descendant markers: %w", err)
-	}
-
-	// Insert each descendant into swept_marker
 	var count int64
-	for _, id := range descendantIDs {
-		err := m.querier.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
-			MarkerID: id,
-			SweptAt:  sweptAt,
-		})
+	txBody := func(qtx *queries.Queries) error {
+		// Get all descendant marker IDs (including the root marker) that are not already swept
+		descendantIDs, err := qtx.GetDescendantMarkerIds(ctx, markerID)
 		if err != nil {
-			return count, fmt.Errorf("failed to sweep marker %s: %w", id, err)
+			return fmt.Errorf("failed to get descendant markers: %w", err)
 		}
-		count++
-	}
 
+		// Insert each descendant into swept_marker
+		for _, id := range descendantIDs {
+			if err := qtx.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
+				MarkerID: id,
+				SweptAt:  sweptAt,
+			}); err != nil {
+				return fmt.Errorf("failed to sweep marker %s: %w", id, err)
+			}
+			count++
+		}
+		return nil
+	}
+	if err := execTx(ctx, m.db, txBody); err != nil {
+		return 0, err
+	}
 	return count, nil
 }
 

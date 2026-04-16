@@ -61,6 +61,41 @@ func (c *tokenCache) close() {
 	close(c.stop)
 }
 
+// touch extends the expiry of an existing cache entry by invalidationDuration
+// from now. Auth tokens embed a signed timestamp that expires after authTokenTTL
+// (5 min), but paginating a long VTXO chain can span many requests over a longer
+// period. Each successful GetVtxoChain page calls touch so the cache entry stays
+// live; validateChainAuth then accepts expired-timestamp tokens as long as the
+// cache entry is still active, proving the session was recently used.
+func (c *tokenCache) touch(hash string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	outpoints, ok := c.outpointsByHash[hash]
+	if !ok {
+		return
+	}
+	newExpiry := time.Now().Add(c.invalidationDuration)
+	for op := range outpoints {
+		outpoints[op] = newExpiry
+	}
+}
+
+// isActive returns true if the hash has a non-expired cache entry.
+func (c *tokenCache) isActive(hash string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	outpoints, ok := c.outpointsByHash[hash]
+	if !ok {
+		return false
+	}
+	for _, expiresAt := range outpoints {
+		return time.Now().Before(expiresAt)
+	}
+	return false
+}
+
 func (c *tokenCache) add(hash string, outpoints []Outpoint, now time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
