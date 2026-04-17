@@ -81,7 +81,10 @@ func (c *tokenCache) touch(hash string) {
 	}
 }
 
-// isActive returns true if the hash has a non-expired cache entry.
+// isActive returns true if the hash has any non-expired cache entry. In
+// practice touch/add set every outpoint under a hash to the same expiry, so
+// any single entry would answer the question; scanning all entries removes
+// reliance on that invariant and on Go's non-deterministic map iteration.
 func (c *tokenCache) isActive(hash string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -90,8 +93,11 @@ func (c *tokenCache) isActive(hash string) bool {
 	if !ok {
 		return false
 	}
+	now := time.Now()
 	for _, expiresAt := range outpoints {
-		return time.Now().Before(expiresAt)
+		if now.Before(expiresAt) {
+			return true
+		}
 	}
 	return false
 }

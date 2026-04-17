@@ -10,6 +10,15 @@ CREATE TABLE IF NOT EXISTS swept_vtxo (
 DROP VIEW IF EXISTS intent_with_inputs_vw;
 DROP VIEW IF EXISTS vtxo_vw;
 
+-- swept is OR'd across two sources on purpose:
+--   * swept_marker — populated by batch/round sweeps. Coarse-grained: a single
+--     marker can cover many VTXOs, so marker-based sweeping is efficient for
+--     whole-round sweeps but would over-reach if applied to checkpoint sweeps
+--     (markers are shared across independent subtrees).
+--   * swept_vtxo — populated by checkpoint sweeps. Fine-grained: one row per
+--     (txid, vout), so it safely scopes to a single outpoint's lineage.
+-- New sweep code paths must pick the right table; maintainers adding a third
+-- sweep path should extend this OR rather than re-overloading one of them.
 CREATE VIEW vtxo_vw AS
 SELECT v.*,
     COALESCE((
