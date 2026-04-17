@@ -477,7 +477,7 @@ SELECT EXISTS(SELECT 1 FROM swept_marker WHERE marker_id = @marker_id) AS is_swe
 WITH RECURSIVE descendant_markers(id) AS (
     -- Base case: the marker being swept
     SELECT marker.id FROM marker WHERE marker.id = @root_marker_id
-    UNION ALL
+    UNION
     -- Recursive case: find markers whose parent_markers jsonb array contains any descendant
     SELECT m.id FROM marker m
     INNER JOIN descendant_markers dm ON (
@@ -496,7 +496,7 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE markers @> jsonb_build_array(@mark
 
 -- name: CountUnsweptVtxosByMarkerId :one
 -- Count VTXOs whose markers JSONB array contains the given marker_id and are not swept
-SELECT COUNT(*) FROM vtxo_vw WHERE markers @> jsonb_build_array(@marker_id::TEXT) AND swept = false;
+SELECT COUNT(DISTINCT (txid, vout)) FROM vtxo_vw WHERE markers @> jsonb_build_array(@marker_id::TEXT) AND swept = false;
 
 -- Chain traversal queries for GetVtxoChain optimization
 

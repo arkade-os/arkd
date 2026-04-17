@@ -369,6 +369,14 @@ func (s *service) registerEventHandlers() {
 				return
 			}
 
+			if len(spentVtxos) != len(spentVtxoKeys) {
+				log.Warnf(
+					"incomplete parent read: got %d of %d spent vtxos for tx %s",
+					len(spentVtxos), len(spentVtxoKeys), txid,
+				)
+				return
+			}
+
 			// Calculate depth for new vtxos: max(parent depths) + 1
 			var maxDepth uint32
 			for _, v := range spentVtxos {

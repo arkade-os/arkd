@@ -669,8 +669,8 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 					log.WithError(err).Warnf("failed to create dust marker %s", dustMarkerID)
 				} else {
 					createdDustMarkerIDs = append(createdDustMarkerIDs, dustMarkerID)
+					vtxoMarkerIDs = append(append([]string{}, markerIDs...), dustMarkerID)
 				}
-				vtxoMarkerIDs = append(append([]string{}, markerIDs...), dustMarkerID)
 			}
 
 			newVtxos = append(newVtxos, domain.Vtxo{
