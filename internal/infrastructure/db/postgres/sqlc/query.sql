@@ -52,7 +52,7 @@ INSERT INTO vtxo (
 )
 VALUES (
     @txid, @vout, @pubkey, @amount, @commitment_txid, @settled_by, @ark_txid,
-    @spent_by, @spent, @unrolled, @preconfirmed, @expires_at, @created_at, (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT, @depth, @markers
+    @spent_by, @spent, @unrolled, @preconfirmed, @expires_at, @created_at, (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT, @depth, @markers::jsonb
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
@@ -298,13 +298,17 @@ WHERE v.swept = false
     OR (',' || COALESCE(v.commitments::text, '') || ',') LIKE '%,' || @commitment_txid || ',%');
 
 -- name: SelectVtxosOutpointsByArkTxidRecursive :many
+-- Returns the seed outpoint (txid, vout) and all VTXOs descending from it
+-- via ark_txid links. Scoped to a single outpoint (not the whole txid) so that
+-- sibling outputs of the seed tx, which belong to independent lineages, are
+-- not included.
 WITH RECURSIVE descendants_chain AS (
-    -- seed
+    -- seed: only the specific outpoint, not all vouts of the txid
     SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
            0 AS depth,
            ARRAY[(v.txid||':'||v.vout)]::text[] AS visited
     FROM vtxo v
-    WHERE v.txid = @txid
+    WHERE v.txid = @txid AND v.vout = @vout
 
     UNION ALL
 
@@ -473,7 +477,10 @@ SELECT * FROM swept_marker WHERE marker_id = ANY(@marker_ids::text[]);
 SELECT EXISTS(SELECT 1 FROM swept_marker WHERE marker_id = @marker_id) AS is_swept;
 
 -- name: GetDescendantMarkerIds :many
--- Recursively get a marker and all its descendants (markers whose parent_markers contain it)
+-- Recursively get a marker and all its descendants (markers whose parent_markers contain it).
+-- Uses UNION (set semantics, not UNION ALL) so rows already produced are filtered,
+-- which makes this cycle-safe. Do not convert to UNION ALL: cycles in parent_markers
+-- would cause the recursion to run unbounded.
 WITH RECURSIVE descendant_markers(id) AS (
     -- Base case: the marker being swept
     SELECT marker.id FROM marker WHERE marker.id = @root_marker_id

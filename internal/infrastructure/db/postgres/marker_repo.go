@@ -9,6 +9,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
+	log "github.com/sirupsen/logrus"
 	"github.com/sqlc-dev/pqtype"
 )
 
@@ -287,29 +288,35 @@ func (m *markerRepository) GetVtxosByMarker(
 }
 
 func (m *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID string) (int64, error) {
-	// First check if the marker exists (foreign key constraint on swept_marker)
-	marker, err := m.GetMarker(ctx, markerID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to check marker existence: %w", err)
-	}
-	if marker == nil {
-		return 0, nil // Marker doesn't exist, nothing to sweep
-	}
+	var count int64
+	txBody := func(qtx *queries.Queries) error {
+		// First check if the marker exists (foreign key constraint on swept_marker)
+		if _, err := qtx.SelectMarker(ctx, markerID); err != nil {
+			if err == sql.ErrNoRows {
+				return nil // Marker doesn't exist, nothing to sweep
+			}
+			return fmt.Errorf("failed to check marker existence: %w", err)
+		}
 
-	// Count unswept VTXOs with this marker before inserting to swept_marker
-	count, err := m.querier.CountUnsweptVtxosByMarkerId(ctx, markerID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to count unswept vtxos: %w", err)
-	}
+		// Count unswept VTXOs with this marker before inserting to swept_marker
+		c, err := qtx.CountUnsweptVtxosByMarkerId(ctx, markerID)
+		if err != nil {
+			return fmt.Errorf("failed to count unswept vtxos: %w", err)
+		}
 
-	// Insert the marker into swept_marker (sweep state is computed via view)
-	if err := m.querier.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
-		MarkerID: markerID,
-		SweptAt:  time.Now().UnixMilli(),
-	}); err != nil {
-		return 0, fmt.Errorf("failed to insert swept marker: %w", err)
+		// Insert the marker into swept_marker (sweep state is computed via view)
+		if err := qtx.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
+			MarkerID: markerID,
+			SweptAt:  time.Now().UnixMilli(),
+		}); err != nil {
+			return fmt.Errorf("failed to insert swept marker: %w", err)
+		}
+		count = c
+		return nil
 	}
-
+	if err := execTx(ctx, m.db, txBody); err != nil {
+		return 0, err
+	}
 	return count, nil
 }
 
@@ -466,13 +473,16 @@ func rowToVtxoFromMarkerQuery(row queries.SelectVtxosByMarkerIdRow) domain.Vtxo 
 	}
 }
 
-// parseMarkersJSONB parses a JSONB array into a slice of strings
+// parseMarkersJSONB parses a JSONB array into a slice of strings.
+// Logs and returns nil if the JSON is malformed so that corrupt markers are
+// surfaced instead of silently treated as empty.
 func parseMarkersJSONB(markers json.RawMessage) []string {
 	if len(markers) == 0 {
 		return nil
 	}
 	var markerIDs []string
 	if err := json.Unmarshal(markers, &markerIDs); err != nil {
+		log.WithError(err).Warnf("failed to parse markers JSONB: %q", string(markers))
 		return nil
 	}
 	return markerIDs

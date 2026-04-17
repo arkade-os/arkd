@@ -1,3 +1,20 @@
+-- Guard against silently resurrecting swept VTXOs.
+--
+-- swept_vtxo holds per-outpoint sweep state for the checkpoint-sweep path.
+-- Dropping the table would make vtxo_vw.swept flip back to false for every
+-- outpoint tracked only here (marker-based sweeps still survive via
+-- swept_marker). When the table has data, fail loudly rather than silently
+-- discard it. When the table is empty, the rollback is safe — drop the
+-- table and restore the pre-swept_vtxo view shape.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM swept_vtxo) THEN
+        RAISE EXCEPTION 'irreversible migration: swept_vtxo contains % entries; rolling back would resurrect swept VTXOs. Truncate swept_vtxo manually if you accept the data loss, then re-run.',
+            (SELECT count(*) FROM swept_vtxo);
+    END IF;
+END
+$$;
+
 DROP TABLE IF EXISTS swept_vtxo;
 
 -- Restore views without swept_vtxo check

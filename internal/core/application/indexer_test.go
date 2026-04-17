@@ -119,7 +119,7 @@ func (m *mockVtxoRepoForIndexer) GetSweepableVtxosByCommitmentTxid(
 
 func (m *mockVtxoRepoForIndexer) GetAllChildrenVtxos(
 	ctx context.Context,
-	txid string,
+	outpoint domain.Outpoint,
 ) ([]domain.Outpoint, error) {
 	return nil, nil
 }
@@ -1298,6 +1298,78 @@ func TestGetVtxoChain_PreloadReducesDBCalls(t *testing.T) {
 	// Marker-based preload: 5 bulk fetches + 5 marker lookups = 10 total queries.
 	markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", markersCount)
 	markerRepo.AssertNumberOfCalls(t, "GetMarkersByIds", markersCount)
+}
+
+// TestGetVtxoChain_PreloadMarkerErrorFallback verifies that when the marker
+// repo errors during preloadByMarkers, GetVtxoChain still returns the correct
+// chain via the per-hop GetVtxos + ensureVtxosCached fallback, rather than
+// aborting the request entirely.
+func TestGetVtxoChain_PreloadMarkerErrorFallback(t *testing.T) {
+	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
+	ctx := context.Background()
+
+	txidA := strings.Repeat("a", 64)
+	txidB := strings.Repeat("b", 64)
+	txidC := strings.Repeat("c", 64)
+
+	vtxoA := domain.Vtxo{
+		Outpoint:     domain.Outpoint{Txid: txidA, VOut: 0},
+		Preconfirmed: true,
+		ExpiresAt:    1000,
+		MarkerIDs:    []string{"marker-A"},
+	}
+	vtxoB := domain.Vtxo{
+		Outpoint:     domain.Outpoint{Txid: txidB, VOut: 0},
+		Preconfirmed: true,
+		ExpiresAt:    2000,
+		MarkerIDs:    []string{"marker-B"},
+	}
+	vtxoC := domain.Vtxo{
+		Outpoint:     domain.Outpoint{Txid: txidC, VOut: 0},
+		Preconfirmed: true,
+		ExpiresAt:    3000,
+		MarkerIDs:    []string{"marker-C"},
+	}
+
+	// Initial preload fetch for the frontier.
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: txidA, VOut: 0}}).
+		Return([]domain.Vtxo{vtxoA}, nil)
+
+	// Preload's first marker lookup fails — this is the fault we're injecting.
+	// Per-hop fallback should take over from here.
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-A")).
+		Return(nil, fmt.Errorf("transient marker repo failure"))
+
+	// ensureVtxosCached fetches B and C on cache miss. The fix lets these run
+	// even though preload aborted partway through.
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: txidB, VOut: 0}}).
+		Return([]domain.Vtxo{vtxoB}, nil)
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: txidC, VOut: 0}}).
+		Return([]domain.Vtxo{vtxoC}, nil)
+
+	// Marker window loading during the walk — can either succeed empty or
+	// error; ensureVtxosCached logs and continues either way.
+	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
+		Return([]domain.Vtxo{}, nil).Maybe()
+
+	// Offchain tx for the preconfirmed chain: A → B → C.
+	cpA := makeCheckpointPSBT(t, txidB, 0)
+	cpB := makeCheckpointPSBT(t, txidC, 0)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-a": cpA}}, nil)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-b": cpB}}, nil)
+	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
+		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+
+	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, nil, "")
+	require.NoError(t, err, "marker preload failure must not abort GetVtxoChain")
+	require.Equal(t, 5, len(resp.Chain)) // A(ark+cp) + B(ark+cp) + C(ark)
+
+	// The preload GetVtxoChainByMarkers was attempted (and failed).
+	markerRepo.AssertCalled(t, "GetVtxoChainByMarkers", ctx, matchIDs("marker-A"))
+	// And the fallback did per-hop GetVtxos for B and C (plus the initial A).
+	vtxoRepo.AssertNumberOfCalls(t, "GetVtxos", 3)
 }
 
 // TestGetVtxoChain_Fanout verifies that a VTXO with 2 checkpoints pointing

@@ -304,13 +304,17 @@ WHERE v.swept = false
     OR (',' || COALESCE(v.commitments, '') || ',') LIKE '%,' || @commitment_txid || ',%');
 
 -- name: SelectVtxosOutpointsByArkTxidRecursive :many
+-- Returns the seed outpoint (txid, vout) and all VTXOs descending from it
+-- via ark_txid links. Scoped to a single outpoint (not the whole txid) so that
+-- sibling outputs of the seed tx, which belong to independent lineages, are
+-- not included.
 WITH RECURSIVE descendants_chain AS (
-    -- seed
+    -- seed: only the specific outpoint, not all vouts of the txid
     SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
            0 AS depth,
            v.txid||':'||v.vout AS visited
     FROM vtxo v
-    WHERE v.txid = @txid
+    WHERE v.txid = @txid AND v.vout = @vout
 
     UNION ALL
 
@@ -475,7 +479,10 @@ SELECT EXISTS(SELECT 1 FROM swept_marker WHERE marker_id = @marker_id) AS is_swe
 
 -- name: GetDescendantMarkerIds :many
 -- Recursively get a marker and all its descendants (markers whose parent_markers contain it)
--- Uses json_each instead of LIKE to avoid false positives with special characters (%, _)
+-- Uses json_each instead of LIKE to avoid false positives with special characters (%, _).
+-- Uses UNION (set semantics, not UNION ALL) so rows already produced are filtered,
+-- which makes this cycle-safe. Do not convert to UNION ALL: cycles in parent_markers
+-- would cause the recursion to run unbounded.
 WITH RECURSIVE descendant_markers(id) AS (
     -- Base case: the marker being swept
     SELECT marker.id FROM marker WHERE marker.id = @root_marker_id

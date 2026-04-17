@@ -8,6 +8,7 @@ import (
 	"math"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -370,8 +371,13 @@ func (s *service) registerEventHandlers() {
 			}
 
 			if len(spentVtxos) != len(spentVtxoKeys) {
-				log.Warnf(
-					"incomplete parent read: got %d of %d spent vtxos for tx %s",
+				// Partial parent read: this means the offchain tx's finalization
+				// event references spent vtxos that we can no longer resolve from
+				// the DB. Drop propagation rather than emit a half-populated event;
+				// log at Error level so this inconsistency is surfaced for investigation.
+				log.Errorf(
+					"incomplete parent read: got %d of %d spent vtxos for tx %s; "+
+						"dropping TransactionEvent propagation",
 					len(spentVtxos), len(spentVtxoKeys), txid,
 				)
 				return
@@ -1118,6 +1124,7 @@ func (s *service) SubmitOffchainTx(
 	for id := range parentMarkerSet {
 		parentMarkerIDs = append(parentMarkerIDs, id)
 	}
+	sort.Strings(parentMarkerIDs)
 
 	change, err := offchainTx.Accept(
 		fullySignedArkTx, signedCheckpointTxsMap,

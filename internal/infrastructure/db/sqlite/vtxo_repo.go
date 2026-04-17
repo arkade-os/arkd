@@ -12,6 +12,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
+	log "github.com/sirupsen/logrus"
 )
 
 type vtxoRepository struct {
@@ -425,9 +426,15 @@ func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 }
 
 func (v *vtxoRepository) GetAllChildrenVtxos(
-	ctx context.Context, txid string,
+	ctx context.Context, outpoint domain.Outpoint,
 ) ([]domain.Outpoint, error) {
-	res, err := v.querier.SelectVtxosOutpointsByArkTxidRecursive(ctx, txid)
+	res, err := v.querier.SelectVtxosOutpointsByArkTxidRecursive(
+		ctx,
+		queries.SelectVtxosOutpointsByArkTxidRecursiveParams{
+			Txid: outpoint.Txid,
+			Vout: int64(outpoint.VOut),
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -585,13 +592,16 @@ func toBool(v interface{}) bool {
 	}
 }
 
-// parseMarkersJSONFromVtxo parses a JSON array string into a slice of strings for vtxo repo
+// parseMarkersJSONFromVtxo parses a JSON array string into a slice of strings for vtxo repo.
+// Logs and returns nil if the JSON is malformed so that corrupt markers are
+// surfaced instead of silently treated as empty.
 func parseMarkersJSONFromVtxo(markersJSON string) []string {
 	if markersJSON == "" {
 		return nil
 	}
 	var markerIDs []string
 	if err := json.Unmarshal([]byte(markersJSON), &markerIDs); err != nil {
+		log.WithError(err).Warnf("failed to parse markers JSON: %q", markersJSON)
 		return nil
 	}
 	return markerIDs

@@ -729,7 +729,7 @@ func (a *adminService) saveBatchSweptEvents(
 		} else {
 			seen := make(map[string]struct{})
 			for _, leafVtxo := range leafVtxos {
-				children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
+				children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo)
 				if err != nil {
 					log.WithError(err).Error("error while getting children vtxos")
 					continue

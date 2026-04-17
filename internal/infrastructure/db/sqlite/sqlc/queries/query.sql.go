@@ -90,6 +90,7 @@ SELECT COUNT(DISTINCT txid || ':' || CAST(vout AS TEXT)) FROM vtxo_vw WHERE mark
 
 // Count VTXOs whose markers JSON array contains the given marker_id and are not swept.
 // Uses LIKE because sqlc cannot parse json_each with view columns.
+// Uses DISTINCT to avoid double-counting VTXOs with multiple asset projections.
 func (q *Queries) CountUnsweptVtxosByMarkerId(ctx context.Context, markerID sql.NullString) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countUnsweptVtxosByMarkerId, markerID)
 	var count int64
@@ -113,7 +114,10 @@ WHERE descendant_markers.id NOT IN (SELECT sm.marker_id FROM swept_marker sm)
 `
 
 // Recursively get a marker and all its descendants (markers whose parent_markers contain it)
-// Uses json_each instead of LIKE to avoid false positives with special characters (%, _)
+// Uses json_each instead of LIKE to avoid false positives with special characters (%, _).
+// Uses UNION (set semantics, not UNION ALL) so rows already produced are filtered,
+// which makes this cycle-safe. Do not convert to UNION ALL: cycles in parent_markers
+// would cause the recursion to run unbounded.
 func (q *Queries) GetDescendantMarkerIds(ctx context.Context, rootMarkerID string) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, getDescendantMarkerIds, rootMarkerID)
 	if err != nil {
@@ -2300,12 +2304,12 @@ func (q *Queries) SelectVtxosByMarkerId(ctx context.Context, markerID sql.NullSt
 
 const selectVtxosOutpointsByArkTxidRecursive = `-- name: SelectVtxosOutpointsByArkTxidRecursive :many
 WITH RECURSIVE descendants_chain AS (
-    -- seed
+    -- seed: only the specific outpoint, not all vouts of the txid
     SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
            0 AS depth,
            v.txid||':'||v.vout AS visited
     FROM vtxo v
-    WHERE v.txid = ?1
+    WHERE v.txid = ?1 AND v.vout = ?2
 
     UNION ALL
 
@@ -2329,14 +2333,23 @@ FROM nodes
 ORDER BY depth, txid, vout
 `
 
+type SelectVtxosOutpointsByArkTxidRecursiveParams struct {
+	Txid string
+	Vout int64
+}
+
 type SelectVtxosOutpointsByArkTxidRecursiveRow struct {
 	Txid string
 	Vout int64
 }
 
+// Returns the seed outpoint (txid, vout) and all VTXOs descending from it
+// via ark_txid links. Scoped to a single outpoint (not the whole txid) so that
+// sibling outputs of the seed tx, which belong to independent lineages, are
+// not included.
 // keep one row per node at its MIN depth (layers)
-func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, txid string) ([]SelectVtxosOutpointsByArkTxidRecursiveRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxosOutpointsByArkTxidRecursive, txid)
+func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, arg SelectVtxosOutpointsByArkTxidRecursiveParams) ([]SelectVtxosOutpointsByArkTxidRecursiveRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxosOutpointsByArkTxidRecursive, arg.Txid, arg.Vout)
 	if err != nil {
 		return nil, err
 	}

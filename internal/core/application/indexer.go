@@ -609,13 +609,19 @@ func (i *indexerService) walkVtxoChain(
 	loadedMarkers := make(map[string]bool)
 
 	// Eagerly preload VTXOs and offchain txs by walking the marker DAG upward.
+	// Failures in the marker-driven preload are treated as optimization misses:
+	// the per-hop walk loop below falls back to Vtxos().GetVtxos + ensureVtxosCached,
+	// so we log marker-repo errors here and continue instead of aborting.
 	if i.repoManager.Markers() != nil {
 		startVtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, nextVtxos)
 		if err != nil {
 			return nil, nil, "", err
 		}
 		if err := i.preloadByMarkers(ctx, startVtxos, vtxoCache, offchainTxCache); err != nil {
-			return nil, nil, "", err
+			log.WithError(err).Warnf(
+				"marker-driven preload failed for frontier of %d outpoints; "+
+					"falling back to per-hop walk", len(nextVtxos),
+			)
 		}
 	}
 
