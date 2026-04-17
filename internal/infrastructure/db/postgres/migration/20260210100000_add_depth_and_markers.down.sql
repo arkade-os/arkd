@@ -2,6 +2,18 @@
 DROP VIEW IF EXISTS intent_with_inputs_vw;
 DROP VIEW IF EXISTS vtxo_vw;
 
+-- Restore the swept column that the up migration dropped. Backfill from
+-- swept_marker (joined via the markers JSON array) before dropping the marker
+-- tables, otherwise the rollback silently loses sweep state — VTXOs that
+-- were swept via swept_marker would reappear as unswept.
+ALTER TABLE vtxo ADD COLUMN swept BOOLEAN NOT NULL DEFAULT false;
+UPDATE vtxo v
+SET swept = true
+WHERE EXISTS (
+    SELECT 1 FROM swept_marker sm
+    WHERE v.markers @> jsonb_build_array(sm.marker_id)
+);
+
 -- Drop markers index and column from vtxo
 DROP INDEX IF EXISTS idx_vtxo_markers;
 ALTER TABLE vtxo DROP COLUMN IF EXISTS markers;
