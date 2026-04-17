@@ -256,6 +256,9 @@ func (m *markerRepository) UpdateVtxoMarkers(
 	outpoint domain.Outpoint,
 	markerIDs []string,
 ) error {
+	if markerIDs == nil {
+		markerIDs = []string{}
+	}
 	markersJSON, err := json.Marshal(markerIDs)
 	if err != nil {
 		return fmt.Errorf("failed to marshal markers: %w", err)

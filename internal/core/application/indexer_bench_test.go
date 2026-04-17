@@ -617,9 +617,9 @@ func BenchmarkOffchainTxBulkVsSingle(b *testing.B) {
 			vtxoRepo: vtxoRepo, offchainRepo: repo,
 		}}
 		b.ReportAllocs()
+		repo.reset()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			repo.reset()
 			_, err := svc.GetVtxoChain(ctx, "", start, nil, "")
 			if err != nil {
 				b.Fatal(err)
@@ -636,9 +636,9 @@ func BenchmarkOffchainTxBulkVsSingle(b *testing.B) {
 			vtxoRepo: vtxoRepo, offchainRepo: repo,
 		}}
 		b.ReportAllocs()
+		repo.reset()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			repo.reset()
 			_, err := svc.GetVtxoChain(ctx, "", start, nil, "")
 			if err != nil {
 				b.Fatal(err)

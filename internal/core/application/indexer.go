@@ -724,6 +724,7 @@ func (i *indexerService) walkVtxoChain(
 						Spends:    []string{ptx.UnsignedTx.TxIn[0].PreviousOutPoint.String()},
 					})
 
+					allOutpoints = append(allOutpoints, Outpoint{Txid: txid, VOut: 0})
 					chainTx.Spends = append(chainTx.Spends, txid)
 
 					// populate newNextVtxos with checkpoints inputs

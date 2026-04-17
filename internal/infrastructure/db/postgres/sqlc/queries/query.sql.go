@@ -121,7 +121,7 @@ func (q *Queries) ClearScheduledSession(ctx context.Context) error {
 }
 
 const countUnsweptVtxosByMarkerId = `-- name: CountUnsweptVtxosByMarkerId :one
-SELECT COUNT(*) FROM vtxo_vw WHERE markers @> jsonb_build_array($1::TEXT) AND swept = false
+SELECT COUNT(DISTINCT (txid, vout)) FROM vtxo_vw WHERE markers @> jsonb_build_array($1::TEXT) AND swept = false
 `
 
 // Count VTXOs whose markers JSONB array contains the given marker_id and are not swept
@@ -136,7 +136,7 @@ const getDescendantMarkerIds = `-- name: GetDescendantMarkerIds :many
 WITH RECURSIVE descendant_markers(id) AS (
     -- Base case: the marker being swept
     SELECT marker.id FROM marker WHERE marker.id = $1
-    UNION ALL
+    UNION
     -- Recursive case: find markers whose parent_markers jsonb array contains any descendant
     SELECT m.id FROM marker m
     INNER JOIN descendant_markers dm ON (
