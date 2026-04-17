@@ -637,13 +637,32 @@ func (r *VtxoRepository) GetSweepableVtxosByCommitmentTxid(
 
 func (r *VtxoRepository) GetAllChildrenVtxos(
 	ctx context.Context,
-	txid string,
+	outpoint domain.Outpoint,
 ) ([]domain.Outpoint, error) {
+	// Seed with the specific outpoint, not all vouts of the txid, so that
+	// sibling outputs (which belong to independent lineages) are not included.
+	seedQuery := badgerhold.Where("Txid").Eq(outpoint.Txid).
+		And("VOut").Eq(outpoint.VOut)
+	seedVtxos, err := r.findVtxos(ctx, seedQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find seed vtxo %s: %w", outpoint, err)
+	}
+
 	visited := make(map[string]bool)
 	visitedTxids := make(map[string]bool)
 	var outpoints []domain.Outpoint
+	queue := make([]string, 0, len(seedVtxos))
 
-	queue := []string{txid}
+	for _, vtxo := range seedVtxos {
+		outpointKey := vtxo.Outpoint.String()
+		if !visited[outpointKey] {
+			visited[outpointKey] = true
+			outpoints = append(outpoints, vtxo.Outpoint)
+			if vtxo.ArkTxid != "" {
+				queue = append(queue, vtxo.ArkTxid)
+			}
+		}
+	}
 
 	for len(queue) > 0 {
 		currentTxid := queue[0]

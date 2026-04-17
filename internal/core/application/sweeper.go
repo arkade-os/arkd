@@ -696,7 +696,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 				// get all vtxos related to the leaf swept
 				seen := make(map[string]struct{})
 				for _, leafVtxo := range leafVtxoKeys {
-					children, childErr := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
+					children, childErr := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo)
 					if childErr != nil {
 						log.WithError(childErr).Error("error while getting children vtxos")
 						continue
@@ -764,7 +764,7 @@ func (s *sweeper) createCheckpointSweepTask(
 		// because markers can be shared across independent subtrees when
 		// offchain txs consolidate inputs from different lineages. Sweeping
 		// by marker would over-reach and incorrectly mark unrelated VTXOs.
-		childrenVtxos, err := s.repoManager.Vtxos().GetAllChildrenVtxos(ctx, vtxo.Txid)
+		childrenVtxos, err := s.repoManager.Vtxos().GetAllChildrenVtxos(ctx, vtxo)
 		if err != nil {
 			return err
 		}

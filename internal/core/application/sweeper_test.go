@@ -163,9 +163,9 @@ type mockVtxoRepository struct {
 
 func (m *mockVtxoRepository) GetAllChildrenVtxos(
 	ctx context.Context,
-	txid string,
+	outpoint domain.Outpoint,
 ) ([]domain.Outpoint, error) {
-	args := m.Called(ctx, txid)
+	args := m.Called(ctx, outpoint)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -525,7 +525,7 @@ func TestCreateCheckpointSweepTask_SweepsVtxoOutpoints(t *testing.T) {
 	wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
 		Return("sweeptxid123", nil)
 
-	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint.Txid).
+	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
 		Return(childOutpoints, nil)
 
 	// SweepVtxoOutpoints should be called with the exact child outpoints
@@ -562,7 +562,7 @@ func TestCreateCheckpointSweepTask_SweptAtTimestamp(t *testing.T) {
 	wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
 		Return("sweeptxid_ts", nil)
 
-	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint.Txid).
+	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
 		Return(childOutpoints, nil)
 
 	beforeExec := time.Now().UnixMilli()
@@ -599,7 +599,7 @@ func TestCreateCheckpointSweepTask_SweepVtxoOutpointsError(t *testing.T) {
 	wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
 		Return("sweeptxid_err", nil)
 
-	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint.Txid).
+	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
 		Return(childOutpoints, nil)
 
 	dbError := fmt.Errorf("database connection failed")
@@ -629,7 +629,7 @@ func TestCreateCheckpointSweepTask_GetAllChildrenVtxosError(t *testing.T) {
 	wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
 		Return("sweeptxid_children_err", nil)
 
-	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint.Txid).
+	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
 		Return(nil, fmt.Errorf("failed to query children vtxos"))
 
 	task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
@@ -706,7 +706,7 @@ func TestCreateCheckpointSweepTask_NoChildrenVtxos(t *testing.T) {
 	wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
 		Return("sweeptxid_nc", nil)
 
-	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint.Txid).
+	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
 		Return([]domain.Outpoint{}, nil)
 
 	task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)

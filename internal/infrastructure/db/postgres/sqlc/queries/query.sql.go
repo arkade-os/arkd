@@ -147,7 +147,10 @@ SELECT descendant_markers.id AS marker_id FROM descendant_markers
 WHERE descendant_markers.id NOT IN (SELECT sm.marker_id FROM swept_marker sm)
 `
 
-// Recursively get a marker and all its descendants (markers whose parent_markers contain it)
+// Recursively get a marker and all its descendants (markers whose parent_markers contain it).
+// Uses UNION (set semantics, not UNION ALL) so rows already produced are filtered,
+// which makes this cycle-safe. Do not convert to UNION ALL: cycles in parent_markers
+// would cause the recursion to run unbounded.
 func (q *Queries) GetDescendantMarkerIds(ctx context.Context, rootMarkerID string) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, getDescendantMarkerIds, rootMarkerID)
 	if err != nil {
@@ -2185,12 +2188,12 @@ func (q *Queries) SelectVtxosByMarkerId(ctx context.Context, markerID string) ([
 
 const selectVtxosOutpointsByArkTxidRecursive = `-- name: SelectVtxosOutpointsByArkTxidRecursive :many
 WITH RECURSIVE descendants_chain AS (
-    -- seed
+    -- seed: only the specific outpoint, not all vouts of the txid
     SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
            0 AS depth,
            ARRAY[(v.txid||':'||v.vout)]::text[] AS visited
     FROM vtxo v
-    WHERE v.txid = $1
+    WHERE v.txid = $1 AND v.vout = $2
 
     UNION ALL
 
@@ -2215,14 +2218,23 @@ FROM nodes
 ORDER BY depth, txid, vout
 `
 
+type SelectVtxosOutpointsByArkTxidRecursiveParams struct {
+	Txid string
+	Vout int32
+}
+
 type SelectVtxosOutpointsByArkTxidRecursiveRow struct {
 	Txid string
 	Vout int32
 }
 
+// Returns the seed outpoint (txid, vout) and all VTXOs descending from it
+// via ark_txid links. Scoped to a single outpoint (not the whole txid) so that
+// sibling outputs of the seed tx, which belong to independent lineages, are
+// not included.
 // keep one row per node at its MIN depth (layers)
-func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, txid string) ([]SelectVtxosOutpointsByArkTxidRecursiveRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxosOutpointsByArkTxidRecursive, txid)
+func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, arg SelectVtxosOutpointsByArkTxidRecursiveParams) ([]SelectVtxosOutpointsByArkTxidRecursiveRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxosOutpointsByArkTxidRecursive, arg.Txid, arg.Vout)
 	if err != nil {
 		return nil, err
 	}
@@ -2724,7 +2736,7 @@ INSERT INTO vtxo (
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, $12, $13, (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT, $14, $15
+    $8, $9, $10, $11, $12, $13, (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT, $14, $15::jsonb
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,

@@ -211,6 +211,7 @@ func TestService(t *testing.T) {
 			testSweepableUnrolledExcludesMarkerSwept(t, svc)
 			testSweepVtxoOutpointsNoOverreach(t, svc)
 			testSweepVtxoOutpointsEdgeCases(t, svc)
+			testGetAllChildrenVtxosSiblingIsolation(t, svc)
 			testConvergentMultiParentMarkerDAG(t, svc)
 			testSweepMarkerWithDescendantsDeepChain(t, svc)
 			testScheduledSessionRepository(t, svc)
@@ -933,7 +934,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.Empty(t, children)
 
 		// Test recursive query starting from vtxo1
-		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo1.Txid)
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo1.Outpoint)
 		require.NoError(t, err)
 		require.Len(t, children, 4) // Should return all 4 vtxos in the chain
 
@@ -944,17 +945,19 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.Equal(t, expectedOutpoints, children)
 
 		// Test starting from middle of chain (vtxo2)
-		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo2.Txid)
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo2.Outpoint)
 		require.NoError(t, err)
 		require.Len(t, children, 3) // Should return vtxo2, vtxo3, vtxo4
 
 		// Test starting from end of chain (vtxo4)
-		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo4.Txid)
+		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo4.Outpoint)
 		require.NoError(t, err)
 		require.Len(t, children, 1) // Should return only vtxo4
 
-		// Test with non-existent txid
-		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, randomString(32))
+		// Test with non-existent outpoint
+		children, err = svc.Vtxos().GetAllChildrenVtxos(
+			ctx, domain.Outpoint{Txid: randomString(32), VOut: 0},
+		)
 		require.NoError(t, err)
 		require.Empty(t, children)
 
@@ -5044,6 +5047,100 @@ func testSweepVtxoOutpointsEdgeCases(t *testing.T, svc ports.RepoManager) {
 			}
 		}
 		require.True(t, foundInSpent2, "vtxo should remain swept after double sweep via both paths")
+	})
+}
+
+// testGetAllChildrenVtxosSiblingIsolation verifies that GetAllChildrenVtxos,
+// when called with a specific (txid, vout) outpoint, returns only that
+// outpoint's descendant lineage and does not include sibling outpoints of the
+// same txid or their descendants.
+//
+// Scenario: a parent tx A produces two outputs (A, 0) and (A, 1). Each is
+// spent by a different offchain tx (ark_txid X vs Y), each of which has its
+// own descendant. Sweeping the checkpoint for (A, 0) must not sweep (A, 1)'s
+// lineage, since those funds belong to an independent subtree.
+func testGetAllChildrenVtxosSiblingIsolation(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_get_all_children_vtxos_sibling_isolation", func(t *testing.T) {
+		ctx := context.Background()
+		suffix := randomString(16)
+
+		commitmentTxid := randomString(32)
+		parentTxid := "sibling-parent-" + suffix
+		arkTxidForVout0 := "sibling-arktx-0-" + suffix
+		arkTxidForVout1 := "sibling-arktx-1-" + suffix
+
+		// Parent outputs: (parent, 0) spent by arkTxidForVout0,
+		// (parent, 1) spent by arkTxidForVout1. Same txid, different lineages.
+		parentVout0 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: parentTxid, VOut: 0},
+			PubKey:             pubkey,
+			Amount:             1000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			ArkTxid:            arkTxidForVout0,
+		}
+		parentVout1 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: parentTxid, VOut: 1},
+			PubKey:             pubkey2,
+			Amount:             2000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			ArkTxid:            arkTxidForVout1,
+		}
+
+		// Descendant of (parent, 0): belongs to the lineage we're sweeping.
+		descendantOfVout0 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: arkTxidForVout0, VOut: 0},
+			PubKey:             pubkey,
+			Amount:             900,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			ArkTxid:            "",
+		}
+
+		// Descendant of (parent, 1): belongs to an independent lineage —
+		// must NOT be returned when we query (parent, 0).
+		descendantOfVout1 := domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: arkTxidForVout1, VOut: 0},
+			PubKey:             pubkey2,
+			Amount:             1900,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			ArkTxid:            "",
+		}
+
+		require.NoError(t, svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{
+			parentVout0, parentVout1, descendantOfVout0, descendantOfVout1,
+		}))
+
+		// Querying (parent, 0) should return (parent, 0) and its descendant
+		// only — NOT (parent, 1) or its descendant.
+		got, err := svc.Vtxos().GetAllChildrenVtxos(ctx, parentVout0.Outpoint)
+		require.NoError(t, err)
+		gotSet := make(map[domain.Outpoint]bool, len(got))
+		for _, op := range got {
+			gotSet[op] = true
+		}
+		require.True(t, gotSet[parentVout0.Outpoint],
+			"seed outpoint (parent, 0) should be in result")
+		require.True(t, gotSet[descendantOfVout0.Outpoint],
+			"descendant of (parent, 0) should be in result")
+		require.False(t, gotSet[parentVout1.Outpoint],
+			"sibling (parent, 1) MUST NOT be in result — independent lineage")
+		require.False(t, gotSet[descendantOfVout1.Outpoint],
+			"descendant of sibling (parent, 1) MUST NOT be in result")
+
+		// Symmetric check: querying (parent, 1) only returns its own lineage.
+		got, err = svc.Vtxos().GetAllChildrenVtxos(ctx, parentVout1.Outpoint)
+		require.NoError(t, err)
+		gotSet = make(map[domain.Outpoint]bool, len(got))
+		for _, op := range got {
+			gotSet[op] = true
+		}
+		require.True(t, gotSet[parentVout1.Outpoint])
+		require.True(t, gotSet[descendantOfVout1.Outpoint])
+		require.False(t, gotSet[parentVout0.Outpoint])
+		require.False(t, gotSet[descendantOfVout0.Outpoint])
 	})
 }
 
