@@ -140,6 +140,14 @@ func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, 
 			return nil, fmt.Errorf("failed to get intent %s: %v", id, err)
 		}
 
+		if intent == nil {
+			// remove id with nil value from the cache
+			if err := s.rdb.SRem(ctx, intentStoreIdsKey, id).Err(); err != nil {
+				log.Warnf("failed to remove intent with nil body (id=%s): %v", id, err)
+			}
+			continue
+		}
+
 		if len(intent.Receivers) > 0 {
 			intentsByTime = append(intentsByTime, *intent)
 		}
