@@ -20,7 +20,7 @@ func TestPopNilIntent(t *testing.T) {
 
 	// delete all to not make the other tests won't fail
 	err = store.DeleteAll(ctx)
-	require.NoError(t, store.DeleteAll(ctx))
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = store.DeleteAll(ctx) })
 
 	// push an intent with "nil" body
