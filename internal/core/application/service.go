@@ -16,6 +16,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
@@ -1893,9 +1894,9 @@ func (s *service) RegisterIntent(
 		return "", err
 	}
 
-	leafTxPacket := ""
-	intentAssetPacket := ext.GetAssetPacket()
-	if len(intentAssetPacket) > 0 {
+	leafTxExtension := ""
+	if len(ext) > 0 {
+		intentAssetPacket := ext.GetAssetPacket()
 		// disable issuance in settlement
 		if hasIssuance(intentAssetPacket) {
 			return "", errors.INVALID_INTENT_PROOF.New("intent contains asset issuance").
@@ -1905,11 +1906,31 @@ func (s *service) RegisterIntent(
 				})
 		}
 
-		leafTxPacket = intentAssetPacket.LeafTxPacket(proof.UnsignedTx.TxHash()).String()
+		// rebuild the batch leaf extension from the intent extension packets
+		// copy all intent packets to batch leaf except the asset packet : transform it as input type "intent"
+		leafExtension := make(extension.Extension, 0, len(ext))
+		for _, pkt := range ext {
+			if ap, ok := pkt.(asset.Packet); ok {
+				leafAssetPacket := ap.LeafTxPacket(proof.UnsignedTx.TxHash())
+				leafExtension = append(leafExtension, leafAssetPacket)
+				continue
+			}
+			leafExtension = append(leafExtension, pkt)
+		}
+
+		leafExtScript, err := leafExtension.Serialize()
+		if err != nil {
+			return "", errors.INTERNAL_ERROR.New("failed to serialize leaf extension: %w", err).
+				WithMetadata(map[string]any{
+					"proof":   encodedProof,
+					"message": encodedMessage,
+				})
+		}
+		leafTxExtension = hex.EncodeToString(leafExtScript)
 	}
 
 	intent, err := domain.NewIntent(
-		proofTxid, encodedProof, encodedMessage, vtxoInputs, leafTxPacket,
+		proofTxid, encodedProof, encodedMessage, vtxoInputs, leafTxExtension,
 	)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to create intent: %w", err).
