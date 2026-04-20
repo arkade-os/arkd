@@ -79,6 +79,16 @@ func (h *OTelHook) Fire(e *logrus.Entry) error {
 	logger := global.GetLoggerProvider().Logger("arkd.wallet")
 	logger.Emit(ctx, rec)
 
+	if e.Level <= logrus.ErrorLevel {
+		type flusher interface {
+			ForceFlush(context.Context) error
+		}
+		if f, ok := global.GetLoggerProvider().(flusher); ok {
+			//nolint:all
+			f.ForceFlush(ctx)
+		}
+	}
+
 	return nil
 }
 
