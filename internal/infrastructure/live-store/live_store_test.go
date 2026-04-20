@@ -139,6 +139,15 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		)
 		require.NoError(t, err)
 
+		// try to push an intent with the same boarding input but different Id
+		intent2DuplicateBoarding := intent2.Intent
+		intent2DuplicateBoarding.Id = uuid.New().String()
+		err = store.Intents().Push(
+			ctx, intent2DuplicateBoarding, intent2.BoardingInputs, intent2.CosignersPublicKeys,
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "duplicated input")
+
 		// ViewAll
 		all, err := store.Intents().ViewAll(
 			ctx, []string{intent1.Intent.Id, intent2.Intent.Id, "nonexistent"},
