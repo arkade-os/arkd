@@ -442,6 +442,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		roundsMatch(t, *round, *roundById)
 
 		commitmentTxid := randomString(32)
+		largeProof := randomString(3000)
 		newEvents := []domain.Event{
 			domain.IntentsRegistered{
 				RoundEvent: domain.RoundEvent{
@@ -451,7 +452,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 				Intents: []domain.Intent{
 					{
 						Id:      uuid.New().String(),
-						Proof:   "proof",
+						Proof:   largeProof,
 						Txid:    txida,
 						Message: "message",
 						Inputs: []domain.Vtxo{
@@ -528,7 +529,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		// get intents by txid
 		intent, err := svc.Rounds().GetIntentByTxid(ctx, txida)
 		require.NoError(t, err)
-		require.Equal(t, "proof", intent.Proof)
+		require.Equal(t, largeProof, intent.Proof)
 		require.Equal(t, "message", intent.Message)
 		require.NotEqual(t, "", intent.Id)
 		require.NotEqual(t, "", intent.Txid)
