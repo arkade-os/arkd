@@ -158,6 +158,11 @@ func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, 
 			return nil, fmt.Errorf("failed to get intent %s: %v", id, err)
 		}
 
+		if intent == nil {
+			log.Warnf("got nil intent for id %s", id)
+			continue
+		}
+
 		if len(intent.Receivers) > 0 {
 			intentsByTime = append(intentsByTime, *intent)
 		}
