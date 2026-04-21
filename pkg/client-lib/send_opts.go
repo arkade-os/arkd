@@ -29,9 +29,23 @@ func WithVtxos(vtxos []types.VtxoWithTapTree) SendOption {
 	}
 }
 
+func WithKeys(keys map[string]string) SendOption {
+	return func(o *sendOptions) error {
+		if len(o.signingKeys) > 0 {
+			return fmt.Errorf("key ids by script already set")
+		}
+		if len(keys) <= 0 {
+			return fmt.Errorf("missing key ids by script")
+		}
+		o.signingKeys = keys
+		return nil
+	}
+}
+
 type sendOptions struct {
 	withoutExpirySorting bool
 	vtxos                []types.VtxoWithTapTree
+	signingKeys          map[string]string
 }
 
 func newDefaultSendOptions() *sendOptions {

@@ -104,6 +104,19 @@ func WithFunds(boardingUtxos []types.Utxo, vtxos []types.VtxoWithTapTree) BatchS
 	}
 }
 
+func WithKeysForBatchSession(keys map[string]string) BatchSessionOption {
+	return func(o *batchSessionOptions) error {
+		if len(o.keyIdsByScript) > 0 {
+			return fmt.Errorf("key ids by script already set")
+		}
+		if len(keys) <= 0 {
+			return fmt.Errorf("missing key ids by script")
+		}
+		o.keyIdsByScript = keys
+		return nil
+	}
+}
+
 // batchSessionOptions allows to customize the vtxo signing process
 type batchSessionOptions struct {
 	extraSignerSessions  []tree.SignerSession
@@ -113,6 +126,7 @@ type batchSessionOptions struct {
 	retryNum             int
 	boardingUtxos        []types.Utxo
 	vtxos                []types.VtxoWithTapTree
+	keyIdsByScript       map[string]string
 
 	cancelCh <-chan struct{}
 	eventsCh chan<- any

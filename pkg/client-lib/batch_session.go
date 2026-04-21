@@ -188,10 +188,17 @@ func (a *service) CollaborativeExit(
 
 func (a *service) RegisterIntent(
 	ctx context.Context, vtxos []types.Vtxo, boardingUtxos []types.Utxo, notes []string,
-	outputs []types.Receiver, cosignersPublicKeys []string,
+	outputs []types.Receiver, cosignersPublicKeys []string, opts ...BatchSessionOption,
 ) (string, error) {
 	if err := a.safeCheck(); err != nil {
 		return "", err
+	}
+
+	options := newDefaultSettleOptions()
+	for _, opt := range opts {
+		if err := opt(options); err != nil {
+			return "", err
+		}
 	}
 
 	vtxosWithTapscripts, err := a.populateVtxosWithTapscripts(ctx, vtxos)
@@ -207,7 +214,8 @@ func (a *service) RegisterIntent(
 	}
 
 	proofTx, message, _, err := a.makeRegisterIntent(
-		inputs, assetInputs, tapLeaves, outputs, cosignersPublicKeys, arkFields,
+		inputs, assetInputs, tapLeaves, outputs,
+		cosignersPublicKeys, arkFields, options.keyIdsByScript,
 	)
 	if err != nil {
 		return "", err
@@ -218,9 +226,17 @@ func (a *service) RegisterIntent(
 
 func (a *service) DeleteIntent(
 	ctx context.Context, vtxos []types.Vtxo, boardingUtxos []types.Utxo, notes []string,
+	opts ...BatchSessionOption,
 ) error {
 	if err := a.safeCheck(); err != nil {
 		return err
+	}
+
+	options := newDefaultSettleOptions()
+	for _, opt := range opts {
+		if err := opt(options); err != nil {
+			return err
+		}
 	}
 
 	vtxosWithTapscripts, err := a.populateVtxosWithTapscripts(ctx, vtxos)
@@ -235,7 +251,7 @@ func (a *service) DeleteIntent(
 		return err
 	}
 
-	proofTx, message, err := a.makeDeleteIntent(inputs, exitLeaves, arkFields)
+	proofTx, message, err := a.makeDeleteIntent(inputs, exitLeaves, arkFields, options.keyIdsByScript)
 	if err != nil {
 		return err
 	}
@@ -437,7 +453,9 @@ func (a *service) joinBatchWithRetry(
 	}
 
 	deleteIntent := func() {
-		proof, message, err := a.makeDeleteIntent(inputs, exitLeaves, arkFields)
+		proof, message, err := a.makeDeleteIntent(
+			inputs, exitLeaves, arkFields, options.keyIdsByScript,
+		)
 		if err != nil {
 			log.WithError(err).Warn("failed to create delete intent proof")
 			return
@@ -458,7 +476,8 @@ func (a *service) joinBatchWithRetry(
 	var batchErr error
 	for retryCount < maxRetry {
 		proofTx, message, ext, err := a.makeRegisterIntent(
-			inputs, assetInputs, exitLeaves, outputs, signerPubKeys, arkFields,
+			inputs, assetInputs, exitLeaves, outputs,
+			signerPubKeys, arkFields, options.keyIdsByScript,
 		)
 		if err != nil {
 			return nil, err
@@ -473,7 +492,7 @@ func (a *service) joinBatchWithRetry(
 
 		commitmentTxid, commitmentTx, batchExpiry, forfeitTxs, vtxoTree, err := a.handleBatchEvents(
 			ctx, intentID, selectedCoins, notes, selectedBoardingCoins, outputs, signerSessions,
-			options.eventsCh, options.cancelCh,
+			options.eventsCh, options.cancelCh, options.keyIdsByScript,
 		)
 		if err != nil {
 			if retryCount < maxRetry-1 {
@@ -604,7 +623,7 @@ func (a *service) handleBatchEvents(
 	ctx context.Context,
 	intentId string, vtxos []types.VtxoWithTapTree, notes []string, boardingUtxos []types.Utxo,
 	receivers []types.Receiver, signerSessions []tree.SignerSession,
-	replayEventsCh chan<- any, cancelCh <-chan struct{},
+	replayEventsCh chan<- any, cancelCh <-chan struct{}, keysByScript map[string]string,
 ) (string, string, time.Duration, []string, *tree.TxTree, error) {
 	topics := make([]string, 0)
 	for _, n := range notes {
@@ -659,7 +678,7 @@ func (a *service) handleBatchEvents(
 	defer close()
 
 	batchEventsHandler := newBatchEventsHandler(
-		a, intentId, vtxos, boardingUtxos, receivers, signerSessions,
+		a, intentId, vtxos, boardingUtxos, receivers, signerSessions, keysByScript,
 	)
 
 	return JoinBatchSession(ctx, eventsCh, batchEventsHandler, options...)
@@ -668,14 +687,18 @@ func (a *service) handleBatchEvents(
 func (a *service) makeRegisterIntent(
 	inputs []intent.Input, assetInputs map[int][]types.Asset,
 	leafProofs []*arklib.TaprootMerkleProof, outputs []types.Receiver,
-	cosignersPublicKeys []string, arkFields [][]*psbt.Unknown,
+	cosignersPublicKeys []string, arkFields [][]*psbt.Unknown, keysByScripts map[string]string,
 ) (string, string, extension.Extension, error) {
-	message, outputsTxOut, ext, err := registerIntentMessage(assetInputs, outputs, cosignersPublicKeys)
+	message, outputsTxOut, ext, err := registerIntentMessage(
+		assetInputs, outputs, cosignersPublicKeys,
+	)
 	if err != nil {
 		return "", "", nil, err
 	}
 
-	proof, message, err := a.makeIntent(message, inputs, outputsTxOut, leafProofs, arkFields)
+	proof, message, err := a.makeIntent(
+		message, inputs, outputsTxOut, leafProofs, arkFields, keysByScripts,
+	)
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -684,7 +707,8 @@ func (a *service) makeRegisterIntent(
 }
 
 func (a *service) makeGetPendingTxIntent(
-	inputs []intent.Input, leafProofs []*arklib.TaprootMerkleProof, arkFields [][]*psbt.Unknown,
+	inputs []intent.Input, leafProofs []*arklib.TaprootMerkleProof,
+	arkFields [][]*psbt.Unknown, keysByScripts map[string]string,
 ) (string, string, error) {
 	message, err := intent.GetPendingTxMessage{
 		BaseMessage: intent.BaseMessage{
@@ -696,11 +720,12 @@ func (a *service) makeGetPendingTxIntent(
 		return "", "", err
 	}
 
-	return a.makeIntent(message, inputs, nil, leafProofs, arkFields)
+	return a.makeIntent(message, inputs, nil, leafProofs, arkFields, keysByScripts)
 }
 
 func (a *service) makeDeleteIntent(
-	inputs []intent.Input, leafProofs []*arklib.TaprootMerkleProof, arkFields [][]*psbt.Unknown,
+	inputs []intent.Input, leafProofs []*arklib.TaprootMerkleProof,
+	arkFields [][]*psbt.Unknown, keysByScripts map[string]string,
 ) (string, string, error) {
 	message, err := intent.DeleteMessage{
 		BaseMessage: intent.BaseMessage{
@@ -712,12 +737,13 @@ func (a *service) makeDeleteIntent(
 		return "", "", err
 	}
 
-	return a.makeIntent(message, inputs, nil, leafProofs, arkFields)
+	return a.makeIntent(message, inputs, nil, leafProofs, arkFields, keysByScripts)
 }
 
 func (a *service) makeIntent(
 	message string, inputs []intent.Input, outputsTxOut []*wire.TxOut,
 	leafProofs []*arklib.TaprootMerkleProof, arkFields [][]*psbt.Unknown,
+	keysByScript map[string]string,
 ) (string, string, error) {
 	proof, err := intent.New(message, inputs, outputsTxOut)
 	if err != nil {
@@ -750,7 +776,9 @@ func (a *service) makeIntent(
 		return "", "", err
 	}
 
-	signedTx, err := a.wallet.SignTransaction(context.Background(), a.explorer, unsignedProofTx)
+	signedTx, err := a.wallet.SignTransaction(
+		context.Background(), a.explorer, unsignedProofTx, keysByScript,
+	)
 	if err != nil {
 		return "", "", err
 	}

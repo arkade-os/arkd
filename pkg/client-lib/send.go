@@ -27,11 +27,18 @@ func (a *service) SendOffChain(
 		return nil, err
 	}
 
+	o := newDefaultSendOptions()
+	for _, opt := range opts {
+		if err := opt(o); err != nil {
+			return nil, err
+		}
+	}
+
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
 	baseArkTx, checkpointTxs, selectedCoins, changeReceiver, err := a.createOffchainTx(
-		ctx, receivers, opts...,
+		ctx, receivers, o,
 	)
 	if err != nil {
 		return nil, err
@@ -58,7 +65,7 @@ func (a *service) SendOffChain(
 		return nil, err
 	}
 
-	signedArkTx, err := a.wallet.SignTransaction(ctx, a.explorer, arkTx)
+	signedArkTx, err := a.wallet.SignTransaction(ctx, a.explorer, arkTx, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -108,17 +115,24 @@ func (a *service) SendOffChain(
 }
 
 func (a *service) FinalizePendingTxs(
-	ctx context.Context, createdAfter *time.Time,
+	ctx context.Context, createdAfter *time.Time, opts ...SendOption,
 ) ([]string, error) {
 	if err := a.safeCheck(); err != nil {
 		return nil, err
 	}
 
-	return a.finalizePendingTxs(ctx, createdAfter)
+	o := newDefaultSendOptions()
+	for _, opt := range opts {
+		if err := opt(o); err != nil {
+			return nil, err
+		}
+	}
+
+	return a.finalizePendingTxs(ctx, createdAfter, o.signingKeys)
 }
 
 func (a *service) createOffchainTx(
-	ctx context.Context, receivers []types.Receiver, opts ...SendOption,
+	ctx context.Context, receivers []types.Receiver, opts *sendOptions,
 ) (string, []string, []types.VtxoWithTapTree, *types.Receiver, error) {
 	if len(receivers) <= 0 {
 		return "", nil, nil, nil, fmt.Errorf("missing receivers")
@@ -155,16 +169,9 @@ func (a *service) createOffchainTx(
 		}
 	}
 
-	options := newDefaultSendOptions()
-	for _, opt := range opts {
-		if err := opt(options); err != nil {
-			return "", nil, nil, nil, err
-		}
-	}
-
 	vtxos := make([]types.VtxoWithTapTree, 0)
 	spendableVtxos, err := a.getSpendableVtxos(ctx, &getVtxosFilter{
-		withoutExpirySorting: options.withoutExpirySorting,
+		withoutExpirySorting: opts.withoutExpirySorting,
 	})
 	if err != nil {
 		return "", nil, nil, nil, err
@@ -225,7 +232,7 @@ func (a *service) createOffchainTx(
 				}
 
 				assetCoins, assetChangeAmount, err := utils.CoinSelectAsset(
-					availableVtxos, amountToSelect, asset.AssetId, options.withoutExpirySorting,
+					availableVtxos, amountToSelect, asset.AssetId, opts.withoutExpirySorting,
 				)
 				if err != nil {
 					return "", nil, nil, nil, err
@@ -281,7 +288,7 @@ func (a *service) createOffchainTx(
 				// use a "fake" receiver to select only the remaining btc amount
 				// it works for offchain tx because feeEstimator is nil (no offchain fee)
 				[]types.Receiver{{Amount: uint64(btcAmountToSelect)}},
-				a.Dust, options.withoutExpirySorting, nil,
+				a.Dust, opts.withoutExpirySorting, nil,
 			)
 			if err != nil {
 				return "", nil, nil, nil, err
@@ -330,7 +337,7 @@ func (a *service) createOffchainTx(
 
 		_, selectedBtcCoins, changeBtcAmount, err := utils.CoinSelect(
 			nil, availableVtxos, []types.Receiver{{Amount: a.Dust}},
-			a.Dust, options.withoutExpirySorting, nil,
+			a.Dust, opts.withoutExpirySorting, nil,
 		)
 		if err != nil {
 			return "", nil, nil, nil, fmt.Errorf(
@@ -399,7 +406,7 @@ func (a *service) createOffchainTx(
 }
 
 func (a *service) finalizePendingTxs(
-	ctx context.Context, createdAfter *time.Time,
+	ctx context.Context, createdAfter *time.Time, keysByScript map[string]string,
 ) ([]string, error) {
 	vtxos, err := a.fetchPendingSpentVtxos(ctx)
 	if err != nil {
@@ -439,7 +446,7 @@ func (a *service) finalizePendingTxs(
 		exitLeavesSubset := exitLeaves[i:end]
 		arkFieldsSubset := arkFields[i:end]
 		proofTx, message, err := a.makeGetPendingTxIntent(
-			inputsSubset, exitLeavesSubset, arkFieldsSubset,
+			inputsSubset, exitLeavesSubset, arkFieldsSubset, keysByScript,
 		)
 		if err != nil {
 			return nil, err
@@ -469,7 +476,7 @@ func (a *service) finalizeTx(
 	finalCheckpoints := make([]string, 0, len(acceptedTx.SignedCheckpointTxs))
 
 	for _, checkpoint := range acceptedTx.SignedCheckpointTxs {
-		signedTx, err := a.wallet.SignTransaction(ctx, a.explorer, checkpoint)
+		signedTx, err := a.wallet.SignTransaction(ctx, a.explorer, checkpoint, nil)
 		if err != nil {
 			return "", nil, err
 		}

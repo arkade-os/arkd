@@ -847,11 +847,7 @@ func TestOffchainTx(t *testing.T) {
 			// sign the ark transaction
 			encodedArkTx, err := ptx.B64Encode()
 			require.NoError(t, err)
-			signedArkTx, err := wallet.SignTransaction(
-				ctx,
-				explorer,
-				encodedArkTx,
-			)
+			signedArkTx, err := wallet.SignTransaction(ctx, explorer, encodedArkTx, nil)
 			require.NoError(t, err)
 
 			txs = append(txs, tx{
@@ -1997,11 +1993,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Sign the transaction
-	signedTx, err := bobWallet.SignTransaction(
-		ctx,
-		explorer,
-		encodedVirtualTx,
-	)
+	signedTx, err := bobWallet.SignTransaction(ctx, explorer, encodedVirtualTx, nil)
 	require.NoError(t, err)
 
 	checkpoints := make([]string, 0, len(checkpointsPtx))
@@ -2025,7 +2017,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 
 	finalCheckpoints := make([]string, 0, len(signedCheckpoints))
 	for _, checkpoint := range signedCheckpoints {
-		finalCheckpoint, err := bobWallet.SignTransaction(ctx, explorer, checkpoint)
+		finalCheckpoint, err := bobWallet.SignTransaction(ctx, explorer, checkpoint, nil)
 		require.NoError(t, err)
 		finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
 	}
@@ -2249,11 +2241,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Sign the transaction
-	signedTx, err := bobWallet.SignTransaction(
-		ctx,
-		explorer,
-		encodedVirtualTx,
-	)
+	signedTx, err := bobWallet.SignTransaction(ctx, explorer, encodedVirtualTx, nil)
 	require.NoError(t, err)
 
 	checkpoints := make([]string, 0, len(checkpointsPtx))
@@ -2283,7 +2271,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		encoded, err := ptx.B64Encode()
 		require.NoError(t, err)
 
-		finalCheckpoint, err := bobWallet.SignTransaction(ctx, explorer, encoded)
+		finalCheckpoint, err := bobWallet.SignTransaction(ctx, explorer, encoded, nil)
 		require.NoError(t, err)
 		finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
 	}
@@ -2814,7 +2802,7 @@ func TestReactToFraud(t *testing.T) {
 			encodedArkTx, err := ptx.B64Encode()
 			require.NoError(t, err)
 
-			signedTx, err := bobWallet.SignTransaction(ctx, explorer, encodedArkTx)
+			signedTx, err := bobWallet.SignTransaction(ctx, explorer, encodedArkTx, nil)
 			require.NoError(t, err)
 
 			checkpoints := make([]string, 0, len(checkpointsPtx))
@@ -2837,7 +2825,7 @@ func TestReactToFraud(t *testing.T) {
 
 			finalCheckpoints := make([]string, 0, len(signedCheckpoints))
 			for _, checkpoint := range signedCheckpoints {
-				finalCheckpoint, err := bobWallet.SignTransaction(ctx, explorer, checkpoint)
+				finalCheckpoint, err := bobWallet.SignTransaction(ctx, explorer, checkpoint, nil)
 				require.NoError(t, err)
 				finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
 			}

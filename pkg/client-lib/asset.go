@@ -20,6 +20,13 @@ func (a *service) IssueAsset(
 		return nil, err
 	}
 
+	o := newDefaultSendOptions()
+	for _, opt := range opts {
+		if err := opt(o); err != nil {
+			return nil, err
+		}
+	}
+
 	_, changeAddr, _, err := a.newAddress(ctx)
 	if err != nil {
 		return nil, err
@@ -50,7 +57,7 @@ func (a *service) IssueAsset(
 	// create an ark tx sending small amount of btc to wallet's address
 	// we'll attach new asset outputs to this vout
 	baseArkTx, checkpointTxs, selectedCoins, changeReceiver, err := a.createOffchainTx(
-		ctx, []types.Receiver{receiver}, opts...,
+		ctx, []types.Receiver{receiver}, o,
 	)
 	if err != nil {
 		return nil, err
@@ -137,7 +144,7 @@ func (a *service) IssueAsset(
 		return nil, err
 	}
 
-	signedArkTx, err := a.wallet.SignTransaction(ctx, a.explorer, arkTx)
+	signedArkTx, err := a.wallet.SignTransaction(ctx, a.explorer, arkTx, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -228,6 +235,13 @@ func (a *service) ReissueAsset(
 		return nil, err
 	}
 
+	o := newDefaultSendOptions()
+	for _, opt := range opts {
+		if err := opt(o); err != nil {
+			return nil, err
+		}
+	}
+
 	_, changeAddr, _, err := a.newAddress(ctx)
 	if err != nil {
 		return nil, err
@@ -262,7 +276,7 @@ func (a *service) ReissueAsset(
 	// create an ark tx sending small amount of btc to wallet's address
 	// we'll attach new asset outputs to this vout
 	baseArkTx, checkpointTxs, selectedCoins, changeReceiver, err := a.createOffchainTx(
-		ctx, receivers, opts...,
+		ctx, receivers, o,
 	)
 	if err != nil {
 		return nil, err
@@ -333,7 +347,7 @@ func (a *service) ReissueAsset(
 		return nil, err
 	}
 
-	signedArkTx, err := a.wallet.SignTransaction(ctx, a.explorer, arkTx)
+	signedArkTx, err := a.wallet.SignTransaction(ctx, a.explorer, arkTx, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -400,6 +414,13 @@ func (a *service) BurnAsset(
 		return nil, fmt.Errorf("amount must be > 0")
 	}
 
+	o := newDefaultSendOptions()
+	for _, opt := range opts {
+		if err := opt(o); err != nil {
+			return nil, err
+		}
+	}
+
 	_, changeAddr, _, err := a.newAddress(ctx)
 	if err != nil {
 		return nil, err
@@ -422,7 +443,7 @@ func (a *service) BurnAsset(
 
 	receivers := []types.Receiver{burnReceiver}
 	baseArkTx, checkpointTxs, selectedCoins, changeReceiver, err := a.createOffchainTx(
-		ctx, receivers, opts...,
+		ctx, receivers, o,
 	)
 	if err != nil {
 		return nil, err
@@ -458,7 +479,7 @@ func (a *service) BurnAsset(
 		return nil, err
 	}
 
-	signedArkTx, err := a.wallet.SignTransaction(ctx, a.explorer, arkTx)
+	signedArkTx, err := a.wallet.SignTransaction(ctx, a.explorer, arkTx, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}

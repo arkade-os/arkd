@@ -29,7 +29,7 @@ type ArkClient interface {
 	Unlock(ctx context.Context, password string) error
 	Lock(ctx context.Context) error
 	Dump(ctx context.Context) (seed string, err error)
-	SignTransaction(ctx context.Context, tx string) (string, error)
+	SignTransaction(ctx context.Context, tx string, opts ...SendOption) (string, error)
 	Reset(ctx context.Context)
 	Stop()
 	// ** Funding **
@@ -59,7 +59,7 @@ type ArkClient interface {
 	SendOffChain(
 		ctx context.Context, receivers []types.Receiver, opts ...SendOption,
 	) (*SendOffChainRes, error)
-	FinalizePendingTxs(ctx context.Context, createdAfter *time.Time) ([]string, error)
+	FinalizePendingTxs(ctx context.Context, createdAfter *time.Time, opts ...SendOption) ([]string, error)
 	// ** Batch session **
 	Settle(ctx context.Context, opts ...BatchSessionOption) (*SettleRes, error)
 	CollaborativeExit(
@@ -68,16 +68,19 @@ type ArkClient interface {
 	RedeemNotes(ctx context.Context, notes []string, opts ...BatchSessionOption) (*RedeemNotesRes, error)
 	RegisterIntent(
 		ctx context.Context, vtxos []types.Vtxo, boardingUtxos []types.Utxo, notes []string,
-		outputs []types.Receiver, cosignersPublicKeys []string,
+		outputs []types.Receiver, cosignersPublicKeys []string, opts ...BatchSessionOption,
 	) (intentID string, err error)
 	DeleteIntent(
-		ctx context.Context, vtxos []types.Vtxo, boardingUtxos []types.Utxo, notes []string,
+		ctx context.Context, vtxos []types.Vtxo, boardingUtxos []types.Utxo,
+		notes []string, opts ...BatchSessionOption,
 	) error
 	// ** Unroll **
 	Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes, error)
-	CompleteUnroll(ctx context.Context, to string) (string, error)
-	OnboardAgainAllExpiredBoardings(ctx context.Context) (string, error)
-	WithdrawFromAllExpiredBoardings(ctx context.Context, to string) (string, error)
+	CompleteUnroll(ctx context.Context, to string, opts ...UnrollOption) (string, error)
+	OnboardAgainAllExpiredBoardings(ctx context.Context, opts ...UnrollOption) (string, error)
+	WithdrawFromAllExpiredBoardings(
+		ctx context.Context, to string, opts ...UnrollOption,
+	) (string, error)
 }
 
 type ReissueAssetRes = OffchainTxRes

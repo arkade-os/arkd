@@ -31,7 +31,7 @@ type WalletService interface {
 	GetKey(ctx context.Context, opts ...KeyOption) (key *KeyRef, err error)
 	ListKeys(ctx context.Context) (keys []KeyRef, err error)
 	SignTransaction(
-		ctx context.Context, explorerSvc explorer.Explorer, tx string,
+		ctx context.Context, explorerSvc explorer.Explorer, tx string, keys map[string]string,
 	) (signedTx string, err error)
 	SignMessage(ctx context.Context, message []byte) (signature string, err error)
 	Dump(ctx context.Context) (seed string, err error)

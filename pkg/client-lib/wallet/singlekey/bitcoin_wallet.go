@@ -73,7 +73,7 @@ func (w *bitcoinWallet) ListKeys(ctx context.Context) ([]wallet.KeyRef, error) {
 	return []wallet.KeyRef{*key}, nil
 }
 func (s *bitcoinWallet) SignTransaction(
-	ctx context.Context, explorerSvc explorer.Explorer, tx string,
+	ctx context.Context, explorerSvc explorer.Explorer, tx string, _ map[string]string,
 ) (string, error) {
 	if s.walletData == nil {
 		return "", fmt.Errorf("wallet not initialized")
