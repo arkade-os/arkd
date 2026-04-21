@@ -63,10 +63,6 @@ func (s assetSource) AssetExists(ctx context.Context, assetID string) bool {
 }
 
 func hasIssuance(packet asset.Packet) bool {
-	if len(packet) == 0 {
-		return false
-	}
-
 	for _, group := range packet {
 		if group.IsIssuance() {
 			return true
