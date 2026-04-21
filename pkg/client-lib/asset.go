@@ -22,7 +22,7 @@ func (a *service) IssueAsset(
 
 	o := newDefaultSendOptions()
 	for _, opt := range opts {
-		if err := opt(o); err != nil {
+		if err := opt.applySend(o); err != nil {
 			return nil, err
 		}
 	}
@@ -237,7 +237,7 @@ func (a *service) ReissueAsset(
 
 	o := newDefaultSendOptions()
 	for _, opt := range opts {
-		if err := opt(o); err != nil {
+		if err := opt.applySend(o); err != nil {
 			return nil, err
 		}
 	}
@@ -416,7 +416,7 @@ func (a *service) BurnAsset(
 
 	o := newDefaultSendOptions()
 	for _, opt := range opts {
-		if err := opt(o); err != nil {
+		if err := opt.applySend(o); err != nil {
 			return nil, err
 		}
 	}

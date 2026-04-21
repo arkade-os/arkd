@@ -29,7 +29,7 @@ func (a *service) SendOffChain(
 
 	o := newDefaultSendOptions()
 	for _, opt := range opts {
-		if err := opt(o); err != nil {
+		if err := opt.applySend(o); err != nil {
 			return nil, err
 		}
 	}
@@ -123,7 +123,7 @@ func (a *service) FinalizePendingTxs(
 
 	o := newDefaultSendOptions()
 	for _, opt := range opts {
-		if err := opt(o); err != nil {
+		if err := opt.applySend(o); err != nil {
 			return nil, err
 		}
 	}

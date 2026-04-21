@@ -32,7 +32,7 @@ func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes
 	}
 	options := newDefaultUnrollOptions()
 	for _, opt := range opts {
-		if err := opt(options); err != nil {
+		if err := opt.applyUnroll(options); err != nil {
 			return nil, err
 		}
 	}
@@ -137,7 +137,7 @@ func (a *service) CompleteUnroll(
 
 	options := newDefaultUnrollOptions()
 	for _, opt := range opts {
-		if err := opt(options); err != nil {
+		if err := opt.applyUnroll(options); err != nil {
 			return "", err
 		}
 	}
@@ -165,7 +165,7 @@ func (a *service) WithdrawFromAllExpiredBoardings(
 
 	options := newDefaultUnrollOptions()
 	for _, opt := range opts {
-		if err := opt(options); err != nil {
+		if err := opt.applyUnroll(options); err != nil {
 			return "", err
 		}
 	}
@@ -190,7 +190,7 @@ func (a *service) OnboardAgainAllExpiredBoardings(
 
 	options := newDefaultUnrollOptions()
 	for _, opt := range opts {
-		if err := opt(options); err != nil {
+		if err := opt.applyUnroll(options); err != nil {
 			return "", err
 		}
 	}

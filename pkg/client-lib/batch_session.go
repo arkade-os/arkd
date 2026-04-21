@@ -32,7 +32,7 @@ func (a *service) Settle(ctx context.Context, opts ...BatchSessionOption) (*Sett
 
 	options := newDefaultSettleOptions()
 	for _, opt := range opts {
-		if err := opt(options); err != nil {
+		if err := opt.applyBatch(options); err != nil {
 			return nil, err
 		}
 	}
@@ -80,7 +80,7 @@ func (a *service) RedeemNotes(
 
 	options := newDefaultSettleOptions()
 	for _, opt := range opts {
-		if err := opt(options); err != nil {
+		if err := opt.applyBatch(options); err != nil {
 			return nil, err
 		}
 	}
@@ -127,7 +127,7 @@ func (a *service) CollaborativeExit(
 
 	options := newDefaultSettleOptions()
 	for _, opt := range opts {
-		if err := opt(options); err != nil {
+		if err := opt.applyBatch(options); err != nil {
 			return nil, err
 		}
 	}
@@ -188,7 +188,7 @@ func (a *service) CollaborativeExit(
 
 func (a *service) RegisterIntent(
 	ctx context.Context, vtxos []types.Vtxo, boardingUtxos []types.Utxo, notes []string,
-	outputs []types.Receiver, cosignersPublicKeys []string, opts ...BatchSessionOption,
+	outputs []types.Receiver, cosignersPublicKeys []string, opts ...SignOption,
 ) (string, error) {
 	if err := a.safeCheck(); err != nil {
 		return "", err
@@ -196,7 +196,7 @@ func (a *service) RegisterIntent(
 
 	options := newDefaultSettleOptions()
 	for _, opt := range opts {
-		if err := opt(options); err != nil {
+		if err := opt.applyBatch(options); err != nil {
 			return "", err
 		}
 	}
@@ -226,7 +226,7 @@ func (a *service) RegisterIntent(
 
 func (a *service) DeleteIntent(
 	ctx context.Context, vtxos []types.Vtxo, boardingUtxos []types.Utxo, notes []string,
-	opts ...BatchSessionOption,
+	opts ...SignOption,
 ) error {
 	if err := a.safeCheck(); err != nil {
 		return err
@@ -234,7 +234,7 @@ func (a *service) DeleteIntent(
 
 	options := newDefaultSettleOptions()
 	for _, opt := range opts {
-		if err := opt(options); err != nil {
+		if err := opt.applyBatch(options); err != nil {
 			return err
 		}
 	}

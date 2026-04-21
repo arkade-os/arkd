@@ -12,64 +12,70 @@ const (
 	maxRetries             int   = 3
 )
 
-type BatchSessionOption func(options *batchSessionOptions) error
+type BatchSessionOption interface {
+	applyBatch(*batchSessionOptions) error
+}
+
+type batchOptFn func(*batchSessionOptions) error
+
+func (f batchOptFn) applyBatch(o *batchSessionOptions) error { return f(o) }
 
 // name alias, sub-dust vtxos are recoverable vtxos
 var WithSubDustVtxos = WithRecoverableVtxos
 
 func WithRecoverableVtxos() BatchSessionOption {
-	return func(o *batchSessionOptions) error {
+	return batchOptFn(func(o *batchSessionOptions) error {
 		o.withRecoverableVtxos = true
 		return nil
-	}
+	})
 }
 
 func WithEventsCh(ch chan<- any) BatchSessionOption {
-	return func(o *batchSessionOptions) error {
+	return batchOptFn(func(o *batchSessionOptions) error {
 		if o.eventsCh != nil {
 			return fmt.Errorf("events channel already set")
 		}
 		o.eventsCh = ch
 		return nil
-	}
+	})
 }
 
 // WithoutWalletSigner disables the wallet signer
 func WithoutWalletSigner() BatchSessionOption {
-	return func(o *batchSessionOptions) error {
+	return batchOptFn(func(o *batchSessionOptions) error {
 		o.walletSignerDisabled = true
 		return nil
-	}
+	})
 }
 
 // WithExtraSigner allows to use a set of custom signer for the vtxo tree signing process
 func WithExtraSigner(signerSessions ...tree.SignerSession) BatchSessionOption {
-	return func(o *batchSessionOptions) error {
+	return batchOptFn(func(o *batchSessionOptions) error {
 		if len(signerSessions) == 0 {
 			return fmt.Errorf("no signer sessions provided")
 		}
 		o.extraSignerSessions = signerSessions
 		return nil
-	}
+	})
 }
 
 // WithCancelCh allows to cancel the settlement process
 func WithCancelCh(ch <-chan struct{}) BatchSessionOption {
-	return func(o *batchSessionOptions) error {
+	return batchOptFn(func(o *batchSessionOptions) error {
 		o.cancelCh = ch
 		return nil
-	}
+	})
 }
 
 func WithExpiryThreshold(threshold int64) BatchSessionOption {
-	return func(o *batchSessionOptions) error {
+	return batchOptFn(func(o *batchSessionOptions) error {
 		o.expiryThreshold = threshold
 		return nil
-	}
+	})
 }
 
 func WithRetries(num int) BatchSessionOption {
-	return func(o *batchSessionOptions) error {
+	return batchOptFn(func(o *batchSessionOptions) error {
 		if o.retryNum > 0 {
 			return fmt.Errorf("retry num already set")
 		}
@@ -78,11 +84,11 @@ func WithRetries(num int) BatchSessionOption {
 		}
 		o.retryNum = num
 		return nil
-	}
+	})
 }
 
 func WithFunds(boardingUtxos []types.Utxo, vtxos []types.VtxoWithTapTree) BatchSessionOption {
-	return func(o *batchSessionOptions) error {
+	return batchOptFn(func(o *batchSessionOptions) error {
 		if len(boardingUtxos) <= 0 && len(vtxos) <= 0 {
 			return fmt.Errorf("missing funds")
 		}
@@ -101,20 +107,7 @@ func WithFunds(boardingUtxos []types.Utxo, vtxos []types.VtxoWithTapTree) BatchS
 			copy(o.vtxos, vtxos)
 		}
 		return nil
-	}
-}
-
-func WithKeysForBatchSession(keys map[string]string) BatchSessionOption {
-	return func(o *batchSessionOptions) error {
-		if len(o.keyIdsByScript) > 0 {
-			return fmt.Errorf("key ids by script already set")
-		}
-		if len(keys) <= 0 {
-			return fmt.Errorf("missing key ids by script")
-		}
-		o.keyIdsByScript = keys
-		return nil
-	}
+	})
 }
 
 // batchSessionOptions allows to customize the vtxo signing process

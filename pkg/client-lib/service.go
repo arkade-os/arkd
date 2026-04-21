@@ -285,14 +285,14 @@ func (a *service) Stop() {
 }
 
 func (a *service) SignTransaction(
-	ctx context.Context, tx string, opts ...SendOption,
+	ctx context.Context, tx string, opts ...SignOption,
 ) (string, error) {
 	if err := a.safeCheck(); err != nil {
 		return "", err
 	}
 	o := newDefaultSendOptions()
 	for _, opt := range opts {
-		if err := opt(o); err != nil {
+		if err := opt.applySend(o); err != nil {
 			return "", err
 		}
 	}
