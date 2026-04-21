@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -808,4 +809,32 @@ func isRetryableChurnError(err error) bool {
 	}
 
 	return false
+}
+
+func waitForVTXOs(ch <-chan indexer.ScriptEvent, atLeastN int, timeout time.Duration) ([]types.Vtxo, error) {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(timeout))
+	defer cancel()
+	vtxos := make([]types.Vtxo, 0)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("timed out - %d/%d recieved", len(vtxos), atLeastN)
+		case evt, ok := <-ch:
+			if !ok {
+				return nil, fmt.Errorf("vtxo event channel closed")
+			}
+			if evt.Connection != nil {
+				continue
+			}
+
+			if evt.Err != nil {
+				return nil, evt.Err
+			}
+			vtxos = append(vtxos, evt.Data.NewVtxos...)
+		}
+
+		if len(vtxos) >= atLeastN {
+			return vtxos, nil
+		}
+	}
 }
