@@ -5,12 +5,12 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"sort"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
-	"github.com/shopspring/decimal"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -123,30 +123,21 @@ func (r *assetRepository) GetAssets(
 	if len(assetIds) == 0 {
 		return nil, nil
 	}
-	var assets []domain.Asset
-	txBody := func(querierWithTx *queries.Queries) error {
-		rows, err := querierWithTx.SelectAssetsByIds(ctx, assetIds)
-		if err != nil {
-			return err
-		}
-		assets = make([]domain.Asset, 0, len(rows))
-		for _, row := range rows {
-			// TODO: this is not efficient, but avoids overflows
-			amounts, err := querierWithTx.SelectAssetAmounts(ctx, row.ID)
-			if err != nil {
-				return fmt.Errorf("failed to compute supply for asset %s: %w", row.ID, err)
-			}
-			supply := decimal.NewFromFloat(0)
-			for _, amount := range amounts {
-				// nolint
-				dec, _ := decimal.NewFromString(amount)
-				supply = supply.Add(dec)
-			}
 
+	rows, err := r.querier.SelectAssetsWithUnspentAmountsByIds(ctx, assetIds)
+	if err != nil {
+		return nil, err
+	}
+
+	assets := make([]domain.Asset, 0, len(rows))
+	indexByID := make(map[string]int, len(rows))
+	for _, row := range rows {
+		idx, ok := indexByID[row.ID]
+		if !ok {
 			ast := domain.Asset{
 				Id:             row.ID,
 				ControlAssetId: row.ControlAssetID.String,
-				Supply:         *supply.BigInt(),
+				Supply:         *big.NewInt(0),
 			}
 
 			if row.Metadata.Valid {
@@ -157,13 +148,23 @@ func (r *assetRepository) GetAssets(
 					log.WithError(err).Warnf("failed to parse metadata for asset %s", row.ID)
 				}
 			}
+
 			assets = append(assets, ast)
+			idx = len(assets) - 1
+			indexByID[row.ID] = idx
 		}
-		return nil
+
+		if !row.AssetAmount.Valid {
+			continue
+		}
+
+		amount, ok := new(big.Int).SetString(row.AssetAmount.String, 10)
+		if !ok {
+			continue
+		}
+		assets[idx].Supply.Add(&assets[idx].Supply, amount)
 	}
-	if err := execTx(ctx, r.db, txBody); err != nil {
-		return nil, err
-	}
+
 	return assets, nil
 }
 

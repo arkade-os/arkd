@@ -446,6 +446,22 @@ VALUES (@asset_id, @txid, @vout, @amount);
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id IN (sqlc.slice('ids'));
 
+-- name: SelectAssetsWithUnspentAmountsByIds :many
+SELECT
+  a.id,
+  a.is_immutable,
+  a.metadata_hash,
+  a.metadata,
+  a.control_asset_id,
+  v.asset_amount
+FROM asset a
+LEFT JOIN vtxo_vw v
+  ON v.asset_id = a.id
+ AND v.spent = false
+ AND v.asset_amount > 0
+WHERE a.id IN (sqlc.slice('ids'))
+ORDER BY a.id;
+
 -- name: SelectAssetAmounts :many
 SELECT v.asset_amount FROM vtxo_vw v
 WHERE v.asset_id = ? AND v.spent = false AND v.asset_amount > 0;
