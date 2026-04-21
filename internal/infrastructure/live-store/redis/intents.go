@@ -326,7 +326,7 @@ func (s *intentStore) Delete(ctx context.Context, ids []string) error {
 				}
 				if intent == nil {
 					// ignore nil intent as defensive check to avoid dereference panic
-					return nil 
+					return nil
 				}
 				// delete intent id + outpoints in the same tx pipeline
 				_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {

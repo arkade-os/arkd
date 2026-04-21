@@ -11,7 +11,7 @@ import (
 // TestPopNilIntent ensures Pop doesn't panic when intent:ids contains an id whose intent:<id> body is "nil"
 func TestPopNilIntent(t *testing.T) {
 	ctx := t.Context()
-	
+
 	// use /1 to isolate from TestLiveStoreImplementations which uses /0
 	// it avoids race condition where DeleteAll clean the intent list before the end of the test
 	redisOpts, err := redis.ParseURL("redis://localhost:6379/1")
