@@ -185,6 +185,7 @@ func TestService(t *testing.T) {
 			testOffchainTxRepository(t, svc)
 			testAssetRepository(t, svc)
 			testVtxoRepository(t, svc)
+			testAssetRepositorySpentOnlySupply(t, svc)
 			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
 			testFeeRepository(t, svc)
@@ -1756,6 +1757,53 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 			Mul(new(big.Int).SetUint64(math.MaxUint64), big.NewInt(2))
 
 		require.Equal(t, expectedSupply.String(), assets[0].Supply.String())
+	})
+}
+
+func testAssetRepositorySpentOnlySupply(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_asset_repository_spent_only_supply", func(t *testing.T) {
+		ctx := t.Context()
+		repo := svc.Assets()
+		vtxoRepo := svc.Vtxos()
+
+		assetID := randomString(16)
+		vtxoTxid := randomString(32)
+		spentBy := randomString(32)
+		arkTxid := randomString(32)
+
+		count, err := repo.AddAssets(ctx, map[string][]domain.Asset{"spentOnlyAssetTx": {
+			{
+				Id:       assetID,
+				Metadata: []asset.Metadata{},
+			},
+		}})
+		require.NoError(t, err)
+		require.Equal(t, 1, count)
+
+		spentOnlyVtxo := domain.Vtxo{
+			Outpoint: domain.Outpoint{
+				Txid: vtxoTxid,
+				VOut: 0,
+			},
+			Amount: 330,
+			Assets: []domain.AssetDenomination{{
+				AssetId: assetID,
+				Amount:  42,
+			}},
+		}
+		err = vtxoRepo.AddVtxos(ctx, []domain.Vtxo{spentOnlyVtxo})
+		require.NoError(t, err)
+
+		err = vtxoRepo.SpendVtxos(ctx, map[domain.Outpoint]string{
+			spentOnlyVtxo.Outpoint: spentBy,
+		}, arkTxid)
+		require.NoError(t, err)
+
+		assets, err := repo.GetAssets(ctx, []string{assetID})
+		require.NoError(t, err)
+		require.Len(t, assets, 1)
+		require.Equal(t, assetID, assets[0].Id)
+		require.Zero(t, assets[0].Supply.Sign())
 	})
 }
 
