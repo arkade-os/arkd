@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -17,11 +16,6 @@ type KVStore[T any] struct {
 
 func NewRedisKVStore[T any](rdb *redis.Client, prefix string) *KVStore[T] {
 	return &KVStore[T]{rdb: rdb, prefix: prefix}
-}
-
-// NewIntentKVStore returns a KVStore for TimedIntent with the proper prefix.
-func NewIntentKVStore(rdb *redis.Client) *KVStore[ports.TimedIntent] {
-	return &KVStore[ports.TimedIntent]{rdb: rdb, prefix: "intent:"}
 }
 
 func (s *KVStore[T]) key(id string) string {
@@ -97,13 +91,16 @@ func (s *KVStore[T]) SetPipe(
 	return nil
 }
 
-// ListPush pushes a value to the front of a Redis list
-func (s *KVStore[T]) ListPush(ctx context.Context, key string, value *T) error {
+// ListPushPipe pushes a value to the front of a Redis list (in pipeline)
+func (s *KVStore[T]) ListPushPipe(
+	ctx context.Context, pipe redis.Pipeliner, key string, value *T,
+) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	return s.rdb.LPush(ctx, key, data).Err()
+	pipe.LPush(ctx, key, data)
+	return nil
 }
 
 // ListRange gets all items from a Redis list

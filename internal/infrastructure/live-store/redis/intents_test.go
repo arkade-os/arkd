@@ -12,7 +12,9 @@ import (
 func TestPopNilIntent(t *testing.T) {
 	ctx := t.Context()
 	
-	redisOpts, err := redis.ParseURL("redis://localhost:6379/0")
+	// use /1 to isolate from TestLiveStoreImplementations which uses /0
+	// it avoids race condition where DeleteAll clean the intent list before the end of the test
+	redisOpts, err := redis.ParseURL("redis://localhost:6379/1")
 	require.NoError(t, err)
 	rdb := redis.NewClient(redisOpts)
 
