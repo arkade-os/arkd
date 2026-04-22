@@ -84,8 +84,13 @@ func (h *OTelHook) Fire(e *logrus.Entry) error {
 			ForceFlush(context.Context) error
 		}
 		if f, ok := global.GetLoggerProvider().(flusher); ok {
-			//nolint:all
-			f.ForceFlush(ctx)
+			// Bound the flush to avoid freezing the caller if the OTLP/Loki
+			// endpoint is slow or unreachable.
+			flushCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			//nolint:errcheck // ignoring flush error on purpose: logging it
+			// from inside a log hook would risk infinite recursion.
+			f.ForceFlush(flushCtx)
+			cancel()
 		}
 	}
 
