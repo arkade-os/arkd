@@ -2,6 +2,7 @@ package redislivestore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -153,7 +154,7 @@ func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, 
 	for range s.numOfRetries {
 		err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
 			// list all ids
-			ids, err := s.rdb.SMembers(ctx, intentStoreIdsKey).Result()
+			ids, err := tx.SMembers(ctx, intentStoreIdsKey).Result()
 			if err != nil {
 				return fmt.Errorf("failed to get intent ids: %v", err)
 			}
@@ -161,7 +162,7 @@ func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, 
 			// fetch intents
 			var intentsByTime []ports.TimedIntent
 			for _, id := range ids {
-				intent, err := s.intents.Get(ctx, id)
+				intent, err := s.intents.GetWith(ctx, tx, id)
 				if err != nil {
 					return fmt.Errorf("failed to get intent %s: %v", id, err)
 				}
@@ -200,7 +201,7 @@ func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, 
 				pipe.Del(ctx, selectedIntentsKey)
 				for i := range selected {
 					intent := selected[i]
-					pipe.Del(ctx, "intent:"+intent.Id)
+					s.intents.DeletePipe(ctx, pipe, intent.Id)
 					pipe.SRem(ctx, intentStoreIdsKey, intent.Id)
 					if err := s.intents.ListPushPipe(
 						ctx, pipe, selectedIntentsKey, &intent,
@@ -223,6 +224,10 @@ func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, 
 		}, watchKeys...)
 		if err == nil {
 			return result, nil
+		}
+		// only retry on transient WATCH conflicts; propagate any other error.
+		if !errors.Is(err, redis.TxFailedErr) {
+			return nil, fmt.Errorf("failed to pop intents: %v", err)
 		}
 		time.Sleep(s.retryDelay)
 	}
@@ -320,7 +325,7 @@ func (s *intentStore) Delete(ctx context.Context, ids []string) error {
 		for range s.numOfRetries {
 			err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
 				// get intent by id
-				intent, err := s.intents.Get(ctx, id)
+				intent, err := s.intents.GetWith(ctx, tx, id)
 				if err != nil {
 					return fmt.Errorf("failed to get intent %s: %v", id, err)
 				}
@@ -336,7 +341,7 @@ func (s *intentStore) Delete(ctx context.Context, ids []string) error {
 					for _, boardingInput := range intent.BoardingInputs {
 						pipe.SRem(ctx, intentStoreVtxosKey, boardingInput.String())
 					}
-					pipe.Del(ctx, "intent:"+id)
+					s.intents.DeletePipe(ctx, pipe, id)
 					pipe.SRem(ctx, intentStoreIdsKey, id)
 					return nil
 				})
@@ -345,10 +350,14 @@ func (s *intentStore) Delete(ctx context.Context, ids []string) error {
 			if err == nil {
 				break
 			}
+			// only retry on transient WATCH conflicts; stop on terminal errors.
+			if !errors.Is(err, redis.TxFailedErr) {
+				break
+			}
 			time.Sleep(s.retryDelay)
 		}
 		if err != nil {
-			log.Warnf("delete: failed to delete intent %s: %v", id, err)
+			return fmt.Errorf("failed to delete intent %s: %v", id, err)
 		}
 	}
 	return nil

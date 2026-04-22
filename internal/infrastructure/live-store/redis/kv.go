@@ -23,7 +23,17 @@ func (s *KVStore[T]) key(id string) string {
 }
 
 func (s *KVStore[T]) Get(ctx context.Context, id string) (*T, error) {
-	val, err := s.rdb.Get(ctx, s.key(id)).Result()
+	return s.getWith(ctx, s.rdb, id)
+}
+
+// GetWith reads through an arbitrary redis.Cmdable (e.g. a *redis.Tx inside a
+// Watch callback) so reads share the same connection as the transaction.
+func (s *KVStore[T]) GetWith(ctx context.Context, c redis.Cmdable, id string) (*T, error) {
+	return s.getWith(ctx, c, id)
+}
+
+func (s *KVStore[T]) getWith(ctx context.Context, c redis.Cmdable, id string) (*T, error) {
+	val, err := c.Get(ctx, s.key(id)).Result()
 	if errors.Is(err, redis.Nil) {
 		return nil, nil
 	}
@@ -47,6 +57,12 @@ func (s *KVStore[T]) Set(ctx context.Context, id string, value *T) error {
 
 func (s *KVStore[T]) Delete(ctx context.Context, id string) error {
 	return s.rdb.Del(ctx, s.key(id)).Err()
+}
+
+// DeletePipe queues a DEL for the given id on the pipeline, keeping the key
+// prefix encapsulated in the KVStore.
+func (s *KVStore[T]) DeletePipe(ctx context.Context, pipe redis.Pipeliner, id string) {
+	pipe.Del(ctx, s.key(id))
 }
 
 func (s *KVStore[T]) GetMulti(ctx context.Context, ids []string) ([]*T, error) {
