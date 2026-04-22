@@ -1326,7 +1326,7 @@ func TestOffchainTx(t *testing.T) {
 	// In this test, Alice submits an offchain tx spending a vtxo, then unrolls the same
 	// vtxo onchain before finalizing. The server should reject the finalization because
 	// the input vtxo is marked "unrolled"
-	t.Run("reject finalize of tx spending unrolled vtxo", func(t *testing.T) {
+	t.Run("reject finalization of tx with unrolled inputs", func(t *testing.T) {
 		ctx := t.Context()
 		explorer, err := mempool_explorer.NewExplorer(
 			"http://localhost:3000", arklib.BitcoinRegTest,
