@@ -15,22 +15,20 @@ import (
 )
 
 type assetRepository struct {
-	db      *sql.DB
-	querier *queries.Queries
+	db SQLiteDB
 }
 
 func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
 	if len(config) != 1 {
 		return nil, fmt.Errorf("invalid config")
 	}
-	db, ok := config[0].(*sql.DB)
+	db, ok := config[0].(SQLiteDB)
 	if !ok {
 		return nil, fmt.Errorf("cannot open asset repository: invalid config")
 	}
 
 	return &assetRepository{
-		db:      db,
-		querier: queries.New(db),
+		db: db,
 	}, nil
 }
 
@@ -111,7 +109,7 @@ func (r *assetRepository) AddAssets(
 		return nil
 	}
 
-	if err := execTx(ctx, r.db, txBody); err != nil {
+	if err := execTx(ctx, r.db.Write(), txBody); err != nil {
 		return -1, err
 	}
 	return count, nil
@@ -124,8 +122,12 @@ func (r *assetRepository) GetAssets(
 		return nil, nil
 	}
 
-	rows, err := r.querier.SelectAssetsWithUnspentAmountsByIds(ctx, assetIds)
-	if err != nil {
+	var rows []queries.SelectAssetsWithUnspentAmountsByIdsRow
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectAssetsWithUnspentAmountsByIds(ctx, assetIds)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -143,9 +145,11 @@ func (r *assetRepository) GetAssets(
 			if row.Metadata.Valid {
 				// Parsing metadata should never fail but if it does we just return an empty list
 				// of metadata and log the error
-				ast.Metadata, err = asset.NewMetadataListFromString(row.Metadata.String)
-				if err != nil {
-					log.WithError(err).Warnf("failed to parse metadata for asset %s", row.ID)
+				metadata, parseErr := asset.NewMetadataListFromString(row.Metadata.String)
+				if parseErr != nil {
+					log.WithError(parseErr).Warnf("failed to parse metadata for asset %s", row.ID)
+				} else {
+					ast.Metadata = metadata
 				}
 			}
 
@@ -169,8 +173,12 @@ func (r *assetRepository) GetAssets(
 }
 
 func (r *assetRepository) GetControlAsset(ctx context.Context, assetID string) (string, error) {
-	controlID, err := r.querier.SelectControlAssetByID(ctx, assetID)
-	if err != nil {
+	var controlID sql.NullString
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		controlID, err = q.SelectControlAssetByID(ctx, assetID)
+		return err
+	}); err != nil {
 		if err == sql.ErrNoRows {
 			return "", fmt.Errorf("no control asset found")
 		}
@@ -183,8 +191,10 @@ func (r *assetRepository) GetControlAsset(ctx context.Context, assetID string) (
 }
 
 func (r *assetRepository) AssetExists(ctx context.Context, assetID string) (bool, error) {
-	_, err := r.querier.SelectAssetExists(ctx, assetID)
-	if err != nil {
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		_, err := q.SelectAssetExists(ctx, assetID)
+		return err
+	}); err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil
 		}
