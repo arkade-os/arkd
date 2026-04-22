@@ -12,29 +12,32 @@ import (
 )
 
 type scheduledSessionRepository struct {
-	db      *sql.DB
-	querier *queries.Queries
+	db SQLiteDB
 }
 
 func NewScheduledSessionRepository(config ...interface{}) (domain.ScheduledSessionRepo, error) {
 	if len(config) != 1 {
 		return nil, fmt.Errorf("invalid config: expected 1 argument, got %d", len(config))
 	}
-	db, ok := config[0].(*sql.DB)
+	db, ok := config[0].(SQLiteDB)
 	if !ok {
 		return nil, fmt.Errorf(
-			"cannot open scheduled session repository: expected *sql.DB but got %T", config[0],
+			"cannot open scheduled session repository: expected SQLiteDB but got %T", config[0],
 		)
 	}
 
 	return &scheduledSessionRepository{
-		db:      db,
-		querier: queries.New(db),
+		db: db,
 	}, nil
 }
 
 func (r *scheduledSessionRepository) Get(ctx context.Context) (*domain.ScheduledSession, error) {
-	scheduledSession, err := r.querier.SelectLatestScheduledSession(ctx)
+	var scheduledSession queries.ScheduledSession
+	err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		scheduledSession, err = q.SelectLatestScheduledSession(ctx)
+		return err
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -56,19 +59,23 @@ func (r *scheduledSessionRepository) Get(ctx context.Context) (*domain.Scheduled
 func (r *scheduledSessionRepository) Upsert(
 	ctx context.Context, scheduledSession domain.ScheduledSession,
 ) error {
-	return r.querier.UpsertScheduledSession(ctx, queries.UpsertScheduledSessionParams{
-		StartTime:            scheduledSession.StartTime.Unix(),
-		EndTime:              scheduledSession.EndTime.Unix(),
-		Period:               int64(scheduledSession.Period),
-		Duration:             int64(scheduledSession.Duration),
-		RoundMinParticipants: scheduledSession.RoundMinParticipantsCount,
-		RoundMaxParticipants: scheduledSession.RoundMaxParticipantsCount,
-		UpdatedAt:            scheduledSession.UpdatedAt.Unix(),
+	return withWriteQuerier(ctx, r.db, func(q *queries.Queries) error {
+		return q.UpsertScheduledSession(ctx, queries.UpsertScheduledSessionParams{
+			StartTime:            scheduledSession.StartTime.Unix(),
+			EndTime:              scheduledSession.EndTime.Unix(),
+			Period:               int64(scheduledSession.Period),
+			Duration:             int64(scheduledSession.Duration),
+			RoundMinParticipants: scheduledSession.RoundMinParticipantsCount,
+			RoundMaxParticipants: scheduledSession.RoundMaxParticipantsCount,
+			UpdatedAt:            scheduledSession.UpdatedAt.Unix(),
+		})
 	})
 }
 
 func (r *scheduledSessionRepository) Clear(ctx context.Context) error {
-	return r.querier.ClearScheduledSession(ctx)
+	return withWriteQuerier(ctx, r.db, func(q *queries.Queries) error {
+		return q.ClearScheduledSession(ctx)
+	})
 }
 
 func (r *scheduledSessionRepository) Close() {

@@ -315,7 +315,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to open db: %s", err)
 		}
 
-		driver, err := sqlitemigrate.WithInstance(db, &sqlitemigrate.Config{})
+		driver, err := sqlitemigrate.WithInstance(db.Write(), &sqlitemigrate.Config{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to init driver: %s", err)
 		}
@@ -330,7 +330,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to create migration instance: %s", err)
 		}
 
-		err = handleIntentTxidMigration(m, db, config.DataStoreType)
+		err = handleIntentTxidMigration(m, db.Write(), config.DataStoreType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to handle intent txid migration: %w", err)
 		}
