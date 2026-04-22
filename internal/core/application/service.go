@@ -3471,6 +3471,7 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 			"failed to wait for confirmation of commitment tx %s, schedule task time may be inaccurate",
 			round.CommitmentTxid,
 		)
+		blockTimestamp = &ports.BlockTimestamp{Time: time.Now().Unix()}
 	}
 
 	var expirationTimestamp int64
