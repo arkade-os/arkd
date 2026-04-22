@@ -1179,7 +1179,14 @@ func (s *service) FinalizeOffchainTx(
 			).WithMetadata(errors.InvalidSignatureMetadata{Tx: checkpoint})
 		}
 
-		decodedCheckpointTxs[ptx.UnsignedTx.TxID()] = ptx
+		checkpointTxid := ptx.UnsignedTx.TxID()
+		if len(ptx.UnsignedTx.TxIn) < 1 {
+			return errors.INVALID_PSBT_MISSING_INPUT.New(
+				"invalid checkpoint tx %s", checkpointTxid,
+			).WithMetadata(errors.PsbtInputMetadata{Txid: checkpointTxid})
+		}
+
+		decodedCheckpointTxs[checkpointTxid] = ptx
 		outpoint := ptx.UnsignedTx.TxIn[0].PreviousOutPoint
 		spentVtxoKeys = append(spentVtxoKeys, domain.Outpoint{
 			Txid: outpoint.Hash.String(),
