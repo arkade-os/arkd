@@ -2099,9 +2099,14 @@ func TestReactToFraud(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, leafTx)
 
-			bumpAndBroadcastTx(t, leafTx, expl)
+			pauseBackgroundMiner(t)
+			defer resumeBackgroundMiner(t)
 
-			// Give time to the explorer to track down the broadcasted txs.
+			broadcastTxWithAnchorBump(t, leafTx, expl)
+
+			// Give time to the explorer to track down the broadcasted txs while
+			// they are still unconfirmed. Confirmation is triggered explicitly
+			// below so this assertion does not race CI's block production.
 			time.Sleep(5 * time.Second)
 
 			// The vtxo is now unrolled and unspent in the Bitcoin mempool.
@@ -2201,9 +2206,14 @@ func TestReactToFraud(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, leafTx)
 
-			bumpAndBroadcastTx(t, leafTx, expl)
+			pauseBackgroundMiner(t)
+			defer resumeBackgroundMiner(t)
 
-			// Give time to the explorer to track down the broadcasted txs.
+			broadcastTxWithAnchorBump(t, leafTx, expl)
+
+			// Give time to the explorer to track down the broadcasted txs while
+			// they are still unconfirmed. Confirmation is triggered explicitly
+			// below so this assertion does not race CI's block production.
 			time.Sleep(5 * time.Second)
 
 			// The vtxo is now unrolled and unspent in the Bitcoin mempool.

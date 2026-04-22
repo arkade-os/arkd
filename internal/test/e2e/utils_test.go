@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -44,7 +45,21 @@ const (
 	adminUrl    = "http://127.0.0.1:7071"
 	serverUrl   = "127.0.0.1:7070"
 	explorerUrl = "http://127.0.0.1:3000"
+	blockMinerPauseFile = "/tmp/dark-go-e2e.pause-miner"
 )
+
+func pauseBackgroundMiner(t *testing.T) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(blockMinerPauseFile, []byte("pause\n"), 0o644))
+}
+
+func resumeBackgroundMiner(t *testing.T) {
+	t.Helper()
+	err := os.Remove(blockMinerPauseFile)
+	if err != nil && !os.IsNotExist(err) {
+		require.NoError(t, err)
+	}
+}
 
 func generateBlocks(n int) error {
 	_, err := runCommand("nigiri", "rpc", "--generate", fmt.Sprintf("%d", n))
@@ -137,7 +152,7 @@ func newCommand(name string, arg ...string) *exec.Cmd {
 	return cmd
 }
 
-func bumpAndBroadcastTx(t *testing.T, tx string, explorer explorer.Explorer) {
+func broadcastTxWithAnchorBump(t *testing.T, tx string, explorer explorer.Explorer) {
 	var transaction wire.MsgTx
 	err := transaction.Deserialize(hex.NewDecoder(strings.NewReader(tx)))
 	require.NoError(t, err)
@@ -146,8 +161,12 @@ func bumpAndBroadcastTx(t *testing.T, tx string, explorer explorer.Explorer) {
 
 	_, err = explorer.Broadcast(tx, childTx)
 	require.NoError(t, err)
+}
 
-	err = generateBlocks(1)
+func bumpAndBroadcastTx(t *testing.T, tx string, explorer explorer.Explorer) {
+	broadcastTxWithAnchorBump(t, tx, explorer)
+
+	err := generateBlocks(1)
 	require.NoError(t, err)
 }
 
