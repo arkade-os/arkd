@@ -93,15 +93,17 @@ type ServiceConfig struct {
 }
 
 type service struct {
-	eventStore            domain.EventRepository
-	roundStore            domain.RoundRepository
-	vtxoStore             domain.VtxoRepository
-	scheduledSessionStore domain.ScheduledSessionRepo
-	offchainTxStore       domain.OffchainTxRepository
-	convictionStore       domain.ConvictionRepository
-	assetStore            domain.AssetRepository
-	intentFeesStore       domain.FeeRepository
-	txDecoder             ports.TxDecoder
+	eventStore              domain.EventRepository
+	roundStore              domain.RoundRepository
+	vtxoStore               domain.VtxoRepository
+	scheduledSessionStore   domain.ScheduledSessionRepo
+	offchainTxStore         domain.OffchainTxRepository
+	convictionStore         domain.ConvictionRepository
+	assetStore              domain.AssetRepository
+	intentFeesStore         domain.FeeRepository
+	txDecoder               ports.TxDecoder
+	batchUpdateHandler      *updateHandler[domain.Round]
+	offchainTxUpdateHandler *updateHandler[domain.OffchainTx]
 }
 
 func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoManager, error) {
@@ -360,15 +362,17 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	}
 
 	svc := &service{
-		eventStore:            eventStore,
-		roundStore:            roundStore,
-		vtxoStore:             vtxoStore,
-		scheduledSessionStore: scheduledSessionStore,
-		offchainTxStore:       offchainTxStore,
-		txDecoder:             txDecoder,
-		convictionStore:       convictionStore,
-		assetStore:            assetStore,
-		intentFeesStore:       intentFeesStore,
+		eventStore:              eventStore,
+		roundStore:              roundStore,
+		vtxoStore:               vtxoStore,
+		scheduledSessionStore:   scheduledSessionStore,
+		offchainTxStore:         offchainTxStore,
+		txDecoder:               txDecoder,
+		convictionStore:         convictionStore,
+		assetStore:              assetStore,
+		intentFeesStore:         intentFeesStore,
+		batchUpdateHandler:      newUpdateHandler[domain.Round](),
+		offchainTxUpdateHandler: newUpdateHandler[domain.OffchainTx](),
 	}
 
 	// Register handlers that take care of keeping the projection store up-to-date.
@@ -414,6 +418,14 @@ func (s *service) Fees() domain.FeeRepository {
 	return s.intentFeesStore
 }
 
+func (s *service) RegisterBatchUpdateHandler(handler func(data domain.Round)) {
+	s.batchUpdateHandler.set(handler)
+}
+
+func (s *service) RegisterOffchainTxUpdateHandler(handler func(data domain.OffchainTx)) {
+	s.offchainTxUpdateHandler.set(handler)
+}
+
 func (s *service) Close() {
 	s.eventStore.Close()
 	s.roundStore.Close()
@@ -427,7 +439,14 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	ctx := context.Background()
 	round := domain.NewRoundFromEvents(events)
 
-	if err := s.roundStore.AddOrUpdateRound(ctx, *round); err != nil {
+	var err error
+	defer func() {
+		if err == nil {
+			s.batchUpdateHandler.dispatch(*round)
+		}
+	}()
+
+	if err = s.roundStore.AddOrUpdateRound(ctx, *round); err != nil {
 		log.WithError(err).Errorf("failed to add or update round %s", round.Id)
 		return
 	}
@@ -443,7 +462,8 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	if lastEvent.GetType() == domain.EventTypeBatchSwept {
 		event := lastEvent.(domain.BatchSwept)
 		allSweptVtxos := append(event.LeafVtxos, event.PreconfirmedVtxos...)
-		sweptCount, err := repo.SweepVtxos(ctx, allSweptVtxos)
+		var sweptCount int
+		sweptCount, err = repo.SweepVtxos(ctx, allSweptVtxos)
 		if err != nil {
 			log.WithError(err).Warn("failed to sweep vtxos")
 		} else {
@@ -463,7 +483,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 
 	if len(spentVtxos) > 0 {
 		for {
-			if err := repo.SettleVtxos(ctx, spentVtxos, round.CommitmentTxid); err != nil {
+			if err = repo.SettleVtxos(ctx, spentVtxos, round.CommitmentTxid); err != nil {
 				log.WithError(err).Warn("failed to spend vtxos, retrying...")
 				time.Sleep(100 * time.Millisecond)
 				continue
@@ -476,7 +496,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	if len(newVtxos) > 0 {
 		for {
 			// this will take care of updating asset projections as well
-			if err := repo.AddVtxos(ctx, newVtxos); err != nil {
+			if err = repo.AddVtxos(ctx, newVtxos); err != nil {
 				log.WithError(err).Warn("failed to add new vtxos, retrying soon")
 				time.Sleep(100 * time.Millisecond)
 				continue
@@ -493,7 +513,14 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 	ctx := context.Background()
 	offchainTx := domain.NewOffchainTxFromEvents(events)
 
-	if err := s.offchainTxStore.AddOrUpdateOffchainTx(ctx, offchainTx); err != nil {
+	var err error
+	defer func() {
+		if err == nil {
+			s.offchainTxUpdateHandler.dispatch(*offchainTx)
+		}
+	}()
+
+	if err = s.offchainTxStore.AddOrUpdateOffchainTx(ctx, offchainTx); err != nil {
 		log.WithError(err).Errorf("failed to add or update offchain tx %s", offchainTx.ArkTxid)
 		return
 	}
@@ -503,7 +530,9 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 	case offchainTx.IsAccepted():
 		spentVtxos := make(map[domain.Outpoint]string)
 		for _, tx := range offchainTx.CheckpointTxs {
-			txid, ins, _, err := s.txDecoder.DecodeTx(tx)
+			var txid string
+			var ins []ports.TxIn
+			txid, ins, _, err = s.txDecoder.DecodeTx(tx)
 			if err != nil {
 				log.WithError(err).Warn("failed to decode checkpoint tx")
 				continue
@@ -515,26 +544,31 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 
 		// as soon as the checkpoint txs are signed by the signer,
 		// we must mark the vtxos as spent to prevent double spending.
-		if err := s.vtxoStore.SpendVtxos(ctx, spentVtxos, offchainTx.ArkTxid); err != nil {
+		if err = s.vtxoStore.SpendVtxos(ctx, spentVtxos, offchainTx.ArkTxid); err != nil {
 			log.WithError(err).Warn("failed to spend vtxos")
 			return
 		}
 		log.Debugf("spent %d vtxos", len(spentVtxos))
 	case offchainTx.IsFinalized():
-		txid, _, outs, err := s.txDecoder.DecodeTx(offchainTx.ArkTx)
+		var txid string
+		var outs []ports.TxOut
+		txid, _, outs, err = s.txDecoder.DecodeTx(offchainTx.ArkTx)
 		if err != nil {
 			log.WithError(err).Warn("failed to decode ark tx")
 			return
 		}
 
-		issuances, assets, err := getAssetsFromTxOuts(txid, outs)
+		var issuances []domain.Asset
+		var assets map[uint32][]domain.AssetDenomination
+		issuances, assets, err = getAssetsFromTxOuts(txid, outs)
 		if err != nil {
 			log.WithError(err).Warn("failed to get assets from tx")
 			return
 		}
 
 		txSwept := false
-		batch, err := s.roundStore.GetRoundWithCommitmentTxid(ctx, offchainTx.RootCommitmentTxId)
+		var batch *domain.Round
+		batch, err = s.roundStore.GetRoundWithCommitmentTxid(ctx, offchainTx.RootCommitmentTxId)
 		// We consider the tx swept if:
 		// - there is an error fetching the batch (this is just fallback, should never happen)
 		// - the batch is swept
@@ -586,7 +620,8 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			assetsByTx := map[string][]domain.Asset{
 				offchainTx.ArkTxid: issuances,
 			}
-			count, err := s.assetStore.AddAssets(ctx, assetsByTx)
+			var count int
+			count, err = s.assetStore.AddAssets(ctx, assetsByTx)
 			if err != nil {
 				log.WithError(err).Warnf(
 					"failed to add issued assets in offchain tx %s", offchainTx.ArkTxid,
@@ -598,7 +633,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 		}
 
-		if err := s.vtxoStore.AddVtxos(ctx, newVtxos); err != nil {
+		if err = s.vtxoStore.AddVtxos(ctx, newVtxos); err != nil {
 			log.WithError(err).Warn("failed to add vtxos")
 			return
 		}

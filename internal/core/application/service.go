@@ -296,11 +296,11 @@ func (s *service) Start() error {
 }
 
 func (s *service) registerEventHandlers() {
-	s.repoManager.Events().RegisterEventsHandler(
-		domain.RoundTopic, func(events []domain.Event) {
-			round := domain.NewRoundFromEvents(events)
+	s.repoManager.RegisterBatchUpdateHandler(
+		func(round domain.Round) {
 			go s.propagateEvents(context.Background(), round)
 
+			events := round.Events()
 			lastEvent := events[len(events)-1]
 			if lastEvent.GetType() == domain.EventTypeBatchSwept {
 				batchSweptEvent := lastEvent.(domain.BatchSwept)
@@ -347,15 +347,13 @@ func (s *service) registerEventHandlers() {
 		},
 	)
 
-	s.repoManager.Events().RegisterEventsHandler(
-		domain.OffchainTxTopic, func(events []domain.Event) {
-			offchainTx := domain.NewOffchainTxFromEvents(events)
-
+	s.repoManager.RegisterOffchainTxUpdateHandler(
+		func(offchainTx domain.OffchainTx) {
 			if !offchainTx.IsFinalized() {
 				return
 			}
 
-			txid, spentVtxoKeys, newVtxos, err := decodeTx(*offchainTx)
+			txid, spentVtxoKeys, newVtxos, err := decodeTx(offchainTx)
 			if err != nil {
 				log.WithError(err).Warn("failed to decode offchain tx")
 				return
@@ -3330,7 +3328,7 @@ func (s *service) listenToScannerNotifications() {
 	}
 }
 
-func (s *service) propagateEvents(ctx context.Context, round *domain.Round) {
+func (s *service) propagateEvents(ctx context.Context, round domain.Round) {
 	lastEvent := round.Events()[len(round.Events())-1]
 	events := make([]domain.Event, 0)
 	switch ev := lastEvent.(type) {
@@ -3454,7 +3452,7 @@ func (s *service) propagateRoundSigningNoncesGeneratedEvent(
 	s.eventsCh <- events
 }
 
-func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
+func (s *service) scheduleSweepBatchOutput(round domain.Round) {
 	// Schedule the sweeping procedure only for completed round.
 	if !round.IsEnded() {
 		return
