@@ -386,6 +386,7 @@ func TestUnilateralExit(t *testing.T) {
 // and accepts it into the batch. After settlement Alice's funds are back
 // offchain.
 func TestUnrolledVtxoRejoinBatch(t *testing.T) {
+	t.Run("without asset", func(t *testing.T) {
 	ctx := t.Context()
 	alice := setupArkSDK(t)
 
@@ -402,8 +403,9 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 	require.Empty(t, balance.OnchainBalance.LockedAmount)
 
 	// Unroll: moves VTXOs onchain
-	_, err = alice.Unroll(ctx)
+		txids, err := alice.Unroll(ctx)
 	require.NoError(t, err)
+		require.NotEmpty(t, txids)
 
 	err = generateBlocks(1)
 	require.NoError(t, err)
@@ -479,6 +481,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 
 	_, err = alice.CompleteUnroll(ctx, "")
 	require.ErrorContains(t, err, "no mature funds available")
+	})
 }
 
 func TestCollaborativeExit(t *testing.T) {

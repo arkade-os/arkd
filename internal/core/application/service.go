@@ -3538,14 +3538,16 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 	}
 
 	var expirationTimestamp int64
+	var skipExpiryUpdate bool
 	if s.sweeper.scheduler.Unit() == ports.BlockHeight {
 		expirationTimestamp = int64(blockTimestamp.Height) + int64(s.batchExpiry.Value)
+		skipExpiryUpdate = true
 	} else {
 		expirationTimestamp = blockTimestamp.Time + s.batchExpiry.Seconds()
 	}
 
 	if err := s.sweeper.scheduleBatchSweep(
-		expirationTimestamp, round.CommitmentTxid, round.VtxoTree.RootTxid(),
+		expirationTimestamp, round.CommitmentTxid, round.VtxoTree.RootTxid(), skipExpiryUpdate,
 	); err != nil {
 		log.WithError(err).Warn("failed to schedule sweep tx")
 	}
