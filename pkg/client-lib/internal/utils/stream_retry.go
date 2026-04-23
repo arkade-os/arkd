@@ -33,7 +33,7 @@ type ReconnectingStreamConfig[S grpcClientStream, R any, E any] struct {
 	// Connect creates a new stream instance. Called once at startup
 	Connect func(context.Context) (S, error)
 	// Reconnect creates a new stream instance after retryable failures while reconnecting.
-	Reconnect func(context.Context) (S, error)
+	Reconnect func(context.Context) (string, S, error)
 	// Recv reads one response from the current stream instance.
 	Recv func(S) (*R, error)
 	// HandleResp maps one response into domain events and writes them to eventsCh.
@@ -323,7 +323,7 @@ func StartReconnectingStream[S grpcClientStream, R any, E any](
 					case <-time.After(sleepDuration):
 					}
 
-					newStream, dialErr := cfg.Reconnect(ctx)
+					_, newStream, dialErr := cfg.Reconnect(ctx)
 					if dialErr != nil {
 						shouldRetryDial, dialRetryDelay := ShouldReconnect(dialErr)
 						if !shouldRetryDial {
@@ -418,7 +418,7 @@ func applyJitter(d time.Duration, jitter float64) time.Duration {
 		jitter = 0.999
 	}
 
-	randomFactor := 2.0*rand.Float64()-1.0 // [-1, +1] factor
+	randomFactor := 2.0*rand.Float64() - 1.0 // [-1, +1] factor
 	jitterFactor := 1.0 + jitter*randomFactor
 	return time.Duration(float64(d) * jitterFactor)
 }

@@ -119,11 +119,14 @@ func TestSubscriptionLifecycleEventsAndDeltaFetchByTimestamp(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
+	t.Cleanup(cancel)
 
-	eventsCh, closeFn, err := c.GetSubscription(ctx, "sub-1")
+	subId, eventsCh, closeFn, err := c.NewSubscription(ctx, []string{"script1", "script2"})
 	require.NoError(t, err)
-	defer closeFn()
+	require.NotEmpty(t, subId)
+	require.NotNil(t, eventsCh)
+	require.NotNil(t, closeFn)
+	t.Cleanup(closeFn)
 
 	var (
 		disconnectedAt time.Time

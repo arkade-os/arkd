@@ -1172,6 +1172,7 @@ func (s *service) FinalizeOffchainTx(
 	}()
 
 	decodedCheckpointTxs := make(map[string]*psbt.Packet)
+	spentVtxoKeys := make([]domain.Outpoint, 0, len(finalCheckpointTxs))
 	for _, checkpoint := range finalCheckpointTxs {
 		// verify the tapscript signatures
 		valid, ptx, err := s.builder.VerifyVtxoTapscriptSigs(checkpoint, true)
@@ -1181,7 +1182,33 @@ func (s *service) FinalizeOffchainTx(
 			).WithMetadata(errors.InvalidSignatureMetadata{Tx: checkpoint})
 		}
 
-		decodedCheckpointTxs[ptx.UnsignedTx.TxID()] = ptx
+		checkpointTxid := ptx.UnsignedTx.TxID()
+		if len(ptx.UnsignedTx.TxIn) < 1 {
+			return errors.INVALID_PSBT_MISSING_INPUT.New(
+				"invalid checkpoint tx %s", checkpointTxid,
+			).WithMetadata(errors.PsbtInputMetadata{Txid: checkpointTxid})
+		}
+
+		decodedCheckpointTxs[checkpointTxid] = ptx
+		outpoint := ptx.UnsignedTx.TxIn[0].PreviousOutPoint
+		spentVtxoKeys = append(spentVtxoKeys, domain.Outpoint{
+			Txid: outpoint.Hash.String(),
+			VOut: outpoint.Index,
+		})
+	}
+
+	// re-check spent vtxos, reject if any input is unrolled
+	spentVtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, spentVtxoKeys)
+	if err != nil {
+		return errors.INTERNAL_ERROR.New("failed to fetch vtxos: %w", err).
+			WithMetadata(map[string]any{"vtxos": spentVtxoKeys})
+	}
+	for _, vtxo := range spentVtxos {
+		if vtxo.Unrolled {
+			return errors.VTXO_ALREADY_UNROLLED.New(
+				"%s already unrolled", vtxo.Outpoint,
+			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+		}
 	}
 
 	finalCheckpointTxsMap := make(map[string]string)
@@ -3507,6 +3534,7 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 			"failed to wait for confirmation of commitment tx %s, schedule task time may be inaccurate",
 			round.CommitmentTxid,
 		)
+		blockTimestamp = &ports.BlockTimestamp{Time: time.Now().Unix()}
 	}
 
 	var expirationTimestamp int64
