@@ -2411,12 +2411,6 @@ func aggregateIntentTriggerData(
 func (s *service) collectTriggerContext(ctx context.Context) batchtrigger.Context {
 	tc := batchtrigger.Context{}
 
-	if intentsCount, err := s.cache.Intents().Len(ctx); err != nil {
-		log.WithError(err).Warn("batch_trigger: failed to read intents count")
-	} else {
-		tc.IntentsCount = intentsCount
-	}
-
 	if feerate, err := s.wallet.FeeRate(ctx); err != nil {
 		log.WithError(err).Warn("batch_trigger: failed to read fee rate")
 	} else {
@@ -2430,12 +2424,15 @@ func (s *service) collectTriggerContext(ctx context.Context) batchtrigger.Contex
 		}
 	}
 
+	// Read intents once so IntentsCount and the boarding/fee aggregates all
+	// derive from the same snapshot — using a separate Len() call would race
+	// with concurrent intent registrations.
 	intents, err := s.cache.Intents().ViewAll(ctx, nil)
 	if err != nil {
 		log.WithError(err).Warn("batch_trigger: failed to view pending intents")
 		return tc
 	}
-
+	tc.IntentsCount = int64(len(intents))
 	tc.BoardingInputsCount, tc.TotalBoardingAmount, tc.TotalIntentFees =
 		aggregateIntentTriggerData(intents)
 
@@ -2453,7 +2450,7 @@ func (s *service) evalBatchTrigger(tc batchtrigger.Context) bool {
 	}
 	ok, err := s.batchTrigger.Eval(tc)
 	if err != nil {
-		log.WithError(err).Errorf(
+		log.WithError(err).Warnf(
 			"batch_trigger: evaluation failed for program %q, starting batch as fallback",
 			s.batchTrigger.Source(),
 		)
