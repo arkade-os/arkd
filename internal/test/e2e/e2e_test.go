@@ -1301,24 +1301,21 @@ func TestOffchainTx(t *testing.T) {
 	// the input vtxo is marked "unrolled"
 	t.Run("reject finalization of tx with unrolled inputs", func(t *testing.T) {
 		ctx := t.Context()
-		explorer, err := mempool_explorer.NewExplorer(
-			"http://localhost:3000", arklib.BitcoinRegTest,
-			mempool_explorer.WithTracker(false),
-		)
-		require.NoError(t, err)
 
-		alice, aliceWallet, _, arkSvc := setupArkSDKwithPublicKey(t)
+		alice := setupClient(t)
 		t.Cleanup(func() { alice.Stop() })
-		t.Cleanup(func() { arkSvc.Close() })
 
-		vtxo := faucetOffchain(t, alice, 0.00021)
+		aliceClient := alice.Transport()
 
-		_, offchainAddresses, _, _, err := aliceWallet.GetAddresses(ctx)
+		fund := faucetOffchain(t, alice, 0.00021)
+		vtxo := types.VtxoWithTapTree{Vtxo: fund}
+
+		_, offchainAddresses, _, _, err := alice.GetAddresses(ctx)
 		require.NoError(t, err)
 		require.NotEmpty(t, offchainAddresses)
 		offchainAddress := offchainAddresses[0]
 
-		serverParams, err := arkSvc.GetInfo(ctx)
+		serverParams, err := aliceClient.GetInfo(ctx)
 		require.NoError(t, err)
 
 		vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
@@ -1388,11 +1385,11 @@ func TestOffchainTx(t *testing.T) {
 
 		encodedArkTx, err := ptx.B64Encode()
 		require.NoError(t, err)
-		signedArkTx, err := aliceWallet.SignTransaction(ctx, explorer, encodedArkTx)
+		signedArkTx, err := alice.SignTransaction(ctx, encodedArkTx)
 		require.NoError(t, err)
 
 		// Submit the offchain tx but do NOT finalize it yet
-		txid, _, signedCheckpoints, err := arkSvc.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
+		txid, _, signedCheckpoints, err := aliceClient.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
 		require.NoError(t, err)
 		require.NotEmpty(t, txid)
 
@@ -1405,7 +1402,7 @@ func TestOffchainTx(t *testing.T) {
 
 		// Unroll the input vtxo onchain. Submit has already marked it spent server-side,
 		// so we pass the vtxo explicitly to bypass the SDK's spendable filter.
-		unrollRes, err := alice.Unroll(ctx, arksdk.WithVtxosToUnroll([]types.Vtxo{vtxo}))
+		unrollRes, err := alice.Unroll(ctx, arksdk.WithVtxos([]types.VtxoWithTapTree{vtxo}))
 		require.NoError(t, err)
 		require.NotEmpty(t, unrollRes)
 
@@ -1431,13 +1428,13 @@ func TestOffchainTx(t *testing.T) {
 		// Sign the checkpoints so the finalize request is otherwise valid
 		finalCheckpoints := make([]string, 0, len(signedCheckpoints))
 		for _, checkpoint := range signedCheckpoints {
-			finalCheckpoint, err := aliceWallet.SignTransaction(ctx, explorer, checkpoint)
+			finalCheckpoint, err := alice.SignTransaction(ctx, checkpoint)
 			require.NoError(t, err)
 			finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
 		}
 
 		// Finalize must now be rejected because the input vtxo is unrolled
-		err = arkSvc.FinalizeTx(ctx, txid, finalCheckpoints)
+		err = aliceClient.FinalizeTx(ctx, txid, finalCheckpoints)
 		require.ErrorContains(t, err, "unrolled")
 	})
 
