@@ -30,6 +30,15 @@ func (a *service) SendOffChain(
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
+	// Parse opts here so SendOffChain can read extraExtensionPackets;
+	// createOffchainTx parses opts again for its own settings.
+	sendOpts := newDefaultSendOptions()
+	for _, opt := range opts {
+		if err := opt(sendOpts); err != nil {
+			return nil, err
+		}
+	}
+
 	baseArkTx, checkpointTxs, selectedCoins, changeReceiver, err := a.createOffchainTx(
 		ctx, receivers, opts...,
 	)
@@ -49,7 +58,7 @@ func (a *service) SendOffChain(
 		return nil, err
 	}
 
-	if err := addAssetPacket(arkPtx, assetPacket); err != nil {
+	if err := addExtension(arkPtx, assetPacket, sendOpts.extraPackets); err != nil {
 		return nil, err
 	}
 
@@ -97,13 +106,19 @@ func (a *service) SendOffChain(
 		outs = append(outs, *changeReceiver)
 	}
 
+	ext := make(extension.Extension, 0, 1+len(sendOpts.extraPackets))
+	if len(assetPacket) > 0 {
+		ext = append(ext, assetPacket)
+	}
+	ext = append(ext, sendOpts.extraPackets...)
+
 	return &SendOffChainRes{
 		Txid:        txid,
 		Tx:          signedArkTx,
 		Checkpoints: checkpointTxs,
 		Inputs:      ins,
 		Outputs:     outs,
-		Extension:   extension.Extension{assetPacket},
+		Extension:   ext,
 	}, nil
 }
 
