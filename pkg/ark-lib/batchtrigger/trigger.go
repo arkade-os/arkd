@@ -17,8 +17,8 @@ import (
 
 // Trigger wraps a compiled CEL program and the original source text.
 type Trigger struct {
-	cel.Program
-	txt string
+	program cel.Program
+	txt     string
 }
 
 // New parses the supplied program text against the batch_trigger CEL
@@ -40,7 +40,7 @@ func Parse(txt string) (*Trigger, error) {
 		return nil, issues.Err()
 	}
 
-	if ast.OutputType() != cel.BoolType {
+	if !ast.OutputType().IsExactType(cel.BoolType) {
 		return nil, fmt.Errorf("expected return type bool, got %v", ast.OutputType())
 	}
 
@@ -48,7 +48,7 @@ func Parse(txt string) (*Trigger, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Trigger{Program: prg, txt: txt}, nil
+	return &Trigger{program: prg, txt: txt}, nil
 }
 
 // Source returns the original program text.
@@ -65,7 +65,7 @@ func (t *Trigger) Eval(ctx Context) (bool, error) {
 	if t == nil {
 		return true, nil
 	}
-	result, _, err := t.Program.Eval(ctx.toArgs())
+	result, _, err := t.program.Eval(ctx.toArgs())
 	if err != nil {
 		return false, err
 	}
