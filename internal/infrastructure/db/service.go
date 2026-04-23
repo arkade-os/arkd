@@ -534,13 +534,13 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		}
 
 		txSwept := false
-		batch, err := s.roundStore.GetRoundWithCommitmentTxid(ctx, offchainTx.RootCommitmentTxId)
+		sweepTxs, err := s.roundStore.GetSweepTxs(ctx, offchainTx.RootCommitmentTxId)
 		// We consider the tx swept if:
-		// - there is an error fetching the batch (this is just fallback, should never happen)
+		// - there is an error fetching the sweep txs (this is just fallback, should never happen)
 		// - the batch is swept
 		// - the tx expired (meaning one or all its inputs expired and are already swept or about
 		// to be swept)
-		txSwept = err != nil || (batch != nil && len(batch.SweepTxs) > 0) ||
+		txSwept = err != nil || len(sweepTxs) > 0 ||
 			time.Now().After(time.Unix(offchainTx.ExpiryTimestamp, 0))
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.

@@ -419,6 +419,10 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Empty(t, emptyForfeitTxs)
 
+		emptySweepTxs, err := svc.Rounds().GetSweepTxs(ctx, "nonexistent")
+		require.NoError(t, err)
+		require.Empty(t, emptySweepTxs)
+
 		emptyConnectorTree, err := svc.Rounds().GetRoundConnectorTree(ctx, "nonexistent")
 		require.NoError(t, err)
 		require.Empty(t, emptyConnectorTree)
@@ -612,6 +616,11 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.NotNil(t, roundById)
 		roundsMatch(t, *sweptRound, *roundById)
+
+		sweepTxs, err := svc.Rounds().GetSweepTxs(ctx, commitmentTxid)
+		require.NoError(t, err)
+		require.Len(t, sweepTxs, 1)
+		require.Equal(t, sweepTx, sweepTxs[sweepTxid])
 
 		roundsIds, err := svc.Rounds().GetRoundIds(ctx, 0, 0, false, true)
 		require.NoError(t, err)
