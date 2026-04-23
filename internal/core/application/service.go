@@ -2396,8 +2396,8 @@ func aggregateIntentTriggerData(
 		}
 		totalBoardingAmount += boardingAmount
 
-		inputAmount := it.Intent.TotalInputAmount() + boardingAmount
-		outputAmount := it.Intent.TotalOutputAmount()
+		inputAmount := it.TotalInputAmount() + boardingAmount
+		outputAmount := it.TotalOutputAmount()
 		if inputAmount > outputAmount {
 			totalIntentFees += inputAmount - outputAmount
 		}
