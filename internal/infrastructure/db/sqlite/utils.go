@@ -41,15 +41,9 @@ func (s *sqliteDB) Write() *sql.DB {
 }
 
 func (s *sqliteDB) Close() error {
-	if err := s.readDB.Close(); err != nil {
-		return err
-	}
-
-	if err := s.writeDB.Close(); err != nil {
-		return err
-	}
-
-	return nil
+	readErr := s.readDB.Close()
+	writeErr := s.writeDB.Close()
+	return errors.Join(readErr, writeErr)
 }
 
 // OpenDb returns a split SQLite handle with separate read and write pools.
