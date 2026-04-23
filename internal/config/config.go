@@ -26,6 +26,7 @@ import (
 	fileunlocker "github.com/arkade-os/arkd/internal/infrastructure/unlocker/file"
 	walletclient "github.com/arkade-os/arkd/internal/infrastructure/wallet"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/batchtrigger"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
@@ -143,6 +144,11 @@ type Config struct {
 	IndexerSigningKey    string
 	MaxConcurrentStreams uint32
 
+	// BatchTrigger is an optional CEL formula. When set, the server only
+	// starts a new batch round when the formula evaluates to true. When
+	// empty, every session starts a round (legacy behaviour).
+	BatchTrigger string
+
 	fee            ports.FeeManager
 	repo           ports.RepoManager
 	svc            application.Service
@@ -243,6 +249,9 @@ var (
 	// IndexerSigningKey is a hex-encoded private key. SENSITIVE: never log this value.
 	IndexerSigningKey    = "INDEXER_SIGNING_PRIVKEY" // #nosec G101
 	MaxConcurrentStreams = "MAX_CONCURRENT_STREAMS"
+	// BatchTrigger is a CEL formula evaluated before every round to decide
+	// whether the server should start a new batch. Empty = always start.
+	BatchTrigger = "BATCH_TRIGGER"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -443,6 +452,7 @@ func LoadConfig() (*Config, error) {
 		MaxConcurrentStreams:          viper.GetUint32(MaxConcurrentStreams),
 		// Default to 1 if set to 0
 		MaxOpReturnOutputs: max(1, viper.GetUint32(MaxOpReturnOutputs)),
+		BatchTrigger:       viper.GetString(BatchTrigger),
 	}, nil
 }
 
@@ -649,6 +659,10 @@ func (c *Config) Validate() error {
 
 	if c.MaxConcurrentStreams == 0 {
 		return fmt.Errorf("max concurrent streams must be greater than 0")
+	}
+
+	if _, err := batchtrigger.New(c.BatchTrigger); err != nil {
+		return fmt.Errorf("invalid batch trigger program: %w", err)
 	}
 
 	if err := c.repoManager(); err != nil {
@@ -977,6 +991,7 @@ func (c *Config) appService() error {
 		c.SettlementMinExpiryGap,
 		c.UnrolledVtxoMinExpiryMargin,
 		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0), c.MaxOpReturnOutputs,
+		c.BatchTrigger,
 	)
 	if err != nil {
 		return err
