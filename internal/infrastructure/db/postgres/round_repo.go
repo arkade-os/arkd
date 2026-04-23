@@ -329,6 +329,22 @@ func (r *roundRepository) GetRoundForfeitTxs(
 	return forfeits, nil
 }
 
+func (r *roundRepository) GetSweepTxs(
+	ctx context.Context, commitmentTxid string,
+) (map[string]string, error) {
+	rows, err := r.querier.SelectRoundSweepTxs(ctx, commitmentTxid)
+	if err != nil {
+		return nil, err
+	}
+
+	sweepTxs := make(map[string]string, len(rows))
+	for _, row := range rows {
+		sweepTxs[row.Txid] = row.Tx
+	}
+
+	return sweepTxs, nil
+}
+
 func (r *roundRepository) GetRoundConnectorTree(
 	ctx context.Context, commitmentTxid string,
 ) (tree.FlatTxTree, error) {
