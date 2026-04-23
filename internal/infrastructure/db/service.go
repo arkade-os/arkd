@@ -546,7 +546,9 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				return false
 			}
 
-			batch, batchErr := s.roundStore.GetRoundWithCommitmentTxid(ctx, offchainTx.RootCommitmentTxId)
+			batch, batchErr := s.roundStore.GetRoundWithCommitmentTxid(
+				ctx, offchainTx.RootCommitmentTxId,
+			)
 			// We consider the tx swept if:
 			// - there is an error fetching the batch (this is just fallback, should never happen)
 			// - the batch is swept
