@@ -14,8 +14,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-
-
 type VerifyTapscriptOption func(*verifyTapscriptOptions)
 
 type verifyTapscriptOptions struct {
@@ -41,10 +39,11 @@ func WithSkipPublicKeys(keys ...*btcec.PublicKey) VerifyTapscriptOption {
 	}
 }
 
-// WithoutSkipUnsignedInput makes the func returns an error if any input is unsigned
-func WithoutSkipUnsignedInput() VerifyTapscriptOption {
+// WithSkipUnsignedInputs makes the func ignore unsigned inputs instead of
+// returning an error.
+func WithSkipUnsignedInputs() VerifyTapscriptOption {
 	return func(o *verifyTapscriptOptions) {
-		o.skipUnsignedInputs = false
+		o.skipUnsignedInputs = true
 	}
 }
 
@@ -53,8 +52,7 @@ func VerifyTapscriptSigs(
 	tx *psbt.Packet, prevoutFetcher txscript.PrevOutputFetcher,
 	opts ...VerifyTapscriptOption,
 ) (signedInputs []int, err error) {
-	// skip unsigned input by default
-	options := &verifyTapscriptOptions{skipUnsignedInputs: true}
+	options := &verifyTapscriptOptions{}
 	for _, opt := range opts {
 		opt(options)
 	}

@@ -1065,6 +1065,7 @@ func (b *txBuilder) VerifyBoardingTapscriptSigs(
 		ptx,
 		prevoutFetcher,
 		script.WithSkipPublicKeys(signerPubkey),
+		script.WithSkipUnsignedInputs(),
 	)
 	if err != nil {
 		return nil, err

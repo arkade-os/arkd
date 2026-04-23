@@ -33,7 +33,9 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 			packet, prevoutFetcher := buildTx(t, setup)
 			// No signatures added.
 
-			signedInputs, err := script.VerifyTapscriptSigs(packet, prevoutFetcher)
+			signedInputs, err := script.VerifyTapscriptSigs(
+				packet, prevoutFetcher, script.WithSkipUnsignedInputs(),
+			)
 			require.NoError(t, err)
 			require.Empty(t, signedInputs)
 		})
@@ -161,14 +163,12 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("WithoutSkipUnsignedInput errors on unsigned input", func(t *testing.T) {
+		t.Run("unsigned input errors by default", func(t *testing.T) {
 			setup := newSingleKeySetup(t)
 			packet, prevoutFetcher := buildTx(t, setup)
 			// No signatures added.
 
-			_, err := script.VerifyTapscriptSigs(
-				packet, prevoutFetcher, script.WithoutSkipUnsignedInput(),
-			)
+			_, err := script.VerifyTapscriptSigs(packet, prevoutFetcher)
 			require.Error(t, err)
 		})
 

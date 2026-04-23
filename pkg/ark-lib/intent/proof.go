@@ -103,7 +103,6 @@ func Verify(proofB64, message string, skip []*btcec.PublicKey) error {
 	if _, err := script.VerifyTapscriptSigs(
 		ptx, prevoutFetcher,
 		script.WithSkipPublicKeys(skip...),
-		script.WithoutSkipUnsignedInput(),
 	); err != nil {
 		return fmt.Errorf("invalid intent proof: %w", err)
 	}
