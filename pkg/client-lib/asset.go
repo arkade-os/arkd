@@ -169,7 +169,7 @@ func (a *service) IssueAsset(
 		Txid:                arkTxid,
 		FinalArkTx:          signedArkTx,
 		SignedCheckpointTxs: signedCheckpointTxs,
-	})
+	}, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +372,7 @@ func (a *service) ReissueAsset(
 		Txid:                arkTxid,
 		FinalArkTx:          signedArkTx,
 		SignedCheckpointTxs: signedCheckpointTxs,
-	})
+	}, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -504,7 +504,7 @@ func (a *service) BurnAsset(
 		Txid:                arkTxid,
 		FinalArkTx:          signedArkTx,
 		SignedCheckpointTxs: signedCheckpointTxs,
-	})
+	}, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}

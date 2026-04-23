@@ -90,7 +90,7 @@ func (a *service) SendOffChain(
 		Txid:                arkTxid,
 		FinalArkTx:          signedArkTx,
 		SignedCheckpointTxs: signedCheckpointTxs,
-	})
+	}, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +458,7 @@ func (a *service) finalizePendingTxs(
 		}
 
 		for _, tx := range pendingTxs {
-			txid, _, err := a.finalizeTx(ctx, tx)
+			txid, _, err := a.finalizeTx(ctx, tx, keysByScript)
 			if err != nil {
 				log.WithError(err).Errorf("failed to finalize pending tx: %s", tx.Txid)
 				continue
@@ -471,12 +471,12 @@ func (a *service) finalizePendingTxs(
 }
 
 func (a *service) finalizeTx(
-	ctx context.Context, acceptedTx client.AcceptedOffchainTx,
+	ctx context.Context, acceptedTx client.AcceptedOffchainTx, keysByScript map[string]string,
 ) (string, []string, error) {
 	finalCheckpoints := make([]string, 0, len(acceptedTx.SignedCheckpointTxs))
 
 	for _, checkpoint := range acceptedTx.SignedCheckpointTxs {
-		signedTx, err := a.wallet.SignTransaction(ctx, a.explorer, checkpoint, nil)
+		signedTx, err := a.wallet.SignTransaction(ctx, a.explorer, checkpoint, keysByScript)
 		if err != nil {
 			return "", nil, err
 		}
