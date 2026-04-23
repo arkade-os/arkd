@@ -14,7 +14,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	alertsmanager "github.com/arkade-os/arkd/internal/infrastructure/alertsmanager"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
-	pgbd "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
+	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	"github.com/arkade-os/arkd/internal/infrastructure/feemanager"
 	inmemorylivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/inmemory"
 	redislivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/redis"
@@ -298,6 +298,10 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(Port, DefaultPort)
 	viper.SetDefault(AdminPort, DefaultAdminPort)
 	viper.SetDefault(DbType, defaultDbType)
+	viper.SetDefault(PostgresMaxOpenConn, 50)
+	viper.SetDefault(PostgresMaxIdleConn, 50)
+	viper.SetDefault(PostgresConnMaxIdleMins, 5)
+	viper.SetDefault(PostgresConnMaxLifeMins, 30)
 	viper.SetDefault(NoTLS, defaultNoTLS)
 	viper.SetDefault(LogLevel, defaultLogLevel)
 	viper.SetDefault(SessionDuration, defaultSessionDuration)
@@ -799,7 +803,7 @@ func (c *Config) repoManager() error {
 		eventStoreConfig = []interface{}{
 			c.EventDbUrl,
 			c.PostgresAutoCreateDB,
-			pgbd.ConnectionConfig{
+			pgdb.ConnectionConfig{
 				MaxOpenConn:         c.PostgresMaxOpenConn,
 				MaxIdleConn:         c.PostgresMaxIdleConn,
 				ConnMaxIdleTimeMins: c.PostgresConnMaxIdleMins,
@@ -818,7 +822,7 @@ func (c *Config) repoManager() error {
 		dataStoreConfig = []interface{}{
 			c.DbUrl,
 			c.PostgresAutoCreateDB,
-			pgbd.ConnectionConfig{
+			pgdb.ConnectionConfig{
 				MaxOpenConn:         c.PostgresMaxOpenConn,
 				MaxIdleConn:         c.PostgresMaxIdleConn,
 				ConnMaxIdleTimeMins: c.PostgresConnMaxIdleMins,
