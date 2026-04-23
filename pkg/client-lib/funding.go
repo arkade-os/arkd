@@ -267,20 +267,11 @@ func (a *service) NotifyIncomingFunds(ctx context.Context, addr string) ([]types
 	}
 
 	scripts := []string{hex.EncodeToString(vtxoScript)}
-	subId, err := a.indexer.SubscribeForScripts(ctx, "", scripts)
+	_, eventCh, closeFn, err := a.indexer.NewSubscription(ctx, scripts)
 	if err != nil {
 		return nil, err
 	}
-
-	eventCh, closeFn, err := a.indexer.GetSubscription(ctx, subId)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		// nolint
-		a.indexer.UnsubscribeForScripts(ctx, subId, scripts)
-		closeFn()
-	}()
+	defer closeFn()
 
 	for {
 		event, ok := <-eventCh

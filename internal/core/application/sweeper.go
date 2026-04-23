@@ -474,6 +474,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 					"failed to wait for confirmation of batch input tx %s, schedule task time "+
 						"may be inaccurate", rootInput,
 				)
+				blockTimestamp = &ports.BlockTimestamp{Time: time.Now().Unix()}
 			}
 
 			var expirationTimestamp int64
