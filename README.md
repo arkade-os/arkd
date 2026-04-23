@@ -109,6 +109,7 @@ The `arkd` server can be configured using environment variables.
 | `ARKD_INDEXER_EXPOSURE`.           | Require intent for getting vtxo chain (public, private, withheld)               | `public`                       |
 | `ARKD_INDEXER_SIGNING_PRIVKEY`     | Hex-encoded private key for indexer auth token signing (sensitive)              | -                              |
 | `ARKD_INDEXER_AUTH_TOKEN_EXPIRY`   | Auth token TTL in seconds                                                       | `300` (5 minutes)              |
+| `ARKD_BATCH_TRIGGER`               | Optional CEL formula returning `bool`. When set, the server only starts a new batch round when the formula evaluates to `true`. See [`pkg/ark-lib/batchtrigger/README.md`](pkg/ark-lib/batchtrigger/README.md) for the available variables and examples. | - (always start)               |
 
 ## Provisioning
 

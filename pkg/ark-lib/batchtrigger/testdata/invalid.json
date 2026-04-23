@@ -1,0 +1,39 @@
+{
+  "invalidConfigs": [
+    {
+      "name": "syntax error",
+      "program": "intents_count >>",
+      "err": "Syntax error"
+    },
+    {
+      "name": "wrong return type - double",
+      "program": "intents_count + 1.0",
+      "err": "expected return type bool"
+    },
+    {
+      "name": "wrong return type - string",
+      "program": "'hello'",
+      "err": "expected return type bool"
+    },
+    {
+      "name": "wrong return type - int",
+      "program": "1",
+      "err": "expected return type bool"
+    },
+    {
+      "name": "undeclared variable",
+      "program": "undeclared_thing > 0.0",
+      "err": "undeclared reference"
+    },
+    {
+      "name": "type mismatch",
+      "program": "intents_count == 'foo'",
+      "err": "no matching overload"
+    },
+    {
+      "name": "unknown function",
+      "program": "missing_func() > 0.0",
+      "err": "undeclared reference"
+    }
+  ]
+}
