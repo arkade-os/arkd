@@ -84,28 +84,6 @@ func TestUpdateHandlerDispatch(t *testing.T) {
 			})
 		}
 
-		t.Run("does not block the caller", func(t *testing.T) {
-			h := newUpdateHandler[domain.OffchainTx]()
-
-			release := make(chan struct{})
-			entered := make(chan struct{})
-			h.set(func(data domain.OffchainTx) {
-				close(entered)
-				<-release
-			})
-
-			start := time.Now()
-			h.dispatch(domain.OffchainTx{})
-			require.Less(t, time.Since(start), 100*time.Millisecond)
-
-			select {
-			case <-entered:
-			case <-time.After(time.Second):
-				t.Fatal("handler goroutine did not start")
-			}
-			close(release)
-		})
-
 		t.Run("no-op when handler not set", func(t *testing.T) {
 			h := newUpdateHandler[domain.OffchainTx]()
 

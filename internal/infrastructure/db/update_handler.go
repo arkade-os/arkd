@@ -30,5 +30,5 @@ func (u *updateHandler[T]) dispatch(data T) {
 	if u.handler == nil {
 		return
 	}
-	go u.handler(data)
+	u.handler(data)
 }
