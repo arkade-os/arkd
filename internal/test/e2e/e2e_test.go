@@ -280,6 +280,15 @@ func TestUnilateralExit(t *testing.T) {
 		require.Zero(t, balance.OffchainBalance.Total)
 		require.NotEmpty(t, balance.OnchainBalance.LockedAmount)
 		require.NotZero(t, balance.OnchainBalance.LockedAmount[0].Amount)
+
+		err = generateBlocks(20)
+		require.NoError(t, err)
+
+		time.Sleep(15 * time.Second)
+
+		txid, err := alice.CompleteUnroll(t.Context(), "")
+		require.NoError(t, err)
+		require.NotEmpty(t, txid)
 	})
 
 	// In this test Bob receives from Alice a VTXO offchain and unrolls it onchain
@@ -357,6 +366,15 @@ func TestUnilateralExit(t *testing.T) {
 		require.Zero(t, bobBalance.OffchainBalance.Total)
 		require.NotEmpty(t, bobBalance.OnchainBalance.LockedAmount)
 		require.NotZero(t, bobBalance.OnchainBalance.LockedAmount[0].Amount)
+
+		err = generateBlocks(20)
+		require.NoError(t, err)
+
+		time.Sleep(15 * time.Second)
+
+		txid, err := alice.CompleteUnroll(t.Context(), "")
+		require.NoError(t, err)
+		require.NotEmpty(t, txid)
 	})
 }
 
@@ -456,6 +474,8 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 	// CompleteUnroll should find no mature funds to claim.
 	err = generateBlocks(20)
 	require.NoError(t, err)
+
+	time.Sleep(5 * time.Second)
 
 	_, err = alice.CompleteUnroll(ctx, "")
 	require.ErrorContains(t, err, "no mature funds available")
