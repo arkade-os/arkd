@@ -3482,8 +3482,17 @@ func (s *service) propagateRoundSigningNoncesGeneratedEvent(
 }
 
 func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
+	// Background goroutine — recover from unexpected panics (nil wallet
+	// returns, transient nbxplorer loss, dropped domain pointers) so a
+	// single broken round does not crash the process.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("panic in scheduleSweepBatchOutput: %v", r)
+		}
+	}()
+
 	// Schedule the sweeping procedure only for completed round.
-	if !round.IsEnded() {
+	if round == nil || !round.IsEnded() {
 		return
 	}
 
@@ -3493,11 +3502,13 @@ func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
 	}
 
 	blockTimestamp, err := waitForConfirmation(context.Background(), round.CommitmentTxid, s.wallet)
-	if err != nil {
-		log.WithError(err).Warnf(
-			"failed to wait for confirmation of commitment tx %s, schedule task time may be inaccurate",
-			round.CommitmentTxid,
-		)
+	if err != nil || blockTimestamp == nil {
+		if err != nil {
+			log.WithError(err).Warnf(
+				"failed to wait for confirmation of commitment tx %s, schedule task time may be inaccurate",
+				round.CommitmentTxid,
+			)
+		}
 		blockTimestamp = &ports.BlockTimestamp{Time: time.Now().Unix()}
 	}
 
