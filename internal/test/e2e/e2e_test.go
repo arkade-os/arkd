@@ -1303,7 +1303,7 @@ func TestOffchainTx(t *testing.T) {
 		ctx := t.Context()
 
 		alice := setupClient(t)
-		t.Cleanup(func() { alice.Stop() })
+		t.Cleanup(alice.Stop)
 
 		aliceClient := alice.Transport()
 
