@@ -20,10 +20,10 @@ type validTestData struct {
 }
 
 type validCase struct {
-	Name     string         `json:"name"`
-	Program  string         `json:"program"`
-	Context  jsonContext    `json:"context"`
-	Expected bool           `json:"expected"`
+	Name     string      `json:"name"`
+	Program  string      `json:"program"`
+	Context  jsonContext `json:"context"`
+	Expected bool        `json:"expected"`
 }
 
 type jsonContext struct {

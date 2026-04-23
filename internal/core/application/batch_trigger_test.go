@@ -12,11 +12,11 @@ import (
 
 func TestAggregateIntentTriggerData(t *testing.T) {
 	tests := []struct {
-		name                       string
-		intents                    []ports.TimedIntent
-		wantBoardingInputsCount    int64
-		wantTotalBoardingAmount    uint64
-		wantTotalIntentFees        uint64
+		name                    string
+		intents                 []ports.TimedIntent
+		wantBoardingInputsCount int64
+		wantTotalBoardingAmount uint64
+		wantTotalIntentFees     uint64
 	}{
 		{
 			name:                    "empty intents",
