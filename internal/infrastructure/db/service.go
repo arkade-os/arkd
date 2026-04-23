@@ -156,7 +156,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to open event store: %s", err)
 		}
 	case "postgres":
-		if len(config.EventStoreConfig) != 2 {
+		if len(config.EventStoreConfig) != 3 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
 		}
 
@@ -170,7 +170,12 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("invalid autocreate flag for postgres")
 		}
 
-		db, err := pgdb.OpenDb(dsn, autoCreate)
+		connectionCfg, ok := config.EventStoreConfig[2].(pgdb.ConnectionConfig)
+		if !ok {
+			return nil, fmt.Errorf("invalid connection config flags for postgres")
+		}
+
+		db, err := pgdb.OpenDb(dsn, autoCreate, pgdb.WithConnectionConfig(connectionCfg))
 		if err != nil {
 			return nil, fmt.Errorf("failed to open postgres db: %s", err)
 		}
@@ -215,7 +220,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
 	case "postgres":
-		if len(config.DataStoreConfig) != 2 {
+		if len(config.DataStoreConfig) != 3 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
 		}
 
@@ -229,7 +234,12 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("invalid autocreate flag for postgres")
 		}
 
-		db, err := pgdb.OpenDb(dsn, autoCreate)
+		connectionCfg, ok := config.DataStoreConfig[2].(pgdb.ConnectionConfig)
+		if !ok {
+			return nil, fmt.Errorf("invalid connection config flags for postgres")
+		}
+
+		db, err := pgdb.OpenDb(dsn, autoCreate, pgdb.WithConnectionConfig(connectionCfg))
 		if err != nil {
 			return nil, fmt.Errorf("failed to open postgres db: %s", err)
 		}
