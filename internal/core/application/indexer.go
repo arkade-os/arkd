@@ -495,13 +495,13 @@ func (i *indexerService) GetVirtualTxsByIntent(
 func (i *indexerService) GetBatchSweepTxs(
 	ctx context.Context, batchOutpoint Outpoint,
 ) ([]string, error) {
-	round, err := i.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, batchOutpoint.Txid)
+	sweepTxs, err := i.repoManager.Rounds().GetSweepTxs(ctx, batchOutpoint.Txid)
 	if err != nil {
 		return nil, err
 	}
 
-	txids := make([]string, 0, len(round.SweepTxs))
-	for txid := range round.SweepTxs {
+	txids := make([]string, 0, len(sweepTxs))
+	for txid := range sweepTxs {
 		txids = append(txids, txid)
 	}
 
