@@ -1,10 +1,10 @@
 -- name: UpsertRound :exec
 INSERT INTO round (
     id, starting_timestamp, ending_timestamp, ended, failed, fail_reason,
-    stage_code, connector_address, version, swept, vtxo_tree_expiration
+    stage_code, connector_address, version, swept, vtxo_tree_expiration, fees
 ) VALUES (
     @id, @starting_timestamp, @ending_timestamp, @ended, @failed, @fail_reason,
-    @stage_code, @connector_address, @version, @swept, @vtxo_tree_expiration
+    @stage_code, @connector_address, @version, @swept, @vtxo_tree_expiration, @fees
 )
 ON CONFLICT(id) DO UPDATE SET
     starting_timestamp = EXCLUDED.starting_timestamp,
@@ -16,7 +16,8 @@ ON CONFLICT(id) DO UPDATE SET
     connector_address = EXCLUDED.connector_address,
     version = EXCLUDED.version,
     swept = EXCLUDED.swept,
-    vtxo_tree_expiration = EXCLUDED.vtxo_tree_expiration;
+    vtxo_tree_expiration = EXCLUDED.vtxo_tree_expiration,
+    fees = EXCLUDED.fees;
 
 -- name: UpsertTx :exec
 INSERT INTO tx (tx, round_id, type, position, txid, children)
@@ -440,6 +441,14 @@ VALUES (@asset_id, @txid, @vout, @amount);
 
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id = ANY($1::varchar[]);
+
+-- name: SelectCollectedFees :one
+SELECT COALESCE(SUM(fees), 0)::bigint AS fees
+FROM round
+WHERE ended = true
+  AND failed = false
+  AND (@after::bigint <= 0 OR starting_timestamp > @after)
+  AND (@before::bigint <= 0 OR starting_timestamp < @before);
 
 -- name: SelectAssetSupply :one
 SELECT (COALESCE(SUM(ap.amount), 0))::TEXT AS supply
