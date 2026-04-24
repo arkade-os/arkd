@@ -158,13 +158,9 @@ func (r *assetRepository) GetAssets(
 			indexByID[row.ID] = idx
 		}
 
-		if !row.AssetAmount.Valid {
-			continue
-		}
-
-		amount, ok := new(big.Int).SetString(row.AssetAmount.String, 10)
+		amount, ok := new(big.Int).SetString(row.AssetAmount, 10)
 		if !ok {
-			continue
+			return nil, fmt.Errorf("invalid supply value: %s", row.AssetAmount)
 		}
 		assets[idx].Supply.Add(&assets[idx].Supply, amount)
 	}

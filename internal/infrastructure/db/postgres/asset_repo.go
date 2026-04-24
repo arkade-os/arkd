@@ -143,9 +143,13 @@ func (r *assetRepository) GetAssets(
 			}
 
 			if row.Metadata.Valid {
-				ast.Metadata, err = asset.NewMetadataListFromString(row.Metadata.String)
-				if err != nil {
-					log.WithError(err).Warnf("failed to parse metadata for asset %s", row.ID)
+				// Parsing metadata should never fail but if it does we just return an empty list
+				// of metadata and log the error
+				metadata, parseErr := asset.NewMetadataListFromString(row.Metadata.String)
+				if parseErr != nil {
+					log.WithError(parseErr).Warnf("failed to parse metadata for asset %s", row.ID)
+				} else {
+					ast.Metadata = metadata
 				}
 			}
 

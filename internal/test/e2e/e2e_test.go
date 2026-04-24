@@ -5664,6 +5664,8 @@ func TestGetAssetQueryChurn(t *testing.T) {
 	var aliceRecvd, bobRecvd []types.Vtxo
 
 	for i := range supply {
+		completed := i + 1
+
 		sendWg := &sync.WaitGroup{}
 		sendWg.Add(2)
 		recvWg := &sync.WaitGroup{}
@@ -5703,14 +5705,14 @@ func TestGetAssetQueryChurn(t *testing.T) {
 		}()
 
 		sendWg.Wait()
-		require.NoErrorf(t, aliceSendErr, "send %d/%d failed", i, supply)
-		require.NoErrorf(t, bobSendErr, "send %d/%d failed", i, supply)
+		require.NoErrorf(t, aliceSendErr, "send %d/%d failed", completed, supply)
+		require.NoErrorf(t, bobSendErr, "send %d/%d failed", completed, supply)
 
 		recvWg.Wait()
 		require.NoError(t, aliceRecvErr, "receiving vtxos for send %s %d/%d failed",
-			aliceSendRes.Txid, i, supply)
+			aliceSendRes.Txid, completed, supply)
 		require.NoError(t, bobRecvErr, "receiving vtxos for send %s %d/%d failed",
-			bobSendRes.Txid, i, supply)
+			bobSendRes.Txid, completed, supply)
 
 		outpoints := make([]types.Outpoint, 0)
 		spentVtxos := make([]types.Outpoint, 0)
@@ -5762,7 +5764,7 @@ func TestGetAssetQueryChurn(t *testing.T) {
 		}
 
 		// start a batch after every batchInterval sends
-		if i != 0 && i%batchInterval == 0 {
+		if completed%batchInterval == 0 {
 			settleWg := &sync.WaitGroup{}
 			settleWg.Add(4)
 
@@ -5831,7 +5833,7 @@ func TestGetAssetQueryChurn(t *testing.T) {
 			require.NoError(t, bobGetCtxErr)
 			require.Len(t, bobCtx.Batches, 1, "failed to update completed round in database")
 			t.Logf("completed %d/%d offchain sends and batch %d/%d",
-				i, supply, i/batchInterval, supply/batchInterval)
+				completed, supply, completed/batchInterval, supply/batchInterval)
 		}
 	}
 
