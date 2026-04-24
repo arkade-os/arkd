@@ -52,6 +52,7 @@ func NewClient(serverUrl string) (indexer.Indexer, error) {
 	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
 		grpc.WithDisableServiceConfig(),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(20 << 20)),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff: backoff.Config{
 				BaseDelay:  1 * time.Second,
@@ -743,8 +744,8 @@ func (a *grpcClient) paginatedGetVirtualTxs(
 func paginatedFetch[T any](
 	ctx context.Context,
 	fetch func(
-		ctx context.Context, page *arkv1.IndexerPageRequest,
-	) ([]T, *arkv1.IndexerPageResponse, error),
+	ctx context.Context, page *arkv1.IndexerPageRequest,
+) ([]T, *arkv1.IndexerPageResponse, error),
 ) ([]T, error) {
 	var all []T
 	pageIndex := int32(0)
