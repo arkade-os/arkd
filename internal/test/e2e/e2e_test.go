@@ -5527,8 +5527,8 @@ func TestGetAssetQueryChurn(t *testing.T) {
 	const batchInterval = 10
 	const assetQueryWorkers = 4
 
-	alice := setupArkSDK(t)
-	bob := setupArkSDK(t)
+	alice := setupClientWallet(t)
+	bob := setupClientWallet(t)
 
 	faucetOffchain(t, alice, 0.002)
 	faucetOffchain(t, bob, 0.002)
@@ -5600,7 +5600,7 @@ func TestGetAssetQueryChurn(t *testing.T) {
 	var canceledAssetCalls atomic.Int64
 
 	assetTargets := []struct {
-		client  arksdk.ArkClient
+		client  wallet.Wallet
 		assetID string
 	}{
 		{client: alice, assetID: aliceAssetID},
@@ -5660,7 +5660,7 @@ func TestGetAssetQueryChurn(t *testing.T) {
 	}()
 
 	var aliceSendErr, bobSendErr error
-	var aliceSendRes, bobSendRes *arksdk.SendOffChainRes
+	var aliceSendRes, bobSendRes *wallet.SendOffChainRes
 	var aliceRecvd, bobRecvd []types.Vtxo
 
 	for i := range supply {
@@ -5769,7 +5769,7 @@ func TestGetAssetQueryChurn(t *testing.T) {
 			settleWg.Add(4)
 
 			var aliceSettleErr, bobSettleErr error
-			var aliceSettleRes, bobSettleRes *arksdk.SettleRes
+			var aliceSettleRes, bobSettleRes *wallet.SettleRes
 			go func() {
 				// expect 1 new batch vtxo
 				_, aliceRecvErr = waitForVTXOs(aliceEvtCh, 1, recvVtxosTimeout)
