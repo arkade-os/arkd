@@ -344,7 +344,7 @@ func (s *sweeper) scheduleCheckpointSweep(
 
 // scheduleBatchSweep set up a task to be executed once at the given timestamp
 func (s *sweeper) scheduleBatchSweep(
-	expirationTimestamp int64, commitmentTxid, vtxoTreeRootTxid string,
+	expirationTimestamp int64, commitmentTxid, vtxoTreeRootTxid string, skipExpiryUpdate bool,
 ) error {
 	if err := s.scheduleTask(sweeperTask{
 		execute: s.createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid),
@@ -357,6 +357,10 @@ func (s *sweeper) scheduleBatchSweep(
 	log.WithField("root", vtxoTreeRootTxid).
 		Debugf("sweeper: scheduled sweep for batch %s at %s",
 			commitmentTxid, fancyTime(expirationTimestamp, s.scheduler.Unit()))
+
+	if skipExpiryUpdate {
+		return nil
+	}
 
 	if err := s.updateVtxoExpirationTime(
 		commitmentTxid, vtxoTreeRootTxid, expirationTimestamp,
@@ -474,17 +478,20 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 					"failed to wait for confirmation of batch input tx %s, schedule task time "+
 						"may be inaccurate", rootInput,
 				)
+				blockTimestamp = &ports.BlockTimestamp{Time: time.Now().Unix()}
 			}
 
 			var expirationTimestamp int64
+			var skipExpiryUpdate bool
 			if s.scheduler.Unit() == ports.BlockHeight {
 				expirationTimestamp = int64(blockTimestamp.Height) + int64(vtxoTreeExpiry.Value)
+				skipExpiryUpdate = true
 			} else {
 				expirationTimestamp = blockTimestamp.Time + vtxoTreeExpiry.Seconds()
 			}
 
 			if err := s.scheduleBatchSweep(
-				expirationTimestamp, txid, tree.Root.UnsignedTx.TxID(),
+				expirationTimestamp, txid, tree.Root.UnsignedTx.TxID(), skipExpiryUpdate,
 			); err != nil {
 				log.WithError(err).Errorf(
 					"failed to schedule sweep for vtxo tree %s of batch %s",

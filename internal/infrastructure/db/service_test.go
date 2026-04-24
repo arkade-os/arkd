@@ -419,6 +419,10 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Empty(t, emptyForfeitTxs)
 
+		emptySweepTxs, err := svc.Rounds().GetSweepTxs(ctx, "nonexistent")
+		require.NoError(t, err)
+		require.Empty(t, emptySweepTxs)
+
 		emptyConnectorTree, err := svc.Rounds().GetRoundConnectorTree(ctx, "nonexistent")
 		require.NoError(t, err)
 		require.Empty(t, emptyConnectorTree)
@@ -442,6 +446,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		roundsMatch(t, *round, *roundById)
 
 		commitmentTxid := randomString(32)
+		largeProof := randomString(3000)
 		newEvents := []domain.Event{
 			domain.IntentsRegistered{
 				RoundEvent: domain.RoundEvent{
@@ -451,7 +456,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 				Intents: []domain.Intent{
 					{
 						Id:      uuid.New().String(),
-						Proof:   "proof",
+						Proof:   largeProof,
 						Txid:    txida,
 						Message: "message",
 						Inputs: []domain.Vtxo{
@@ -528,7 +533,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		// get intents by txid
 		intent, err := svc.Rounds().GetIntentByTxid(ctx, txida)
 		require.NoError(t, err)
-		require.Equal(t, "proof", intent.Proof)
+		require.Equal(t, largeProof, intent.Proof)
 		require.Equal(t, "message", intent.Message)
 		require.NotEqual(t, "", intent.Id)
 		require.NotEqual(t, "", intent.Txid)
@@ -611,6 +616,11 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.NotNil(t, roundById)
 		roundsMatch(t, *sweptRound, *roundById)
+
+		sweepTxs, err := svc.Rounds().GetSweepTxs(ctx, commitmentTxid)
+		require.NoError(t, err)
+		require.Len(t, sweepTxs, 1)
+		require.Equal(t, sweepTx, sweepTxs[sweepTxid])
 
 		roundsIds, err := svc.Rounds().GetRoundIds(ctx, 0, 0, false, true)
 		require.NoError(t, err)

@@ -29,6 +29,15 @@ func (a *service) IssueAsset(
 		return nil, fmt.Errorf("amount must be > 0")
 	}
 
+	// Parse opts here so we can pass extra extension packets to addExtension below;
+	// createOffchainTx parses opts again for its own settings.
+	sendOpts := newDefaultSendOptions()
+	for _, opt := range opts {
+		if err := opt(sendOpts); err != nil {
+			return nil, err
+		}
+	}
+
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
@@ -128,7 +137,7 @@ func (a *service) IssueAsset(
 		return nil, err
 	}
 
-	if err := addAssetPacket(arkPtx, assetPacket); err != nil {
+	if err := addExtension(arkPtx, assetPacket, sendOpts.extraPackets); err != nil {
 		return nil, err
 	}
 
@@ -208,6 +217,8 @@ func (a *service) IssueAsset(
 		outs = append(outs, *changeReceiver)
 	}
 
+	ext := append(extension.Extension{assetPacket}, sendOpts.extraPackets...)
+
 	return &IssueAssetRes{
 		OffchainTxRes: OffchainTxRes{
 			Txid:        txid,
@@ -215,7 +226,7 @@ func (a *service) IssueAsset(
 			Checkpoints: checkpointTxs,
 			Inputs:      ins,
 			Outputs:     outs,
-			Extension:   extension.Extension{assetPacket},
+			Extension:   ext,
 		},
 		IssuedAssets: assetIds,
 	}, nil
@@ -244,6 +255,13 @@ func (a *service) ReissueAsset(
 
 	if len(controlAssetId) == 0 {
 		return nil, fmt.Errorf("%s can't be reissued, no control asset", assetId)
+	}
+
+	sendOpts := newDefaultSendOptions()
+	for _, opt := range opts {
+		if err := opt(sendOpts); err != nil {
+			return nil, err
+		}
 	}
 
 	a.txLock.Lock()
@@ -324,7 +342,7 @@ func (a *service) ReissueAsset(
 		assetPacket[groupIndex].Outputs = append(assetPacket[groupIndex].Outputs, *issuedAssetOutput)
 	}
 
-	if err := addAssetPacket(arkPtx, assetPacket); err != nil {
+	if err := addExtension(arkPtx, assetPacket, sendOpts.extraPackets); err != nil {
 		return nil, err
 	}
 
@@ -379,13 +397,15 @@ func (a *service) ReissueAsset(
 		outs = append(outs, *changeReceiver)
 	}
 
+	ext := append(extension.Extension{assetPacket}, sendOpts.extraPackets...)
+
 	return &ReissueAssetRes{
 		Txid:        txid,
 		Tx:          signedArkTx,
 		Checkpoints: checkpointTxs,
 		Inputs:      ins,
 		Outputs:     outs,
-		Extension:   extension.Extension{assetPacket},
+		Extension:   ext,
 	}, nil
 }
 
@@ -406,6 +426,13 @@ func (a *service) BurnAsset(
 	}
 	if len(offchainAddrs) <= 0 {
 		return nil, fmt.Errorf("no offchain addresses")
+	}
+
+	sendOpts := newDefaultSendOptions()
+	for _, opt := range opts {
+		if err := opt(sendOpts); err != nil {
+			return nil, err
+		}
 	}
 
 	a.txLock.Lock()
@@ -449,7 +476,7 @@ func (a *service) BurnAsset(
 		return nil, err
 	}
 
-	if err := addAssetPacket(arkPtx, assetPacket); err != nil {
+	if err := addExtension(arkPtx, assetPacket, sendOpts.extraPackets); err != nil {
 		return nil, err
 	}
 
@@ -499,13 +526,15 @@ func (a *service) BurnAsset(
 		outs = append(outs, types.Receiver{To: changeReceiver.To, Amount: changeReceiver.Amount})
 	}
 
+	ext := append(extension.Extension{assetPacket}, sendOpts.extraPackets...)
+
 	return &BurnAssetRes{
 		Txid:        txid,
 		Tx:          signedArkTx,
 		Checkpoints: checkpointTxs,
 		Inputs:      ins,
 		Outputs:     outs,
-		Extension:   extension.Extension{assetPacket},
+		Extension:   ext,
 	}, nil
 }
 
