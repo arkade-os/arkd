@@ -193,6 +193,27 @@ type ScheduledSession struct {
 	UpdatedAt            int64
 }
 
+type Setting struct {
+	ID                            int64
+	BanThreshold                  int64
+	BanDuration                   int64
+	UnilateralExitDelay           int64
+	PublicUnilateralExitDelay     int64
+	CheckpointExitDelay           int64
+	BoardingExitDelay             int64
+	VtxoTreeExpiry                int64
+	RoundMinParticipantsCount     int64
+	RoundMaxParticipantsCount     int64
+	VtxoMinAmount                 int64
+	VtxoMaxAmount                 int64
+	UtxoMinAmount                 int64
+	UtxoMaxAmount                 int64
+	SettlementMinExpiryGap        int64
+	VtxoNoCsvValidationCutoffDate int64
+	MaxTxWeight                   int64
+	UpdatedAt                     int64
+}
+
 type Tx struct {
 	Txid     string
 	Tx       string

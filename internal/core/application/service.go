@@ -299,6 +299,93 @@ func (s *service) Start() error {
 	return nil
 }
 
+// UpdateSettings applies new settings to the running service. It is called by
+// the admin service under settingsMu and must not be called concurrently.
+func (s *service) UpdateSettings(settings domain.Settings) error {
+	// Warn when exit delay parameters change — existing VTXOs have the old
+	// values baked into their scripts, so changes only affect future rounds.
+	newUnilateral := domain.ToRelativeLocktime(settings.UnilateralExitDelay)
+	newPublicUnilateral := domain.ToRelativeLocktime(settings.PublicUnilateralExitDelay)
+	newCheckpoint := domain.ToRelativeLocktime(settings.CheckpointExitDelay)
+	newBoarding := domain.ToRelativeLocktime(settings.BoardingExitDelay)
+	newExpiry := domain.ToRelativeLocktime(settings.VtxoTreeExpiry)
+	if s.unilateralExitDelay != newUnilateral {
+		log.Warnf(
+			"unilateral exit delay changed from %d to %d — only affects future rounds",
+			s.unilateralExitDelay.Value, newUnilateral.Value,
+		)
+	}
+	if s.publicUnilateralExitDelay != newPublicUnilateral {
+		log.Warnf(
+			"public unilateral exit delay changed from %d to %d — only affects future rounds",
+			s.publicUnilateralExitDelay.Value, newPublicUnilateral.Value,
+		)
+	}
+	if s.checkpointExitDelay != newCheckpoint {
+		log.Warnf(
+			"checkpoint exit delay changed from %d to %d — only affects future rounds",
+			s.checkpointExitDelay.Value, newCheckpoint.Value,
+		)
+	}
+	if s.boardingExitDelay != newBoarding {
+		log.Warnf(
+			"boarding exit delay changed from %d to %d — only affects future rounds",
+			s.boardingExitDelay.Value, newBoarding.Value,
+		)
+	}
+	if s.batchExpiry != newExpiry {
+		log.Warnf(
+			"vtxo tree expiry changed from %d to %d — only affects future rounds",
+			s.batchExpiry.Value, newExpiry.Value,
+		)
+	}
+
+	s.banDuration = time.Duration(settings.BanDuration) * time.Second
+	s.banThreshold = settings.BanThreshold
+	s.unilateralExitDelay = newUnilateral
+	s.publicUnilateralExitDelay = newPublicUnilateral
+	s.checkpointExitDelay = newCheckpoint
+	s.boardingExitDelay = newBoarding
+	s.batchExpiry = newExpiry
+	s.roundMinParticipantsCount = settings.RoundMinParticipantsCount
+	s.roundMaxParticipantsCount = settings.RoundMaxParticipantsCount
+	s.vtxoMinAmount = settings.VtxoMinAmount
+	s.vtxoMaxAmount = settings.VtxoMaxAmount
+	s.utxoMinAmount = settings.UtxoMinAmount
+	s.utxoMaxAmount = settings.UtxoMaxAmount
+	s.settlementMinExpiryGap = time.Duration(settings.SettlementMinExpiryGap) * time.Second
+	s.vtxoNoCsvValidationCutoffTime = time.Unix(settings.VtxoNoCsvValidationCutoffDate, 0)
+	s.maxTxWeight = uint64(settings.MaxTxWeight)
+
+	// Recalculate dust-derived values.
+	ctx := context.Background()
+	dustAmount, err := s.wallet.GetDustAmount(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get dust amount: %s", err)
+	}
+
+	s.vtxoMinAmount, s.utxoMinAmount = resolveMinAmounts(
+		s.vtxoMinAmount, s.utxoMinAmount, int64(dustAmount),
+	)
+
+	// Recalculate checkpoint tapscript if forfeit pubkey is already set.
+	if s.forfeitPubkey != nil {
+		checkpointClosure := &script.CSVMultisigClosure{
+			Locktime: s.checkpointExitDelay,
+			MultisigClosure: script.MultisigClosure{
+				PubKeys: []*btcec.PublicKey{s.forfeitPubkey},
+			},
+		}
+		checkpointTapscript, err := checkpointClosure.Script()
+		if err != nil {
+			return fmt.Errorf("failed to encode checkpoint tapscript: %s", err)
+		}
+		s.checkpointTapscript = checkpointTapscript
+	}
+
+	return nil
+}
+
 func (s *service) registerEventHandlers() {
 	s.repoManager.Events().RegisterEventsHandler(
 		domain.RoundTopic, func(events []domain.Event) {

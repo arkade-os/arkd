@@ -78,6 +78,11 @@ var (
 		"sqlite":   sqlitedb.NewIntentFeesRepository,
 		"postgres": pgdb.NewIntentFeesRepository,
 	}
+	settingsStoreTypes = map[string]func(...interface{}) (domain.SettingsRepository, error){
+		"badger":   badgerdb.NewSettingsRepository,
+		"sqlite":   sqlitedb.NewSettingsRepository,
+		"postgres": pgdb.NewSettingsRepository,
+	}
 )
 
 const (
@@ -101,6 +106,7 @@ type service struct {
 	convictionStore       domain.ConvictionRepository
 	assetStore            domain.AssetRepository
 	intentFeesStore       domain.FeeRepository
+	settingsStore         domain.SettingsRepository
 	txDecoder             ports.TxDecoder
 }
 
@@ -139,6 +145,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
 
+	settingsStoreFactory, ok := settingsStoreTypes[config.DataStoreType]
+	if !ok {
+		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
+	}
+
 	var eventStore domain.EventRepository
 	var roundStore domain.RoundRepository
 	var vtxoStore domain.VtxoRepository
@@ -147,6 +158,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	var convictionStore domain.ConvictionRepository
 	var assetStore domain.AssetRepository
 	var intentFeesStore domain.FeeRepository
+	var settingsStore domain.SettingsRepository
 	var err error
 
 	switch config.EventStoreType {
@@ -213,6 +225,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		intentFeesStore, err = intentFeesStoreFactory(config.DataStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
+		}
+		settingsStore, err = settingsStoreFactory(config.DataStoreConfig...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create settings store: %w", err)
 		}
 	case "postgres":
 		if len(config.DataStoreConfig) != 2 {
@@ -289,6 +305,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
+		settingsStore, err = settingsStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create settings store: %w", err)
+		}
 	case "sqlite":
 		if len(config.DataStoreConfig) != 1 {
 			return nil, fmt.Errorf("invalid data store config")
@@ -357,6 +377,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
+		settingsStore, err = settingsStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create settings store: %w", err)
+		}
 	}
 
 	svc := &service{
@@ -369,6 +393,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		convictionStore:       convictionStore,
 		assetStore:            assetStore,
 		intentFeesStore:       intentFeesStore,
+		settingsStore:         settingsStore,
 	}
 
 	// Register handlers that take care of keeping the projection store up-to-date.
@@ -414,6 +439,10 @@ func (s *service) Fees() domain.FeeRepository {
 	return s.intentFeesStore
 }
 
+func (s *service) Settings() domain.SettingsRepository {
+	return s.settingsStore
+}
+
 func (s *service) Close() {
 	s.eventStore.Close()
 	s.roundStore.Close()
@@ -421,6 +450,7 @@ func (s *service) Close() {
 	s.scheduledSessionStore.Close()
 	s.offchainTxStore.Close()
 	s.convictionStore.Close()
+	s.settingsStore.Close()
 }
 
 func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
