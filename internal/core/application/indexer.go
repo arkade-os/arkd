@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -35,6 +36,8 @@ const (
 
 	defaultAuthTokenTTL = 5 * time.Minute
 )
+
+var ErrInvalidInput = errors.New("invalid input")
 
 type exposure string
 
@@ -75,6 +78,8 @@ type IndexerService interface {
 	GetVirtualTxsByIntent(ctx context.Context, intent Intent, page *Page) (*VirtualTxsResp, error)
 	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error)
 	GetAsset(ctx context.Context, assetID string) ([]Asset, error)
+	ListTokens(ctx context.Context, token, hash, outpoint, txid string) ([]TokenEntry, error)
+	RevokeTokens(ctx context.Context, token, hash, outpoint, txid string) (int, error)
 }
 
 type indexerService struct {
@@ -290,7 +295,7 @@ func (i *indexerService) GetVtxos(
 		if recoverableOnly {
 			recoverableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
 			for _, vtxo := range allVtxos {
-				if !vtxo.RequiresForfeit() && !vtxo.Spent {
+				if !vtxo.RequiresForfeit() && !vtxo.Spent && !vtxo.Unrolled {
 					recoverableVtxos = append(recoverableVtxos, vtxo)
 				}
 			}
@@ -490,13 +495,13 @@ func (i *indexerService) GetVirtualTxsByIntent(
 func (i *indexerService) GetBatchSweepTxs(
 	ctx context.Context, batchOutpoint Outpoint,
 ) ([]string, error) {
-	round, err := i.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, batchOutpoint.Txid)
+	sweepTxs, err := i.repoManager.Rounds().GetSweepTxs(ctx, batchOutpoint.Txid)
 	if err != nil {
 		return nil, err
 	}
 
-	txids := make([]string, 0, len(round.SweepTxs))
-	for txid := range round.SweepTxs {
+	txids := make([]string, 0, len(sweepTxs))
+	for txid := range sweepTxs {
 		txids = append(txids, txid)
 	}
 
@@ -947,6 +952,80 @@ func (i *indexerService) validateAuthToken(authToken string) (string, error) {
 	}
 
 	return hex.EncodeToString(msg[:32]), nil
+}
+
+// extractTokenHash decodes an auth token and returns the outpoints hash
+// without checking expiry. Signature is still verified.
+func (i *indexerService) extractTokenHash(authToken string) (string, error) {
+	if i.authPrvkey == nil {
+		return "", fmt.Errorf(
+			"%w: token filter not available in public exposure mode",
+			ErrInvalidInput,
+		)
+	}
+
+	tokenBytes, err := base64.StdEncoding.DecodeString(authToken)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid auth token format, must be base64", ErrInvalidInput)
+	}
+	if len(tokenBytes) != 40+64 {
+		return "", fmt.Errorf("%w: invalid auth token length", ErrInvalidInput)
+	}
+
+	return hex.EncodeToString(tokenBytes[:32]), nil
+}
+
+func (i *indexerService) resolveTokenFilter(
+	token, hash string,
+) (string, error) {
+	if token != "" {
+		return i.extractTokenHash(token)
+	}
+	return hash, nil
+}
+
+// normalizeOutpoint validates and normalizes an outpoint string (txid:vout).
+// Returns empty string if input is empty.
+func normalizeOutpoint(outpoint string) (string, error) {
+	if outpoint == "" {
+		return "", nil
+	}
+	var op Outpoint
+	if err := op.FromString(outpoint); err != nil {
+		return "", fmt.Errorf("%w: invalid outpoint filter: %w", ErrInvalidInput, err)
+	}
+	return op.String(), nil
+}
+
+func (i *indexerService) ListTokens(
+	_ context.Context, token, hash, outpoint, txid string,
+) ([]TokenEntry, error) {
+	h, err := i.resolveTokenFilter(token, hash)
+	if err != nil {
+		return nil, err
+	}
+	op, err := normalizeOutpoint(outpoint)
+	if err != nil {
+		return nil, err
+	}
+	return i.tokenCache.list(h, op, txid), nil
+}
+
+func (i *indexerService) RevokeTokens(
+	_ context.Context, token, hash, outpoint, txid string,
+) (int, error) {
+	h, err := i.resolveTokenFilter(token, hash)
+	if err != nil {
+		return 0, err
+	}
+	op, err := normalizeOutpoint(outpoint)
+	if err != nil {
+		return 0, err
+	}
+	if h == "" && op == "" && txid == "" {
+		return 0, fmt.Errorf("%w: at least one filter is required", ErrInvalidInput)
+	}
+	return i.tokenCache.revoke(h, op, txid), nil
 }
 
 // hashOutpoints clones the given outpoints, sorts them lexicographically by txid and vout,

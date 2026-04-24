@@ -73,7 +73,7 @@ The `arkd` server can be configured using environment variables.
 | `ARKD_LIVE_STORE_TYPE`              | Cache service type (redis, inmemory)                                            | `redis`                        |
 | `ARKD_REDIS_URL`                    | Redis db connection url if `ARKD_LIVE_STORE_TYPE` is set to `redis`             | -                              |
 | `ARKD_REDIS_NUM_OF_RETRIES`         | Maximum number of retries for Redis write operations in case of conflicts       | -                              |
-| `ARKD_VTXO_TREE_EXPIRY`             | VTXO tree expiry in seconds                                                     | `604672` (7 days)              |
+| `ARKD_VTXO_TREE_EXPIRY`             | VTXO tree expiry in seconds. Values below `512` are allowed only on regtest                                                     | `604672` (7 days)              |
 | `ARKD_UNILATERAL_EXIT_DELAY`        | Unilateral exit delay in seconds                                                | `86400` (24 hours)             |
 | `ARKD_BOARDING_EXIT_DELAY`          | Boarding exit delay in seconds                                                  | `7776000` (3 months)           |
 | `ARKD_ESPLORA_URL`                  | Esplora API URL                                                                 | `https://blockstream.info/api` |
@@ -92,7 +92,6 @@ The `arkd` server can be configured using environment variables.
 | `ARKD_VTXO_MIN_AMOUNT`              | The minimum allowed amount for vtxos                                            | `-1` (dust)                    |
 | `ARKD_BAN_DURATION`                | Ban duration in seconds                                                         | `300` (5 minutes)              |
 | `ARKD_BAN_THRESHOLD`               | Number of crimes to trigger a ban                                               | `3`                            |
-| `ARKD_SCHEDULER_TYPE`              | Scheduler type (gocron, block)                                                 | `gocron`                       |
 | `ARKD_CHECKPOINT_EXIT_DELAY`       | Checkpoint exit delay in seconds                                                | `86400` (24 hours)             |
 | `ARKD_TLS_EXTRA_IP`                | Extra IP addresses for TLS (comma-separated)                                   | -                              |
 | `ARKD_TLS_EXTRA_DOMAIN`            | Extra domains for TLS (comma-separated)                                         | -                              |
@@ -105,7 +104,6 @@ The `arkd` server can be configured using environment variables.
 | `ARKD_SCHEDULED_SESSION_MAX_ROUND_PARTICIPANTS_COUNT` | Max participants for scheduled sessions        | -                              |
 | `ARKD_OTEL_COLLECTOR_ENDPOINT`     | OpenTelemetry collector endpoint                                                | -                              |
 | `ARKD_OTEL_PUSH_INTERVAL`          | OpenTelemetry push interval in seconds                                          | `10`                           |
-| `ARKD_ALLOW_CSV_BLOCK_TYPE`        | Allow CSV block type                                                            | `false`                        |
 | `ARKD_HEARTBEAT_INTERVAL`          | Heartbeat interval in seconds                                                   | `60`                           |
 | `ARKD_ROUND_REPORT_ENABLED`        | Enable round report service                                                     | `false`                        |
 | `ARKD_INDEXER_EXPOSURE`.           | Require intent for getting vtxo chain (public, private, withheld)               | `public`                       |

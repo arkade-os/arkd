@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -23,11 +24,19 @@ func (k *Outpoint) FromString(s string) error {
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid outpoint string: %s", s)
 	}
-	k.Txid = parts[0]
+	txid := parts[0]
+	txidBytes, err := hex.DecodeString(txid)
+	if err != nil {
+		return fmt.Errorf("invalid txid hex: %s", txid)
+	}
+	if len(txidBytes) != 32 {
+		return fmt.Errorf("invalid txid length: expected 32 bytes, got %d", len(txidBytes))
+	}
 	vout, err := strconv.ParseUint(parts[1], 10, 32)
 	if err != nil {
 		return fmt.Errorf("invalid vout string: %s", parts[1])
 	}
+	k.Txid = hex.EncodeToString(txidBytes)
 	k.VOut = uint32(vout)
 	return nil
 }
@@ -67,7 +76,7 @@ func (v Vtxo) IsNote() bool {
 }
 
 func (v Vtxo) RequiresForfeit() bool {
-	return !v.Swept && !v.IsNote()
+	return !v.Swept && !v.IsExpired() && !v.IsNote() && !v.Unrolled
 }
 
 func (v Vtxo) IsSettled() bool {
@@ -88,4 +97,8 @@ func (v Vtxo) OutputScript() ([]byte, error) {
 		return nil, err
 	}
 	return script.P2TRScript(pubkey)
+}
+
+func (v Vtxo) IsExpired() bool {
+	return time.Now().After(time.Unix(v.ExpiresAt, 0))
 }

@@ -110,6 +110,18 @@ service AdminService {
       body: "*"
     };
   }
+  rpc ListTokens(ListTokensRequest) returns (ListTokensResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/tokens"
+      body: "*"
+    };
+  }
+  rpc RevokeTokens(RevokeTokensRequest) returns (RevokeTokensResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/tokens/revoke"
+      body: "*"
+    };
+  }
   rpc GetExpiringLiquidity(GetExpiringLiquidityRequest) returns (GetExpiringLiquidityResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/admin/liquidity/expiring"
@@ -359,4 +371,30 @@ message SweepRequest {
 message SweepResponse {
   string txid = 1;
   string hex = 2;
+}
+
+message ListTokensRequest {
+  string token = 1;    // base64 auth token
+  string hash = 2;     // hex-encoded hash of outpoints
+  string outpoint = 3; // txid:vout format
+  string txid = 4;
+}
+message ListTokensResponse {
+  repeated TokenInfo tokens = 1;
+}
+
+message TokenInfo {
+  string hash = 1;
+  repeated string outpoints = 2; // txid:vout format
+  int64 expires_at = 3;         // unix timestamp
+}
+
+message RevokeTokensRequest {
+  string token = 1;    // base64 auth token
+  string hash = 2;     // hex-encoded hash of outpoints
+  string outpoint = 3; // txid:vout format
+  string txid = 4;
+}
+message RevokeTokensResponse {
+  int32 revoked_count = 1;
 }

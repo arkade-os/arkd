@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -24,18 +25,35 @@ import (
 	"gopkg.in/macaroon.v2"
 )
 
+type tokenAdminInterface interface {
+	ListTokens(
+		ctx context.Context,
+		token, hash, outpoint, txid string,
+	) ([]application.TokenEntry, error)
+	RevokeTokens(ctx context.Context, token, hash, outpoint, txid string) (int, error)
+}
+
 type adminHandler struct {
 	adminService    application.AdminService
+	tokenAdminSvc   tokenAdminInterface
 	macaroonSvc     *macaroons.Service
 	macaroonDatadir string
 	noteUriPrefix   string
 }
 
 func NewAdminHandler(
-	adminService application.AdminService, macaroonSvc *macaroons.Service,
+	adminService application.AdminService,
+	indexerService application.IndexerService,
+	macaroonSvc *macaroons.Service,
 	macaroonDatadir, noteUriPrefix string,
 ) arkv1.AdminServiceServer {
-	return &adminHandler{adminService, macaroonSvc, macaroonDatadir, noteUriPrefix}
+	return &adminHandler{
+		adminService:    adminService,
+		tokenAdminSvc:   indexerService,
+		macaroonSvc:     macaroonSvc,
+		macaroonDatadir: macaroonDatadir,
+		noteUriPrefix:   noteUriPrefix,
+	}
 }
 
 func (a *adminHandler) GetRoundDetails(
@@ -500,6 +518,53 @@ func (a *adminHandler) RevokeAuth(
 	return &arkv1.RevokeAuthResponse{
 		Token: hex.EncodeToString(macBytes),
 	}, nil
+}
+
+// TODO: move ListTokens and RevokeTokens to the indexer's own admin interface when we detach it.
+func (a *adminHandler) ListTokens(
+	ctx context.Context, req *arkv1.ListTokensRequest,
+) (*arkv1.ListTokensResponse, error) {
+	tokens, err := a.tokenAdminSvc.ListTokens(
+		ctx, req.GetToken(), req.GetHash(), req.GetOutpoint(), req.GetTxid(),
+	)
+	if err != nil {
+		if errors.Is(err, application.ErrInvalidInput) {
+			return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
+		}
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	protoTokens := make([]*arkv1.TokenInfo, 0, len(tokens))
+	for _, t := range tokens {
+		protoTokens = append(protoTokens, &arkv1.TokenInfo{
+			Hash:      t.Hash,
+			Outpoints: t.Outpoints,
+			ExpiresAt: t.ExpiresAt.Unix(),
+		})
+	}
+
+	return &arkv1.ListTokensResponse{Tokens: protoTokens}, nil
+}
+
+func (a *adminHandler) RevokeTokens(
+	ctx context.Context, req *arkv1.RevokeTokensRequest,
+) (*arkv1.RevokeTokensResponse, error) {
+	if req.GetToken() == "" && req.GetHash() == "" && req.GetOutpoint() == "" &&
+		req.GetTxid() == "" {
+		return nil, status.Error(codes.InvalidArgument, "at least one filter is required")
+	}
+
+	count, err := a.tokenAdminSvc.RevokeTokens(
+		ctx, req.GetToken(), req.GetHash(), req.GetOutpoint(), req.GetTxid(),
+	)
+	if err != nil {
+		if errors.Is(err, application.ErrInvalidInput) {
+			return nil, status.Errorf(codes.InvalidArgument, "%s", err.Error())
+		}
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.RevokeTokensResponse{RevokedCount: int32(count)}, nil
 }
 
 func (a *adminHandler) GetIntentFees(

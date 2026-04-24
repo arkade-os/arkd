@@ -66,15 +66,18 @@ func deriveWsURL(baseUrl string) (string, error) {
 	return wsUrl, nil
 }
 
-// isCloseError determines if an error indicates a permanent connection close.
-// It returns true for websocket close codes, net.ErrClosed, and context cancellation.
+// isCloseError determines if an error indicates a permanent, intentional connection close
+// that should NOT trigger reconnection. It returns true for clean websocket close codes,
+// net.ErrClosed (locally closed), context cancellation, and broken pipe (EPIPE).
+//
+// Note: CloseAbnormalClosure is intentionally excluded — it means the connection was
+// dropped unexpectedly and should trigger reconnection via isTimeoutError.
 func isCloseError(err error) bool {
-	// Check for explicit websocket close errors
+	// Check for explicit websocket close errors (clean / intentional shutdown only)
 	if websocket.IsCloseError(
 		err,
 		websocket.CloseNormalClosure,
 		websocket.CloseGoingAway,
-		websocket.CloseAbnormalClosure,
 	) {
 		return true
 	}
@@ -86,6 +89,14 @@ func isCloseError(err error) bool {
 
 	// Check for context cancelation
 	if errors.Is(err, context.Canceled) {
+		return true
+	}
+
+	// Check for broken pipe: the remote end closed the connection before we
+	// could write (e.g. ping on a dead TCP link).  The ping goroutine should
+	// treat this as a clean exit and let the read-deadline mechanism trigger
+	// reconnection rather than propagating a noisy error event.
+	if errors.Is(err, syscall.EPIPE) {
 		return true
 	}
 
@@ -111,6 +122,13 @@ func isTimeoutError(err error) bool {
 		return true
 	}
 	if errors.Is(err, syscall.ECONNRESET) {
+		return true
+	}
+
+	// CloseAbnormalClosure means the TCP connection was dropped without a WebSocket
+	// close frame (e.g. server crash, NAT timeout, network interruption). Treat it
+	// like a timeout so the read goroutine triggers reconnection.
+	if websocket.IsCloseError(err, websocket.CloseAbnormalClosure) {
 		return true
 	}
 

@@ -280,6 +280,15 @@ func TestUnilateralExit(t *testing.T) {
 		require.Zero(t, balance.OffchainBalance.Total)
 		require.NotEmpty(t, balance.OnchainBalance.LockedAmount)
 		require.NotZero(t, balance.OnchainBalance.LockedAmount[0].Amount)
+
+		err = generateBlocks(20)
+		require.NoError(t, err)
+
+		time.Sleep(15 * time.Second)
+
+		txid, err := alice.CompleteUnroll(t.Context(), "")
+		require.NoError(t, err)
+		require.NotEmpty(t, txid)
 	})
 
 	// In this test Bob receives from Alice a VTXO offchain and unrolls it onchain
@@ -357,6 +366,121 @@ func TestUnilateralExit(t *testing.T) {
 		require.Zero(t, bobBalance.OffchainBalance.Total)
 		require.NotEmpty(t, bobBalance.OnchainBalance.LockedAmount)
 		require.NotZero(t, bobBalance.OnchainBalance.LockedAmount[0].Amount)
+
+		err = generateBlocks(20)
+		require.NoError(t, err)
+
+		time.Sleep(15 * time.Second)
+
+		txid, err := alice.CompleteUnroll(t.Context(), "")
+		require.NoError(t, err)
+		require.NotEmpty(t, txid)
+	})
+}
+
+// TestUnrolledVtxoRejoinBatch verifies that an unrolled VTXO can rejoin the
+// Ark via the collaborative path. Alice funds herself offchain, unrolls her
+// VTXOs on-chain, then calls Settle(WithFunds(...)) passing the unrolled VTXO
+// as a boarding input. The server recognises the outpoint as an unrolled VTXO,
+// validates it with the unilateral exit delay, checks the CSV expiry margin,
+// and accepts it into the batch. After settlement Alice's funds are back
+// offchain.
+func TestUnrolledVtxoRejoinBatch(t *testing.T) {
+	t.Run("without asset", func(t *testing.T) {
+	ctx := t.Context()
+	alice := setupArkSDK(t)
+
+	// Fund Alice offchain + small onchain amount for unroll fees
+	faucet(t, alice, 0.00021)
+	time.Sleep(5 * time.Second)
+
+	_, offchainAddr, _, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	balance, err := alice.Balance(ctx)
+	require.NoError(t, err)
+	require.NotZero(t, balance.OffchainBalance.Total)
+	require.Empty(t, balance.OnchainBalance.LockedAmount)
+
+	// Unroll: moves VTXOs onchain
+		txids, err := alice.Unroll(ctx)
+	require.NoError(t, err)
+		require.NotEmpty(t, txids)
+
+	err = generateBlocks(1)
+	require.NoError(t, err)
+
+	// Poll for the wallet to index the new block instead of sleeping a fixed
+	// interval — every second spent here eats into the unrolled VTXO's CSV
+	// runway before the subsequent Settle call.
+	require.Eventually(t, func() bool {
+		b, err := alice.Balance(ctx)
+		if err != nil {
+			return false
+		}
+		return b.OffchainBalance.Total == 0 &&
+			len(b.OnchainBalance.LockedAmount) > 0 &&
+			b.OnchainBalance.LockedAmount[0].Amount > 0
+	}, 15*time.Second, 200*time.Millisecond, "unroll did not settle onchain in time")
+
+	balance, err = alice.Balance(ctx)
+	require.NoError(t, err)
+
+	// Find the unrolled VTXO in the spent list
+	_, spentVtxos, err := alice.ListVtxos(ctx)
+	require.NoError(t, err)
+
+	var unrolledVtxo types.Vtxo
+	for _, v := range spentVtxos {
+		if v.Unrolled && !v.Spent {
+			unrolledVtxo = v
+			break
+		}
+	}
+	require.NotZero(t, unrolledVtxo.Amount, "expected an unrolled VTXO")
+
+	// Receive returns *types.Address which carries Tapscripts — use them
+	// to present the unrolled VTXO as a boarding input.
+	boardingUtxo := types.Utxo{
+		Outpoint:   unrolledVtxo.Outpoint,
+		Amount:     unrolledVtxo.Amount,
+		Tapscripts: offchainAddr.Tapscripts,
+	}
+
+	// Rejoin the batch — unrolled VTXO should be accepted as a boarding input
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	var incomingErr error
+	go func() {
+		_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+		wg.Done()
+	}()
+
+	res, err := alice.Settle(ctx,
+		arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, res.CommitmentTxid)
+
+	wg.Wait()
+	require.NoError(t, incomingErr)
+	time.Sleep(time.Second)
+
+	// Alice has offchain funds again
+	balance, err = alice.Balance(ctx)
+	require.NoError(t, err)
+	require.NotZero(t, balance.OffchainBalance.Total)
+
+	// Once the unrolled VTXO has been accepted into a batch, the onchain
+	// UTXO is spent. Mining past the unilateral exit delay and calling
+	// CompleteUnroll should find no mature funds to claim.
+	err = generateBlocks(20)
+	require.NoError(t, err)
+
+	time.Sleep(5 * time.Second)
+
+	_, err = alice.CompleteUnroll(ctx, "")
+	require.ErrorContains(t, err, "no mature funds available")
 	})
 }
 
@@ -895,6 +1019,8 @@ func TestOffchainTx(t *testing.T) {
 		)
 	})
 
+	// In this test, Alice submits a tx and then fetches the pending tx by proviving an intent
+	// to finalize it.
 	t.Run("finalize pending tx", func(t *testing.T) {
 		ctx := t.Context()
 		explorer, err := mempool_explorer.NewExplorer(
@@ -1020,6 +1146,450 @@ func TestOffchainTx(t *testing.T) {
 		require.NotEmpty(t, incomingFunds)
 		require.Len(t, incomingFunds, 1)
 		require.Equal(t, txid, incomingFunds[0].Txid)
+	})
+
+	// In these tests, Alice submits an offchain tx and waits for the inputs to be swept before
+	// finalizing it.
+	// Covers both cases, the one where the inputs are swept by the server, and the other one,
+	// where they are expired but not yet swept.
+	// In both cases, the server should allow the finalization but the new vtxos should be marked
+	// as swept.
+	t.Run("finalize pending swept tx", func(t *testing.T) {
+		t.Run("vtxo already swept", func(t *testing.T) {
+			ctx := t.Context()
+			explorer, err := mempool_explorer.NewExplorer(
+				"http://localhost:3000", arklib.BitcoinRegTest,
+				mempool_explorer.WithTracker(false),
+			)
+			require.NoError(t, err)
+
+			alice, aliceWallet, _, arkSvc := setupArkSDKwithPublicKey(t)
+			t.Cleanup(func() { alice.Stop() })
+			t.Cleanup(func() { arkSvc.Close() })
+
+			vtxo := faucetOffchain(t, alice, 0.00021)
+
+			finalizedPendingTxs, err := alice.FinalizePendingTxs(ctx, nil)
+			require.NoError(t, err)
+			require.Empty(t, finalizedPendingTxs)
+
+			_, offchainAddresses, _, _, err := aliceWallet.GetAddresses(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, offchainAddresses)
+			offchainAddress := offchainAddresses[0]
+
+			serverParams, err := arkSvc.GetInfo(ctx)
+			require.NoError(t, err)
+
+			vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
+			require.NoError(t, err)
+			forfeitClosures := vtxoScript.ForfeitClosures()
+			require.Len(t, forfeitClosures, 1)
+			closure := forfeitClosures[0]
+
+			scriptBytes, err := closure.Script()
+			require.NoError(t, err)
+
+			_, vtxoTapTree, err := vtxoScript.TapTree()
+			require.NoError(t, err)
+
+			merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+				txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+			)
+			require.NoError(t, err)
+
+			ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+			require.NoError(t, err)
+
+			tapscript := &waddrmgr.Tapscript{
+				ControlBlock:   ctrlBlock,
+				RevealedScript: merkleProof.Script,
+			}
+
+			checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+			require.NoError(t, err)
+
+			vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+			require.NoError(t, err)
+
+			addr, err := arklib.DecodeAddressV0(offchainAddress.Address)
+			require.NoError(t, err)
+			pkscript, err := addr.GetPkScript()
+			require.NoError(t, err)
+
+			ptx, checkpointsPtx, err := offchain.BuildTxs(
+				[]offchain.VtxoInput{
+					{
+						Outpoint: &wire.OutPoint{
+							Hash:  *vtxoHash,
+							Index: vtxo.VOut,
+						},
+						Tapscript:          tapscript,
+						Amount:             int64(vtxo.Amount),
+						RevealedTapscripts: offchainAddress.Tapscripts,
+					},
+				},
+				[]*wire.TxOut{
+					{
+						Value:    int64(vtxo.Amount),
+						PkScript: pkscript,
+					},
+				},
+				checkpointTapscript,
+			)
+			require.NoError(t, err)
+
+			encodedCheckpoints := make([]string, 0, len(checkpointsPtx))
+			for _, checkpoint := range checkpointsPtx {
+				encoded, err := checkpoint.B64Encode()
+				require.NoError(t, err)
+				encodedCheckpoints = append(encodedCheckpoints, encoded)
+			}
+
+			// sign the ark transaction
+			encodedArkTx, err := ptx.B64Encode()
+			require.NoError(t, err)
+			signedArkTx, err := aliceWallet.SignTransaction(
+				ctx,
+				explorer,
+				encodedArkTx,
+			)
+			require.NoError(t, err)
+
+			txid, _, _, err := arkSvc.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
+			require.NoError(t, err)
+			require.NotEmpty(t, txid)
+
+			// Make the vtxo expire
+			err = generateBlocks(41)
+			require.NoError(t, err)
+
+			// Give time to the server to sweep the vtxo
+			time.Sleep(30 * time.Second)
+
+			// Ensure the vtxo is pending and swept
+			scriptStr := hex.EncodeToString(pkscript)
+			resp, err := alice.Indexer().GetVtxos(
+				ctx, indexer.WithScripts([]string{scriptStr}), indexer.WithPendingOnly(),
+			)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.NotEmpty(t, resp.Vtxos)
+			require.True(t, resp.Vtxos[0].Spent)
+			require.True(t, resp.Vtxos[0].Swept)
+
+			var incomingFunds []types.Vtxo
+			var incomingErr error
+			wg := &sync.WaitGroup{}
+			wg.Go(func() {
+				incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddress.Address)
+			})
+
+			// Finalize the pending tx and ensure the new vtxo is marked as swept
+			finalizedTxIds, err := alice.FinalizePendingTxs(ctx, nil)
+			require.NoError(t, err)
+			require.NotEmpty(t, finalizedTxIds)
+			require.Equal(t, 1, len(finalizedTxIds))
+			require.Equal(t, txid, finalizedTxIds[0])
+
+			wg.Wait()
+			require.NoError(t, incomingErr)
+			require.NotEmpty(t, incomingFunds)
+			require.Len(t, incomingFunds, 1)
+			require.Equal(t, txid, incomingFunds[0].Txid)
+			require.True(t, incomingFunds[0].Swept)
+		})
+
+		t.Run("vtxo expired but not swept", func(t *testing.T) {
+			ctx := t.Context()
+			explorer, err := mempool_explorer.NewExplorer(
+				"http://localhost:3000", arklib.BitcoinRegTest,
+				mempool_explorer.WithTracker(false),
+			)
+			require.NoError(t, err)
+
+			alice, aliceWallet, _, arkSvc := setupArkSDKwithPublicKey(t)
+			t.Cleanup(func() { alice.Stop() })
+			t.Cleanup(func() { arkSvc.Close() })
+
+			vtxo := faucetOffchain(t, alice, 0.00021)
+
+			finalizedPendingTxs, err := alice.FinalizePendingTxs(ctx, nil)
+			require.NoError(t, err)
+			require.Empty(t, finalizedPendingTxs)
+
+			_, offchainAddresses, _, _, err := aliceWallet.GetAddresses(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, offchainAddresses)
+			offchainAddress := offchainAddresses[0]
+
+			serverParams, err := arkSvc.GetInfo(ctx)
+			require.NoError(t, err)
+
+			vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
+			require.NoError(t, err)
+			forfeitClosures := vtxoScript.ForfeitClosures()
+			require.Len(t, forfeitClosures, 1)
+			closure := forfeitClosures[0]
+
+			scriptBytes, err := closure.Script()
+			require.NoError(t, err)
+
+			_, vtxoTapTree, err := vtxoScript.TapTree()
+			require.NoError(t, err)
+
+			merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+				txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+			)
+			require.NoError(t, err)
+
+			ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+			require.NoError(t, err)
+
+			tapscript := &waddrmgr.Tapscript{
+				ControlBlock:   ctrlBlock,
+				RevealedScript: merkleProof.Script,
+			}
+
+			checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+			require.NoError(t, err)
+
+			vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+			require.NoError(t, err)
+
+			addr, err := arklib.DecodeAddressV0(offchainAddress.Address)
+			require.NoError(t, err)
+			pkscript, err := addr.GetPkScript()
+			require.NoError(t, err)
+
+			ptx, checkpointsPtx, err := offchain.BuildTxs(
+				[]offchain.VtxoInput{
+					{
+						Outpoint: &wire.OutPoint{
+							Hash:  *vtxoHash,
+							Index: vtxo.VOut,
+						},
+						Tapscript:          tapscript,
+						Amount:             int64(vtxo.Amount),
+						RevealedTapscripts: offchainAddress.Tapscripts,
+					},
+				},
+				[]*wire.TxOut{
+					{
+						Value:    int64(vtxo.Amount),
+						PkScript: pkscript,
+					},
+				},
+				checkpointTapscript,
+			)
+			require.NoError(t, err)
+
+			encodedCheckpoints := make([]string, 0, len(checkpointsPtx))
+			for _, checkpoint := range checkpointsPtx {
+				encoded, err := checkpoint.B64Encode()
+				require.NoError(t, err)
+				encodedCheckpoints = append(encodedCheckpoints, encoded)
+			}
+
+			// sign the ark transaction
+			encodedArkTx, err := ptx.B64Encode()
+			require.NoError(t, err)
+			signedArkTx, err := aliceWallet.SignTransaction(
+				ctx,
+				explorer,
+				encodedArkTx,
+			)
+			require.NoError(t, err)
+
+			txid, _, _, err := arkSvc.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
+			require.NoError(t, err)
+			require.NotEmpty(t, txid)
+
+			// Make the tx expire (the tx has 40 block expiration converted to 40 seconds in timestamp)
+			time.Sleep(50 * time.Second)
+
+			// Make the vtxo expire
+			err = generateBlocks(41)
+			require.NoError(t, err)
+
+			// Don't give time to the server to mark the vtxo as swept
+			// Ensure the vtxo is pending but not swept yet
+			scriptStr := hex.EncodeToString(pkscript)
+			resp, err := alice.Indexer().GetVtxos(
+				ctx, indexer.WithScripts([]string{scriptStr}), indexer.WithPendingOnly(),
+			)
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.NotEmpty(t, resp.Vtxos)
+			require.True(t, resp.Vtxos[0].Spent)
+			require.False(t, resp.Vtxos[0].Swept)
+
+			var incomingFunds []types.Vtxo
+			var incomingErr error
+			wg := &sync.WaitGroup{}
+			wg.Go(func() {
+				incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddress.Address)
+			})
+
+			// Finalize the pending tx and ensure the new vtxo is still marked as swept
+			finalizedTxIds, err := alice.FinalizePendingTxs(ctx, nil)
+			require.NoError(t, err)
+			require.NotEmpty(t, finalizedTxIds)
+			require.Equal(t, 1, len(finalizedTxIds))
+			require.Equal(t, txid, finalizedTxIds[0])
+
+			wg.Wait()
+			require.NoError(t, incomingErr)
+			require.NotEmpty(t, incomingFunds)
+			require.Len(t, incomingFunds, 1)
+			require.Equal(t, txid, incomingFunds[0].Txid)
+			require.True(t, incomingFunds[0].Swept)
+		})
+	})
+
+	// In this test, Alice submits an offchain tx spending a vtxo, then unrolls the same
+	// vtxo onchain before finalizing. The server should reject the finalization because
+	// the input vtxo is marked "unrolled"
+	t.Run("reject finalization of tx with unrolled inputs", func(t *testing.T) {
+		ctx := t.Context()
+		explorer, err := mempool_explorer.NewExplorer(
+			"http://localhost:3000", arklib.BitcoinRegTest,
+			mempool_explorer.WithTracker(false),
+		)
+		require.NoError(t, err)
+
+		alice, aliceWallet, _, arkSvc := setupArkSDKwithPublicKey(t)
+		t.Cleanup(func() { alice.Stop() })
+		t.Cleanup(func() { arkSvc.Close() })
+
+		vtxo := faucetOffchain(t, alice, 0.00021)
+
+		_, offchainAddresses, _, _, err := aliceWallet.GetAddresses(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddresses)
+		offchainAddress := offchainAddresses[0]
+
+		serverParams, err := arkSvc.GetInfo(ctx)
+		require.NoError(t, err)
+
+		vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
+		require.NoError(t, err)
+		forfeitClosures := vtxoScript.ForfeitClosures()
+		require.Len(t, forfeitClosures, 1)
+		closure := forfeitClosures[0]
+
+		scriptBytes, err := closure.Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+		)
+		require.NoError(t, err)
+
+		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+		require.NoError(t, err)
+
+		tapscript := &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: merkleProof.Script,
+		}
+
+		checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		addr, err := arklib.DecodeAddressV0(offchainAddress.Address)
+		require.NoError(t, err)
+		pkscript, err := addr.GetPkScript()
+		require.NoError(t, err)
+
+		ptx, checkpointsPtx, err := offchain.BuildTxs(
+			[]offchain.VtxoInput{
+				{
+					Outpoint: &wire.OutPoint{
+						Hash:  *vtxoHash,
+						Index: vtxo.VOut,
+					},
+					Tapscript:          tapscript,
+					Amount:             int64(vtxo.Amount),
+					RevealedTapscripts: offchainAddress.Tapscripts,
+				},
+			},
+			[]*wire.TxOut{
+				{
+					Value:    int64(vtxo.Amount),
+					PkScript: pkscript,
+				},
+			},
+			checkpointTapscript,
+		)
+		require.NoError(t, err)
+
+		encodedCheckpoints := make([]string, 0, len(checkpointsPtx))
+		for _, checkpoint := range checkpointsPtx {
+			encoded, err := checkpoint.B64Encode()
+			require.NoError(t, err)
+			encodedCheckpoints = append(encodedCheckpoints, encoded)
+		}
+
+		encodedArkTx, err := ptx.B64Encode()
+		require.NoError(t, err)
+		signedArkTx, err := aliceWallet.SignTransaction(ctx, explorer, encodedArkTx)
+		require.NoError(t, err)
+
+		// Submit the offchain tx but do NOT finalize it yet
+		txid, _, signedCheckpoints, err := arkSvc.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
+		require.NoError(t, err)
+		require.NotEmpty(t, txid)
+
+		// Fund alice's onchain address to cover unroll network fees
+		onchainAddr, _, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+
+		faucetOnchain(t, onchainAddr, 0.01)
+		time.Sleep(5 * time.Second)
+
+		// Unroll the input vtxo onchain. Submit has already marked it spent server-side,
+		// so we pass the vtxo explicitly to bypass the SDK's spendable filter.
+		unrollRes, err := alice.Unroll(ctx, arksdk.WithVtxosToUnroll([]types.Vtxo{vtxo}))
+		require.NoError(t, err)
+		require.NotEmpty(t, unrollRes)
+
+		// Generate a block to confirm the ark tx just unrolled so the server can react
+		// by marking the input vtxo as unrolled
+		err = generateBlocks(1)
+		require.NoError(t, err)
+		time.Sleep(8 * time.Second)
+
+		// The server should now have marked the input vtxo as unrolled
+		_, spentVtxos, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+
+		var inputUnrolled bool
+		for _, v := range spentVtxos {
+			if v.Txid == vtxo.Txid && v.VOut == vtxo.VOut {
+				inputUnrolled = v.Unrolled
+				break
+			}
+		}
+		require.True(t, inputUnrolled, "input vtxo should be marked unrolled")
+
+		// Sign the checkpoints so the finalize request is otherwise valid
+		finalCheckpoints := make([]string, 0, len(signedCheckpoints))
+		for _, checkpoint := range signedCheckpoints {
+			finalCheckpoint, err := aliceWallet.SignTransaction(ctx, explorer, checkpoint)
+			require.NoError(t, err)
+			finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
+		}
+
+		// Finalize must now be rejected because the input vtxo is unrolled
+		err = arkSvc.FinalizeTx(ctx, txid, finalCheckpoints)
+		require.ErrorContains(t, err, "unrolled")
 	})
 
 	// In this test, we ensure that a tx with too many OP_RETURN outputs gets rejected.
@@ -1307,7 +1877,7 @@ func TestDelegateRefresh(t *testing.T) {
 
 	exitLocktime := arklib.RelativeLocktime{
 		Type:  arklib.LocktimeTypeBlock,
-		Value: 10,
+		Value: 20,
 	}
 
 	delegationVtxoScript := script.TapscriptsVtxoScript{
@@ -1510,7 +2080,7 @@ func TestDelegateRefresh(t *testing.T) {
 	signedPartialForfeitTx, err := alice.SignTransaction(ctx, b64partialForfeitTx)
 	require.NoError(t, err)
 
-	// 10 blocks later, Bob registers Alice's intent, signs the tree and submit,
+	// 11 blocks later, Bob registers Alice's intent, signs the tree and submit,
 	// completes the forfeit tx by adding the connector, signs and finally submits it to complete
 	// the batch session in behalf of Alice
 	err = generateBlocks(11)
@@ -2320,7 +2890,7 @@ func TestReactToFraud(t *testing.T) {
 				bumpAndBroadcastTx(t, parentTx, expl)
 			}
 
-			err = generateBlocks(30)
+			err = generateBlocks(50)
 			require.NoError(t, err)
 
 			// Give time for the server to detect and process the fraud
@@ -2462,9 +3032,8 @@ func TestReactToFraud(t *testing.T) {
 			require.NotEmpty(t, res.Txid)
 
 			wg.Wait()
-			time.Sleep(time.Second)
+			time.Sleep(3 * time.Second)
 
-			time.Sleep(2 * time.Second)
 			spendable, _, err := alice.ListVtxos(ctx)
 			require.NoError(t, err)
 			require.NotEmpty(t, spendable)
@@ -2610,7 +3179,7 @@ func TestReactToFraud(t *testing.T) {
 			}
 
 			// give time for the server to detect and process the fraud
-			err = generateBlocks(30)
+			err = generateBlocks(50)
 			require.NoError(t, err)
 
 			// make sure the vtxo of bob is not redeemed
@@ -2662,7 +3231,7 @@ func TestSweep(t *testing.T) {
 			wg.Done()
 		}()
 
-		// Settle the boarding utxo to create a new batch output expiring in 20 blocks
+		// Settle the boarding utxo to create a new batch output expiring in 40 blocks
 		_, err = alice.Settle(ctx)
 		require.NoError(t, err)
 
@@ -2696,8 +3265,8 @@ func TestSweep(t *testing.T) {
 			}
 		}()
 
-		// Generate 30 blocks to expire the batch output
-		err = generateBlocks(30)
+		// Generate 50 blocks to expire the batch output
+		err = generateBlocks(50)
 		require.NoError(t, err)
 
 		// wait for sweep event from the stream
@@ -2897,7 +3466,7 @@ func TestSweep(t *testing.T) {
 			wg.Done()
 		}()
 
-		// Settle the boarding utxo to create a new batch output expiring in 20 blocks
+		// Settle the boarding utxo to create a new batch output expiring in 40 blocks
 		_, err = alice.Settle(ctx)
 		require.NoError(t, err)
 
@@ -2916,11 +3485,11 @@ func TestSweep(t *testing.T) {
 		err = restartArkd()
 		require.NoError(t, err)
 
-		// Generate 30 blocks to expire the batch output
-		err = generateBlocks(30)
+		// Generate 50 blocks to expire the batch output
+		err = generateBlocks(50)
 		require.NoError(t, err)
 
-		// Wait for server to process the sweep
+		// Wait for server to process the sweep (needs extra time after restart)
 		time.Sleep(20 * time.Second)
 
 		spendable, _, err := alice.ListVtxos(ctx)
@@ -3023,7 +3592,7 @@ func TestSweep(t *testing.T) {
 		require.Empty(t, balance.OnchainBalance.LockedAmount)
 
 		// confirm the commitment tx (time t)
-		// sweeper schedules a sweep task at t+20 blocks
+		// sweeper schedules a sweep task at t+40 blocks
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
@@ -3035,7 +3604,7 @@ func TestSweep(t *testing.T) {
 
 		// t + 1 to confirm the first unroll tx
 		// split the root batch in two, "reset" the CSV
-		// sweeper schedules 2 sweep tasks at t+20+1 and t+20+1
+		// sweeper schedules 2 sweep tasks at t+40+1 and t+40+1
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
@@ -3043,7 +3612,7 @@ func TestSweep(t *testing.T) {
 		time.Sleep(5 * time.Second)
 
 		// wait 10 blocks to unroll again
-		// at this point, batches expires in 11 blocks
+		// at this point, batches expires in 31 blocks
 		err = generateBlocks(10)
 		require.NoError(t, err)
 
@@ -3054,15 +3623,15 @@ func TestSweep(t *testing.T) {
 		time.Sleep(2 * time.Second)
 
 		// split one of the batches in two, "reset" the CSV
-		// 1 expires in 10 blocks, the other in 20 blocks
+		// 1 expires in 20 blocks, the other in 40 blocks
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
 		// give time for the server to process the unroll
 		time.Sleep(2 * time.Second)
 
-		// Generate 11 blocks to expire the first batch outputs
-		err = generateBlocks(11)
+		// Generate 30 blocks to expire the first batch outputs
+		err = generateBlocks(30)
 		require.NoError(t, err)
 
 		// Wait for server to process the sweep
@@ -3104,7 +3673,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// give time for the server to process the sweep and indexer to sync the vtxo table
-		time.Sleep(60 * time.Second)
+		time.Sleep(80 * time.Second)
 
 		// verify that all vtxos have been swept
 		aliceVtxos, _, err = alice.ListVtxos(ctx)
@@ -3154,7 +3723,7 @@ func TestSweep(t *testing.T) {
 			wg.Done()
 		}()
 
-		// Settle the boarding utxo to create a new batch output expiring in 20 blocks
+		// Settle the boarding utxo to create a new batch output expiring in 40 blocks
 		res, err := alice.Settle(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, res)
@@ -3164,12 +3733,12 @@ func TestSweep(t *testing.T) {
 		require.Len(t, incomingFunds, 1)
 		vtxo := incomingFunds[0]
 
-		// Generate 30 blocks to expire the batch output
-		err = generateBlocks(30)
+		// Generate 50 blocks to expire the batch output
+		err = generateBlocks(50)
 		require.NoError(t, err)
 
 		// Wait for server to attempt the sweep (it should fail due to dust amount)
-		time.Sleep(25 * time.Second)
+		time.Sleep(10 * time.Second)
 
 		// Verify the vtxo is not swept yet (automatic sweep failed)
 		spendable, _, err := alice.ListVtxos(ctx)
