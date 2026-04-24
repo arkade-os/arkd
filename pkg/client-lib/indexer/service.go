@@ -33,12 +33,13 @@ type Indexer interface {
 		ctx context.Context, txids []string, opts ...PageOption,
 	) (*VirtualTxsResponse, error)
 	GetBatchSweepTxs(ctx context.Context, batchOutpoint types.Outpoint) ([]string, error)
-	NewSubscription(
-		ctx context.Context, scripts []string,
-	) (string, <-chan ScriptEvent, func(), error)
-	UpdateSubscription(
-		ctx context.Context, subscriptionId string, scriptsToAdd, scriptsToRemove []string,
-	) error
+	SubscribeForScripts(
+		ctx context.Context, subscriptionId string, scripts []string,
+	) (string, error)
+	UnsubscribeForScripts(ctx context.Context, subscriptionId string, scripts []string) error
+	GetSubscription(ctx context.Context, subscriptionId string, scripts ...string) (<-chan ScriptEvent, func(), error)
+	ModifySubscriptionScripts(ctx context.Context, addScripts, removeScripts []string) (scriptsAdded, scriptsRemoved, allScripts []string, err error)
+	OverwriteSubscriptionScripts(ctx context.Context, scripts []string) (scriptsAdded, scriptsRemoved, allScripts []string, err error)
 	GetAsset(ctx context.Context, assetID string) (*AssetInfo, error)
 
 	Close()

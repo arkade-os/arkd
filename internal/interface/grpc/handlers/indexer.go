@@ -425,24 +425,58 @@ func (h *indexerService) GetSubscription(
 	request *arkv1.GetSubscriptionRequest, stream arkv1.IndexerService_GetSubscriptionServer,
 ) error {
 	subscriptionId := request.GetSubscriptionId()
-	if len(subscriptionId) == 0 {
-		return status.Error(codes.InvalidArgument, "missing subscription id")
-	}
 
-	h.scriptSubsHandler.stopTimeout(subscriptionId)
-	defer func() {
-		topics := h.scriptSubsHandler.getTopics(subscriptionId)
-		if len(topics) > 0 {
-			h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
-		} else {
-			h.scriptSubsHandler.removeListener(subscriptionId)
+	var scriptCh chan *arkv1.GetSubscriptionResponse
+
+	if len(subscriptionId) == 0 {
+		// New single-connection flow: create subscription inline.
+		scripts := request.GetScripts()
+		if len(scripts) > 0 {
+			var err error
+			scripts, err = parseScripts(scripts)
+			if err != nil {
+				return status.Error(codes.InvalidArgument, err.Error())
+			}
 		}
 
-	}()
+		subscriptionId = uuid.NewString()
+		listener := newListener[*arkv1.GetSubscriptionResponse](subscriptionId, scripts)
+		h.scriptSubsHandler.pushListener(listener)
+		defer h.scriptSubsHandler.removeListener(subscriptionId)
 
-	scriptCh, err := h.scriptSubsHandler.getListenerChannel(subscriptionId)
-	if err != nil && !strings.Contains(err.Error(), "listener not found") {
-		return status.Error(codes.Internal, err.Error())
+		scriptCh = listener.ch
+
+		// Send SubscriptionStartedEvent as first message.
+		startedEvt := &arkv1.GetSubscriptionResponse{
+			Data: &arkv1.GetSubscriptionResponse_SubscriptionStarted{
+				SubscriptionStarted: &arkv1.SubscriptionStartedEvent{
+					SubscriptionId: subscriptionId,
+				},
+			},
+		}
+		if err := stream.Send(startedEvt); err != nil {
+			return err
+		}
+	} else {
+		// Old flow: subscription_id provided, use existing listener.
+		h.scriptSubsHandler.stopTimeout(subscriptionId)
+		defer func() {
+			topics := h.scriptSubsHandler.getTopics(subscriptionId)
+			if len(topics) > 0 {
+				h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
+			} else {
+				h.scriptSubsHandler.removeListener(subscriptionId)
+			}
+		}()
+
+		var err error
+		scriptCh, err = h.scriptSubsHandler.getListenerChannel(subscriptionId)
+		if err != nil {
+			if strings.Contains(err.Error(), "listener not found") {
+				return status.Error(codes.NotFound, err.Error())
+			}
+			return status.Error(codes.Internal, err.Error())
+		}
 	}
 
 	// create a Timer that will fire after one heartbeat interval
@@ -481,6 +515,84 @@ func (h *indexerService) GetSubscription(
 			}
 			resetTimer()
 		}
+	}
+}
+
+func (h *indexerService) UpdateSubscriptionScripts(
+	ctx context.Context, req *arkv1.UpdateSubscriptionScriptsRequest,
+) (*arkv1.UpdateSubscriptionScriptsResponse, error) {
+	if req.GetSubscriptionId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "missing subscription id")
+	}
+
+	switch req.GetScriptsChange().(type) {
+	case nil:
+		return nil, status.Error(codes.InvalidArgument, "missing scripts change")
+	case *arkv1.UpdateSubscriptionScriptsRequest_Overwrite:
+		overwrite := req.GetOverwrite()
+		if overwrite == nil {
+			return nil, status.Error(codes.InvalidArgument, "missing scripts to overwrite")
+		}
+		scripts := overwrite.GetScripts()
+		if len(scripts) > 0 {
+			var err error
+			scripts, err = parseScripts(scripts)
+			if err != nil {
+				return nil, status.Error(codes.InvalidArgument, err.Error())
+			}
+		}
+		if err := h.scriptSubsHandler.overwriteTopics(
+			req.GetSubscriptionId(), scripts,
+		); err != nil {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return &arkv1.UpdateSubscriptionScriptsResponse{
+			AllScripts: h.scriptSubsHandler.getTopics(req.GetSubscriptionId()),
+		}, nil
+	case *arkv1.UpdateSubscriptionScriptsRequest_Modify:
+		modify := req.GetModify()
+		if modify == nil {
+			return nil, status.Error(codes.InvalidArgument, "missing scripts to add or remove")
+		}
+		if len(modify.GetAddScripts()) <= 0 && len(modify.GetRemoveScripts()) <= 0 {
+			return nil, status.Error(codes.InvalidArgument, "missing scripts to add or remove")
+		}
+		var addScripts, removeScripts []string
+		if len(modify.GetAddScripts()) > 0 {
+			var err error
+			addScripts, err = parseScripts(modify.GetAddScripts())
+			if err != nil {
+				return nil, status.Error(codes.InvalidArgument, err.Error())
+			}
+		}
+		if len(modify.GetRemoveScripts()) > 0 {
+			var err error
+			removeScripts, err = parseScripts(modify.GetRemoveScripts())
+			if err != nil {
+				return nil, status.Error(codes.InvalidArgument, err.Error())
+			}
+		}
+		if len(addScripts) > 0 {
+			if err := h.scriptSubsHandler.addTopics(
+				req.GetSubscriptionId(), addScripts,
+			); err != nil {
+				return nil, status.Error(codes.NotFound, err.Error())
+			}
+		}
+		if len(removeScripts) > 0 {
+			if err := h.scriptSubsHandler.removeTopics(
+				req.GetSubscriptionId(), removeScripts,
+			); err != nil {
+				return nil, status.Error(codes.NotFound, err.Error())
+			}
+		}
+		return &arkv1.UpdateSubscriptionScriptsResponse{
+			ScriptsAdded:   modify.GetAddScripts(),
+			ScriptsRemoved: modify.GetRemoveScripts(),
+			AllScripts:     h.scriptSubsHandler.getTopics(req.GetSubscriptionId()),
+		}, nil
+	default:
+		return nil, status.Error(codes.InvalidArgument, "unknown scripts change")
 	}
 }
 

@@ -113,20 +113,15 @@ func TestSubscriptionLifecycleEventsAndDeltaFetchByTimestamp(t *testing.T) {
 	t.Cleanup(func() { _ = conn.Close() })
 
 	c := &grpcClient{
-		conn:    conn,
-		connMu:  &sync.RWMutex{},
-		scripts: newScriptsCache(),
+		conn: conn,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	t.Cleanup(cancel)
+	defer cancel()
 
-	subId, eventsCh, closeFn, err := c.NewSubscription(ctx, []string{"script1", "script2"})
+	eventsCh, closeFn, err := c.GetSubscription(ctx, "sub-1")
 	require.NoError(t, err)
-	require.NotEmpty(t, subId)
-	require.NotNil(t, eventsCh)
-	require.NotNil(t, closeFn)
-	t.Cleanup(closeFn)
+	defer closeFn()
 
 	var (
 		disconnectedAt time.Time
