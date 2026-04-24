@@ -421,8 +421,12 @@ func (r *roundRepository) GetRoundForfeitTxs(
 func (r *roundRepository) GetSweepTxs(
 	ctx context.Context, commitmentTxid string,
 ) (map[string]string, error) {
-	rows, err := r.querier.SelectRoundSweepTxs(ctx, commitmentTxid)
-	if err != nil {
+	var rows []queries.SelectRoundSweepTxsRow
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectRoundSweepTxs(ctx, commitmentTxid)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
