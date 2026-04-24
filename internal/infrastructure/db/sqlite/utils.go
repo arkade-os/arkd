@@ -34,6 +34,36 @@ type sqliteDB struct {
 	writeDB *sql.DB
 }
 
+type openOptions struct {
+	sharedCache    bool
+	journalModeWAL bool
+	busyTimeout    *time.Duration
+}
+
+// OpenOption configures how OpenDb builds the SQLite DSN.
+type OpenOption func(*openOptions)
+
+// WithSharedCache enables SQLite shared-cache mode.
+func WithSharedCache() OpenOption {
+	return func(opts *openOptions) {
+		opts.sharedCache = true
+	}
+}
+
+// WithJournalModeWAL enables WAL journaling mode.
+func WithJournalModeWAL() OpenOption {
+	return func(opts *openOptions) {
+		opts.journalModeWAL = true
+	}
+}
+
+// WithBusyTimeout sets SQLite's busy timeout pragma.
+func WithBusyTimeout(d time.Duration) OpenOption {
+	return func(opts *openOptions) {
+		opts.busyTimeout = &d
+	}
+}
+
 func (s *sqliteDB) Read() *sql.DB {
 	return s.readDB
 }
@@ -49,10 +79,12 @@ func (s *sqliteDB) Close() error {
 }
 
 // OpenDb returns a split SQLite handle with separate read and write pools.
-//
-// The read pool allows concurrent reads, while the write pool stays pinned to a
-// single connection. WAL mode is enabled so reads do not block writes.
-func OpenDb(dbPath string) (SQLiteDB, error) {
+func OpenDb(dbPath string, opts ...OpenOption) (SQLiteDB, error) {
+	openOpts := openOptions{}
+	for _, opt := range opts {
+		opt(&openOpts)
+	}
+
 	dir := filepath.Dir(dbPath)
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		err = os.MkdirAll(dir, 0755)
@@ -61,40 +93,21 @@ func OpenDb(dbPath string) (SQLiteDB, error) {
 		}
 	}
 
-	// Multi-connection read pool
-	readDB, err := sql.Open(driverName, dbPath)
+	dsn := buildDSN(dbPath, openOpts)
+
+	readDB, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open read db: %w", err)
 	}
 	readDB.SetMaxOpenConns(runtime.NumCPU())
 
 	// single connection writer pool
-	writeDB, err := sql.Open(driverName, dbPath)
+	writeDB, err := sql.Open(driverName, dsn)
 	if err != nil {
 		_ = readDB.Close()
 		return nil, fmt.Errorf("failed to open write db: %w", err)
 	}
 	writeDB.SetMaxOpenConns(1)
-
-	// Use WAL so reads do not block writes
-	if _, err := writeDB.Exec(`PRAGMA journal_mode = WAL;`); err != nil {
-		_ = readDB.Close()
-		_ = writeDB.Close()
-		return nil, fmt.Errorf("failed to enable WAL: %w", err)
-	}
-
-	// Use busy_timeout so reads/writes wait for WAL checkpointing instead of failing
-	if _, err := writeDB.Exec(`PRAGMA busy_timeout = 5000;`); err != nil {
-		_ = readDB.Close()
-		_ = writeDB.Close()
-		return nil, fmt.Errorf("failed to enable WAL: %w", err)
-	}
-
-	if _, err := readDB.Exec(`PRAGMA busy_timeout = 5000;`); err != nil {
-		_ = readDB.Close()
-		_ = writeDB.Close()
-		return nil, fmt.Errorf("failed to enable WAL: %w", err)
-	}
 
 	// Check there are no errors when opening a connection
 	if err := writeDB.Ping(); err != nil {
@@ -113,6 +126,23 @@ func OpenDb(dbPath string) (SQLiteDB, error) {
 		readDB:  readDB,
 		writeDB: writeDB,
 	}, nil
+}
+
+func buildDSN(dbPath string, opts openOptions) string {
+	params := make([]string, 0, 3)
+	if opts.sharedCache {
+		params = append(params, "cache=shared")
+	}
+	if opts.journalModeWAL {
+		params = append(params, "_pragma=journal_mode(WAL)")
+	}
+	if opts.busyTimeout != nil {
+		params = append(params, fmt.Sprintf("_pragma=busy_timeout(%d)", opts.busyTimeout.Milliseconds()))
+	}
+	if len(params) == 0 {
+		return dbPath
+	}
+	return dbPath + "?" + strings.Join(params, "&")
 }
 
 func extendArray[T any](arr []T, position int) []T {
@@ -154,7 +184,7 @@ func execTx(
 			tx.Rollback()
 
 			if closeErr := closeConn(conn, isInterruptError(ctx, err)); closeErr != nil {
-				return closeErr
+				return fmt.Errorf("%w: %w", err, closeErr)
 			}
 
 			if isConflictError(err) {
@@ -168,7 +198,7 @@ func execTx(
 		// Commit the transaction
 		if err := tx.Commit(); err != nil {
 			if closeErr := closeConn(conn, isInterruptError(ctx, err)); closeErr != nil {
-				return closeErr
+				return fmt.Errorf("failed to commit transaction: %w: %w", err, closeErr)
 			}
 			if isConflictError(err) {
 				lastErr = err
