@@ -562,7 +562,11 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
 		for _, outpoint := range outpoints {
 			res, err := q.SelectPendingSpentVtxo(
-				ctx, queries.SelectPendingSpentVtxoParams{Txid: outpoint.Txid, Vout: int64(outpoint.VOut)},
+				ctx,
+				queries.SelectPendingSpentVtxoParams{
+					Txid: outpoint.Txid,
+					Vout: int64(outpoint.VOut),
+				},
 			)
 			if err != nil {
 				return err

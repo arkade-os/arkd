@@ -228,7 +228,10 @@ func (r *roundRepository) GetRoundWithId(ctx context.Context, id string) (*domai
 
 		rvs := make([]combinedRow, 0, len(rows))
 		for _, row := range rows {
-			rvs = append(rvs, combinedRow{round: row.Round, intent: row.RoundIntentsVw, tx: row.RoundTxsVw})
+			rvs = append(
+				rvs,
+				combinedRow{round: row.Round, intent: row.RoundIntentsVw, tx: row.RoundTxsVw},
+			)
 		}
 
 		rounds, err := rowsToRounds(rvs)
@@ -280,7 +283,10 @@ func (r *roundRepository) GetRoundWithCommitmentTxid(
 
 		rvs := make([]combinedRow, 0, len(rows))
 		for _, row := range rows {
-			rvs = append(rvs, combinedRow{round: row.Round, intent: row.RoundIntentsVw, tx: row.RoundTxsVw})
+			rvs = append(
+				rvs,
+				combinedRow{round: row.Round, intent: row.RoundIntentsVw, tx: row.RoundTxsVw},
+			)
 		}
 
 		rounds, err := rowsToRounds(rvs)
