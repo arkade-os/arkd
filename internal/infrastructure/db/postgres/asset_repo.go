@@ -158,29 +158,14 @@ func (r *assetRepository) GetAssets(
 			indexByID[row.ID] = idx
 		}
 
-		amountStr, err := stringifyAssetAmount(row.AssetAmount)
-		if err != nil {
-			return nil, fmt.Errorf("invalid supply value for asset %s: %w", row.ID, err)
-		}
-		amount, ok := new(big.Int).SetString(amountStr, 10)
+		amount, ok := new(big.Int).SetString(row.AssetAmount, 10)
 		if !ok {
-			return nil, fmt.Errorf("invalid supply value: %s", amountStr)
+			return nil, fmt.Errorf("invalid supply value: %s", row.AssetAmount)
 		}
 		assets[idx].Supply.Add(&assets[idx].Supply, amount)
 	}
 
 	return assets, nil
-}
-
-func stringifyAssetAmount(value interface{}) (string, error) {
-	switch v := value.(type) {
-	case string:
-		return v, nil
-	case []byte:
-		return string(v), nil
-	default:
-		return "", fmt.Errorf("unexpected asset amount type: %T", value)
-	}
 }
 
 func (r *assetRepository) GetControlAsset(ctx context.Context, assetID string) (string, error) {
