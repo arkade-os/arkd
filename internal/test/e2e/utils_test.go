@@ -811,14 +811,18 @@ func isRetryableChurnError(err error) bool {
 	return false
 }
 
-func waitForVTXOs(ch <-chan indexer.ScriptEvent, atLeastN int, timeout time.Duration) ([]types.Vtxo, error) {
+func waitForVTXOs(
+	ch <-chan indexer.ScriptEvent,
+	atLeastN int,
+	timeout time.Duration,
+) ([]types.Vtxo, error) {
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(timeout))
 	defer cancel()
 	vtxos := make([]types.Vtxo, 0)
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("timed out - %d/%d recieved", len(vtxos), atLeastN)
+			return nil, fmt.Errorf("timed out - %d/%d received", len(vtxos), atLeastN)
 		case evt, ok := <-ch:
 			if !ok {
 				return nil, fmt.Errorf("vtxo event channel closed")

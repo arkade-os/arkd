@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
-	_ "modernc.org/sqlite"
+	log "github.com/sirupsen/logrus"
+	sqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 const (
@@ -74,18 +76,31 @@ func OpenDb(dbPath string) (SQLiteDB, error) {
 	}
 	writeDB.SetMaxOpenConns(1)
 
-	// Force connections to open now.
-	if err := writeDB.Ping(); err != nil {
-		_ = readDB.Close()
-		_ = writeDB.Close()
-		return nil, fmt.Errorf("failed to ping write db: %w", err)
-	}
-
 	// Use WAL so reads do not block writes
 	if _, err := writeDB.Exec(`PRAGMA journal_mode = WAL;`); err != nil {
 		_ = readDB.Close()
 		_ = writeDB.Close()
 		return nil, fmt.Errorf("failed to enable WAL: %w", err)
+	}
+
+	// Use busy_timeout so reads/writes wait for WAL checkpointing instead of failing
+	if _, err := writeDB.Exec(`PRAGMA busy_timeout = 5000;`); err != nil {
+		_ = readDB.Close()
+		_ = writeDB.Close()
+		return nil, fmt.Errorf("failed to enable WAL: %w", err)
+	}
+
+	if _, err := readDB.Exec(`PRAGMA busy_timeout = 5000;`); err != nil {
+		_ = readDB.Close()
+		_ = writeDB.Close()
+		return nil, fmt.Errorf("failed to enable WAL: %w", err)
+	}
+
+	// Check there are no errors when opening a connection
+	if err := writeDB.Ping(); err != nil {
+		_ = readDB.Close()
+		_ = writeDB.Close()
+		return nil, fmt.Errorf("failed to ping write db: %w", err)
 	}
 
 	if err := readDB.Ping(); err != nil {
@@ -164,7 +179,7 @@ func execTx(
 		}
 
 		if err := closeConn(conn, false); err != nil {
-			return err
+			log.WithError(err).Warn("failed to close connection after successful commit")
 		}
 		return nil
 	}
@@ -250,9 +265,8 @@ func closeConn(conn *sql.Conn, discard bool) error {
 	return nil
 }
 
-// isInterruptError reports whether err looks like a context cancellation or a
-// SQLite interrupt. SQLite interrupt detection is partly heuristic because the
-// driver may surface it as driver-specific error text.
+// isInterruptError reports whether err is a context cancellation or a SQLite
+// interrupt.
 func isInterruptError(ctx context.Context, err error) bool {
 	if err == nil {
 		return false
@@ -266,8 +280,13 @@ func isInterruptError(ctx context.Context, err error) bool {
 		return true
 	}
 
-	errMsg := strings.ToLower(err.Error())
-	return strings.Contains(errMsg, "interrupted") || strings.Contains(errMsg, "sqlite_interrupt")
+	var sqliteErr *sqlite.Error
+	if errors.As(err, &sqliteErr) {
+		code := sqliteErr.Code()
+		return code == sqlite3.SQLITE_INTERRUPT || code&0xff == sqlite3.SQLITE_INTERRUPT
+	}
+
+	return false
 }
 
 func isConflictError(err error) bool {

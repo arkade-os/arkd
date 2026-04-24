@@ -359,7 +359,7 @@ SELECT
   a.metadata_hash,
   a.metadata,
   a.control_asset_id,
-  v.asset_amount
+  COALESCE(v.asset_amount, '0') AS asset_amount
 FROM asset a
 LEFT JOIN vtxo_vw v
   ON v.asset_id = a.id
@@ -375,7 +375,7 @@ type SelectAssetsWithUnspentAmountsByIdsRow struct {
 	MetadataHash   sql.NullString
 	Metadata       sql.NullString
 	ControlAssetID sql.NullString
-	AssetAmount    sql.NullString
+	AssetAmount    string
 }
 
 func (q *Queries) SelectAssetsWithUnspentAmountsByIds(ctx context.Context, ids []string) ([]SelectAssetsWithUnspentAmountsByIdsRow, error) {
