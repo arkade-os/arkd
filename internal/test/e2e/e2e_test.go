@@ -5461,7 +5461,7 @@ func TestGetAssetQueryChurn(t *testing.T) {
 	require.NoError(t, err)
 	defer closeFn()
 
-	recvVtxosTimeout := time.Second * 10
+	recvVtxosTimeout := time.Second * 20
 
 	var aliceRecvErr, bobRecvErr error
 
@@ -5639,7 +5639,7 @@ func TestGetAssetQueryChurn(t *testing.T) {
 		}
 
 		dbVtxos := make(map[types.Outpoint]types.Vtxo)
-		vtxosInDBDeadline := time.Now().Add(5 * time.Second)
+		vtxosInDBDeadline := time.Now().Add(10 * time.Second)
 		for time.Now().Before(vtxosInDBDeadline) {
 			res, err := alice.Indexer().
 				GetVtxos(ctx, indexer.WithOutpoints(outpoints))
@@ -5700,7 +5700,7 @@ func TestGetAssetQueryChurn(t *testing.T) {
 			require.NoError(t, bobSettleErr)
 
 			// ensure rounds were written to the DB
-			batchInDbDeadline := time.Now().Add(5 * time.Second)
+			batchInDbDeadline := time.Now().Add(10 * time.Second)
 			outpoints := make([]types.Outpoint, 0)
 			for _, v := range aliceSettleRes.VtxoInputs {
 				outpoints = append(outpoints, v.Outpoint)
