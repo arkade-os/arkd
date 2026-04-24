@@ -744,8 +744,8 @@ func (a *grpcClient) paginatedGetVirtualTxs(
 func paginatedFetch[T any](
 	ctx context.Context,
 	fetch func(
-	ctx context.Context, page *arkv1.IndexerPageRequest,
-) ([]T, *arkv1.IndexerPageResponse, error),
+		ctx context.Context, page *arkv1.IndexerPageRequest,
+	) ([]T, *arkv1.IndexerPageResponse, error),
 ) ([]T, error) {
 	var all []T
 	pageIndex := int32(0)
