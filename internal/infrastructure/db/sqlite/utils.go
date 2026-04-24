@@ -137,7 +137,10 @@ func buildDSN(dbPath string, opts openOptions) string {
 		params = append(params, "_pragma=journal_mode(WAL)")
 	}
 	if opts.busyTimeout != nil {
-		params = append(params, fmt.Sprintf("_pragma=busy_timeout(%d)", opts.busyTimeout.Milliseconds()))
+		params = append(
+			params,
+			fmt.Sprintf("_pragma=busy_timeout(%d)", opts.busyTimeout.Milliseconds()),
+		)
 	}
 	if len(params) == 0 {
 		return dbPath
