@@ -239,6 +239,7 @@ type boardingIntentInput struct {
 	locktime         *arklib.RelativeLocktime
 	locktimeDisabled bool
 	witnessUtxo      *wire.TxOut
+	isUnrolledVtxo   bool // unrolled VTXO re-entering the Ark
 }
 
 type AssetInput struct {

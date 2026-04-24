@@ -134,6 +134,52 @@ func TestResolveMinAmounts(t *testing.T) {
 	}
 }
 
+// TestCheckUnrolledVtxoExpiry verifies the expiry margin gate that decides
+// whether an unrolled VTXO's remaining CSV time is long enough to safely
+// rejoin a batch. The margin is always a concrete configured value (config
+// validation rejects <= 0), so the function just compares csvExpiresAt to
+// now + margin.
+func TestCheckUnrolledVtxoExpiry(t *testing.T) {
+	now := parseTime(t, "2023-10-10 12:00:00")
+	margin := 5 * time.Minute
+
+	tests := []struct {
+		description  string
+		csvExpiresAt time.Time
+		expectErr    bool
+	}{
+		{
+			description:  "CSV expires after margin",
+			csvExpiresAt: now.Add(10 * time.Minute),
+			expectErr:    false,
+		},
+		{
+			description:  "CSV expires within margin",
+			csvExpiresAt: now.Add(2 * time.Minute),
+			expectErr:    true,
+		},
+		{
+			description:  "CSV expires exactly at margin boundary",
+			csvExpiresAt: now.Add(margin),
+			expectErr:    false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.description, func(t *testing.T) {
+			svc := &service{unrolledVtxoMinExpiryMargin: margin}
+
+			err := svc.checkUnrolledVtxoExpiry(tc.csvExpiresAt, now)
+			if tc.expectErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "unrolled vtxo CSV expires too soon")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func parseTime(t *testing.T, value string) time.Time {
 	tm, err := time.ParseInLocation(time.DateTime, value, time.UTC)
 	require.NoError(t, err)

@@ -204,6 +204,11 @@ SELECT t.* FROM tx t WHERE t.round_id IN (
     SELECT tx.round_id FROM tx WHERE tx.txid = @txid AND type = 'commitment'
 ) AND t.type = 'forfeit';
 
+-- name: SelectRoundSweepTxs :many
+SELECT t.txid, t.tx FROM tx t WHERE t.round_id = (
+    SELECT tx.round_id FROM tx WHERE tx.txid = @txid AND type = 'commitment'
+) AND t.type = 'sweep';
+
 -- name: SelectRoundStats :one
 SELECT
     r.swept,

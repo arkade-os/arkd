@@ -88,6 +88,21 @@ func (s *intentStore) Push(
 				}
 			}
 
+			for _, boardingInput := range boardingInputs {
+				key := boardingInput.String()
+				exists, err := s.rdb.SIsMember(ctx, intentStoreVtxosKey, key).Result()
+				if err != nil {
+					return fmt.Errorf(
+						"failed to check existence of boarding input %s: %v", key, err,
+					)
+				}
+				if exists {
+					return fmt.Errorf(
+						"duplicated input, %s already registered by another intent", key,
+					)
+				}
+			}
+
 			now := time.Now()
 			timedIntent := &ports.TimedIntent{
 				Intent:              intent,
@@ -108,12 +123,15 @@ func (s *intentStore) Push(
 					}
 					pipe.SAdd(ctx, intentStoreVtxosKey, vtxo.Outpoint.String())
 				}
+				for _, boardingInput := range boardingInputs {
+					pipe.SAdd(ctx, intentStoreVtxosKey, boardingInput.String())
+				}
 
 				return nil
 			})
 
 			return err
-		}, intentStoreVtxosKey, intentStoreIdsKey) // WATCH both keys
+		}, intentStoreVtxosKey, intentStoreIdsKey) // WATCH dedup keys
 		if err == nil {
 			return nil
 		}
@@ -140,6 +158,11 @@ func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, 
 			return nil, fmt.Errorf("failed to get intent %s: %v", id, err)
 		}
 
+		if intent == nil {
+			log.Warnf("got nil intent for id %s", id)
+			continue
+		}
+
 		if len(intent.Receivers) > 0 {
 			intentsByTime = append(intentsByTime, *intent)
 		}
@@ -153,11 +176,14 @@ func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, 
 	}
 
 	result := make([]ports.TimedIntent, 0, num)
-	var vtxosToRemove []string
+	var inputsToRemove []string
 	for _, intent := range intentsByTime[:num] {
 		result = append(result, intent)
 		for _, vtxo := range intent.Inputs {
-			vtxosToRemove = append(vtxosToRemove, vtxo.Outpoint.String())
+			inputsToRemove = append(inputsToRemove, vtxo.Outpoint.String())
+		}
+		for _, boardingInput := range intent.BoardingInputs {
+			inputsToRemove = append(inputsToRemove, boardingInput.String())
 		}
 
 		if err := s.intents.Delete(ctx, intent.Id); err != nil {
@@ -167,8 +193,8 @@ func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, 
 		s.rdb.SRem(ctx, intentStoreIdsKey, intent.Id)
 	}
 
-	if len(vtxosToRemove) > 0 {
-		s.rdb.SAdd(ctx, intentStoreVtxosToRemoveKey, vtxosToRemove)
+	if len(inputsToRemove) > 0 {
+		s.rdb.SAdd(ctx, intentStoreVtxosToRemoveKey, inputsToRemove)
 	}
 
 	if len(result) > 0 {
@@ -281,6 +307,9 @@ func (s *intentStore) Delete(ctx context.Context, ids []string) error {
 		for _, vtxo := range intent.Inputs {
 			s.rdb.SRem(ctx, intentStoreVtxosKey, vtxo.Outpoint.String())
 		}
+		for _, boardingInput := range intent.BoardingInputs {
+			s.rdb.SRem(ctx, intentStoreVtxosKey, boardingInput.String())
+		}
 
 		if err := s.intents.Delete(ctx, id); err != nil {
 			log.Warnf("delete:failed to delete intent %s: %v", id, err)
@@ -308,10 +337,7 @@ func (s *intentStore) DeleteAll(ctx context.Context) error {
 	for range s.numOfRetries {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
 			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				pipe.Del(
-					ctx, intentStoreIdsKey, intentStoreVtxosKey,
-					intentStoreVtxosToRemoveKey, selectedIntentsKey,
-				)
+				pipe.Del(ctx, keys...)
 				return nil
 			})
 			return err
@@ -324,17 +350,17 @@ func (s *intentStore) DeleteAll(ctx context.Context) error {
 }
 
 func (s *intentStore) DeleteVtxos(ctx context.Context) error {
-	vtxosToRemove, err := s.rdb.SMembers(ctx, intentStoreVtxosToRemoveKey).Result()
+	inputsToRemove, err := s.rdb.SMembers(ctx, intentStoreVtxosToRemoveKey).Result()
 	if err != nil {
-		return fmt.Errorf("failed to get vtxos to remove: %v", err)
+		return fmt.Errorf("failed to get inputs to remove: %v", err)
 	}
 
 	for range s.numOfRetries {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
 			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				if len(vtxosToRemove) > 0 {
-					members := make([]interface{}, len(vtxosToRemove))
-					for i, v := range vtxosToRemove {
+				if len(inputsToRemove) > 0 {
+					members := make([]interface{}, len(inputsToRemove))
+					for i, v := range inputsToRemove {
 						members[i] = v
 					}
 					pipe.SRem(ctx, intentStoreVtxosKey, members...)

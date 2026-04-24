@@ -122,16 +122,17 @@ type Config struct {
 	UnlockerFilePath string // file unlocker
 	UnlockerPassword string // env unlocker
 
-	RoundMinParticipantsCount int64
-	RoundMaxParticipantsCount int64
-	UtxoMaxAmount             int64
-	UtxoMinAmount             int64
-	VtxoMaxAmount             int64
-	VtxoMinAmount             int64
-	SettlementMinExpiryGap    int64
-	MaxTxWeight               uint64
-	AssetTxMaxWeightRatio     float64
-	MaxOpReturnOutputs        uint32
+	RoundMinParticipantsCount   int64
+	RoundMaxParticipantsCount   int64
+	UtxoMaxAmount               int64
+	UtxoMinAmount               int64
+	VtxoMaxAmount               int64
+	VtxoMinAmount               int64
+	SettlementMinExpiryGap      int64
+	UnrolledVtxoMinExpiryMargin int64
+	MaxTxWeight                 uint64
+	AssetTxMaxWeightRatio       float64
+	MaxOpReturnOutputs          uint32
 
 	EnablePprof            bool
 	IndexerExposure        string
@@ -221,7 +222,10 @@ var (
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
-	MaxOpReturnOutputs                   = "MAX_OP_RETURN_OUTS"
+	// Minimum remaining CSV time (in seconds) for an unrolled VTXO to be accepted into a batch.
+	// 0 means fallback to session duration.
+	UnrolledVtxoMinExpiryMargin = "UNROLLED_VTXO_MIN_EXPIRY_MARGIN"
+	MaxOpReturnOutputs          = "MAX_OP_RETURN_OUTS"
 	// Max transaction weight accepted by the ark server
 	MaxTxWeight = "MAX_TX_WEIGHT"
 	// Fraction of MaxTxWeight reserved for the asset packet when spending a VTXO
@@ -262,15 +266,21 @@ var (
 	defaultNoTLS               = true
 	defaultSchedulerType       = "gocron"
 
-	defaultOtelPushInterval          = 10 // seconds
-	defaultHeartbeatInterval         = 60 // seconds
-	defaultRoundReportServiceEnabled = false
-	defaultAssetTxMaxWeightRatio     = 0.5
-	defaultEnablePprof               = false
-	defaultIndexerExposure           = "public"
-	defaultIndexerAuthTokenExpiry    = 300 // 5 minutes in seconds
-	defaultMaxConcurrentStreams      = uint32(1000)
-	defaultMaxOpReturnOuts           = uint32(3)
+	defaultRoundMaxParticipantsCount     = 128
+	defaultRoundMinParticipantsCount     = 1
+	defaultOtelPushInterval              = 10 // seconds
+	defaultHeartbeatInterval             = 60 // seconds
+	defaultRoundReportServiceEnabled     = false
+	defaultSettlementMinExpiryGap        = 0   // disabled by default
+	defaultUnrolledVtxoMinExpiryMargin   = 300 // 5 minutes in seconds
+	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
+	defaultAssetTxMaxWeightRatio         = 0.5
+	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
+	defaultEnablePprof                   = false
+	defaultIndexerExposure               = "public"
+	defaultIndexerAuthTokenExpiry        = 300 // 5 minutes in seconds
+	defaultMaxConcurrentStreams          = uint32(1000)
+	defaultMaxOpReturnOuts               = uint32(3)
 )
 
 func LoadConfig() (*Config, error) {
@@ -295,6 +305,9 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
+	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
+	viper.SetDefault(UnrolledVtxoMinExpiryMargin, defaultUnrolledVtxoMinExpiryMargin)
+	viper.SetDefault(MaxTxWeight, defaultMaxTxWeight)
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
 	viper.SetDefault(IndexerExposure, defaultIndexerExposure)
@@ -404,6 +417,7 @@ func LoadConfig() (*Config, error) {
 		VtxoMinAmount:                 viper.GetInt64(VtxoMinAmount),
 		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
+		UnrolledVtxoMinExpiryMargin:   viper.GetInt64(UnrolledVtxoMinExpiryMargin),
 		MaxTxWeight:                   viper.GetUint64(MaxTxWeight),
 		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
@@ -574,6 +588,19 @@ func (c *Config) Validate() error {
 	}
 	if c.SessionDuration < 2 {
 		return fmt.Errorf("invalid session duration, must be at least 2 seconds")
+	}
+	if c.UnrolledVtxoMinExpiryMargin <= 0 {
+		return fmt.Errorf(
+			"invalid unrolled vtxo min expiry margin, must be greater than 0 seconds",
+		)
+	}
+	if c.UnrolledVtxoMinExpiryMargin < c.SessionDuration {
+		return fmt.Errorf(
+			"invalid unrolled vtxo min expiry margin (%d), "+
+				"must be at least session duration (%d) so the batch has "+
+				"enough time to finalize before the CSV expires",
+			c.UnrolledVtxoMinExpiryMargin, c.SessionDuration,
+		)
 	}
 
 	if err := c.repoManager(); err != nil {
@@ -1045,6 +1072,7 @@ func (c *Config) appService() error {
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
+		c.UnrolledVtxoMinExpiryMargin,
 		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0), c.MaxOpReturnOutputs,
 	)
 	if err != nil {

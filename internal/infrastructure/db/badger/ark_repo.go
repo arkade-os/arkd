@@ -131,6 +131,12 @@ func (r *arkRepository) GetRoundForfeitTxs(
 	return nil, nil
 }
 
+func (r *arkRepository) GetSweepTxs(
+	ctx context.Context, commitmentTxid string,
+) (map[string]string, error) {
+	return nil, nil
+}
+
 func (r *arkRepository) GetRoundConnectorTree(
 	ctx context.Context, commitmentTxid string,
 ) (tree.FlatTxTree, error) {
