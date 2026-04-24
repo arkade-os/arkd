@@ -13,7 +13,8 @@ import (
 
 func TestIntentTxidMigration(t *testing.T) {
 	ctx := context.Background()
-	db, err := sqlitedb.OpenDb(":memory:")
+	// shared in-memory SQLite DB so multiple connections (read/write pools) see the same data
+	db, err := sqlitedb.OpenDb("file::memory:", sqlitedb.WithSharedCache())
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
@@ -21,24 +22,25 @@ func TestIntentTxidMigration(t *testing.T) {
 		db.Close()
 	})
 	// create table intent references
-	setupRoundTable(t, db)
+	setupRoundTable(t, db.Write())
 	// create intent table using old schema
-	setupOldIntentTable(t, db)
+	setupOldIntentTable(t, db.Write())
 
 	// insert dummy data into tables
-	insertTestRoundRows(t, db)
-	insertTestIntentRows(t, db)
+	insertTestRoundRows(t, db.Write())
+	insertTestIntentRows(t, db.Write())
 
 	// add new txid field to intent table
-	modifyIntentTable(t, db)
+	modifyIntentTable(t, db.Write())
 
 	// run the backfill to populate intent rows with derived txids
-	err = sqlitedb.BackfillIntentTxid(ctx, db)
+	err = sqlitedb.BackfillIntentTxid(ctx, db.Write())
 	require.NoError(t, err)
 
 	// check the intent table has the new txid column
 	var hasID int
-	err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('intent') WHERE name = 'txid'`).
+	err = db.Read().
+		QueryRow(`SELECT COUNT(*) FROM pragma_table_info('intent') WHERE name = 'txid'`).
 		Scan(&hasID)
 	require.NoError(t, err)
 	require.Equal(t, 1, hasID)
@@ -48,7 +50,7 @@ func TestIntentTxidMigration(t *testing.T) {
 		Txid  string
 		Proof string
 	}
-	rows, err := db.Query(`
+	rows, err := db.Read().Query(`
        SELECT id, txid, proof FROM intent;
     `)
 	require.NoError(t, err)

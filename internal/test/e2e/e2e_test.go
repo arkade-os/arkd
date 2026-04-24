@@ -43,6 +43,8 @@ import (
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -387,100 +389,100 @@ func TestUnilateralExit(t *testing.T) {
 // offchain.
 func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 	t.Run("without asset", func(t *testing.T) {
-	ctx := t.Context()
-	alice := setupArkSDK(t)
+		ctx := t.Context()
+		alice := setupArkSDK(t)
 
-	// Fund Alice offchain + small onchain amount for unroll fees
-	faucet(t, alice, 0.00021)
-	time.Sleep(5 * time.Second)
+		// Fund Alice offchain + small onchain amount for unroll fees
+		faucet(t, alice, 0.00021)
+		time.Sleep(5 * time.Second)
 
-	_, offchainAddr, _, err := alice.Receive(ctx)
-	require.NoError(t, err)
+		_, offchainAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
 
-	balance, err := alice.Balance(ctx)
-	require.NoError(t, err)
-	require.NotZero(t, balance.OffchainBalance.Total)
-	require.Empty(t, balance.OnchainBalance.LockedAmount)
+		balance, err := alice.Balance(ctx)
+		require.NoError(t, err)
+		require.NotZero(t, balance.OffchainBalance.Total)
+		require.Empty(t, balance.OnchainBalance.LockedAmount)
 
-	// Unroll: moves VTXOs onchain
+		// Unroll: moves VTXOs onchain
 		txids, err := alice.Unroll(ctx)
-	require.NoError(t, err)
+		require.NoError(t, err)
 		require.NotEmpty(t, txids)
 
-	err = generateBlocks(1)
-	require.NoError(t, err)
+		err = generateBlocks(1)
+		require.NoError(t, err)
 
-	// Poll for the wallet to index the new block instead of sleeping a fixed
-	// interval — every second spent here eats into the unrolled VTXO's CSV
-	// runway before the subsequent Settle call.
-	require.Eventually(t, func() bool {
-		b, err := alice.Balance(ctx)
-		if err != nil {
-			return false
+		// Poll for the wallet to index the new block instead of sleeping a fixed
+		// interval — every second spent here eats into the unrolled VTXO's CSV
+		// runway before the subsequent Settle call.
+		require.Eventually(t, func() bool {
+			b, err := alice.Balance(ctx)
+			if err != nil {
+				return false
+			}
+			return b.OffchainBalance.Total == 0 &&
+				len(b.OnchainBalance.LockedAmount) > 0 &&
+				b.OnchainBalance.LockedAmount[0].Amount > 0
+		}, 15*time.Second, 200*time.Millisecond, "unroll did not settle onchain in time")
+
+		balance, err = alice.Balance(ctx)
+		require.NoError(t, err)
+
+		// Find the unrolled VTXO in the spent list
+		_, spentVtxos, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+
+		var unrolledVtxo types.Vtxo
+		for _, v := range spentVtxos {
+			if v.Unrolled && !v.Spent {
+				unrolledVtxo = v
+				break
+			}
 		}
-		return b.OffchainBalance.Total == 0 &&
-			len(b.OnchainBalance.LockedAmount) > 0 &&
-			b.OnchainBalance.LockedAmount[0].Amount > 0
-	}, 15*time.Second, 200*time.Millisecond, "unroll did not settle onchain in time")
+		require.NotZero(t, unrolledVtxo.Amount, "expected an unrolled VTXO")
 
-	balance, err = alice.Balance(ctx)
-	require.NoError(t, err)
-
-	// Find the unrolled VTXO in the spent list
-	_, spentVtxos, err := alice.ListVtxos(ctx)
-	require.NoError(t, err)
-
-	var unrolledVtxo types.Vtxo
-	for _, v := range spentVtxos {
-		if v.Unrolled && !v.Spent {
-			unrolledVtxo = v
-			break
+		// Receive returns *types.Address which carries Tapscripts — use them
+		// to present the unrolled VTXO as a boarding input.
+		boardingUtxo := types.Utxo{
+			Outpoint:   unrolledVtxo.Outpoint,
+			Amount:     unrolledVtxo.Amount,
+			Tapscripts: offchainAddr.Tapscripts,
 		}
-	}
-	require.NotZero(t, unrolledVtxo.Amount, "expected an unrolled VTXO")
 
-	// Receive returns *types.Address which carries Tapscripts — use them
-	// to present the unrolled VTXO as a boarding input.
-	boardingUtxo := types.Utxo{
-		Outpoint:   unrolledVtxo.Outpoint,
-		Amount:     unrolledVtxo.Amount,
-		Tapscripts: offchainAddr.Tapscripts,
-	}
+		// Rejoin the batch — unrolled VTXO should be accepted as a boarding input
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		var incomingErr error
+		go func() {
+			_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+			wg.Done()
+		}()
 
-	// Rejoin the batch — unrolled VTXO should be accepted as a boarding input
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	var incomingErr error
-	go func() {
-		_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
-		wg.Done()
-	}()
+		res, err := alice.Settle(ctx,
+			arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
+		)
+		require.NoError(t, err)
+		require.NotEmpty(t, res.CommitmentTxid)
 
-	res, err := alice.Settle(ctx,
-		arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
-	)
-	require.NoError(t, err)
-	require.NotEmpty(t, res.CommitmentTxid)
+		wg.Wait()
+		require.NoError(t, incomingErr)
+		time.Sleep(time.Second)
 
-	wg.Wait()
-	require.NoError(t, incomingErr)
-	time.Sleep(time.Second)
+		// Alice has offchain funds again
+		balance, err = alice.Balance(ctx)
+		require.NoError(t, err)
+		require.NotZero(t, balance.OffchainBalance.Total)
 
-	// Alice has offchain funds again
-	balance, err = alice.Balance(ctx)
-	require.NoError(t, err)
-	require.NotZero(t, balance.OffchainBalance.Total)
+		// Once the unrolled VTXO has been accepted into a batch, the onchain
+		// UTXO is spent. Mining past the unilateral exit delay and calling
+		// CompleteUnroll should find no mature funds to claim.
+		err = generateBlocks(20)
+		require.NoError(t, err)
 
-	// Once the unrolled VTXO has been accepted into a batch, the onchain
-	// UTXO is spent. Mining past the unilateral exit delay and calling
-	// CompleteUnroll should find no mature funds to claim.
-	err = generateBlocks(20)
-	require.NoError(t, err)
+		time.Sleep(5 * time.Second)
 
-	time.Sleep(5 * time.Second)
-
-	_, err = alice.CompleteUnroll(ctx, "")
-	require.ErrorContains(t, err, "no mature funds available")
+		_, err = alice.CompleteUnroll(ctx, "")
+		require.ErrorContains(t, err, "no mature funds available")
 	})
 }
 
@@ -5419,6 +5421,341 @@ func TestAsset(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, 1_200, int(assetBalance))
 	})
+}
+
+func TestGetAssetQueryChurn(t *testing.T) {
+	ctx := t.Context()
+
+	const supply = 200
+	// join a batch after n offchain sends
+	const batchInterval = 10
+	const assetQueryWorkers = 4
+
+	alice := setupArkSDK(t)
+	bob := setupArkSDK(t)
+
+	faucetOffchain(t, alice, 0.002)
+	faucetOffchain(t, bob, 0.002)
+
+	_, aliceOffchainAddr, _, err := alice.Receive(ctx)
+	require.NoError(t, err)
+	aliceOffchainAddrDecoded, err := arklib.DecodeAddressV0(aliceOffchainAddr.Address)
+	require.NoError(t, err)
+	aliceP2TR, err := script.P2TRScript(aliceOffchainAddrDecoded.VtxoTapKey)
+	require.NoError(t, err)
+	aliceP2TRStr := hex.EncodeToString(aliceP2TR)
+
+	_, bobOffchainAddr, _, err := bob.Receive(ctx)
+	require.NoError(t, err)
+	bobOffchainAddrDecoded, err := arklib.DecodeAddressV0(bobOffchainAddr.Address)
+	require.NoError(t, err)
+	bobP2TR, err := script.P2TRScript(bobOffchainAddrDecoded.VtxoTapKey)
+	require.NoError(t, err)
+	bobP2TRStr := hex.EncodeToString(bobP2TR)
+
+	_, aliceEvtCh, closeFn, err := alice.Indexer().NewSubscription(ctx, []string{aliceP2TRStr})
+	require.NoError(t, err)
+	defer closeFn()
+
+	_, bobEvtCh, closeFn, err := bob.Indexer().NewSubscription(ctx, []string{bobP2TRStr})
+	require.NoError(t, err)
+	defer closeFn()
+
+	recvVtxosTimeout := time.Second * 20
+
+	var aliceRecvErr, bobRecvErr error
+
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
+	go func() {
+		// expect 1 asset vtxo + change vtxo
+		_, aliceRecvErr = waitForVTXOs(aliceEvtCh, 2, recvVtxosTimeout)
+		wg.Done()
+	}()
+	go func() {
+		// expect 1 asset vtxo + change vtxo
+		_, bobRecvErr = waitForVTXOs(bobEvtCh, 2, recvVtxosTimeout)
+		wg.Done()
+	}()
+
+	res, err := alice.IssueAsset(ctx, supply, nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.NotEmpty(t, res.Txid)
+	require.Len(t, res.IssuedAssets, 1)
+	aliceAssetID := res.IssuedAssets[0].String()
+
+	res, err = bob.IssueAsset(ctx, supply, nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.NotEmpty(t, res.Txid)
+	require.Len(t, res.IssuedAssets, 1)
+	bobAssetID := res.IssuedAssets[0].String()
+
+	wg.Wait()
+
+	require.NoError(t, aliceRecvErr)
+	require.NoError(t, bobRecvErr)
+
+	time.Sleep(2 * time.Second)
+
+	stressCtx, cancelStress := context.WithCancel(ctx)
+	errCh := make(chan error, assetQueryWorkers)
+	var canceledAssetCalls atomic.Int64
+
+	assetTargets := []struct {
+		client  arksdk.ArkClient
+		assetID string
+	}{
+		{client: alice, assetID: aliceAssetID},
+		{client: bob, assetID: bobAssetID},
+	}
+
+	assetQueryWG := &sync.WaitGroup{}
+	assetQueryWG.Add(assetQueryWorkers)
+	for i := range assetQueryWorkers {
+		// repeatedly issue and cancel GetAsset query requests
+		go func(workerID int) {
+			defer assetQueryWG.Done()
+
+			// staggered start
+			time.Sleep(time.Duration(workerID) * time.Millisecond)
+
+			target := assetTargets[workerID%len(assetTargets)]
+			for stressCtx.Err() == nil {
+				callCtx, cancel := context.WithTimeout(stressCtx, 50*time.Millisecond)
+				done := make(chan error, 1)
+				go func() {
+					_, getAssetErr := target.client.Indexer().GetAsset(callCtx, target.assetID)
+					done <- getAssetErr
+				}()
+
+				time.Sleep(5 * time.Millisecond)
+				cancel()
+
+				getAssetErr := <-done
+				if getAssetErr != nil {
+					if st, ok := status.FromError(getAssetErr); ok {
+						switch st.Code() {
+						case codes.Canceled, codes.DeadlineExceeded:
+							canceledAssetCalls.Add(1)
+							continue
+						case codes.Internal:
+							errMsg := strings.ToLower(st.Message())
+							if strings.Contains(errMsg, "context") {
+								canceledAssetCalls.Add(1)
+								continue
+							}
+						}
+					}
+
+					select {
+					case errCh <- fmt.Errorf("asset query worker %d: %w", workerID, getAssetErr):
+					default:
+					}
+					return
+				}
+			}
+		}(i)
+	}
+	defer func() {
+		cancelStress()
+		assetQueryWG.Wait()
+	}()
+
+	var aliceSendErr, bobSendErr error
+	var aliceSendRes, bobSendRes *arksdk.SendOffChainRes
+	var aliceRecvd, bobRecvd []types.Vtxo
+
+	for i := range supply {
+		completed := i + 1
+
+		sendWg := &sync.WaitGroup{}
+		sendWg.Add(2)
+		recvWg := &sync.WaitGroup{}
+		recvWg.Add(2)
+
+		go func() {
+			// expect 1 asset from bob + change vtxo
+			aliceRecvd, aliceRecvErr = waitForVTXOs(aliceEvtCh, 2, recvVtxosTimeout)
+			recvWg.Done()
+		}()
+		go func() {
+			// expect 1 asset from alice + change vtxo
+			bobRecvd, bobRecvErr = waitForVTXOs(bobEvtCh, 2, recvVtxosTimeout)
+			recvWg.Done()
+		}()
+		go func() {
+			aliceSendRes, aliceSendErr = alice.SendOffChain(ctx, []types.Receiver{{
+				To:     bobOffchainAddr.Address,
+				Amount: 330,
+				Assets: []types.Asset{{
+					AssetId: aliceAssetID,
+					Amount:  1,
+				}},
+			}})
+			sendWg.Done()
+		}()
+		go func() {
+			bobSendRes, bobSendErr = bob.SendOffChain(ctx, []types.Receiver{{
+				To:     aliceOffchainAddr.Address,
+				Amount: 330,
+				Assets: []types.Asset{{
+					AssetId: bobAssetID,
+					Amount:  1,
+				}},
+			}})
+			sendWg.Done()
+		}()
+
+		sendWg.Wait()
+		require.NoErrorf(t, aliceSendErr, "send %d/%d failed", completed, supply)
+		require.NoErrorf(t, bobSendErr, "send %d/%d failed", completed, supply)
+
+		recvWg.Wait()
+		require.NoError(t, aliceRecvErr, "receiving vtxos for send %s %d/%d failed",
+			aliceSendRes.Txid, completed, supply)
+		require.NoError(t, bobRecvErr, "receiving vtxos for send %s %d/%d failed",
+			bobSendRes.Txid, completed, supply)
+
+		outpoints := make([]types.Outpoint, 0)
+		spentVtxos := make([]types.Outpoint, 0)
+		unspentVtxos := make([]types.Outpoint, 0)
+		for _, input := range aliceSendRes.Inputs {
+			outpoints = append(outpoints, input.Outpoint)
+			spentVtxos = append(spentVtxos, input.Outpoint)
+		}
+		for _, input := range bobSendRes.Inputs {
+			outpoints = append(outpoints, input.Outpoint)
+			spentVtxos = append(spentVtxos, input.Outpoint)
+		}
+		for _, output := range aliceRecvd {
+			outpoints = append(outpoints, output.Outpoint)
+			unspentVtxos = append(unspentVtxos, output.Outpoint)
+		}
+		for _, output := range bobRecvd {
+			outpoints = append(outpoints, output.Outpoint)
+			unspentVtxos = append(unspentVtxos, output.Outpoint)
+		}
+
+		dbVtxos := make(map[types.Outpoint]types.Vtxo)
+		vtxosInDBDeadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(vtxosInDBDeadline) {
+			res, err := alice.Indexer().
+				GetVtxos(ctx, indexer.WithOutpoints(outpoints))
+			require.NoError(t, err)
+
+			if len(res.Vtxos) == len(outpoints) {
+				vtxos := res.Vtxos
+				for _, v := range vtxos {
+					dbVtxos[v.Outpoint] = v
+				}
+				break
+			}
+
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		require.Len(t, dbVtxos, len(outpoints), "failed to find all sent/received vtxos in db")
+
+		for _, spent := range spentVtxos {
+			require.Truef(t, dbVtxos[spent].Spent, "failed to update spent vtxo in db: %s", spent)
+		}
+		for _, unspent := range unspentVtxos {
+			require.Falsef(t, dbVtxos[unspent].Spent, "failed to add new vtxo in db: %s", unspent)
+			require.Truef(t, dbVtxos[unspent].Preconfirmed,
+				"failed to add new vtxo in db: %s", unspent)
+		}
+
+		// start a batch after every batchInterval sends
+		if completed%batchInterval == 0 {
+			settleWg := &sync.WaitGroup{}
+			settleWg.Add(4)
+
+			var aliceSettleErr, bobSettleErr error
+			var aliceSettleRes, bobSettleRes *arksdk.SettleRes
+			go func() {
+				// expect 1 new batch vtxo
+				_, aliceRecvErr = waitForVTXOs(aliceEvtCh, 1, recvVtxosTimeout)
+				settleWg.Done()
+			}()
+			go func() {
+				// expect 1 new batch vtxo
+				_, bobRecvErr = waitForVTXOs(bobEvtCh, 1, recvVtxosTimeout)
+				settleWg.Done()
+			}()
+			go func() {
+				aliceSettleRes, aliceSettleErr = alice.Settle(ctx)
+				settleWg.Done()
+			}()
+			go func() {
+				bobSettleRes, bobSettleErr = bob.Settle(ctx)
+				settleWg.Done()
+			}()
+			settleWg.Wait()
+
+			require.NoError(t, aliceRecvErr)
+			require.NoError(t, bobRecvErr)
+			require.NoError(t, aliceSettleErr)
+			require.NoError(t, bobSettleErr)
+
+			// ensure rounds were written to the DB
+			batchInDbDeadline := time.Now().Add(10 * time.Second)
+			outpoints := make([]types.Outpoint, 0)
+			for _, v := range aliceSettleRes.VtxoInputs {
+				outpoints = append(outpoints, v.Outpoint)
+			}
+
+			var aliceCtx, bobCtx *indexer.CommitmentTx
+			var aliceGetCtxErr, bobGetCtxErr error
+			for time.Now().Before(batchInDbDeadline) {
+				aliceCtx, aliceGetCtxErr = alice.Indexer().
+					GetCommitmentTx(ctx, aliceSettleRes.CommitmentTxid)
+				bobCtx, bobGetCtxErr = bob.Indexer().
+					GetCommitmentTx(ctx, bobSettleRes.CommitmentTxid)
+
+				dbVtxos, err := alice.Indexer().GetVtxos(ctx, indexer.WithOutpoints(outpoints))
+
+				require.NoError(t, err)
+				require.Len(t, dbVtxos.Vtxos, len(outpoints))
+
+				allSpent := true
+				for _, v := range dbVtxos.Vtxos {
+					allSpent = v.Spent
+					if !allSpent {
+						break
+					}
+				}
+
+				if aliceGetCtxErr == nil && bobGetCtxErr == nil && allSpent {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+			require.NoError(t, aliceGetCtxErr)
+			require.Len(t, aliceCtx.Batches, 1, "failed to update completed round in database")
+			require.NoError(t, bobGetCtxErr)
+			require.Len(t, bobCtx.Batches, 1, "failed to update completed round in database")
+			t.Logf("completed %d/%d offchain sends and batch %d/%d",
+				completed, supply, completed/batchInterval, supply/batchInterval)
+		}
+	}
+
+	cancelStress()
+	assetQueryWG.Wait()
+	cancelledQueries := canceledAssetCalls.Load()
+	require.Greater(t, cancelledQueries, int64(0))
+
+	t.Logf("cancelled query count: %d", cancelledQueries)
+
+	for {
+		select {
+		case runErr := <-errCh:
+			require.NoError(t, runErr)
+		default:
+			return
+		}
+	}
 }
 
 // TestTxListenerChurn verifies that the gRPC transaction stream fanout is

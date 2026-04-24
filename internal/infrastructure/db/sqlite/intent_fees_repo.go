@@ -3,6 +3,7 @@ package sqlitedb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -10,15 +11,14 @@ import (
 )
 
 type intentFeesRepo struct {
-	db      *sql.DB
-	querier *queries.Queries
+	db SQLiteDB
 }
 
 func NewIntentFeesRepository(config ...interface{}) (domain.FeeRepository, error) {
 	if len(config) != 1 {
 		return nil, fmt.Errorf("invalid config")
 	}
-	db, ok := config[0].(*sql.DB)
+	db, ok := config[0].(SQLiteDB)
 	if !ok {
 		return nil, fmt.Errorf(
 			"cannot open intent fees repository: invalid config, expected db at 0",
@@ -26,8 +26,7 @@ func NewIntentFeesRepository(config ...interface{}) (domain.FeeRepository, error
 	}
 
 	return &intentFeesRepo{
-		db:      db,
-		querier: queries.New(db),
+		db: db,
 	}, nil
 }
 
@@ -37,9 +36,13 @@ func (r *intentFeesRepo) Close() {
 }
 
 func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees, error) {
-	intentFees, err := r.querier.SelectLatestIntentFees(ctx)
-	if err != nil {
-		if err == sql.ErrNoRows {
+	var intentFees queries.IntentFee
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		intentFees, err = q.SelectLatestIntentFees(ctx)
+		return err
+	}); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			return &domain.IntentFees{}, nil
 		}
 		return nil, fmt.Errorf("failed to get intent fees: %w", err)
@@ -60,11 +63,13 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 		return fmt.Errorf("missing fees to update")
 	}
 
-	if err := r.querier.AddIntentFees(ctx, queries.AddIntentFeesParams{
-		OnchainInputFeeProgram:   fees.OnchainInputFee,
-		OffchainInputFeeProgram:  fees.OffchainInputFee,
-		OnchainOutputFeeProgram:  fees.OnchainOutputFee,
-		OffchainOutputFeeProgram: fees.OffchainOutputFee,
+	if err := withWriteQuerier(ctx, r.db, func(q *queries.Queries) error {
+		return q.AddIntentFees(ctx, queries.AddIntentFeesParams{
+			OnchainInputFeeProgram:   fees.OnchainInputFee,
+			OffchainInputFeeProgram:  fees.OffchainInputFee,
+			OnchainOutputFeeProgram:  fees.OnchainOutputFee,
+			OffchainOutputFeeProgram: fees.OffchainOutputFee,
+		})
 	}); err != nil {
 		return fmt.Errorf("failed to add intent fees: %w", err)
 	}
@@ -73,7 +78,9 @@ func (r *intentFeesRepo) UpdateIntentFees(ctx context.Context, fees domain.Inten
 }
 
 func (r *intentFeesRepo) ClearIntentFees(ctx context.Context) error {
-	if err := r.querier.ClearIntentFees(ctx); err != nil {
+	if err := withWriteQuerier(ctx, r.db, func(q *queries.Queries) error {
+		return q.ClearIntentFees(ctx)
+	}); err != nil {
 		return fmt.Errorf("failed to clear intent fees: %w", err)
 	}
 

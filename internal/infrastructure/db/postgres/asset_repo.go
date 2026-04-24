@@ -125,43 +125,46 @@ func (r *assetRepository) GetAssets(
 	if len(assetIds) == 0 {
 		return nil, nil
 	}
-	var assets []domain.Asset
-	txBody := func(querierWithTx *queries.Queries) error {
-		rows, err := querierWithTx.SelectAssetsByIds(ctx, assetIds)
-		if err != nil {
-			return err
-		}
-		assets = make([]domain.Asset, 0, len(rows))
-		for _, row := range rows {
-			supplyStr, err := querierWithTx.SelectAssetSupply(ctx, row.ID)
-			if err != nil {
-				return fmt.Errorf("failed to compute supply for asset %s: %w", row.ID, err)
-			}
-			supply := new(big.Int)
-			if _, ok := supply.SetString(supplyStr, 10); !ok {
-				return fmt.Errorf("invalid supply value: %s", supplyStr)
-			}
+
+	rows, err := r.querier.SelectAssetsWithUnspentAmountsByIds(ctx, assetIds)
+	if err != nil {
+		return nil, err
+	}
+
+	assets := make([]domain.Asset, 0, len(rows))
+	indexByID := make(map[string]int, len(rows))
+	for _, row := range rows {
+		idx, ok := indexByID[row.ID]
+		if !ok {
 			ast := domain.Asset{
 				Id:             row.ID,
 				ControlAssetId: row.ControlAssetID.String,
-				Supply:         *supply,
+				Supply:         *big.NewInt(0),
 			}
+
 			if row.Metadata.Valid {
 				// Parsing metadata should never fail but if it does we just return an empty list
 				// of metadata and log the error
-				ast.Metadata, err = asset.NewMetadataListFromString(row.Metadata.String)
-				if err != nil {
-					log.WithError(err).Warnf("failed to parse metadata for asset %s", row.ID)
+				metadata, parseErr := asset.NewMetadataListFromString(row.Metadata.String)
+				if parseErr != nil {
+					log.WithError(parseErr).Warnf("failed to parse metadata for asset %s", row.ID)
+				} else {
+					ast.Metadata = metadata
 				}
 			}
 
 			assets = append(assets, ast)
+			idx = len(assets) - 1
+			indexByID[row.ID] = idx
 		}
-		return nil
+
+		amount, ok := new(big.Int).SetString(row.AssetAmount, 10)
+		if !ok {
+			return nil, fmt.Errorf("invalid supply value: %s", row.AssetAmount)
+		}
+		assets[idx].Supply.Add(&assets[idx].Supply, amount)
 	}
-	if err := execTx(ctx, r.db, txBody); err != nil {
-		return nil, err
-	}
+
 	return assets, nil
 }
 

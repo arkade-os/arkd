@@ -3,14 +3,19 @@ package sqlitedb
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
-	_ "modernc.org/sqlite"
+	log "github.com/sirupsen/logrus"
+	sqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 const (
@@ -18,7 +23,68 @@ const (
 	maxRetries = 5
 )
 
-func OpenDb(dbPath string) (*sql.DB, error) {
+type SQLiteDB interface {
+	Read() *sql.DB
+	Write() *sql.DB
+	Close() error
+}
+
+type sqliteDB struct {
+	readDB  *sql.DB
+	writeDB *sql.DB
+}
+
+type openOptions struct {
+	sharedCache    bool
+	journalModeWAL bool
+	busyTimeout    *time.Duration
+}
+
+// OpenOption configures how OpenDb builds the SQLite DSN.
+type OpenOption func(*openOptions)
+
+// WithSharedCache enables SQLite shared-cache mode.
+func WithSharedCache() OpenOption {
+	return func(opts *openOptions) {
+		opts.sharedCache = true
+	}
+}
+
+// WithJournalModeWAL enables WAL journaling mode.
+func WithJournalModeWAL() OpenOption {
+	return func(opts *openOptions) {
+		opts.journalModeWAL = true
+	}
+}
+
+// WithBusyTimeout sets SQLite's busy timeout pragma.
+func WithBusyTimeout(d time.Duration) OpenOption {
+	return func(opts *openOptions) {
+		opts.busyTimeout = &d
+	}
+}
+
+func (s *sqliteDB) Read() *sql.DB {
+	return s.readDB
+}
+
+func (s *sqliteDB) Write() *sql.DB {
+	return s.writeDB
+}
+
+func (s *sqliteDB) Close() error {
+	readErr := s.readDB.Close()
+	writeErr := s.writeDB.Close()
+	return errors.Join(readErr, writeErr)
+}
+
+// OpenDb returns a split SQLite handle with separate read and write pools.
+func OpenDb(dbPath string, opts ...OpenOption) (SQLiteDB, error) {
+	openOpts := openOptions{}
+	for _, opt := range opts {
+		opt(&openOpts)
+	}
+
 	dir := filepath.Dir(dbPath)
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		err = os.MkdirAll(dir, 0755)
@@ -27,14 +93,59 @@ func OpenDb(dbPath string) (*sql.DB, error) {
 		}
 	}
 
-	db, err := sql.Open(driverName, dbPath)
+	dsn := buildDSN(dbPath, openOpts)
+
+	readDB, err := sql.Open(driverName, dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open db: %w", err)
+		return nil, fmt.Errorf("failed to open read db: %w", err)
+	}
+	readDB.SetMaxOpenConns(runtime.NumCPU())
+
+	// single connection writer pool
+	writeDB, err := sql.Open(driverName, dsn)
+	if err != nil {
+		_ = readDB.Close()
+		return nil, fmt.Errorf("failed to open write db: %w", err)
+	}
+	writeDB.SetMaxOpenConns(1)
+
+	// Check there are no errors when opening a connection
+	if err := writeDB.Ping(); err != nil {
+		_ = readDB.Close()
+		_ = writeDB.Close()
+		return nil, fmt.Errorf("failed to ping write db: %w", err)
 	}
 
-	db.SetMaxOpenConns(1) // prevent concurrent writes
+	if err := readDB.Ping(); err != nil {
+		_ = readDB.Close()
+		_ = writeDB.Close()
+		return nil, fmt.Errorf("failed to ping read db: %w", err)
+	}
 
-	return db, nil
+	return &sqliteDB{
+		readDB:  readDB,
+		writeDB: writeDB,
+	}, nil
+}
+
+func buildDSN(dbPath string, opts openOptions) string {
+	params := make([]string, 0, 3)
+	if opts.sharedCache {
+		params = append(params, "cache=shared")
+	}
+	if opts.journalModeWAL {
+		params = append(params, "_pragma=journal_mode(WAL)")
+	}
+	if opts.busyTimeout != nil {
+		params = append(
+			params,
+			fmt.Sprintf("_pragma=busy_timeout(%d)", opts.busyTimeout.Milliseconds()),
+		)
+	}
+	if len(params) == 0 {
+		return dbPath
+	}
+	return dbPath + "?" + strings.Join(params, "&")
 }
 
 func extendArray[T any](arr []T, position int) []T {
@@ -49,20 +160,35 @@ func extendArray[T any](arr []T, position int) []T {
 	return arr
 }
 
+// execTx runs txBody on a pinned write connection.
+//
+// The connection is kept for the full transaction so SQLite interrupt/cancel
+// state stays scoped to that connection. Conflict-like errors are retried, and
+// interrupted connections are discarded instead of being returned to the pool.
 func execTx(
 	ctx context.Context, db *sql.DB, txBody func(*queries.Queries) error,
 ) error {
 	var lastErr error
 	for range maxRetries {
-		tx, err := db.BeginTx(ctx, nil)
+		conn, err := db.Conn(ctx)
 		if err != nil {
+			return fmt.Errorf("failed to acquire connection: %w", err)
+		}
+
+		tx, err := conn.BeginTx(ctx, nil)
+		if err != nil {
+			_ = closeConn(conn, isInterruptError(ctx, err))
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
-		qtx := queries.New(db).WithTx(tx)
+		qtx := queries.New(conn).WithTx(tx)
 
 		if err := txBody(qtx); err != nil {
 			//nolint:all
 			tx.Rollback()
+
+			if closeErr := closeConn(conn, isInterruptError(ctx, err)); closeErr != nil {
+				return fmt.Errorf("%w: %w", err, closeErr)
+			}
 
 			if isConflictError(err) {
 				lastErr = err
@@ -74,6 +200,9 @@ func execTx(
 
 		// Commit the transaction
 		if err := tx.Commit(); err != nil {
+			if closeErr := closeConn(conn, isInterruptError(ctx, err)); closeErr != nil {
+				return fmt.Errorf("failed to commit transaction: %w: %w", err, closeErr)
+			}
 			if isConflictError(err) {
 				lastErr = err
 				time.Sleep(100 * time.Millisecond)
@@ -81,10 +210,116 @@ func execTx(
 			}
 			return fmt.Errorf("failed to commit transaction: %w", err)
 		}
+
+		if err := closeConn(conn, false); err != nil {
+			log.WithError(err).Warn("failed to close connection after successful commit")
+		}
 		return nil
 	}
 
 	return lastErr
+}
+
+// withReadQuerier runs fn on a pinned read connection.
+//
+// If the read is canceled or interrupted, the connection is discarded so later
+// callers do not reuse a tainted SQLite connection from the pool.
+func withReadQuerier(
+	ctx context.Context, db SQLiteDB, fn func(*queries.Queries) error,
+) error {
+	conn, err := db.Read().Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection: %w", err)
+	}
+
+	err = fn(queries.New(conn))
+	if closeErr := closeConn(conn, isInterruptError(ctx, err)); closeErr != nil {
+		if err != nil {
+			return fmt.Errorf("%w: %w", err, closeErr)
+		}
+		return closeErr
+	}
+
+	return err
+}
+
+// withWriteQuerier runs fn on a pinned write connection.
+//
+// Even non-transactional writes go through an explicit connection so interrupt
+// handling can discard the connection when SQLite reports it as tainted.
+func withWriteQuerier(
+	ctx context.Context, db SQLiteDB, fn func(*queries.Queries) error,
+) error {
+	conn, err := db.Write().Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection: %w", err)
+	}
+
+	err = fn(queries.New(conn))
+	if closeErr := closeConn(conn, isInterruptError(ctx, err)); closeErr != nil {
+		if err != nil {
+			return fmt.Errorf("%w: %w", err, closeErr)
+		}
+		return closeErr
+	}
+
+	return err
+}
+
+// closeConn closes conn and optionally forces the sql pool to discard it.
+//
+// When discard is true we surface driver.ErrBadConn through Raw so database/sql
+// treats the underlying SQLite connection as unusable and does not recycle it.
+func closeConn(conn *sql.Conn, discard bool) error {
+	if conn == nil {
+		return nil
+	}
+
+	if discard {
+		err := conn.Raw(func(any) error {
+			return driver.ErrBadConn
+		})
+		if errors.Is(err, driver.ErrBadConn) {
+			err = nil
+		}
+		if err != nil {
+			_ = conn.Close()
+			return fmt.Errorf("failed to discard tainted connection: %w", err)
+		}
+	}
+
+	if err := conn.Close(); err != nil {
+		if discard && errors.Is(err, sql.ErrConnDone) {
+			return nil
+		}
+		return fmt.Errorf("failed to close connection: %w", err)
+	}
+
+	return nil
+}
+
+// isInterruptError reports whether err is a context cancellation or a SQLite
+// interrupt.
+func isInterruptError(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	if ctx != nil && ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		return true
+	}
+
+	var sqliteErr *sqlite.Error
+	if errors.As(err, &sqliteErr) {
+		code := sqliteErr.Code()
+		return code == sqlite3.SQLITE_INTERRUPT || code&0xff == sqlite3.SQLITE_INTERRUPT
+	}
+
+	return false
 }
 
 func isConflictError(err error) bool {

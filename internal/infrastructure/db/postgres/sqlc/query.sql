@@ -441,6 +441,22 @@ VALUES (@asset_id, @txid, @vout, @amount);
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id = ANY($1::varchar[]);
 
+-- name: SelectAssetsWithUnspentAmountsByIds :many
+SELECT
+  a.id,
+  a.is_immutable,
+  a.metadata_hash,
+  a.metadata,
+  a.control_asset_id,
+  COALESCE(v.asset_amount, 0)::TEXT AS asset_amount
+FROM asset a
+LEFT JOIN vtxo_vw v
+  ON v.asset_id = a.id
+ AND v.spent = false
+ AND v.asset_amount > 0
+WHERE a.id = ANY($1::varchar[])
+ORDER BY a.id;
+
 -- name: SelectAssetSupply :one
 SELECT (COALESCE(SUM(ap.amount), 0))::TEXT AS supply
 FROM asset_projection ap

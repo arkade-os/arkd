@@ -330,6 +330,62 @@ func (q *Queries) SelectAssetsByIds(ctx context.Context, dollar_1 []string) ([]A
 	return items, nil
 }
 
+const selectAssetsWithUnspentAmountsByIds = `-- name: SelectAssetsWithUnspentAmountsByIds :many
+SELECT
+  a.id,
+  a.is_immutable,
+  a.metadata_hash,
+  a.metadata,
+  a.control_asset_id,
+  COALESCE(v.asset_amount, 0)::TEXT AS asset_amount
+FROM asset a
+LEFT JOIN vtxo_vw v
+  ON v.asset_id = a.id
+ AND v.spent = false
+ AND v.asset_amount > 0
+WHERE a.id = ANY($1::varchar[])
+ORDER BY a.id
+`
+
+type SelectAssetsWithUnspentAmountsByIdsRow struct {
+	ID             string
+	IsImmutable    bool
+	MetadataHash   sql.NullString
+	Metadata       sql.NullString
+	ControlAssetID sql.NullString
+	AssetAmount    string
+}
+
+func (q *Queries) SelectAssetsWithUnspentAmountsByIds(ctx context.Context, dollar_1 []string) ([]SelectAssetsWithUnspentAmountsByIdsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectAssetsWithUnspentAmountsByIds, pq.Array(dollar_1))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectAssetsWithUnspentAmountsByIdsRow
+	for rows.Next() {
+		var i SelectAssetsWithUnspentAmountsByIdsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IsImmutable,
+			&i.MetadataHash,
+			&i.Metadata,
+			&i.ControlAssetID,
+			&i.AssetAmount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectControlAssetByID = `-- name: SelectControlAssetByID :one
 SELECT control_asset_id FROM asset WHERE id = $1
 `
