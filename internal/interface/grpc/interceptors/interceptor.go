@@ -13,6 +13,7 @@ func UnaryInterceptor(
 	svc *macaroons.Service,
 	readiness *ReadinessService,
 	serverVersion string,
+	digest *DigestService,
 ) grpc.ServerOption {
 	major, minor, _ := parseVersion(serverVersion)
 	return grpc.UnaryInterceptor(middleware.ChainUnaryServer(
@@ -21,6 +22,7 @@ func UnaryInterceptor(
 		unaryVersionCompatHandler(major, minor, serverVersion),
 		unaryMacaroonAuthHandler(svc),
 		unaryReadinessHandler(readiness),
+		unaryDigestValidator(digest),
 		errorConverter,
 	))
 }
@@ -32,6 +34,7 @@ func StreamInterceptor(
 	svc *macaroons.Service,
 	readiness *ReadinessService,
 	serverVersion string,
+	digest *DigestService,
 ) grpc.ServerOption {
 	major, minor, _ := parseVersion(serverVersion)
 	return grpc.StreamInterceptor(middleware.ChainStreamServer(
@@ -40,5 +43,6 @@ func StreamInterceptor(
 		streamVersionCompatHandler(major, minor, serverVersion),
 		streamMacaroonAuthHandler(svc),
 		streamReadinessHandler(readiness),
+		streamDigestValidator(digest),
 	))
 }
