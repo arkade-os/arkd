@@ -21,7 +21,7 @@ const slowRecursiveQuery = `
 func TestCanceledReadQueryDiscardsConnection(t *testing.T) {
 	// Use a shared in-memory DB because the test exercises a pinned read
 	// connection while the DB wrapper exposes separate read/write pools.
-	db, err := OpenDb("file::memory:?cache=shared")
+	db, err := OpenDb("file::memory:", WithSharedCache())
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = db.Close()

@@ -14,7 +14,7 @@ import (
 func TestIntentTxidMigration(t *testing.T) {
 	ctx := context.Background()
 	// shared in-memory SQLite DB so multiple connections (read/write pools) see the same data
-	db, err := sqlitedb.OpenDb("file::memory:?cache=shared")
+	db, err := sqlitedb.OpenDb("file::memory:", sqlitedb.WithSharedCache())
 	require.NoError(t, err)
 
 	t.Cleanup(func() {

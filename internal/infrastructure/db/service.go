@@ -310,7 +310,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		}
 
 		dbFile := filepath.Join(baseDir, sqliteDbFile)
-		db, err := sqlitedb.OpenDb(dbFile)
+		db, err := sqlitedb.OpenDb(
+			dbFile,
+			sqlitedb.WithJournalModeWAL(),
+			sqlitedb.WithBusyTimeout(5*time.Second),
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open db: %s", err)
 		}
