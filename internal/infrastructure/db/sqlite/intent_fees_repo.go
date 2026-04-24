@@ -3,6 +3,7 @@ package sqlitedb
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -41,7 +42,7 @@ func (r *intentFeesRepo) GetIntentFees(ctx context.Context) (*domain.IntentFees,
 		intentFees, err = q.SelectLatestIntentFees(ctx)
 		return err
 	}); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return &domain.IntentFees{}, nil
 		}
 		return nil, fmt.Errorf("failed to get intent fees: %w", err)

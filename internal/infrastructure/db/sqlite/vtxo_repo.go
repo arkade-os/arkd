@@ -267,7 +267,7 @@ func (v *vtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, e
 	}
 	n, ok := amount.(int64)
 	if !ok {
-		return 0, nil
+		return 0, fmt.Errorf("unexpected type for recoverable liquidity: %T", amount)
 	}
 	if n < 0 {
 		return 0, fmt.Errorf("data integrity issue: got negative value %d", n)
