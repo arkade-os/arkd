@@ -22,6 +22,12 @@ func (s *KVStore[T]) key(id string) string {
 	return s.prefix + id
 }
 
+// Key returns the fully-prefixed Redis key for id, so callers can WATCH a
+// specific entry without leaking the KVStore prefix.
+func (s *KVStore[T]) Key(id string) string {
+	return s.key(id)
+}
+
 func (s *KVStore[T]) Get(ctx context.Context, id string) (*T, error) {
 	return s.getWith(ctx, s.rdb, id)
 }

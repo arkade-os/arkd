@@ -159,6 +159,19 @@ func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, 
 				return fmt.Errorf("failed to get intent ids: %v", err)
 			}
 
+			// Watch each intent body so a concurrent Update() on any of them
+			// aborts this tx and we re-read the fresh Inputs/BoardingInputs
+			// before writing to intentStoreVtxosToRemoveKey.
+			if len(ids) > 0 {
+				bodyKeys := make([]string, 0, len(ids))
+				for _, id := range ids {
+					bodyKeys = append(bodyKeys, s.intents.Key(id))
+				}
+				if err := tx.Watch(ctx, bodyKeys...).Err(); err != nil {
+					return fmt.Errorf("failed to watch intent bodies: %v", err)
+				}
+			}
+
 			// fetch intents
 			var intentsByTime []ports.TimedIntent
 			for _, id := range ids {
@@ -319,8 +332,10 @@ func (s *intentStore) Update(
 }
 
 func (s *intentStore) Delete(ctx context.Context, ids []string) error {
-	watchKeys := []string{intentStoreIdsKey, intentStoreVtxosKey}
 	for _, id := range ids {
+		// Watch the intent body so a concurrent Update() aborts this tx and
+		// we re-read the fresh Inputs/BoardingInputs before SREM-ing vtxos.
+		watchKeys := []string{intentStoreIdsKey, intentStoreVtxosKey, s.intents.Key(id)}
 		var err error
 		for range s.numOfRetries {
 			err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
