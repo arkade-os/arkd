@@ -389,100 +389,100 @@ func TestUnilateralExit(t *testing.T) {
 // offchain.
 func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 	t.Run("without asset", func(t *testing.T) {
-	ctx := t.Context()
-	alice := setupArkSDK(t)
+		ctx := t.Context()
+		alice := setupArkSDK(t)
 
-	// Fund Alice offchain + small onchain amount for unroll fees
-	faucet(t, alice, 0.00021)
-	time.Sleep(5 * time.Second)
+		// Fund Alice offchain + small onchain amount for unroll fees
+		faucet(t, alice, 0.00021)
+		time.Sleep(5 * time.Second)
 
-	_, offchainAddr, _, err := alice.Receive(ctx)
-	require.NoError(t, err)
+		_, offchainAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
 
-	balance, err := alice.Balance(ctx)
-	require.NoError(t, err)
-	require.NotZero(t, balance.OffchainBalance.Total)
-	require.Empty(t, balance.OnchainBalance.LockedAmount)
+		balance, err := alice.Balance(ctx)
+		require.NoError(t, err)
+		require.NotZero(t, balance.OffchainBalance.Total)
+		require.Empty(t, balance.OnchainBalance.LockedAmount)
 
-	// Unroll: moves VTXOs onchain
+		// Unroll: moves VTXOs onchain
 		txids, err := alice.Unroll(ctx)
-	require.NoError(t, err)
+		require.NoError(t, err)
 		require.NotEmpty(t, txids)
 
-	err = generateBlocks(1)
-	require.NoError(t, err)
+		err = generateBlocks(1)
+		require.NoError(t, err)
 
-	// Poll for the wallet to index the new block instead of sleeping a fixed
-	// interval — every second spent here eats into the unrolled VTXO's CSV
-	// runway before the subsequent Settle call.
-	require.Eventually(t, func() bool {
-		b, err := alice.Balance(ctx)
-		if err != nil {
-			return false
+		// Poll for the wallet to index the new block instead of sleeping a fixed
+		// interval — every second spent here eats into the unrolled VTXO's CSV
+		// runway before the subsequent Settle call.
+		require.Eventually(t, func() bool {
+			b, err := alice.Balance(ctx)
+			if err != nil {
+				return false
+			}
+			return b.OffchainBalance.Total == 0 &&
+				len(b.OnchainBalance.LockedAmount) > 0 &&
+				b.OnchainBalance.LockedAmount[0].Amount > 0
+		}, 15*time.Second, 200*time.Millisecond, "unroll did not settle onchain in time")
+
+		balance, err = alice.Balance(ctx)
+		require.NoError(t, err)
+
+		// Find the unrolled VTXO in the spent list
+		_, spentVtxos, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+
+		var unrolledVtxo types.Vtxo
+		for _, v := range spentVtxos {
+			if v.Unrolled && !v.Spent {
+				unrolledVtxo = v
+				break
+			}
 		}
-		return b.OffchainBalance.Total == 0 &&
-			len(b.OnchainBalance.LockedAmount) > 0 &&
-			b.OnchainBalance.LockedAmount[0].Amount > 0
-	}, 15*time.Second, 200*time.Millisecond, "unroll did not settle onchain in time")
+		require.NotZero(t, unrolledVtxo.Amount, "expected an unrolled VTXO")
 
-	balance, err = alice.Balance(ctx)
-	require.NoError(t, err)
-
-	// Find the unrolled VTXO in the spent list
-	_, spentVtxos, err := alice.ListVtxos(ctx)
-	require.NoError(t, err)
-
-	var unrolledVtxo types.Vtxo
-	for _, v := range spentVtxos {
-		if v.Unrolled && !v.Spent {
-			unrolledVtxo = v
-			break
+		// Receive returns *types.Address which carries Tapscripts — use them
+		// to present the unrolled VTXO as a boarding input.
+		boardingUtxo := types.Utxo{
+			Outpoint:   unrolledVtxo.Outpoint,
+			Amount:     unrolledVtxo.Amount,
+			Tapscripts: offchainAddr.Tapscripts,
 		}
-	}
-	require.NotZero(t, unrolledVtxo.Amount, "expected an unrolled VTXO")
 
-	// Receive returns *types.Address which carries Tapscripts — use them
-	// to present the unrolled VTXO as a boarding input.
-	boardingUtxo := types.Utxo{
-		Outpoint:   unrolledVtxo.Outpoint,
-		Amount:     unrolledVtxo.Amount,
-		Tapscripts: offchainAddr.Tapscripts,
-	}
+		// Rejoin the batch — unrolled VTXO should be accepted as a boarding input
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		var incomingErr error
+		go func() {
+			_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+			wg.Done()
+		}()
 
-	// Rejoin the batch — unrolled VTXO should be accepted as a boarding input
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	var incomingErr error
-	go func() {
-		_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
-		wg.Done()
-	}()
+		res, err := alice.Settle(ctx,
+			arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
+		)
+		require.NoError(t, err)
+		require.NotEmpty(t, res.CommitmentTxid)
 
-	res, err := alice.Settle(ctx,
-		arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
-	)
-	require.NoError(t, err)
-	require.NotEmpty(t, res.CommitmentTxid)
+		wg.Wait()
+		require.NoError(t, incomingErr)
+		time.Sleep(time.Second)
 
-	wg.Wait()
-	require.NoError(t, incomingErr)
-	time.Sleep(time.Second)
+		// Alice has offchain funds again
+		balance, err = alice.Balance(ctx)
+		require.NoError(t, err)
+		require.NotZero(t, balance.OffchainBalance.Total)
 
-	// Alice has offchain funds again
-	balance, err = alice.Balance(ctx)
-	require.NoError(t, err)
-	require.NotZero(t, balance.OffchainBalance.Total)
+		// Once the unrolled VTXO has been accepted into a batch, the onchain
+		// UTXO is spent. Mining past the unilateral exit delay and calling
+		// CompleteUnroll should find no mature funds to claim.
+		err = generateBlocks(20)
+		require.NoError(t, err)
 
-	// Once the unrolled VTXO has been accepted into a batch, the onchain
-	// UTXO is spent. Mining past the unilateral exit delay and calling
-	// CompleteUnroll should find no mature funds to claim.
-	err = generateBlocks(20)
-	require.NoError(t, err)
+		time.Sleep(5 * time.Second)
 
-	time.Sleep(5 * time.Second)
-
-	_, err = alice.CompleteUnroll(ctx, "")
-	require.ErrorContains(t, err, "no mature funds available")
+		_, err = alice.CompleteUnroll(ctx, "")
+		require.ErrorContains(t, err, "no mature funds available")
 	})
 }
 
