@@ -8,6 +8,7 @@ import (
 	"math"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -371,6 +372,30 @@ func (s *service) registerEventHandlers() {
 			if err != nil {
 				log.WithError(err).Warn("failed to get spent vtxos")
 				return
+			}
+
+			if len(spentVtxos) != len(spentVtxoKeys) {
+				// Partial parent read: this means the offchain tx's finalization
+				// event references spent vtxos that we can no longer resolve from
+				// the DB. Drop propagation rather than emit a half-populated event;
+				// log at Error level so this inconsistency is surfaced for investigation.
+				log.Errorf(
+					"incomplete parent read: got %d of %d spent vtxos for tx %s; "+
+						"dropping TransactionEvent propagation",
+					len(spentVtxos), len(spentVtxoKeys), txid,
+				)
+				return
+			}
+
+			// Calculate depth for new vtxos: max(parent depths) + 1
+			var maxDepth uint32
+			for _, v := range spentVtxos {
+				if v.Depth > maxDepth {
+					maxDepth = v.Depth
+				}
+			}
+			for i := range newVtxos {
+				newVtxos[i].Depth = maxDepth + 1
 			}
 
 			// Make sure to mark new vtxos as swept if any of the spent inputs is swept as well or
@@ -1082,9 +1107,33 @@ func (s *service) SubmitOffchainTx(
 		signedCheckpointTxsMap[rebuiltCheckpointTx.UnsignedTx.TxID()] = signedCheckpointTx
 	}
 
+	// Compute depth and parent markers from spent VTXOs for the accepted event.
+	var maxDepth uint32
+	parentMarkerSet := make(map[string]struct{})
+	for _, v := range spentVtxos {
+		if v.Depth > maxDepth {
+			maxDepth = v.Depth
+		}
+		for _, markerID := range v.MarkerIDs {
+			if markerID != "" {
+				parentMarkerSet[markerID] = struct{}{}
+			}
+		}
+	}
+	var newDepth uint32
+	if len(spentVtxos) > 0 {
+		newDepth = maxDepth + 1
+	}
+	parentMarkerIDs := make([]string, 0, len(parentMarkerSet))
+	for id := range parentMarkerSet {
+		parentMarkerIDs = append(parentMarkerIDs, id)
+	}
+	sort.Strings(parentMarkerIDs)
+
 	change, err := offchainTx.Accept(
 		fullySignedArkTx, signedCheckpointTxsMap,
 		commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiration,
+		newDepth, parentMarkerIDs,
 	)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to accept offchain tx: %w", err).

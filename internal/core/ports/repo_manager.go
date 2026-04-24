@@ -6,6 +6,7 @@ type RepoManager interface {
 	Events() domain.EventRepository
 	Rounds() domain.RoundRepository
 	Vtxos() domain.VtxoRepository
+	Markers() domain.MarkerRepository
 	ScheduledSession() domain.ScheduledSessionRepo
 	OffchainTxs() domain.OffchainTxRepository
 	Convictions() domain.ConvictionRepository

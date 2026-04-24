@@ -217,12 +217,14 @@ message GetVtxoChainRequest {
     // A valid token obtained from GetVirtualTxs rpc can be recycled for this request.
     string token = 4;
   }
+  string page_token = 5;
 }
 message GetVtxoChainResponse {
   repeated IndexerChain chain = 1;
   IndexerPageResponse page = 2;
   // Auth token can be used for other rpcs related to this vtxo/tx that require proof of ownership.
   string auth_token = 3;
+  string next_page_token = 4;
 }
 
 message GetVirtualTxsRequest {
@@ -302,6 +304,7 @@ message IndexerVtxo {
   string settled_by = 12;
   string ark_txid = 13;
   repeated IndexerAsset assets = 14;
+  uint32 depth = 15;
 }
 
 message IndexerAsset {
