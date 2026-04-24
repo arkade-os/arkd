@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"sort"
@@ -175,7 +176,7 @@ func (r *assetRepository) GetControlAsset(ctx context.Context, assetID string) (
 		controlID, err = q.SelectControlAssetByID(ctx, assetID)
 		return err
 	}); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return "", fmt.Errorf("no control asset found")
 		}
 		return "", err
@@ -191,7 +192,7 @@ func (r *assetRepository) AssetExists(ctx context.Context, assetID string) (bool
 		_, err := q.SelectAssetExists(ctx, assetID)
 		return err
 	}); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
 		return false, err
