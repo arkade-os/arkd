@@ -14,6 +14,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	alertsmanager "github.com/arkade-os/arkd/internal/infrastructure/alertsmanager"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
+	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	"github.com/arkade-os/arkd/internal/infrastructure/feemanager"
 	inmemorylivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/inmemory"
 	redislivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/redis"
@@ -83,6 +84,10 @@ type Config struct {
 	EventDbUrl                string
 	EventDbDir                string
 	PostgresAutoCreateDB      bool
+	PostgresMaxOpenConn       int
+	PostgresMaxIdleConn       int
+	PostgresConnMaxIdleMins   int64
+	PostgresConnMaxLifeMins   int64
 	SessionDuration           int64
 	BanDuration               int64
 	BanThreshold              int64 // number of crimes to trigger a ban
@@ -121,16 +126,17 @@ type Config struct {
 	UnlockerFilePath string // file unlocker
 	UnlockerPassword string // env unlocker
 
-	RoundMinParticipantsCount int64
-	RoundMaxParticipantsCount int64
-	UtxoMaxAmount             int64
-	UtxoMinAmount             int64
-	VtxoMaxAmount             int64
-	VtxoMinAmount             int64
-	SettlementMinExpiryGap    int64
-	MaxTxWeight               uint64
-	AssetTxMaxWeightRatio     float64
-	MaxOpReturnOutputs        uint32
+	RoundMinParticipantsCount   int64
+	RoundMaxParticipantsCount   int64
+	UtxoMaxAmount               int64
+	UtxoMinAmount               int64
+	VtxoMaxAmount               int64
+	VtxoMinAmount               int64
+	SettlementMinExpiryGap      int64
+	UnrolledVtxoMinExpiryMargin int64
+	MaxTxWeight                 uint64
+	AssetTxMaxWeightRatio       float64
+	MaxOpReturnOutputs          uint32
 
 	EnablePprof            bool
 	IndexerExposure        string
@@ -186,6 +192,10 @@ var (
 	DbType                               = "DB_TYPE"
 	DbUrl                                = "PG_DB_URL"
 	PostgresAutoCreateDB                 = "PG_DB_AUTOCREATE"
+	PostgresMaxOpenConn                  = "PG_DB_MAX_OPEN_CONN"
+	PostgresMaxIdleConn                  = "PG_DB_MAX_IDLE_CONN"
+	PostgresConnMaxIdleMins              = "PG_DB_CONN_MAX_IDLE_MINS"
+	PostgresConnMaxLifeMins              = "PG_DB_CONN_MAX_LIFE_MINS"
 	EventDbUrl                           = "PG_EVENT_DB_URL"
 	TxBuilderType                        = "TX_BUILDER_TYPE"
 	LiveStoreType                        = "LIVE_STORE_TYPE"
@@ -226,7 +236,10 @@ var (
 	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
 	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
 	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
-	MaxOpReturnOutputs                   = "MAX_OP_RETURN_OUTS"
+	// Minimum remaining CSV time (in seconds) for an unrolled VTXO to be accepted into a batch.
+	// 0 means fallback to session duration.
+	UnrolledVtxoMinExpiryMargin = "UNROLLED_VTXO_MIN_EXPIRY_MARGIN"
+	MaxOpReturnOutputs          = "MAX_OP_RETURN_OUTS"
 	// Max transaction weight accepted by the ark server
 	MaxTxWeight = "MAX_TX_WEIGHT"
 	// Fraction of MaxTxWeight reserved for the asset packet when spending a VTXO
@@ -270,7 +283,8 @@ var (
 	defaultOtelPushInterval              = 10 // seconds
 	defaultHeartbeatInterval             = 60 // seconds
 	defaultRoundReportServiceEnabled     = false
-	defaultSettlementMinExpiryGap        = 0 // disabled by default
+	defaultSettlementMinExpiryGap        = 0   // disabled by default
+	defaultUnrolledVtxoMinExpiryMargin   = 300 // 5 minutes in seconds
 	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
 	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
@@ -289,6 +303,10 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(Port, DefaultPort)
 	viper.SetDefault(AdminPort, DefaultAdminPort)
 	viper.SetDefault(DbType, defaultDbType)
+	viper.SetDefault(PostgresMaxOpenConn, 50)
+	viper.SetDefault(PostgresMaxIdleConn, 50)
+	viper.SetDefault(PostgresConnMaxIdleMins, 5)
+	viper.SetDefault(PostgresConnMaxLifeMins, 30)
 	viper.SetDefault(NoTLS, defaultNoTLS)
 	viper.SetDefault(LogLevel, defaultLogLevel)
 	viper.SetDefault(SessionDuration, defaultSessionDuration)
@@ -316,6 +334,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
+	viper.SetDefault(UnrolledVtxoMinExpiryMargin, defaultUnrolledVtxoMinExpiryMargin)
 	viper.SetDefault(MaxTxWeight, defaultMaxTxWeight)
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
@@ -387,6 +406,10 @@ func LoadConfig() (*Config, error) {
 		EventDbDir:                dbPath,
 		EventDbUrl:                eventDbUrl,
 		PostgresAutoCreateDB:      viper.GetBool(PostgresAutoCreateDB),
+		PostgresMaxOpenConn:       viper.GetInt(PostgresMaxOpenConn),
+		PostgresMaxIdleConn:       viper.GetInt(PostgresMaxIdleConn),
+		PostgresConnMaxIdleMins:   viper.GetInt64(PostgresConnMaxIdleMins),
+		PostgresConnMaxLifeMins:   viper.GetInt64(PostgresConnMaxLifeMins),
 		LogLevel:                  viper.GetInt(LogLevel),
 		VtxoTreeExpiry:            determineLocktimeType(viper.GetInt64(VtxoTreeExpiry)),
 		UnilateralExitDelay:       determineLocktimeType(viper.GetInt64(UnilateralExitDelay)),
@@ -426,6 +449,7 @@ func LoadConfig() (*Config, error) {
 		VtxoMinAmount:                 viper.GetInt64(VtxoMinAmount),
 		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
+		UnrolledVtxoMinExpiryMargin:   viper.GetInt64(UnrolledVtxoMinExpiryMargin),
 		MaxTxWeight:                   viper.GetUint64(MaxTxWeight),
 		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
@@ -489,6 +513,19 @@ func (c *Config) Validate() error {
 	}
 	if c.SessionDuration < 2 {
 		return fmt.Errorf("invalid session duration, must be at least 2 seconds")
+	}
+	if c.UnrolledVtxoMinExpiryMargin <= 0 {
+		return fmt.Errorf(
+			"invalid unrolled vtxo min expiry margin, must be greater than 0 seconds",
+		)
+	}
+	if c.UnrolledVtxoMinExpiryMargin < c.SessionDuration {
+		return fmt.Errorf(
+			"invalid unrolled vtxo min expiry margin (%d), "+
+				"must be at least session duration (%d) so the batch has "+
+				"enough time to finalize before the CSV expires",
+			c.UnrolledVtxoMinExpiryMargin, c.SessionDuration,
+		)
 	}
 	if c.BanDuration < 1 {
 		return fmt.Errorf("invalid ban duration, must be at least 1 second")
@@ -783,7 +820,15 @@ func (c *Config) repoManager() error {
 	case "badger":
 		eventStoreConfig = []interface{}{c.EventDbDir, logger}
 	case "postgres":
-		eventStoreConfig = []interface{}{c.EventDbUrl, c.PostgresAutoCreateDB}
+		eventStoreConfig = []interface{}{
+			c.EventDbUrl,
+			c.PostgresAutoCreateDB,
+			pgdb.ConnectionConfig{
+				MaxOpenConn:         c.PostgresMaxOpenConn,
+				MaxIdleConn:         c.PostgresMaxIdleConn,
+				ConnMaxIdleTimeMins: c.PostgresConnMaxIdleMins,
+				ConnMaxLifetimeMins: c.PostgresConnMaxLifeMins,
+			}}
 	default:
 		return fmt.Errorf("unknown event db type")
 	}
@@ -794,7 +839,15 @@ func (c *Config) repoManager() error {
 	case "sqlite":
 		dataStoreConfig = []interface{}{c.DbDir}
 	case "postgres":
-		dataStoreConfig = []interface{}{c.DbUrl, c.PostgresAutoCreateDB}
+		dataStoreConfig = []interface{}{
+			c.DbUrl,
+			c.PostgresAutoCreateDB,
+			pgdb.ConnectionConfig{
+				MaxOpenConn:         c.PostgresMaxOpenConn,
+				MaxIdleConn:         c.PostgresMaxIdleConn,
+				ConnMaxIdleTimeMins: c.PostgresConnMaxIdleMins,
+				ConnMaxLifetimeMins: c.PostgresConnMaxLifeMins,
+			}}
 	default:
 		return fmt.Errorf("unknown db type")
 	}
@@ -955,6 +1008,7 @@ func (c *Config) appService() error {
 		ssStartTime, ssEndTime, ssPeriod, ssDuration,
 		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
 		c.SettlementMinExpiryGap,
+		c.UnrolledVtxoMinExpiryMargin,
 		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0), c.MaxOpReturnOutputs,
 	)
 	if err != nil {

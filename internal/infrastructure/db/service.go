@@ -156,7 +156,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to open event store: %s", err)
 		}
 	case "postgres":
-		if len(config.EventStoreConfig) != 2 {
+		if len(config.EventStoreConfig) != 3 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
 		}
 
@@ -170,7 +170,12 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("invalid autocreate flag for postgres")
 		}
 
-		db, err := pgdb.OpenDb(dsn, autoCreate)
+		connectionCfg, ok := config.EventStoreConfig[2].(pgdb.ConnectionConfig)
+		if !ok {
+			return nil, fmt.Errorf("invalid connection config flags for postgres")
+		}
+
+		db, err := pgdb.OpenDb(dsn, autoCreate, pgdb.WithConnectionConfig(connectionCfg))
 		if err != nil {
 			return nil, fmt.Errorf("failed to open postgres db: %s", err)
 		}
@@ -215,7 +220,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
 		}
 	case "postgres":
-		if len(config.DataStoreConfig) != 2 {
+		if len(config.DataStoreConfig) != 3 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
 		}
 
@@ -229,7 +234,12 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("invalid autocreate flag for postgres")
 		}
 
-		db, err := pgdb.OpenDb(dsn, autoCreate)
+		connectionCfg, ok := config.DataStoreConfig[2].(pgdb.ConnectionConfig)
+		if !ok {
+			return nil, fmt.Errorf("invalid connection config flags for postgres")
+		}
+
+		db, err := pgdb.OpenDb(dsn, autoCreate, pgdb.WithConnectionConfig(connectionCfg))
 		if err != nil {
 			return nil, fmt.Errorf("failed to open postgres db: %s", err)
 		}
@@ -534,13 +544,13 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		}
 
 		txSwept := false
-		batch, err := s.roundStore.GetRoundWithCommitmentTxid(ctx, offchainTx.RootCommitmentTxId)
+		sweepTxs, err := s.roundStore.GetSweepTxs(ctx, offchainTx.RootCommitmentTxId)
 		// We consider the tx swept if:
-		// - there is an error fetching the batch (this is just fallback, should never happen)
+		// - there is an error fetching the sweep txs (this is just fallback, should never happen)
 		// - the batch is swept
 		// - the tx expired (meaning one or all its inputs expired and are already swept or about
 		// to be swept)
-		txSwept = err != nil || (batch != nil && len(batch.SweepTxs) > 0) ||
+		txSwept = err != nil || len(sweepTxs) > 0 ||
 			time.Now().After(time.Unix(offchainTx.ExpiryTimestamp, 0))
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.

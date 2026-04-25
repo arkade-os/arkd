@@ -135,7 +135,7 @@ func (a *service) IssueAsset(
 		return nil, err
 	}
 
-	if err := addAssetPacket(arkPtx, assetPacket); err != nil {
+	if err := addExtension(arkPtx, assetPacket, o.extraPackets); err != nil {
 		return nil, err
 	}
 
@@ -215,6 +215,8 @@ func (a *service) IssueAsset(
 		outs = append(outs, *changeReceiver)
 	}
 
+	ext := append(extension.Extension{assetPacket}, o.extraPackets...)
+
 	return &IssueAssetRes{
 		OffchainTxRes: OffchainTxRes{
 			Txid:        txid,
@@ -222,7 +224,7 @@ func (a *service) IssueAsset(
 			Checkpoints: checkpointTxs,
 			Inputs:      ins,
 			Outputs:     outs,
-			Extension:   extension.Extension{assetPacket},
+			Extension:   ext,
 		},
 		IssuedAssets: assetIds,
 	}, nil
@@ -338,7 +340,7 @@ func (a *service) ReissueAsset(
 		assetPacket[groupIndex].Outputs = append(assetPacket[groupIndex].Outputs, *issuedAssetOutput)
 	}
 
-	if err := addAssetPacket(arkPtx, assetPacket); err != nil {
+	if err := addExtension(arkPtx, assetPacket, o.extraPackets); err != nil {
 		return nil, err
 	}
 
@@ -393,13 +395,15 @@ func (a *service) ReissueAsset(
 		outs = append(outs, *changeReceiver)
 	}
 
+	ext := append(extension.Extension{assetPacket}, o.extraPackets...)
+
 	return &ReissueAssetRes{
 		Txid:        txid,
 		Tx:          signedArkTx,
 		Checkpoints: checkpointTxs,
 		Inputs:      ins,
 		Outputs:     outs,
-		Extension:   extension.Extension{assetPacket},
+		Extension:   ext,
 	}, nil
 }
 
@@ -470,7 +474,7 @@ func (a *service) BurnAsset(
 		return nil, err
 	}
 
-	if err := addAssetPacket(arkPtx, assetPacket); err != nil {
+	if err := addExtension(arkPtx, assetPacket, o.extraPackets); err != nil {
 		return nil, err
 	}
 
@@ -520,13 +524,15 @@ func (a *service) BurnAsset(
 		outs = append(outs, types.Receiver{To: changeReceiver.To, Amount: changeReceiver.Amount})
 	}
 
+	ext := append(extension.Extension{assetPacket}, o.extraPackets...)
+
 	return &BurnAssetRes{
 		Txid:        txid,
 		Tx:          signedArkTx,
 		Checkpoints: checkpointTxs,
 		Inputs:      ins,
 		Outputs:     outs,
-		Extension:   extension.Extension{assetPacket},
+		Extension:   ext,
 	}, nil
 }
 
