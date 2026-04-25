@@ -109,6 +109,12 @@ type BatchFailedEvent struct {
 	Reason string
 }
 
+type IntentDisruptedEvent struct {
+	Id       string
+	IntentId string
+	Reason   string
+}
+
 type TreeSigningStartedEvent struct {
 	Id                   string
 	UnsignedCommitmentTx string
