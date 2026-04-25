@@ -5,12 +5,21 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/btcsuite/btcd/btcec/v2"
 )
 
 const (
 	SingleKeyWallet = "singlekey"
 )
+
+type KeyRef struct {
+	// Id can be anything and it's up to implementation whether it is, for example, a derivation
+	// path or just a derivation index
+	Id     string
+	PubKey *btcec.PublicKey
+}
+
+type KeyOption func(options any) error
 
 type WalletService interface {
 	GetType() string
@@ -18,19 +27,11 @@ type WalletService interface {
 	Lock(ctx context.Context) (err error)
 	Unlock(ctx context.Context, password string) (alreadyUnlocked bool, err error)
 	IsLocked() bool
-	GetAddresses(ctx context.Context) (
-		onchainAddresses []string,
-		offchainAddresses, boardingAddresses, redemptionAddresses []types.Address, err error,
-	)
-	NewAddress(ctx context.Context, change bool) (
-		onchainAddr string, offchainAddr, boardingAddr *types.Address, err error,
-	)
-	NewAddresses(ctx context.Context, change bool, num int) (
-		onchainAddresses []string,
-		offchainAddresses, boardingAddresses []types.Address, err error,
-	)
+	NewKey(ctx context.Context, opts ...KeyOption) (key *KeyRef, err error)
+	GetKey(ctx context.Context, opts ...KeyOption) (key *KeyRef, err error)
+	ListKeys(ctx context.Context) (keys []KeyRef, err error)
 	SignTransaction(
-		ctx context.Context, explorerSvc explorer.Explorer, tx string,
+		ctx context.Context, explorerSvc explorer.Explorer, tx string, keys map[string]string,
 	) (signedTx string, err error)
 	SignMessage(ctx context.Context, message []byte) (signature string, err error)
 	Dump(ctx context.Context) (seed string, err error)

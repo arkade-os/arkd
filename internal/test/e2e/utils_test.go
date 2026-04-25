@@ -17,11 +17,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/arkade-os/arkd/pkg/client-lib/client"
-	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
-	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/store"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
@@ -261,7 +257,7 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 	return hex.EncodeToString(serializedTx.Bytes())
 }
 
-func setupArkSDK(t *testing.T) arksdk.ArkClient {
+func setupClient(t *testing.T) arksdk.ArkClient {
 	appDataStore, err := store.NewStore(store.Config{
 		ConfigStoreType: types.InMemoryStore,
 	})
@@ -287,27 +283,17 @@ func setupArkSDK(t *testing.T) arksdk.ArkClient {
 	err = client.Unlock(t.Context(), password)
 	require.NoError(t, err)
 
+	t.Cleanup(client.Stop)
+
 	return client
 }
 
-func setupArkSDKWithTransport(t *testing.T) (arksdk.ArkClient, client.TransportClient) {
-	client := setupArkSDK(t)
-	transportClient, err := grpcclient.NewClient(serverUrl)
-	require.NoError(t, err)
-	return client, transportClient
-}
-
 func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, error) {
-	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType: types.InMemoryStore,
-	})
-	require.NoError(t, err)
-
 	walletStore, err := inmemorystore.NewWalletStore()
 	require.NoError(t, err)
 	require.NotNil(t, walletStore)
 
-	wallet, err := singlekeywallet.NewBitcoinWallet(appDataStore.ConfigStore(), walletStore)
+	wallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
 	require.NoError(t, err)
 
 	privkey, err := btcec.NewPrivateKey()
@@ -324,53 +310,6 @@ func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, e
 	require.NoError(t, err)
 
 	return wallet, privkey.PubKey(), nil
-}
-
-func setupArkSDKwithPublicKey(
-	t *testing.T,
-) (arksdk.ArkClient, wallet.WalletService, *btcec.PublicKey, client.TransportClient) {
-	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType: types.InMemoryStore,
-	})
-	require.NoError(t, err)
-
-	client, err := arksdk.NewArkClient(appDataStore)
-	require.NoError(t, err)
-
-	walletStore, err := inmemorystore.NewWalletStore()
-	require.NoError(t, err)
-	require.NotNil(t, walletStore)
-
-	wallet, err := singlekeywallet.NewBitcoinWallet(appDataStore.ConfigStore(), walletStore)
-	require.NoError(t, err)
-
-	privkey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-
-	privkeyHex := hex.EncodeToString(privkey.Serialize())
-
-	err = client.InitWithWallet(t.Context(), arksdk.InitWithWalletArgs{
-		Wallet:      wallet,
-		ServerUrl:   serverUrl,
-		Password:    password,
-		Seed:        privkeyHex,
-		ExplorerURL: explorerUrl,
-	})
-	require.NoError(t, err)
-
-	err = client.Unlock(t.Context(), password)
-	require.NoError(t, err)
-
-	grpcClient, err := grpcclient.NewClient(serverUrl)
-	require.NoError(t, err)
-
-	return client, wallet, privkey.PubKey(), grpcClient
-}
-
-func setupIndexer(t *testing.T) indexer.Indexer {
-	svc, err := grpcindexer.NewClient(serverUrl)
-	require.NoError(t, err)
-	return svc
 }
 
 func faucet(t *testing.T, client arksdk.ArkClient, amount float64) {
@@ -446,7 +385,7 @@ func faucetOffchain(t *testing.T, client arksdk.ArkClient, amount float64) types
 }
 
 func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.Vtxo {
-	client := setupArkSDK(t)
+	client := setupClient(t)
 
 	_, offchainAddr, _, err := client.Receive(t.Context())
 	require.NoError(t, err)

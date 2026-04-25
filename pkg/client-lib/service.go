@@ -71,6 +71,16 @@ func NewArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, error
 		opt(client)
 	}
 
+	if client.wallet == nil {
+		storeType := storeSvc.ConfigStore().GetType()
+		datadir := storeSvc.ConfigStore().GetDatadir()
+		walletSvc, err := getWallet(datadir, storeType, wallet.SingleKeyWallet, supportedWallets)
+		if err != nil {
+			return nil, fmt.Errorf("failed to setup wallet: %s", err)
+		}
+		client.wallet = walletSvc
+	}
+
 	return client, nil
 }
 
@@ -87,14 +97,8 @@ func LoadArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, erro
 		return nil, ErrNotInitialized
 	}
 
-	walletSvc, err := getWallet(storeSvc.ConfigStore(), cfgData.WalletType, supportedWallets)
-	if err != nil {
-		return nil, fmt.Errorf("failed to setup wallet: %s", err)
-	}
-
 	client := &service{
 		Config:                 cfgData,
-		wallet:                 walletSvc,
 		store:                  storeSvc,
 		txLock:                 &sync.RWMutex{},
 		withFinalizePendingTxs: true,
@@ -103,66 +107,18 @@ func LoadArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, erro
 		opt(client)
 	}
 
+	if client.wallet == nil {
+		storeType := storeSvc.ConfigStore().GetType()
+		datadir := storeSvc.ConfigStore().GetDatadir()
+		walletSvc, err := getWallet(datadir, storeType, cfgData.WalletType, supportedWallets)
+		if err != nil {
+			return nil, fmt.Errorf("failed to setup wallet: %s", err)
+		}
+		client.wallet = walletSvc
+	}
+
 	if client.explorer == nil {
 		explorerOpts := []mempool_explorer.Option{mempool_explorer.WithTracker(false)}
-		explorerSvc, err := mempool_explorer.NewExplorer(
-			cfgData.ExplorerURL, cfgData.Network, explorerOpts...,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to setup explorer: %s", err)
-		}
-		client.explorer = explorerSvc
-	}
-
-	clientSvc, err := grpcclient.NewClient(cfgData.ServerUrl)
-	if err != nil {
-		return nil, fmt.Errorf("failed to setup transport client: %s", err)
-	}
-	indexerSvc, err := grpcindexer.NewClient(cfgData.ServerUrl)
-	if err != nil {
-		return nil, fmt.Errorf("failed to setup indexer: %s", err)
-	}
-
-	client.client = clientSvc
-	client.indexer = indexerSvc
-
-	return client, nil
-}
-
-func LoadArkClientWithWallet(
-	sdkStore types.Store, walletSvc wallet.WalletService, opts ...ServiceOption,
-) (ArkClient, error) {
-	if sdkStore == nil {
-		return nil, fmt.Errorf("missin sdk repository")
-	}
-
-	if walletSvc == nil {
-		return nil, fmt.Errorf("missin wallet service")
-	}
-
-	cfgData, err := sdkStore.ConfigStore().GetData(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	if cfgData == nil {
-		return nil, ErrNotInitialized
-	}
-
-	client := &service{
-		Config:                 cfgData,
-		wallet:                 walletSvc,
-		store:                  sdkStore,
-		txLock:                 &sync.RWMutex{},
-		withFinalizePendingTxs: true,
-	}
-	for _, opt := range opts {
-		opt(client)
-	}
-
-	if client.explorer == nil {
-		explorerOpts := []mempool_explorer.Option{
-			mempool_explorer.WithTracker(false),
-		}
 		explorerSvc, err := mempool_explorer.NewExplorer(
 			cfgData.ExplorerURL, cfgData.Network, explorerOpts...,
 		)
@@ -225,7 +181,10 @@ func (a *service) Unlock(ctx context.Context, password string) error {
 	}
 
 	if a.withFinalizePendingTxs {
-		txids, err := a.finalizePendingTxs(ctx, nil)
+		// TODO: @sekulicd shall we move this to go-sdk? Otherwise we would have to pass an extra
+		// option to Unlock to pass basically the keys ids for the whole vtxo set and that would
+		// look awkward.
+		txids, err := a.finalizePendingTxs(ctx, nil, nil)
 		if err != nil {
 			return err
 		}
@@ -281,11 +240,20 @@ func (a *service) Stop() {
 	}
 }
 
-func (a *service) SignTransaction(ctx context.Context, tx string) (string, error) {
+func (a *service) SignTransaction(
+	ctx context.Context, tx string, opts ...SignOption,
+) (string, error) {
 	if err := a.safeCheck(); err != nil {
 		return "", err
 	}
-	return a.wallet.SignTransaction(ctx, a.explorer, tx)
+	o := newDefaultSendOptions()
+	for _, opt := range opts {
+		if err := opt.applySend(o); err != nil {
+			return "", err
+		}
+	}
+
+	return a.wallet.SignTransaction(ctx, a.explorer, tx, o.signingKeys)
 }
 
 func (a *service) safeCheck() error {
@@ -305,7 +273,7 @@ func (a *service) getVtxos(
 		return nil, nil, ErrNotInitialized
 	}
 
-	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return
 	}
@@ -417,7 +385,7 @@ func (a *service) fetchPendingSpentVtxos(ctx context.Context) ([]types.Vtxo, err
 		return nil, ErrNotInitialized
 	}
 
-	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +412,7 @@ func (a *service) fetchPendingSpentVtxos(ctx context.Context) ([]types.Vtxo, err
 func (a *service) populateVtxosWithTapscripts(
 	ctx context.Context, vtxos []types.Vtxo,
 ) ([]types.VtxoWithTapTree, error) {
-	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}

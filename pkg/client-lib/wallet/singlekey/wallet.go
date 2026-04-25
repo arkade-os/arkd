@@ -7,14 +7,12 @@ import (
 	"fmt"
 
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
-	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	walletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store"
 	"github.com/btcsuite/btcd/btcec/v2"
 )
 
 type singlekeyWallet struct {
-	configStore types.ConfigStore
 	walletStore walletstore.WalletStore
 	privateKey  *btcec.PrivateKey
 	walletData  *walletstore.WalletData

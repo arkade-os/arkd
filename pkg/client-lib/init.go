@@ -18,33 +18,19 @@ func (a *service) Init(ctx context.Context, args InitArgs) error {
 	if err := args.validate(); err != nil {
 		return fmt.Errorf("invalid args: %s", err)
 	}
-	walletSvc, err := getWallet(a.store.ConfigStore(), args.WalletType, supportedWallets)
-	if err != nil {
-		return err
-	}
-	if _, err := walletSvc.Create(ctx, args.Password, args.Seed); err != nil {
-		return err
+	if a.wallet == nil {
+		return fmt.Errorf("wallet not initialized")
 	}
 
-	return a.init(ctx, args.parse(), walletSvc, args.Explorer)
-}
-
-func (a *service) InitWithWallet(ctx context.Context, args InitWithWalletArgs) error {
-	if err := args.validate(); err != nil {
-		return fmt.Errorf("invalid args: %s", err)
-	}
-
-	if _, err := args.Wallet.Create(ctx, args.Password, args.Seed); err != nil {
-		//nolint:all
-		a.store.ConfigStore().CleanData(ctx)
+	if _, err := a.wallet.Create(ctx, args.Password, args.Seed); err != nil {
 		return err
 	}
 
-	return a.init(ctx, args.parse(), args.Wallet, args.Explorer)
+	return a.init(ctx, args.parse(), args.Explorer)
 }
 
 func (a *service) init(
-	ctx context.Context, args args, walletSvc wallet.WalletService, explorerSvc explorer.Explorer,
+	ctx context.Context, args args, explorerSvc explorer.Explorer,
 ) error {
 	clientSvc, err := grpcclient.NewClient(args.serverUrl)
 	if err != nil {
@@ -129,7 +115,6 @@ func (a *service) init(
 	}
 
 	a.Config = &cfgData
-	a.wallet = walletSvc
 	a.client = clientSvc
 	a.indexer = indexerSvc
 	if a.explorer == nil {

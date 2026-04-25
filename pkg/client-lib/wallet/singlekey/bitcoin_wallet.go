@@ -7,17 +7,13 @@ import (
 	"fmt"
 	"strings"
 
-	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
-	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	walletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -28,146 +24,55 @@ type bitcoinWallet struct {
 	*singlekeyWallet
 }
 
-func NewBitcoinWallet(
-	configStore types.ConfigStore, walletStore walletstore.WalletStore,
-) (wallet.WalletService, error) {
+func NewBitcoinWallet(walletStore walletstore.WalletStore) (wallet.WalletService, error) {
 	walletData, err := walletStore.GetWallet()
 	if err != nil {
 		return nil, err
 	}
 	return &bitcoinWallet{
 		&singlekeyWallet{
-			configStore: configStore,
 			walletStore: walletStore,
 			walletData:  walletData,
 		},
 	}, nil
 }
 
-func (w *bitcoinWallet) GetAddresses(
-	ctx context.Context,
-) ([]string, []types.Address, []types.Address, []types.Address, error) {
-	offchainAddr, boardingAddr, err := w.getArkAddresses(ctx)
-	if err != nil {
-		return nil, nil, nil, nil, err
+func (w *bitcoinWallet) NewKey(
+	ctx context.Context, opts ...wallet.KeyOption,
+) (*wallet.KeyRef, error) {
+	if w.walletData == nil {
+		return nil, fmt.Errorf("wallet not initialized")
 	}
-
-	encodedOffchainAddr, err := offchainAddr.Address.EncodeV0()
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-
-	data, err := w.configStore.GetData(ctx)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-
-	netParams := utils.ToBitcoinNetwork(data.Network)
-
-	redemptionAddr, err := btcutil.NewAddressTaproot(
-		schnorr.SerializePubKey(offchainAddr.Address.VtxoTapKey),
-		&netParams,
-	)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-
-	offchainAddrs := []types.Address{
-		{
-			Tapscripts: offchainAddr.Tapscripts,
-			Address:    encodedOffchainAddr,
-		},
-	}
-	boardingAddrs := []types.Address{
-		{
-			Tapscripts: boardingAddr.Tapscripts,
-			Address:    boardingAddr.Address,
-		},
-	}
-	redemptionAddrs := []types.Address{
-		{
-			Tapscripts: offchainAddr.Tapscripts,
-			Address:    redemptionAddr.EncodeAddress(),
-		},
-	}
-
-	onchainAddr, err := w.getP2TRAddress(ctx)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-
-	return []string{onchainAddr.EncodeAddress()}, offchainAddrs, boardingAddrs, redemptionAddrs, nil
+	return &wallet.KeyRef{PubKey: w.walletData.PubKey}, nil
 }
 
-func (w *bitcoinWallet) NewAddress(
-	ctx context.Context, _ bool,
-) (string, *types.Address, *types.Address, error) {
-	offchainAddr, boardingAddr, err := w.getArkAddresses(ctx)
-	if err != nil {
-		return "", nil, nil, err
+func (w *bitcoinWallet) GetKey(
+	ctx context.Context, opts ...wallet.KeyOption,
+) (*wallet.KeyRef, error) {
+	if w.walletData == nil {
+		return nil, fmt.Errorf("wallet not initialized")
 	}
-
-	encodedOffchainAddr, err := offchainAddr.Address.EncodeV0()
-	if err != nil {
-		return "", nil, nil, err
-	}
-
-	onchainAddr, err := w.getP2TRAddress(ctx)
-	if err != nil {
-		return "", nil, nil, err
-	}
-
-	return onchainAddr.EncodeAddress(), &types.Address{
-		Tapscripts: offchainAddr.Tapscripts,
-		Address:    encodedOffchainAddr,
-	}, boardingAddr, nil
+	return &wallet.KeyRef{PubKey: w.walletData.PubKey}, nil
 }
 
-func (w *bitcoinWallet) NewAddresses(
-	ctx context.Context, _ bool, num int,
-) ([]string, []types.Address, []types.Address, error) {
-	if num <= 0 {
-		num = 1
-	}
-
-	offchainAddr, boardingAddr, err := w.getArkAddresses(ctx)
+func (w *bitcoinWallet) ListKeys(ctx context.Context) ([]wallet.KeyRef, error) {
+	key, err := w.GetKey(ctx)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
-
-	offchainAddrs := make([]types.Address, 0, num)
-	boardingAddrs := make([]types.Address, 0, num)
-	for range num {
-		encodedOffchainAddr, err := offchainAddr.Address.EncodeV0()
-		if err != nil {
-			return nil, nil, nil, err
-		}
-
-		offchainAddrs = append(offchainAddrs, types.Address{
-			Tapscripts: offchainAddr.Tapscripts,
-			Address:    encodedOffchainAddr,
-		})
-		boardingAddrs = append(boardingAddrs, types.Address{
-			Tapscripts: boardingAddr.Tapscripts,
-			Address:    boardingAddr.Address,
-		})
-	}
-
-	onchainAddrs := make([]string, 0, num)
-	for range num {
-		onchainAddr, err := w.getP2TRAddress(ctx)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		onchainAddrs = append(onchainAddrs, onchainAddr.EncodeAddress())
-	}
-
-	return onchainAddrs, offchainAddrs, boardingAddrs, nil
+	return []wallet.KeyRef{*key}, nil
 }
-
 func (s *bitcoinWallet) SignTransaction(
-	ctx context.Context, explorerSvc explorer.Explorer, tx string,
+	ctx context.Context, explorerSvc explorer.Explorer, tx string, _ map[string]string,
 ) (string, error) {
+	if s.walletData == nil {
+		return "", fmt.Errorf("wallet not initialized")
+	}
+
+	if s.IsLocked() {
+		return "", fmt.Errorf("wallet is locked")
+	}
+
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
 		return "", err
@@ -389,6 +294,9 @@ func (w *bitcoinWallet) signTaprootKeySpend(
 func (w *bitcoinWallet) NewVtxoTreeSigner(
 	ctx context.Context, derivationPath string,
 ) (tree.SignerSession, error) {
+	if w.walletData == nil {
+		return nil, fmt.Errorf("wallet not initialized")
+	}
 	if w.IsLocked() {
 		return nil, fmt.Errorf("wallet is locked")
 	}
@@ -436,6 +344,9 @@ func (w *bitcoinWallet) NewVtxoTreeSigner(
 func (w *bitcoinWallet) SignMessage(
 	ctx context.Context, message []byte,
 ) (string, error) {
+	if w.walletData == nil {
+		return "", fmt.Errorf("wallet not initialized")
+	}
 	if w.IsLocked() {
 		return "", fmt.Errorf("wallet is locked")
 	}
@@ -446,110 +357,4 @@ func (w *bitcoinWallet) SignMessage(
 	}
 
 	return hex.EncodeToString(sig.Serialize()), nil
-}
-
-type addressWithTapscripts struct {
-	Address    arklib.Address
-	Tapscripts []string
-}
-
-func (w *bitcoinWallet) getP2TRAddress(
-	ctx context.Context,
-) (*btcutil.AddressTaproot, error) {
-	if w.walletData == nil {
-		return nil, fmt.Errorf("wallet not initialized")
-	}
-
-	data, err := w.configStore.GetData(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if data == nil {
-		return nil, fmt.Errorf("config not set, cannot create P2TR address")
-	}
-
-	netParams := utils.ToBitcoinNetwork(data.Network)
-
-	tapKey := txscript.ComputeTaprootKeyNoScript(w.walletData.PubKey)
-	addr, err := btcutil.NewAddressTaproot(schnorr.SerializePubKey(tapKey), &netParams)
-	if err != nil {
-		return nil, err
-	}
-
-	return addr, nil
-}
-
-func (w *bitcoinWallet) getArkAddresses(
-	ctx context.Context,
-) (
-	*addressWithTapscripts,
-	*types.Address,
-	error,
-) {
-	if w.walletData == nil {
-		return nil, nil, fmt.Errorf("wallet not initialized")
-	}
-
-	data, err := w.configStore.GetData(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	if data == nil {
-		return nil, nil, fmt.Errorf("config store not initialized")
-	}
-
-	netParams := utils.ToBitcoinNetwork(data.Network)
-
-	defaultVtxoScript := script.NewDefaultVtxoScript(
-		w.walletData.PubKey, data.SignerPubKey, data.UnilateralExitDelay,
-	)
-
-	vtxoTapKey, _, err := defaultVtxoScript.TapTree()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	offchainAddress := &arklib.Address{
-		HRP:        data.Network.Addr,
-		Signer:     data.SignerPubKey,
-		VtxoTapKey: vtxoTapKey,
-	}
-
-	boardingVtxoScript := script.NewDefaultVtxoScript(
-		w.walletData.PubKey, data.SignerPubKey, data.BoardingExitDelay,
-	)
-
-	boardingTapKey, _, err := boardingVtxoScript.TapTree()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	boardingAddr, err := btcutil.NewAddressTaproot(
-		schnorr.SerializePubKey(boardingTapKey),
-		&netParams,
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	tapscripts, err := defaultVtxoScript.Encode()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	boardingTapscripts, err := boardingVtxoScript.Encode()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return &addressWithTapscripts{
-			Address:    *offchainAddress,
-			Tapscripts: tapscripts,
-		},
-		&types.Address{
-			Tapscripts: boardingTapscripts,
-			Address:    boardingAddr.EncodeAddress(),
-		},
-		nil
 }

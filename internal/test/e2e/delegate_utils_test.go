@@ -206,11 +206,7 @@ func (h *delegateBatchEventsHandler) OnBatchFinalization(
 	}
 
 	// sign the forfeit tx
-	signedForfeitTx, err := h.delegatorWallet.SignTransaction(
-		context.Background(),
-		nil,
-		encodedForfeitTx,
-	)
+	signedForfeitTx, err := h.delegatorWallet.SignTransaction(ctx, nil, encodedForfeitTx, nil)
 	if err != nil {
 		return nil, err
 	}
