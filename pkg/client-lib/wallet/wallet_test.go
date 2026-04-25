@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"testing"
 
-	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/store/inmemory"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
 	inmemorywalletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
@@ -169,11 +168,9 @@ func TestListKeys(t *testing.T) {
 
 func newTestWallet(t *testing.T) wallet.WalletService {
 	t.Helper()
-	store, err := inmemorystore.NewConfigStore()
-	require.NoError(t, err)
 	walletStore, err := inmemorywalletstore.NewWalletStore()
 	require.NoError(t, err)
-	walletSvc, err := singlekeywallet.NewBitcoinWallet(store, walletStore)
+	walletSvc, err := singlekeywallet.NewBitcoinWallet(walletStore)
 	require.NoError(t, err)
 	return walletSvc
 }

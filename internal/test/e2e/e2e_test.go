@@ -29,7 +29,6 @@ import (
 	mempool_explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/redemption"
-	inmemorystoreconfig "github.com/arkade-os/arkd/pkg/client-lib/store/inmemory"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
 	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
@@ -842,13 +841,10 @@ func TestOffchainTx(t *testing.T) {
 		privkey, err := btcec.NewPrivateKey()
 		require.NoError(t, err)
 
-		configStore, err := inmemorystoreconfig.NewConfigStore()
-		require.NoError(t, err)
-
 		walletStore, err := inmemorystore.NewWalletStore()
 		require.NoError(t, err)
 
-		wallet, err := singlekeywallet.NewBitcoinWallet(configStore, walletStore)
+		wallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
 		require.NoError(t, err)
 
 		_, err = wallet.Create(ctx, password, hex.EncodeToString(privkey.Serialize()))
@@ -2083,13 +2079,10 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	bobPrivKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	configStore, err := inmemorystoreconfig.NewConfigStore()
-	require.NoError(t, err)
-
 	walletStore, err := inmemorystore.NewWalletStore()
 	require.NoError(t, err)
 
-	bobWallet, err := singlekeywallet.NewBitcoinWallet(configStore, walletStore)
+	bobWallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
 	require.NoError(t, err)
 
 	_, err = bobWallet.Create(ctx, password, hex.EncodeToString(bobPrivKey.Serialize()))
@@ -2304,16 +2297,10 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	bobPrivKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	configStore, err := inmemorystoreconfig.NewConfigStore()
-	require.NoError(t, err)
-
 	walletStore, err := inmemorystore.NewWalletStore()
 	require.NoError(t, err)
 
-	bobWallet, err := singlekeywallet.NewBitcoinWallet(
-		configStore,
-		walletStore,
-	)
+	bobWallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
 	require.NoError(t, err)
 
 	_, err = bobWallet.Create(ctx, password, hex.EncodeToString(bobPrivKey.Serialize()))
@@ -2866,16 +2853,10 @@ func TestReactToFraud(t *testing.T) {
 			bobPrivKey, err := btcec.NewPrivateKey()
 			require.NoError(t, err)
 
-			configStore, err := inmemorystoreconfig.NewConfigStore()
-			require.NoError(t, err)
-
 			walletStore, err := inmemorystore.NewWalletStore()
 			require.NoError(t, err)
 
-			bobWallet, err := singlekeywallet.NewBitcoinWallet(
-				configStore,
-				walletStore,
-			)
+			bobWallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
 			require.NoError(t, err)
 
 			_, err = bobWallet.Create(ctx, password, hex.EncodeToString(bobPrivKey.Serialize()))

@@ -289,16 +289,11 @@ func setupClient(t *testing.T) arksdk.ArkClient {
 }
 
 func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, error) {
-	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType: types.InMemoryStore,
-	})
-	require.NoError(t, err)
-
 	walletStore, err := inmemorystore.NewWalletStore()
 	require.NoError(t, err)
 	require.NotNil(t, walletStore)
 
-	wallet, err := singlekeywallet.NewBitcoinWallet(appDataStore.ConfigStore(), walletStore)
+	wallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
 	require.NoError(t, err)
 
 	privkey, err := btcec.NewPrivateKey()

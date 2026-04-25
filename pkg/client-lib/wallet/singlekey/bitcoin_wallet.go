@@ -10,7 +10,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	walletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -25,16 +24,13 @@ type bitcoinWallet struct {
 	*singlekeyWallet
 }
 
-func NewBitcoinWallet(
-	configStore types.ConfigStore, walletStore walletstore.WalletStore,
-) (wallet.WalletService, error) {
+func NewBitcoinWallet(walletStore walletstore.WalletStore) (wallet.WalletService, error) {
 	walletData, err := walletStore.GetWallet()
 	if err != nil {
 		return nil, err
 	}
 	return &bitcoinWallet{
 		&singlekeyWallet{
-			configStore: configStore,
 			walletStore: walletStore,
 			walletData:  walletData,
 		},
@@ -47,10 +43,7 @@ func (w *bitcoinWallet) NewKey(
 	if w.walletData == nil {
 		return nil, fmt.Errorf("wallet not initialized")
 	}
-	if w.IsLocked() {
-		return nil, fmt.Errorf("wallet is locked")
-	}
-	return &wallet.KeyRef{PubKey: w.privateKey.PubKey()}, nil
+	return &wallet.KeyRef{PubKey: w.walletData.PubKey}, nil
 }
 
 func (w *bitcoinWallet) GetKey(
@@ -59,10 +52,7 @@ func (w *bitcoinWallet) GetKey(
 	if w.walletData == nil {
 		return nil, fmt.Errorf("wallet not initialized")
 	}
-	if w.IsLocked() {
-		return nil, fmt.Errorf("wallet is locked")
-	}
-	return &wallet.KeyRef{PubKey: w.privateKey.PubKey()}, nil
+	return &wallet.KeyRef{PubKey: w.walletData.PubKey}, nil
 }
 
 func (w *bitcoinWallet) ListKeys(ctx context.Context) ([]wallet.KeyRef, error) {

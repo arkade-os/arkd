@@ -58,12 +58,12 @@ func getIndexer(
 }
 
 func getWallet(
-	configStore types.ConfigStore, walletType string,
+	datadir, storeType, walletType string,
 	supportedWallets utils.SupportedType[struct{}],
 ) (wallet.WalletService, error) {
 	switch walletType {
 	case wallet.SingleKeyWallet:
-		return getSingleKeyWallet(configStore)
+		return getSingleKeyWallet(datadir, storeType)
 	default:
 		return nil, fmt.Errorf(
 			"unsupported wallet type '%s', please select one of: %s", walletType, supportedWallets,
@@ -71,13 +71,13 @@ func getWallet(
 	}
 }
 
-func getSingleKeyWallet(configStore types.ConfigStore) (wallet.WalletService, error) {
-	walletStore, err := getWalletStore(configStore.GetType(), configStore.GetDatadir())
+func getSingleKeyWallet(datadir, storeType string) (wallet.WalletService, error) {
+	walletStore, err := getWalletStore(storeType, datadir)
 	if err != nil {
 		return nil, err
 	}
 
-	return singlekeywallet.NewBitcoinWallet(configStore, walletStore)
+	return singlekeywallet.NewBitcoinWallet(walletStore)
 }
 
 func getWalletStore(storeType, datadir string) (walletstore.WalletStore, error) {
