@@ -114,6 +114,12 @@ message BatchFailedEvent {
   string reason = 2;
 }
 
+message IntentDisruptedEvent {
+  string id = 1; // round id
+  string intent_id = 2;
+  string reason = 3;
+}
+
 message TreeSigningStartedEvent {
   string id = 1;
   repeated string cosigners_pubkeys = 2;

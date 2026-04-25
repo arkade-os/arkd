@@ -74,6 +74,11 @@ func (h *delegateBatchEventsHandler) OnBatchFailed(
 	return nil
 }
 
+func (h *delegateBatchEventsHandler) OnIntentDisrupted(ctx context.Context, event client.IntentDisruptedEvent,
+) error {
+	return fmt.Errorf("intent disrupted: %s", event.Reason)
+}
+
 func (h *delegateBatchEventsHandler) OnTreeTxEvent(
 	ctx context.Context, event client.TreeTxEvent,
 ) error {
@@ -229,6 +234,7 @@ type customBatchEventsHandler struct {
 	onBatchFinalization    func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree) ([]string, error)
 	onBatchFinalized       func(ctx context.Context, event client.BatchFinalizedEvent) error
 	onBatchFailed          func(ctx context.Context, event client.BatchFailedEvent) error
+	onIntentDisrupted      func(ctx context.Context, event client.IntentDisruptedEvent) error
 	onTreeTxEvent          func(ctx context.Context, event client.TreeTxEvent) error
 	onTreeSignatureEvent   func(ctx context.Context, event client.TreeSignatureEvent) error
 	onTreeSigningStarted   func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error)
@@ -285,6 +291,16 @@ func (h *customBatchEventsHandler) OnBatchFailed(
 		return h.onBatchFailed(ctx, event)
 	}
 	return errors.New(event.Reason)
+}
+
+func (h *customBatchEventsHandler) OnIntentDisrupted(
+	ctx context.Context,
+	event client.IntentDisruptedEvent,
+) error {
+	if h.onIntentDisrupted != nil {
+		return h.onIntentDisrupted(ctx, event)
+	}
+	return fmt.Errorf("intent disrupted: %s", event.Reason)
 }
 
 func (h *customBatchEventsHandler) OnTreeTxEvent(
