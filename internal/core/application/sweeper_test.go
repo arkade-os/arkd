@@ -470,10 +470,12 @@ func (m *mockRepoManager) Vtxos() domain.VtxoRepository                  { retur
 func (m *mockRepoManager) Markers() domain.MarkerRepository              { return m.markers }
 func (m *mockRepoManager) ScheduledSession() domain.ScheduledSessionRepo { return nil }
 func (m *mockRepoManager) OffchainTxs() domain.OffchainTxRepository      { return nil }
-func (m *mockRepoManager) Convictions() domain.ConvictionRepository      { return nil }
-func (m *mockRepoManager) Assets() domain.AssetRepository                { return nil }
-func (m *mockRepoManager) Fees() domain.FeeRepository                    { return nil }
-func (m *mockRepoManager) Close()                                        {}
+func (m *mockRepoManager) Convictions() domain.ConvictionRepository              { return nil }
+func (m *mockRepoManager) Assets() domain.AssetRepository                        { return nil }
+func (m *mockRepoManager) Fees() domain.FeeRepository                            { return nil }
+func (m *mockRepoManager) RegisterBatchUpdateHandler(func(data domain.Round))    {}
+func (m *mockRepoManager) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx)) {}
+func (m *mockRepoManager) Close()                                                {}
 
 type mockScheduler struct{}
 
