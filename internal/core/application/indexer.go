@@ -601,14 +601,12 @@ func (i *indexerService) buildVtxoChain(
 
 			// if the vtxo is not preconfirmed, it means it's a leaf of a batch tree
 			// add the branch until the commitment tx
-			flatVtxoTree, err := i.GetVtxoTree(ctx, Outpoint{
-				Txid: vtxo.RootCommitmentTxid, VOut: 0,
-			}, nil)
+			flatVtxoTree, err := i.repoManager.Rounds().GetRoundVtxoTree(ctx, vtxo.RootCommitmentTxid)
 			if err != nil {
 				return nil, nil, err
 			}
 
-			vtxoTree, err := tree.NewTxTree(flatVtxoTree.Txs)
+			vtxoTree, err := tree.NewTxTree(flatVtxoTree)
 			if err != nil {
 				return nil, nil, err
 			}
