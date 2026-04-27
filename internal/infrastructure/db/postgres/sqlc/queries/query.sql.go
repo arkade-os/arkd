@@ -1330,6 +1330,40 @@ func (q *Queries) SelectRoundStats(ctx context.Context, txid string) (SelectRoun
 	return i, err
 }
 
+const selectRoundSweepTxs = `-- name: SelectRoundSweepTxs :many
+SELECT t.txid, t.tx FROM tx t WHERE t.round_id = (
+    SELECT tx.round_id FROM tx WHERE tx.txid = $1 AND type = 'commitment'
+) AND t.type = 'sweep'
+`
+
+type SelectRoundSweepTxsRow struct {
+	Txid string
+	Tx   string
+}
+
+func (q *Queries) SelectRoundSweepTxs(ctx context.Context, txid string) ([]SelectRoundSweepTxsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectRoundSweepTxs, txid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectRoundSweepTxsRow
+	for rows.Next() {
+		var i SelectRoundSweepTxsRow
+		if err := rows.Scan(&i.Txid, &i.Tx); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectRoundVtxoTree = `-- name: SelectRoundVtxoTree :many
 SELECT txid, tx, round_id, type, position, children FROM tx WHERE round_id = (
     SELECT tx.round_id FROM tx WHERE tx.txid = $1 AND type = 'commitment'

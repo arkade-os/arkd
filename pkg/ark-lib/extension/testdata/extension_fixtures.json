@@ -197,5 +197,39 @@
                 "hex": ""
             }
         ]
+    },
+    "getPacketByType": {
+        "found": [
+            {
+                "name": "asset type",
+                "hex": "6a1941524b000e01020200000001010000c0de810a0304deadbeef",
+                "queryType": 0,
+                "expectedPacketHex": "01020200000001010000c0de810a"
+            },
+            {
+                "name": "unknown packet type 0x03 (banco-offer-like)",
+                "hex": "6a1941524b000e01020200000001010000c0de810a0304deadbeef",
+                "queryType": 3,
+                "expectedPacketHex": "deadbeef"
+            },
+            {
+                "name": "unknown type",
+                "hex": "6a0941524b0304deadbeef",
+                "queryType": 3,
+                "expectedPacketHex": "deadbeef"
+            }
+        ],
+        "notFound": [
+            {
+                "name": "type 0xff absent in single asset extension",
+                "hex": "6a1341524b000e01020200000001010000c0de810a",
+                "queryType": 255
+            },
+            {
+                "name": "type 0xff absent in single unknown-0x03 extension",
+                "hex": "6a0941524b0304deadbeef",
+                "queryType": 255
+            }
+        ]
     }
 }

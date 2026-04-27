@@ -325,7 +325,7 @@ func (i *indexerService) GetVtxos(
 		if recoverableOnly {
 			recoverableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
 			for _, vtxo := range allVtxos {
-				if !vtxo.RequiresForfeit() && !vtxo.Spent {
+				if !vtxo.RequiresForfeit() && !vtxo.Spent && !vtxo.Unrolled {
 					recoverableVtxos = append(recoverableVtxos, vtxo)
 				}
 			}
@@ -579,13 +579,13 @@ func (i *indexerService) GetVirtualTxsByIntent(
 func (i *indexerService) GetBatchSweepTxs(
 	ctx context.Context, batchOutpoint Outpoint,
 ) ([]string, error) {
-	round, err := i.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, batchOutpoint.Txid)
+	sweepTxs, err := i.repoManager.Rounds().GetSweepTxs(ctx, batchOutpoint.Txid)
 	if err != nil {
 		return nil, err
 	}
 
-	txids := make([]string, 0, len(round.SweepTxs))
-	for txid := range round.SweepTxs {
+	txids := make([]string, 0, len(sweepTxs))
+	for txid := range sweepTxs {
 		txids = append(txids, txid)
 	}
 

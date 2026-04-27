@@ -242,7 +242,7 @@ func calcNextScheduledSession(
 	return nextStartTime, nextEndTime
 }
 
-func getNewVtxosFromRound(round *domain.Round) []domain.Vtxo {
+func getNewVtxosFromRound(round domain.Round) []domain.Vtxo {
 	if len(round.VtxoTree) <= 0 {
 		return nil
 	}

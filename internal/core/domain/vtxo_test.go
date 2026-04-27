@@ -163,6 +163,15 @@ func TestVtxo_RequiresForfeit(t *testing.T) {
 			},
 			requiresForfeit: false,
 		},
+		{
+			name: "should be false (unrolled)",
+			vtxo: domain.Vtxo{
+				CommitmentTxids: []string{"txid1"},
+				ExpiresAt:       futureExpiry,
+				Unrolled:        true,
+			},
+			requiresForfeit: false,
+		},
 	}
 	for _, f := range fixtures {
 		t.Run(f.name, func(t *testing.T) {

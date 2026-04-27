@@ -12,5 +12,7 @@ type RepoManager interface {
 	Convictions() domain.ConvictionRepository
 	Assets() domain.AssetRepository
 	Fees() domain.FeeRepository
+	RegisterBatchUpdateHandler(handler func(data domain.Round))
+	RegisterOffchainTxUpdateHandler(handler func(data domain.OffchainTx))
 	Close()
 }

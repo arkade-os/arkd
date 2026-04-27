@@ -18,6 +18,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
+	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -166,8 +167,8 @@ func TestService(t *testing.T) {
 			config: db.ServiceConfig{
 				EventStoreType:   "postgres",
 				DataStoreType:    "postgres",
-				EventStoreConfig: []interface{}{pgEventDns, false},
-				DataStoreConfig:  []interface{}{pgDns, false},
+				EventStoreConfig: []interface{}{pgEventDns, false, pgdb.ConnectionConfig{}},
+				DataStoreConfig:  []interface{}{pgDns, false, pgdb.ConnectionConfig{}},
 			},
 		},
 	}
@@ -448,6 +449,10 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Empty(t, emptyForfeitTxs)
 
+		emptySweepTxs, err := svc.Rounds().GetSweepTxs(ctx, "nonexistent")
+		require.NoError(t, err)
+		require.Empty(t, emptySweepTxs)
+
 		emptyConnectorTree, err := svc.Rounds().GetRoundConnectorTree(ctx, "nonexistent")
 		require.NoError(t, err)
 		require.Empty(t, emptyConnectorTree)
@@ -471,6 +476,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		roundsMatch(t, *round, *roundById)
 
 		commitmentTxid := randomString(32)
+		largeProof := randomString(3000)
 		newEvents := []domain.Event{
 			domain.IntentsRegistered{
 				RoundEvent: domain.RoundEvent{
@@ -480,7 +486,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 				Intents: []domain.Intent{
 					{
 						Id:      uuid.New().String(),
-						Proof:   "proof",
+						Proof:   largeProof,
 						Txid:    txida,
 						Message: "message",
 						Inputs: []domain.Vtxo{
@@ -557,7 +563,7 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		// get intents by txid
 		intent, err := svc.Rounds().GetIntentByTxid(ctx, txida)
 		require.NoError(t, err)
-		require.Equal(t, "proof", intent.Proof)
+		require.Equal(t, largeProof, intent.Proof)
 		require.Equal(t, "message", intent.Message)
 		require.NotEqual(t, "", intent.Id)
 		require.NotEqual(t, "", intent.Txid)
@@ -640,6 +646,11 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.NotNil(t, roundById)
 		roundsMatch(t, *sweptRound, *roundById)
+
+		sweepTxs, err := svc.Rounds().GetSweepTxs(ctx, commitmentTxid)
+		require.NoError(t, err)
+		require.Len(t, sweepTxs, 1)
+		require.Equal(t, sweepTx, sweepTxs[sweepTxid])
 
 		roundsIds, err := svc.Rounds().GetRoundIds(ctx, 0, 0, false, true)
 		require.NoError(t, err)
