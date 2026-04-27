@@ -1064,7 +1064,7 @@ func hashOutpoints(outpoints []Outpoint) ([]byte, error) {
 
 func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {
 	if params == nil {
-		return items, PageResp{}
+		params = &Page{PageSize: maxSize, PageNum: 1}
 	}
 	if params.PageSize <= 0 {
 		params.PageSize = maxSize
