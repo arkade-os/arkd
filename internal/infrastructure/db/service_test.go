@@ -17,6 +17,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
+	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -165,8 +166,8 @@ func TestService(t *testing.T) {
 			config: db.ServiceConfig{
 				EventStoreType:   "postgres",
 				DataStoreType:    "postgres",
-				EventStoreConfig: []interface{}{pgEventDns, false},
-				DataStoreConfig:  []interface{}{pgDns, false},
+				EventStoreConfig: []interface{}{pgEventDns, false, pgdb.ConnectionConfig{}},
+				DataStoreConfig:  []interface{}{pgDns, false, pgdb.ConnectionConfig{}},
 			},
 		},
 	}

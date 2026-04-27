@@ -15,6 +15,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	alertsmanager "github.com/arkade-os/arkd/internal/infrastructure/alertsmanager"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
+	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	"github.com/arkade-os/arkd/internal/infrastructure/feemanager"
 	inmemorylivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/inmemory"
 	redislivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/redis"
@@ -83,6 +84,10 @@ type Config struct {
 	EventDbUrl                string
 	EventDbDir                string
 	PostgresAutoCreateDB      bool
+	PostgresMaxOpenConn       int
+	PostgresMaxIdleConn       int
+	PostgresConnMaxIdleMins   int64
+	PostgresConnMaxLifeMins   int64
 	SessionDuration           int64
 	BanDuration               int64
 	BanThreshold              int64 // number of crimes to trigger a ban
@@ -186,6 +191,10 @@ var (
 	DbType                               = "DB_TYPE"
 	DbUrl                                = "PG_DB_URL"
 	PostgresAutoCreateDB                 = "PG_DB_AUTOCREATE"
+	PostgresMaxOpenConn                  = "PG_DB_MAX_OPEN_CONN"
+	PostgresMaxIdleConn                  = "PG_DB_MAX_IDLE_CONN"
+	PostgresConnMaxIdleMins              = "PG_DB_CONN_MAX_IDLE_MINS"
+	PostgresConnMaxLifeMins              = "PG_DB_CONN_MAX_LIFE_MINS"
 	EventDbUrl                           = "PG_EVENT_DB_URL"
 	TxBuilderType                        = "TX_BUILDER_TYPE"
 	LiveStoreType                        = "LIVE_STORE_TYPE"
@@ -288,6 +297,10 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(Port, DefaultPort)
 	viper.SetDefault(AdminPort, DefaultAdminPort)
 	viper.SetDefault(DbType, defaultDbType)
+	viper.SetDefault(PostgresMaxOpenConn, 50)
+	viper.SetDefault(PostgresMaxIdleConn, 50)
+	viper.SetDefault(PostgresConnMaxIdleMins, 5)
+	viper.SetDefault(PostgresConnMaxLifeMins, 30)
 	viper.SetDefault(NoTLS, defaultNoTLS)
 	viper.SetDefault(LogLevel, defaultLogLevel)
 	viper.SetDefault(SessionDuration, defaultSessionDuration)
@@ -380,6 +393,10 @@ func LoadConfig() (*Config, error) {
 		EventDbDir:                dbPath,
 		EventDbUrl:                eventDbUrl,
 		PostgresAutoCreateDB:      viper.GetBool(PostgresAutoCreateDB),
+		PostgresMaxOpenConn:       viper.GetInt(PostgresMaxOpenConn),
+		PostgresMaxIdleConn:       viper.GetInt(PostgresMaxIdleConn),
+		PostgresConnMaxIdleMins:   viper.GetInt64(PostgresConnMaxIdleMins),
+		PostgresConnMaxLifeMins:   viper.GetInt64(PostgresConnMaxLifeMins),
 		LogLevel:                  viper.GetInt(LogLevel),
 		EsploraURL:                viper.GetString(EsploraURL),
 		AlertManagerURL:           viper.GetString(AlertManagerURL),
@@ -897,7 +914,15 @@ func (c *Config) repoManager() error {
 	case "badger":
 		eventStoreConfig = []interface{}{c.EventDbDir, logger}
 	case "postgres":
-		eventStoreConfig = []interface{}{c.EventDbUrl, c.PostgresAutoCreateDB}
+		eventStoreConfig = []interface{}{
+			c.EventDbUrl,
+			c.PostgresAutoCreateDB,
+			pgdb.ConnectionConfig{
+				MaxOpenConn:         c.PostgresMaxOpenConn,
+				MaxIdleConn:         c.PostgresMaxIdleConn,
+				ConnMaxIdleTimeMins: c.PostgresConnMaxIdleMins,
+				ConnMaxLifetimeMins: c.PostgresConnMaxLifeMins,
+			}}
 	default:
 		return fmt.Errorf("unknown event db type")
 	}
@@ -908,7 +933,15 @@ func (c *Config) repoManager() error {
 	case "sqlite":
 		dataStoreConfig = []interface{}{c.DbDir}
 	case "postgres":
-		dataStoreConfig = []interface{}{c.DbUrl, c.PostgresAutoCreateDB}
+		dataStoreConfig = []interface{}{
+			c.DbUrl,
+			c.PostgresAutoCreateDB,
+			pgdb.ConnectionConfig{
+				MaxOpenConn:         c.PostgresMaxOpenConn,
+				MaxIdleConn:         c.PostgresMaxIdleConn,
+				ConnMaxIdleTimeMins: c.PostgresConnMaxIdleMins,
+				ConnMaxLifetimeMins: c.PostgresConnMaxLifeMins,
+			}}
 	default:
 		return fmt.Errorf("unknown db type")
 	}
