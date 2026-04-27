@@ -89,7 +89,7 @@ func TestGetNewVtxosFromRound_MarkerIDsAndDepth(t *testing.T) {
 		},
 	}
 
-	vtxos := getNewVtxosFromRound(round)
+	vtxos := getNewVtxosFromRound(*round)
 
 	require.Len(t, vtxos, 2)
 
@@ -133,7 +133,7 @@ func TestGetNewVtxosFromRound_EmptyVtxoTree(t *testing.T) {
 		VtxoTree:       nil,
 	}
 
-	vtxos := getNewVtxosFromRound(round)
+	vtxos := getNewVtxosFromRound(*round)
 	require.Nil(t, vtxos)
 }
 
@@ -165,7 +165,7 @@ func TestGetNewVtxosFromRound_SingleOutput(t *testing.T) {
 		},
 	}
 
-	vtxos := getNewVtxosFromRound(round)
+	vtxos := getNewVtxosFromRound(*round)
 	require.Len(t, vtxos, 1)
 
 	vtxo := vtxos[0]

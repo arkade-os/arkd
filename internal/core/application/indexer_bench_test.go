@@ -133,10 +133,12 @@ func (m *benchRepoManager) OffchainTxs() domain.OffchainTxRepository {
 	}
 	return m.offchainRepo
 }
-func (m *benchRepoManager) Convictions() domain.ConvictionRepository { return nil }
-func (m *benchRepoManager) Assets() domain.AssetRepository           { return nil }
-func (m *benchRepoManager) Fees() domain.FeeRepository               { return nil }
-func (m *benchRepoManager) Close()                                   {}
+func (m *benchRepoManager) Convictions() domain.ConvictionRepository              { return nil }
+func (m *benchRepoManager) Assets() domain.AssetRepository                        { return nil }
+func (m *benchRepoManager) Fees() domain.FeeRepository                            { return nil }
+func (m *benchRepoManager) RegisterBatchUpdateHandler(func(data domain.Round))    {}
+func (m *benchRepoManager) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx)) {}
+func (m *benchRepoManager) Close()                                                {}
 
 // benchTxid returns a deterministic 64-char hex txid for index i.
 func benchTxid(i int) string {
@@ -870,6 +872,8 @@ func (m *wrappedRepoManager) OffchainTxs() domain.OffchainTxRepository { return 
 func (m *wrappedRepoManager) Convictions() domain.ConvictionRepository {
 	panic("Convictions: not wired")
 }
-func (m *wrappedRepoManager) Assets() domain.AssetRepository { panic("Assets: not wired") }
-func (m *wrappedRepoManager) Fees() domain.FeeRepository     { panic("Fees: not wired") }
-func (m *wrappedRepoManager) Close()                         {}
+func (m *wrappedRepoManager) Assets() domain.AssetRepository                        { panic("Assets: not wired") }
+func (m *wrappedRepoManager) Fees() domain.FeeRepository                            { panic("Fees: not wired") }
+func (m *wrappedRepoManager) RegisterBatchUpdateHandler(func(data domain.Round))    {}
+func (m *wrappedRepoManager) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx)) {}
+func (m *wrappedRepoManager) Close()                                                {}

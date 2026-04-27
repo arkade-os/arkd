@@ -352,10 +352,12 @@ func (m *mockRepoManagerForIndexer) OffchainTxs() domain.OffchainTxRepository {
 	}
 	return m.offchainTxs
 }
-func (m *mockRepoManagerForIndexer) Convictions() domain.ConvictionRepository { return nil }
-func (m *mockRepoManagerForIndexer) Assets() domain.AssetRepository           { return nil }
-func (m *mockRepoManagerForIndexer) Fees() domain.FeeRepository               { return nil }
-func (m *mockRepoManagerForIndexer) Close()                                   {}
+func (m *mockRepoManagerForIndexer) Convictions() domain.ConvictionRepository              { return nil }
+func (m *mockRepoManagerForIndexer) Assets() domain.AssetRepository                        { return nil }
+func (m *mockRepoManagerForIndexer) Fees() domain.FeeRepository                            { return nil }
+func (m *mockRepoManagerForIndexer) RegisterBatchUpdateHandler(func(data domain.Round))    {}
+func (m *mockRepoManagerForIndexer) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx)) {}
+func (m *mockRepoManagerForIndexer) Close()                                                {}
 
 // newTestIndexer creates a fresh set of mock repos and an indexerService for testing.
 func newChainTestIndexer() (
