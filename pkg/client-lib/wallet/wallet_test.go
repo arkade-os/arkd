@@ -8,15 +8,18 @@ import (
 	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
 	inmemorywalletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/stretchr/testify/require"
 )
 
 const testPassword = "password"
 
+var network = chaincfg.RegressionNetParams
+
 func TestCreate(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		walletSvc := newTestWallet(t)
-		seed, err := walletSvc.Create(t.Context(), testPassword, "")
+		seed, err := walletSvc.Create(t.Context(), network, testPassword, "")
 		require.NoError(t, err)
 		require.NotEmpty(t, seed)
 	})
@@ -62,7 +65,7 @@ func TestLockUnlock(t *testing.T) {
 func TestGetKey(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		walletSvc, seed := newUnlockedTestWallet(t)
-		key, err := walletSvc.GetKey(t.Context())
+		key, err := walletSvc.GetKey(t.Context(), "")
 		require.NoError(t, err)
 		require.NotNil(t, key)
 		require.NotNil(t, key.PubKey)
@@ -88,7 +91,7 @@ func TestGetKey(t *testing.T) {
 				"locked",
 				func(t *testing.T) wallet.WalletService {
 					w := newTestWallet(t)
-					_, err := w.Create(t.Context(), testPassword, "")
+					_, err := w.Create(t.Context(), network, testPassword, "")
 					require.NoError(t, err)
 					return w
 				},
@@ -97,7 +100,7 @@ func TestGetKey(t *testing.T) {
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				key, err := tt.setup(t).GetKey(t.Context())
+				key, err := tt.setup(t).GetKey(t.Context(), "")
 				require.ErrorContains(t, err, tt.expErr)
 				require.Nil(t, key)
 			})
@@ -133,7 +136,7 @@ func TestNewKey(t *testing.T) {
 				"locked",
 				func(t *testing.T) wallet.WalletService {
 					w := newTestWallet(t)
-					_, err := w.Create(t.Context(), testPassword, "")
+					_, err := w.Create(t.Context(), network, testPassword, "")
 					require.NoError(t, err)
 					return w
 				},
@@ -179,7 +182,7 @@ func newUnlockedTestWallet(t *testing.T) (wallet.WalletService, string) {
 	t.Helper()
 	walletSvc := newTestWallet(t)
 	ctx := t.Context()
-	seed, err := walletSvc.Create(ctx, testPassword, "")
+	seed, err := walletSvc.Create(ctx, network, testPassword, "")
 	require.NoError(t, err)
 	_, err = walletSvc.Unlock(ctx, testPassword)
 	require.NoError(t, err)

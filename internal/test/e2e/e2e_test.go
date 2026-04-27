@@ -36,6 +36,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -828,14 +829,7 @@ func TestOffchainTx(t *testing.T) {
 	// The server should accept only one of them and reject the others.
 	t.Run("concurrent submit txs", func(t *testing.T) {
 		ctx := t.Context()
-		explorer, err := mempool_explorer.NewExplorer(
-			"http://localhost:3000", arklib.BitcoinRegTest,
-			mempool_explorer.WithTracker(false),
-		)
-		require.NoError(t, err)
-
 		client := setupClient(t)
-
 		arkdClient := client.Transport()
 
 		privkey, err := btcec.NewPrivateKey()
@@ -847,7 +841,9 @@ func TestOffchainTx(t *testing.T) {
 		wallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
 		require.NoError(t, err)
 
-		_, err = wallet.Create(ctx, password, hex.EncodeToString(privkey.Serialize()))
+		_, err = wallet.Create(
+			ctx, chaincfg.RegressionNetParams, password, hex.EncodeToString(privkey.Serialize()),
+		)
 		require.NoError(t, err)
 
 		_, err = wallet.Unlock(ctx, password)
@@ -967,7 +963,7 @@ func TestOffchainTx(t *testing.T) {
 			// sign the ark transaction
 			encodedArkTx, err := ptx.B64Encode()
 			require.NoError(t, err)
-			signedArkTx, err := wallet.SignTransaction(ctx, explorer, encodedArkTx, nil)
+			signedArkTx, err := wallet.SignTransaction(ctx, encodedArkTx, nil)
 			require.NoError(t, err)
 
 			txs = append(txs, tx{
@@ -1798,7 +1794,7 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, aliceAddr)
 
-	aliceKey, err := alice.Wallet().GetKey(ctx)
+	aliceKey, err := alice.Wallet().GetKey(ctx, "")
 	require.NoError(t, err)
 	require.NotNil(t, aliceKey.PubKey)
 
@@ -1811,7 +1807,7 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NotNil(t, bobWallet)
 	require.NotNil(t, bobPubKey)
 
-	bobTreeSigner, err := bobWallet.NewVtxoTreeSigner(ctx, "m/0/1")
+	bobTreeSigner, err := bobWallet.NewVtxoTreeSigner(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, bobTreeSigner)
 
@@ -2085,7 +2081,9 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	bobWallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
 	require.NoError(t, err)
 
-	_, err = bobWallet.Create(ctx, password, hex.EncodeToString(bobPrivKey.Serialize()))
+	_, err = bobWallet.Create(
+		ctx, chaincfg.RegressionNetParams, password, hex.EncodeToString(bobPrivKey.Serialize()),
+	)
 	require.NoError(t, err)
 
 	_, err = bobWallet.Unlock(ctx, password)
@@ -2242,17 +2240,11 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	explorer, err := mempool_explorer.NewExplorer(
-		"http://localhost:3000", arklib.BitcoinRegTest,
-		mempool_explorer.WithTracker(false),
-	)
-	require.NoError(t, err)
-
 	encodedVirtualTx, err := ptx.B64Encode()
 	require.NoError(t, err)
 
 	// Sign the transaction
-	signedTx, err := bobWallet.SignTransaction(ctx, explorer, encodedVirtualTx, nil)
+	signedTx, err := bobWallet.SignTransaction(ctx, encodedVirtualTx, nil)
 	require.NoError(t, err)
 
 	checkpoints := make([]string, 0, len(checkpointsPtx))
@@ -2276,7 +2268,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 
 	finalCheckpoints := make([]string, 0, len(signedCheckpoints))
 	for _, checkpoint := range signedCheckpoints {
-		finalCheckpoint, err := bobWallet.SignTransaction(ctx, explorer, checkpoint, nil)
+		finalCheckpoint, err := bobWallet.SignTransaction(ctx, checkpoint, nil)
 		require.NoError(t, err)
 		finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
 	}
@@ -2303,7 +2295,9 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	bobWallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
 	require.NoError(t, err)
 
-	_, err = bobWallet.Create(ctx, password, hex.EncodeToString(bobPrivKey.Serialize()))
+	_, err = bobWallet.Create(
+		ctx, chaincfg.RegressionNetParams, password, hex.EncodeToString(bobPrivKey.Serialize()),
+	)
 	require.NoError(t, err)
 
 	_, err = bobWallet.Unlock(ctx, password)
@@ -2475,12 +2469,6 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	explorer, err := mempool_explorer.NewExplorer(
-		"http://localhost:3000", arklib.BitcoinRegTest,
-		mempool_explorer.WithTracker(false),
-	)
-	require.NoError(t, err)
-
 	// Add condition witness to the ark tx that reveals the preimage
 	err = txutils.SetArkPsbtField(
 		arkPtx,
@@ -2494,7 +2482,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Sign the transaction
-	signedTx, err := bobWallet.SignTransaction(ctx, explorer, encodedVirtualTx, nil)
+	signedTx, err := bobWallet.SignTransaction(ctx, encodedVirtualTx, nil)
 	require.NoError(t, err)
 
 	checkpoints := make([]string, 0, len(checkpointsPtx))
@@ -2524,7 +2512,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		encoded, err := ptx.B64Encode()
 		require.NoError(t, err)
 
-		finalCheckpoint, err := bobWallet.SignTransaction(ctx, explorer, encoded, nil)
+		finalCheckpoint, err := bobWallet.SignTransaction(ctx, encoded, nil)
 		require.NoError(t, err)
 		finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
 	}
@@ -2859,7 +2847,8 @@ func TestReactToFraud(t *testing.T) {
 			bobWallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
 			require.NoError(t, err)
 
-			_, err = bobWallet.Create(ctx, password, hex.EncodeToString(bobPrivKey.Serialize()))
+			bobKey := hex.EncodeToString(bobPrivKey.Serialize())
+			_, err = bobWallet.Create(ctx, chaincfg.RegressionNetParams, password, bobKey)
 			require.NoError(t, err)
 
 			_, err = bobWallet.Unlock(ctx, password)
@@ -3049,7 +3038,7 @@ func TestReactToFraud(t *testing.T) {
 			encodedArkTx, err := ptx.B64Encode()
 			require.NoError(t, err)
 
-			signedTx, err := bobWallet.SignTransaction(ctx, explorer, encodedArkTx, nil)
+			signedTx, err := bobWallet.SignTransaction(ctx, encodedArkTx, nil)
 			require.NoError(t, err)
 
 			checkpoints := make([]string, 0, len(checkpointsPtx))
@@ -3072,7 +3061,7 @@ func TestReactToFraud(t *testing.T) {
 
 			finalCheckpoints := make([]string, 0, len(signedCheckpoints))
 			for _, checkpoint := range signedCheckpoints {
-				finalCheckpoint, err := bobWallet.SignTransaction(ctx, explorer, checkpoint, nil)
+				finalCheckpoint, err := bobWallet.SignTransaction(ctx, checkpoint, nil)
 				require.NoError(t, err)
 				finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
 			}

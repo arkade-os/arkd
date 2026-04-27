@@ -303,7 +303,7 @@ func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, e
 
 	password := "password"
 	ctx := t.Context()
-	_, err = wallet.Create(ctx, password, privkeyHex)
+	_, err = wallet.Create(ctx, chaincfg.RegressionNetParams, password, privkeyHex)
 	require.NoError(t, err)
 
 	_, err = wallet.Unlock(ctx, password)

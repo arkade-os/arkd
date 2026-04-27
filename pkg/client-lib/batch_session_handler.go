@@ -698,7 +698,7 @@ func (h *defaultBatchEventsHandler) OnBatchFinalization(
 			return nil, err
 		}
 
-		signedCommitmentTx, err = h.wallet.SignTransaction(ctx, h.explorer, b64, h.keysByScript)
+		signedCommitmentTx, err = h.wallet.SignTransaction(ctx, b64, h.keysByScript)
 		if err != nil {
 			return nil, err
 		}
@@ -910,7 +910,7 @@ func (h *defaultBatchEventsHandler) createAndSignForfeits(
 			return nil, err
 		}
 
-		signedForfeitTx, err := h.wallet.SignTransaction(ctx, h.explorer, b64, h.keysByScript)
+		signedForfeitTx, err := h.wallet.SignTransaction(ctx, b64, h.keysByScript)
 		if err != nil {
 			return nil, err
 		}

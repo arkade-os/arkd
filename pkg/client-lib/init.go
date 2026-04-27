@@ -22,10 +22,6 @@ func (a *service) Init(ctx context.Context, args InitArgs) error {
 		return fmt.Errorf("wallet not initialized")
 	}
 
-	if _, err := a.wallet.Create(ctx, args.Password, args.Seed); err != nil {
-		return err
-	}
-
 	return a.init(ctx, args.parse(), args.Explorer)
 }
 
@@ -60,6 +56,12 @@ func (a *service) init(
 	}
 
 	network := utils.NetworkFromString(info.Network)
+
+	if _, err := a.wallet.Create(
+		ctx, utils.ToBitcoinNetwork(network), args.password, args.seed,
+	); err != nil {
+		return err
+	}
 
 	signerPubkey, err := ecPubkeyFromHex(info.SignerPubKey)
 	if err != nil {

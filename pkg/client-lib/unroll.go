@@ -14,6 +14,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	"github.com/arkade-os/arkd/pkg/client-lib/redemption"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -304,12 +305,37 @@ func (a *service) bumpAnchorTx(
 
 	ptx.Inputs[0].WitnessUtxo = txutils.AnchorOutput()
 
+	for i, utxo := range selectedCoins {
+		pkScript, err := hex.DecodeString(utxo.Script)
+		if err != nil {
+			return "", "", err
+		}
+		var keyID string
+		if len(keys) > 0 {
+			id, ok := keys[utxo.Script]
+			if !ok {
+				return "", "", fmt.Errorf("no signing key for utxo %s:%d", utxo.Txid, utxo.Vout)
+			}
+			keyID = id
+		}
+		keyRef, err := a.wallet.GetKey(ctx, keyID)
+		if err != nil {
+			return "", "", err
+		}
+
+		ptx.Inputs[i+1].WitnessUtxo = &wire.TxOut{
+			Value:    int64(utxo.Amount),
+			PkScript: pkScript,
+		}
+		ptx.Inputs[i+1].TaprootInternalKey = schnorr.SerializePubKey(keyRef.PubKey)
+	}
+
 	b64, err := ptx.B64Encode()
 	if err != nil {
 		return "", "", err
 	}
 
-	tx, err := a.wallet.SignTransaction(ctx, a.explorer, b64, keys)
+	tx, err := a.wallet.SignTransaction(ctx, b64, keys)
 	if err != nil {
 		return "", "", err
 	}
@@ -399,7 +425,7 @@ func (a *service) completeUnroll(
 
 	unsignedTx, _ := ptx.B64Encode()
 
-	signedTx, err := a.wallet.SignTransaction(ctx, a.explorer, unsignedTx, opts.signingKeys)
+	signedTx, err := a.wallet.SignTransaction(ctx, unsignedTx, opts.signingKeys)
 	if err != nil {
 		return "", err
 	}
@@ -489,7 +515,7 @@ func (a *service) sendExpiredBoardingUtxos(
 
 	unsignedTx, _ := ptx.B64Encode()
 
-	signedTx, err := a.wallet.SignTransaction(ctx, a.explorer, unsignedTx, opts.signingKeys)
+	signedTx, err := a.wallet.SignTransaction(ctx, unsignedTx, opts.signingKeys)
 	if err != nil {
 		return "", err
 	}
@@ -583,6 +609,11 @@ func (a *service) addInputs(
 			return err
 		}
 
+		pkScript, err := hex.DecodeString(utxo.Script)
+		if err != nil {
+			return err
+		}
+
 		updater.Upsbt.UnsignedTx.AddTxIn(&wire.TxIn{
 			PreviousOutPoint: wire.OutPoint{
 				Hash:  *previousHash,
@@ -615,6 +646,10 @@ func (a *service) addInputs(
 		}
 
 		updater.Upsbt.Inputs = append(updater.Upsbt.Inputs, psbt.PInput{
+			WitnessUtxo: &wire.TxOut{
+				Value:    int64(utxo.Amount),
+				PkScript: pkScript,
+			},
 			TaprootLeafScript: []*psbt.TaprootTapLeafScript{
 				{
 					ControlBlock: leafProof.ControlBlock,

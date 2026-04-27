@@ -10,6 +10,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	walletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chaincfg"
 )
 
 type singlekeyWallet struct {
@@ -23,7 +24,7 @@ func (w *singlekeyWallet) GetType() string {
 }
 
 func (w *singlekeyWallet) Create(
-	_ context.Context, password, seed string,
+	_ context.Context, _ chaincfg.Params, password, seed string,
 ) (string, error) {
 	var privateKey *btcec.PrivateKey
 	if len(seed) <= 0 {
@@ -106,6 +107,10 @@ func (w *singlekeyWallet) Unlock(
 
 func (w *singlekeyWallet) IsLocked() bool {
 	return w.privateKey == nil
+}
+
+func (w *singlekeyWallet) NextIndex(_ context.Context) (uint32, error) {
+	return 0, nil
 }
 
 func (w *singlekeyWallet) Dump(ctx context.Context) (string, error) {

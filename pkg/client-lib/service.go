@@ -253,7 +253,7 @@ func (a *service) SignTransaction(
 		}
 	}
 
-	return a.wallet.SignTransaction(ctx, a.explorer, tx, o.signingKeys)
+	return a.wallet.SignTransaction(ctx, tx, o.signingKeys)
 }
 
 func (a *service) safeCheck() error {

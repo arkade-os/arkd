@@ -597,10 +597,7 @@ func (a *service) handleOptions(
 			})
 		}
 
-		signerSession, err := a.wallet.NewVtxoTreeSigner(
-			context.Background(),
-			inputsToDerivationPath(outpoints, notesInputs),
-		)
+		signerSession, err := a.wallet.NewVtxoTreeSigner(context.Background())
 		if err != nil {
 			return nil, nil, err
 		}
@@ -776,9 +773,7 @@ func (a *service) makeIntent(
 		return "", "", err
 	}
 
-	signedTx, err := a.wallet.SignTransaction(
-		context.Background(), a.explorer, unsignedProofTx, keysByScript,
-	)
+	signedTx, err := a.wallet.SignTransaction(context.Background(), unsignedProofTx, keysByScript)
 	if err != nil {
 		return "", "", err
 	}

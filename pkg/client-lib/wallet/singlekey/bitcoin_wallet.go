@@ -9,7 +9,6 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
-	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	walletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -17,7 +16,6 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/vulpemventures/go-bip32"
 )
 
 type bitcoinWallet struct {
@@ -37,18 +35,14 @@ func NewBitcoinWallet(walletStore walletstore.WalletStore) (wallet.WalletService
 	}, nil
 }
 
-func (w *bitcoinWallet) NewKey(
-	ctx context.Context, opts ...wallet.KeyOption,
-) (*wallet.KeyRef, error) {
+func (w *bitcoinWallet) NewKey(ctx context.Context) (*wallet.KeyRef, error) {
 	if w.walletData == nil {
 		return nil, fmt.Errorf("wallet not initialized")
 	}
 	return &wallet.KeyRef{PubKey: w.walletData.PubKey}, nil
 }
 
-func (w *bitcoinWallet) GetKey(
-	ctx context.Context, opts ...wallet.KeyOption,
-) (*wallet.KeyRef, error) {
+func (w *bitcoinWallet) GetKey(ctx context.Context, _ string) (*wallet.KeyRef, error) {
 	if w.walletData == nil {
 		return nil, fmt.Errorf("wallet not initialized")
 	}
@@ -56,14 +50,14 @@ func (w *bitcoinWallet) GetKey(
 }
 
 func (w *bitcoinWallet) ListKeys(ctx context.Context) ([]wallet.KeyRef, error) {
-	key, err := w.GetKey(ctx)
+	key, err := w.GetKey(ctx, "")
 	if err != nil {
 		return nil, err
 	}
 	return []wallet.KeyRef{*key}, nil
 }
 func (s *bitcoinWallet) SignTransaction(
-	ctx context.Context, explorerSvc explorer.Explorer, tx string, _ map[string]string,
+	ctx context.Context, tx string, _ map[string]string,
 ) (string, error) {
 	if s.walletData == nil {
 		return "", fmt.Errorf("wallet not initialized")
@@ -83,43 +77,24 @@ func (s *bitcoinWallet) SignTransaction(
 		return "", err
 	}
 
-	for i, input := range updater.Upsbt.UnsignedTx.TxIn {
-		if updater.Upsbt.Inputs[i].WitnessUtxo != nil {
-			continue
-		}
-
-		prevoutTxHex, err := explorerSvc.GetTxHex(input.PreviousOutPoint.Hash.String())
-		if err != nil {
-			return "", err
-		}
-
-		var prevoutTx wire.MsgTx
-
-		if err := prevoutTx.Deserialize(hex.NewDecoder(strings.NewReader(prevoutTxHex))); err != nil {
-			return "", err
-		}
-
-		utxo := prevoutTx.TxOut[input.PreviousOutPoint.Index]
-		if utxo == nil {
-			return "", fmt.Errorf("witness utxo not found")
-		}
-
-		if err := updater.AddInWitnessUtxo(utxo, i); err != nil {
-			return "", err
-		}
-	}
-
 	prevouts := make(map[wire.OutPoint]*wire.TxOut)
-
-	for i, input := range updater.Upsbt.Inputs {
+	for i := range updater.Upsbt.Inputs {
+		in := updater.Upsbt.Inputs[i]
 		outpoint := updater.Upsbt.UnsignedTx.TxIn[i].PreviousOutPoint
-		prevouts[outpoint] = input.WitnessUtxo
+		switch {
+		case in.WitnessUtxo != nil:
+			prevouts[outpoint] = in.WitnessUtxo
+		case in.NonWitnessUtxo != nil && int(outpoint.Index) < len(in.NonWitnessUtxo.TxOut):
+			prevouts[outpoint] = in.NonWitnessUtxo.TxOut[outpoint.Index]
+		default:
+			return "", fmt.Errorf(
+				"input %d: missing prevout (WitnessUtxo or NonWitnessUtxo) for %s:%d",
+				i, outpoint.Hash, outpoint.Index,
+			)
+		}
 	}
 
-	prevoutFetcher := txscript.NewMultiPrevOutFetcher(
-		prevouts,
-	)
-
+	prevoutFetcher := txscript.NewMultiPrevOutFetcher(prevouts)
 	txsighashes := txscript.NewTxSigHashes(updater.Upsbt.UnsignedTx, prevoutFetcher)
 
 	onchainPkScript, err := script.P2TRScript(
@@ -291,9 +266,7 @@ func (w *bitcoinWallet) signTaprootKeySpend(
 	return nil
 }
 
-func (w *bitcoinWallet) NewVtxoTreeSigner(
-	ctx context.Context, derivationPath string,
-) (tree.SignerSession, error) {
+func (w *bitcoinWallet) NewVtxoTreeSigner(ctx context.Context) (tree.SignerSession, error) {
 	if w.walletData == nil {
 		return nil, fmt.Errorf("wallet not initialized")
 	}
@@ -301,44 +274,11 @@ func (w *bitcoinWallet) NewVtxoTreeSigner(
 		return nil, fmt.Errorf("wallet is locked")
 	}
 
-	if len(derivationPath) == 0 {
-		return nil, fmt.Errorf("derivation path is required")
-	}
-
-	// convert private key to BIP32 master key format
-	// TODO UNSAFE ?
-	privKeyBytes := w.privateKey.Serialize()
-	masterKey, err := bip32.NewMasterKey(privKeyBytes)
+	key, err := btcec.NewPrivateKey()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create master key: %w", err)
+		return nil, err
 	}
-
-	paths := strings.Split(strings.TrimPrefix(derivationPath, "m/"), "/")
-	currentKey := masterKey
-
-	for _, pathComponent := range paths {
-		index := uint32(0)
-		isHardened := strings.HasSuffix(pathComponent, "'")
-		if isHardened {
-			pathComponent = strings.TrimSuffix(pathComponent, "'")
-		}
-
-		if _, err := fmt.Sscanf(pathComponent, "%d", &index); err != nil {
-			return nil, fmt.Errorf("invalid path component %s: %w", pathComponent, err)
-		}
-
-		if isHardened {
-			index += bip32.FirstHardenedChild
-		}
-
-		currentKey, err = currentKey.NewChildKey(index)
-		if err != nil {
-			return nil, fmt.Errorf("failed to derive child key: %w", err)
-		}
-	}
-
-	derivedPrivKey, _ := btcec.PrivKeyFromBytes(currentKey.Key)
-	return tree.NewTreeSignerSession(derivedPrivKey), nil
+	return tree.NewTreeSignerSession(key), nil
 }
 
 func (w *bitcoinWallet) SignMessage(
