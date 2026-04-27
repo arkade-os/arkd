@@ -10,11 +10,11 @@ import (
 // x-only pubkey
 
 var (
-	pubkey       = "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967"
-	proof        = "proof"
-	message      = "message"
-	leafTxPacket = "assetpacket"
-	inputs       = []domain.Vtxo{
+	pubkey          = "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967"
+	proof           = "proof"
+	message         = "message"
+	leafTxExtension = "6a1341524b000e01020200000001010000c0de810a"
+	inputs          = []domain.Vtxo{
 		{
 			Outpoint: domain.Outpoint{
 				Txid: "0000000000000000000000000000000000000000000000000000000000000000",
@@ -29,7 +29,7 @@ var (
 func TestIntent(t *testing.T) {
 	t.Run("new_intent", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
-			t.Run("without leaf tx packet", func(t *testing.T) {
+			t.Run("without extension", func(t *testing.T) {
 				intent, err := domain.NewIntent(txid, proof, message, inputs, "")
 				require.NoError(t, err)
 				require.NotNil(t, intent)
@@ -37,8 +37,8 @@ func TestIntent(t *testing.T) {
 				require.Exactly(t, inputs, intent.Inputs)
 				require.Empty(t, intent.Receivers)
 			})
-			t.Run("with leaf tx packet", func(t *testing.T) {
-				intent, err := domain.NewIntent(txid, proof, message, inputs, leafTxPacket)
+			t.Run("with extension", func(t *testing.T) {
+				intent, err := domain.NewIntent(txid, proof, message, inputs, leafTxExtension)
 				require.NoError(t, err)
 				require.NotNil(t, intent)
 				require.NotEmpty(t, intent.Id)

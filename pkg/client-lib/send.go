@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,6 +31,15 @@ func (a *service) SendOffChain(
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
+	// Parse opts here so SendOffChain can read extraExtensionPackets;
+	// createOffchainTx parses opts again for its own settings.
+	sendOpts := newDefaultSendOptions()
+	for _, opt := range opts {
+		if err := opt(sendOpts); err != nil {
+			return nil, err
+		}
+	}
+
 	baseArkTx, checkpointTxs, selectedCoins, changeReceiver, err := a.createOffchainTx(
 		ctx, receivers, opts...,
 	)
@@ -49,7 +59,7 @@ func (a *service) SendOffChain(
 		return nil, err
 	}
 
-	if err := addAssetPacket(arkPtx, assetPacket); err != nil {
+	if err := addExtension(arkPtx, assetPacket, sendOpts.extraPackets); err != nil {
 		return nil, err
 	}
 
@@ -97,13 +107,19 @@ func (a *service) SendOffChain(
 		outs = append(outs, *changeReceiver)
 	}
 
+	ext := make(extension.Extension, 0, 1+len(sendOpts.extraPackets))
+	if len(assetPacket) > 0 {
+		ext = append(ext, assetPacket)
+	}
+	ext = append(ext, sendOpts.extraPackets...)
+
 	return &SendOffChainRes{
 		Txid:        txid,
 		Tx:          signedArkTx,
 		Checkpoints: checkpointTxs,
 		Inputs:      ins,
 		Outputs:     outs,
-		Extension:   extension.Extension{assetPacket},
+		Extension:   ext,
 	}, nil
 }
 
@@ -163,29 +179,34 @@ func (a *service) createOffchainTx(
 	}
 
 	vtxos := make([]types.VtxoWithTapTree, 0)
-	spendableVtxos, err := a.getSpendableVtxos(ctx, &getVtxosFilter{
-		withoutExpirySorting: options.withoutExpirySorting,
-	})
-	if err != nil {
-		return "", nil, nil, nil, err
-	}
 
-	for _, offchainAddr := range offchainAddrs {
-		for _, v := range spendableVtxos {
-			if v.IsRecoverable() {
-				continue
-			}
+	if len(options.vtxos) > 0 {
+		vtxos = slices.Clone(options.vtxos)
+	} else {
+		spendableVtxos, err := a.getSpendableVtxos(ctx, &getVtxosFilter{
+			withoutExpirySorting: options.withoutExpirySorting,
+		})
+		if err != nil {
+			return "", nil, nil, nil, err
+		}
 
-			vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
-			if err != nil {
-				return "", nil, nil, nil, err
-			}
-
-			if vtxoAddr == offchainAddr.Address {
-				vtxos = append(vtxos, types.VtxoWithTapTree{
-					Vtxo:       v,
-					Tapscripts: offchainAddr.Tapscripts,
-				})
+		for _, offchainAddr := range offchainAddrs {
+			for _, v := range spendableVtxos {
+				if v.IsRecoverable() {
+					continue
+				}
+	
+				vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
+				if err != nil {
+					return "", nil, nil, nil, err
+				}
+	
+				if vtxoAddr == offchainAddr.Address {
+					vtxos = append(vtxos, types.VtxoWithTapTree{
+						Vtxo:       v,
+						Tapscripts: offchainAddr.Tapscripts,
+					})
+				}
 			}
 		}
 	}

@@ -1064,7 +1064,8 @@ func (b *txBuilder) VerifyBoardingTapscriptSigs(
 	ins, err := script.VerifyTapscriptSigs(
 		ptx,
 		prevoutFetcher,
-		[]*btcec.PublicKey{signerPubkey},
+		script.WithSkipPublicKeys(signerPubkey),
+		script.WithSkipUnsignedInputs(),
 	)
 	if err != nil {
 		return nil, err

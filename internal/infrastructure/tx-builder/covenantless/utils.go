@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
-	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -81,19 +79,10 @@ func getOutputVtxosLeaves(
 			}
 		}
 
-		if len(intent.LeafTxAssetPacket) > 0 {
-			assetPacket, err := asset.NewPacketFromString(intent.LeafTxAssetPacket)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse asset packet: %s", err)
-			}
-
-			assetPacketOut, err := extension.Extension{assetPacket}.TxOut()
-			if err != nil {
-				return nil, fmt.Errorf("failed to get asset packet output: %s", err)
-			}
+		if len(intent.LeafTxExtension) > 0 {
 			leafOutputs = append(leafOutputs, tree.LeafOutput{
-				Amount: uint64(assetPacketOut.Value),
-				Script: hex.EncodeToString(assetPacketOut.PkScript),
+				Amount: 0,
+				Script: intent.LeafTxExtension,
 			})
 		}
 

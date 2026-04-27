@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"sort"
 	"sync"
 	"time"
@@ -475,6 +476,7 @@ func (i *service) vtxosToTxs(
 			Type:      types.TxReceived,
 			CreatedAt: vtxo.CreatedAt,
 			SettledBy: settledBy,
+			Assets:    NetVtxoAssets([]types.Vtxo{vtxo}, append(settleVtxos, spentVtxos...)),
 		})
 	}
 
@@ -523,6 +525,7 @@ func (i *service) vtxosToTxs(
 				Amount:    forfeitAmount - resultedAmount,
 				Type:      types.TxSent,
 				CreatedAt: vtxo.CreatedAt,
+				Assets:    NetVtxoAssets(vtxosBySettledBy[sb], resultedVtxos),
 			})
 		}
 	}
@@ -565,8 +568,63 @@ func (i *service) vtxosToTxs(
 			Type:      types.TxSent,
 			CreatedAt: vtxo.CreatedAt,
 			SettledBy: vtxo.SettledBy,
+			Assets:    NetVtxoAssets(vtxosBySpentBy[sb], resultedVtxos),
 		})
 	}
 
 	return txs, nil
+}
+
+// NetVtxoAssets returns the per-asset balance for a vtxo movement:
+// assets found in `gross` minus the portion in `subtract` that effectively
+// stayed in the wallet (change, already-owned vtxos, etc.).
+//
+// The output preserves asset-id order as first encountered in `gross`, drops
+// zero-net assets, and returns nil when there is no asset data (common pure-BTC
+// case).
+//
+// It is exported so that external SDKs reproducing the same vtxosToTxs
+// reconstruction (e.g. go-sdk) can derive Transaction.Assets with identical
+// semantics, rather than keeping a parallel copy of the helper.
+func NetVtxoAssets(gross, subtract []types.Vtxo) []types.Asset {
+	grossSums, order := sumVtxoAssets(gross)
+	if len(order) == 0 {
+		return nil
+	}
+	subSums, _ := sumVtxoAssets(subtract)
+	out := make([]types.Asset, 0, len(order))
+	zero := new(big.Int)
+	for _, id := range order {
+		g := grossSums[id]
+		s := subSums[id]
+		if s == nil {
+			s = zero
+		}
+		if g.Cmp(s) > 0 {
+			diff := new(big.Int).Sub(g, s)
+			out = append(out, types.Asset{AssetId: id, Amount: diff.Uint64()})
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// sumVtxoAssets aggregates per-asset amounts across the given vtxos, returning
+// a map of asset id → total amount together with the asset ids in first-seen
+// order (useful for deterministic output).
+func sumVtxoAssets(vtxos []types.Vtxo) (map[string]*big.Int, []string) {
+	sums := make(map[string]*big.Int)
+	order := make([]string, 0)
+	for _, v := range vtxos {
+		for _, a := range v.Assets {
+			if _, seen := sums[a.AssetId]; !seen {
+				sums[a.AssetId] = new(big.Int)
+				order = append(order, a.AssetId)
+			}
+			sums[a.AssetId].Add(sums[a.AssetId], new(big.Int).SetUint64(a.Amount))
+		}
+	}
+	return sums, order
 }

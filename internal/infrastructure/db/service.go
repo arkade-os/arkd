@@ -99,16 +99,18 @@ type ServiceConfig struct {
 }
 
 type service struct {
-	eventStore            domain.EventRepository
-	roundStore            domain.RoundRepository
-	vtxoStore             domain.VtxoRepository
-	markerStore           domain.MarkerRepository
-	scheduledSessionStore domain.ScheduledSessionRepo
-	offchainTxStore       domain.OffchainTxRepository
-	convictionStore       domain.ConvictionRepository
-	assetStore            domain.AssetRepository
-	intentFeesStore       domain.FeeRepository
-	txDecoder             ports.TxDecoder
+	eventStore              domain.EventRepository
+	roundStore              domain.RoundRepository
+	vtxoStore               domain.VtxoRepository
+	markerStore             domain.MarkerRepository
+	scheduledSessionStore   domain.ScheduledSessionRepo
+	offchainTxStore         domain.OffchainTxRepository
+	convictionStore         domain.ConvictionRepository
+	assetStore              domain.AssetRepository
+	intentFeesStore         domain.FeeRepository
+	txDecoder               ports.TxDecoder
+	batchUpdateHandler      *updateHandler[domain.Round]
+	offchainTxUpdateHandler *updateHandler[domain.OffchainTx]
 }
 
 func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoManager, error) {
@@ -167,7 +169,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to open event store: %s", err)
 		}
 	case "postgres":
-		if len(config.EventStoreConfig) != 2 {
+		if len(config.EventStoreConfig) != 3 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
 		}
 
@@ -181,7 +183,12 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("invalid autocreate flag for postgres")
 		}
 
-		db, err := pgdb.OpenDb(dsn, autoCreate)
+		connectionCfg, ok := config.EventStoreConfig[2].(pgdb.ConnectionConfig)
+		if !ok {
+			return nil, fmt.Errorf("invalid connection config flags for postgres")
+		}
+
+		db, err := pgdb.OpenDb(dsn, autoCreate, pgdb.WithConnectionConfig(connectionCfg))
 		if err != nil {
 			return nil, fmt.Errorf("failed to open postgres db: %s", err)
 		}
@@ -243,7 +250,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		}
 
 	case "postgres":
-		if len(config.DataStoreConfig) != 2 {
+		if len(config.DataStoreConfig) != 3 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
 		}
 
@@ -257,7 +264,12 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("invalid autocreate flag for postgres")
 		}
 
-		db, err := pgdb.OpenDb(dsn, autoCreate)
+		connectionCfg, ok := config.DataStoreConfig[2].(pgdb.ConnectionConfig)
+		if !ok {
+			return nil, fmt.Errorf("invalid connection config flags for postgres")
+		}
+
+		db, err := pgdb.OpenDb(dsn, autoCreate, pgdb.WithConnectionConfig(connectionCfg))
 		if err != nil {
 			return nil, fmt.Errorf("failed to open postgres db: %s", err)
 		}
@@ -397,16 +409,18 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	}
 
 	svc := &service{
-		eventStore:            eventStore,
-		roundStore:            roundStore,
-		vtxoStore:             vtxoStore,
-		markerStore:           markerStore,
-		scheduledSessionStore: scheduledSessionStore,
-		offchainTxStore:       offchainTxStore,
-		txDecoder:             txDecoder,
-		convictionStore:       convictionStore,
-		assetStore:            assetStore,
-		intentFeesStore:       intentFeesStore,
+		eventStore:              eventStore,
+		roundStore:              roundStore,
+		vtxoStore:               vtxoStore,
+		markerStore:             markerStore,
+		scheduledSessionStore:   scheduledSessionStore,
+		offchainTxStore:         offchainTxStore,
+		txDecoder:               txDecoder,
+		convictionStore:         convictionStore,
+		assetStore:              assetStore,
+		intentFeesStore:         intentFeesStore,
+		batchUpdateHandler:      newUpdateHandler[domain.Round](),
+		offchainTxUpdateHandler: newUpdateHandler[domain.OffchainTx](),
 	}
 
 	// Register handlers that take care of keeping the projection store up-to-date.
@@ -456,6 +470,14 @@ func (s *service) Fees() domain.FeeRepository {
 	return s.intentFeesStore
 }
 
+func (s *service) RegisterBatchUpdateHandler(handler func(data domain.Round)) {
+	s.batchUpdateHandler.set(handler)
+}
+
+func (s *service) RegisterOffchainTxUpdateHandler(handler func(data domain.OffchainTx)) {
+	s.offchainTxUpdateHandler.set(handler)
+}
+
 func (s *service) Close() {
 	s.eventStore.Close()
 	s.roundStore.Close()
@@ -498,6 +520,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 				"round %s fully swept", round.Id,
 			)
 		}
+		go s.batchUpdateHandler.dispatch(*round)
 		return
 	}
 
@@ -547,6 +570,8 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 			break
 		}
 	}
+
+	go s.batchUpdateHandler.dispatch(*round)
 }
 
 func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) {
@@ -729,6 +754,8 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			}
 		}
 	}
+
+	go s.offchainTxUpdateHandler.dispatch(*offchainTx)
 }
 
 func getSpentVtxoKeysFromRound(

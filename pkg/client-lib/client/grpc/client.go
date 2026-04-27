@@ -48,6 +48,7 @@ func NewClient(serverUrl string) (client.TransportClient, error) {
 	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
 		grpc.WithDisableServiceConfig(),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(20 << 20)),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff: backoff.Config{
 				BaseDelay:  1 * time.Second,

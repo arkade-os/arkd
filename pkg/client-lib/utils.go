@@ -777,22 +777,43 @@ func createAssetPacket(
 	return asset.NewPacket(assetGroups)
 }
 
-// addAssetPacket adds the asset packet output to the given partial tx by keeping the P2A output as
-// the very last one.
-func addAssetPacket(ptx *psbt.Packet, assetPacket asset.Packet) error {
-	if len(assetPacket) == 0 {
+// addExtension inserts an extension OP_RETURN (asset packet + extras) right
+// before the P2A anchor output, which remains last. If both assetPacket and
+// extraPkts are empty it is a no-op. Duplicate packet types are rejected.
+func addExtension(
+	ptx *psbt.Packet, assetPacket asset.Packet, extraPkts []extension.Packet,
+) error {
+	// Nothing to add when we have neither an asset packet nor extras.
+	if len(assetPacket) == 0 && len(extraPkts) == 0 {
 		return nil
 	}
 
-	packetOut, err := extension.Extension{assetPacket}.TxOut()
+	pkts := make([]extension.Packet, 0, 1+len(extraPkts))
+	if len(assetPacket) > 0 {
+		pkts = append(pkts, assetPacket)
+	}
+	pkts = append(pkts, extraPkts...)
+
+	ext, err := extension.NewExtensionFromPackets(pkts...)
 	if err != nil {
 		return err
 	}
-	// add the asset packet output, P2A should stay as last output
-	ptx.Outputs = append(ptx.Outputs, psbt.POutput{})
-	p2aOutput := ptx.UnsignedTx.TxOut[len(ptx.UnsignedTx.TxOut)-1]
-	ptx.UnsignedTx.TxOut[len(ptx.UnsignedTx.TxOut)-1] = packetOut
-	ptx.UnsignedTx.TxOut = append(ptx.UnsignedTx.TxOut, p2aOutput)
+
+	packetOut, err := ext.TxOut()
+	if err != nil {
+		return fmt.Errorf("building extension txout: %w", err)
+	}
+	// Insert the extension output immediately before the P2A anchor, keeping
+	// ptx.Outputs[i] aligned with ptx.UnsignedTx.TxOut[i]. The anchor's own
+	// PSBT-level metadata must follow its TxOut to the new last index; the
+	// fresh empty POutput goes next to the EXT TxOut.
+	lastIdx := len(ptx.UnsignedTx.TxOut) - 1
+	p2aTxOut := ptx.UnsignedTx.TxOut[lastIdx]
+	p2aPOutput := ptx.Outputs[lastIdx]
+	ptx.UnsignedTx.TxOut[lastIdx] = packetOut
+	ptx.Outputs[lastIdx] = psbt.POutput{}
+	ptx.UnsignedTx.TxOut = append(ptx.UnsignedTx.TxOut, p2aTxOut)
+	ptx.Outputs = append(ptx.Outputs, p2aPOutput)
 	return nil
 }
 

@@ -16,18 +16,69 @@ import (
 )
 
 const (
-	driverName = "postgres"
-	maxRetries = 5
+	driverName                 = "postgres"
+	maxRetries                 = 5
+	defaultMaxOpenConns        = 50
+	defaultMaxIdleConns        = 50
+	defaultConnMaxIdleTimeMins = 5
+	defaultConnMaxLifetimeMins = 30
 )
 
+type ConnectionConfig struct {
+	MaxOpenConn         int
+	MaxIdleConn         int
+	ConnMaxIdleTimeMins int64
+	ConnMaxLifetimeMins int64
+}
+
+type Option func(*ConnectionConfig)
+
+func WithConnectionConfig(cfg ConnectionConfig) Option {
+	return func(c *ConnectionConfig) {
+		if cfg.MaxOpenConn > 0 {
+			c.MaxOpenConn = cfg.MaxOpenConn
+		}
+		if cfg.MaxIdleConn > 0 {
+			c.MaxIdleConn = cfg.MaxIdleConn
+		}
+		if cfg.ConnMaxIdleTimeMins > 0 {
+			c.ConnMaxIdleTimeMins = cfg.ConnMaxIdleTimeMins
+		}
+		if cfg.ConnMaxLifetimeMins > 0 {
+			c.ConnMaxLifetimeMins = cfg.ConnMaxLifetimeMins
+		}
+	}
+}
+
 // OpenDb opens a connection with the DB.
-// If the operation fails when trying to establish a connection and the `autoCreate` flag is set to
-// true, OpenDb will try to create the database set in the DSN.
-func OpenDb(dsn string, autoCreate bool) (*sql.DB, error) {
+//
+// By default, it uses sensible connection pool settings. These can be
+// optionally overridden by providing a WithConnectionConfig option.
+//
+// If the operation fails when trying to establish a connection and the
+// `autoCreate` flag is set to true, OpenDb will try to create the database
+// specified in the DSN.
+func OpenDb(dsn string, autoCreate bool, opts ...Option) (*sql.DB, error) {
+	cfg := ConnectionConfig{
+		MaxOpenConn:         defaultMaxOpenConns,
+		MaxIdleConn:         defaultMaxIdleConns,
+		ConnMaxIdleTimeMins: defaultConnMaxIdleTimeMins,
+		ConnMaxLifetimeMins: defaultConnMaxLifetimeMins,
+	}
+
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open postgres db: %v", err)
 	}
+
+	db.SetMaxOpenConns(cfg.MaxOpenConn)
+	db.SetMaxIdleConns(cfg.MaxIdleConn)
+	db.SetConnMaxIdleTime(time.Duration(cfg.ConnMaxIdleTimeMins) * time.Minute)
+	db.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetimeMins) * time.Minute)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

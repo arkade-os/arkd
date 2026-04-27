@@ -232,6 +232,13 @@ type Transaction struct {
 	Hex         string
 	SettledBy   string
 	AssetPacket asset.Packet
+	// Assets is the per-asset breakdown for this transaction, expressed as
+	// net amounts (gross inputs minus own change). Populated at construction
+	// by any code path that has the source vtxos in hand — notably
+	// funding.vtxosToTxs (for reconciled history) and the wallet-side
+	// send/batch handlers (for just-signed sends). Nil for pure-BTC
+	// transactions.
+	Assets []Asset
 }
 
 func (t Transaction) String() string {

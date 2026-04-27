@@ -85,6 +85,12 @@ func (a *service) init(
 		return fmt.Errorf("failed to parse forfeit pubkey: %s", err)
 	}
 
+	// TODO: Drop me once go-sdk handles arkd config changes properly
+	unilateralExitDelay := uint32(info.UnilateralExitDelay)
+	if network.Name == arklib.Bitcoin.Name {
+		unilateralExitDelay = 605184
+	}
+
 	unilateralExitDelayType := arklib.LocktimeTypeBlock
 	if info.UnilateralExitDelay >= 512 {
 		unilateralExitDelayType = arklib.LocktimeTypeSecond
@@ -103,7 +109,7 @@ func (a *service) init(
 		Network:         network,
 		SessionDuration: info.SessionDuration,
 		UnilateralExitDelay: arklib.RelativeLocktime{
-			Type: unilateralExitDelayType, Value: uint32(info.UnilateralExitDelay),
+			Type: unilateralExitDelayType, Value: unilateralExitDelay,
 		},
 		Dust: info.Dust,
 		BoardingExitDelay: arklib.RelativeLocktime{
