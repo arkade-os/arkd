@@ -306,7 +306,6 @@ func initArkSdk(ctx *cli.Context) error {
 
 	return arkSdkClient.Init(
 		ctx.Context, arksdk.InitArgs{
-			WalletType:  arksdk.SingleKeyWallet,
 			ServerUrl:   ctx.String(urlFlag.Name),
 			Seed:        ctx.String(privateKeyFlag.Name),
 			Password:    string(password),
@@ -324,7 +323,6 @@ func config(ctx *cli.Context) error {
 	cfg := map[string]any{
 		"server_url":            cfgData.ServerUrl,
 		"signer_pubkey":         hex.EncodeToString(cfgData.SignerPubKey.SerializeCompressed()),
-		"wallet_type":           cfgData.WalletType,
 		"network":               cfgData.Network.Name,
 		"unilateral_exit_delay": cfgData.UnilateralExitDelay,
 		"dust":                  cfgData.Dust,
