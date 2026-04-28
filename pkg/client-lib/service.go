@@ -74,7 +74,7 @@ func NewArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, error
 	if client.wallet == nil {
 		storeType := storeSvc.ConfigStore().GetType()
 		datadir := storeSvc.ConfigStore().GetDatadir()
-		walletSvc, err := getWallet(datadir, storeType, wallet.SingleKeyWallet, supportedWallets)
+		walletSvc, err := getSingleKeyWallet(datadir, storeType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to setup wallet: %s", err)
 		}
@@ -110,7 +110,7 @@ func LoadArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, erro
 	if client.wallet == nil {
 		storeType := storeSvc.ConfigStore().GetType()
 		datadir := storeSvc.ConfigStore().GetDatadir()
-		walletSvc, err := getWallet(datadir, storeType, cfgData.WalletType, supportedWallets)
+		walletSvc, err := getSingleKeyWallet(datadir, storeType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to setup wallet: %s", err)
 		}

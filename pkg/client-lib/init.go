@@ -11,7 +11,6 @@ import (
 	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 )
 
 func (a *service) Init(ctx context.Context, args InitArgs) error {
@@ -93,7 +92,6 @@ func (a *service) init(
 		ServerUrl:       args.serverUrl,
 		SignerPubKey:    signerPubkey,
 		ForfeitPubKey:   forfeitPubkey,
-		WalletType:      args.walletType,
 		Network:         network,
 		SessionDuration: info.SessionDuration,
 		UnilateralExitDelay: arklib.RelativeLocktime{
@@ -127,7 +125,6 @@ func (a *service) init(
 }
 
 type InitArgs struct {
-	WalletType  string
 	ServerUrl   string
 	Seed        string
 	Password    string
@@ -136,16 +133,6 @@ type InitArgs struct {
 }
 
 func (a InitArgs) validate() error {
-	if len(a.WalletType) <= 0 {
-		return fmt.Errorf("missing wallet")
-	}
-	if !supportedWallets.Supports(a.WalletType) {
-		return fmt.Errorf(
-			"wallet type '%s' not supported, please select one of: %s",
-			a.WalletType, supportedWallets,
-		)
-	}
-
 	if a.Explorer == nil && len(a.ExplorerURL) <= 0 {
 		return fmt.Errorf("missing explorer or explorer url")
 	}
@@ -165,46 +152,10 @@ func (a InitArgs) parse() args {
 	if a.Explorer != nil {
 		explorerUrl = a.Explorer.BaseUrl()
 	}
-	return args{a.WalletType, a.ServerUrl, a.Seed, a.Password, explorerUrl}
-}
-
-type InitWithWalletArgs struct {
-	Wallet      wallet.WalletService
-	ServerUrl   string
-	Seed        string
-	Password    string
-	ExplorerURL string
-	Explorer    explorer.Explorer
-}
-
-func (a InitWithWalletArgs) validate() error {
-	if a.Wallet == nil {
-		return fmt.Errorf("missing wallet")
-	}
-
-	if a.Explorer == nil && len(a.ExplorerURL) <= 0 {
-		return fmt.Errorf("missing explorer or explorer url")
-	}
-
-	if len(a.ServerUrl) <= 0 {
-		return fmt.Errorf("missing server url")
-	}
-	if len(a.Password) <= 0 {
-		return fmt.Errorf("missing password")
-	}
-	return nil
-}
-
-func (a InitWithWalletArgs) parse() args {
-	explorerUrl := a.ExplorerURL
-	if a.Explorer != nil {
-		explorerUrl = a.Explorer.BaseUrl()
-	}
-	return args{a.Wallet.GetType(), a.ServerUrl, a.Seed, a.Password, explorerUrl}
+	return args{a.ServerUrl, a.Seed, a.Password, explorerUrl}
 }
 
 type args struct {
-	walletType  string
 	serverUrl   string
 	seed        string
 	password    string

@@ -169,7 +169,6 @@ func setupArkClient() (arksdk.ArkClient, error) {
 	}
 
 	if err := client.Init(context.Background(), arksdk.InitArgs{
-		WalletType:  walletType,
 		ServerUrl:   serverUrl,
 		Password:    password,
 		ExplorerURL: explorerUrl,

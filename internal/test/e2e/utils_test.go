@@ -272,7 +272,6 @@ func setupClient(t *testing.T) arksdk.ArkClient {
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
 
 	err = client.Init(t.Context(), arksdk.InitArgs{
-		WalletType:  arksdk.SingleKeyWallet,
 		ServerUrl:   serverUrl,
 		Password:    password,
 		Seed:        privkeyHex,
