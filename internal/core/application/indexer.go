@@ -37,6 +37,11 @@ const (
 	maxPageSizeVtxoChain      = 100
 	maxPageSizeVirtualTxs     = 100
 
+	// maxVtxoChainWalkSize is a hard upper bound applied when walking the full
+	// chain before paginating (GetVtxoChainByIntent). Prevents unbounded memory
+	// growth on pathologically deep chains.
+	maxVtxoChainWalkSize = 50_000
+
 	defaultAuthTokenTTL = 5 * time.Minute
 )
 
@@ -458,9 +463,16 @@ func (i *indexerService) GetVtxoChainByIntent(
 
 	switch i.txExposure {
 	case exposurePublic:
-		chain, _, _, err := i.walkVtxoChain(ctx, []domain.Outpoint{outpoint}, math.MaxInt32)
+		chain, _, _, err := i.walkVtxoChain(
+			ctx,
+			[]domain.Outpoint{outpoint},
+			maxVtxoChainWalkSize+1,
+		)
 		if err != nil {
 			return nil, err
+		}
+		if len(chain) > maxVtxoChainWalkSize {
+			return nil, fmt.Errorf("chain exceeds maximum size of %d", maxVtxoChainWalkSize)
 		}
 		txChain, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
 		return &VtxoChainResp{Chain: txChain, Page: pageResp}, nil
@@ -470,9 +482,16 @@ func (i *indexerService) GetVtxoChainByIntent(
 		}
 	}
 
-	chain, allOutpoints, _, err := i.walkVtxoChain(ctx, []domain.Outpoint{outpoint}, math.MaxInt32)
+	chain, allOutpoints, _, err := i.walkVtxoChain(
+		ctx,
+		[]domain.Outpoint{outpoint},
+		maxVtxoChainWalkSize+1,
+	)
 	if err != nil {
 		return nil, err
+	}
+	if len(chain) > maxVtxoChainWalkSize {
+		return nil, fmt.Errorf("chain exceeds maximum size of %d", maxVtxoChainWalkSize)
 	}
 
 	token, err := i.createAuthToken(allOutpoints)

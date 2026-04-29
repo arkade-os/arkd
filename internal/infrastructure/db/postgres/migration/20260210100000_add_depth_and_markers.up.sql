@@ -50,6 +50,8 @@ ON intent.id = vtxo_vw.intent_id;
 
 -- Backfill: Create a marker for every existing VTXO using its outpoint as marker ID
 -- This ensures every VTXO has at least 1 marker
+-- NOTE: this INSERT and the UPDATE below run over all VTXOs and will hold locks.
+-- On large production DBs (millions of rows) expect 10-60 seconds; plan a maintenance window.
 INSERT INTO marker (id, depth, parent_markers)
 SELECT
     v.txid || ':' || v.vout,

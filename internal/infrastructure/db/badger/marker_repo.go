@@ -484,20 +484,24 @@ func (r *markerRepository) GetVtxosByMarker(
 }
 
 func (r *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID string) (int64, error) {
-	// Mark the marker as swept (this also updates vtxo Swept fields)
-	if err := r.SweepMarker(ctx, markerID, time.Now().Unix()); err != nil {
-		return 0, err
-	}
-
-	// Count VTXOs affected
+	// Count unswept VTXOs before marking to match Postgres/SQLite behaviour.
 	var dtos []vtxoDTO
-	err := r.vtxoStore.Find(&dtos,
-		badgerhold.Where("MarkerIDs").Contains(markerID))
-	if err != nil {
+	if err := r.vtxoStore.Find(&dtos,
+		badgerhold.Where("MarkerIDs").Contains(markerID)); err != nil {
+		return 0, err
+	}
+	var unsweptCount int64
+	for _, dto := range dtos {
+		if !dto.Swept {
+			unsweptCount++
+		}
+	}
+
+	if err := r.SweepMarker(ctx, markerID, time.Now().UnixMilli()); err != nil {
 		return 0, err
 	}
 
-	return int64(len(dtos)), nil
+	return unsweptCount, nil
 }
 
 func (r *markerRepository) CreateRootMarkersForVtxos(
