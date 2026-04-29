@@ -48,6 +48,9 @@ ON intent.id = vtxo_vw.intent_id;
 
 -- Backfill: Create a marker for every existing VTXO using its outpoint as marker ID
 -- This ensures every VTXO has at least 1 marker
+-- NOTE: this INSERT and the UPDATE below run in a single transaction over all VTXOs.
+-- On large production DBs (millions of rows) expect a table lock for 10-60 seconds.
+-- Plan a maintenance window or apply with a connection timeout if live traffic is present.
 INSERT INTO marker (id, depth, parent_markers)
 SELECT
     v.txid || ':' || v.vout,
@@ -108,7 +111,6 @@ ALTER TABLE vtxo_new RENAME TO vtxo;
 
 -- Recreate indexes
 CREATE INDEX IF NOT EXISTS fk_vtxo_intent_id ON vtxo(intent_id);
-CREATE INDEX IF NOT EXISTS idx_vtxo_markers ON vtxo(markers);
 
 -- Recreate views to compute swept status dynamically
 CREATE VIEW vtxo_vw AS

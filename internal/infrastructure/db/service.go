@@ -510,10 +510,15 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		event := lastEvent.(domain.BatchSwept)
 		allSweptVtxos := append(event.LeafVtxos, event.PreconfirmedVtxos...)
 
-		// marker-based sweeping
-		sweptCount := s.sweepVtxosWithMarkers(ctx, allSweptVtxos)
-		if sweptCount > 0 {
-			log.Debugf("swept %d vtxos using marker-based sweeping", sweptCount)
+		// Per-outpoint sweeping avoids marker over-reach: markers can be shared
+		// across independent subtrees when offchain txs consolidate inputs from
+		// different lineages. Sweeping by marker would incorrectly mark unrelated
+		// VTXOs as swept (same reason the checkpoint path uses SweepVtxoOutpoints).
+		sweptAt := time.Now().UnixMilli()
+		if err := s.markerStore.SweepVtxoOutpoints(ctx, allSweptVtxos, sweptAt); err != nil {
+			log.WithError(err).Warn("failed to sweep vtxo outpoints for batch")
+		} else if len(allSweptVtxos) > 0 {
+			log.Debugf("swept %d vtxo outpoints for batch", len(allSweptVtxos))
 		}
 
 		if event.FullySwept {
@@ -839,54 +844,6 @@ func getNewVtxosFromRound(round domain.Round, txDecoder ports.TxDecoder) []domai
 		}
 	}
 	return vtxos
-}
-
-// sweepVtxosWithMarkers performs marker-based sweeping for VTXOs.
-// It groups VTXOs by their marker, sweeps each marker via swept_marker table.
-// Returns the total count of VTXOs swept.
-func (s *service) sweepVtxosWithMarkers(
-	ctx context.Context,
-	vtxoOutpoints []domain.Outpoint,
-) int64 {
-	if len(vtxoOutpoints) == 0 {
-		return 0
-	}
-
-	// Get VTXOs to find their markers
-	vtxos, err := s.vtxoStore.GetVtxos(ctx, vtxoOutpoints)
-	if err != nil {
-		log.WithError(err).Warn("failed to get vtxos for marker-based sweep")
-		return 0
-	}
-
-	// Collect all unique markers from all VTXOs
-	// Every VTXO is guaranteed to have at least 1 marker after migration
-	uniqueMarkers := make(map[string]struct{})
-	for _, vtxo := range vtxos {
-		for _, markerID := range vtxo.MarkerIDs {
-			uniqueMarkers[markerID] = struct{}{}
-		}
-	}
-
-	if len(uniqueMarkers) == 0 {
-		return 0
-	}
-
-	// Convert marker set to slice for bulk sweeping
-	markerIDs := make([]string, 0, len(uniqueMarkers))
-	for markerID := range uniqueMarkers {
-		markerIDs = append(markerIDs, markerID)
-	}
-
-	sweptAt := time.Now().UnixMilli()
-	if err := s.markerStore.BulkSweepMarkers(ctx, markerIDs, sweptAt); err != nil {
-		log.WithError(err).Warn("failed to bulk sweep markers")
-		return 0
-	}
-
-	totalSwept := int64(len(vtxos))
-	log.Debugf("bulk swept %d markers affecting %d vtxos", len(markerIDs), totalSwept)
-	return totalSwept
 }
 
 func getAssetsFromTxOuts(txid string, txOuts []ports.TxOut) (
