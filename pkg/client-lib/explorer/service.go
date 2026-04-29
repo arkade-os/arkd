@@ -130,6 +130,7 @@ func newUtxo(explorerUtxo Utxo, delay arklib.RelativeLocktime, tapscripts []stri
 			VOut: explorerUtxo.Vout,
 		},
 		Amount:      explorerUtxo.Amount,
+		Script:      explorerUtxo.Script,
 		Delay:       delay,
 		SpendableAt: time.Unix(utxoTime, 0).Add(time.Duration(delay.Seconds()) * time.Second),
 		CreatedAt:   createdAt,

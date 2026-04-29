@@ -22,8 +22,8 @@ var (
 func TestWithExtraPacket(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		testCases := []struct {
-			name                 string
-			packets              []extension.Packet
+			name                string
+			packets             []extension.Packet
 			expectErrorContains string
 		}{
 			{
@@ -42,7 +42,7 @@ func TestWithExtraPacket(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				opts := newDefaultSendOptions()
-				err := WithExtraPacket(tc.packets...)(opts)
+				err := WithExtraPacket(tc.packets...).applySend(opts)
 				require.Error(t, err)
 				if tc.expectErrorContains != "" {
 					require.Contains(t, err.Error(), tc.expectErrorContains)
@@ -64,9 +64,9 @@ func TestWithExtraPacket(t *testing.T) {
 			expectTypes  []uint8
 		}{
 			{
-				name:          "appends valid packets",
-				applyPackets:  [][]extension.Packet{[]extension.Packet{p1, p2}},
-				expectTypes:   []uint8{0x03, 0x04},
+				name:         "appends valid packets",
+				applyPackets: [][]extension.Packet{[]extension.Packet{p1, p2}},
+				expectTypes:  []uint8{0x03, 0x04},
 			},
 			{
 				name: "multiple calls accumulate",
@@ -82,7 +82,7 @@ func TestWithExtraPacket(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				opts := newDefaultSendOptions()
 				for _, callPackets := range tc.applyPackets {
-					require.NoError(t, WithExtraPacket(callPackets...)(opts))
+					require.NoError(t, WithExtraPacket(callPackets...).applySend(opts))
 				}
 				require.Len(t, opts.extraPackets, len(tc.expectTypes))
 				for i, wantType := range tc.expectTypes {
@@ -100,31 +100,31 @@ func TestWithExtraPacket(t *testing.T) {
 func TestAddExtension(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		testCases := []struct {
-			name                     string
-			includeAssetPacket       bool
-			extraPkts                []extension.Packet
-			expectNoOpOutputCount   bool
-			expectedTxOutLen        int
-			checkP2AAnchor          bool
-			checkParseExtension     bool
-			expectedPacketType      uint8
-			expectedPacketBytes     []byte
+			name                  string
+			includeAssetPacket    bool
+			extraPkts             []extension.Packet
+			expectNoOpOutputCount bool
+			expectedTxOutLen      int
+			checkP2AAnchor        bool
+			checkParseExtension   bool
+			expectedPacketType    uint8
+			expectedPacketBytes   []byte
 		}{
 			{
-				name:                   "no-op when empty",
+				name:                  "no-op when empty",
 				includeAssetPacket:    false,
-				extraPkts:              nil,
+				extraPkts:             nil,
 				expectNoOpOutputCount: true,
 			},
 			{
-				name:                "asset packet only inserts one output before P2A",
+				name:               "asset packet only inserts one output before P2A",
 				includeAssetPacket: true,
-				extraPkts:           nil,
+				extraPkts:          nil,
 				expectedTxOutLen:   2,
 				checkP2AAnchor:     true,
 			},
 			{
-				name:                "asset + extra packets produce parseable extension",
+				name:               "asset + extra packets produce parseable extension",
 				includeAssetPacket: true,
 				extraPkts: []extension.Packet{
 					extension.UnknownPacket{PacketType: 0x03, Data: []byte{0xde, 0xad, 0xbe, 0xef}},
@@ -135,7 +135,7 @@ func TestAddExtension(t *testing.T) {
 				expectedPacketBytes: []byte{0xde, 0xad, 0xbe, 0xef},
 			},
 			{
-				name:                "extras-only (no asset packet) works",
+				name:               "extras-only (no asset packet) works",
 				includeAssetPacket: false,
 				extraPkts: []extension.Packet{
 					extension.UnknownPacket{PacketType: 0x03, Data: []byte{0x01, 0x02}},
@@ -208,9 +208,9 @@ func TestAddExtension(t *testing.T) {
 
 	t.Run("invalid", func(t *testing.T) {
 		testCases := []struct {
-			name                 string
-			includeAssetPacket   bool
-			extraPkts            []extension.Packet
+			name                string
+			includeAssetPacket  bool
+			extraPkts           []extension.Packet
 			expectErrorContains string
 		}{
 			{
@@ -222,8 +222,8 @@ func TestAddExtension(t *testing.T) {
 				expectErrorContains: "duplicate",
 			},
 			{
-				name:               "nil extra packet rejected",
-				extraPkts:          []extension.Packet{nil},
+				name:                "nil extra packet rejected",
+				extraPkts:           []extension.Packet{nil},
 				expectErrorContains: "",
 			},
 			{

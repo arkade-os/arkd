@@ -7,7 +7,6 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/client-lib/store"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +18,6 @@ var (
 		ServerUrl:           "127.0.0.1:7070",
 		SignerPubKey:        key.PubKey(),
 		ForfeitPubKey:       forfeitkKey.PubKey(),
-		WalletType:          wallet.SingleKeyWallet,
 		Network:             arklib.BitcoinRegTest,
 		SessionDuration:     10,
 		UnilateralExitDelay: arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512},

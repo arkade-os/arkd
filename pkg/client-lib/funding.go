@@ -12,7 +12,12 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
+	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/txscript"
 )
 
 func (a *service) Receive(ctx context.Context) (
@@ -22,7 +27,7 @@ func (a *service) Receive(ctx context.Context) (
 		return "", nil, nil, fmt.Errorf("wallet not initialized")
 	}
 
-	onchainAddr, offchainAddr, boardingAddr, err = a.wallet.NewAddress(ctx, false)
+	onchainAddr, offchainAddr, boardingAddr, err = a.newAddress(ctx)
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -36,26 +41,12 @@ func (a *service) Receive(ctx context.Context) (
 
 func (a *service) GetAddresses(
 	ctx context.Context,
-) ([]string, []string, []string, []string, error) {
+) ([]string, []types.Address, []types.Address, []types.Address, error) {
 	if err := a.safeCheck(); err != nil {
 		return nil, nil, nil, nil, err
 	}
 
-	onchainAddrs, offchainAddrs, boardingAddrs, redemptionAddrs, err := a.wallet.GetAddresses(ctx)
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-
-	toStringList := func(l []types.Address) []string {
-		res := make([]string, 0, len(l))
-		for _, v := range l {
-			res = append(res, v.Address)
-		}
-		return res
-	}
-
-	return onchainAddrs, toStringList(offchainAddrs),
-		toStringList(boardingAddrs), toStringList(redemptionAddrs), nil
+	return a.getAddresses(ctx)
 }
 
 func (a *service) ListVtxos(
@@ -79,7 +70,7 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 		return nil, fmt.Errorf("wallet not initialized")
 	}
 
-	onchainAddrs, offchainAddrs, boardingAddrs, redeemAddrs, err := a.wallet.GetAddresses(ctx)
+	onchainAddrs, offchainAddrs, boardingAddrs, redeemAddrs, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -299,6 +290,137 @@ func (a *service) NotifyIncomingFunds(ctx context.Context, addr string) ([]types
 	}
 }
 
+func (a *service) newAddress(
+	ctx context.Context,
+) (onchainAddr string, offchainAddr, boardingAddr *types.Address, err error) {
+	key, err := a.wallet.NewKey(ctx)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	onchainAddr, offchainAddr, boardingAddr, _, err = a.deriveDefaultAddresses(*key)
+	return onchainAddr, offchainAddr, boardingAddr, err
+}
+
+func (a *service) getAddresses(ctx context.Context) (
+	onchainAddrs []string,
+	offchainAddrs, boardingAddrs, redemptionAddrs []types.Address,
+	err error,
+) {
+	keys := make([]wallet.KeyRef, 0)
+	seenKeys := make(map[string]struct{})
+
+	keyRefs, err := a.wallet.ListKeys(ctx)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	for _, key := range keyRefs {
+		if _, ok := seenKeys[key.Id]; ok {
+			continue
+		}
+		seenKeys[key.Id] = struct{}{}
+		keys = append(keys, key)
+	}
+
+	for _, key := range keys {
+		onchainAddr, offchainAddr, boardingAddr, redemptionAddr, err := a.deriveDefaultAddresses(key)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+
+		onchainAddrs = append(onchainAddrs, onchainAddr)
+		offchainAddrs = append(offchainAddrs, *offchainAddr)
+		boardingAddrs = append(boardingAddrs, *boardingAddr)
+		redemptionAddrs = append(redemptionAddrs, *redemptionAddr)
+	}
+
+	return onchainAddrs, offchainAddrs, boardingAddrs, redemptionAddrs, nil
+}
+
+func (a *service) deriveDefaultAddresses(
+	key wallet.KeyRef,
+) (onchainAddr string, offchainAddr, boardingAddr, redemptionAddr *types.Address, err error) {
+	netParams := utils.ToBitcoinNetwork(a.Network)
+
+	defaultVtxoScript := script.NewDefaultVtxoScript(
+		key.PubKey, a.SignerPubKey, a.UnilateralExitDelay,
+	)
+	vtxoTapKey, _, err := defaultVtxoScript.TapTree()
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	offchainAddress := &arklib.Address{
+		HRP:        a.Network.Addr,
+		Signer:     a.SignerPubKey,
+		VtxoTapKey: vtxoTapKey,
+	}
+	encodedOffchainAddr, err := offchainAddress.EncodeV0()
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	tapscripts, err := defaultVtxoScript.Encode()
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	boardingVtxoScript := script.NewDefaultVtxoScript(
+		key.PubKey, a.SignerPubKey, a.BoardingExitDelay,
+	)
+	boardingTapKey, _, err := boardingVtxoScript.TapTree()
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	boardingTaprootAddr, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(boardingTapKey), &netParams,
+	)
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	boardingTapscripts, err := boardingVtxoScript.Encode()
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	redemptionTaprootAddr, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(vtxoTapKey), &netParams,
+	)
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	onchainTapKey := txscript.ComputeTaprootKeyNoScript(key.PubKey)
+	onchainTaprootAddr, err := btcutil.NewAddressTaproot(
+		schnorr.SerializePubKey(onchainTapKey), &netParams,
+	)
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	onchainAddr = onchainTaprootAddr.EncodeAddress()
+	offchainAddr = &types.Address{
+		KeyID:      key.Id,
+		Tapscripts: tapscripts,
+		Address:    encodedOffchainAddr,
+	}
+	boardingAddr = &types.Address{
+		KeyID:      key.Id,
+		Tapscripts: boardingTapscripts,
+		Address:    boardingTaprootAddr.EncodeAddress(),
+	}
+	redemptionAddr = &types.Address{
+		KeyID:      key.Id,
+		Tapscripts: tapscripts,
+		Address:    redemptionTaprootAddr.EncodeAddress(),
+	}
+
+	return
+}
+
 func (a *service) getOffchainBalance(ctx context.Context) (
 	uint64, map[int64]uint64, map[string]uint64, error,
 ) {
@@ -367,7 +489,7 @@ func (a *service) getBoardingTxs(ctx context.Context) ([]types.Transaction, erro
 }
 
 func (a *service) getAllBoardingUtxos(ctx context.Context) ([]types.Utxo, error) {
-	_, _, boardingAddrs, _, err := a.wallet.GetAddresses(ctx)
+	_, _, boardingAddrs, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}

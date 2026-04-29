@@ -70,8 +70,6 @@ require github.com/stretchr/objx v0.5.2 // indirect
 
 require (
 	cel.dev/expr v0.25.1 // indirect
-	github.com/FactomProject/basen v0.0.0-20150613233007-fe3947df716e // indirect
-	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
@@ -163,7 +161,6 @@ require (
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75 // indirect
 	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
-	github.com/vulpemventures/go-bip32 v0.0.0-20200624192635-867c159da4d7 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
 	github.com/xiang90/probing v0.0.0-20221125231312-a49e3df8f510 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect

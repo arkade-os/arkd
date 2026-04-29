@@ -24,7 +24,6 @@ require (
 	github.com/lightningnetwork/lnd v0.18.2-beta
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.11.1
-	github.com/vulpemventures/go-bip32 v0.0.0-20200624192635-867c159da4d7
 	golang.org/x/crypto v0.48.0
 	google.golang.org/grpc v1.79.3
 )
@@ -32,8 +31,6 @@ require (
 require (
 	cel.dev/expr v0.25.1 // indirect
 	dario.cat/mergo v1.0.1 // indirect
-	github.com/FactomProject/basen v0.0.0-20150613233007-fe3947df716e // indirect
-	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec // indirect
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/arkade-os/arkd/pkg/errors v0.0.0-00010101000000-000000000000 // indirect

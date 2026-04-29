@@ -336,6 +336,7 @@ type options struct {
 	signVtxoTree   bool            // default: true
 	replayEventsCh chan<- any      // default: nil
 	cancelCh       <-chan struct{} // default: nil
+	keysByScript   map[string]string
 }
 
 func newOptions() *options {
@@ -354,6 +355,7 @@ type defaultBatchEventsHandler struct {
 	boardingUtxos  []types.Utxo
 	receivers      []types.Receiver
 	signerSessions []tree.SignerSession
+	keysByScript   map[string]string
 
 	batchSessionId string
 	batchExpiry    arklib.RelativeLocktime
@@ -368,6 +370,7 @@ func newBatchEventsHandler(
 	boardingUtxos []types.Utxo,
 	receivers []types.Receiver,
 	signerSessions []tree.SignerSession,
+	keysByScript map[string]string,
 ) *defaultBatchEventsHandler {
 	vtxosToSign := make([]types.VtxoWithTapTree, 0, len(vtxos))
 	for _, vtxo := range vtxos {
@@ -385,6 +388,7 @@ func newBatchEventsHandler(
 		boardingUtxos:    boardingUtxos,
 		receivers:        receivers,
 		signerSessions:   signerSessions,
+		keysByScript:     keysByScript,
 		batchSessionId:   "",
 		countSigningDone: 0,
 	}
@@ -694,7 +698,7 @@ func (h *defaultBatchEventsHandler) OnBatchFinalization(
 			return nil, err
 		}
 
-		signedCommitmentTx, err = h.wallet.SignTransaction(ctx, h.explorer, b64)
+		signedCommitmentTx, err = h.wallet.SignTransaction(ctx, b64, h.keysByScript)
 		if err != nil {
 			return nil, err
 		}
@@ -906,7 +910,7 @@ func (h *defaultBatchEventsHandler) createAndSignForfeits(
 			return nil, err
 		}
 
-		signedForfeitTx, err := h.wallet.SignTransaction(ctx, h.explorer, b64)
+		signedForfeitTx, err := h.wallet.SignTransaction(ctx, b64, h.keysByScript)
 		if err != nil {
 			return nil, err
 		}

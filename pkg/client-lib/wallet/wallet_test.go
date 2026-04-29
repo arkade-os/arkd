@@ -1,149 +1,190 @@
 package wallet_test
 
 import (
-	"context"
-	"strings"
+	"encoding/hex"
 	"testing"
 
-	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/store/inmemory"
-	sdktypes "github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
 	inmemorywalletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/stretchr/testify/require"
 )
 
-func TestWallet(t *testing.T) {
-	ctx := context.Background()
-	key, _ := btcec.NewPrivateKey()
-	password := "password"
-	testStoreData := sdktypes.Config{
-		ServerUrl:           "127.0.0.1:7070",
-		SignerPubKey:        key.PubKey(),
-		WalletType:          wallet.SingleKeyWallet,
-		Network:             arklib.BitcoinRegTest,
-		SessionDuration:     10,
-		UnilateralExitDelay: arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512},
-		Dust:                1000,
-		BoardingExitDelay:   arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512},
-		ForfeitAddress:      "bcrt1qzvqj",
-		CheckpointTapscript: "",
-	}
-	tests := []struct {
-		name  string
-		chain string
-		args  []interface{}
-	}{
-		{
-			name:  "bitcoin" + wallet.SingleKeyWallet,
-			chain: "bitcoin",
-			args:  []interface{}{arklib.BitcoinRegTest},
-		},
-	}
+const testPassword = "password"
 
-	for i := range tests {
-		tt := tests[i]
-		t.Run(tt.name, func(t *testing.T) {
-			store, err := inmemorystore.NewConfigStore()
+var network = chaincfg.RegressionNetParams
+
+func TestCreate(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		walletSvc := newTestWallet(t)
+		seed, err := walletSvc.Create(t.Context(), network, testPassword, "")
+		require.NoError(t, err)
+		require.NotEmpty(t, seed)
+	})
+}
+
+func TestLockUnlock(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		t.Run("lock and unlock", func(t *testing.T) {
+			walletSvc, _ := newUnlockedTestWallet(t)
+			ctx := t.Context()
+
+			require.False(t, walletSvc.IsLocked())
+
+			err := walletSvc.Lock(ctx)
 			require.NoError(t, err)
-			require.NotNil(t, store)
+			require.True(t, walletSvc.IsLocked())
 
-			err = store.AddData(ctx, testStoreData)
+			_, err = walletSvc.Unlock(ctx, testPassword)
 			require.NoError(t, err)
+			require.False(t, walletSvc.IsLocked())
+		})
 
-			walletStore, err := inmemorywalletstore.NewWalletStore()
-			require.NoError(t, err)
-			require.NotNil(t, walletStore)
-
-			walletSvc, err := singlekeywallet.NewBitcoinWallet(store, walletStore)
-			require.NoError(t, err)
-			require.NotNil(t, walletSvc)
-
-			key, err := walletSvc.Create(ctx, password, "")
-			require.NoError(t, err)
-			require.NotEmpty(t, key)
-
-			onchainAddr, offchainAddr, boardingAddr, err := walletSvc.NewAddress(ctx, false)
-			require.NoError(t, err)
-			require.NotEmpty(t, offchainAddr)
-			require.NotEmpty(t, onchainAddr)
-			require.NotEmpty(t, boardingAddr)
-
-			onchainAddrs, offchainAddrs, boardingAddrs, redemptionAddrs, err := walletSvc.GetAddresses(
-				ctx,
-			)
-			require.NoError(t, err)
-			require.Len(t, offchainAddrs, 1)
-			require.Len(t, onchainAddrs, 1)
-			require.Len(t, redemptionAddrs, 1)
-			require.Len(t, boardingAddrs, 1)
-
-			onchainAddr, offchainAddr, boardingAddr, err = walletSvc.NewAddress(ctx, true)
-			require.NoError(t, err)
-			require.NotEmpty(t, offchainAddr)
-			require.NotEmpty(t, onchainAddr)
-			require.NotEmpty(t, boardingAddr)
-
-			expectedNumOfAddresses := 2
-			if strings.Contains(tt.name, wallet.SingleKeyWallet) {
-				expectedNumOfAddresses = 1
-			}
-
-			onchainAddrs, offchainAddrs, boardingAddrs, redemptionAddrs, err = walletSvc.GetAddresses(
-				ctx,
-			)
-			require.NoError(t, err)
-			require.Len(t, offchainAddrs, expectedNumOfAddresses)
-			require.Len(t, onchainAddrs, expectedNumOfAddresses)
-			require.Len(t, redemptionAddrs, expectedNumOfAddresses)
-			require.Len(t, boardingAddrs, expectedNumOfAddresses)
-
-			num := 3
-			onchainAddrs, offchainAddrs, boardingAddrs, err = walletSvc.NewAddresses(
-				ctx,
-				false,
-				num,
-			)
-			require.NoError(t, err)
-			require.Len(t, offchainAddrs, num)
-			require.Len(t, boardingAddrs, num)
-			require.Len(t, onchainAddrs, num)
-
-			expectedNumOfAddresses += num
-			if strings.Contains(tt.name, wallet.SingleKeyWallet) {
-				expectedNumOfAddresses = 1
-			}
-			onchainAddrs, offchainAddrs, boardingAddrs, redemptionAddrs, err = walletSvc.GetAddresses(
-				ctx,
-			)
-			require.NoError(t, err)
-			require.Len(t, offchainAddrs, expectedNumOfAddresses)
-			require.Len(t, onchainAddrs, expectedNumOfAddresses)
-			require.Len(t, redemptionAddrs, expectedNumOfAddresses)
-			require.Len(t, boardingAddrs, expectedNumOfAddresses)
-
-			// Check no password is required to unlock if wallet is already unlocked.
-			alreadyUnlocked, err := walletSvc.Unlock(ctx, password)
-			require.NoError(t, err)
-			require.False(t, alreadyUnlocked)
-
-			alreadyUnlocked, err = walletSvc.Unlock(ctx, "")
+		t.Run("unlock when already unlocked", func(t *testing.T) {
+			walletSvc, _ := newUnlockedTestWallet(t)
+			alreadyUnlocked, err := walletSvc.Unlock(t.Context(), "")
 			require.NoError(t, err)
 			require.True(t, alreadyUnlocked)
-
-			err = walletSvc.Lock(ctx)
-			require.NoError(t, err)
-
-			locked := walletSvc.IsLocked()
-			require.True(t, locked)
-
-			_, err = walletSvc.Unlock(ctx, password)
-			require.NoError(t, err)
-
-			locked = walletSvc.IsLocked()
-			require.False(t, locked)
 		})
-	}
+
+		t.Run("lock when already locked", func(t *testing.T) {
+			walletSvc, _ := newUnlockedTestWallet(t)
+			err := walletSvc.Lock(t.Context())
+			require.NoError(t, err)
+			require.True(t, walletSvc.IsLocked())
+
+			err = walletSvc.Lock(t.Context())
+			require.NoError(t, err)
+			require.True(t, walletSvc.IsLocked())
+		})
+	})
+}
+
+func TestGetKey(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		walletSvc, seed := newUnlockedTestWallet(t)
+		key, err := walletSvc.GetKey(t.Context(), "")
+		require.NoError(t, err)
+		require.NotNil(t, key)
+		require.NotNil(t, key.PubKey)
+
+		prvkeyBytes, err := hex.DecodeString(seed)
+		require.NoError(t, err)
+		expectedPrvkey, _ := btcec.PrivKeyFromBytes(prvkeyBytes)
+		require.True(t, key.PubKey.IsEqual(expectedPrvkey.PubKey()))
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			setup  func(t *testing.T) wallet.WalletService
+			expErr string
+		}{
+			{
+				"not initialized",
+				func(t *testing.T) wallet.WalletService { return newTestWallet(t) },
+				"wallet not initialized",
+			},
+			{
+				"locked",
+				func(t *testing.T) wallet.WalletService {
+					w := newTestWallet(t)
+					_, err := w.Create(t.Context(), network, testPassword, "")
+					require.NoError(t, err)
+					return w
+				},
+				"wallet is locked",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				key, err := tt.setup(t).GetKey(t.Context(), "")
+				require.ErrorContains(t, err, tt.expErr)
+				require.Nil(t, key)
+			})
+		}
+	})
+}
+
+func TestNewKey(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		walletSvc, seed := newUnlockedTestWallet(t)
+		key, err := walletSvc.NewKey(t.Context())
+		require.NoError(t, err)
+		require.NotNil(t, key.PubKey)
+
+		prvkeyBytes, err := hex.DecodeString(seed)
+		require.NoError(t, err)
+		expectedPrvkey, _ := btcec.PrivKeyFromBytes(prvkeyBytes)
+		require.True(t, key.PubKey.IsEqual(expectedPrvkey.PubKey()))
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			setup  func(t *testing.T) wallet.WalletService
+			expErr string
+		}{
+			{
+				"not initialized",
+				func(t *testing.T) wallet.WalletService { return newTestWallet(t) },
+				"wallet not initialized",
+			},
+			{
+				"locked",
+				func(t *testing.T) wallet.WalletService {
+					w := newTestWallet(t)
+					_, err := w.Create(t.Context(), network, testPassword, "")
+					require.NoError(t, err)
+					return w
+				},
+				"wallet is locked",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				key, err := tt.setup(t).NewKey(t.Context())
+				require.ErrorContains(t, err, tt.expErr)
+				require.Nil(t, key)
+			})
+		}
+	})
+}
+
+func TestListKeys(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		walletSvc, seed := newUnlockedTestWallet(t)
+
+		keys, err := walletSvc.ListKeys(t.Context())
+		require.NoError(t, err)
+		require.Len(t, keys, 1)
+		require.NotNil(t, keys[0].PubKey)
+
+		prvkeyBytes, err := hex.DecodeString(seed)
+		require.NoError(t, err)
+		expectedPrvkey, _ := btcec.PrivKeyFromBytes(prvkeyBytes)
+		require.True(t, keys[0].PubKey.IsEqual(expectedPrvkey.PubKey()))
+	})
+}
+
+func newTestWallet(t *testing.T) wallet.WalletService {
+	t.Helper()
+	walletStore, err := inmemorywalletstore.NewWalletStore()
+	require.NoError(t, err)
+	walletSvc, err := singlekeywallet.NewBitcoinWallet(walletStore)
+	require.NoError(t, err)
+	return walletSvc
+}
+
+func newUnlockedTestWallet(t *testing.T) (wallet.WalletService, string) {
+	t.Helper()
+	walletSvc := newTestWallet(t)
+	ctx := t.Context()
+	seed, err := walletSvc.Create(ctx, network, testPassword, "")
+	require.NoError(t, err)
+	_, err = walletSvc.Unlock(ctx, testPassword)
+	require.NoError(t, err)
+	return walletSvc, seed
 }
