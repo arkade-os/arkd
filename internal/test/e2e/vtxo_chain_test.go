@@ -57,7 +57,6 @@ func TestVtxoChain(t *testing.T) {
 	t.Logf("wallet seed: %s", seed)
 
 	err = client.Init(ctx, arksdk.InitArgs{
-		WalletType:  arksdk.SingleKeyWallet,
 		ServerUrl:   *arkServerUrl,
 		Password:    password,
 		Seed:        seed,
