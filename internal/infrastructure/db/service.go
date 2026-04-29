@@ -499,6 +499,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	log.Debugf("added or updated round %s", round.Id)
 
 	if !round.IsEnded() {
+		go s.batchUpdateHandler.dispatch(*round)
 		return
 	}
 
