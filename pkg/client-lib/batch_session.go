@@ -308,10 +308,15 @@ func (a *service) getFundsToSettle(
 	}
 
 	if len(outputs) <= 0 {
-		// gather all asset balances from vtxos to carry them forward
+		// gather all asset balances from inputs to carry them forward
 		assetBalances := make(map[string]uint64)
 		for _, vtxo := range vtxos {
 			for _, a := range vtxo.Assets {
+				assetBalances[a.AssetId] += a.Amount
+			}
+		}
+		for _, utxo := range boardingUtxos {
+			for _, a := range utxo.Assets {
 				assetBalances[a.AssetId] += a.Amount
 			}
 		}
