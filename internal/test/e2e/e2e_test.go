@@ -673,6 +673,69 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 			require.Error(t, err)
 			require.ErrorContains(t, err, "expired")
 		})
+
+		// Alice unrolls a regular BTC-only VTXO and then attempts to
+		// rejoin the batch claiming, via the boarding utxo's Assets
+		// field, that the unrolled VTXO carries an asset.
+		// The server should reject it.
+		t.Run("fake asset on boarding input", func(t *testing.T) {
+			fakeAssetId := strings.Repeat("ab", 32) + "0000"
+
+			ctx := t.Context()
+			alice := setupClient(t)
+
+			faucet(t, alice, 0.00021)
+			time.Sleep(5 * time.Second)
+
+			_, offchainAddr, _, err := alice.Receive(ctx)
+			require.NoError(t, err)
+
+			txids, err := alice.Unroll(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, txids)
+
+			err = generateBlocks(1)
+			require.NoError(t, err)
+
+			require.Eventually(t, func() bool {
+				b, err := alice.Balance(ctx)
+				if err != nil {
+					return false
+				}
+				return b.OffchainBalance.Total == 0 &&
+					len(b.OnchainBalance.LockedAmount) > 0 &&
+					b.OnchainBalance.LockedAmount[0].Amount > 0
+			}, 15*time.Second, 200*time.Millisecond)
+
+			_, spentVtxos, err := alice.ListVtxos(ctx)
+			require.NoError(t, err)
+
+			var unrolledVtxo types.Vtxo
+			for _, v := range spentVtxos {
+				if v.Unrolled && !v.Spent {
+					unrolledVtxo = v
+					break
+				}
+			}
+			require.NotZero(t, unrolledVtxo.Amount)
+			require.Empty(t, unrolledVtxo.Assets)
+
+
+			boardingUtxo := types.Utxo{
+				Outpoint:   unrolledVtxo.Outpoint,
+				Amount:     unrolledVtxo.Amount,
+				Tapscripts: offchainAddr.Tapscripts,
+				Assets: []types.Asset{
+					{AssetId: fakeAssetId, Amount: 1},
+				},
+			}
+
+			_, err = alice.Settle(ctx,
+				arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
+			)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "does not contain any assets")
+		})
 	})
 }
 
