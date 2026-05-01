@@ -3392,7 +3392,10 @@ func (s *service) listenToScannerNotifications() {
 								)
 							}
 
-							log.Debugf("vtxo %s unrolled", vtxo.Outpoint.String())
+							log.Debugf(
+								"vtxo %s unrolled (commitment tx: %s)",
+								 vtxo.Outpoint.String(), vtxo.RootCommitmentTxid,
+								)
 						}()
 					}
 
