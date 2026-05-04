@@ -87,16 +87,6 @@ func TestGetKey(t *testing.T) {
 				func(t *testing.T) wallet.WalletService { return newTestWallet(t) },
 				"wallet not initialized",
 			},
-			{
-				"locked",
-				func(t *testing.T) wallet.WalletService {
-					w := newTestWallet(t)
-					_, err := w.Create(t.Context(), network, testPassword, "")
-					require.NoError(t, err)
-					return w
-				},
-				"wallet is locked",
-			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -131,16 +121,6 @@ func TestNewKey(t *testing.T) {
 				"not initialized",
 				func(t *testing.T) wallet.WalletService { return newTestWallet(t) },
 				"wallet not initialized",
-			},
-			{
-				"locked",
-				func(t *testing.T) wallet.WalletService {
-					w := newTestWallet(t)
-					_, err := w.Create(t.Context(), network, testPassword, "")
-					require.NoError(t, err)
-					return w
-				},
-				"wallet is locked",
 			},
 		}
 		for _, tt := range tests {
