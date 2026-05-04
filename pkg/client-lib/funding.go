@@ -138,8 +138,11 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 		go func() {
 			defer wg.Done()
 			totalOnchainBalance := uint64(0)
+			addresses := make([]string, 0, len(onchainAddrs))
 			for _, addr := range onchainAddrs {
-				utxos, err := a.explorer.GetUtxos(addr)
+				addresses = append(addresses, addr.Address)
+			}
+			utxos, err := a.explorer.GetUtxos(addresses)
 				balance := uint64(0)
 				for _, utxo := range utxos {
 					balance += utxo.Amount
@@ -149,7 +152,6 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 					return
 				}
 				totalOnchainBalance += balance
-			}
 			chRes <- balanceRes{onchainSpendableBalance: totalOnchainBalance}
 		}()
 

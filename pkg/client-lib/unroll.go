@@ -243,8 +243,13 @@ func (a *service) bumpAnchorTx(
 	selectedCoins := make([]explorer.Utxo, 0)
 	selectedAmount := uint64(0)
 	amountToSelect := int64(fees) - txutils.ANCHOR_VALUE
+	keys := make(map[string]string)
 	for _, addr := range addresses {
-		utxos, err := a.explorer.GetUtxos(addr)
+		utxos, err := a.explorer.GetUtxos([]string{addr.Address})
+		if err != nil {
+			return "", "", err
+		}
+		script, err := toOutputScript(addr.Address, a.Network)
 		if err != nil {
 			return "", "", err
 		}
@@ -253,6 +258,7 @@ func (a *service) bumpAnchorTx(
 			selectedCoins = append(selectedCoins, utxo)
 			selectedAmount += utxo.Amount
 			amountToSelect -= int64(selectedAmount)
+			keys[hex.EncodeToString(script)] = addr.KeyID
 			if amountToSelect <= 0 {
 				break
 			}
@@ -554,7 +560,7 @@ func (a *service) getExpiredBoardingUtxos(
 			return nil, err
 		}
 
-		boardingUtxos, err := a.explorer.GetUtxos(addr.Address)
+		boardingUtxos, err := a.explorer.GetUtxos([]string{addr.Address})
 		if err != nil {
 			return nil, err
 		}
@@ -672,17 +678,25 @@ func (a *service) getMatureUtxos(ctx context.Context) ([]types.Utxo, error) {
 	now := time.Now()
 
 	utxos := make([]types.Utxo, 0)
+	addresses := make([]string, 0, len(redemptionAddrs))
+	addrTapscripts := make(map[string][]string)
 	for _, addr := range redemptionAddrs {
-		fetchedUtxos, err := a.explorer.GetUtxos(addr.Address)
+		addresses = append(addresses, addr.Address)
+		// nolint
+		script, _ := toOutputScript(addr.Address, a.Network)
+		addrTapscripts[hex.EncodeToString(script)] = addr.Tapscripts
+	}
+
+	fetchedUtxos, err := a.explorer.GetUtxos(addresses)
 		if err != nil {
 			return nil, err
 		}
 
 		for _, utxo := range fetchedUtxos {
-			u := utxo.ToUtxo(a.UnilateralExitDelay, addr.Tapscripts)
+		tapscripts := addrTapscripts[utxo.Script]
+		u := utxo.ToUtxo(a.UnilateralExitDelay, tapscripts)
 			if u.SpendableAt.Before(now) {
 				utxos = append(utxos, u)
-			}
 		}
 	}
 

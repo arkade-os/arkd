@@ -398,7 +398,7 @@ func (a *service) getClaimableBoardingUtxos(
 			return nil, err
 		}
 
-		boardingUtxos, err := a.explorer.GetUtxos(addr.Address)
+		boardingUtxos, err := a.explorer.GetUtxos([]string{addr.Address})
 		if err != nil {
 			return nil, err
 		}
