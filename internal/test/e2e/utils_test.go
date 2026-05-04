@@ -180,7 +180,7 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 
 	time.Sleep(5 * time.Second)
 
-	selectedCoins, err := explorerSvc.GetUtxos(addr.EncodeAddress())
+	selectedCoins, err := explorerSvc.GetUtxos([]string{addr.EncodeAddress()})
 	require.NoError(t, err)
 	require.Len(t, selectedCoins, 1)
 
