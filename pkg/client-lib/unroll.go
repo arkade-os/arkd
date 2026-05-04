@@ -196,7 +196,7 @@ func (a *service) OnboardAgainAllExpiredBoardings(
 		}
 	}
 
-	addr, err := a.getReceiver(ctx, options.receiver)
+	addr, err := a.getBoardingReceiver(ctx, options.receiver)
 	if err != nil {
 		return "", err
 	}

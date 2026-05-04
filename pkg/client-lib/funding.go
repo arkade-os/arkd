@@ -79,7 +79,7 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 		return nil, fmt.Errorf("wallet not initialized")
 	}
 
-	onchainAddrs, offchainAddrs, boardingAddrs, redeemAddrs, err := a.getAddresses(ctx)
+	onchainAddrs, _, boardingAddrs, redeemAddrs, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -102,127 +102,113 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 		}, nil
 	}
 
-	const nbWorkers = 4
+	var (
+		offchainBalance    uint64
+		amountByExpiration map[int64]uint64
+		assetBalances      map[string]uint64
+		onchainSpendable   uint64
+		boardingSpendable  uint64
+		boardingLocked     []LockedOnchainBalance
+		redeemSpendable    uint64
+		redeemLocked       []LockedOnchainBalance
+
+		offchainErr, onchainErr, boardingErr, redeemErr error
+	)
+
 	wg := &sync.WaitGroup{}
-	wg.Add(nbWorkers * len(offchainAddrs))
+	wg.Add(4)
 
-	chRes := make(chan balanceRes, nbWorkers*len(offchainAddrs))
-	for i := range offchainAddrs {
-		boardingAddr := boardingAddrs[i]
-		redeemAddr := redeemAddrs[i]
+	go func() {
+		defer wg.Done()
+		bal, byExp, assets, err := a.getOffchainBalance(ctx)
+		if err != nil {
+			offchainErr = err
+			return
+		}
+		offchainBalance = bal
+		amountByExpiration = byExp
+		assetBalances = assets
+	}()
 
-		go func() {
-			defer wg.Done()
-			balance, amountByExpiration, assetBalances, err := a.getOffchainBalance(ctx)
-			if err != nil {
-				chRes <- balanceRes{err: err}
-				return
-			}
+	go func() {
+		defer wg.Done()
+		addresses := make([]string, 0, len(onchainAddrs))
+		for _, addr := range onchainAddrs {
+			addresses = append(addresses, addr.Address)
+		}
+		utxos, err := a.explorer.GetUtxos(addresses)
+		if err != nil {
+			onchainErr = err
+			return
+		}
+		for _, u := range utxos {
+			onchainSpendable += u.Amount
+		}
+	}()
 
-			chRes <- balanceRes{
-				offchainBalance:             balance,
-				offchainBalanceByExpiration: amountByExpiration,
-				assetBalances:               assetBalances,
-			}
-		}()
-
-		getDelayedBalance := func(addr string) {
-			defer wg.Done()
-
-			spendableBalance, lockedBalance, err := a.explorer.GetRedeemedVtxosBalance(
-				addr, a.UnilateralExitDelay,
+	go func() {
+		defer wg.Done()
+		for _, addr := range boardingAddrs {
+			spendable, locked, err := a.explorer.GetRedeemedVtxosBalance(
+				addr.Address, a.UnilateralExitDelay,
 			)
 			if err != nil {
-				chRes <- balanceRes{err: err}
+				boardingErr = err
 				return
 			}
-
-			chRes <- balanceRes{
-				onchainSpendableBalance: spendableBalance,
-				onchainLockedBalance:    lockedBalance,
-				err:                     err,
+			boardingSpendable += spendable
+			for ts, amt := range locked {
+				boardingLocked = append(boardingLocked, LockedOnchainBalance{
+					SpendableAt: time.Unix(ts, 0).Format(time.RFC3339),
+					Amount:      amt,
+				})
 			}
 		}
+	}()
 
-		go func() {
-			defer wg.Done()
-			totalOnchainBalance := uint64(0)
-			addresses := make([]string, 0, len(onchainAddrs))
-			for _, addr := range onchainAddrs {
-				addresses = append(addresses, addr.Address)
-			}
-			utxos, err := a.explorer.GetUtxos(addresses)
-			balance := uint64(0)
-			for _, utxo := range utxos {
-				balance += utxo.Amount
-			}
+	go func() {
+		defer wg.Done()
+		for _, addr := range redeemAddrs {
+			spendable, locked, err := a.explorer.GetRedeemedVtxosBalance(
+				addr.Address, a.UnilateralExitDelay,
+			)
 			if err != nil {
-				chRes <- balanceRes{err: err}
+				redeemErr = err
 				return
 			}
-			totalOnchainBalance += balance
-			chRes <- balanceRes{onchainSpendableBalance: totalOnchainBalance}
-		}()
-
-		go getDelayedBalance(boardingAddr.Address)
-		go getDelayedBalance(redeemAddr.Address)
-	}
+			redeemSpendable += spendable
+			for ts, amt := range locked {
+				redeemLocked = append(redeemLocked, LockedOnchainBalance{
+					SpendableAt: time.Unix(ts, 0).Format(time.RFC3339),
+					Amount:      amt,
+				})
+			}
+		}
+	}()
 
 	wg.Wait()
 
-	lockedOnchainBalance := []LockedOnchainBalance{}
-	details := make([]VtxoDetails, 0)
-	offchainBalance, onchainBalance := uint64(0), uint64(0)
-	nextExpiration := int64(0)
-	assetBalances := make(map[string]uint64)
-	count := 0
-	for res := range chRes {
-		if res.err != nil {
-			return nil, res.err
-		}
-		if res.offchainBalance > 0 {
-			offchainBalance = res.offchainBalance
-		}
-		if res.onchainSpendableBalance > 0 {
-			onchainBalance += res.onchainSpendableBalance
-		}
-		nextExpiration, details = getOffchainBalanceDetails(res.offchainBalanceByExpiration)
-
-		if res.assetBalances != nil {
-			for assetId, amount := range res.assetBalances {
-				assetBalances[assetId] += amount
-			}
-		}
-
-		if res.onchainLockedBalance != nil {
-			for timestamp, amount := range res.onchainLockedBalance {
-				fancyTime := time.Unix(timestamp, 0).Format(time.RFC3339)
-				lockedOnchainBalance = append(
-					lockedOnchainBalance,
-					LockedOnchainBalance{
-						SpendableAt: fancyTime,
-						Amount:      amount,
-					},
-				)
-			}
-		}
-
-		count++
-		if count == nbWorkers {
-			break
+	for _, e := range []error{offchainErr, onchainErr, boardingErr, redeemErr} {
+		if e != nil {
+			return nil, e
 		}
 	}
 
-	// remove empty asset balances
 	for assetId, amount := range assetBalances {
 		if amount == 0 {
 			delete(assetBalances, assetId)
 		}
 	}
 
+	nextExpiration, details := getOffchainBalanceDetails(amountByExpiration)
+
+	lockedOnchainBalance := make([]LockedOnchainBalance, 0, len(boardingLocked)+len(redeemLocked))
+	lockedOnchainBalance = append(lockedOnchainBalance, boardingLocked...)
+	lockedOnchainBalance = append(lockedOnchainBalance, redeemLocked...)
+
 	return &Balance{
 		OnchainBalance: OnchainBalance{
-			SpendableAmount: onchainBalance,
+			SpendableAmount: onchainSpendable + boardingSpendable + redeemSpendable,
 			LockedAmount:    lockedOnchainBalance,
 		},
 		OffchainBalance: OffchainBalance{
@@ -715,6 +701,20 @@ func (s *service) getReceiver(ctx context.Context, optReceiver string) (string, 
 		return optReceiver, nil
 	}
 	_, changeAddr, _, err := s.newAddress(ctx)
+	if err != nil {
+		return "", err
+	}
+	return changeAddr.Address, nil
+}
+
+func (s *service) getBoardingReceiver(ctx context.Context, optReceiver string) (string, error) {
+	if len(optReceiver) > 0 {
+		if err := validateOffchainAddress(optReceiver); err != nil {
+			return "", err
+		}
+		return optReceiver, nil
+	}
+	_, _, changeAddr, err := s.newAddress(ctx)
 	if err != nil {
 		return "", err
 	}
