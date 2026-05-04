@@ -57,6 +57,7 @@ type sendOptions struct {
 	vtxos                []types.VtxoWithTapTree
 	signingKeys          map[string]string
 	extraPackets         []extension.Packet
+	receiver             string
 }
 
 func newDefaultSendOptions() *sendOptions {

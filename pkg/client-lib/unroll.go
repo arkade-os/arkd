@@ -106,7 +106,7 @@ func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes
 			return nil, err
 		}
 
-		childTxid, child, err := a.bumpAnchorTx(ctx, &parentTx, options.signingKeys)
+		childTxid, child, err := a.bumpAnchorTx(ctx, &parentTx)
 		if err != nil {
 			return nil, err
 		}
@@ -196,19 +196,17 @@ func (a *service) OnboardAgainAllExpiredBoardings(
 		}
 	}
 
-	_, _, boardingAddr, err := a.newAddress(ctx)
+	addr, err := a.getReceiver(ctx, options.receiver)
 	if err != nil {
 		return "", err
 	}
 
-	return a.sendExpiredBoardingUtxos(ctx, boardingAddr.Address, options)
+	return a.sendExpiredBoardingUtxos(ctx, addr, options)
 }
 
 // bumpAnchorTx builds and signs a transaction bumping the fees for a given tx with P2A output.
 // Makes use of the onchain P2TR account to select UTXOs to pay fees for parent.
-func (a *service) bumpAnchorTx(
-	ctx context.Context, parent *wire.MsgTx, keys map[string]string,
-) (string, string, error) {
+func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string, string, error) {
 	anchor, err := txutils.FindAnchorOutpoint(parent)
 	if err != nil {
 		return "", "", err
@@ -688,15 +686,15 @@ func (a *service) getMatureUtxos(ctx context.Context) ([]types.Utxo, error) {
 	}
 
 	fetchedUtxos, err := a.explorer.GetUtxos(addresses)
-		if err != nil {
-			return nil, err
-		}
+	if err != nil {
+		return nil, err
+	}
 
-		for _, utxo := range fetchedUtxos {
+	for _, utxo := range fetchedUtxos {
 		tapscripts := addrTapscripts[utxo.Script]
 		u := utxo.ToUtxo(a.UnilateralExitDelay, tapscripts)
-			if u.SpendableAt.Before(now) {
-				utxos = append(utxos, u)
+		if u.SpendableAt.Before(now) {
+			utxos = append(utxos, u)
 		}
 	}
 

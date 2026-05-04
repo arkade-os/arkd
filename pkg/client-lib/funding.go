@@ -46,7 +46,16 @@ func (a *service) GetAddresses(
 		return nil, nil, nil, nil, err
 	}
 
-	return a.getAddresses(ctx)
+	onchainAddrs, offchainAddrs, boardingAddrs, redemptionAddrs, err := a.getAddresses(ctx)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	onchainAddresses := make([]string, 0, len(onchainAddrs))
+	for _, addr := range onchainAddrs {
+		onchainAddresses = append(onchainAddresses, addr.Address)
+	}
+	return onchainAddresses, offchainAddrs, boardingAddrs, redemptionAddrs, nil
 }
 
 func (a *service) ListVtxos(
@@ -143,15 +152,15 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 				addresses = append(addresses, addr.Address)
 			}
 			utxos, err := a.explorer.GetUtxos(addresses)
-				balance := uint64(0)
-				for _, utxo := range utxos {
-					balance += utxo.Amount
-				}
-				if err != nil {
-					chRes <- balanceRes{err: err}
-					return
-				}
-				totalOnchainBalance += balance
+			balance := uint64(0)
+			for _, utxo := range utxos {
+				balance += utxo.Amount
+			}
+			if err != nil {
+				chRes <- balanceRes{err: err}
+				return
+			}
+			totalOnchainBalance += balance
 			chRes <- balanceRes{onchainSpendableBalance: totalOnchainBalance}
 		}()
 
@@ -305,8 +314,7 @@ func (a *service) newAddress(
 }
 
 func (a *service) getAddresses(ctx context.Context) (
-	onchainAddrs []string,
-	offchainAddrs, boardingAddrs, redemptionAddrs []types.Address,
+	onchainAddrs, offchainAddrs, boardingAddrs, redemptionAddrs []types.Address,
 	err error,
 ) {
 	keys := make([]wallet.KeyRef, 0)
@@ -331,7 +339,7 @@ func (a *service) getAddresses(ctx context.Context) (
 			return nil, nil, nil, nil, err
 		}
 
-		onchainAddrs = append(onchainAddrs, onchainAddr)
+		onchainAddrs = append(onchainAddrs, types.Address{KeyID: key.Id, Address: onchainAddr})
 		offchainAddrs = append(offchainAddrs, *offchainAddr)
 		boardingAddrs = append(boardingAddrs, *boardingAddr)
 		redemptionAddrs = append(redemptionAddrs, *redemptionAddr)
@@ -697,6 +705,20 @@ func (i *service) vtxosToTxs(
 	}
 
 	return txs, nil
+}
+
+func (s *service) getReceiver(ctx context.Context, optReceiver string) (string, error) {
+	if len(optReceiver) > 0 {
+		if err := validateOffchainAddress(optReceiver); err != nil {
+			return "", err
+		}
+		return optReceiver, nil
+	}
+	_, changeAddr, _, err := s.newAddress(ctx)
+	if err != nil {
+		return "", err
+	}
+	return changeAddr.Address, nil
 }
 
 // NetVtxoAssets returns the per-asset balance for a vtxo movement:

@@ -27,13 +27,13 @@ func (a *service) IssueAsset(
 		}
 	}
 
-	_, changeAddr, _, err := a.newAddress(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	if amount == 0 {
 		return nil, fmt.Errorf("amount must be > 0")
+	}
+
+	addr, err := a.getReceiver(ctx, o.receiver)
+	if err != nil {
+		return nil, err
 	}
 
 	a.txLock.Lock()
@@ -50,7 +50,7 @@ func (a *service) IssueAsset(
 	}
 
 	receiver := types.Receiver{
-		To: changeAddr.Address, Amount: a.Dust,
+		To: addr, Amount: a.Dust,
 		Assets: receiverAsset,
 	}
 
@@ -244,11 +244,6 @@ func (a *service) ReissueAsset(
 		}
 	}
 
-	_, changeAddr, _, err := a.newAddress(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	if amount == 0 {
 		return nil, fmt.Errorf("amount must be > 0")
 	}
@@ -262,11 +257,16 @@ func (a *service) ReissueAsset(
 		return nil, fmt.Errorf("%s can't be reissued, no control asset", assetId)
 	}
 
+	addr, err := a.getReceiver(ctx, o.receiver)
+	if err != nil {
+		return nil, err
+	}
+
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
 	receiver := types.Receiver{
-		To: changeAddr.Address, Amount: a.Dust,
+		To: addr, Amount: a.Dust,
 		Assets: []types.Asset{{
 			AssetId: controlAssetId,
 			Amount:  1, // TODO: should send all denominated amount of the asset vtxo
@@ -425,19 +425,16 @@ func (a *service) BurnAsset(
 		}
 	}
 
-	_, changeAddr, _, err := a.newAddress(ctx)
+	addr, err := a.getReceiver(ctx, o.receiver)
 	if err != nil {
 		return nil, err
-	}
-	if len(changeAddr.Address) <= 0 {
-		return nil, fmt.Errorf("no offchain addresses")
 	}
 
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
 	burnReceiver := types.Receiver{
-		To:     changeAddr.Address,
+		To:     addr,
 		Amount: a.Dust,
 		Assets: []types.Asset{{
 			AssetId: assetId,

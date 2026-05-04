@@ -120,6 +120,7 @@ type batchSessionOptions struct {
 	boardingUtxos        []types.Utxo
 	vtxos                []types.VtxoWithTapTree
 	keyIdsByScript       map[string]string
+	receiver             string
 
 	cancelCh <-chan struct{}
 	eventsCh chan<- any
