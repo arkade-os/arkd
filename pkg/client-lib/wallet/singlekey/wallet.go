@@ -110,6 +110,10 @@ func (w *singlekeyWallet) IsLocked() bool {
 }
 
 func (w *singlekeyWallet) NextIndex(_ context.Context) (uint32, error) {
+	if w.walletData != nil {
+		return 1, nil
+	}
+
 	return 0, nil
 }
 
