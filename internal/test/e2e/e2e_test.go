@@ -389,101 +389,353 @@ func TestUnilateralExit(t *testing.T) {
 // and accepts it into the batch. After settlement Alice's funds are back
 // offchain.
 func TestUnrolledVtxoRejoinBatch(t *testing.T) {
-	t.Run("without asset", func(t *testing.T) {
-		ctx := t.Context()
-		alice := setupClient(t)
+	t.Run("valid", func(t *testing.T) {
+		t.Run("without asset", func(t *testing.T) {
+			ctx := t.Context()
+			alice := setupClient(t)
 
-		// Fund Alice offchain + small onchain amount for unroll fees
-		faucet(t, alice, 0.00021)
-		time.Sleep(5 * time.Second)
+			// Fund Alice offchain + small onchain amount for unroll fees
+			faucet(t, alice, 0.00021)
+			time.Sleep(5 * time.Second)
 
-		_, offchainAddr, _, err := alice.Receive(ctx)
-		require.NoError(t, err)
+			_, offchainAddr, _, err := alice.Receive(ctx)
+			require.NoError(t, err)
 
-		balance, err := alice.Balance(ctx)
-		require.NoError(t, err)
-		require.NotZero(t, balance.OffchainBalance.Total)
-		require.Empty(t, balance.OnchainBalance.LockedAmount)
+			balance, err := alice.Balance(ctx)
+			require.NoError(t, err)
+			require.NotZero(t, balance.OffchainBalance.Total)
+			require.Empty(t, balance.OnchainBalance.LockedAmount)
 
-		// Unroll: moves VTXOs onchain
-		txids, err := alice.Unroll(ctx)
-		require.NoError(t, err)
-		require.NotEmpty(t, txids)
+			// Unroll: moves VTXOs onchain
+			txids, err := alice.Unroll(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, txids)
 
-		err = generateBlocks(1)
-		require.NoError(t, err)
+			err = generateBlocks(1)
+			require.NoError(t, err)
 
-		// Poll for the wallet to index the new block instead of sleeping a fixed
-		// interval — every second spent here eats into the unrolled VTXO's CSV
-		// runway before the subsequent Settle call.
-		require.Eventually(t, func() bool {
-			b, err := alice.Balance(ctx)
-			if err != nil {
+			// Poll for the wallet to index the new block instead of sleeping a fixed
+			// interval — every second spent here eats into the unrolled VTXO's CSV
+			// runway before the subsequent Settle call.
+			require.Eventually(t, func() bool {
+				b, err := alice.Balance(ctx)
+				if err != nil {
+					return false
+				}
+				return b.OffchainBalance.Total == 0 &&
+					len(b.OnchainBalance.LockedAmount) > 0 &&
+					b.OnchainBalance.LockedAmount[0].Amount > 0
+			}, 15*time.Second, 200*time.Millisecond)
+
+			balance, err = alice.Balance(ctx)
+			require.NoError(t, err)
+
+			// Find the unrolled VTXO in the spent list
+			_, spentVtxos, err := alice.ListVtxos(ctx)
+			require.NoError(t, err)
+
+			var unrolledVtxo types.Vtxo
+			for _, v := range spentVtxos {
+				if v.Unrolled && !v.Spent {
+					unrolledVtxo = v
+					break
+				}
+			}
+			require.NotZero(t, unrolledVtxo.Amount)
+
+			// Receive returns *types.Address which carries Tapscripts — use them
+			// to present the unrolled VTXO as a boarding input.
+			boardingUtxo := types.Utxo{
+				Outpoint:   unrolledVtxo.Outpoint,
+				Amount:     unrolledVtxo.Amount,
+				Tapscripts: offchainAddr.Tapscripts,
+			}
+
+			// Rejoin the batch — unrolled VTXO should be accepted as a boarding input
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
+			var incomingErr error
+			go func() {
+				_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+				wg.Done()
+			}()
+
+			res, err := alice.Settle(ctx,
+				arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
+			)
+			require.NoError(t, err)
+			require.NotEmpty(t, res.CommitmentTxid)
+
+			wg.Wait()
+			require.NoError(t, incomingErr)
+			time.Sleep(time.Second)
+
+			// Alice has offchain funds again
+			balance, err = alice.Balance(ctx)
+			require.NoError(t, err)
+			require.NotZero(t, balance.OffchainBalance.Total)
+
+			// Once the unrolled VTXO has been accepted into a batch, the onchain
+			// UTXO is spent. Mining past the unilateral exit delay and calling
+			// CompleteUnroll should find no mature funds to claim.
+			err = generateBlocks(20)
+			require.NoError(t, err)
+
+			time.Sleep(5 * time.Second)
+
+			_, err = alice.CompleteUnroll(ctx, "")
+			require.ErrorContains(t, err, "no mature funds available")
+		})
+
+		t.Run("with asset", func(t *testing.T) {
+			ctx := t.Context()
+			alice := setupClient(t)
+
+			// Fund Alice with the exact amount needed for an asset issuance
+			// to avoid creating BTC change (which would leave a non-asset
+			// VTXO behind that we don't care about for this test).
+			faucetOffchain(t, alice, 0.00000330)
+
+			onchainAddr, offchainAddr, _, err := alice.Receive(ctx)
+			require.NoError(t, err)
+
+			// Fund Alice's onchain address generously to cover the unroll
+			// fee bumps for both the leaf and the asset issuance txs.
+			faucetOnchain(t, onchainAddr, 0.01)
+			time.Sleep(5 * time.Second)
+
+			// mint an asset to alice's wallet
+			supply := uint64(6000)
+			issueRes, err := alice.IssueAsset(ctx, supply, nil, nil)
+			require.NoError(t, err)
+			require.NotNil(t, issueRes)
+			require.Len(t, issueRes.IssuedAssets, 1)
+			assetId := issueRes.IssuedAssets[0].String()
+
+			time.Sleep(3 * time.Second)
+
+			assetVtxos := listVtxosWithAsset(t, alice, assetId)
+			require.Len(t, assetVtxos, 1)
+			requireVtxoHasAsset(t, assetVtxos[0], assetId, supply)
+
+			// Asset VTXOs require an extra unroll round-trip: the leaf tx
+			// confirms first, the server reacts by broadcasting the asset
+			// issuance/checkpoint tx, and a second Unroll() call finalises
+			// the unroll once that tx is confirmed.
+			txids, err := alice.Unroll(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, txids)
+
+			err = generateBlocks(1)
+			require.NoError(t, err)
+			time.Sleep(5 * time.Second)
+
+			err = generateBlocks(1)
+			require.NoError(t, err)
+			time.Sleep(5 * time.Second)
+
+			txids, err = alice.Unroll(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, txids)
+
+			err = generateBlocks(1)
+			require.NoError(t, err)
+
+			// Wait for the wallet to index the unrolled asset VTXO.
+			require.Eventually(t, func() bool {
+				spendable, spent, err := alice.ListVtxos(ctx)
+				if err != nil {
+					return false
+				}
+				if len(spendable) != 0 {
+					return false
+				}
+				for _, v := range spent {
+					if v.Unrolled && !v.Spent && len(v.Assets) > 0 {
+						return true
+					}
+				}
 				return false
+			}, 15*time.Second, 200*time.Millisecond)
+
+			_, spentVtxos, err := alice.ListVtxos(ctx)
+			require.NoError(t, err)
+
+			var unrolledAssetVtxo types.Vtxo
+			for _, v := range spentVtxos {
+				if v.Unrolled && !v.Spent && len(v.Assets) > 0 {
+					unrolledAssetVtxo = v
+					break
+				}
 			}
-			return b.OffchainBalance.Total == 0 &&
-				len(b.OnchainBalance.LockedAmount) > 0 &&
-				b.OnchainBalance.LockedAmount[0].Amount > 0
-		}, 15*time.Second, 200*time.Millisecond, "unroll did not settle onchain in time")
+			require.NotZero(t, unrolledAssetVtxo.Amount)
 
-		balance, err = alice.Balance(ctx)
-		require.NoError(t, err)
-
-		// Find the unrolled VTXO in the spent list
-		_, spentVtxos, err := alice.ListVtxos(ctx)
-		require.NoError(t, err)
-
-		var unrolledVtxo types.Vtxo
-		for _, v := range spentVtxos {
-			if v.Unrolled && !v.Spent {
-				unrolledVtxo = v
-				break
+			// Same flow as the without-asset case: present the unrolled
+			// asset VTXO as a boarding input. The Assets field carries the
+			// asset metadata so the SDK builds the intent's asset packet.
+			boardingUtxo := types.Utxo{
+				Outpoint:   unrolledAssetVtxo.Outpoint,
+				Amount:     unrolledAssetVtxo.Amount,
+				Tapscripts: offchainAddr.Tapscripts,
+				Assets:     unrolledAssetVtxo.Assets,
 			}
-		}
-		require.NotZero(t, unrolledVtxo.Amount, "expected an unrolled VTXO")
 
-		// Receive returns *types.Address which carries Tapscripts — use them
-		// to present the unrolled VTXO as a boarding input.
-		boardingUtxo := types.Utxo{
-			Outpoint:   unrolledVtxo.Outpoint,
-			Amount:     unrolledVtxo.Amount,
-			Tapscripts: offchainAddr.Tapscripts,
-		}
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
+			var incomingErr error
+			go func() {
+				_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+				wg.Done()
+			}()
 
-		// Rejoin the batch — unrolled VTXO should be accepted as a boarding input
-		wg := &sync.WaitGroup{}
-		wg.Add(1)
-		var incomingErr error
-		go func() {
-			_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
-			wg.Done()
-		}()
+			res, err := alice.Settle(ctx,
+				arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
+			)
+			require.NoError(t, err)
+			require.NotEmpty(t, res.CommitmentTxid)
 
-		res, err := alice.Settle(ctx,
-			arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
-		)
-		require.NoError(t, err)
-		require.NotEmpty(t, res.CommitmentTxid)
+			wg.Wait()
+			require.NoError(t, incomingErr)
+			time.Sleep(time.Second)
 
-		wg.Wait()
-		require.NoError(t, incomingErr)
-		time.Sleep(time.Second)
+			// Asset balance should be back offchain after rejoining.
+			balance, err := alice.Balance(ctx)
+			require.NoError(t, err)
+			assetBalance, ok := balance.AssetBalances[assetId]
+			require.True(t, ok)
+			require.Equal(t, supply, assetBalance)
 
-		// Alice has offchain funds again
-		balance, err = alice.Balance(ctx)
-		require.NoError(t, err)
-		require.NotZero(t, balance.OffchainBalance.Total)
+			// The resulting offchain VTXO must carry the asset metadata.
+			rejoinedAssetVtxos := listVtxosWithAsset(t, alice, assetId)
+			require.Len(t, rejoinedAssetVtxos, 1)
+			requireVtxoHasAsset(t, rejoinedAssetVtxos[0], assetId, supply)
+		})
+	})
 
-		// Once the unrolled VTXO has been accepted into a batch, the onchain
-		// UTXO is spent. Mining past the unilateral exit delay and calling
-		// CompleteUnroll should find no mature funds to claim.
-		err = generateBlocks(20)
-		require.NoError(t, err)
+	t.Run("invalid", func(t *testing.T) {
+		// Alice unrolls and then waits for the unilateral exit delay to
+		// fully elapse. Once the CSV is reached the exit path is open, so
+		// the server must reject the rejoin request.
+		t.Run("csv reached", func(t *testing.T) {
+			ctx := t.Context()
+			alice := setupClient(t)
 
-		time.Sleep(5 * time.Second)
+			faucet(t, alice, 0.00021)
+			time.Sleep(5 * time.Second)
 
-		_, err = alice.CompleteUnroll(ctx, "")
-		require.ErrorContains(t, err, "no mature funds available")
+			_, offchainAddr, _, err := alice.Receive(ctx)
+			require.NoError(t, err)
+
+			txids, err := alice.Unroll(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, txids)
+
+			err = generateBlocks(1)
+			require.NoError(t, err)
+
+			require.Eventually(t, func() bool {
+				b, err := alice.Balance(ctx)
+				if err != nil {
+					return false
+				}
+				return b.OffchainBalance.Total == 0 &&
+					len(b.OnchainBalance.LockedAmount) > 0 &&
+					b.OnchainBalance.LockedAmount[0].Amount > 0
+			}, 15*time.Second, 200*time.Millisecond)
+
+			_, spentVtxos, err := alice.ListVtxos(ctx)
+			require.NoError(t, err)
+
+			var unrolledVtxo types.Vtxo
+			for _, v := range spentVtxos {
+				if v.Unrolled && !v.Spent {
+					unrolledVtxo = v
+					break
+				}
+			}
+			require.NotZero(t, unrolledVtxo.Amount)
+
+			// Wait past the unilateral exit delay (regtest: 20 in
+			// CSV-seconds) so the exit path is open. The server should
+			// then refuse to accept the unrolled VTXO as a boarding input.
+			time.Sleep(25 * time.Second)
+			require.NoError(t, generateBlocks(1))
+
+			boardingUtxo := types.Utxo{
+				Outpoint:   unrolledVtxo.Outpoint,
+				Amount:     unrolledVtxo.Amount,
+				Tapscripts: offchainAddr.Tapscripts,
+			}
+
+			_, err = alice.Settle(ctx,
+				arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
+			)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "expired")
+		})
+
+		// Alice unrolls a regular BTC-only VTXO and then attempts to
+		// rejoin the batch claiming, via the boarding utxo's Assets
+		// field, that the unrolled VTXO carries an asset.
+		// The server should reject it.
+		t.Run("fake asset on boarding input", func(t *testing.T) {
+			fakeAssetId := strings.Repeat("ab", 32) + "0000"
+
+			ctx := t.Context()
+			alice := setupClient(t)
+
+			faucet(t, alice, 0.00021)
+			time.Sleep(5 * time.Second)
+
+			_, offchainAddr, _, err := alice.Receive(ctx)
+			require.NoError(t, err)
+
+			txids, err := alice.Unroll(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, txids)
+
+			err = generateBlocks(1)
+			require.NoError(t, err)
+
+			require.Eventually(t, func() bool {
+				b, err := alice.Balance(ctx)
+				if err != nil {
+					return false
+				}
+				return b.OffchainBalance.Total == 0 &&
+					len(b.OnchainBalance.LockedAmount) > 0 &&
+					b.OnchainBalance.LockedAmount[0].Amount > 0
+			}, 15*time.Second, 200*time.Millisecond)
+
+			_, spentVtxos, err := alice.ListVtxos(ctx)
+			require.NoError(t, err)
+
+			var unrolledVtxo types.Vtxo
+			for _, v := range spentVtxos {
+				if v.Unrolled && !v.Spent {
+					unrolledVtxo = v
+					break
+				}
+			}
+			require.NotZero(t, unrolledVtxo.Amount)
+			require.Empty(t, unrolledVtxo.Assets)
+
+
+			boardingUtxo := types.Utxo{
+				Outpoint:   unrolledVtxo.Outpoint,
+				Amount:     unrolledVtxo.Amount,
+				Tapscripts: offchainAddr.Tapscripts,
+				Assets: []types.Asset{
+					{AssetId: fakeAssetId, Amount: 1},
+				},
+			}
+
+			_, err = alice.Settle(ctx,
+				arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
+			)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "does not contain any assets")
+		})
 	})
 }
 
