@@ -39,14 +39,20 @@ func (w *bitcoinWallet) NewKey(ctx context.Context) (*wallet.KeyRef, error) {
 	if w.walletData == nil {
 		return nil, fmt.Errorf("wallet not initialized")
 	}
-	return &wallet.KeyRef{PubKey: w.walletData.PubKey}, nil
+	return &wallet.KeyRef{
+		Id:     "m/0/0",
+		PubKey: w.walletData.PubKey,
+	}, nil
 }
 
 func (w *bitcoinWallet) GetKey(ctx context.Context, _ string) (*wallet.KeyRef, error) {
 	if w.walletData == nil {
 		return nil, fmt.Errorf("wallet not initialized")
 	}
-	return &wallet.KeyRef{PubKey: w.walletData.PubKey}, nil
+	return &wallet.KeyRef{
+		Id:     "m/0/0",
+		PubKey: w.walletData.PubKey,
+	}, nil
 }
 
 func (w *bitcoinWallet) ListKeys(ctx context.Context) ([]wallet.KeyRef, error) {
