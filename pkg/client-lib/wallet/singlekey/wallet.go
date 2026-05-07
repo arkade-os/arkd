@@ -109,10 +109,6 @@ func (w *singlekeyWallet) IsLocked() bool {
 	return w.privateKey == nil
 }
 
-func (w *singlekeyWallet) NextIndex(_ context.Context) (uint32, error) {
-	return 0, nil
-}
-
 func (w *singlekeyWallet) Dump(ctx context.Context) (string, error) {
 	if w.walletData == nil {
 		return "", fmt.Errorf("wallet not initialized")

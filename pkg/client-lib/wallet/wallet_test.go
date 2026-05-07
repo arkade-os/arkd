@@ -133,6 +133,38 @@ func TestNewKey(t *testing.T) {
 	})
 }
 
+func TestNextKeyId(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		walletSvc, _ := newUnlockedTestWallet(t)
+		ctx := t.Context()
+
+		// Single-key wallet always returns "m" regardless of the id argument.
+		id, err := walletSvc.NextKeyId(ctx, "")
+		require.NoError(t, err)
+		require.Equal(t, "m", id)
+
+		id, err = walletSvc.NextKeyId(ctx, "some-arbitrary-id")
+		require.NoError(t, err)
+		require.Equal(t, "m", id)
+	})
+}
+
+func TestGetKeyIndex(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		walletSvc, _ := newUnlockedTestWallet(t)
+		ctx := t.Context()
+
+		// Single-key wallet always returns 0 regardless of the id argument.
+		idx, err := walletSvc.GetKeyIndex(ctx, "")
+		require.NoError(t, err)
+		require.Equal(t, uint32(0), idx)
+
+		idx, err = walletSvc.GetKeyIndex(ctx, "some-arbitrary-id")
+		require.NoError(t, err)
+		require.Equal(t, uint32(0), idx)
+	})
+}
+
 func TestListKeys(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		walletSvc, seed := newUnlockedTestWallet(t)
