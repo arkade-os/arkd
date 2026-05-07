@@ -135,7 +135,7 @@ func (a *service) FinalizePendingTxs(
 		}
 	}
 
-	return a.finalizePendingTxs(ctx, createdAfter, o.signingKeys)
+	return a.finalizePendingTxs(ctx, createdAfter, o.vtxos, o.signingKeys)
 }
 
 func (a *service) createOffchainTx(
@@ -143,14 +143,6 @@ func (a *service) createOffchainTx(
 ) (string, []string, []types.VtxoWithTapTree, *types.Receiver, error) {
 	if len(receivers) <= 0 {
 		return "", nil, nil, nil, fmt.Errorf("missing receivers")
-	}
-
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
-	if err != nil {
-		return "", nil, nil, nil, err
-	}
-	if len(offchainAddrs) == 0 {
-		return "", nil, nil, nil, fmt.Errorf("no offchain addresses")
 	}
 
 	expectedSignerPubkey := schnorr.SerializePubKey(a.SignerPubKey)
@@ -180,6 +172,14 @@ func (a *service) createOffchainTx(
 	if len(opts.vtxos) > 0 {
 		vtxos = slices.Clone(opts.vtxos)
 	} else {
+		_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+		if err != nil {
+			return "", nil, nil, nil, err
+		}
+		if len(offchainAddrs) == 0 {
+			return "", nil, nil, nil, fmt.Errorf("no offchain addresses")
+		}
+
 		spendableVtxos, err := a.getSpendableVtxos(ctx, &getVtxosFilter{
 			withoutExpirySorting: opts.withoutExpirySorting,
 		})
@@ -362,13 +362,13 @@ func (a *service) createOffchainTx(
 	}
 
 	if changeAmount > 0 {
-		_, changeAddr, _, err := a.newAddress(ctx)
+		addr, err := a.getReceiver(ctx, opts.receiver)
 		if err != nil {
 			return "", nil, nil, nil, err
 		}
 
 		changeReceiver = &types.Receiver{
-			To: changeAddr.Address, Amount: changeAmount,
+			To: addr, Amount: changeAmount,
 		}
 		if len(assetChanges) > 0 {
 			for assetID, amount := range assetChanges {
@@ -417,15 +417,22 @@ func (a *service) createOffchainTx(
 }
 
 func (a *service) finalizePendingTxs(
-	ctx context.Context, createdAfter *time.Time, keysByScript map[string]string,
+	ctx context.Context, createdAfter *time.Time,
+	vtxosWithTapscripts []types.VtxoWithTapTree, keysByScript map[string]string,
 ) ([]string, error) {
-	vtxos, err := a.fetchPendingSpentVtxos(ctx)
-	if err != nil {
-		return nil, err
+	if len(vtxosWithTapscripts) <= 0 {
+		vtxos, err := a.fetchPendingSpentVtxos(ctx)
+		if err != nil {
+			return nil, err
+		}
+		vtxosWithTapscripts, err = a.populateVtxosWithTapscripts(ctx, vtxos)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	filtered := make([]types.Vtxo, 0, len(vtxos))
-	for _, vtxo := range vtxos {
+	filtered := make([]types.VtxoWithTapTree, 0, len(vtxosWithTapscripts))
+	for _, vtxo := range vtxosWithTapscripts {
 		if createdAfter != nil && !createdAfter.IsZero() {
 			if !vtxo.CreatedAt.After(*createdAfter) {
 				continue
@@ -438,18 +445,14 @@ func (a *service) finalizePendingTxs(
 		return nil, nil
 	}
 
-	vtxosWithTapscripts, err := a.populateVtxosWithTapscripts(ctx, filtered)
-	if err != nil {
-		return nil, err
-	}
-
-	inputs, exitLeaves, arkFields, _, err := toIntentInputs(nil, vtxosWithTapscripts, nil)
+	inputs, exitLeaves, arkFields, _, err := toIntentInputs(nil, filtered, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	txids := make([]string, 0)
 	const MAX_INPUTS_PER_INTENT = 20
+	signingRequired := true
 
 	for i := 0; i < len(inputs); i += MAX_INPUTS_PER_INTENT {
 		end := min(i+MAX_INPUTS_PER_INTENT, len(inputs))
@@ -457,7 +460,7 @@ func (a *service) finalizePendingTxs(
 		exitLeavesSubset := exitLeaves[i:end]
 		arkFieldsSubset := arkFields[i:end]
 		proofTx, message, err := a.makeGetPendingTxIntent(
-			inputsSubset, exitLeavesSubset, arkFieldsSubset, keysByScript,
+			inputsSubset, exitLeavesSubset, arkFieldsSubset, signingRequired, keysByScript,
 		)
 		if err != nil {
 			return nil, err

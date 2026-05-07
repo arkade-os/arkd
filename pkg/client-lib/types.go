@@ -29,15 +29,6 @@ type VtxoDetails struct {
 	Amount     uint64 `json:"amount"`
 }
 
-type balanceRes struct {
-	offchainBalance             uint64
-	onchainSpendableBalance     uint64
-	onchainLockedBalance        map[int64]uint64
-	offchainBalanceByExpiration map[int64]uint64
-	assetBalances               map[string]uint64
-	err                         error
-}
-
 type getVtxosFilter struct {
 	// If true, will sort coins by expiration (oldest first)
 	withoutExpirySorting bool

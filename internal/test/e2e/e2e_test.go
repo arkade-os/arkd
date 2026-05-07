@@ -4845,7 +4845,7 @@ func TestBan(t *testing.T) {
 			mempool_explorer.WithPollInterval(time.Second),
 		)
 		require.NoError(t, err)
-		boardingUtxos, err := explr.GetUtxos(boardingAddr.Address)
+		boardingUtxos, err := explr.GetUtxos([]string{boardingAddr.Address})
 		require.NoError(t, err)
 		require.NotEmpty(t, boardingUtxos)
 

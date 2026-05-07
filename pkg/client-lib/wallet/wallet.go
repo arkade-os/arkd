@@ -27,7 +27,8 @@ type WalletService interface {
 	Lock(ctx context.Context) (err error)
 	Unlock(ctx context.Context, password string) (alreadyUnlocked bool, err error)
 	IsLocked() bool
-	NextIndex(ctx context.Context) (index uint32, err error)
+	NextKeyId(ctx context.Context, id string) (string, error)
+	GetKeyIndex(ctx context.Context, id string) (index uint32, err error)
 	NewKey(ctx context.Context) (key *KeyRef, err error)
 	GetKey(ctx context.Context, id string) (key *KeyRef, err error)
 	ListKeys(ctx context.Context) (keys []KeyRef, err error)

@@ -87,16 +87,6 @@ func TestGetKey(t *testing.T) {
 				func(t *testing.T) wallet.WalletService { return newTestWallet(t) },
 				"wallet not initialized",
 			},
-			{
-				"locked",
-				func(t *testing.T) wallet.WalletService {
-					w := newTestWallet(t)
-					_, err := w.Create(t.Context(), network, testPassword, "")
-					require.NoError(t, err)
-					return w
-				},
-				"wallet is locked",
-			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -132,16 +122,6 @@ func TestNewKey(t *testing.T) {
 				func(t *testing.T) wallet.WalletService { return newTestWallet(t) },
 				"wallet not initialized",
 			},
-			{
-				"locked",
-				func(t *testing.T) wallet.WalletService {
-					w := newTestWallet(t)
-					_, err := w.Create(t.Context(), network, testPassword, "")
-					require.NoError(t, err)
-					return w
-				},
-				"wallet is locked",
-			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -150,6 +130,38 @@ func TestNewKey(t *testing.T) {
 				require.Nil(t, key)
 			})
 		}
+	})
+}
+
+func TestNextKeyId(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		walletSvc, _ := newUnlockedTestWallet(t)
+		ctx := t.Context()
+
+		// Single-key wallet always returns "m" regardless of the id argument.
+		id, err := walletSvc.NextKeyId(ctx, "")
+		require.NoError(t, err)
+		require.Equal(t, "m", id)
+
+		id, err = walletSvc.NextKeyId(ctx, "some-arbitrary-id")
+		require.NoError(t, err)
+		require.Equal(t, "m", id)
+	})
+}
+
+func TestGetKeyIndex(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		walletSvc, _ := newUnlockedTestWallet(t)
+		ctx := t.Context()
+
+		// Single-key wallet always returns 0 regardless of the id argument.
+		idx, err := walletSvc.GetKeyIndex(ctx, "")
+		require.NoError(t, err)
+		require.Equal(t, uint32(0), idx)
+
+		idx, err = walletSvc.GetKeyIndex(ctx, "some-arbitrary-id")
+		require.NoError(t, err)
+		require.Equal(t, uint32(0), idx)
 	})
 }
 

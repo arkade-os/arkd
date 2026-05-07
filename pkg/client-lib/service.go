@@ -184,7 +184,7 @@ func (a *service) Unlock(ctx context.Context, password string) error {
 		// TODO: @sekulicd shall we move this to go-sdk? Otherwise we would have to pass an extra
 		// option to Unlock to pass basically the keys ids for the whole vtxo set and that would
 		// look awkward.
-		txids, err := a.finalizePendingTxs(ctx, nil, nil)
+		txids, err := a.finalizePendingTxs(ctx, nil, nil, nil)
 		if err != nil {
 			return err
 		}

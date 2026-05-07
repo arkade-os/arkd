@@ -55,6 +55,14 @@ func (w *bitcoinWallet) GetKey(ctx context.Context, _ string) (*wallet.KeyRef, e
 	}, nil
 }
 
+func (w *bitcoinWallet) NextKeyId(ctx context.Context, _ string) (string, error) {
+	return "m", nil
+}
+
+func (w *bitcoinWallet) GetKeyIndex(ctx context.Context, _ string) (uint32, error) {
+	return 0, nil
+}
+
 func (w *bitcoinWallet) ListKeys(ctx context.Context) ([]wallet.KeyRef, error) {
 	key, err := w.GetKey(ctx, "")
 	if err != nil {
