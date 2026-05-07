@@ -479,7 +479,7 @@ func toIntentInputs(
 		arkFields = append(arkFields, []*psbt.Unknown{taptreeField})
 	}
 
-	for _, coin := range boardingUtxos {
+	for boardingIndex, coin := range boardingUtxos {
 		hash, err := chainhash.NewHashFromStr(coin.Txid)
 		if err != nil {
 			return nil, nil, nil, nil, err
@@ -501,6 +501,12 @@ func toIntentInputs(
 				PkScript: pkScript,
 			},
 		})
+
+		if len(coin.Assets) > 0 {
+			// boarding utxos sit after vtxos in the proof PSBT, and the +1
+			// accounts for the fake intent input at index 0.
+			assetInputs[len(vtxos)+boardingIndex+1] = coin.Assets
+		}
 
 		taptreeField, err := txutils.VtxoTaprootTreeField.Encode(coin.Tapscripts)
 		if err != nil {
