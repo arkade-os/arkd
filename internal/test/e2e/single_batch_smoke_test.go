@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/application"
-	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
+	wallet "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -109,25 +109,25 @@ func runBatchSettleTest(t *testing.T, config singleBatchConfig) {
 
 type orchestrator struct {
 	config  singleBatchConfig
-	clients map[int]arksdk.ArkClient
+	clients map[int]wallet.Wallet
 }
 
 func newOrchestrator(t *testing.T, config singleBatchConfig) *orchestrator {
 	chClients := make(chan struct {
 		id     int
-		client arksdk.ArkClient
+		client wallet.Wallet
 	}, config.NumClients)
-	clients := make(map[int]arksdk.ArkClient)
+	clients := make(map[int]wallet.Wallet)
 	wg := &sync.WaitGroup{}
 	wg.Add(config.NumClients)
 	go func() {
 		for i := range config.NumClients {
 			go func(wg *sync.WaitGroup, id int) {
 				defer wg.Done()
-				client := setupClient(t)
+				client := setupClientWallet(t)
 				chClients <- struct {
 					id     int
-					client arksdk.ArkClient
+					client wallet.Wallet
 				}{id, client}
 			}(wg, i)
 		}
@@ -162,7 +162,7 @@ func (o *orchestrator) onboard(t *testing.T) {
 	go func() {
 		for i, client := range o.clients {
 			note := append([]string{}, notes[i])
-			go func(id int, client arksdk.ArkClient, note []string) {
+			go func(id int, client wallet.Wallet, note []string) {
 				defer wg.Done()
 
 				res, err := client.RedeemNotes(context.Background(), note)
@@ -192,7 +192,7 @@ func (o *orchestrator) settle(t *testing.T) string {
 
 	go func() {
 		for i, client := range o.clients {
-			go func(id int, client arksdk.ArkClient) {
+			go func(id int, client wallet.Wallet) {
 				defer wg.Done()
 
 				res, err := client.Settle(context.Background())

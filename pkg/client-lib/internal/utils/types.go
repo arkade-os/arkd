@@ -23,7 +23,7 @@ func (t SupportedType[V]) Supports(typeStr string) bool {
 	return ok
 }
 
-type ClientFactory func(string, bool) (client.TransportClient, error)
+type ClientFactory func(string, bool) (client.Client, error)
 
 type IndexerFactory func(string, bool) (indexer.Indexer, error)
 

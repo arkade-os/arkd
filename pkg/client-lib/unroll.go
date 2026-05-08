@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"bytes"
@@ -322,7 +322,7 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 			}
 			keyID = id
 		}
-		keyRef, err := a.wallet.GetKey(ctx, keyID)
+		keyRef, err := a.identity.GetKey(ctx, keyID)
 		if err != nil {
 			return "", "", err
 		}
@@ -339,7 +339,7 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 		return "", "", err
 	}
 
-	tx, err := a.wallet.SignTransaction(ctx, b64, keys)
+	tx, err := a.identity.SignTransaction(ctx, b64, keys)
 	if err != nil {
 		return "", "", err
 	}
@@ -429,7 +429,7 @@ func (a *service) completeUnroll(
 
 	unsignedTx, _ := ptx.B64Encode()
 
-	signedTx, err := a.wallet.SignTransaction(ctx, unsignedTx, opts.signingKeys)
+	signedTx, err := a.identity.SignTransaction(ctx, unsignedTx, opts.signingKeys)
 	if err != nil {
 		return "", err
 	}
@@ -519,7 +519,7 @@ func (a *service) sendExpiredBoardingUtxos(
 
 	unsignedTx, _ := ptx.B64Encode()
 
-	signedTx, err := a.wallet.SignTransaction(ctx, unsignedTx, opts.signingKeys)
+	signedTx, err := a.identity.SignTransaction(ctx, unsignedTx, opts.signingKeys)
 	if err != nil {
 		return "", err
 	}

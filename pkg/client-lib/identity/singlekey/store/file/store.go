@@ -1,4 +1,4 @@
-package filestore
+package idenityFileStore
 
 import (
 	"encoding/hex"
@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	walletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store"
+	identityStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
 	"github.com/btcsuite/btcd/btcec/v2"
 )
 
@@ -17,29 +17,29 @@ const (
 	filename = "state.json"
 )
 
-type walletData struct {
+type identityData struct {
 	EncryptedPrvkey string `json:"encrypted_private_key"`
 	PasswordHash    string `json:"password_hash"`
 	PubKey          string `json:"pubkey"`
 }
 
-func (d walletData) isEmpty() bool {
-	return d == walletData{}
+func (d identityData) isEmpty() bool {
+	return d == identityData{}
 }
 
-func (d walletData) decode() walletstore.WalletData {
+func (d identityData) decode() identityStore.IdentityData {
 	encryptedPrvkey, _ := hex.DecodeString(d.EncryptedPrvkey)
 	passwordHash, _ := hex.DecodeString(d.PasswordHash)
 	buf, _ := hex.DecodeString(d.PubKey)
 	pubkey, _ := btcec.ParsePubKey(buf)
-	return walletstore.WalletData{
+	return identityStore.IdentityData{
 		EncryptedPrvkey: encryptedPrvkey,
 		PasswordHash:    passwordHash,
 		PubKey:          pubkey,
 	}
 }
 
-func (d walletData) asMap() map[string]any {
+func (d identityData) asMap() map[string]any {
 	return map[string]any{
 		"encrypted_private_key": d.EncryptedPrvkey,
 		"password_hash":         d.PasswordHash,
@@ -51,7 +51,7 @@ type fileStore struct {
 	filePath string
 }
 
-func NewWalletStore(baseDir string) (walletstore.WalletStore, error) {
+func NewStore(baseDir string) (identityStore.IdentityStore, error) {
 	datadir := cleanAndExpandPath(baseDir)
 	if err := makeDirectoryIfNotExists(datadir); err != nil {
 		return nil, fmt.Errorf("failed to initialize datadir: %s", err)
@@ -67,58 +67,56 @@ func NewWalletStore(baseDir string) (walletstore.WalletStore, error) {
 	return fileStore, nil
 }
 
-func (s *fileStore) AddWallet(data walletstore.WalletData) error {
-	wd := &walletData{
+func (s *fileStore) Add(data identityStore.IdentityData) error {
+	if err := s.write(&identityData{
 		EncryptedPrvkey: hex.EncodeToString(data.EncryptedPrvkey),
 		PasswordHash:    hex.EncodeToString(data.PasswordHash),
 		PubKey:          hex.EncodeToString(data.PubKey.SerializeCompressed()),
-	}
-
-	if err := s.write(wd); err != nil {
+	}); err != nil {
 		return fmt.Errorf("failed to write to file store: %s", err)
 	}
 	return nil
 }
 
-func (s *fileStore) GetWallet() (*walletstore.WalletData, error) {
-	wd, err := s.open()
+func (s *fileStore) Get() (*identityStore.IdentityData, error) {
+	rawData, err := s.open()
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return nil, err
 		}
-		if err := s.write(&walletData{}); err != nil {
+		if err := s.write(&identityData{}); err != nil {
 			return nil, fmt.Errorf("failed to initialize store: %s", err)
 		}
 		return nil, nil
 	}
-	if wd.isEmpty() {
+	if rawData.isEmpty() {
 		return nil, nil
 	}
 
-	data := wd.decode()
+	data := rawData.decode()
 	return &data, nil
 }
 
-func (s *fileStore) open() (*walletData, error) {
+func (s *fileStore) open() (*identityData, error) {
 	file, err := os.ReadFile(s.filePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("failed to open file store: %s", err)
 		}
-		if err := s.write(&walletData{}); err != nil {
+		if err := s.write(&identityData{}); err != nil {
 			return nil, fmt.Errorf("failed to initialize file store: %s", err)
 		}
-		return &walletData{}, nil
+		return &identityData{}, nil
 	}
 
-	data := &walletData{}
+	data := &identityData{}
 	if err := json.Unmarshal(file, data); err != nil {
 		return nil, fmt.Errorf("failed to read file store: %s", err)
 	}
 	return data, nil
 }
 
-func (s *fileStore) write(data *walletData) error {
+func (s *fileStore) write(data *identityData) error {
 	file, err := os.ReadFile(s.filePath)
 	if err != nil {
 		if !os.IsNotExist(err) {

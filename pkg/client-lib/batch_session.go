@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"bytes"
@@ -571,7 +571,7 @@ func (a *service) handleOptions(
 	sessions := make([]tree.SignerSession, 0)
 	sessions = append(sessions, options.extraSignerSessions...)
 
-	if !options.walletSignerDisabled {
+	if !options.treeSignerDisabled {
 		outpoints := make([]types.Outpoint, 0, len(inputs))
 		for _, input := range inputs {
 			outpoints = append(outpoints, types.Outpoint{
@@ -580,7 +580,7 @@ func (a *service) handleOptions(
 			})
 		}
 
-		signerSession, err := a.wallet.NewVtxoTreeSigner(context.Background())
+		signerSession, err := a.identity.NewVtxoTreeSigner(context.Background())
 		if err != nil {
 			return nil, nil, err
 		}
@@ -765,7 +765,7 @@ func (a *service) makeIntent(
 		return unsignedProofTx, message, nil
 	}
 
-	signedTx, err := a.wallet.SignTransaction(context.Background(), unsignedProofTx, keysByScript)
+	signedTx, err := a.identity.SignTransaction(context.Background(), unsignedProofTx, keysByScript)
 	if err != nil {
 		return "", "", err
 	}

@@ -1,4 +1,4 @@
-package grpcclient
+package grpcClient
 
 import (
 	"context"
@@ -28,7 +28,7 @@ type grpcClient struct {
 	listenerId string
 }
 
-func NewClient(serverUrl string) (client.TransportClient, error) {
+func NewClient(serverUrl string) (client.Client, error) {
 	if len(serverUrl) <= 0 {
 		return nil, fmt.Errorf("missing server url")
 	}

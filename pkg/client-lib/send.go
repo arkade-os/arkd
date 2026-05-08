@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"bytes"
@@ -66,7 +66,7 @@ func (a *service) SendOffChain(
 		return nil, err
 	}
 
-	signedArkTx, err := a.wallet.SignTransaction(ctx, arkTx, o.signingKeys)
+	signedArkTx, err := a.identity.SignTransaction(ctx, arkTx, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -490,7 +490,7 @@ func (a *service) finalizeTx(
 	finalCheckpoints := make([]string, 0, len(acceptedTx.SignedCheckpointTxs))
 
 	for _, checkpoint := range acceptedTx.SignedCheckpointTxs {
-		signedTx, err := a.wallet.SignTransaction(ctx, checkpoint, keysByScript)
+		signedTx, err := a.identity.SignTransaction(ctx, checkpoint, keysByScript)
 		if err != nil {
 			return "", nil, err
 		}

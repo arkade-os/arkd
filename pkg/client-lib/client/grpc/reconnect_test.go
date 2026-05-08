@@ -1,4 +1,4 @@
-package grpcclient
+package grpcClient
 
 import (
 	"context"
@@ -124,8 +124,6 @@ func TestGetTransactionsStreamEmitsConnectionLifecycleEvents(t *testing.T) {
 		}
 	}
 }
-
-
 
 func TestGetTransactionsStreamReconnectsAfterServerRestart(t *testing.T) {
 	originalCfg := utils.GrpcReconnectConfig

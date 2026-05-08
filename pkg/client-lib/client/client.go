@@ -23,7 +23,7 @@ type AcceptedOffchainTx struct {
 	SignedCheckpointTxs []string
 }
 
-type TransportClient interface {
+type Client interface {
 	GetInfo(ctx context.Context) (*Info, error)
 	RegisterIntent(ctx context.Context, proof, message string) (string, error)
 	DeleteIntent(ctx context.Context, proof, message string) error

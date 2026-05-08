@@ -1,4 +1,4 @@
-package mempool_explorer
+package mempoolExplorer
 
 import (
 	"context"
@@ -151,6 +151,6 @@ func TestIsTimeoutError(t *testing.T) {
 // timeoutError is a helper that implements the Timeout() bool interface.
 type timeoutError struct{}
 
-func (e *timeoutError) Error() string  { return "timeout" }
-func (e *timeoutError) Timeout() bool  { return true }
+func (e *timeoutError) Error() string   { return "timeout" }
+func (e *timeoutError) Timeout() bool   { return true }
 func (e *timeoutError) Temporary() bool { return true }

@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"context"
@@ -144,7 +144,7 @@ func (a *service) IssueAsset(
 		return nil, err
 	}
 
-	signedArkTx, err := a.wallet.SignTransaction(ctx, arkTx, o.signingKeys)
+	signedArkTx, err := a.identity.SignTransaction(ctx, arkTx, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +349,7 @@ func (a *service) ReissueAsset(
 		return nil, err
 	}
 
-	signedArkTx, err := a.wallet.SignTransaction(ctx, arkTx, o.signingKeys)
+	signedArkTx, err := a.identity.SignTransaction(ctx, arkTx, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -480,7 +480,7 @@ func (a *service) BurnAsset(
 		return nil, err
 	}
 
-	signedArkTx, err := a.wallet.SignTransaction(ctx, arkTx, o.signingKeys)
+	signedArkTx, err := a.identity.SignTransaction(ctx, arkTx, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}

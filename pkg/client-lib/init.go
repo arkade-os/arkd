@@ -1,14 +1,14 @@
-package arksdk
+package wallet
 
 import (
 	"context"
 	"fmt"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
+	grpcClient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	mempool_explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
-	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
+	mempoolExplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
+	grpcIndexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 )
@@ -17,8 +17,8 @@ func (a *service) Init(ctx context.Context, args InitArgs) error {
 	if err := args.validate(); err != nil {
 		return fmt.Errorf("invalid args: %s", err)
 	}
-	if a.wallet == nil {
-		return fmt.Errorf("wallet not initialized")
+	if a.identity == nil {
+		return ErrNotInitialized
 	}
 
 	return a.init(ctx, args.parse(), args.Explorer)
@@ -27,7 +27,7 @@ func (a *service) Init(ctx context.Context, args InitArgs) error {
 func (a *service) init(
 	ctx context.Context, args args, explorerSvc explorer.Explorer,
 ) error {
-	clientSvc, err := grpcclient.NewClient(args.serverUrl)
+	clientSvc, err := grpcClient.NewClient(args.serverUrl)
 	if err != nil {
 		return fmt.Errorf("failed to setup client: %s", err)
 	}
@@ -37,16 +37,16 @@ func (a *service) init(
 		return fmt.Errorf("failed to connect to server: %s", err)
 	}
 
-	indexerSvc, err := grpcindexer.NewClient(args.serverUrl)
+	indexerSvc, err := grpcIndexer.NewClient(args.serverUrl)
 	if err != nil {
 		return fmt.Errorf("failed to setup indexer: %s", err)
 	}
 
 	if explorerSvc == nil {
-		explorerOpts := []mempool_explorer.Option{
-			mempool_explorer.WithTracker(false),
+		explorerOpts := []mempoolExplorer.Option{
+			mempoolExplorer.WithTracker(false),
 		}
-		explorerSvc, err = mempool_explorer.NewExplorer(
+		explorerSvc, err = mempoolExplorer.NewExplorer(
 			args.explorerURL, utils.NetworkFromString(info.Network), explorerOpts...,
 		)
 		if err != nil {
@@ -56,7 +56,7 @@ func (a *service) init(
 
 	network := utils.NetworkFromString(info.Network)
 
-	if _, err := a.wallet.Create(
+	if _, err := a.identity.Create(
 		ctx, utils.ToBitcoinNetwork(network), args.password, args.seed,
 	); err != nil {
 		return err

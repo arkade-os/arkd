@@ -33,7 +33,7 @@
 // # Thread Safety
 //
 // All public methods are thread-safe and can be called concurrently.
-package mempool_explorer
+package mempoolExplorer
 
 import (
 	"bytes"

@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"bytes"
@@ -22,14 +22,14 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	"github.com/arkade-os/arkd/pkg/client-lib/identity"
+	singleKeyIdentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
+	identityStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
+	identityFileStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/file"
+	identityInmemoryStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
-	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
-	walletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store"
-	filestore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/file"
-	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -44,7 +44,7 @@ import (
 func getClient(
 	supportedClients utils.SupportedType[utils.ClientFactory],
 	clientType, serverUrl string, withMonitorConn bool,
-) (client.TransportClient, error) {
+) (client.Client, error) {
 	factory := supportedClients[clientType]
 	return factory(serverUrl, withMonitorConn)
 }
@@ -57,23 +57,23 @@ func getIndexer(
 	return factory(serverUrl, withMonitorConn)
 }
 
-func getSingleKeyWallet(datadir, storeType string) (wallet.WalletService, error) {
-	walletStore, err := getWalletStore(storeType, datadir)
+func getSingleKeyIdentity(datadir, storeType string) (identity.Identity, error) {
+	store, err := getIdentityStore(storeType, datadir)
 	if err != nil {
 		return nil, err
 	}
 
-	return singlekeywallet.NewBitcoinWallet(walletStore)
+	return singleKeyIdentity.NewIdentity(store)
 }
 
-func getWalletStore(storeType, datadir string) (walletstore.WalletStore, error) {
+func getIdentityStore(storeType, datadir string) (identityStore.IdentityStore, error) {
 	switch storeType {
 	case types.InMemoryStore:
-		return inmemorystore.NewWalletStore()
+		return identityInmemoryStore.NewStore()
 	case types.FileStore:
-		return filestore.NewWalletStore(datadir)
+		return identityFileStore.NewStore(datadir)
 	default:
-		return nil, fmt.Errorf("unknown wallet store type")
+		return nil, fmt.Errorf("unknown identity store type")
 	}
 }
 
