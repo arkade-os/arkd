@@ -720,7 +720,6 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 			require.NotZero(t, unrolledVtxo.Amount)
 			require.Empty(t, unrolledVtxo.Assets)
 
-
 			boardingUtxo := types.Utxo{
 				Outpoint:   unrolledVtxo.Outpoint,
 				Amount:     unrolledVtxo.Amount,
@@ -1358,6 +1357,13 @@ func TestOffchainTx(t *testing.T) {
 		txid, _, _, err := aliceClient.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
 		require.NoError(t, err)
 		require.NotEmpty(t, txid)
+
+		time.Sleep(time.Second)
+
+		// Ensure a second submit fails and that it doesn't affect the finalization of the tx.
+		_, _, _, err = aliceClient.SubmitTx(ctx, signedArkTx, encodedCheckpoints)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "duplicated")
 
 		time.Sleep(time.Second)
 
