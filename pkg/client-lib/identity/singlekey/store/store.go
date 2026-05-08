@@ -1,4 +1,4 @@
-package identityStore
+package identitystore
 
 import "github.com/btcsuite/btcd/btcec/v2"
 

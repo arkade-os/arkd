@@ -23,10 +23,10 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/identity"
-	singleKeyIdentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
-	identityStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
-	identityFileStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/file"
-	identityInmemoryStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
+	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
+	identitystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
+	identityfilestore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/file"
+	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
@@ -63,15 +63,15 @@ func getSingleKeyIdentity(datadir, storeType string) (identity.Identity, error) 
 		return nil, err
 	}
 
-	return singleKeyIdentity.NewIdentity(store)
+	return singlekeyidentity.NewIdentity(store)
 }
 
-func getIdentityStore(storeType, datadir string) (identityStore.IdentityStore, error) {
+func getIdentityStore(storeType, datadir string) (identitystore.IdentityStore, error) {
 	switch storeType {
 	case types.InMemoryStore:
-		return identityInmemoryStore.NewStore()
+		return identityinmemorystore.NewStore()
 	case types.FileStore:
-		return identityFileStore.NewStore(datadir)
+		return identityfilestore.NewStore(datadir)
 	default:
 		return nil, fmt.Errorf("unknown identity store type")
 	}

@@ -19,8 +19,8 @@ import (
 	wallet "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	"github.com/arkade-os/arkd/pkg/client-lib/identity"
-	singleKeyIdentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
-	identityInmemoryStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
+	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
+	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
 	"github.com/arkade-os/arkd/pkg/client-lib/store"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -288,11 +288,11 @@ func setupClientWallet(t *testing.T) wallet.Wallet {
 }
 
 func setupIdentity(t *testing.T) (identity.Identity, *btcec.PublicKey, error) {
-	store, err := identityInmemoryStore.NewStore()
+	store, err := identityinmemorystore.NewStore()
 	require.NoError(t, err)
 	require.NotNil(t, store)
 
-	identity, err := singleKeyIdentity.NewIdentity(store)
+	identity, err := singlekeyidentity.NewIdentity(store)
 	require.NoError(t, err)
 
 	privkey, err := btcec.NewPrivateKey()

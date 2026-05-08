@@ -7,8 +7,8 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	grpcClient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	mempoolExplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
-	grpcIndexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
+	mempoolexplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
+	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 )
@@ -37,16 +37,16 @@ func (a *service) init(
 		return fmt.Errorf("failed to connect to server: %s", err)
 	}
 
-	indexerSvc, err := grpcIndexer.NewClient(args.serverUrl)
+	indexerSvc, err := grpcindexer.NewClient(args.serverUrl)
 	if err != nil {
 		return fmt.Errorf("failed to setup indexer: %s", err)
 	}
 
 	if explorerSvc == nil {
-		explorerOpts := []mempoolExplorer.Option{
-			mempoolExplorer.WithTracker(false),
+		explorerOpts := []mempoolexplorer.Option{
+			mempoolexplorer.WithTracker(false),
 		}
-		explorerSvc, err = mempoolExplorer.NewExplorer(
+		explorerSvc, err = mempoolexplorer.NewExplorer(
 			args.explorerURL, utils.NetworkFromString(info.Network), explorerOpts...,
 		)
 		if err != nil {

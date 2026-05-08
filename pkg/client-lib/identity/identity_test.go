@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/pkg/client-lib/identity"
-	singleKeyIdentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
-	identityInmemoryStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
+	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
+	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/stretchr/testify/require"
@@ -183,9 +183,9 @@ func TestListKeys(t *testing.T) {
 
 func newTestIdentity(t *testing.T) identity.Identity {
 	t.Helper()
-	store, err := identityInmemoryStore.NewStore()
+	store, err := identityinmemorystore.NewStore()
 	require.NoError(t, err)
-	identitySvc, err := singleKeyIdentity.NewIdentity(store)
+	identitySvc, err := singlekeyidentity.NewIdentity(store)
 	require.NoError(t, err)
 	return identitySvc
 }

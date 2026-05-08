@@ -1,4 +1,4 @@
-package mempoolExplorer
+package mempoolexplorer
 
 import "time"
 

@@ -1,4 +1,4 @@
-package singleKeyIdentity
+package singlekeyidentity
 
 import (
 	"bytes"
@@ -10,7 +10,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/identity"
-	identityStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
+	identitystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -26,12 +26,12 @@ var (
 )
 
 type service struct {
-	store      identityStore.IdentityStore
+	store      identitystore.IdentityStore
 	privateKey *btcec.PrivateKey
-	data       *identityStore.IdentityData
+	data       *identitystore.IdentityData
 }
 
-func NewIdentity(store identityStore.IdentityStore) (identity.Identity, error) {
+func NewIdentity(store identitystore.IdentityStore) (identity.Identity, error) {
 	data, err := store.Get()
 	if err != nil {
 		return nil, err
@@ -74,7 +74,7 @@ func (s *service) Create(
 		return "", err
 	}
 
-	data := identityStore.IdentityData{
+	data := identitystore.IdentityData{
 		EncryptedPrvkey: encryptedPrivateKey,
 		PasswordHash:    passwordHash,
 		PubKey:          pubkey,

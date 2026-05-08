@@ -26,7 +26,7 @@ import (
 	wallet "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
-	mempoolExplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
+	mempoolexplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/redemption"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
@@ -2774,9 +2774,9 @@ func TestReactToFraud(t *testing.T) {
 				}
 			}
 
-			explorer, err := mempoolExplorer.NewExplorer(
+			explorer, err := mempoolexplorer.NewExplorer(
 				"http://localhost:3000", arklib.BitcoinRegTest,
-				mempoolExplorer.WithTracker(false),
+				mempoolexplorer.WithTracker(false),
 			)
 			require.NoError(t, err)
 
@@ -2876,9 +2876,9 @@ func TestReactToFraud(t *testing.T) {
 				}
 			}
 
-			explorer, err := mempoolExplorer.NewExplorer(
+			explorer, err := mempoolexplorer.NewExplorer(
 				"http://localhost:3000", arklib.BitcoinRegTest,
-				mempoolExplorer.WithTracker(false),
+				mempoolexplorer.WithTracker(false),
 			)
 			require.NoError(t, err)
 
@@ -2998,9 +2998,9 @@ func TestReactToFraud(t *testing.T) {
 			}
 			require.NotEmpty(t, vtxo)
 
-			explorer, err := mempoolExplorer.NewExplorer(
+			explorer, err := mempoolexplorer.NewExplorer(
 				"http://localhost:3000", arklib.BitcoinRegTest,
-				mempoolExplorer.WithTracker(false),
+				mempoolexplorer.WithTracker(false),
 			)
 			require.NoError(t, err)
 
@@ -3209,9 +3209,9 @@ func TestReactToFraud(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			explorer, err := mempoolExplorer.NewExplorer(
+			explorer, err := mempoolexplorer.NewExplorer(
 				"http://localhost:3000", arklib.BitcoinRegTest,
-				mempoolExplorer.WithTracker(false),
+				mempoolexplorer.WithTracker(false),
 			)
 			require.NoError(t, err)
 
@@ -3482,9 +3482,9 @@ func TestSweep(t *testing.T) {
 		require.NotEmpty(t, res2.Txid)
 
 		// unroll the spent VTXO to put checkpoint onchain
-		explorer, err := mempoolExplorer.NewExplorer(
+		explorer, err := mempoolexplorer.NewExplorer(
 			"http://localhost:3000", arklib.BitcoinRegTest,
-			mempoolExplorer.WithTracker(false))
+			mempoolexplorer.WithTracker(false))
 		require.NoError(t, err)
 
 		branch, err := redemption.NewRedeemBranch(ctx, explorer, alice.Indexer(), boardedVtxo)
@@ -4759,9 +4759,9 @@ func TestBan(t *testing.T) {
 		info, err := aliceClient.GetInfo(t.Context())
 		require.NoError(t, err)
 
-		explorer, err := mempoolExplorer.NewExplorer(
+		explorer, err := mempoolexplorer.NewExplorer(
 			"http://localhost:3000", arklib.BitcoinRegTest,
-			mempoolExplorer.WithPollInterval(time.Second),
+			mempoolexplorer.WithPollInterval(time.Second),
 		)
 		require.NoError(t, err)
 		boardingUtxos, err := explorer.GetUtxos([]string{boardingAddr.Address})

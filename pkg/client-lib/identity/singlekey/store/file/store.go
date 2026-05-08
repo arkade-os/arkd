@@ -1,4 +1,4 @@
-package idenityFileStore
+package identityfilestore
 
 import (
 	"encoding/hex"
@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	identityStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
+	identitystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
 	"github.com/btcsuite/btcd/btcec/v2"
 )
 
@@ -27,12 +27,12 @@ func (d identityData) isEmpty() bool {
 	return d == identityData{}
 }
 
-func (d identityData) decode() identityStore.IdentityData {
+func (d identityData) decode() identitystore.IdentityData {
 	encryptedPrvkey, _ := hex.DecodeString(d.EncryptedPrvkey)
 	passwordHash, _ := hex.DecodeString(d.PasswordHash)
 	buf, _ := hex.DecodeString(d.PubKey)
 	pubkey, _ := btcec.ParsePubKey(buf)
-	return identityStore.IdentityData{
+	return identitystore.IdentityData{
 		EncryptedPrvkey: encryptedPrvkey,
 		PasswordHash:    passwordHash,
 		PubKey:          pubkey,
@@ -51,7 +51,7 @@ type fileStore struct {
 	filePath string
 }
 
-func NewStore(baseDir string) (identityStore.IdentityStore, error) {
+func NewStore(baseDir string) (identitystore.IdentityStore, error) {
 	datadir := cleanAndExpandPath(baseDir)
 	if err := makeDirectoryIfNotExists(datadir); err != nil {
 		return nil, fmt.Errorf("failed to initialize datadir: %s", err)
@@ -67,7 +67,7 @@ func NewStore(baseDir string) (identityStore.IdentityStore, error) {
 	return fileStore, nil
 }
 
-func (s *fileStore) Add(data identityStore.IdentityData) error {
+func (s *fileStore) Add(data identitystore.IdentityData) error {
 	if err := s.write(&identityData{
 		EncryptedPrvkey: hex.EncodeToString(data.EncryptedPrvkey),
 		PasswordHash:    hex.EncodeToString(data.PasswordHash),
@@ -78,7 +78,7 @@ func (s *fileStore) Add(data identityStore.IdentityData) error {
 	return nil
 }
 
-func (s *fileStore) Get() (*identityStore.IdentityData, error) {
+func (s *fileStore) Get() (*identitystore.IdentityData, error) {
 	rawData, err := s.open()
 	if err != nil {
 		if !os.IsNotExist(err) {

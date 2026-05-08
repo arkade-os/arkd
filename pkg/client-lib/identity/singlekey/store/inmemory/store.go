@@ -1,22 +1,22 @@
-package identityInmemoryStore
+package identityinmemorystore
 
 import (
 	"sync"
 
-	identityStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
+	identitystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
 )
 
 type inmemoryStore struct {
-	data *identityStore.IdentityData
+	data *identitystore.IdentityData
 	lock *sync.RWMutex
 }
 
-func NewStore() (identityStore.IdentityStore, error) {
+func NewStore() (identitystore.IdentityStore, error) {
 	lock := &sync.RWMutex{}
 	return &inmemoryStore{lock: lock}, nil
 }
 
-func (s *inmemoryStore) Add(data identityStore.IdentityData) error {
+func (s *inmemoryStore) Add(data identitystore.IdentityData) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -24,7 +24,7 @@ func (s *inmemoryStore) Add(data identityStore.IdentityData) error {
 	return nil
 }
 
-func (s *inmemoryStore) Get() (*identityStore.IdentityData, error) {
+func (s *inmemoryStore) Get() (*identitystore.IdentityData, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 

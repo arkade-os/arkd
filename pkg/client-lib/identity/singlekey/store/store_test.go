@@ -1,11 +1,11 @@
-package identityStore_test
+package identitystore_test
 
 import (
 	"testing"
 
-	identityStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
-	identityFileStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/file"
-	identityInmemoryStore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
+	identitystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
+	identityfilestore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/file"
+	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/require"
@@ -13,7 +13,7 @@ import (
 
 func TestWalletStore(t *testing.T) {
 	key, _ := btcec.NewPrivateKey()
-	testData := identityStore.IdentityData{
+	testData := identitystore.IdentityData{
 		EncryptedPrvkey: make([]byte, 32),
 		PasswordHash:    make([]byte, 32),
 		PubKey:          key.PubKey(),
@@ -34,12 +34,12 @@ func TestWalletStore(t *testing.T) {
 	for i := range tests {
 		tt := tests[i]
 		t.Run(tt.name, func(t *testing.T) {
-			var storeSvc identityStore.IdentityStore
+			var storeSvc identitystore.IdentityStore
 			var err error
 			if tt.name == types.InMemoryStore {
-				storeSvc, err = identityInmemoryStore.NewStore()
+				storeSvc, err = identityinmemorystore.NewStore()
 			} else {
-				storeSvc, err = identityFileStore.NewStore(t.TempDir())
+				storeSvc, err = identityfilestore.NewStore(t.TempDir())
 			}
 			require.NoError(t, err)
 			require.NotNil(t, storeSvc)

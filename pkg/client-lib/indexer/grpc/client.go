@@ -1,4 +1,4 @@
-package grpcIndexer
+package grpcindexer
 
 import (
 	"context"
