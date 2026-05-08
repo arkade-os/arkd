@@ -14,6 +14,7 @@ const (
 	EventTypeRoundFinalized
 	EventTypeRoundFailed
 	EventTypeBatchSwept
+	EventTypeIntentDisrupted
 )
 
 const (

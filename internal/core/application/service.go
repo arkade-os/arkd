@@ -3156,7 +3156,11 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming) {
 			return
 		}
 		if !allForfeitTxsSigned {
-			go s.banForfeitCollectionTimeout(ctx, roundId)
+			registeredIntents, err := s.cache.Intents().GetSelectedIntents(ctx)
+			if err != nil {
+				log.WithError(err).Warn("failed to get selected intents for forfeit ban")
+			}
+			go s.banForfeitCollectionTimeout(ctx, roundId, registeredIntents)
 
 			changes = round.Fail(errors.INTERNAL_ERROR.New("missing forfeit transactions"))
 			return

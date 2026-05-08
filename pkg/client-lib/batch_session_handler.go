@@ -55,6 +55,7 @@ type BatchEventsHandler interface {
 	) (bool, time.Duration, error)
 	OnBatchFinalized(ctx context.Context, event client.BatchFinalizedEvent) error
 	OnBatchFailed(ctx context.Context, event client.BatchFailedEvent) error
+	OnIntentDisrupted(ctx context.Context, event client.IntentDisruptedEvent) error
 	OnTreeTxEvent(ctx context.Context, event client.TreeTxEvent) error
 	OnTreeSignatureEvent(ctx context.Context, event client.TreeSignatureEvent) error
 	OnTreeSigningStarted(
@@ -179,6 +180,13 @@ func JoinBatchSession(
 					return "", "", -1, nil, nil, err
 				}
 				continue
+			case client.IntentDisruptedEvent:
+				e := event.(client.IntentDisruptedEvent)
+				err := eventsHandler.OnIntentDisrupted(ctx, e)
+				if err == nil {
+					err = fmt.Errorf("intent disrupted: %s", e.Reason)
+				}
+				return "", "", -1, nil, nil, err
 			// we received a tree tx event msg, let's update the vtxo/connector tree.
 			case client.TreeTxEvent:
 				if step != batchStarted && step != treeNoncesAggregated {
@@ -438,6 +446,10 @@ func (h *defaultBatchEventsHandler) OnBatchFailed(
 	ctx context.Context, event client.BatchFailedEvent,
 ) error {
 	return fmt.Errorf("batch failed: %s", event.Reason)
+}
+
+func (h *defaultBatchEventsHandler) OnIntentDisrupted(ctx context.Context, event client.IntentDisruptedEvent) error {
+	return fmt.Errorf("intent disrupted: %s", event.Reason)
 }
 
 func (h *defaultBatchEventsHandler) OnTreeTxEvent(

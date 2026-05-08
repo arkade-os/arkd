@@ -524,6 +524,18 @@ func (h *handler) listenToEvents() {
 				}
 
 				evs = append(evs, eventWithTopics{event: ev, topics: e.Topic})
+			case application.IntentDisrupted:
+				ev := &arkv1.GetEventStreamResponse{
+					Event: &arkv1.GetEventStreamResponse_IntentDisrupted{
+						IntentDisrupted: &arkv1.IntentDisruptedEvent{
+							Id:       e.Id,
+							IntentId: e.IntentId,
+							Reason:   e.Reason,
+						},
+					},
+				}
+
+				evs = append(evs, eventWithTopics{event: ev, topics: e.Topic})
 			case application.BatchStarted:
 				hashes := make([]string, 0, len(e.IntentIdsHashes))
 				for _, hash := range e.IntentIdsHashes {

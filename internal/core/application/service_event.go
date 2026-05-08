@@ -63,6 +63,13 @@ type RoundFailed struct {
 	Topic []string
 }
 
+type IntentDisrupted struct {
+	domain.RoundEvent
+	IntentId string
+	Reason   string
+	Topic    []string
+}
+
 // implement domain.RoundEvent interface
 func (r RoundSigningStarted) GetTopic() string  { return domain.RoundTopic }
 func (r TreeNoncesAggregated) GetTopic() string { return domain.RoundTopic }

@@ -856,6 +856,9 @@
           "heartbeat": {
             "$ref": "#/components/schemas/Heartbeat"
           },
+          "intentDisrupted": {
+            "$ref": "#/components/schemas/IntentDisruptedEvent"
+          },
           "streamStarted": {
             "$ref": "#/components/schemas/StreamStartedEvent"
           },
@@ -1050,6 +1053,22 @@
             "type": "string"
           },
           "proof": {
+            "type": "string"
+          }
+        }
+      },
+      "IntentDisruptedEvent": {
+        "title": "IntentDisruptedEvent",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "round id"
+          },
+          "intentId": {
+            "type": "string"
+          },
+          "reason": {
             "type": "string"
           }
         }

@@ -264,6 +264,7 @@ message GetEventStreamResponse {
     TreeNoncesEvent tree_nonces = 9;
     Heartbeat heartbeat = 10;
     StreamStartedEvent stream_started = 11;
+    IntentDisruptedEvent intent_disrupted = 12;
   }
 }
 
