@@ -2299,6 +2299,9 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 
 	bob := setupClientWallet(t)
 	keyRef, err := bob.Identity().GetKey(ctx, "")
+	require.NoError(t, err)
+	require.NotNil(t, keyRef)
+
 	bobPubkey := keyRef.PubKey
 
 	// Fund Alice's account

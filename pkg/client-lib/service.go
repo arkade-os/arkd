@@ -11,7 +11,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	mempool_explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
+	mempoolexplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
 	"github.com/arkade-os/arkd/pkg/client-lib/identity"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
@@ -26,8 +26,6 @@ const (
 	// store
 	FileStore     = types.FileStore
 	InMemoryStore = types.InMemoryStore
-	// explorer
-	BitcoinExplorer = mempool_explorer.BitcoinExplorer
 )
 
 var (
@@ -54,6 +52,10 @@ type service struct {
 }
 
 func NewWallet(storeSvc types.Store, opts ...ServiceOption) (Wallet, error) {
+	if storeSvc == nil {
+		return nil, fmt.Errorf("missing store")
+	}
+
 	cfgData, err := storeSvc.ConfigStore().GetData(context.Background())
 	if err != nil {
 		return nil, err
@@ -119,8 +121,8 @@ func LoadWallet(storeSvc types.Store, opts ...ServiceOption) (Wallet, error) {
 	}
 
 	if client.explorer == nil {
-		explorerOpts := []mempool_explorer.Option{mempool_explorer.WithTracker(false)}
-		explorerSvc, err := mempool_explorer.NewExplorer(
+		explorerOpts := []mempoolexplorer.Option{mempoolexplorer.WithTracker(false)}
+		explorerSvc, err := mempoolexplorer.NewExplorer(
 			cfgData.ExplorerURL, cfgData.Network, explorerOpts...,
 		)
 		if err != nil {

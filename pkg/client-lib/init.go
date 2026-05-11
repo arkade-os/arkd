@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	grpcClient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
+	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	mempoolexplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
 	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
@@ -27,7 +27,7 @@ func (a *service) Init(ctx context.Context, args InitArgs) error {
 func (a *service) init(
 	ctx context.Context, args args, explorerSvc explorer.Explorer,
 ) error {
-	clientSvc, err := grpcClient.NewClient(args.serverUrl)
+	clientSvc, err := grpcclient.NewClient(args.serverUrl)
 	if err != nil {
 		return fmt.Errorf("failed to setup client: %s", err)
 	}
