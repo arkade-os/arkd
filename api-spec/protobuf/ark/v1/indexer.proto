@@ -126,6 +126,25 @@ service IndexerService {
         disable_chunked_transfer: true
         disable_websockets: true
       }
+      additional_bindings: [
+        {
+          get: "/v1/indexer/script/subscription"
+          stream: {
+            disable_chunked_transfer: true
+            disable_websockets: true
+          }
+        }
+      ]
+    };
+  };
+
+  // UpdateSubscriptionScripts allows to modify the scripts of an existing subscription
+  // created via GetSubscription.
+  rpc UpdateSubscriptionScripts(UpdateSubscriptionScriptsRequest)
+      returns (UpdateSubscriptionScriptsResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/indexer/script/updateScripts"
+      body: "*"
     };
   };
 }
@@ -379,14 +398,46 @@ message UnsubscribeForScriptsResponse {}
 
 
 message GetSubscriptionRequest {
+  // If empty, server creates a new subscription automatically.
   string subscription_id = 1;
+  // Optional: scripts to subscribe to on stream creation.
+  // Only used when subscription_id is empty; ignored otherwise.
+  repeated string scripts = 2;
 }
 
 message GetSubscriptionResponse {
   oneof data {
     IndexerHeartbeat heartbeat = 1;
     IndexerSubscriptionEvent event = 2;
+    SubscriptionStartedEvent subscription_started = 3;
   }
+}
+
+message SubscriptionStartedEvent {
+  string subscription_id = 1;
+}
+
+message ModifyScripts {
+  repeated string add_scripts = 1;
+  repeated string remove_scripts = 2;
+}
+
+message OverwriteScripts {
+  repeated string scripts = 1;
+}
+
+message UpdateSubscriptionScriptsRequest {
+  string subscription_id = 1;
+  oneof scripts_change {
+    ModifyScripts modify = 2;
+    OverwriteScripts overwrite = 3;
+  }
+}
+
+message UpdateSubscriptionScriptsResponse {
+  repeated string scripts_added = 1;
+  repeated string scripts_removed = 2;
+  repeated string all_scripts = 3;
 }
 
 message IndexerTxData {

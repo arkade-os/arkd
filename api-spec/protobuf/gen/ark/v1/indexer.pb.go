@@ -2344,10 +2344,14 @@ func (*UnsubscribeForScriptsResponse) Descriptor() ([]byte, []int) {
 }
 
 type GetSubscriptionRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	SubscriptionId string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// If empty, server creates a new subscription automatically.
+	SubscriptionId string `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
+	// Optional: scripts to subscribe to on stream creation.
+	// Only used when subscription_id is empty; ignored otherwise.
+	Scripts       []string `protobuf:"bytes,2,rep,name=scripts,proto3" json:"scripts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetSubscriptionRequest) Reset() {
@@ -2387,12 +2391,20 @@ func (x *GetSubscriptionRequest) GetSubscriptionId() string {
 	return ""
 }
 
+func (x *GetSubscriptionRequest) GetScripts() []string {
+	if x != nil {
+		return x.Scripts
+	}
+	return nil
+}
+
 type GetSubscriptionResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Data:
 	//
 	//	*GetSubscriptionResponse_Heartbeat
 	//	*GetSubscriptionResponse_Event
+	//	*GetSubscriptionResponse_SubscriptionStarted
 	Data          isGetSubscriptionResponse_Data `protobuf_oneof:"data"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2453,6 +2465,15 @@ func (x *GetSubscriptionResponse) GetEvent() *IndexerSubscriptionEvent {
 	return nil
 }
 
+func (x *GetSubscriptionResponse) GetSubscriptionStarted() *SubscriptionStartedEvent {
+	if x != nil {
+		if x, ok := x.Data.(*GetSubscriptionResponse_SubscriptionStarted); ok {
+			return x.SubscriptionStarted
+		}
+	}
+	return nil
+}
+
 type isGetSubscriptionResponse_Data interface {
 	isGetSubscriptionResponse_Data()
 }
@@ -2465,9 +2486,306 @@ type GetSubscriptionResponse_Event struct {
 	Event *IndexerSubscriptionEvent `protobuf:"bytes,2,opt,name=event,proto3,oneof"`
 }
 
+type GetSubscriptionResponse_SubscriptionStarted struct {
+	SubscriptionStarted *SubscriptionStartedEvent `protobuf:"bytes,3,opt,name=subscription_started,json=subscriptionStarted,proto3,oneof"`
+}
+
 func (*GetSubscriptionResponse_Heartbeat) isGetSubscriptionResponse_Data() {}
 
 func (*GetSubscriptionResponse_Event) isGetSubscriptionResponse_Data() {}
+
+func (*GetSubscriptionResponse_SubscriptionStarted) isGetSubscriptionResponse_Data() {}
+
+type SubscriptionStartedEvent struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	SubscriptionId string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SubscriptionStartedEvent) Reset() {
+	*x = SubscriptionStartedEvent{}
+	mi := &file_ark_v1_indexer_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SubscriptionStartedEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SubscriptionStartedEvent) ProtoMessage() {}
+
+func (x *SubscriptionStartedEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_indexer_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SubscriptionStartedEvent.ProtoReflect.Descriptor instead.
+func (*SubscriptionStartedEvent) Descriptor() ([]byte, []int) {
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *SubscriptionStartedEvent) GetSubscriptionId() string {
+	if x != nil {
+		return x.SubscriptionId
+	}
+	return ""
+}
+
+type ModifyScripts struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AddScripts    []string               `protobuf:"bytes,1,rep,name=add_scripts,json=addScripts,proto3" json:"add_scripts,omitempty"`
+	RemoveScripts []string               `protobuf:"bytes,2,rep,name=remove_scripts,json=removeScripts,proto3" json:"remove_scripts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModifyScripts) Reset() {
+	*x = ModifyScripts{}
+	mi := &file_ark_v1_indexer_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModifyScripts) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModifyScripts) ProtoMessage() {}
+
+func (x *ModifyScripts) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_indexer_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModifyScripts.ProtoReflect.Descriptor instead.
+func (*ModifyScripts) Descriptor() ([]byte, []int) {
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *ModifyScripts) GetAddScripts() []string {
+	if x != nil {
+		return x.AddScripts
+	}
+	return nil
+}
+
+func (x *ModifyScripts) GetRemoveScripts() []string {
+	if x != nil {
+		return x.RemoveScripts
+	}
+	return nil
+}
+
+type OverwriteScripts struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Scripts       []string               `protobuf:"bytes,1,rep,name=scripts,proto3" json:"scripts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OverwriteScripts) Reset() {
+	*x = OverwriteScripts{}
+	mi := &file_ark_v1_indexer_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OverwriteScripts) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OverwriteScripts) ProtoMessage() {}
+
+func (x *OverwriteScripts) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_indexer_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OverwriteScripts.ProtoReflect.Descriptor instead.
+func (*OverwriteScripts) Descriptor() ([]byte, []int) {
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *OverwriteScripts) GetScripts() []string {
+	if x != nil {
+		return x.Scripts
+	}
+	return nil
+}
+
+type UpdateSubscriptionScriptsRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	SubscriptionId string                 `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
+	// Types that are valid to be assigned to ScriptsChange:
+	//
+	//	*UpdateSubscriptionScriptsRequest_Modify
+	//	*UpdateSubscriptionScriptsRequest_Overwrite
+	ScriptsChange isUpdateSubscriptionScriptsRequest_ScriptsChange `protobuf_oneof:"scripts_change"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateSubscriptionScriptsRequest) Reset() {
+	*x = UpdateSubscriptionScriptsRequest{}
+	mi := &file_ark_v1_indexer_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateSubscriptionScriptsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateSubscriptionScriptsRequest) ProtoMessage() {}
+
+func (x *UpdateSubscriptionScriptsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_indexer_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateSubscriptionScriptsRequest.ProtoReflect.Descriptor instead.
+func (*UpdateSubscriptionScriptsRequest) Descriptor() ([]byte, []int) {
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *UpdateSubscriptionScriptsRequest) GetSubscriptionId() string {
+	if x != nil {
+		return x.SubscriptionId
+	}
+	return ""
+}
+
+func (x *UpdateSubscriptionScriptsRequest) GetScriptsChange() isUpdateSubscriptionScriptsRequest_ScriptsChange {
+	if x != nil {
+		return x.ScriptsChange
+	}
+	return nil
+}
+
+func (x *UpdateSubscriptionScriptsRequest) GetModify() *ModifyScripts {
+	if x != nil {
+		if x, ok := x.ScriptsChange.(*UpdateSubscriptionScriptsRequest_Modify); ok {
+			return x.Modify
+		}
+	}
+	return nil
+}
+
+func (x *UpdateSubscriptionScriptsRequest) GetOverwrite() *OverwriteScripts {
+	if x != nil {
+		if x, ok := x.ScriptsChange.(*UpdateSubscriptionScriptsRequest_Overwrite); ok {
+			return x.Overwrite
+		}
+	}
+	return nil
+}
+
+type isUpdateSubscriptionScriptsRequest_ScriptsChange interface {
+	isUpdateSubscriptionScriptsRequest_ScriptsChange()
+}
+
+type UpdateSubscriptionScriptsRequest_Modify struct {
+	Modify *ModifyScripts `protobuf:"bytes,2,opt,name=modify,proto3,oneof"`
+}
+
+type UpdateSubscriptionScriptsRequest_Overwrite struct {
+	Overwrite *OverwriteScripts `protobuf:"bytes,3,opt,name=overwrite,proto3,oneof"`
+}
+
+func (*UpdateSubscriptionScriptsRequest_Modify) isUpdateSubscriptionScriptsRequest_ScriptsChange() {}
+
+func (*UpdateSubscriptionScriptsRequest_Overwrite) isUpdateSubscriptionScriptsRequest_ScriptsChange() {
+}
+
+type UpdateSubscriptionScriptsResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ScriptsAdded   []string               `protobuf:"bytes,1,rep,name=scripts_added,json=scriptsAdded,proto3" json:"scripts_added,omitempty"`
+	ScriptsRemoved []string               `protobuf:"bytes,2,rep,name=scripts_removed,json=scriptsRemoved,proto3" json:"scripts_removed,omitempty"`
+	AllScripts     []string               `protobuf:"bytes,3,rep,name=all_scripts,json=allScripts,proto3" json:"all_scripts,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *UpdateSubscriptionScriptsResponse) Reset() {
+	*x = UpdateSubscriptionScriptsResponse{}
+	mi := &file_ark_v1_indexer_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateSubscriptionScriptsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateSubscriptionScriptsResponse) ProtoMessage() {}
+
+func (x *UpdateSubscriptionScriptsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_indexer_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateSubscriptionScriptsResponse.ProtoReflect.Descriptor instead.
+func (*UpdateSubscriptionScriptsResponse) Descriptor() ([]byte, []int) {
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *UpdateSubscriptionScriptsResponse) GetScriptsAdded() []string {
+	if x != nil {
+		return x.ScriptsAdded
+	}
+	return nil
+}
+
+func (x *UpdateSubscriptionScriptsResponse) GetScriptsRemoved() []string {
+	if x != nil {
+		return x.ScriptsRemoved
+	}
+	return nil
+}
+
+func (x *UpdateSubscriptionScriptsResponse) GetAllScripts() []string {
+	if x != nil {
+		return x.AllScripts
+	}
+	return nil
+}
 
 type IndexerTxData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2479,7 +2797,7 @@ type IndexerTxData struct {
 
 func (x *IndexerTxData) Reset() {
 	*x = IndexerTxData{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[37]
+	mi := &file_ark_v1_indexer_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2491,7 +2809,7 @@ func (x *IndexerTxData) String() string {
 func (*IndexerTxData) ProtoMessage() {}
 
 func (x *IndexerTxData) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[37]
+	mi := &file_ark_v1_indexer_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2504,7 +2822,7 @@ func (x *IndexerTxData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerTxData.ProtoReflect.Descriptor instead.
 func (*IndexerTxData) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{37}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *IndexerTxData) GetTxid() string {
@@ -2529,7 +2847,7 @@ type IndexerHeartbeat struct {
 
 func (x *IndexerHeartbeat) Reset() {
 	*x = IndexerHeartbeat{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[38]
+	mi := &file_ark_v1_indexer_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2541,7 +2859,7 @@ func (x *IndexerHeartbeat) String() string {
 func (*IndexerHeartbeat) ProtoMessage() {}
 
 func (x *IndexerHeartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[38]
+	mi := &file_ark_v1_indexer_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2554,7 +2872,7 @@ func (x *IndexerHeartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerHeartbeat.ProtoReflect.Descriptor instead.
 func (*IndexerHeartbeat) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{38}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{43}
 }
 
 type IndexerSubscriptionEvent struct {
@@ -2572,7 +2890,7 @@ type IndexerSubscriptionEvent struct {
 
 func (x *IndexerSubscriptionEvent) Reset() {
 	*x = IndexerSubscriptionEvent{}
-	mi := &file_ark_v1_indexer_proto_msgTypes[39]
+	mi := &file_ark_v1_indexer_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2584,7 +2902,7 @@ func (x *IndexerSubscriptionEvent) String() string {
 func (*IndexerSubscriptionEvent) ProtoMessage() {}
 
 func (x *IndexerSubscriptionEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_indexer_proto_msgTypes[39]
+	mi := &file_ark_v1_indexer_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2597,7 +2915,7 @@ func (x *IndexerSubscriptionEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IndexerSubscriptionEvent.ProtoReflect.Descriptor instead.
 func (*IndexerSubscriptionEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{39}
+	return file_ark_v1_indexer_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *IndexerSubscriptionEvent) GetTxid() string {
@@ -2818,13 +3136,33 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x1cUnsubscribeForScriptsRequest\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x18\n" +
 	"\ascripts\x18\x02 \x03(\tR\ascripts\"\x1f\n" +
-	"\x1dUnsubscribeForScriptsResponse\"A\n" +
+	"\x1dUnsubscribeForScriptsResponse\"[\n" +
 	"\x16GetSubscriptionRequest\x12'\n" +
-	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\"\x95\x01\n" +
+	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x18\n" +
+	"\ascripts\x18\x02 \x03(\tR\ascripts\"\xec\x01\n" +
 	"\x17GetSubscriptionResponse\x128\n" +
 	"\theartbeat\x18\x01 \x01(\v2\x18.ark.v1.IndexerHeartbeatH\x00R\theartbeat\x128\n" +
-	"\x05event\x18\x02 \x01(\v2 .ark.v1.IndexerSubscriptionEventH\x00R\x05eventB\x06\n" +
-	"\x04data\"3\n" +
+	"\x05event\x18\x02 \x01(\v2 .ark.v1.IndexerSubscriptionEventH\x00R\x05event\x12U\n" +
+	"\x14subscription_started\x18\x03 \x01(\v2 .ark.v1.SubscriptionStartedEventH\x00R\x13subscriptionStartedB\x06\n" +
+	"\x04data\"C\n" +
+	"\x18SubscriptionStartedEvent\x12'\n" +
+	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\"W\n" +
+	"\rModifyScripts\x12\x1f\n" +
+	"\vadd_scripts\x18\x01 \x03(\tR\n" +
+	"addScripts\x12%\n" +
+	"\x0eremove_scripts\x18\x02 \x03(\tR\rremoveScripts\",\n" +
+	"\x10OverwriteScripts\x12\x18\n" +
+	"\ascripts\x18\x01 \x03(\tR\ascripts\"\xc8\x01\n" +
+	" UpdateSubscriptionScriptsRequest\x12'\n" +
+	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12/\n" +
+	"\x06modify\x18\x02 \x01(\v2\x15.ark.v1.ModifyScriptsH\x00R\x06modify\x128\n" +
+	"\toverwrite\x18\x03 \x01(\v2\x18.ark.v1.OverwriteScriptsH\x00R\toverwriteB\x10\n" +
+	"\x0escripts_change\"\x92\x01\n" +
+	"!UpdateSubscriptionScriptsResponse\x12#\n" +
+	"\rscripts_added\x18\x01 \x03(\tR\fscriptsAdded\x12'\n" +
+	"\x0fscripts_removed\x18\x02 \x03(\tR\x0escriptsRemoved\x12\x1f\n" +
+	"\vall_scripts\x18\x03 \x03(\tR\n" +
+	"allScripts\"3\n" +
 	"\rIndexerTxData\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x0e\n" +
 	"\x02tx\x18\x02 \x01(\tR\x02tx\"\x12\n" +
@@ -2851,7 +3189,7 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\"INDEXER_CHAINED_TX_TYPE_COMMITMENT\x10\x01\x12\x1f\n" +
 	"\x1bINDEXER_CHAINED_TX_TYPE_ARK\x10\x02\x12 \n" +
 	"\x1cINDEXER_CHAINED_TX_TYPE_TREE\x10\x03\x12&\n" +
-	"\"INDEXER_CHAINED_TX_TYPE_CHECKPOINT\x10\x042\xe4\r\n" +
+	"\"INDEXER_CHAINED_TX_TYPE_CHECKPOINT\x10\x042\xaa\x0f\n" +
 	"\x0eIndexerService\x12x\n" +
 	"\x0fGetCommitmentTx\x12\x1e.ark.v1.GetCommitmentTxRequest\x1a\x1f.ark.v1.GetCommitmentTxResponse\"$\xb2J!\x12\x1f/v1/indexer/commitmentTx/{txid}\x12}\n" +
 	"\rGetForfeitTxs\x12\x1c.ark.v1.GetForfeitTxsRequest\x1a\x1d.ark.v1.GetForfeitTxsResponse\"/\xb2J,\x12*/v1/indexer/commitmentTx/{txid}/forfeitTxs\x12}\n" +
@@ -2864,8 +3202,9 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\bGetAsset\x12\x17.ark.v1.GetAssetRequest\x1a\x18.ark.v1.GetAssetResponse\"!\xb2J\x1e\x12\x1c/v1/indexer/asset/{asset_id}\x12\xbd\x01\n" +
 	"\x19GetBatchSweepTransactions\x12(.ark.v1.GetBatchSweepTransactionsRequest\x1a).ark.v1.GetBatchSweepTransactionsResponse\"K\xb2JH\x12F/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs\x12\x84\x01\n" +
 	"\x13SubscribeForScripts\x12\".ark.v1.SubscribeForScriptsRequest\x1a#.ark.v1.SubscribeForScriptsResponse\"$\xb2J!B\x01*\"\x1c/v1/indexer/script/subscribe\x12\x8c\x01\n" +
-	"\x15UnsubscribeForScripts\x12$.ark.v1.UnsubscribeForScriptsRequest\x1a%.ark.v1.UnsubscribeForScriptsResponse\"&\xb2J#B\x01*\"\x1e/v1/indexer/script/unsubscribe\x12\x92\x01\n" +
-	"\x0fGetSubscription\x12\x1e.ark.v1.GetSubscriptionRequest\x1a\x1f.ark.v1.GetSubscriptionResponse\"<\xb2J9b\x04\b\x01\x18\x01\x121/v1/indexer/script/subscription/{subscription_id}0\x01B{\n" +
+	"\x15UnsubscribeForScripts\x12$.ark.v1.UnsubscribeForScriptsRequest\x1a%.ark.v1.UnsubscribeForScriptsResponse\"&\xb2J#B\x01*\"\x1e/v1/indexer/script/unsubscribe\x12\xbb\x01\n" +
+	"\x0fGetSubscription\x12\x1e.ark.v1.GetSubscriptionRequest\x1a\x1f.ark.v1.GetSubscriptionResponse\"e\xb2JbR'b\x04\b\x01\x18\x01\x12\x1f/v1/indexer/script/subscriptionb\x04\b\x01\x18\x01\x121/v1/indexer/script/subscription/{subscription_id}0\x01\x12\x9a\x01\n" +
+	"\x19UpdateSubscriptionScripts\x12(.ark.v1.UpdateSubscriptionScriptsRequest\x1a).ark.v1.UpdateSubscriptionScriptsResponse\"(\xb2J%B\x01*\" /v1/indexer/script/updateScriptsB{\n" +
 	"\n" +
 	"com.ark.v1B\fIndexerProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"
 
@@ -2882,7 +3221,7 @@ func file_ark_v1_indexer_proto_rawDescGZIP() []byte {
 }
 
 var file_ark_v1_indexer_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_ark_v1_indexer_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_ark_v1_indexer_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
 var file_ark_v1_indexer_proto_goTypes = []any{
 	(IndexerTxType)(0),                        // 0: ark.v1.IndexerTxType
 	(IndexerChainedTxType)(0),                 // 1: ark.v1.IndexerChainedTxType
@@ -2923,15 +3262,20 @@ var file_ark_v1_indexer_proto_goTypes = []any{
 	(*UnsubscribeForScriptsResponse)(nil),     // 36: ark.v1.UnsubscribeForScriptsResponse
 	(*GetSubscriptionRequest)(nil),            // 37: ark.v1.GetSubscriptionRequest
 	(*GetSubscriptionResponse)(nil),           // 38: ark.v1.GetSubscriptionResponse
-	(*IndexerTxData)(nil),                     // 39: ark.v1.IndexerTxData
-	(*IndexerHeartbeat)(nil),                  // 40: ark.v1.IndexerHeartbeat
-	(*IndexerSubscriptionEvent)(nil),          // 41: ark.v1.IndexerSubscriptionEvent
-	nil,                                       // 42: ark.v1.GetCommitmentTxResponse.BatchesEntry
-	nil,                                       // 43: ark.v1.IndexerNode.ChildrenEntry
-	nil,                                       // 44: ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry
+	(*SubscriptionStartedEvent)(nil),          // 39: ark.v1.SubscriptionStartedEvent
+	(*ModifyScripts)(nil),                     // 40: ark.v1.ModifyScripts
+	(*OverwriteScripts)(nil),                  // 41: ark.v1.OverwriteScripts
+	(*UpdateSubscriptionScriptsRequest)(nil),  // 42: ark.v1.UpdateSubscriptionScriptsRequest
+	(*UpdateSubscriptionScriptsResponse)(nil), // 43: ark.v1.UpdateSubscriptionScriptsResponse
+	(*IndexerTxData)(nil),                     // 44: ark.v1.IndexerTxData
+	(*IndexerHeartbeat)(nil),                  // 45: ark.v1.IndexerHeartbeat
+	(*IndexerSubscriptionEvent)(nil),          // 46: ark.v1.IndexerSubscriptionEvent
+	nil,                                       // 47: ark.v1.GetCommitmentTxResponse.BatchesEntry
+	nil,                                       // 48: ark.v1.IndexerNode.ChildrenEntry
+	nil,                                       // 49: ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry
 }
 var file_ark_v1_indexer_proto_depIdxs = []int32{
-	42, // 0: ark.v1.GetCommitmentTxResponse.batches:type_name -> ark.v1.GetCommitmentTxResponse.BatchesEntry
+	47, // 0: ark.v1.GetCommitmentTxResponse.batches:type_name -> ark.v1.GetCommitmentTxResponse.BatchesEntry
 	31, // 1: ark.v1.GetForfeitTxsRequest.page:type_name -> ark.v1.IndexerPageRequest
 	32, // 2: ark.v1.GetForfeitTxsResponse.page:type_name -> ark.v1.IndexerPageResponse
 	31, // 3: ark.v1.GetConnectorsRequest.page:type_name -> ark.v1.IndexerPageRequest
@@ -2957,50 +3301,55 @@ var file_ark_v1_indexer_proto_depIdxs = []int32{
 	30, // 23: ark.v1.GetVirtualTxsRequest.intent:type_name -> ark.v1.IndexerIntent
 	32, // 24: ark.v1.GetVirtualTxsResponse.page:type_name -> ark.v1.IndexerPageResponse
 	24, // 25: ark.v1.GetBatchSweepTransactionsRequest.batch_outpoint:type_name -> ark.v1.IndexerOutpoint
-	43, // 26: ark.v1.IndexerNode.children:type_name -> ark.v1.IndexerNode.ChildrenEntry
+	48, // 26: ark.v1.IndexerNode.children:type_name -> ark.v1.IndexerNode.ChildrenEntry
 	24, // 27: ark.v1.IndexerVtxo.outpoint:type_name -> ark.v1.IndexerOutpoint
 	27, // 28: ark.v1.IndexerVtxo.assets:type_name -> ark.v1.IndexerAsset
 	1,  // 29: ark.v1.IndexerChain.type:type_name -> ark.v1.IndexerChainedTxType
 	0,  // 30: ark.v1.IndexerTxHistoryRecord.type:type_name -> ark.v1.IndexerTxType
-	40, // 31: ark.v1.GetSubscriptionResponse.heartbeat:type_name -> ark.v1.IndexerHeartbeat
-	41, // 32: ark.v1.GetSubscriptionResponse.event:type_name -> ark.v1.IndexerSubscriptionEvent
-	26, // 33: ark.v1.IndexerSubscriptionEvent.new_vtxos:type_name -> ark.v1.IndexerVtxo
-	26, // 34: ark.v1.IndexerSubscriptionEvent.spent_vtxos:type_name -> ark.v1.IndexerVtxo
-	44, // 35: ark.v1.IndexerSubscriptionEvent.checkpoint_txs:type_name -> ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry
-	26, // 36: ark.v1.IndexerSubscriptionEvent.swept_vtxos:type_name -> ark.v1.IndexerVtxo
-	23, // 37: ark.v1.GetCommitmentTxResponse.BatchesEntry.value:type_name -> ark.v1.IndexerBatch
-	39, // 38: ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry.value:type_name -> ark.v1.IndexerTxData
-	2,  // 39: ark.v1.IndexerService.GetCommitmentTx:input_type -> ark.v1.GetCommitmentTxRequest
-	4,  // 40: ark.v1.IndexerService.GetForfeitTxs:input_type -> ark.v1.GetForfeitTxsRequest
-	6,  // 41: ark.v1.IndexerService.GetConnectors:input_type -> ark.v1.GetConnectorsRequest
-	8,  // 42: ark.v1.IndexerService.GetVtxoTree:input_type -> ark.v1.GetVtxoTreeRequest
-	10, // 43: ark.v1.IndexerService.GetVtxoTreeLeaves:input_type -> ark.v1.GetVtxoTreeLeavesRequest
-	12, // 44: ark.v1.IndexerService.GetVtxos:input_type -> ark.v1.GetVtxosRequest
-	14, // 45: ark.v1.IndexerService.GetVtxoChain:input_type -> ark.v1.GetVtxoChainRequest
-	16, // 46: ark.v1.IndexerService.GetVirtualTxs:input_type -> ark.v1.GetVirtualTxsRequest
-	18, // 47: ark.v1.IndexerService.GetAsset:input_type -> ark.v1.GetAssetRequest
-	21, // 48: ark.v1.IndexerService.GetBatchSweepTransactions:input_type -> ark.v1.GetBatchSweepTransactionsRequest
-	33, // 49: ark.v1.IndexerService.SubscribeForScripts:input_type -> ark.v1.SubscribeForScriptsRequest
-	35, // 50: ark.v1.IndexerService.UnsubscribeForScripts:input_type -> ark.v1.UnsubscribeForScriptsRequest
-	37, // 51: ark.v1.IndexerService.GetSubscription:input_type -> ark.v1.GetSubscriptionRequest
-	3,  // 52: ark.v1.IndexerService.GetCommitmentTx:output_type -> ark.v1.GetCommitmentTxResponse
-	5,  // 53: ark.v1.IndexerService.GetForfeitTxs:output_type -> ark.v1.GetForfeitTxsResponse
-	7,  // 54: ark.v1.IndexerService.GetConnectors:output_type -> ark.v1.GetConnectorsResponse
-	9,  // 55: ark.v1.IndexerService.GetVtxoTree:output_type -> ark.v1.GetVtxoTreeResponse
-	11, // 56: ark.v1.IndexerService.GetVtxoTreeLeaves:output_type -> ark.v1.GetVtxoTreeLeavesResponse
-	13, // 57: ark.v1.IndexerService.GetVtxos:output_type -> ark.v1.GetVtxosResponse
-	15, // 58: ark.v1.IndexerService.GetVtxoChain:output_type -> ark.v1.GetVtxoChainResponse
-	17, // 59: ark.v1.IndexerService.GetVirtualTxs:output_type -> ark.v1.GetVirtualTxsResponse
-	19, // 60: ark.v1.IndexerService.GetAsset:output_type -> ark.v1.GetAssetResponse
-	22, // 61: ark.v1.IndexerService.GetBatchSweepTransactions:output_type -> ark.v1.GetBatchSweepTransactionsResponse
-	34, // 62: ark.v1.IndexerService.SubscribeForScripts:output_type -> ark.v1.SubscribeForScriptsResponse
-	36, // 63: ark.v1.IndexerService.UnsubscribeForScripts:output_type -> ark.v1.UnsubscribeForScriptsResponse
-	38, // 64: ark.v1.IndexerService.GetSubscription:output_type -> ark.v1.GetSubscriptionResponse
-	52, // [52:65] is the sub-list for method output_type
-	39, // [39:52] is the sub-list for method input_type
-	39, // [39:39] is the sub-list for extension type_name
-	39, // [39:39] is the sub-list for extension extendee
-	0,  // [0:39] is the sub-list for field type_name
+	45, // 31: ark.v1.GetSubscriptionResponse.heartbeat:type_name -> ark.v1.IndexerHeartbeat
+	46, // 32: ark.v1.GetSubscriptionResponse.event:type_name -> ark.v1.IndexerSubscriptionEvent
+	39, // 33: ark.v1.GetSubscriptionResponse.subscription_started:type_name -> ark.v1.SubscriptionStartedEvent
+	40, // 34: ark.v1.UpdateSubscriptionScriptsRequest.modify:type_name -> ark.v1.ModifyScripts
+	41, // 35: ark.v1.UpdateSubscriptionScriptsRequest.overwrite:type_name -> ark.v1.OverwriteScripts
+	26, // 36: ark.v1.IndexerSubscriptionEvent.new_vtxos:type_name -> ark.v1.IndexerVtxo
+	26, // 37: ark.v1.IndexerSubscriptionEvent.spent_vtxos:type_name -> ark.v1.IndexerVtxo
+	49, // 38: ark.v1.IndexerSubscriptionEvent.checkpoint_txs:type_name -> ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry
+	26, // 39: ark.v1.IndexerSubscriptionEvent.swept_vtxos:type_name -> ark.v1.IndexerVtxo
+	23, // 40: ark.v1.GetCommitmentTxResponse.BatchesEntry.value:type_name -> ark.v1.IndexerBatch
+	44, // 41: ark.v1.IndexerSubscriptionEvent.CheckpointTxsEntry.value:type_name -> ark.v1.IndexerTxData
+	2,  // 42: ark.v1.IndexerService.GetCommitmentTx:input_type -> ark.v1.GetCommitmentTxRequest
+	4,  // 43: ark.v1.IndexerService.GetForfeitTxs:input_type -> ark.v1.GetForfeitTxsRequest
+	6,  // 44: ark.v1.IndexerService.GetConnectors:input_type -> ark.v1.GetConnectorsRequest
+	8,  // 45: ark.v1.IndexerService.GetVtxoTree:input_type -> ark.v1.GetVtxoTreeRequest
+	10, // 46: ark.v1.IndexerService.GetVtxoTreeLeaves:input_type -> ark.v1.GetVtxoTreeLeavesRequest
+	12, // 47: ark.v1.IndexerService.GetVtxos:input_type -> ark.v1.GetVtxosRequest
+	14, // 48: ark.v1.IndexerService.GetVtxoChain:input_type -> ark.v1.GetVtxoChainRequest
+	16, // 49: ark.v1.IndexerService.GetVirtualTxs:input_type -> ark.v1.GetVirtualTxsRequest
+	18, // 50: ark.v1.IndexerService.GetAsset:input_type -> ark.v1.GetAssetRequest
+	21, // 51: ark.v1.IndexerService.GetBatchSweepTransactions:input_type -> ark.v1.GetBatchSweepTransactionsRequest
+	33, // 52: ark.v1.IndexerService.SubscribeForScripts:input_type -> ark.v1.SubscribeForScriptsRequest
+	35, // 53: ark.v1.IndexerService.UnsubscribeForScripts:input_type -> ark.v1.UnsubscribeForScriptsRequest
+	37, // 54: ark.v1.IndexerService.GetSubscription:input_type -> ark.v1.GetSubscriptionRequest
+	42, // 55: ark.v1.IndexerService.UpdateSubscriptionScripts:input_type -> ark.v1.UpdateSubscriptionScriptsRequest
+	3,  // 56: ark.v1.IndexerService.GetCommitmentTx:output_type -> ark.v1.GetCommitmentTxResponse
+	5,  // 57: ark.v1.IndexerService.GetForfeitTxs:output_type -> ark.v1.GetForfeitTxsResponse
+	7,  // 58: ark.v1.IndexerService.GetConnectors:output_type -> ark.v1.GetConnectorsResponse
+	9,  // 59: ark.v1.IndexerService.GetVtxoTree:output_type -> ark.v1.GetVtxoTreeResponse
+	11, // 60: ark.v1.IndexerService.GetVtxoTreeLeaves:output_type -> ark.v1.GetVtxoTreeLeavesResponse
+	13, // 61: ark.v1.IndexerService.GetVtxos:output_type -> ark.v1.GetVtxosResponse
+	15, // 62: ark.v1.IndexerService.GetVtxoChain:output_type -> ark.v1.GetVtxoChainResponse
+	17, // 63: ark.v1.IndexerService.GetVirtualTxs:output_type -> ark.v1.GetVirtualTxsResponse
+	19, // 64: ark.v1.IndexerService.GetAsset:output_type -> ark.v1.GetAssetResponse
+	22, // 65: ark.v1.IndexerService.GetBatchSweepTransactions:output_type -> ark.v1.GetBatchSweepTransactionsResponse
+	34, // 66: ark.v1.IndexerService.SubscribeForScripts:output_type -> ark.v1.SubscribeForScriptsResponse
+	36, // 67: ark.v1.IndexerService.UnsubscribeForScripts:output_type -> ark.v1.UnsubscribeForScriptsResponse
+	38, // 68: ark.v1.IndexerService.GetSubscription:output_type -> ark.v1.GetSubscriptionResponse
+	43, // 69: ark.v1.IndexerService.UpdateSubscriptionScripts:output_type -> ark.v1.UpdateSubscriptionScriptsResponse
+	56, // [56:70] is the sub-list for method output_type
+	42, // [42:56] is the sub-list for method input_type
+	42, // [42:42] is the sub-list for extension type_name
+	42, // [42:42] is the sub-list for extension extendee
+	0,  // [0:42] is the sub-list for field type_name
 }
 
 func init() { file_ark_v1_indexer_proto_init() }
@@ -3023,6 +3372,11 @@ func file_ark_v1_indexer_proto_init() {
 	file_ark_v1_indexer_proto_msgTypes[36].OneofWrappers = []any{
 		(*GetSubscriptionResponse_Heartbeat)(nil),
 		(*GetSubscriptionResponse_Event)(nil),
+		(*GetSubscriptionResponse_SubscriptionStarted)(nil),
+	}
+	file_ark_v1_indexer_proto_msgTypes[40].OneofWrappers = []any{
+		(*UpdateSubscriptionScriptsRequest_Modify)(nil),
+		(*UpdateSubscriptionScriptsRequest_Overwrite)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -3030,7 +3384,7 @@ func file_ark_v1_indexer_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ark_v1_indexer_proto_rawDesc), len(file_ark_v1_indexer_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   43,
+			NumMessages:   48,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

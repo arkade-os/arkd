@@ -424,6 +424,60 @@
         }
       }
     },
+    "/v1/indexer/script/subscription": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetSubscription is a server-side streaming RPC which allows clients to receive real-time\nnotifications on transactions related to the subscribed vtxo scripts.\nThe subscription can be created or updated by using the SubscribeForScripts and\nUnsubscribeForScripts RPCs.",
+        "operationId": "IndexerService_GetSubscription2",
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "query",
+            "description": "If empty, server creates a new subscription automatically.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scripts",
+            "in": "query",
+            "description": "Optional: scripts to subscribe to on stream creation.\nOnly used when subscription_id is empty; ignored otherwise.",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response. (streaming responses)",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/indexer/script/subscription/{subscription_id}": {
       "get": {
         "tags": [
@@ -435,9 +489,23 @@
           {
             "name": "subscriptionId",
             "in": "path",
+            "description": "If empty, server creates a new subscription automatically.",
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "scripts",
+            "in": "query",
+            "description": "Optional: scripts to subscribe to on stream creation.\nOnly used when subscription_id is empty; ignored otherwise.",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         ],
@@ -489,6 +557,47 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnsubscribeForScriptsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/script/updateScripts": {
+      "post": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "UpdateSubscriptionScripts allows to modify the scripts of an existing subscription\ncreated via GetSubscription.",
+        "operationId": "IndexerService_UpdateSubscriptionScripts",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSubscriptionScriptsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateSubscriptionScriptsResponse"
                 }
               }
             }
@@ -979,8 +1088,16 @@
         "title": "GetSubscriptionRequest",
         "type": "object",
         "properties": {
+          "scripts": {
+            "type": "array",
+            "description": "Optional: scripts to subscribe to on stream creation.\nOnly used when subscription_id is empty; ignored otherwise.",
+            "items": {
+              "type": "string"
+            }
+          },
           "subscriptionId": {
-            "type": "string"
+            "type": "string",
+            "description": "If empty, server creates a new subscription automatically."
           }
         }
       },
@@ -993,6 +1110,9 @@
           },
           "heartbeat": {
             "$ref": "#/components/schemas/IndexerHeartbeat"
+          },
+          "subscriptionStarted": {
+            "$ref": "#/components/schemas/SubscriptionStartedEvent"
           }
         }
       },
@@ -1491,6 +1611,36 @@
           }
         }
       },
+      "ModifyScripts": {
+        "title": "ModifyScripts",
+        "type": "object",
+        "properties": {
+          "addScripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removeScripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "OverwriteScripts": {
+        "title": "OverwriteScripts",
+        "type": "object",
+        "properties": {
+          "scripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "Status": {
         "title": "Status",
         "type": "object",
@@ -1535,6 +1685,15 @@
           }
         }
       },
+      "SubscriptionStartedEvent": {
+        "title": "SubscriptionStartedEvent",
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string"
+          }
+        }
+      },
       "UnsubscribeForScriptsRequest": {
         "title": "UnsubscribeForScriptsRequest",
         "type": "object",
@@ -1554,6 +1713,45 @@
       "UnsubscribeForScriptsResponse": {
         "title": "UnsubscribeForScriptsResponse",
         "type": "object"
+      },
+      "UpdateSubscriptionScriptsRequest": {
+        "title": "UpdateSubscriptionScriptsRequest",
+        "type": "object",
+        "properties": {
+          "modify": {
+            "$ref": "#/components/schemas/ModifyScripts"
+          },
+          "overwrite": {
+            "$ref": "#/components/schemas/OverwriteScripts"
+          },
+          "subscriptionId": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateSubscriptionScriptsResponse": {
+        "title": "UpdateSubscriptionScriptsResponse",
+        "type": "object",
+        "properties": {
+          "allScripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scriptsAdded": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scriptsRemoved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       }
     }
   },
