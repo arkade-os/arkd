@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import "github.com/arkade-os/arkd/pkg/client-lib/types"
 

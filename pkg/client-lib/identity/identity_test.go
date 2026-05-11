@@ -1,12 +1,12 @@
-package wallet_test
+package identity_test
 
 import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
-	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
-	inmemorywalletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
+	"github.com/arkade-os/arkd/pkg/client-lib/identity"
+	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
+	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/stretchr/testify/require"
@@ -18,8 +18,8 @@ var network = chaincfg.RegressionNetParams
 
 func TestCreate(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		walletSvc := newTestWallet(t)
-		seed, err := walletSvc.Create(t.Context(), network, testPassword, "")
+		identitySvc := newTestIdentity(t)
+		seed, err := identitySvc.Create(t.Context(), network, testPassword, "")
 		require.NoError(t, err)
 		require.NotEmpty(t, seed)
 	})
@@ -28,44 +28,44 @@ func TestCreate(t *testing.T) {
 func TestLockUnlock(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		t.Run("lock and unlock", func(t *testing.T) {
-			walletSvc, _ := newUnlockedTestWallet(t)
+			identitySvc, _ := newUnlockedTestIdentity(t)
 			ctx := t.Context()
 
-			require.False(t, walletSvc.IsLocked())
+			require.False(t, identitySvc.IsLocked())
 
-			err := walletSvc.Lock(ctx)
+			err := identitySvc.Lock(ctx)
 			require.NoError(t, err)
-			require.True(t, walletSvc.IsLocked())
+			require.True(t, identitySvc.IsLocked())
 
-			_, err = walletSvc.Unlock(ctx, testPassword)
+			_, err = identitySvc.Unlock(ctx, testPassword)
 			require.NoError(t, err)
-			require.False(t, walletSvc.IsLocked())
+			require.False(t, identitySvc.IsLocked())
 		})
 
 		t.Run("unlock when already unlocked", func(t *testing.T) {
-			walletSvc, _ := newUnlockedTestWallet(t)
-			alreadyUnlocked, err := walletSvc.Unlock(t.Context(), "")
+			identitySvc, _ := newUnlockedTestIdentity(t)
+			alreadyUnlocked, err := identitySvc.Unlock(t.Context(), "")
 			require.NoError(t, err)
 			require.True(t, alreadyUnlocked)
 		})
 
 		t.Run("lock when already locked", func(t *testing.T) {
-			walletSvc, _ := newUnlockedTestWallet(t)
-			err := walletSvc.Lock(t.Context())
+			identitySvc, _ := newUnlockedTestIdentity(t)
+			err := identitySvc.Lock(t.Context())
 			require.NoError(t, err)
-			require.True(t, walletSvc.IsLocked())
+			require.True(t, identitySvc.IsLocked())
 
-			err = walletSvc.Lock(t.Context())
+			err = identitySvc.Lock(t.Context())
 			require.NoError(t, err)
-			require.True(t, walletSvc.IsLocked())
+			require.True(t, identitySvc.IsLocked())
 		})
 	})
 }
 
 func TestGetKey(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		walletSvc, seed := newUnlockedTestWallet(t)
-		key, err := walletSvc.GetKey(t.Context(), "")
+		identitySvc, seed := newUnlockedTestIdentity(t)
+		key, err := identitySvc.GetKey(t.Context(), "")
 		require.NoError(t, err)
 		require.NotNil(t, key)
 		require.NotNil(t, key.PubKey)
@@ -79,13 +79,13 @@ func TestGetKey(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		tests := []struct {
 			name   string
-			setup  func(t *testing.T) wallet.WalletService
+			setup  func(t *testing.T) identity.Identity
 			expErr string
 		}{
 			{
 				"not initialized",
-				func(t *testing.T) wallet.WalletService { return newTestWallet(t) },
-				"wallet not initialized",
+				func(t *testing.T) identity.Identity { return newTestIdentity(t) },
+				"identity not initialized",
 			},
 		}
 		for _, tt := range tests {
@@ -100,8 +100,8 @@ func TestGetKey(t *testing.T) {
 
 func TestNewKey(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		walletSvc, seed := newUnlockedTestWallet(t)
-		key, err := walletSvc.NewKey(t.Context())
+		identitySvc, seed := newUnlockedTestIdentity(t)
+		key, err := identitySvc.NewKey(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, key.PubKey)
 
@@ -114,13 +114,13 @@ func TestNewKey(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		tests := []struct {
 			name   string
-			setup  func(t *testing.T) wallet.WalletService
+			setup  func(t *testing.T) identity.Identity
 			expErr string
 		}{
 			{
 				"not initialized",
-				func(t *testing.T) wallet.WalletService { return newTestWallet(t) },
-				"wallet not initialized",
+				func(t *testing.T) identity.Identity { return newTestIdentity(t) },
+				"identity not initialized",
 			},
 		}
 		for _, tt := range tests {
@@ -135,15 +135,15 @@ func TestNewKey(t *testing.T) {
 
 func TestNextKeyId(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		walletSvc, _ := newUnlockedTestWallet(t)
+		identitySvc, _ := newUnlockedTestIdentity(t)
 		ctx := t.Context()
 
-		// Single-key wallet always returns "m" regardless of the id argument.
-		id, err := walletSvc.NextKeyId(ctx, "")
+		// Single-key identity always returns "m" regardless of the id argument.
+		id, err := identitySvc.NextKeyId(ctx, "")
 		require.NoError(t, err)
 		require.Equal(t, "m", id)
 
-		id, err = walletSvc.NextKeyId(ctx, "some-arbitrary-id")
+		id, err = identitySvc.NextKeyId(ctx, "some-arbitrary-id")
 		require.NoError(t, err)
 		require.Equal(t, "m", id)
 	})
@@ -151,15 +151,15 @@ func TestNextKeyId(t *testing.T) {
 
 func TestGetKeyIndex(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		walletSvc, _ := newUnlockedTestWallet(t)
+		identitySvc, _ := newUnlockedTestIdentity(t)
 		ctx := t.Context()
 
-		// Single-key wallet always returns 0 regardless of the id argument.
-		idx, err := walletSvc.GetKeyIndex(ctx, "")
+		// Single-key identity always returns 0 regardless of the id argument.
+		idx, err := identitySvc.GetKeyIndex(ctx, "")
 		require.NoError(t, err)
 		require.Equal(t, uint32(0), idx)
 
-		idx, err = walletSvc.GetKeyIndex(ctx, "some-arbitrary-id")
+		idx, err = identitySvc.GetKeyIndex(ctx, "some-arbitrary-id")
 		require.NoError(t, err)
 		require.Equal(t, uint32(0), idx)
 	})
@@ -167,9 +167,9 @@ func TestGetKeyIndex(t *testing.T) {
 
 func TestListKeys(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
-		walletSvc, seed := newUnlockedTestWallet(t)
+		identitySvc, seed := newUnlockedTestIdentity(t)
 
-		keys, err := walletSvc.ListKeys(t.Context())
+		keys, err := identitySvc.ListKeys(t.Context())
 		require.NoError(t, err)
 		require.Len(t, keys, 1)
 		require.NotNil(t, keys[0].PubKey)
@@ -181,22 +181,22 @@ func TestListKeys(t *testing.T) {
 	})
 }
 
-func newTestWallet(t *testing.T) wallet.WalletService {
+func newTestIdentity(t *testing.T) identity.Identity {
 	t.Helper()
-	walletStore, err := inmemorywalletstore.NewWalletStore()
+	store, err := identityinmemorystore.NewStore()
 	require.NoError(t, err)
-	walletSvc, err := singlekeywallet.NewBitcoinWallet(walletStore)
+	identitySvc, err := singlekeyidentity.NewIdentity(store)
 	require.NoError(t, err)
-	return walletSvc
+	return identitySvc
 }
 
-func newUnlockedTestWallet(t *testing.T) (wallet.WalletService, string) {
+func newUnlockedTestIdentity(t *testing.T) (identity.Identity, string) {
 	t.Helper()
-	walletSvc := newTestWallet(t)
+	identitySvc := newTestIdentity(t)
 	ctx := t.Context()
-	seed, err := walletSvc.Create(ctx, network, testPassword, "")
+	seed, err := identitySvc.Create(ctx, network, testPassword, "")
 	require.NoError(t, err)
-	_, err = walletSvc.Unlock(ctx, testPassword)
+	_, err = identitySvc.Unlock(ctx, testPassword)
 	require.NoError(t, err)
-	return walletSvc, seed
+	return identitySvc, seed
 }

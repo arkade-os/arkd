@@ -23,20 +23,17 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
+	wallet "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
-	mempool_explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
+	mempoolexplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/redemption"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
-	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -71,8 +68,8 @@ func TestBatchSession(t *testing.T) {
 	t.Run("refresh vtxos", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
-		bob := setupClient(t)
+		alice := setupClientWallet(t)
+		bob := setupClientWallet(t)
 
 		_, aliceOffchainAddr, aliceBoardingAddr, err := alice.Receive(ctx)
 		require.NoError(t, err)
@@ -114,7 +111,7 @@ func TestBatchSession(t *testing.T) {
 			wg.Done()
 		}()
 
-		var aliceBatchRes, bobBatchRes *arksdk.BatchTxRes
+		var aliceBatchRes, bobBatchRes *wallet.BatchTxRes
 		var aliceBatchErr, bobBatchErr error
 		go func() {
 			aliceBatchRes, aliceBatchErr = alice.Settle(ctx)
@@ -202,7 +199,7 @@ func TestBatchSession(t *testing.T) {
 	// In this test Alice redeems 2 notes and then tries to redeem them again to ensure
 	// they can be redeeemed only once
 	t.Run("redeem notes", func(t *testing.T) {
-		alice := setupClient(t)
+		alice := setupClientWallet(t)
 
 		_, offchainAddr, _, err := alice.Receive(t.Context())
 		require.NoError(t, err)
@@ -254,7 +251,7 @@ func TestBatchSession(t *testing.T) {
 func TestUnilateralExit(t *testing.T) {
 	// In this test Alice owns a leaf VTXO and unrolls it onchain
 	t.Run("leaf vtxo", func(t *testing.T) {
-		alice := setupClient(t)
+		alice := setupClientWallet(t)
 
 		// Faucet 21000 sats offchain and some little amount onchain
 		// to cover network fees for the unroll
@@ -296,11 +293,11 @@ func TestUnilateralExit(t *testing.T) {
 	// In this test Bob receives from Alice a VTXO offchain and unrolls it onchain
 	t.Run("preconfirmed vtxo", func(t *testing.T) {
 		// Faucet Alice
-		alice := setupClient(t)
+		alice := setupClientWallet(t)
 
 		faucetOffchain(t, alice, 0.001)
 
-		bob := setupClient(t)
+		bob := setupClientWallet(t)
 		bobOnchainAddr, bobOffchainAddr, _, err := bob.Receive(t.Context())
 		require.NoError(t, err)
 		require.NotEmpty(t, bobOnchainAddr)
@@ -392,7 +389,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		t.Run("without asset", func(t *testing.T) {
 			ctx := t.Context()
-			alice := setupClient(t)
+			alice := setupClientWallet(t)
 
 			// Fund Alice offchain + small onchain amount for unroll fees
 			faucet(t, alice, 0.00021)
@@ -461,7 +458,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 			}()
 
 			res, err := alice.Settle(ctx,
-				arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
+				wallet.WithFunds([]types.Utxo{boardingUtxo}, nil),
 			)
 			require.NoError(t, err)
 			require.NotEmpty(t, res.CommitmentTxid)
@@ -489,7 +486,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 
 		t.Run("with asset", func(t *testing.T) {
 			ctx := t.Context()
-			alice := setupClient(t)
+			alice := setupClientWallet(t)
 
 			// Fund Alice with the exact amount needed for an asset issuance
 			// to avoid creating BTC change (which would leave a non-asset
@@ -589,7 +586,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 			}()
 
 			res, err := alice.Settle(ctx,
-				arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
+				wallet.WithFunds([]types.Utxo{boardingUtxo}, nil),
 			)
 			require.NoError(t, err)
 			require.NotEmpty(t, res.CommitmentTxid)
@@ -618,7 +615,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 		// the server must reject the rejoin request.
 		t.Run("csv reached", func(t *testing.T) {
 			ctx := t.Context()
-			alice := setupClient(t)
+			alice := setupClientWallet(t)
 
 			faucet(t, alice, 0.00021)
 			time.Sleep(5 * time.Second)
@@ -668,7 +665,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 			}
 
 			_, err = alice.Settle(ctx,
-				arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
+				wallet.WithFunds([]types.Utxo{boardingUtxo}, nil),
 			)
 			require.Error(t, err)
 			require.ErrorContains(t, err, "expired")
@@ -682,7 +679,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 			fakeAssetId := strings.Repeat("ab", 32) + "0000"
 
 			ctx := t.Context()
-			alice := setupClient(t)
+			alice := setupClientWallet(t)
 
 			faucet(t, alice, 0.00021)
 			time.Sleep(5 * time.Second)
@@ -730,7 +727,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 			}
 
 			_, err = alice.Settle(ctx,
-				arksdk.WithFunds([]types.Utxo{boardingUtxo}, nil),
+				wallet.WithFunds([]types.Utxo{boardingUtxo}, nil),
 			)
 			require.Error(t, err)
 			require.ErrorContains(t, err, "does not contain any assets")
@@ -742,8 +739,8 @@ func TestCollaborativeExit(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		// In this test Alice sends to Bob's onchain address by producing a (VTXO) change
 		t.Run("with change", func(t *testing.T) {
-			alice := setupClient(t)
-			bob := setupClient(t)
+			alice := setupClientWallet(t)
+			bob := setupClientWallet(t)
 
 			// Faucet Alice
 			faucetOffchain(t, alice, 0.001)
@@ -790,8 +787,8 @@ func TestCollaborativeExit(t *testing.T) {
 
 		// In this test Alice sends all to Bob'c onchain address without (VTXO) change
 		t.Run("without change", func(t *testing.T) {
-			alice := setupClient(t)
-			bob := setupClient(t)
+			alice := setupClientWallet(t)
+			bob := setupClientWallet(t)
 
 			// Faucet Alice
 			faucetOffchain(t, alice, 0.00021100) // 21000 + 100 satoshis (amount + fee)
@@ -837,8 +834,8 @@ func TestCollaborativeExit(t *testing.T) {
 		// In this test Alice funds her boarding address without settling and tries to join a batch
 		// funding Bob's onchain address. The server should reject the request
 		t.Run("with boarding inputs", func(t *testing.T) {
-			alice := setupClient(t)
-			bob := setupClient(t)
+			alice := setupClientWallet(t)
+			bob := setupClientWallet(t)
 
 			_, _, aliceBoardingAddr, err := alice.Receive(t.Context())
 			require.NoError(t, err)
@@ -863,9 +860,9 @@ func TestOffchainTx(t *testing.T) {
 	// In this test Alice sends several times to Bob to create a chain of offchain txs
 	t.Run("chain of txs", func(t *testing.T) {
 		ctx := context.Background()
-		alice := setupClient(t)
+		alice := setupClientWallet(t)
 
-		bob := setupClient(t)
+		bob := setupClientWallet(t)
 
 		faucetOffchain(t, alice, 0.001)
 
@@ -960,8 +957,8 @@ func TestOffchainTx(t *testing.T) {
 		const numInputs = 5
 		const amount = 2100
 
-		alice := setupClient(t)
-		bob := setupClient(t)
+		alice := setupClientWallet(t)
+		bob := setupClientWallet(t)
 
 		_, aliceOffchainAddr, _, err := alice.Receive(t.Context())
 		require.NoError(t, err)
@@ -1010,8 +1007,8 @@ func TestOffchainTx(t *testing.T) {
 	// In this test Alice sends to Bob a sub-dust VTXO. Bob can't spend or settle his VTXO.
 	// He must receive other offchain funds to be able to settle them into a non-sub-dust
 	t.Run("sub dust", func(t *testing.T) {
-		alice := setupClient(t)
-		bob := setupClient(t)
+		alice := setupClientWallet(t)
+		bob := setupClientWallet(t)
 
 		faucetOffchain(t, alice, 0.00021)
 
@@ -1080,29 +1077,16 @@ func TestOffchainTx(t *testing.T) {
 	// The server should accept only one of them and reject the others.
 	t.Run("concurrent submit txs", func(t *testing.T) {
 		ctx := t.Context()
-		client := setupClient(t)
-		arkdClient := client.Transport()
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
 
-		privkey, err := btcec.NewPrivateKey()
+		aliceKey, err := alice.Identity().GetKey(ctx, "")
 		require.NoError(t, err)
+		require.NotNil(t, aliceKey.PubKey)
 
-		walletStore, err := inmemorystore.NewWalletStore()
-		require.NoError(t, err)
+		alicePubkey := aliceKey.PubKey
 
-		wallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
-		require.NoError(t, err)
-
-		_, err = wallet.Create(
-			ctx, chaincfg.RegressionNetParams, password, hex.EncodeToString(privkey.Serialize()),
-		)
-		require.NoError(t, err)
-
-		_, err = wallet.Unlock(ctx, password)
-		require.NoError(t, err)
-
-		publicKey := privkey.PubKey()
-
-		serverParams, err := arkdClient.GetInfo(ctx)
+		serverParams, err := aliceClient.GetInfo(ctx)
 		require.NoError(t, err)
 
 		signerPubKeyBytes, err := hex.DecodeString(serverParams.SignerPubKey)
@@ -1115,7 +1099,7 @@ func TestOffchainTx(t *testing.T) {
 		vtxoScript := script.TapscriptsVtxoScript{
 			Closures: []script.Closure{
 				&script.MultisigClosure{
-					PubKeys: []*btcec.PublicKey{publicKey, signerPubKey},
+					PubKeys: []*btcec.PublicKey{alicePubkey, signerPubKey},
 				},
 			},
 		}
@@ -1214,7 +1198,7 @@ func TestOffchainTx(t *testing.T) {
 			// sign the ark transaction
 			encodedArkTx, err := ptx.B64Encode()
 			require.NoError(t, err)
-			signedArkTx, err := wallet.SignTransaction(ctx, encodedArkTx, nil)
+			signedArkTx, err := alice.SignTransaction(ctx, encodedArkTx)
 			require.NoError(t, err)
 
 			txs = append(txs, tx{
@@ -1225,7 +1209,7 @@ func TestOffchainTx(t *testing.T) {
 
 		doSubmit := func(ctx context.Context, wg *sync.WaitGroup, errChan chan error, ark string, checkpoints []string) {
 			defer wg.Done()
-			_, _, _, err := arkdClient.SubmitTx(ctx, ark, checkpoints)
+			_, _, _, err := aliceClient.SubmitTx(ctx, ark, checkpoints)
 			errChan <- err
 		}
 
@@ -1265,9 +1249,8 @@ func TestOffchainTx(t *testing.T) {
 	t.Run("finalize pending tx", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
-
-		aliceClient := alice.Transport()
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
 
 		vtxo := faucetOffchain(t, alice, 0.00021)
 
@@ -1397,10 +1380,8 @@ func TestOffchainTx(t *testing.T) {
 		t.Run("vtxo already swept", func(t *testing.T) {
 			ctx := t.Context()
 
-			alice := setupClient(t)
-			t.Cleanup(alice.Stop)
-
-			aliceClient := alice.Transport()
+			alice := setupClientWallet(t)
+			aliceClient := alice.Client()
 
 			vtxo := faucetOffchain(t, alice, 0.00021)
 
@@ -1534,10 +1515,8 @@ func TestOffchainTx(t *testing.T) {
 		t.Run("vtxo expired but not swept", func(t *testing.T) {
 			ctx := t.Context()
 
-			alice := setupClient(t)
-			t.Cleanup(alice.Stop)
-
-			aliceClient := alice.Transport()
+			alice := setupClientWallet(t)
+			aliceClient := alice.Client()
 
 			vtxo := faucetOffchain(t, alice, 0.00021)
 
@@ -1676,10 +1655,8 @@ func TestOffchainTx(t *testing.T) {
 	t.Run("reject finalization of tx with unrolled inputs", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
-		t.Cleanup(alice.Stop)
-
-		aliceClient := alice.Transport()
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
 
 		fund := faucetOffchain(t, alice, 0.00021)
 		vtxo := types.VtxoWithTapTree{Vtxo: fund}
@@ -1776,7 +1753,7 @@ func TestOffchainTx(t *testing.T) {
 
 		// Unroll the input vtxo onchain. Submit has already marked it spent server-side,
 		// so we pass the vtxo explicitly to bypass the SDK's spendable filter.
-		unrollRes, err := alice.Unroll(ctx, arksdk.WithVtxos([]types.VtxoWithTapTree{vtxo}))
+		unrollRes, err := alice.Unroll(ctx, wallet.WithVtxos([]types.VtxoWithTapTree{vtxo}))
 		require.NoError(t, err)
 		require.NotEmpty(t, unrollRes)
 
@@ -1817,9 +1794,8 @@ func TestOffchainTx(t *testing.T) {
 	t.Run("too many op return outputs", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
-
-		aliceClient := alice.Transport()
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
 
 		vtxo := faucetOffchain(t, alice, 0.00021)
 
@@ -1934,9 +1910,8 @@ func TestOffchainTx(t *testing.T) {
 	t.Run("invalid tx size", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
-
-		arkSvc := alice.Transport()
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
 
 		vtxo := faucetOffchain(t, alice, 0.00021)
 
@@ -1945,7 +1920,7 @@ func TestOffchainTx(t *testing.T) {
 		require.NotEmpty(t, offchainAddresses)
 		offchainAddress := offchainAddresses[0]
 
-		serverParams, err := arkSvc.GetInfo(ctx)
+		serverParams, err := aliceClient.GetInfo(ctx)
 		require.NoError(t, err)
 
 		vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
@@ -2026,7 +2001,7 @@ func TestOffchainTx(t *testing.T) {
 		signedArkTx, err := alice.SignTransaction(ctx, encodedArkTx)
 		require.NoError(t, err)
 
-		txid, finalArkTx, signedCheckpoints, err := arkSvc.SubmitTx(
+		txid, finalArkTx, signedCheckpoints, err := aliceClient.SubmitTx(
 			ctx, signedArkTx, encodedCheckpoints,
 		)
 		require.Error(t, err)
@@ -2044,15 +2019,14 @@ func TestOffchainTx(t *testing.T) {
 func TestDelegateRefresh(t *testing.T) {
 	ctx := t.Context()
 
-	alice := setupClient(t)
-
-	aliceClient := alice.Transport()
+	alice := setupClientWallet(t)
+	aliceClient := alice.Client()
 
 	_, aliceAddr, _, err := alice.Receive(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, aliceAddr)
 
-	aliceKey, err := alice.Wallet().GetKey(ctx, "")
+	aliceKey, err := alice.Identity().GetKey(ctx, "")
 	require.NoError(t, err)
 	require.NotNil(t, aliceKey.PubKey)
 
@@ -2060,12 +2034,12 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, aliceArkAddr)
 
-	bobWallet, bobPubKey, err := setupWalletService(t)
+	bob, bobPubKey, err := setupIdentity(t)
 	require.NoError(t, err)
-	require.NotNil(t, bobWallet)
+	require.NotNil(t, bob)
 	require.NotNil(t, bobPubKey)
 
-	bobTreeSigner, err := bobWallet.NewVtxoTreeSigner(ctx)
+	bobTreeSigner, err := bob.NewVtxoTreeSigner(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, bobTreeSigner)
 
@@ -2296,21 +2270,21 @@ func TestDelegateRefresh(t *testing.T) {
 	intentId, err := aliceClient.RegisterIntent(ctx, encodedIntentProof, encodedIntentMessage)
 	require.NoError(t, err)
 
-	topics := arksdk.GetEventStreamTopics(
+	topics := wallet.GetEventStreamTopics(
 		[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{bobTreeSigner},
 	)
 	stream, close, err := aliceClient.GetEventStream(ctx, topics)
 	require.NoError(t, err)
 	t.Cleanup(close)
 
-	commitmentTxid, commitmentTx, batchExpiry, forfeitTxs, vtxoTree, err := arksdk.JoinBatchSession(
+	commitmentTxid, commitmentTx, batchExpiry, forfeitTxs, vtxoTree, err := wallet.JoinBatchSession(
 		ctx, stream, &delegateBatchEventsHandler{
-			signerSession:    bobTreeSigner,
-			partialForfeitTx: signedPartialForfeitTx,
-			delegatorWallet:  bobWallet,
-			client:           aliceClient,
-			forfeitPubKey:    aliceConfig.ForfeitPubKey,
-			intentId:         intentId,
+			signerSession:     bobTreeSigner,
+			partialForfeitTx:  signedPartialForfeitTx,
+			delegatorIdentity: bob,
+			client:            aliceClient,
+			forfeitPubKey:     aliceConfig.ForfeitPubKey,
+			intentId:          intentId,
 		},
 	)
 	require.NoError(t, err)
@@ -2324,30 +2298,18 @@ func TestDelegateRefresh(t *testing.T) {
 // TestSendToCLTVMultisigClosure shows how to send to an ark address that includes a closure locked
 // by an absolute delay (and therefore spendable offchain) and spend from it
 func TestSendToCLTVMultisigClosure(t *testing.T) {
-	ctx := context.Background()
-	alice := setupClient(t)
+	ctx := t.Context()
 
-	aliceClient := alice.Transport()
+	alice := setupClientWallet(t)
+	aliceClient := alice.Client()
 	indexerClient := alice.Indexer()
 
-	bobPrivKey, err := btcec.NewPrivateKey()
+	bob := setupClientWallet(t)
+	keyRef, err := bob.Identity().GetKey(ctx, "")
 	require.NoError(t, err)
+	require.NotNil(t, keyRef)
 
-	walletStore, err := inmemorystore.NewWalletStore()
-	require.NoError(t, err)
-
-	bobWallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
-	require.NoError(t, err)
-
-	_, err = bobWallet.Create(
-		ctx, chaincfg.RegressionNetParams, password, hex.EncodeToString(bobPrivKey.Serialize()),
-	)
-	require.NoError(t, err)
-
-	_, err = bobWallet.Unlock(ctx, password)
-	require.NoError(t, err)
-
-	bobPubKey := bobPrivKey.PubKey()
+	bobPubkey := keyRef.PubKey
 
 	// Fund Alice's account
 	_, offchainAddr, _, err := alice.Receive(ctx)
@@ -2370,7 +2332,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 			&script.CLTVMultisigClosure{
 				Locktime: arklib.AbsoluteLocktime(currentHeight + cltvBlocks),
 				MultisigClosure: script.MultisigClosure{
-					PubKeys: []*btcec.PublicKey{bobPubKey, aliceAddr.Signer},
+					PubKeys: []*btcec.PublicKey{bobPubkey, aliceAddr.Signer},
 				},
 			},
 		},
@@ -2502,7 +2464,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Sign the transaction
-	signedTx, err := bobWallet.SignTransaction(ctx, encodedVirtualTx, nil)
+	signedTx, err := bob.SignTransaction(ctx, encodedVirtualTx)
 	require.NoError(t, err)
 
 	checkpoints := make([]string, 0, len(checkpointsPtx))
@@ -2526,7 +2488,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 
 	finalCheckpoints := make([]string, 0, len(signedCheckpoints))
 	for _, checkpoint := range signedCheckpoints {
-		finalCheckpoint, err := bobWallet.SignTransaction(ctx, checkpoint, nil)
+		finalCheckpoint, err := bob.SignTransaction(ctx, checkpoint)
 		require.NoError(t, err)
 		finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
 	}
@@ -2539,29 +2501,14 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 // including a custom condition like the revealing of a preimage
 func TestSendToConditionMultisigClosure(t *testing.T) {
 	ctx := t.Context()
-	alice := setupClient(t)
 
-	aliceClient := alice.Transport()
+	alice := setupClientWallet(t)
+	aliceClient := alice.Client()
 	indexerClient := alice.Indexer()
 
-	bobPrivKey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-
-	walletStore, err := inmemorystore.NewWalletStore()
-	require.NoError(t, err)
-
-	bobWallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
-	require.NoError(t, err)
-
-	_, err = bobWallet.Create(
-		ctx, chaincfg.RegressionNetParams, password, hex.EncodeToString(bobPrivKey.Serialize()),
-	)
-	require.NoError(t, err)
-
-	_, err = bobWallet.Unlock(ctx, password)
-	require.NoError(t, err)
-
-	bobPubKey := bobPrivKey.PubKey()
+	bob := setupClientWallet(t)
+	keyRef, err := bob.Identity().GetKey(ctx, "")
+	bobPubkey := keyRef.PubKey
 
 	// Fund Alice's account
 	_, offchainAddr, _, err := alice.Receive(ctx)
@@ -2593,11 +2540,11 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 			&script.ConditionMultisigClosure{
 				Condition: conditionScript,
 				MultisigClosure: script.MultisigClosure{
-					PubKeys: []*btcec.PublicKey{bobPubKey, aliceAddr.Signer},
+					PubKeys: []*btcec.PublicKey{bobPubkey, aliceAddr.Signer},
 				},
 			},
 			&script.MultisigClosure{
-				PubKeys: []*btcec.PublicKey{bobPubKey, aliceAddr.Signer},
+				PubKeys: []*btcec.PublicKey{bobPubkey, aliceAddr.Signer},
 			},
 		},
 	}
@@ -2740,7 +2687,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Sign the transaction
-	signedTx, err := bobWallet.SignTransaction(ctx, encodedVirtualTx, nil)
+	signedTx, err := bob.SignTransaction(ctx, encodedVirtualTx)
 	require.NoError(t, err)
 
 	checkpoints := make([]string, 0, len(checkpointsPtx))
@@ -2770,7 +2717,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 		encoded, err := ptx.B64Encode()
 		require.NoError(t, err)
 
-		finalCheckpoint, err := bobWallet.SignTransaction(ctx, encoded, nil)
+		finalCheckpoint, err := bob.SignTransaction(ctx, encoded)
 		require.NoError(t, err)
 		finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
 	}
@@ -2787,8 +2734,7 @@ func TestReactToFraud(t *testing.T) {
 		t.Run("with batch output", func(t *testing.T) {
 			ctx := t.Context()
 
-			client := setupClient(t)
-
+			client := setupClientWallet(t)
 			indexerClient := client.Indexer()
 
 			_, arkAddr, boardingAddress, err := client.Receive(ctx)
@@ -2838,13 +2784,13 @@ func TestReactToFraud(t *testing.T) {
 				}
 			}
 
-			expl, err := mempool_explorer.NewExplorer(
+			explorer, err := mempoolexplorer.NewExplorer(
 				"http://localhost:3000", arklib.BitcoinRegTest,
-				mempool_explorer.WithTracker(false),
+				mempoolexplorer.WithTracker(false),
 			)
 			require.NoError(t, err)
 
-			branch, err := redemption.NewRedeemBranch(ctx, expl, indexerClient, vtxo)
+			branch, err := redemption.NewRedeemBranch(ctx, explorer, indexerClient, vtxo)
 			require.NoError(t, err)
 
 			// The tree we want to unroll contains only one tx, therefore there's only one tx to broadcast.
@@ -2854,13 +2800,13 @@ func TestReactToFraud(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, leafTx)
 
-			bumpAndBroadcastTx(t, leafTx, expl)
+			bumpAndBroadcastTx(t, leafTx, explorer)
 
 			// Give time to the explorer to track down the broadcasted txs.
 			time.Sleep(5 * time.Second)
 
 			// The vtxo is now unrolled and unspent in the Bitcoin mempool.
-			spentStatus, err := expl.GetTxOutspends(vtxo.Txid)
+			spentStatus, err := explorer.GetTxOutspends(vtxo.Txid)
 			require.NoError(t, err)
 			require.GreaterOrEqual(t, len(spentStatus), int(vtxo.VOut))
 			require.False(t, spentStatus[vtxo.VOut].Spent)
@@ -2874,7 +2820,7 @@ func TestReactToFraud(t *testing.T) {
 			time.Sleep(8 * time.Second)
 
 			// Ensure the unrolled vtxo is now spent. The server swept it by broadcasting the forfeit tx.
-			spentStatus, err = expl.GetTxOutspends(vtxo.Txid)
+			spentStatus, err = explorer.GetTxOutspends(vtxo.Txid)
 			require.NoError(t, err)
 			require.NotEmpty(t, spentStatus)
 			require.True(t, spentStatus[vtxo.VOut].Spent)
@@ -2889,8 +2835,7 @@ func TestReactToFraud(t *testing.T) {
 		t.Run("without batch output", func(t *testing.T) {
 			ctx := t.Context()
 
-			client := setupClient(t)
-
+			client := setupClientWallet(t)
 			indexerClient := client.Indexer()
 
 			onchainAddr, arkAddr, boardingAddress, err := client.Receive(ctx)
@@ -2941,13 +2886,13 @@ func TestReactToFraud(t *testing.T) {
 				}
 			}
 
-			expl, err := mempool_explorer.NewExplorer(
+			explorer, err := mempoolexplorer.NewExplorer(
 				"http://localhost:3000", arklib.BitcoinRegTest,
-				mempool_explorer.WithTracker(false),
+				mempoolexplorer.WithTracker(false),
 			)
 			require.NoError(t, err)
 
-			branch, err := redemption.NewRedeemBranch(ctx, expl, indexerClient, vtxo)
+			branch, err := redemption.NewRedeemBranch(ctx, explorer, indexerClient, vtxo)
 			require.NoError(t, err)
 
 			// The tree we want to unroll contains only one tx, therefore there's only one tx to broadcast.
@@ -2957,13 +2902,13 @@ func TestReactToFraud(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, leafTx)
 
-			bumpAndBroadcastTx(t, leafTx, expl)
+			bumpAndBroadcastTx(t, leafTx, explorer)
 
 			// Give time to the explorer to track down the broadcasted txs.
 			time.Sleep(5 * time.Second)
 
 			// The vtxo is now unrolled and unspent in the Bitcoin mempool.
-			spentStatus, err := expl.GetTxOutspends(vtxo.Txid)
+			spentStatus, err := explorer.GetTxOutspends(vtxo.Txid)
 			require.NoError(t, err)
 			require.GreaterOrEqual(t, len(spentStatus), int(vtxo.VOut))
 			require.False(t, spentStatus[vtxo.VOut].Spent)
@@ -2977,7 +2922,7 @@ func TestReactToFraud(t *testing.T) {
 			time.Sleep(8 * time.Second)
 
 			// Ensure the unrolled vtxo is now spent. The server swept it by broadcasting the forfeit tx.
-			spentStatus, err = expl.GetTxOutspends(vtxo.Txid)
+			spentStatus, err = explorer.GetTxOutspends(vtxo.Txid)
 			require.NoError(t, err)
 			require.NotEmpty(t, spentStatus)
 			require.True(t, spentStatus[vtxo.VOut].Spent)
@@ -2992,8 +2937,7 @@ func TestReactToFraud(t *testing.T) {
 		t.Run("default vtxo script", func(t *testing.T) {
 			ctx := context.Background()
 
-			client := setupClient(t)
-
+			client := setupClientWallet(t)
 			indexerClient := client.Indexer()
 
 			_, offchainAddress, boardingAddress, err := client.Receive(ctx)
@@ -3064,17 +3008,17 @@ func TestReactToFraud(t *testing.T) {
 			}
 			require.NotEmpty(t, vtxo)
 
-			expl, err := mempool_explorer.NewExplorer(
+			explorer, err := mempoolexplorer.NewExplorer(
 				"http://localhost:3000", arklib.BitcoinRegTest,
-				mempool_explorer.WithTracker(false),
+				mempoolexplorer.WithTracker(false),
 			)
 			require.NoError(t, err)
 
-			branch, err := redemption.NewRedeemBranch(ctx, expl, indexerClient, vtxo)
+			branch, err := redemption.NewRedeemBranch(ctx, explorer, indexerClient, vtxo)
 			require.NoError(t, err)
 
 			for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
-				bumpAndBroadcastTx(t, parentTx, expl)
+				bumpAndBroadcastTx(t, parentTx, explorer)
 			}
 
 			err = generateBlocks(50)
@@ -3090,29 +3034,17 @@ func TestReactToFraud(t *testing.T) {
 		})
 
 		t.Run("cltv vtxo script", func(t *testing.T) {
-			ctx := context.Background()
-			alice := setupClient(t)
+			ctx := t.Context()
 
-			aliceClient := alice.Transport()
+			alice := setupClientWallet(t)
+			aliceClient := alice.Client()
 			indexerClient := alice.Indexer()
 
-			bobPrivKey, err := btcec.NewPrivateKey()
+			bob := setupClientWallet(t)
+			keyRef, err := bob.Identity().GetKey(ctx, "")
 			require.NoError(t, err)
-
-			walletStore, err := inmemorystore.NewWalletStore()
-			require.NoError(t, err)
-
-			bobWallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
-			require.NoError(t, err)
-
-			bobKey := hex.EncodeToString(bobPrivKey.Serialize())
-			_, err = bobWallet.Create(ctx, chaincfg.RegressionNetParams, password, bobKey)
-			require.NoError(t, err)
-
-			_, err = bobWallet.Unlock(ctx, password)
-			require.NoError(t, err)
-
-			bobPubKey := bobPrivKey.PubKey()
+			require.NotNil(t, keyRef)
+			bobPubkey := keyRef.PubKey
 
 			// Fund Alice's account
 			_, offchainAddr, boardingAddress, err := alice.Receive(ctx)
@@ -3161,7 +3093,7 @@ func TestReactToFraud(t *testing.T) {
 					&script.CLTVMultisigClosure{
 						Locktime: cltvLocktime,
 						MultisigClosure: script.MultisigClosure{
-							PubKeys: []*btcec.PublicKey{bobPubKey, aliceAddr.Signer},
+							PubKeys: []*btcec.PublicKey{bobPubkey, aliceAddr.Signer},
 						},
 					},
 				},
@@ -3287,16 +3219,16 @@ func TestReactToFraud(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			explorer, err := mempool_explorer.NewExplorer(
+			explorer, err := mempoolexplorer.NewExplorer(
 				"http://localhost:3000", arklib.BitcoinRegTest,
-				mempool_explorer.WithTracker(false),
+				mempoolexplorer.WithTracker(false),
 			)
 			require.NoError(t, err)
 
 			encodedArkTx, err := ptx.B64Encode()
 			require.NoError(t, err)
 
-			signedTx, err := bobWallet.SignTransaction(ctx, encodedArkTx, nil)
+			signedTx, err := bob.SignTransaction(ctx, encodedArkTx)
 			require.NoError(t, err)
 
 			checkpoints := make([]string, 0, len(checkpointsPtx))
@@ -3319,7 +3251,7 @@ func TestReactToFraud(t *testing.T) {
 
 			finalCheckpoints := make([]string, 0, len(signedCheckpoints))
 			for _, checkpoint := range signedCheckpoints {
-				finalCheckpoint, err := bobWallet.SignTransaction(ctx, checkpoint, nil)
+				finalCheckpoint, err := bob.SignTransaction(ctx, checkpoint)
 				require.NoError(t, err)
 				finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
 			}
@@ -3391,9 +3323,8 @@ func TestSweep(t *testing.T) {
 	t.Run("batch", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
-
-		aliceClient := alice.Transport()
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
 
 		_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
 		require.NoError(t, err)
@@ -3476,7 +3407,7 @@ func TestSweep(t *testing.T) {
 		}()
 
 		// Test fund recovery
-		res, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos())
+		res, err := alice.Settle(ctx, wallet.WithRecoverableVtxos())
 		require.NoError(t, err)
 		require.NotNil(t, res)
 		require.NotEmpty(t, res.CommitmentTxid)
@@ -3501,7 +3432,7 @@ func TestSweep(t *testing.T) {
 	t.Run("checkpoint", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
+		alice := setupClientWallet(t)
 
 		_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
 		require.NoError(t, err)
@@ -3561,16 +3492,16 @@ func TestSweep(t *testing.T) {
 		require.NotEmpty(t, res2.Txid)
 
 		// unroll the spent VTXO to put checkpoint onchain
-		expl, err := mempool_explorer.NewExplorer(
+		explorer, err := mempoolexplorer.NewExplorer(
 			"http://localhost:3000", arklib.BitcoinRegTest,
-			mempool_explorer.WithTracker(false))
+			mempoolexplorer.WithTracker(false))
 		require.NoError(t, err)
 
-		branch, err := redemption.NewRedeemBranch(ctx, expl, alice.Indexer(), boardedVtxo)
+		branch, err := redemption.NewRedeemBranch(ctx, explorer, alice.Indexer(), boardedVtxo)
 		require.NoError(t, err)
 
 		for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
-			bumpAndBroadcastTx(t, parentTx, expl)
+			bumpAndBroadcastTx(t, parentTx, explorer)
 		}
 
 		// give some time for the server to process the unroll and broadcast the checkpoint
@@ -3626,7 +3557,7 @@ func TestSweep(t *testing.T) {
 	t.Run("with arkd restart", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
+		alice := setupClientWallet(t)
 
 		_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
 		require.NoError(t, err)
@@ -3681,7 +3612,7 @@ func TestSweep(t *testing.T) {
 		})
 
 		// Test fund recovery
-		res, err := alice.Settle(ctx, arksdk.WithRecoverableVtxos())
+		res, err := alice.Settle(ctx, wallet.WithRecoverableVtxos())
 		require.NoError(t, err)
 		require.NotNil(t, res)
 		require.NotEmpty(t, res.CommitmentTxid)
@@ -3717,10 +3648,11 @@ func TestSweep(t *testing.T) {
 	t.Run("unrolled batch", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
-		bob := setupClient(t)
-		charlie := setupClient(t)
-		mike := setupClient(t)
+		alice := setupClientWallet(t)
+		bob := setupClientWallet(t)
+		charlie := setupClientWallet(t)
+		mike := setupClientWallet(t)
+
 		aliceNote := generateNote(t, 21000)
 		bobNote := generateNote(t, 21000)
 		charlieNote := generateNote(t, 21000)
@@ -3728,7 +3660,7 @@ func TestSweep(t *testing.T) {
 
 		wg := &sync.WaitGroup{}
 		var aliceErr, bobErr, charlieErr, daveErr error
-		var aliceRes, bobRes, charlieRes, daveRes *arksdk.BatchTxRes
+		var aliceRes, bobRes, charlieRes, daveRes *wallet.BatchTxRes
 		wg.Go(func() {
 			aliceRes, aliceErr = alice.RedeemNotes(ctx, []string{aliceNote})
 		})
@@ -3881,7 +3813,7 @@ func TestSweep(t *testing.T) {
 	t.Run("force by admin", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
+		alice := setupClientWallet(t)
 
 		_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
 		require.NoError(t, err)
@@ -3970,8 +3902,8 @@ func TestCollisionBetweenInRoundAndRedeemVtxo(t *testing.T) {
 	t.Skip()
 
 	ctx := t.Context()
-	alice := setupClient(t)
-	bob := setupClient(t)
+	alice := setupClientWallet(t)
+	bob := setupClientWallet(t)
 
 	faucetOffchain(t, alice, 0.00005)
 
@@ -4034,7 +3966,7 @@ func TestCollisionBetweenInRoundAndRedeemVtxo(t *testing.T) {
 func TestIntent(t *testing.T) {
 	t.Run("register and delete", func(t *testing.T) {
 		ctx := t.Context()
-		alice := setupClient(t)
+		alice := setupClientWallet(t)
 
 		// faucet offchain address
 		faucetOffchain(t, alice, 0.00021)
@@ -4070,7 +4002,7 @@ func TestIntent(t *testing.T) {
 
 	t.Run("concurrent register", func(t *testing.T) {
 		ctx := t.Context()
-		alice := setupClient(t)
+		alice := setupClientWallet(t)
 
 		// faucet offchain address
 		faucetOffchain(t, alice, 0.00021)
@@ -4131,9 +4063,8 @@ func TestIntent(t *testing.T) {
 // TestBan tests all supported ban scenarios
 func TestBan(t *testing.T) {
 	t.Run("failed to submit tree nonces", func(t *testing.T) {
-		alice := setupClient(t)
-
-		aliceClient := alice.Transport()
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
 
 		// faucet the alice's wallet
 		_, aliceAddr, _, err := alice.Receive(t.Context())
@@ -4165,7 +4096,7 @@ func TestBan(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		topics := arksdk.GetEventStreamTopics(
+		topics := wallet.GetEventStreamTopics(
 			[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{signerSession},
 		)
 		stream, close, err := aliceClient.GetEventStream(t.Context(), topics)
@@ -4189,7 +4120,7 @@ func TestBan(t *testing.T) {
 			},
 		}
 
-		_, _, _, _, _, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		_, _, _, _, _, err = wallet.JoinBatchSession(t.Context(), stream, handlers)
 		require.Error(t, err)
 
 		// next settle should fail because the nonce has not been submitted
@@ -4205,9 +4136,8 @@ func TestBan(t *testing.T) {
 	})
 
 	t.Run("failed to submit tree signatures", func(t *testing.T) {
-		alice := setupClient(t)
-
-		aliceClient := alice.Transport()
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
 
 		// faucet the alice's wallet
 		_, aliceAddr, _, err := alice.Receive(t.Context())
@@ -4241,7 +4171,7 @@ func TestBan(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		topics := arksdk.GetEventStreamTopics(
+		topics := wallet.GetEventStreamTopics(
 			[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{signerSession},
 		)
 		stream, close, err := aliceClient.GetEventStream(t.Context(), topics)
@@ -4326,7 +4256,7 @@ func TestBan(t *testing.T) {
 			},
 		}
 
-		_, _, _, _, _, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		_, _, _, _, _, err = wallet.JoinBatchSession(t.Context(), stream, handlers)
 		require.Error(t, err)
 
 		// next settle should fail because the signature has not been submitted
@@ -4342,9 +4272,8 @@ func TestBan(t *testing.T) {
 	})
 
 	t.Run("failed to submit valid tree signatures", func(t *testing.T) {
-		alice := setupClient(t)
-
-		aliceClient := alice.Transport()
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
 
 		// faucet the alice's wallet
 		_, aliceAddr, _, err := alice.Receive(t.Context())
@@ -4377,7 +4306,7 @@ func TestBan(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		topics := arksdk.GetEventStreamTopics(
+		topics := wallet.GetEventStreamTopics(
 			[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{signerSession},
 		)
 		stream, close, err := aliceClient.GetEventStream(t.Context(), topics)
@@ -4458,7 +4387,7 @@ func TestBan(t *testing.T) {
 			},
 		}
 
-		_, _, _, _, _, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		_, _, _, _, _, err = wallet.JoinBatchSession(t.Context(), stream, handlers)
 		require.Error(t, err)
 
 		// next settle should fail because the signature was invalid
@@ -4474,9 +4403,8 @@ func TestBan(t *testing.T) {
 	})
 
 	t.Run("failed to submit forfeit txs signatures", func(t *testing.T) {
-		alice := setupClient(t)
-
-		aliceClient := alice.Transport()
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
 
 		// faucet the alice's wallet
 		_, aliceAddr, _, err := alice.Receive(t.Context())
@@ -4509,7 +4437,7 @@ func TestBan(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		topics := arksdk.GetEventStreamTopics(
+		topics := wallet.GetEventStreamTopics(
 			[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{signerSession},
 		)
 		stream, close, err := aliceClient.GetEventStream(t.Context(), topics)
@@ -4610,7 +4538,7 @@ func TestBan(t *testing.T) {
 			},
 		}
 
-		_, _, _, _, _, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		_, _, _, _, _, err = wallet.JoinBatchSession(t.Context(), stream, handlers)
 		require.Error(t, err)
 
 		// next settle should fail because the forfeit txs have not been submitted
@@ -4626,9 +4554,8 @@ func TestBan(t *testing.T) {
 	})
 
 	t.Run("failed to submit valid forfeit txs signatures", func(t *testing.T) {
-		alice := setupClient(t)
-
-		aliceClient := alice.Transport()
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
 
 		// faucet the alice's wallet
 		_, aliceAddr, _, err := alice.Receive(t.Context())
@@ -4661,7 +4588,7 @@ func TestBan(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		topics := arksdk.GetEventStreamTopics(
+		topics := wallet.GetEventStreamTopics(
 			[]types.Outpoint{aliceVtxo.Outpoint}, []tree.SignerSession{signerSession},
 		)
 		stream, close, err := aliceClient.GetEventStream(t.Context(), topics)
@@ -4799,10 +4726,7 @@ func TestBan(t *testing.T) {
 				}
 
 				// sign the forfeit tx
-				signedForfeitTx, err := alice.SignTransaction(
-					context.Background(),
-					encodedForfeitTx,
-				)
+				signedForfeitTx, err := alice.SignTransaction(t.Context(), encodedForfeitTx)
 				if err != nil {
 					return nil, err
 				}
@@ -4816,7 +4740,7 @@ func TestBan(t *testing.T) {
 			},
 		}
 
-		_, _, _, _, _, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		_, _, _, _, _, err = wallet.JoinBatchSession(t.Context(), stream, handlers)
 		require.Error(t, err)
 
 		// next settle should fail because the forfeit txs have not been submitted
@@ -4832,13 +4756,12 @@ func TestBan(t *testing.T) {
 	})
 
 	t.Run("failed to submit boarding inputs signatures", func(t *testing.T) {
-		alice := setupClient(t)
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
 
 		// faucet the alice's wallet
 		_, offchainAddr, boardingAddr, err := alice.Receive(t.Context())
 		require.NoError(t, err)
-
-		aliceClient := alice.Transport()
 
 		faucetOnchain(t, boardingAddr.Address, 0.001)
 		time.Sleep(5 * time.Second)
@@ -4846,12 +4769,12 @@ func TestBan(t *testing.T) {
 		info, err := aliceClient.GetInfo(t.Context())
 		require.NoError(t, err)
 
-		explr, err := mempool_explorer.NewExplorer(
+		explorer, err := mempoolexplorer.NewExplorer(
 			"http://localhost:3000", arklib.BitcoinRegTest,
-			mempool_explorer.WithPollInterval(time.Second),
+			mempoolexplorer.WithPollInterval(time.Second),
 		)
 		require.NoError(t, err)
-		boardingUtxos, err := explr.GetUtxos([]string{boardingAddr.Address})
+		boardingUtxos, err := explorer.GetUtxos([]string{boardingAddr.Address})
 		require.NoError(t, err)
 		require.NotEmpty(t, boardingUtxos)
 
@@ -4884,7 +4807,7 @@ func TestBan(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		topics := arksdk.GetEventStreamTopics(
+		topics := wallet.GetEventStreamTopics(
 			[]types.Outpoint{utxo.Outpoint}, []tree.SignerSession{signerSession},
 		)
 		stream, close, err := aliceClient.GetEventStream(t.Context(), topics)
@@ -4995,10 +4918,7 @@ func TestBan(t *testing.T) {
 				}
 
 				// sign the forfeit tx
-				signedCommitmentTx, err := alice.SignTransaction(
-					context.Background(),
-					encodedCommitmentTx,
-				)
+				signedCommitmentTx, err := alice.SignTransaction(t.Context(), encodedCommitmentTx)
 				if err != nil {
 					return nil, err
 				}
@@ -5012,7 +4932,7 @@ func TestBan(t *testing.T) {
 			},
 		}
 
-		_, _, _, _, _, err = arksdk.JoinBatchSession(t.Context(), stream, handlers)
+		_, _, _, _, _, err = wallet.JoinBatchSession(t.Context(), stream, handlers)
 		require.Error(t, err)
 
 		// next settle should fail because the forfeit txs have not been submitted
@@ -5052,8 +4972,8 @@ func TestFee(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := t.Context()
-	alice := setupClient(t)
-	bob := setupClient(t)
+	alice := setupClientWallet(t)
+	bob := setupClientWallet(t)
 
 	_, aliceOffchainAddr, aliceBoardingAddr, err := alice.Receive(ctx)
 	require.NoError(t, err)
@@ -5098,7 +5018,7 @@ func TestFee(t *testing.T) {
 		wg.Done()
 	}()
 
-	var aliceBatchRes, bobBatchRes *arksdk.BatchTxRes
+	var aliceBatchRes, bobBatchRes *wallet.BatchTxRes
 	var aliceBatchErr, bobBatchErr error
 	go func() {
 		aliceBatchRes, aliceBatchErr = alice.Settle(ctx)
@@ -5214,8 +5134,8 @@ func TestAsset(t *testing.T) {
 		const supply = 5_000
 		const transferAmount = 1_200
 
-		alice := setupClient(t)
-		bob := setupClient(t)
+		alice := setupClientWallet(t)
+		bob := setupClientWallet(t)
 
 		wg := &sync.WaitGroup{}
 		wg.Go(func() {
@@ -5302,7 +5222,7 @@ func TestAsset(t *testing.T) {
 	t.Run("issuance", func(t *testing.T) {
 		t.Run("without control asset", func(t *testing.T) {
 			ctx := t.Context()
-			alice := setupClient(t)
+			alice := setupClientWallet(t)
 			faucetOffchain(t, alice, 0.01)
 
 			res, err := alice.IssueAsset(ctx, 1, nil, nil)
@@ -5313,7 +5233,7 @@ func TestAsset(t *testing.T) {
 
 		t.Run("with new control asset", func(t *testing.T) {
 			ctx := t.Context()
-			alice := setupClient(t)
+			alice := setupClientWallet(t)
 			faucetOffchain(t, alice, 0.01)
 
 			res, err := alice.IssueAsset(ctx, 1, types.NewControlAsset{Amount: 1}, nil)
@@ -5328,7 +5248,7 @@ func TestAsset(t *testing.T) {
 
 		t.Run("with existing control asset", func(t *testing.T) {
 			ctx := t.Context()
-			alice := setupClient(t)
+			alice := setupClientWallet(t)
 			faucetOffchain(t, alice, 0.01)
 
 			// issue control asset
@@ -5359,7 +5279,7 @@ func TestAsset(t *testing.T) {
 	t.Run("reissuance", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
+		alice := setupClientWallet(t)
 		faucetOffchain(t, alice, 0.01)
 
 		// issue an asset with a control asset
@@ -5397,7 +5317,7 @@ func TestAsset(t *testing.T) {
 	t.Run("burn", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
+		alice := setupClientWallet(t)
 		faucetOffchain(t, alice, 0.01)
 
 		res, err := alice.IssueAsset(ctx, 5000, nil, nil)
@@ -5427,7 +5347,7 @@ func TestAsset(t *testing.T) {
 	// This test ensures that Alice can unroll her asset vtxos onchain
 	t.Run("unroll", func(t *testing.T) {
 		ctx := t.Context()
-		alice := setupClient(t)
+		alice := setupClientWallet(t)
 
 		// Fund the client with the exact amount needed for an issuance to not create any change
 		faucetOffchain(t, alice, 0.00000330)
@@ -5501,8 +5421,8 @@ func TestAsset(t *testing.T) {
 	t.Run("asset and subdust", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
-		bob := setupClient(t)
+		alice := setupClientWallet(t)
+		bob := setupClientWallet(t)
 
 		faucetOffchain(t, alice, 0.002)
 
@@ -5535,8 +5455,8 @@ func TestAsset(t *testing.T) {
 	t.Run("asset subdust settle", func(t *testing.T) {
 		ctx := t.Context()
 
-		alice := setupClient(t)
-		bob := setupClient(t)
+		alice := setupClientWallet(t)
+		bob := setupClientWallet(t)
 
 		faucetOffchain(t, alice, 0.002)
 
@@ -5624,11 +5544,10 @@ func TestTxListenerChurn(t *testing.T) {
 	ctx := t.Context()
 
 	// Bootstrap sender/receiver clients and fund sender for repeated tx production.
-	sender := setupClient(t)
-	receiver := setupClient(t)
-	alice := setupClient(t)
-
-	aliceClient := alice.Transport()
+	sender := setupClientWallet(t)
+	receiver := setupClientWallet(t)
+	alice := setupClientWallet(t)
+	aliceClient := alice.Client()
 
 	faucetOffchain(t, sender, 0.01)
 
@@ -5904,16 +5823,16 @@ func TestEventListenerChurn(t *testing.T) {
 
 	// Set up multiple funded participants so that settlement rounds
 	// produce real on-chain activity and event-stream events.
-	sentinelClient := setupClient(t)
+	sentinelClient := setupClientWallet(t)
 
-	eventTransport := sentinelClient.Transport()
+	eventTransport := sentinelClient.Client()
 
-	participants := make([]arksdk.ArkClient, 0, participantsCount)
+	participants := make([]wallet.Wallet, 0, participantsCount)
 	offchainAddrs := make([]string, 0, participantsCount)
 
 	participants = append(participants, sentinelClient)
 	for i := 1; i < participantsCount; i++ {
-		participants = append(participants, setupClient(t))
+		participants = append(participants, setupClientWallet(t))
 	}
 
 	for _, participant := range participants {
@@ -6097,7 +6016,7 @@ func TestEventListenerChurn(t *testing.T) {
 			roundCtx, cancelRound := context.WithTimeout(stressCtx, roundTimeout)
 			notifyErrors := make([]error, len(participants))
 			settleErrors := make([]error, len(participants))
-			batchRes := make([]*arksdk.BatchTxRes, len(participants))
+			batchRes := make([]*wallet.BatchTxRes, len(participants))
 
 			// Kick off Settle + NotifyIncomingFunds for every participant
 			// in parallel — this is what triggers event-stream events.

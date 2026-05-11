@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"fmt"
@@ -57,13 +57,13 @@ func (r receiverOpt) applyUnroll(o *unrollOptions) error {
 }
 
 // WithReceiver overrides the destination/change address that the method would
-// otherwise freshly derive via wallet.NewKey. Accepts an offchain ark address
+// otherwise freshly derive via identity.NewKey. Accepts an offchain ark address
 // or an onchain bitcoin address; the consuming method validates which kinds
 // are permitted (e.g. SendOffChain requires offchain; OnboardAgainAllExpiredBoardings
 // requires onchain; Settle / CollaborativeExit accept either).
 //
 // Note: directing change to a known address weakens unlinkability — caller's
-// choice. Skipping the wallet.NewKey call also means no new key is recorded in
+// choice. Skipping the identity.NewKey call also means no new key is recorded in
 // the wallet for the change output.
 func WithReceiver(addr string) ReceiverOption {
 	return receiverOpt{addr: addr}

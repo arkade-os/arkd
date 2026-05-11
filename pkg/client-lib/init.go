@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	mempool_explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
+	mempoolexplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
 	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
@@ -17,8 +17,8 @@ func (a *service) Init(ctx context.Context, args InitArgs) error {
 	if err := args.validate(); err != nil {
 		return fmt.Errorf("invalid args: %s", err)
 	}
-	if a.wallet == nil {
-		return fmt.Errorf("wallet not initialized")
+	if a.identity == nil {
+		return ErrNotInitialized
 	}
 
 	return a.init(ctx, args.parse(), args.Explorer)
@@ -43,10 +43,10 @@ func (a *service) init(
 	}
 
 	if explorerSvc == nil {
-		explorerOpts := []mempool_explorer.Option{
-			mempool_explorer.WithTracker(false),
+		explorerOpts := []mempoolexplorer.Option{
+			mempoolexplorer.WithTracker(false),
 		}
-		explorerSvc, err = mempool_explorer.NewExplorer(
+		explorerSvc, err = mempoolexplorer.NewExplorer(
 			args.explorerURL, utils.NetworkFromString(info.Network), explorerOpts...,
 		)
 		if err != nil {
@@ -56,7 +56,7 @@ func (a *service) init(
 
 	network := utils.NetworkFromString(info.Network)
 
-	if _, err := a.wallet.Create(
+	if _, err := a.identity.Create(
 		ctx, utils.ToBitcoinNetwork(network), args.password, args.seed,
 	); err != nil {
 		return err

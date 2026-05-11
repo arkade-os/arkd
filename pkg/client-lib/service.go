@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"context"
@@ -11,40 +11,39 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	mempool_explorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
+	mempoolexplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
+	"github.com/arkade-os/arkd/pkg/client-lib/identity"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	log "github.com/sirupsen/logrus"
 )
 
 const (
-	// wallet
-	SingleKeyWallet = wallet.SingleKeyWallet
+	// identity
+	SingleKeyIdentity = identity.SingleKeyIdentity
 	// store
 	FileStore     = types.FileStore
 	InMemoryStore = types.InMemoryStore
-	// explorer
-	BitcoinExplorer = mempool_explorer.BitcoinExplorer
 )
 
 var (
-	ErrAlreadyInitialized = fmt.Errorf("client already initialized")
-	ErrNotInitialized     = fmt.Errorf("client not initialized")
+	ErrAlreadyInitialized = fmt.Errorf("wallet already initialized")
+	ErrNotInitialized     = fmt.Errorf("wallet not initialized")
+	ErrIsLocked           = fmt.Errorf("wallet is locked")
 
-	supportedWallets = utils.SupportedType[struct{}]{
-		SingleKeyWallet: struct{}{},
+	supportedIdentities = utils.SupportedType[struct{}]{
+		SingleKeyIdentity: struct{}{},
 	}
 )
 
 type service struct {
 	*types.Config
-	wallet   wallet.WalletService
+	identity identity.Identity
 	store    types.Store
 	explorer explorer.Explorer
-	client   client.TransportClient
+	client   client.Client
 	indexer  indexer.Indexer
 
 	txLock                 *sync.RWMutex
@@ -52,7 +51,11 @@ type service struct {
 	withFinalizePendingTxs bool
 }
 
-func NewArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, error) {
+func NewWallet(storeSvc types.Store, opts ...ServiceOption) (Wallet, error) {
+	if storeSvc == nil {
+		return nil, fmt.Errorf("missing store")
+	}
+
 	cfgData, err := storeSvc.ConfigStore().GetData(context.Background())
 	if err != nil {
 		return nil, err
@@ -71,20 +74,20 @@ func NewArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, error
 		opt(client)
 	}
 
-	if client.wallet == nil {
+	if client.identity == nil {
 		storeType := storeSvc.ConfigStore().GetType()
 		datadir := storeSvc.ConfigStore().GetDatadir()
-		walletSvc, err := getSingleKeyWallet(datadir, storeType)
+		identitySvc, err := getSingleKeyIdentity(datadir, storeType)
 		if err != nil {
-			return nil, fmt.Errorf("failed to setup wallet: %s", err)
+			return nil, fmt.Errorf("failed to setup identity: %s", err)
 		}
-		client.wallet = walletSvc
+		client.identity = identitySvc
 	}
 
 	return client, nil
 }
 
-func LoadArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, error) {
+func LoadWallet(storeSvc types.Store, opts ...ServiceOption) (Wallet, error) {
 	if storeSvc == nil {
 		return nil, fmt.Errorf("missing sdk repository")
 	}
@@ -107,19 +110,19 @@ func LoadArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, erro
 		opt(client)
 	}
 
-	if client.wallet == nil {
+	if client.identity == nil {
 		storeType := storeSvc.ConfigStore().GetType()
 		datadir := storeSvc.ConfigStore().GetDatadir()
-		walletSvc, err := getSingleKeyWallet(datadir, storeType)
+		identitySvc, err := getSingleKeyIdentity(datadir, storeType)
 		if err != nil {
-			return nil, fmt.Errorf("failed to setup wallet: %s", err)
+			return nil, fmt.Errorf("failed to setup identity: %s", err)
 		}
-		client.wallet = walletSvc
+		client.identity = identitySvc
 	}
 
 	if client.explorer == nil {
-		explorerOpts := []mempool_explorer.Option{mempool_explorer.WithTracker(false)}
-		explorerSvc, err := mempool_explorer.NewExplorer(
+		explorerOpts := []mempoolexplorer.Option{mempoolexplorer.WithTracker(false)}
+		explorerSvc, err := mempoolexplorer.NewExplorer(
 			cfgData.ExplorerURL, cfgData.Network, explorerOpts...,
 		)
 		if err != nil {
@@ -143,11 +146,11 @@ func LoadArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, erro
 	return client, nil
 }
 
-func (a *service) Wallet() wallet.WalletService {
-	return a.wallet
+func (a *service) Identity() identity.Identity {
+	return a.identity
 }
 
-func (a *service) Transport() client.TransportClient {
+func (a *service) Client() client.Client {
 	return a.client
 }
 
@@ -171,7 +174,7 @@ func (a *service) GetConfigData(_ context.Context) (*types.Config, error) {
 }
 
 func (a *service) Unlock(ctx context.Context, password string) error {
-	if _, err := a.wallet.Unlock(ctx, password); err != nil {
+	if _, err := a.identity.Unlock(ctx, password); err != nil {
 		return err
 	}
 
@@ -202,24 +205,24 @@ func (a *service) Unlock(ctx context.Context, password string) error {
 }
 
 func (a *service) Lock(ctx context.Context) error {
-	if a.wallet == nil {
-		return fmt.Errorf("wallet not initialized")
+	if a.identity == nil {
+		return ErrNotInitialized
 	}
-	return a.wallet.Lock(ctx)
+	return a.identity.Lock(ctx)
 }
 
 func (a *service) IsLocked(ctx context.Context) bool {
-	if a.wallet == nil {
+	if a.identity == nil {
 		return true
 	}
-	return a.wallet.IsLocked()
+	return a.identity.IsLocked()
 }
 
 func (a *service) Dump(ctx context.Context) (string, error) {
 	if err := a.safeCheck(); err != nil {
 		return "", err
 	}
-	return a.wallet.Dump(ctx)
+	return a.identity.Dump(ctx)
 }
 
 func (a *service) Reset(ctx context.Context) {
@@ -253,15 +256,15 @@ func (a *service) SignTransaction(
 		}
 	}
 
-	return a.wallet.SignTransaction(ctx, tx, o.signingKeys)
+	return a.identity.SignTransaction(ctx, tx, o.signingKeys)
 }
 
 func (a *service) safeCheck() error {
-	if a.wallet == nil {
-		return fmt.Errorf("wallet not initialized")
+	if a.identity == nil {
+		return ErrNotInitialized
 	}
-	if a.wallet.IsLocked() {
-		return fmt.Errorf("wallet is locked")
+	if a.identity.IsLocked() {
+		return ErrIsLocked
 	}
 	return nil
 }
@@ -269,7 +272,7 @@ func (a *service) safeCheck() error {
 func (a *service) getVtxos(
 	ctx context.Context, extraOpts ...indexer.GetVtxosOption,
 ) (spendableVtxos, spentVtxos []types.Vtxo, err error) {
-	if a.wallet == nil {
+	if a.identity == nil {
 		return nil, nil, ErrNotInitialized
 	}
 
@@ -381,7 +384,7 @@ func (a *service) getSpendableVtxos(
 }
 
 func (a *service) fetchPendingSpentVtxos(ctx context.Context) ([]types.Vtxo, error) {
-	if a.wallet == nil {
+	if a.identity == nil {
 		return nil, ErrNotInitialized
 	}
 

@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"context"
@@ -11,10 +11,10 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/client-lib/identity"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
@@ -23,8 +23,8 @@ import (
 func (a *service) Receive(ctx context.Context) (
 	onchainAddr string, offchainAddr, boardingAddr *types.Address, err error,
 ) {
-	if a.wallet == nil {
-		return "", nil, nil, fmt.Errorf("wallet not initialized")
+	if a.identity == nil {
+		return "", nil, nil, ErrNotInitialized
 	}
 
 	onchainAddr, offchainAddr, boardingAddr, err = a.newAddress(ctx)
@@ -75,8 +75,8 @@ func (a *service) ListVtxos(
 }
 
 func (a *service) Balance(ctx context.Context) (*Balance, error) {
-	if a.wallet == nil {
-		return nil, fmt.Errorf("wallet not initialized")
+	if a.identity == nil {
+		return nil, ErrNotInitialized
 	}
 
 	onchainAddrs, _, boardingAddrs, redeemAddrs, err := a.getAddresses(ctx)
@@ -290,7 +290,7 @@ func (a *service) NotifyIncomingFunds(ctx context.Context, addr string) ([]types
 func (a *service) newAddress(
 	ctx context.Context,
 ) (onchainAddr string, offchainAddr, boardingAddr *types.Address, err error) {
-	key, err := a.wallet.NewKey(ctx)
+	key, err := a.identity.NewKey(ctx)
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -303,10 +303,10 @@ func (a *service) getAddresses(ctx context.Context) (
 	onchainAddrs, offchainAddrs, boardingAddrs, redemptionAddrs []types.Address,
 	err error,
 ) {
-	keys := make([]wallet.KeyRef, 0)
+	keys := make([]identity.KeyRef, 0)
 	seenKeys := make(map[string]struct{})
 
-	keyRefs, err := a.wallet.ListKeys(ctx)
+	keyRefs, err := a.identity.ListKeys(ctx)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -335,7 +335,7 @@ func (a *service) getAddresses(ctx context.Context) (
 }
 
 func (a *service) deriveDefaultAddresses(
-	key wallet.KeyRef,
+	key identity.KeyRef,
 ) (onchainAddr string, offchainAddr, boardingAddr, redemptionAddr *types.Address, err error) {
 	netParams := utils.ToBitcoinNetwork(a.Network)
 

@@ -1,8 +1,8 @@
-package arksdk
+package wallet
 
 import (
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
+	"github.com/arkade-os/arkd/pkg/client-lib/identity"
 )
 
 type ServiceOption func(*service)
@@ -19,9 +19,9 @@ func WithExplorer(explorer explorer.Explorer) ServiceOption {
 	}
 }
 
-func WithWallet(wallet wallet.WalletService) ServiceOption {
+func WithIdentity(identitySvc identity.Identity) ServiceOption {
 	return func(c *service) {
-		c.wallet = wallet
+		c.identity = identitySvc
 	}
 }
 

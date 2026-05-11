@@ -16,13 +16,13 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
+	wallet "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
+	"github.com/arkade-os/arkd/pkg/client-lib/identity"
+	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
+	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
 	"github.com/arkade-os/arkd/pkg/client-lib/store"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
-	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
-	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -257,13 +257,13 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 	return hex.EncodeToString(serializedTx.Bytes())
 }
 
-func setupClient(t *testing.T) arksdk.ArkClient {
+func setupClientWallet(t *testing.T) wallet.Wallet {
 	appDataStore, err := store.NewStore(store.Config{
 		ConfigStoreType: types.InMemoryStore,
 	})
 	require.NoError(t, err)
 
-	client, err := arksdk.NewArkClient(appDataStore)
+	client, err := wallet.NewWallet(appDataStore)
 	require.NoError(t, err)
 
 	privkey, err := btcec.NewPrivateKey()
@@ -271,7 +271,7 @@ func setupClient(t *testing.T) arksdk.ArkClient {
 
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
 
-	err = client.Init(t.Context(), arksdk.InitArgs{
+	err = client.Init(t.Context(), wallet.InitArgs{
 		ServerUrl:   serverUrl,
 		Password:    password,
 		Seed:        privkeyHex,
@@ -287,12 +287,12 @@ func setupClient(t *testing.T) arksdk.ArkClient {
 	return client
 }
 
-func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, error) {
-	walletStore, err := inmemorystore.NewWalletStore()
+func setupIdentity(t *testing.T) (identity.Identity, *btcec.PublicKey, error) {
+	store, err := identityinmemorystore.NewStore()
 	require.NoError(t, err)
-	require.NotNil(t, walletStore)
+	require.NotNil(t, store)
 
-	wallet, err := singlekeywallet.NewBitcoinWallet(walletStore)
+	identity, err := singlekeyidentity.NewIdentity(store)
 	require.NoError(t, err)
 
 	privkey, err := btcec.NewPrivateKey()
@@ -302,16 +302,16 @@ func setupWalletService(t *testing.T) (wallet.WalletService, *btcec.PublicKey, e
 
 	password := "password"
 	ctx := t.Context()
-	_, err = wallet.Create(ctx, chaincfg.RegressionNetParams, password, privkeyHex)
+	_, err = identity.Create(ctx, chaincfg.RegressionNetParams, password, privkeyHex)
 	require.NoError(t, err)
 
-	_, err = wallet.Unlock(ctx, password)
+	_, err = identity.Unlock(ctx, password)
 	require.NoError(t, err)
 
-	return wallet, privkey.PubKey(), nil
+	return identity, privkey.PubKey(), nil
 }
 
-func faucet(t *testing.T, client arksdk.ArkClient, amount float64) {
+func faucet(t *testing.T, client wallet.Wallet, amount float64) {
 	// Faucet offchain with note
 	faucetOffchain(t, client, amount)
 
@@ -355,7 +355,7 @@ func faucetOnchain(t *testing.T, address string, amount float64) {
 	require.NoError(t, err)
 }
 
-func faucetOffchain(t *testing.T, client arksdk.ArkClient, amount float64) types.Vtxo {
+func faucetOffchain(t *testing.T, client wallet.Wallet, amount float64) types.Vtxo {
 	_, offchainAddr, _, err := client.Receive(t.Context())
 	require.NoError(t, err)
 
@@ -384,7 +384,7 @@ func faucetOffchain(t *testing.T, client arksdk.ArkClient, amount float64) types
 }
 
 func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.Vtxo {
-	client := setupClient(t)
+	client := setupClientWallet(t)
 
 	_, offchainAddr, _, err := client.Receive(t.Context())
 	require.NoError(t, err)
@@ -678,7 +678,7 @@ func refill(httpClient *http.Client) error {
 	return nil
 }
 
-func listVtxosWithAsset(t *testing.T, client arksdk.ArkClient, assetID string) []types.Vtxo {
+func listVtxosWithAsset(t *testing.T, client wallet.Wallet, assetID string) []types.Vtxo {
 	t.Helper()
 	vtxos, _, err := client.ListVtxos(t.Context())
 	require.NoError(t, err)

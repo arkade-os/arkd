@@ -1,4 +1,4 @@
-package singlekeywallet
+package singlekeyidentity
 
 import (
 	"bytes"
@@ -9,76 +9,185 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
-	walletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store"
+	"github.com/arkade-os/arkd/pkg/client-lib/identity"
+	identitystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
+	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 )
 
-type bitcoinWallet struct {
-	*singlekeyWallet
+var (
+	ErrNotInitialized = fmt.Errorf("identity not initialized")
+	ErrIsLocked       = fmt.Errorf("identity is locked")
+)
+
+type service struct {
+	store      identitystore.IdentityStore
+	privateKey *btcec.PrivateKey
+	data       *identitystore.IdentityData
 }
 
-func NewBitcoinWallet(walletStore walletstore.WalletStore) (wallet.WalletService, error) {
-	walletData, err := walletStore.GetWallet()
+func NewIdentity(store identitystore.IdentityStore) (identity.Identity, error) {
+	data, err := store.Get()
 	if err != nil {
 		return nil, err
 	}
-	return &bitcoinWallet{
-		&singlekeyWallet{
-			walletStore: walletStore,
-			walletData:  walletData,
-		},
+	return &service{
+		store: store,
+		data:  data,
 	}, nil
 }
 
-func (w *bitcoinWallet) NewKey(ctx context.Context) (*wallet.KeyRef, error) {
-	if w.walletData == nil {
-		return nil, fmt.Errorf("wallet not initialized")
-	}
-	return &wallet.KeyRef{
-		Id:     "m",
-		PubKey: w.walletData.PubKey,
-	}, nil
+func (s *service) GetType() string {
+	return identity.SingleKeyIdentity
 }
 
-func (w *bitcoinWallet) GetKey(ctx context.Context, _ string) (*wallet.KeyRef, error) {
-	if w.walletData == nil {
-		return nil, fmt.Errorf("wallet not initialized")
-	}
-	return &wallet.KeyRef{
-		Id:     "m",
-		PubKey: w.walletData.PubKey,
-	}, nil
-}
-
-func (w *bitcoinWallet) NextKeyId(ctx context.Context, _ string) (string, error) {
-	return "m", nil
-}
-
-func (w *bitcoinWallet) GetKeyIndex(ctx context.Context, _ string) (uint32, error) {
-	return 0, nil
-}
-
-func (w *bitcoinWallet) ListKeys(ctx context.Context) ([]wallet.KeyRef, error) {
-	key, err := w.GetKey(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-	return []wallet.KeyRef{*key}, nil
-}
-func (s *bitcoinWallet) SignTransaction(
-	ctx context.Context, tx string, _ map[string]string,
+func (s *service) Create(
+	_ context.Context, _ chaincfg.Params, password, seed string,
 ) (string, error) {
-	if s.walletData == nil {
-		return "", fmt.Errorf("wallet not initialized")
+	var privateKey *btcec.PrivateKey
+	if len(seed) <= 0 {
+		prvkey, err := utils.GenerateRandomPrivateKey()
+		if err != nil {
+			return "", err
+		}
+		privateKey = prvkey
+	} else {
+		prvkeyBytes, err := hex.DecodeString(seed)
+		if err != nil {
+			return "", err
+		}
+
+		privateKey, _ = btcec.PrivKeyFromBytes(prvkeyBytes)
+	}
+
+	pwd := []byte(password)
+	passwordHash := utils.HashPassword(pwd)
+	pubkey := privateKey.PubKey()
+	buf := privateKey.Serialize()
+	encryptedPrivateKey, err := utils.EncryptAES256(buf, pwd)
+	if err != nil {
+		return "", err
+	}
+
+	data := identitystore.IdentityData{
+		EncryptedPrvkey: encryptedPrivateKey,
+		PasswordHash:    passwordHash,
+		PubKey:          pubkey,
+	}
+	if err := s.store.Add(data); err != nil {
+		return "", err
+	}
+
+	s.data = &data
+
+	return hex.EncodeToString(privateKey.Serialize()), nil
+}
+
+func (s *service) Lock(context.Context) error {
+	if s.data == nil {
+		return ErrNotInitialized
+	}
+
+	if s.privateKey == nil {
+		return nil
+	}
+
+	s.privateKey = nil
+	return nil
+}
+
+func (s *service) Unlock(
+	_ context.Context, password string,
+) (bool, error) {
+	if s.data == nil {
+		return false, ErrNotInitialized
+	}
+
+	if s.privateKey != nil {
+		return true, nil
+	}
+
+	pwd := []byte(password)
+	currentPassHash := utils.HashPassword(pwd)
+
+	if !bytes.Equal(s.data.PasswordHash, currentPassHash) {
+		return false, fmt.Errorf("invalid password")
+	}
+
+	privateKeyBytes, err := utils.DecryptAES256(s.data.EncryptedPrvkey, pwd)
+	if err != nil {
+		return false, err
+	}
+
+	s.privateKey, _ = btcec.PrivKeyFromBytes(privateKeyBytes)
+	return false, nil
+}
+
+func (s *service) IsLocked() bool {
+	return s.privateKey == nil
+}
+
+func (s *service) Dump(ctx context.Context) (string, error) {
+	if s.data == nil {
+		return "", ErrNotInitialized
 	}
 
 	if s.IsLocked() {
-		return "", fmt.Errorf("wallet is locked")
+		return "", ErrIsLocked
+	}
+
+	return hex.EncodeToString(s.privateKey.Serialize()), nil
+}
+
+func (s *service) NewKey(ctx context.Context) (*identity.KeyRef, error) {
+	if s.data == nil {
+		return nil, ErrNotInitialized
+	}
+	return &identity.KeyRef{
+		Id:     "m",
+		PubKey: s.data.PubKey,
+	}, nil
+}
+
+func (s *service) GetKey(ctx context.Context, _ string) (*identity.KeyRef, error) {
+	if s.data == nil {
+		return nil, ErrNotInitialized
+	}
+	return &identity.KeyRef{
+		Id:     "m",
+		PubKey: s.data.PubKey,
+	}, nil
+}
+
+func (s *service) NextKeyId(ctx context.Context, _ string) (string, error) {
+	return "m", nil
+}
+
+func (s *service) GetKeyIndex(ctx context.Context, _ string) (uint32, error) {
+	return 0, nil
+}
+
+func (s *service) ListKeys(ctx context.Context) ([]identity.KeyRef, error) {
+	key, err := s.GetKey(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	return []identity.KeyRef{*key}, nil
+}
+func (s *service) SignTransaction(
+	ctx context.Context, tx string, _ map[string]string,
+) (string, error) {
+	if s.data == nil {
+		return "", ErrNotInitialized
+	}
+
+	if s.IsLocked() {
+		return "", ErrIsLocked
 	}
 
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
@@ -112,7 +221,7 @@ func (s *bitcoinWallet) SignTransaction(
 	txsighashes := txscript.NewTxSigHashes(updater.Upsbt.UnsignedTx, prevoutFetcher)
 
 	onchainPkScript, err := script.P2TRScript(
-		txscript.ComputeTaprootKeyNoScript(s.walletData.PubKey),
+		txscript.ComputeTaprootKeyNoScript(s.data.PubKey),
 	)
 	if err != nil {
 		return "", err
@@ -130,7 +239,7 @@ func (s *bitcoinWallet) SignTransaction(
 			// onchain P2TR
 			if bytes.Equal(input.WitnessUtxo.PkScript, onchainPkScript) {
 				updater.Upsbt.Inputs[i].TaprootInternalKey = schnorr.SerializePubKey(
-					txscript.ComputeTaprootKeyNoScript(s.walletData.PubKey),
+					txscript.ComputeTaprootKeyNoScript(s.data.PubKey),
 				)
 				input = updater.Upsbt.Inputs[i]
 			}
@@ -149,14 +258,14 @@ func (s *bitcoinWallet) SignTransaction(
 	return ptx.B64Encode()
 }
 
-func (w *bitcoinWallet) signTapscriptSpend(
+func (s *service) signTapscriptSpend(
 	updater *psbt.Updater,
 	input psbt.PInput,
 	inputIndex int,
 	txsighashes *txscript.TxSigHashes,
 	prevoutFetcher *txscript.MultiPrevOutFetcher,
 ) error {
-	myPubkey := schnorr.SerializePubKey(w.walletData.PubKey)
+	myPubkey := schnorr.SerializePubKey(s.data.PubKey)
 
 	for _, leaf := range input.TaprootLeafScript {
 		closure, err := script.DecodeClosure(leaf.Script)
@@ -213,7 +322,7 @@ func (w *bitcoinWallet) signTapscriptSpend(
 				return err
 			}
 
-			sig, err := schnorr.Sign(w.privateKey, preimage)
+			sig, err := schnorr.Sign(s.privateKey, preimage)
 			if err != nil {
 				return err
 			}
@@ -240,7 +349,7 @@ func (w *bitcoinWallet) signTapscriptSpend(
 	return nil
 }
 
-func (w *bitcoinWallet) signTaprootKeySpend(
+func (s *service) signTaprootKeySpend(
 	updater *psbt.Updater,
 	input psbt.PInput,
 	inputIndex int,
@@ -252,9 +361,9 @@ func (w *bitcoinWallet) signTaprootKeySpend(
 		return nil
 	}
 
-	xOnlyPubkey := schnorr.SerializePubKey(txscript.ComputeTaprootKeyNoScript(w.walletData.PubKey))
+	xOnlyPubkey := schnorr.SerializePubKey(txscript.ComputeTaprootKeyNoScript(s.data.PubKey))
 	if !bytes.Equal(xOnlyPubkey, input.TaprootInternalKey) {
-		// not the wallet's key, skip
+		// not the identity's key, skip
 		return nil
 	}
 
@@ -270,7 +379,7 @@ func (w *bitcoinWallet) signTaprootKeySpend(
 		return err
 	}
 
-	sig, err := schnorr.Sign(txscript.TweakTaprootPrivKey(*w.privateKey, nil), preimage)
+	sig, err := schnorr.Sign(txscript.TweakTaprootPrivKey(*s.privateKey, nil), preimage)
 	if err != nil {
 		return err
 	}
@@ -280,12 +389,12 @@ func (w *bitcoinWallet) signTaprootKeySpend(
 	return nil
 }
 
-func (w *bitcoinWallet) NewVtxoTreeSigner(ctx context.Context) (tree.SignerSession, error) {
-	if w.walletData == nil {
-		return nil, fmt.Errorf("wallet not initialized")
+func (s *service) NewVtxoTreeSigner(ctx context.Context) (tree.SignerSession, error) {
+	if s.data == nil {
+		return nil, ErrNotInitialized
 	}
-	if w.IsLocked() {
-		return nil, fmt.Errorf("wallet is locked")
+	if s.IsLocked() {
+		return nil, ErrIsLocked
 	}
 
 	key, err := btcec.NewPrivateKey()
@@ -295,17 +404,17 @@ func (w *bitcoinWallet) NewVtxoTreeSigner(ctx context.Context) (tree.SignerSessi
 	return tree.NewTreeSignerSession(key), nil
 }
 
-func (w *bitcoinWallet) SignMessage(
+func (s *service) SignMessage(
 	ctx context.Context, message []byte,
 ) (string, error) {
-	if w.walletData == nil {
-		return "", fmt.Errorf("wallet not initialized")
+	if s.data == nil {
+		return "", ErrNotInitialized
 	}
-	if w.IsLocked() {
-		return "", fmt.Errorf("wallet is locked")
+	if s.IsLocked() {
+		return "", ErrIsLocked
 	}
 
-	sig, err := schnorr.Sign(w.privateKey, message)
+	sig, err := schnorr.Sign(s.privateKey, message)
 	if err != nil {
 		return "", err
 	}
