@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"bytes"
@@ -14,6 +14,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	"github.com/arkade-os/arkd/pkg/client-lib/redemption"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -32,7 +33,7 @@ func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes
 	}
 	options := newDefaultUnrollOptions()
 	for _, opt := range opts {
-		if err := opt(options); err != nil {
+		if err := opt.applyUnroll(options); err != nil {
 			return nil, err
 		}
 	}
@@ -128,13 +129,22 @@ func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes
 	return res, nil
 }
 
-func (a *service) CompleteUnroll(ctx context.Context, to string) (string, error) {
+func (a *service) CompleteUnroll(
+	ctx context.Context, to string, opts ...UnrollOption,
+) (string, error) {
 	if err := a.safeCheck(); err != nil {
 		return "", err
 	}
 
+	options := newDefaultUnrollOptions()
+	for _, opt := range opts {
+		if err := opt.applyUnroll(options); err != nil {
+			return "", err
+		}
+	}
+
 	if len(to) == 0 {
-		newAddr, _, _, err := a.wallet.NewAddress(ctx, false)
+		newAddr, _, _, err := a.newAddress(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -144,24 +154,33 @@ func (a *service) CompleteUnroll(ctx context.Context, to string) (string, error)
 		return "", fmt.Errorf("invalid receiver address '%s': must be onchain", to)
 	}
 
-	return a.completeUnroll(ctx, to)
+	return a.completeUnroll(ctx, to, options)
 }
 
 func (a *service) WithdrawFromAllExpiredBoardings(
-	ctx context.Context, to string,
+	ctx context.Context, to string, opts ...UnrollOption,
 ) (string, error) {
 	if err := a.safeCheck(); err != nil {
 		return "", err
+	}
+
+	options := newDefaultUnrollOptions()
+	for _, opt := range opts {
+		if err := opt.applyUnroll(options); err != nil {
+			return "", err
+		}
 	}
 
 	if _, err := btcutil.DecodeAddress(to, nil); err != nil {
 		return "", fmt.Errorf("invalid receiver address '%s': must be onchain", to)
 	}
 
-	return a.sendExpiredBoardingUtxos(ctx, to)
+	return a.sendExpiredBoardingUtxos(ctx, to, options)
 }
 
-func (a *service) OnboardAgainAllExpiredBoardings(ctx context.Context) (string, error) {
+func (a *service) OnboardAgainAllExpiredBoardings(
+	ctx context.Context, opts ...UnrollOption,
+) (string, error) {
 	if err := a.safeCheck(); err != nil {
 		return "", err
 	}
@@ -170,12 +189,19 @@ func (a *service) OnboardAgainAllExpiredBoardings(ctx context.Context) (string, 
 		return "", fmt.Errorf("operation not allowed by the server")
 	}
 
-	_, _, boardingAddr, err := a.wallet.NewAddress(ctx, false)
+	options := newDefaultUnrollOptions()
+	for _, opt := range opts {
+		if err := opt.applyUnroll(options); err != nil {
+			return "", err
+		}
+	}
+
+	addr, err := a.getBoardingReceiver(ctx, options.receiver)
 	if err != nil {
 		return "", err
 	}
 
-	return a.sendExpiredBoardingUtxos(ctx, boardingAddr.Address)
+	return a.sendExpiredBoardingUtxos(ctx, addr, options)
 }
 
 // bumpAnchorTx builds and signs a transaction bumping the fees for a given tx with P2A output.
@@ -207,7 +233,7 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 
 	fees := uint64(math.Ceil(float64(packageSize) * feeRate))
 
-	addresses, _, _, _, err := a.wallet.GetAddresses(ctx)
+	addresses, _, _, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return "", "", err
 	}
@@ -215,8 +241,13 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 	selectedCoins := make([]explorer.Utxo, 0)
 	selectedAmount := uint64(0)
 	amountToSelect := int64(fees) - txutils.ANCHOR_VALUE
+	keys := make(map[string]string)
 	for _, addr := range addresses {
-		utxos, err := a.explorer.GetUtxos(addr)
+		utxos, err := a.explorer.GetUtxos([]string{addr.Address})
+		if err != nil {
+			return "", "", err
+		}
+		script, err := toOutputScript(addr.Address, a.Network)
 		if err != nil {
 			return "", "", err
 		}
@@ -225,6 +256,7 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 			selectedCoins = append(selectedCoins, utxo)
 			selectedAmount += utxo.Amount
 			amountToSelect -= int64(selectedAmount)
+			keys[hex.EncodeToString(script)] = addr.KeyID
 			if amountToSelect <= 0 {
 				break
 			}
@@ -237,7 +269,7 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 
 	changeAmount := selectedAmount - fees
 
-	newAddr, _, _, err := a.wallet.NewAddress(ctx, true)
+	newAddr, _, _, err := a.newAddress(ctx)
 	if err != nil {
 		return "", "", err
 	}
@@ -277,12 +309,37 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 
 	ptx.Inputs[0].WitnessUtxo = txutils.AnchorOutput()
 
+	for i, utxo := range selectedCoins {
+		pkScript, err := hex.DecodeString(utxo.Script)
+		if err != nil {
+			return "", "", err
+		}
+		var keyID string
+		if len(keys) > 0 {
+			id, ok := keys[utxo.Script]
+			if !ok {
+				return "", "", fmt.Errorf("no signing key for utxo %s:%d", utxo.Txid, utxo.Vout)
+			}
+			keyID = id
+		}
+		keyRef, err := a.identity.GetKey(ctx, keyID)
+		if err != nil {
+			return "", "", err
+		}
+
+		ptx.Inputs[i+1].WitnessUtxo = &wire.TxOut{
+			Value:    int64(utxo.Amount),
+			PkScript: pkScript,
+		}
+		ptx.Inputs[i+1].TaprootInternalKey = schnorr.SerializePubKey(keyRef.PubKey)
+	}
+
 	b64, err := ptx.B64Encode()
 	if err != nil {
 		return "", "", err
 	}
 
-	tx, err := a.wallet.SignTransaction(ctx, a.explorer, b64)
+	tx, err := a.identity.SignTransaction(ctx, b64, keys)
 	if err != nil {
 		return "", "", err
 	}
@@ -311,15 +368,20 @@ func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string,
 	return childTx.TxID(), hex.EncodeToString(serializedTx.Bytes()), nil
 }
 
-func (a *service) completeUnroll(ctx context.Context, to string) (string, error) {
+func (a *service) completeUnroll(
+	ctx context.Context, to string, opts *unrollOptions,
+) (string, error) {
 	pkscript, err := toOutputScript(to, a.Network)
 	if err != nil {
 		return "", err
 	}
 
-	utxos, err := a.getMatureUtxos(ctx)
-	if err != nil {
-		return "", err
+	utxos := opts.utxos
+	if len(utxos) <= 0 {
+		utxos, err = a.getMatureUtxos(ctx)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	targetAmount := uint64(0)
@@ -367,7 +429,7 @@ func (a *service) completeUnroll(ctx context.Context, to string) (string, error)
 
 	unsignedTx, _ := ptx.B64Encode()
 
-	signedTx, err := a.wallet.SignTransaction(ctx, a.explorer, unsignedTx)
+	signedTx, err := a.identity.SignTransaction(ctx, unsignedTx, opts.signingKeys)
 	if err != nil {
 		return "", err
 	}
@@ -397,7 +459,9 @@ func (a *service) completeUnroll(ctx context.Context, to string) (string, error)
 	return a.explorer.Broadcast(txHex)
 }
 
-func (a *service) sendExpiredBoardingUtxos(ctx context.Context, to string) (string, error) {
+func (a *service) sendExpiredBoardingUtxos(
+	ctx context.Context, to string, opts *unrollOptions,
+) (string, error) {
 	pkscript, err := toOutputScript(to, a.Network)
 	if err != nil {
 		return "", err
@@ -455,7 +519,7 @@ func (a *service) sendExpiredBoardingUtxos(ctx context.Context, to string) (stri
 
 	unsignedTx, _ := ptx.B64Encode()
 
-	signedTx, err := a.wallet.SignTransaction(ctx, a.explorer, unsignedTx)
+	signedTx, err := a.identity.SignTransaction(ctx, unsignedTx, opts.signingKeys)
 	if err != nil {
 		return "", err
 	}
@@ -477,7 +541,7 @@ func (a *service) sendExpiredBoardingUtxos(ctx context.Context, to string) (stri
 func (a *service) getExpiredBoardingUtxos(
 	ctx context.Context, opts *getVtxosFilter,
 ) ([]types.Utxo, error) {
-	_, _, boardingAddrs, _, err := a.wallet.GetAddresses(ctx)
+	_, _, boardingAddrs, _, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -494,7 +558,7 @@ func (a *service) getExpiredBoardingUtxos(
 			return nil, err
 		}
 
-		boardingUtxos, err := a.explorer.GetUtxos(addr.Address)
+		boardingUtxos, err := a.explorer.GetUtxos([]string{addr.Address})
 		if err != nil {
 			return nil, err
 		}
@@ -533,24 +597,23 @@ func (a *service) getExpiredBoardingUtxos(
 func (a *service) addInputs(
 	ctx context.Context, updater *psbt.Updater, utxos []types.Utxo,
 ) error {
-	// TODO works only with single-key wallet
-	_, offchain, _, err := a.wallet.NewAddress(ctx, false)
-	if err != nil {
-		return err
-	}
-
-	vtxoScript, err := script.ParseVtxoScript(offchain.Tapscripts)
-	if err != nil {
-		return err
-	}
-
 	for _, utxo := range utxos {
+		vtxoScript, err := script.ParseVtxoScript(utxo.Tapscripts)
+		if err != nil {
+			return err
+		}
+
 		previousHash, err := chainhash.NewHashFromStr(utxo.Txid)
 		if err != nil {
 			return err
 		}
 
 		sequence, err := utxo.Sequence()
+		if err != nil {
+			return err
+		}
+
+		pkScript, err := hex.DecodeString(utxo.Script)
 		if err != nil {
 			return err
 		}
@@ -587,6 +650,10 @@ func (a *service) addInputs(
 		}
 
 		updater.Upsbt.Inputs = append(updater.Upsbt.Inputs, psbt.PInput{
+			WitnessUtxo: &wire.TxOut{
+				Value:    int64(utxo.Amount),
+				PkScript: pkScript,
+			},
 			TaprootLeafScript: []*psbt.TaprootTapLeafScript{
 				{
 					ControlBlock: leafProof.ControlBlock,
@@ -601,7 +668,7 @@ func (a *service) addInputs(
 }
 
 func (a *service) getMatureUtxos(ctx context.Context) ([]types.Utxo, error) {
-	_, _, _, redemptionAddrs, err := a.wallet.GetAddresses(ctx)
+	_, _, _, redemptionAddrs, err := a.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -609,17 +676,25 @@ func (a *service) getMatureUtxos(ctx context.Context) ([]types.Utxo, error) {
 	now := time.Now()
 
 	utxos := make([]types.Utxo, 0)
+	addresses := make([]string, 0, len(redemptionAddrs))
+	addrTapscripts := make(map[string][]string)
 	for _, addr := range redemptionAddrs {
-		fetchedUtxos, err := a.explorer.GetUtxos(addr.Address)
-		if err != nil {
-			return nil, err
-		}
+		addresses = append(addresses, addr.Address)
+		// nolint
+		script, _ := toOutputScript(addr.Address, a.Network)
+		addrTapscripts[hex.EncodeToString(script)] = addr.Tapscripts
+	}
 
-		for _, utxo := range fetchedUtxos {
-			u := utxo.ToUtxo(a.UnilateralExitDelay, addr.Tapscripts)
-			if u.SpendableAt.Before(now) {
-				utxos = append(utxos, u)
-			}
+	fetchedUtxos, err := a.explorer.GetUtxos(addresses)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, utxo := range fetchedUtxos {
+		tapscripts := addrTapscripts[utxo.Script]
+		u := utxo.ToUtxo(a.UnilateralExitDelay, tapscripts)
+		if u.SpendableAt.Before(now) {
+			utxos = append(utxos, u)
 		}
 	}
 

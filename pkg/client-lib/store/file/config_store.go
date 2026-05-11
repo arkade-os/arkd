@@ -54,7 +54,6 @@ func (s *configStore) AddData(ctx context.Context, data types.Config) error {
 		ServerUrl:           data.ServerUrl,
 		SignerPubKey:        hex.EncodeToString(data.SignerPubKey.SerializeCompressed()),
 		ForfeitPubKey:       hex.EncodeToString(data.ForfeitPubKey.SerializeCompressed()),
-		WalletType:          data.WalletType,
 		Network:             data.Network.Name,
 		SessionDuration:     fmt.Sprintf("%d", data.SessionDuration),
 		UnilateralExitDelay: fmt.Sprintf("%d", data.UnilateralExitDelay.Value),

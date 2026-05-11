@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"bytes"
@@ -22,14 +22,14 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	"github.com/arkade-os/arkd/pkg/client-lib/identity"
+	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
+	identitystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
+	identityfilestore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/file"
+	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
-	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
-	walletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store"
-	filestore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/file"
-	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -44,7 +44,7 @@ import (
 func getClient(
 	supportedClients utils.SupportedType[utils.ClientFactory],
 	clientType, serverUrl string, withMonitorConn bool,
-) (client.TransportClient, error) {
+) (client.Client, error) {
 	factory := supportedClients[clientType]
 	return factory(serverUrl, withMonitorConn)
 }
@@ -57,37 +57,23 @@ func getIndexer(
 	return factory(serverUrl, withMonitorConn)
 }
 
-func getWallet(
-	configStore types.ConfigStore, walletType string,
-	supportedWallets utils.SupportedType[struct{}],
-) (wallet.WalletService, error) {
-	switch walletType {
-	case wallet.SingleKeyWallet:
-		return getSingleKeyWallet(configStore)
-	default:
-		return nil, fmt.Errorf(
-			"unsupported wallet type '%s', please select one of: %s", walletType, supportedWallets,
-		)
-	}
-}
-
-func getSingleKeyWallet(configStore types.ConfigStore) (wallet.WalletService, error) {
-	walletStore, err := getWalletStore(configStore.GetType(), configStore.GetDatadir())
+func getSingleKeyIdentity(datadir, storeType string) (identity.Identity, error) {
+	store, err := getIdentityStore(storeType, datadir)
 	if err != nil {
 		return nil, err
 	}
 
-	return singlekeywallet.NewBitcoinWallet(configStore, walletStore)
+	return singlekeyidentity.NewIdentity(store)
 }
 
-func getWalletStore(storeType, datadir string) (walletstore.WalletStore, error) {
+func getIdentityStore(storeType, datadir string) (identitystore.IdentityStore, error) {
 	switch storeType {
 	case types.InMemoryStore:
-		return inmemorystore.NewWalletStore()
+		return identityinmemorystore.NewStore()
 	case types.FileStore:
-		return filestore.NewWalletStore(datadir)
+		return identityfilestore.NewStore(datadir)
 	default:
-		return nil, fmt.Errorf("unknown wallet store type")
+		return nil, fmt.Errorf("unknown identity store type")
 	}
 }
 
@@ -493,7 +479,7 @@ func toIntentInputs(
 		arkFields = append(arkFields, []*psbt.Unknown{taptreeField})
 	}
 
-	for _, coin := range boardingUtxos {
+	for boardingIndex, coin := range boardingUtxos {
 		hash, err := chainhash.NewHashFromStr(coin.Txid)
 		if err != nil {
 			return nil, nil, nil, nil, err
@@ -515,6 +501,12 @@ func toIntentInputs(
 				PkScript: pkScript,
 			},
 		})
+
+		if len(coin.Assets) > 0 {
+			// boarding utxos sit after vtxos in the proof PSBT, and the +1
+			// accounts for the fake intent input at index 0.
+			assetInputs[len(vtxos)+boardingIndex+1] = coin.Assets
+		}
 
 		taptreeField, err := txutils.VtxoTaprootTreeField.Encode(coin.Tapscripts)
 		if err != nil {

@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"fmt"
@@ -8,27 +8,22 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 )
 
-type SendOption func(options *sendOptions) error
-
-func WithoutExpirySorting() SendOption {
-	return func(o *sendOptions) error {
-		o.withoutExpirySorting = true
-		return nil
-	}
+// SendOption is satisfied by any value whose applySend method mutates a
+// sendOptions. Interface-typed options let a single definition satisfy
+// multiple option families — see WithKeys in sign_opts.go.
+type SendOption interface {
+	applySend(*sendOptions) error
 }
 
-func WithVtxos(vtxos []types.VtxoWithTapTree) SendOption {
-	return func(o *sendOptions) error {
-		if len(o.vtxos) > 0 {
-			return fmt.Errorf("vtxos already set")
-		}
-		if len(vtxos) <= 0 {
-			return fmt.Errorf("missing vtxos")
-		}
-		o.vtxos = make([]types.VtxoWithTapTree, len(vtxos))
-		copy(o.vtxos, vtxos)
+type sendOptFn func(*sendOptions) error
+
+func (f sendOptFn) applySend(o *sendOptions) error { return f(o) }
+
+func WithoutExpirySorting() SendOption {
+	return sendOptFn(func(o *sendOptions) error {
+		o.withoutExpirySorting = true
 		return nil
-	}
+	})
 }
 
 // WithExtraPacket appends extra extension.Packet values to the
@@ -40,7 +35,7 @@ func WithVtxos(vtxos []types.VtxoWithTapTree) SendOption {
 //
 // Duplicate packet types are not permitted.
 func WithExtraPacket(packets ...extension.Packet) SendOption {
-	return func(o *sendOptions) error {
+	return sendOptFn(func(o *sendOptions) error {
 		for _, p := range packets {
 			if p == nil {
 				return fmt.Errorf("extension packet must not be nil")
@@ -54,13 +49,15 @@ func WithExtraPacket(packets ...extension.Packet) SendOption {
 		}
 		o.extraPackets = append(o.extraPackets, packets...)
 		return nil
-	}
+	})
 }
 
 type sendOptions struct {
-	withoutExpirySorting  bool
-	vtxos                 []types.VtxoWithTapTree
-	extraPackets []extension.Packet
+	withoutExpirySorting bool
+	vtxos                []types.VtxoWithTapTree
+	signingKeys          map[string]string
+	extraPackets         []extension.Packet
+	receiver             string
 }
 
 func newDefaultSendOptions() *sendOptions {

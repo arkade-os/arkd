@@ -300,11 +300,11 @@ func (s *service) Start() error {
 }
 
 func (s *service) registerEventHandlers() {
-	s.repoManager.Events().RegisterEventsHandler(
-		domain.RoundTopic, func(events []domain.Event) {
-			round := domain.NewRoundFromEvents(events)
+	s.repoManager.RegisterBatchUpdateHandler(
+		func(round domain.Round) {
 			go s.propagateEvents(context.Background(), round)
 
+			events := round.Events()
 			lastEvent := events[len(events)-1]
 			if lastEvent.GetType() == domain.EventTypeBatchSwept {
 				batchSweptEvent := lastEvent.(domain.BatchSwept)
@@ -351,15 +351,13 @@ func (s *service) registerEventHandlers() {
 		},
 	)
 
-	s.repoManager.Events().RegisterEventsHandler(
-		domain.OffchainTxTopic, func(events []domain.Event) {
-			offchainTx := domain.NewOffchainTxFromEvents(events)
-
+	s.repoManager.RegisterOffchainTxUpdateHandler(
+		func(offchainTx domain.OffchainTx) {
 			if !offchainTx.IsFinalized() {
 				return
 			}
 
-			txid, spentVtxoKeys, newVtxos, err := decodeTx(*offchainTx)
+			txid, spentVtxoKeys, newVtxos, err := decodeTx(offchainTx)
 			if err != nil {
 				log.WithError(err).Warn("failed to decode offchain tx")
 				return
@@ -468,21 +466,6 @@ func (s *service) SubmitOffchainTx(
 	offchainTx := domain.NewOffchainTx()
 	var changes []domain.Event
 
-	defer func() {
-		if structErr != nil {
-			change := offchainTx.Fail(structErr)
-			changes = append(changes, change)
-		}
-
-		if len(changes) > 0 {
-			if err := s.repoManager.Events().Save(
-				ctx, domain.OffchainTxTopic, txid, changes,
-			); err != nil {
-				log.WithError(err).Errorf("failed to save events for offchain tx %s", txid)
-			}
-		}
-	}()
-
 	vtxoRepo := s.repoManager.Vtxos()
 
 	ins := make([]offchain.VtxoInput, 0)
@@ -537,6 +520,21 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.INTERNAL_ERROR.Wrap(err)
 	}
 	changes = []domain.Event{event}
+
+	defer func() {
+		if structErr != nil {
+			change := offchainTx.Fail(structErr)
+			changes = append(changes, change)
+		}
+
+		if len(changes) > 0 {
+			if err := s.repoManager.Events().Save(
+				ctx, domain.OffchainTxTopic, txid, changes,
+			); err != nil {
+				log.WithError(err).Errorf("failed to save events for offchain tx %s", txid)
+			}
+		}
+	}()
 
 	// get all the vtxos inputs
 	spentVtxos, err := vtxoRepo.GetVtxos(ctx, spentVtxoKeys)
@@ -3414,7 +3412,7 @@ func (s *service) listenToScannerNotifications() {
 	}
 }
 
-func (s *service) propagateEvents(ctx context.Context, round *domain.Round) {
+func (s *service) propagateEvents(ctx context.Context, round domain.Round) {
 	lastEvent := round.Events()[len(round.Events())-1]
 	events := make([]domain.Event, 0)
 	switch ev := lastEvent.(type) {
@@ -3538,7 +3536,7 @@ func (s *service) propagateRoundSigningNoncesGeneratedEvent(
 	s.eventsCh <- events
 }
 
-func (s *service) scheduleSweepBatchOutput(round *domain.Round) {
+func (s *service) scheduleSweepBatchOutput(round domain.Round) {
 	// Schedule the sweeping procedure only for completed round.
 	if !round.IsEnded() {
 		return

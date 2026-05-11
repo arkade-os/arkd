@@ -14,17 +14,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
 
-      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+      - uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1.4.0
+        with:
+          token: ${{ secrets.BUF_TOKEN }}
+          version: 1.50.0
+          setup_only: true
 
       - name: Check proto linting
         run: buf lint
 
       - name: Publish protos
-        uses: bufbuild/buf-push-action@acb5d0e04ee52ea5b0484d453df2daea55d3f33c # v1.0.0
-        with:
-          input: api-spec/protobuf  
-          buf_token: ${{ secrets.BUF_TOKEN }}
+        run: buf push api-spec/protobuf --error-format github-actions --create --git-metadata
 
   build-and-upload:
     runs-on: ubuntu-latest

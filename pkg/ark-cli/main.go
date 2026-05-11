@@ -12,7 +12,7 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
-	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
+	wallet "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/arkade-os/arkd/pkg/client-lib/store"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/urfave/cli/v2"
@@ -25,7 +25,7 @@ const (
 
 var (
 	Version      string
-	arkSdkClient arksdk.ArkClient
+	arkSdkClient wallet.Wallet
 )
 
 func main() {
@@ -305,8 +305,7 @@ func initArkSdk(ctx *cli.Context) error {
 	}
 
 	return arkSdkClient.Init(
-		ctx.Context, arksdk.InitArgs{
-			WalletType:  arksdk.SingleKeyWallet,
+		ctx.Context, wallet.InitArgs{
 			ServerUrl:   ctx.String(urlFlag.Name),
 			Seed:        ctx.String(privateKeyFlag.Name),
 			Password:    string(password),
@@ -324,7 +323,6 @@ func config(ctx *cli.Context) error {
 	cfg := map[string]any{
 		"server_url":            cfgData.ServerUrl,
 		"signer_pubkey":         hex.EncodeToString(cfgData.SignerPubKey.SerializeCompressed()),
-		"wallet_type":           cfgData.WalletType,
 		"network":               cfgData.Network.Name,
 		"unilateral_exit_delay": cfgData.UnilateralExitDelay,
 		"dust":                  cfgData.Dust,
@@ -663,7 +661,7 @@ func listVtxos(ctx *cli.Context) error {
 	return printJSON(spendable)
 }
 
-func getArkSdkClient(ctx *cli.Context) (arksdk.ArkClient, error) {
+func getArkSdkClient(ctx *cli.Context) (wallet.Wallet, error) {
 	dataDir := ctx.String(datadirFlag.Name)
 	sdkRepository, err := store.NewStore(store.Config{
 		ConfigStoreType: types.FileStore,
@@ -683,23 +681,23 @@ func getArkSdkClient(ctx *cli.Context) (arksdk.ArkClient, error) {
 		return nil, fmt.Errorf("CLI not initialized, run 'init' cmd to initialize")
 	}
 
-	opts := make([]arksdk.ServiceOption, 0)
+	opts := make([]wallet.ServiceOption, 0)
 	if ctx.Bool(verboseFlag.Name) {
-		opts = append(opts, arksdk.WithVerbose())
+		opts = append(opts, wallet.WithVerbose())
 	}
 
 	return loadOrCreateClient(
-		arksdk.LoadArkClient, arksdk.NewArkClient, sdkRepository, opts,
+		wallet.LoadWallet, wallet.NewWallet, sdkRepository, opts,
 	)
 }
 
 func loadOrCreateClient(
-	loadFunc, newFunc func(types.Store, ...arksdk.ServiceOption) (arksdk.ArkClient, error),
-	sdkRepository types.Store, opts []arksdk.ServiceOption,
-) (arksdk.ArkClient, error) {
+	loadFunc, newFunc func(types.Store, ...wallet.ServiceOption) (wallet.Wallet, error),
+	sdkRepository types.Store, opts []wallet.ServiceOption,
+) (wallet.Wallet, error) {
 	client, err := loadFunc(sdkRepository, opts...)
 	if err != nil {
-		if errors.Is(err, arksdk.ErrNotInitialized) {
+		if errors.Is(err, wallet.ErrNotInitialized) {
 			return newFunc(sdkRepository, opts...)
 		}
 		return nil, err
