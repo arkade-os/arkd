@@ -396,3 +396,6 @@ func (s *staticSigner) SignTransaction(_ context.Context, _ string, _ bool) (str
 func (s *staticSigner) SignTransactionTapscript(_ context.Context, _ string, _ []int) (string, error) {
 	return "", nil
 }
+func (s *staticSigner) SignMessage(_ context.Context, _ []byte) ([]byte, error) {
+	return nil, nil
+}

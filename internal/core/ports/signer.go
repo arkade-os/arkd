@@ -13,4 +13,5 @@ type SignerService interface {
 	SignTransactionTapscript(
 		ctx context.Context, partialTx string, inputIndexes []int, // inputIndexes == nil means sign all inputs
 	) (string, error)
+	SignMessage(ctx context.Context, message []byte) ([]byte, error)
 }
