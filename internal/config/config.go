@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/application"
+	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	alertsmanager "github.com/arkade-os/arkd/internal/infrastructure/alertsmanager"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
@@ -34,7 +35,6 @@ import (
 )
 
 const (
-	minAllowedSequence = 512
 	bitcoinBlockWeight = 4_000_000
 )
 
@@ -91,6 +91,7 @@ type Config struct {
 	SessionDuration           int64
 	BanDuration               int64
 	BanThreshold              int64 // number of crimes to trigger a ban
+	SchedulerType             string
 	TxBuilderType             string
 	LiveStoreType             string
 	RedisUrl                  string
@@ -184,8 +185,6 @@ var (
 	WalletAddr                           = "WALLET_ADDR"
 	SignerAddr                           = "SIGNER_ADDR"
 	SessionDuration                      = "SESSION_DURATION"
-	BanDuration                          = "BAN_DURATION"
-	BanThreshold                         = "BAN_THRESHOLD"
 	Port                                 = "PORT"
 	AdminPort                            = "ADMIN_PORT"
 	EventDbType                          = "EVENT_DB_TYPE"
@@ -201,12 +200,8 @@ var (
 	LiveStoreType                        = "LIVE_STORE_TYPE"
 	RedisUrl                             = "REDIS_URL"
 	RedisTxNumOfRetries                  = "REDIS_NUM_OF_RETRIES"
+	SchedulerType                        = "SCHEDULER_TYPE"
 	LogLevel                             = "LOG_LEVEL"
-	VtxoTreeExpiry                       = "VTXO_TREE_EXPIRY"
-	UnilateralExitDelay                  = "UNILATERAL_EXIT_DELAY"
-	PublicUnilateralExitDelay            = "PUBLIC_UNILATERAL_EXIT_DELAY"
-	CheckpointExitDelay                  = "CHECKPOINT_EXIT_DELAY"
-	BoardingExitDelay                    = "BOARDING_EXIT_DELAY"
 	EsploraURL                           = "ESPLORA_URL"
 	AlertManagerURL                      = "ALERT_MANAGER_URL"
 	ArkadeExplorerURL                    = "ARKADE_EXPLORER_URL"
@@ -253,10 +248,19 @@ var (
 	IndexerSigningKey    = "INDEXER_SIGNING_PRIVKEY" // #nosec G101
 	MaxConcurrentStreams = "MAX_CONCURRENT_STREAMS"
 
+	// First-boot seed overrides for DB-backed settings. When no settings row
+	// exists yet, defaultSettings() reads these env vars; at runtime the DB
+	// (mutated via the admin UpdateSettings API) is the source of truth.
+	BanThreshold              = "BAN_THRESHOLD"
+	BanDuration               = "BAN_DURATION"
+	VtxoTreeExpiry            = "VTXO_TREE_EXPIRY"
+	UnilateralExitDelay       = "UNILATERAL_EXIT_DELAY"
+	PublicUnilateralExitDelay = "PUBLIC_UNILATERAL_EXIT_DELAY"
+	CheckpointExitDelay       = "CHECKPOINT_EXIT_DELAY"
+	BoardingExitDelay         = "BOARDING_EXIT_DELAY"
+
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
-	defaultBanDuration         = 10 * defaultSessionDuration
-	defaultBanThreshold        = 3
 	DefaultPort                = 7070
 	DefaultAdminPort           = 7071
 	defaultDbType              = "postgres"
@@ -267,32 +271,22 @@ var (
 	defaultEsploraURL          = "https://blockstream.info/api"
 	defaultArkadeExplorerURL   = "https://arkade.space"
 	defaultLogLevel            = 4
-	defaultVtxoTreeExpiry      = 604672  // 7 days
-	defaultUnilateralExitDelay = 86400   // 24 hours
-	defaultCheckpointExitDelay = 86400   // 24 hours
-	defaultBoardingExitDelay   = 7776000 // 3 months
 	defaultNoMacaroons         = false
 	defaultNoTLS               = true
-	defaultUtxoMaxAmount       = -1 // -1 means no limit (default), 0 means boarding not allowed
-	defaultUtxoMinAmount       = -1 // -1 means native dust limit (default)
-	defaultVtxoMinAmount       = -1 // -1 means native dust limit (default)
-	defaultVtxoMaxAmount       = -1 // -1 means no limit (default)
+	defaultSchedulerType       = "gocron"
 
-	defaultRoundMaxParticipantsCount     = 128
-	defaultRoundMinParticipantsCount     = 1
-	defaultOtelPushInterval              = 10 // seconds
-	defaultHeartbeatInterval             = 60 // seconds
-	defaultRoundReportServiceEnabled     = false
-	defaultSettlementMinExpiryGap        = 0   // disabled by default
-	defaultUnrolledVtxoMinExpiryMargin   = 300 // 5 minutes in seconds
-	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
-	defaultAssetTxMaxWeightRatio         = 0.5
-	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
-	defaultEnablePprof                   = false
-	defaultIndexerExposure               = "public"
-	defaultIndexerAuthTokenExpiry        = 300 // 5 minutes in seconds
-	defaultMaxConcurrentStreams          = uint32(1000)
-	defaultMaxOpReturnOuts               = uint32(3)
+	defaultOtelPushInterval            = 10 // seconds
+	defaultHeartbeatInterval           = 60 // seconds
+	defaultRoundReportServiceEnabled   = false
+	defaultSettlementMinExpiryGap      = 0   // disabled by default
+	defaultUnrolledVtxoMinExpiryMargin = 300 // 5 minutes in seconds
+	defaultMaxTxWeight                 = int64(0.01 * bitcoinBlockWeight)
+	defaultAssetTxMaxWeightRatio       = 0.5
+	defaultEnablePprof                 = false
+	defaultIndexerExposure             = "public"
+	defaultIndexerAuthTokenExpiry      = 300 // 5 minutes in seconds
+	defaultMaxConcurrentStreams        = uint32(1000)
+	defaultMaxOpReturnOuts             = uint32(3)
 )
 
 func LoadConfig() (*Config, error) {
@@ -310,24 +304,12 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(NoTLS, defaultNoTLS)
 	viper.SetDefault(LogLevel, defaultLogLevel)
 	viper.SetDefault(SessionDuration, defaultSessionDuration)
-	viper.SetDefault(BanDuration, defaultBanDuration)
-	viper.SetDefault(BanThreshold, defaultBanThreshold)
-	viper.SetDefault(VtxoTreeExpiry, defaultVtxoTreeExpiry)
+	viper.SetDefault(SchedulerType, defaultSchedulerType)
 	viper.SetDefault(EventDbType, defaultEventDbType)
 	viper.SetDefault(TxBuilderType, defaultTxBuilderType)
-	viper.SetDefault(UnilateralExitDelay, defaultUnilateralExitDelay)
-	viper.SetDefault(PublicUnilateralExitDelay, defaultUnilateralExitDelay)
-	viper.SetDefault(CheckpointExitDelay, defaultCheckpointExitDelay)
 	viper.SetDefault(EsploraURL, defaultEsploraURL)
 	viper.SetDefault(ArkadeExplorerURL, defaultArkadeExplorerURL)
 	viper.SetDefault(NoMacaroons, defaultNoMacaroons)
-	viper.SetDefault(BoardingExitDelay, defaultBoardingExitDelay)
-	viper.SetDefault(RoundMaxParticipantsCount, defaultRoundMaxParticipantsCount)
-	viper.SetDefault(RoundMinParticipantsCount, defaultRoundMinParticipantsCount)
-	viper.SetDefault(UtxoMaxAmount, defaultUtxoMaxAmount)
-	viper.SetDefault(UtxoMinAmount, defaultUtxoMinAmount)
-	viper.SetDefault(VtxoMaxAmount, defaultVtxoMaxAmount)
-	viper.SetDefault(VtxoMinAmount, defaultVtxoMinAmount)
 	viper.SetDefault(LiveStoreType, defaultLiveStoreType)
 	viper.SetDefault(RedisTxNumOfRetries, defaultRedisTxNumOfRetries)
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
@@ -337,12 +319,19 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(UnrolledVtxoMinExpiryMargin, defaultUnrolledVtxoMinExpiryMargin)
 	viper.SetDefault(MaxTxWeight, defaultMaxTxWeight)
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
-	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
 	viper.SetDefault(IndexerExposure, defaultIndexerExposure)
 	viper.SetDefault(IndexerAuthTokenExpiry, defaultIndexerAuthTokenExpiry)
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
 	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
+
+	// First-boot seed defaults for DB-backed settings (production values).
+	// Only consulted in defaultSettings() when no settings row exists yet.
+	viper.SetDefault(BanThreshold, 3)
+	viper.SetDefault(BanDuration, 300)                 // 10 * 30s
+	viper.SetDefault(UnilateralExitDelay, 86400)       // 24 hours
+	viper.SetDefault(PublicUnilateralExitDelay, 86400) // 24 hours
+	viper.SetDefault(BoardingExitDelay, 7776000)       // 3 months
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -390,8 +379,6 @@ func LoadConfig() (*Config, error) {
 		WalletAddr:                viper.GetString(WalletAddr),
 		SignerAddr:                signerAddr,
 		SessionDuration:           viper.GetInt64(SessionDuration),
-		BanDuration:               viper.GetInt64(BanDuration),
-		BanThreshold:              viper.GetInt64(BanThreshold),
 		Port:                      viper.GetUint32(Port),
 		AdminPort:                 adminPort,
 		EventDbType:               viper.GetString(EventDbType),
@@ -411,11 +398,6 @@ func LoadConfig() (*Config, error) {
 		PostgresConnMaxIdleMins:   viper.GetInt64(PostgresConnMaxIdleMins),
 		PostgresConnMaxLifeMins:   viper.GetInt64(PostgresConnMaxLifeMins),
 		LogLevel:                  viper.GetInt(LogLevel),
-		VtxoTreeExpiry:            determineLocktimeType(viper.GetInt64(VtxoTreeExpiry)),
-		UnilateralExitDelay:       determineLocktimeType(viper.GetInt64(UnilateralExitDelay)),
-		PublicUnilateralExitDelay: determineLocktimeType(viper.GetInt64(PublicUnilateralExitDelay)),
-		CheckpointExitDelay:       determineLocktimeType(viper.GetInt64(CheckpointExitDelay)),
-		BoardingExitDelay:         determineLocktimeType(viper.GetInt64(BoardingExitDelay)),
 		EsploraURL:                viper.GetString(EsploraURL),
 		AlertManagerURL:           viper.GetString(AlertManagerURL),
 		ArkadeExplorerURL:         viper.GetString(ArkadeExplorerURL),
@@ -476,11 +458,118 @@ func makeDirectoryIfNotExists(path string) error {
 }
 
 func determineLocktimeType(locktime int64) arklib.RelativeLocktime {
-	if locktime >= minAllowedSequence {
-		return arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: uint32(locktime)}
+	return domain.ToRelativeLocktime(locktime)
+}
+
+// defaultSettings builds the first-boot seed for DB-backed settings. It is
+// only consulted when the settings table is empty. Env vars (ARKD_*) override
+// the hardcoded production defaults so test environments and operators can
+// seed the DB deterministically before the round scheduler comes online.
+// After the first boot, this function is no longer consulted — the admin
+// UpdateSettings API is the only way to mutate the stored settings.
+func (c *Config) defaultSettings() *domain.Settings {
+	// Scheduler-aware fallbacks for the two fields that have no env var:
+	// with the block scheduler we want short block-based delays, otherwise
+	// reasonable second-based production defaults.
+	vtxoTreeExpiry := int64(604672)     // ~7 days in seconds
+	checkpointExitDelay := int64(86400) // 24 hours in seconds
+	if c.SchedulerType == "block" {
+		vtxoTreeExpiry = 20      // 20 blocks
+		checkpointExitDelay = 10 // 10 blocks
+	}
+	if viper.IsSet(VtxoTreeExpiry) {
+		vtxoTreeExpiry = viper.GetInt64(VtxoTreeExpiry)
+	}
+	if viper.IsSet(CheckpointExitDelay) {
+		checkpointExitDelay = viper.GetInt64(CheckpointExitDelay)
 	}
 
-	return arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: uint32(locktime)}
+	// Wiring env-var reads for the remaining fields that already had env
+	// var constants prior to the DB-backed-settings refactor.
+	roundMin := int64(1)
+	if viper.IsSet(RoundMinParticipantsCount) {
+		roundMin = viper.GetInt64(RoundMinParticipantsCount)
+	}
+	roundMax := int64(128)
+	if viper.IsSet(RoundMaxParticipantsCount) {
+		roundMax = viper.GetInt64(RoundMaxParticipantsCount)
+	}
+	vtxoMin := int64(-1)
+	if viper.IsSet(VtxoMinAmount) {
+		vtxoMin = viper.GetInt64(VtxoMinAmount)
+	}
+	vtxoMax := int64(-1)
+	if viper.IsSet(VtxoMaxAmount) {
+		vtxoMax = viper.GetInt64(VtxoMaxAmount)
+	}
+	utxoMin := int64(-1)
+	if viper.IsSet(UtxoMinAmount) {
+		utxoMin = viper.GetInt64(UtxoMinAmount)
+	}
+	utxoMax := int64(-1)
+	if viper.IsSet(UtxoMaxAmount) {
+		utxoMax = viper.GetInt64(UtxoMaxAmount)
+	}
+	maxTxWeight := int64(0.01 * bitcoinBlockWeight)
+	if viper.IsSet(MaxTxWeight) {
+		maxTxWeight = viper.GetInt64(MaxTxWeight)
+	}
+
+	return &domain.Settings{
+		BanThreshold:              viper.GetInt64(BanThreshold),
+		BanDuration:               viper.GetInt64(BanDuration),
+		VtxoTreeExpiry:            vtxoTreeExpiry,
+		UnilateralExitDelay:       viper.GetInt64(UnilateralExitDelay),
+		PublicUnilateralExitDelay: viper.GetInt64(PublicUnilateralExitDelay),
+		CheckpointExitDelay:       checkpointExitDelay,
+		BoardingExitDelay:         viper.GetInt64(BoardingExitDelay),
+		RoundMinParticipantsCount: roundMin,
+		RoundMaxParticipantsCount: roundMax,
+		UtxoMaxAmount:             utxoMax,
+		UtxoMinAmount:             utxoMin,
+		VtxoMaxAmount:             vtxoMax,
+		VtxoMinAmount:             vtxoMin,
+		MaxTxWeight:               maxTxWeight,
+		UpdatedAt:                 time.Now(),
+	}
+}
+
+func (c *Config) loadSettings() error {
+	ctx := context.Background()
+	settings, err := c.repo.Settings().Get(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get settings: %w", err)
+	}
+	if settings == nil {
+		settings = c.defaultSettings()
+		// Run the same validation the admin UpdateSettings path enforces so a
+		// bad env-var combination (e.g. PublicUnilateral < Unilateral,
+		// RoundMin > RoundMax) can't be silently persisted on first boot.
+		if err := settings.Validate(); err != nil {
+			return fmt.Errorf("invalid default settings: %w", err)
+		}
+		if err := c.repo.Settings().Upsert(ctx, *settings); err != nil {
+			return fmt.Errorf("failed to seed default settings: %w", err)
+		}
+	}
+
+	c.BanThreshold = settings.BanThreshold
+	c.BanDuration = settings.BanDuration
+	c.VtxoTreeExpiry = determineLocktimeType(settings.VtxoTreeExpiry)
+	c.UnilateralExitDelay = determineLocktimeType(settings.UnilateralExitDelay)
+	c.PublicUnilateralExitDelay = determineLocktimeType(settings.PublicUnilateralExitDelay)
+	c.CheckpointExitDelay = determineLocktimeType(settings.CheckpointExitDelay)
+	c.BoardingExitDelay = determineLocktimeType(settings.BoardingExitDelay)
+	c.RoundMinParticipantsCount = settings.RoundMinParticipantsCount
+	c.RoundMaxParticipantsCount = settings.RoundMaxParticipantsCount
+	c.VtxoMinAmount = settings.VtxoMinAmount
+	c.VtxoMaxAmount = settings.VtxoMaxAmount
+	c.UtxoMinAmount = settings.UtxoMinAmount
+	c.UtxoMaxAmount = settings.UtxoMaxAmount
+	c.SettlementMinExpiryGap = settings.SettlementMinExpiryGap
+	c.VtxoNoCsvValidationCutoffDate = settings.VtxoNoCsvValidationCutoffDate
+	c.MaxTxWeight = uint64(settings.MaxTxWeight)
+	return nil
 }
 
 func (c *Config) Validate() error {
@@ -527,6 +616,14 @@ func (c *Config) Validate() error {
 			c.UnrolledVtxoMinExpiryMargin, c.SessionDuration,
 		)
 	}
+
+	if err := c.repoManager(); err != nil {
+		return err
+	}
+	if err := c.loadSettings(); err != nil {
+		return err
+	}
+
 	if c.BanDuration < 1 {
 		return fmt.Errorf("invalid ban duration, must be at least 1 second")
 	}
@@ -562,55 +659,55 @@ func (c *Config) Validate() error {
 		)
 	}
 
-	// Round seconds-based delays to multiples of minAllowedSequence (BIP68 requirement).
+	// Round seconds-based delays to multiples of domain.MinAllowedSequence (BIP68 requirement).
 	// Block-based delays don't need rounding.
 	if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeSecond {
 		// vtxo tree expiry must be a multiple of 512 if expressed in seconds
-		if c.VtxoTreeExpiry.Value%minAllowedSequence != 0 {
-			c.VtxoTreeExpiry.Value -= c.VtxoTreeExpiry.Value % minAllowedSequence
+		if c.VtxoTreeExpiry.Value%domain.MinAllowedSequence != 0 {
+			c.VtxoTreeExpiry.Value -= c.VtxoTreeExpiry.Value % domain.MinAllowedSequence
 			log.Infof(
 				"vtxo tree expiry must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.VtxoTreeExpiry,
+				domain.MinAllowedSequence, c.VtxoTreeExpiry,
 			)
 		}
 	}
 
 	if c.CheckpointExitDelay.Type == arklib.LocktimeTypeSecond {
-		if c.CheckpointExitDelay.Value%minAllowedSequence != 0 {
-			c.CheckpointExitDelay.Value -= c.CheckpointExitDelay.Value % minAllowedSequence
+		if c.CheckpointExitDelay.Value%domain.MinAllowedSequence != 0 {
+			c.CheckpointExitDelay.Value -= c.CheckpointExitDelay.Value % domain.MinAllowedSequence
 			log.Infof(
 				"checkpoint exit delay must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.CheckpointExitDelay,
+				domain.MinAllowedSequence, c.CheckpointExitDelay,
 			)
 		}
 	}
 
 	if c.UnilateralExitDelay.Type == arklib.LocktimeTypeSecond {
-		if c.UnilateralExitDelay.Value%minAllowedSequence != 0 {
-			c.UnilateralExitDelay.Value -= c.UnilateralExitDelay.Value % minAllowedSequence
+		if c.UnilateralExitDelay.Value%domain.MinAllowedSequence != 0 {
+			c.UnilateralExitDelay.Value -= c.UnilateralExitDelay.Value % domain.MinAllowedSequence
 			log.Infof(
 				"unilateral exit delay must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.UnilateralExitDelay,
+				domain.MinAllowedSequence, c.UnilateralExitDelay,
 			)
 		}
 	}
 
 	if c.PublicUnilateralExitDelay.Type == arklib.LocktimeTypeSecond {
-		if c.PublicUnilateralExitDelay.Value%minAllowedSequence != 0 {
-			c.PublicUnilateralExitDelay.Value -= c.PublicUnilateralExitDelay.Value % minAllowedSequence
+		if c.PublicUnilateralExitDelay.Value%domain.MinAllowedSequence != 0 {
+			c.PublicUnilateralExitDelay.Value -= c.PublicUnilateralExitDelay.Value % domain.MinAllowedSequence
 			log.Infof(
 				"public unilateral exit delay must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.PublicUnilateralExitDelay.Value,
+				domain.MinAllowedSequence, c.PublicUnilateralExitDelay.Value,
 			)
 		}
 	}
 
 	if c.BoardingExitDelay.Type == arklib.LocktimeTypeSecond {
-		if c.BoardingExitDelay.Value%minAllowedSequence != 0 {
-			c.BoardingExitDelay.Value -= c.BoardingExitDelay.Value % minAllowedSequence
+		if c.BoardingExitDelay.Value%domain.MinAllowedSequence != 0 {
+			c.BoardingExitDelay.Value -= c.BoardingExitDelay.Value % domain.MinAllowedSequence
 			log.Infof(
 				"boarding exit delay must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.BoardingExitDelay,
+				domain.MinAllowedSequence, c.BoardingExitDelay,
 			)
 		}
 	}
@@ -668,9 +765,6 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("max concurrent streams must be greater than 0")
 	}
 
-	if err := c.repoManager(); err != nil {
-		return err
-	}
 	if err := c.feeManager(); err != nil {
 		return err
 	}
@@ -1021,7 +1115,7 @@ func (c *Config) appService() error {
 
 func (c *Config) adminService() error {
 	unit := ports.UnixTime
-	if c.VtxoTreeExpiry.Value < minAllowedSequence {
+	if c.VtxoTreeExpiry.Value < domain.MinAllowedSequence {
 		unit = ports.BlockHeight
 	}
 
@@ -1035,6 +1129,14 @@ func (c *Config) adminService() error {
 	c.adminSvc = application.NewAdminService(
 		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
+		*c.defaultSettings(),
+		func(ctx context.Context, settings domain.Settings) error {
+			// Propagate settings to the running app service.
+			if c.svc != nil {
+				return c.svc.UpdateSettings(settings)
+			}
+			return nil
+		},
 		onInfoChange,
 	)
 	return nil

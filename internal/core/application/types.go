@@ -67,6 +67,7 @@ type Service interface {
 		proof intent.Proof,
 		message intent.GetIntentMessage,
 	) ([]*domain.Intent, errors.Error)
+	UpdateSettings(settings domain.Settings) error
 	RefreshInfoCache()
 }
 
