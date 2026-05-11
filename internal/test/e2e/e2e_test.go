@@ -5127,6 +5127,103 @@ func TestFee(t *testing.T) {
 	require.Empty(t, bobBalance.OnchainBalance.LockedAmount)
 }
 
+func TestCollectedFees(t *testing.T) {
+	// Record timestamp before any rounds so every round in this test falls
+	// inside the query window.
+	startTime := time.Now().Unix()
+
+	// Save and clear fees so the funding round (faucetOffchain) doesn't
+	// collect fees — only the final settle round should.
+	originalFees, err := getIntentFees()
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, clearIntentFees())
+		if !isEmptyIntentFees(*originalFees) {
+			require.NoError(t, updateIntentFees(*originalFees))
+		}
+	})
+
+	require.NoError(t, clearIntentFees())
+
+	ctx := t.Context()
+	alice := setupArkSDK(t)
+	bob := setupArkSDK(t)
+
+	_, aliceOffchainAddr, aliceBoardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+	_, bobOffchainAddr, _, err := bob.Receive(ctx)
+	require.NoError(t, err)
+
+	// Fund Alice onchain (no round triggered) and Bob offchain (round triggered,
+	// but no fees configured yet so collected fees stay zero).
+	faucetOnchain(t, aliceBoardingAddr.Address, 0.001)
+	faucetOffchain(t, bob, 0.001)
+	time.Sleep(6 * time.Second)
+
+	// Configure 1% input fees so the next round generates non-zero collected fees.
+	fees := intentFees{
+		IntentOffchainInputFeeProgram:  "0.01 * amount",
+		IntentOnchainInputFeeProgram:   "0.01 * amount",
+		IntentOffchainOutputFeeProgram: "0.0",
+		IntentOnchainOutputFeeProgram:  "0.0",
+	}
+	err = updateIntentFees(fees)
+	require.NoError(t, err)
+
+	// Alice (boarding / onchain input) and Bob (renewal / offchain input) settle together.
+	wg := &sync.WaitGroup{}
+	wg.Add(4)
+
+	var aliceIncomingErr error
+	go func() {
+		_, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr.Address)
+		wg.Done()
+	}()
+
+	var bobIncomingErr error
+	go func() {
+		_, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
+		wg.Done()
+	}()
+
+	var aliceSettleErr error
+	go func() {
+		_, aliceSettleErr = alice.Settle(ctx)
+		wg.Done()
+	}()
+
+	var bobSettleErr error
+	go func() {
+		_, bobSettleErr = bob.Settle(ctx)
+		wg.Done()
+	}()
+
+	wg.Wait()
+	require.NoError(t, aliceIncomingErr)
+	require.NoError(t, bobIncomingErr)
+	require.NoError(t, aliceSettleErr)
+	require.NoError(t, bobSettleErr)
+
+	time.Sleep(time.Second)
+
+	// Query collected fees for the window that includes our round.
+	endTime := time.Now().Unix() + 10
+	collectedFees, err := getCollectedFees(startTime-1, endTime)
+	require.NoError(t, err)
+
+	// Alice's boarding input: 100,000 sats × 1% = 1,000 sats
+	// Bob's offchain input:   100,000 sats × 1% = 1,000 sats
+	// Total expected: 2,000 sats
+	require.Equal(t, 2000, int(collectedFees),
+		"collected fees should equal sum of onchain and offchain input fees")
+
+	// Query with a future window — should return zero.
+	futureFees, err := getCollectedFees(endTime, 0)
+	require.NoError(t, err)
+	require.Zero(t, futureFees, "expected zero collected fees for future time range")
+}
+
 func TestAsset(t *testing.T) {
 	// This test ensures that an asset vtxo can be issued, transfered and then refreshed
 	t.Run("transfer and renew", func(t *testing.T) {
@@ -5753,9 +5850,24 @@ func TestTxListenerChurn(t *testing.T) {
 	// Wait for the stress window to expire, then drain all goroutines and
 	// close the sentinel stream.
 	<-stressCtx.Done()
-	wg.Wait()
 	closeSentinelStream()
-	<-sentinelDone
+
+	wgDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(wgDone)
+	}()
+	select {
+	case <-wgDone:
+	case <-time.After(10 * time.Second):
+		t.Log("churn/producer goroutines did not exit within 10s")
+	}
+
+	select {
+	case <-sentinelDone:
+	case <-time.After(5 * time.Second):
+		t.Log("sentinel goroutine did not exit within 5s")
+	}
 
 	// Drain the error channel — any non-retryable error from a churn
 	// worker or the tx producer is a test failure.
@@ -5886,6 +5998,7 @@ func TestEventListenerChurn(t *testing.T) {
 			for {
 				select {
 				case <-stressCtx.Done():
+					closeStream()
 					return
 				case ev, ok := <-sentinelStream:
 					if !ok {
@@ -6045,6 +6158,9 @@ func TestEventListenerChurn(t *testing.T) {
 
 			select {
 			case <-roundDone:
+			case <-stressCtx.Done():
+				cancelRound()
+				return
 			case <-time.After(roundTimeout + 2*time.Second):
 				cancelRound()
 				continue
@@ -6101,9 +6217,24 @@ func TestEventListenerChurn(t *testing.T) {
 	// Wait for the stress window to expire, then drain all goroutines and
 	// close the sentinel stream.
 	<-stressCtx.Done()
-	wg.Wait()
 	closeSentinelStream()
-	<-sentinelDone
+
+	wgDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(wgDone)
+	}()
+	select {
+	case <-wgDone:
+	case <-time.After(10 * time.Second):
+		t.Log("churn/producer goroutines did not exit within 10s")
+	}
+
+	select {
+	case <-sentinelDone:
+	case <-time.After(5 * time.Second):
+		t.Log("sentinel goroutine did not exit within 5s")
+	}
 
 	// At least one round must have completed and the sentinel must have
 	// observed events. Transient sentinel errors are tolerated (the

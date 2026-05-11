@@ -476,12 +476,13 @@ func testEndFinalization(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
 
-			events, err = round.EndFinalization(forfeitTxs, finalCommitmentTx)
+			events, err = round.EndFinalization(forfeitTxs, finalCommitmentTx, 42000)
 			require.NoError(t, err)
 			require.Len(t, events, 1)
 			require.False(t, round.IsStarted())
 			require.True(t, round.IsEnded())
 			require.False(t, round.IsFailed())
+			require.Equal(t, 42000, int(round.CollectedFees))
 
 			event, ok := events[0].(domain.RoundFinalized)
 			require.True(t, ok)
@@ -489,6 +490,7 @@ func testEndFinalization(t *testing.T) {
 			require.Equal(t, round.Id, event.Id)
 			require.Exactly(t, forfeitTxs, event.ForfeitTxs)
 			require.Exactly(t, round.EndingTimestamp, event.Timestamp)
+			require.Equal(t, 42000, int(event.Fees))
 		})
 
 		t.Run("invalid", func(t *testing.T) {
@@ -571,7 +573,7 @@ func testEndFinalization(t *testing.T) {
 
 			for _, f := range fixtures {
 				t.Run(f.name, func(t *testing.T) {
-					events, err := f.round.EndFinalization(f.forfeitTxs, finalCommitmentTx)
+					events, err := f.round.EndFinalization(f.forfeitTxs, finalCommitmentTx, 0)
 					require.EqualError(t, err, f.expectedErr)
 					require.Empty(t, events)
 				})
@@ -603,7 +605,7 @@ func testSweep(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
 
-			events, err = round.EndFinalization(forfeitTxs, finalCommitmentTx)
+			events, err = round.EndFinalization(forfeitTxs, finalCommitmentTx, 0)
 			require.NoError(t, err)
 			require.Len(t, events, 1)
 			require.False(t, round.IsStarted())
