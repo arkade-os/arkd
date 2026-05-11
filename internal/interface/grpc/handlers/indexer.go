@@ -336,7 +336,13 @@ func (e *indexerService) GetVtxoChain(
 		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
-		resp, err = e.indexerSvc.GetVtxoChain(ctx, request.GetToken(), *outpoint, page)
+		resp, err = e.indexerSvc.GetVtxoChain(
+			ctx,
+			request.GetToken(),
+			*outpoint,
+			page,
+			request.GetPageToken(),
+		)
 	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
@@ -365,9 +371,10 @@ func (e *indexerService) GetVtxoChain(
 	}
 
 	return &arkv1.GetVtxoChainResponse{
-		Chain:     chain,
-		Page:      protoPage(resp.Page),
-		AuthToken: resp.AuthToken,
+		Chain:         chain,
+		Page:          protoPage(resp.Page),
+		AuthToken:     resp.AuthToken,
+		NextPageToken: resp.NextPageToken,
 	}, nil
 }
 
@@ -775,6 +782,7 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 		CommitmentTxids: vtxo.CommitmentTxids,
 		SettledBy:       vtxo.SettledBy,
 		ArkTxid:         vtxo.ArkTxid,
+		Depth:           vtxo.Depth,
 		Assets:          assets,
 	}
 }

@@ -860,6 +860,7 @@ type GetVtxoChainRequest struct {
 	//	*GetVtxoChainRequest_Intent
 	//	*GetVtxoChainRequest_Token
 	Auth          isGetVtxoChainRequest_Auth `protobuf_oneof:"auth"`
+	PageToken     string                     `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -933,6 +934,13 @@ func (x *GetVtxoChainRequest) GetToken() string {
 	return ""
 }
 
+func (x *GetVtxoChainRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type isGetVtxoChainRequest_Auth interface {
 	isGetVtxoChainRequest_Auth()
 }
@@ -958,6 +966,7 @@ type GetVtxoChainResponse struct {
 	Page  *IndexerPageResponse   `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	// Auth token can be used for other rpcs related to this vtxo/tx that require proof of ownership.
 	AuthToken     string `protobuf:"bytes,3,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
+	NextPageToken string `protobuf:"bytes,4,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1009,6 +1018,13 @@ func (x *GetVtxoChainResponse) GetPage() *IndexerPageResponse {
 func (x *GetVtxoChainResponse) GetAuthToken() string {
 	if x != nil {
 		return x.AuthToken
+	}
+	return ""
+}
+
+func (x *GetVtxoChainResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
 	}
 	return ""
 }
@@ -1618,6 +1634,7 @@ type IndexerVtxo struct {
 	SettledBy       string                 `protobuf:"bytes,12,opt,name=settled_by,json=settledBy,proto3" json:"settled_by,omitempty"`
 	ArkTxid         string                 `protobuf:"bytes,13,opt,name=ark_txid,json=arkTxid,proto3" json:"ark_txid,omitempty"`
 	Assets          []*IndexerAsset        `protobuf:"bytes,14,rep,name=assets,proto3" json:"assets,omitempty"`
+	Depth           uint32                 `protobuf:"varint,15,opt,name=depth,proto3" json:"depth,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1748,6 +1765,13 @@ func (x *IndexerVtxo) GetAssets() []*IndexerAsset {
 		return x.Assets
 	}
 	return nil
+}
+
+func (x *IndexerVtxo) GetDepth() uint32 {
+	if x != nil {
+		return x.Depth
+	}
+	return 0
 }
 
 type IndexerAsset struct {
@@ -2707,18 +2731,21 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x06before\x18\t \x01(\x03R\x06before\"n\n" +
 	"\x10GetVtxosResponse\x12)\n" +
 	"\x05vtxos\x18\x01 \x03(\v2\x13.ark.v1.IndexerVtxoR\x05vtxos\x12/\n" +
-	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"\xcb\x01\n" +
+	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"\xea\x01\n" +
 	"\x13GetVtxoChainRequest\x123\n" +
 	"\boutpoint\x18\x01 \x01(\v2\x17.ark.v1.IndexerOutpointR\boutpoint\x12.\n" +
 	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\x12/\n" +
 	"\x06intent\x18\x03 \x01(\v2\x15.ark.v1.IndexerIntentH\x00R\x06intent\x12\x16\n" +
-	"\x05token\x18\x04 \x01(\tH\x00R\x05tokenB\x06\n" +
-	"\x04auth\"\x92\x01\n" +
+	"\x05token\x18\x04 \x01(\tH\x00R\x05token\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x05 \x01(\tR\tpageTokenB\x06\n" +
+	"\x04auth\"\xba\x01\n" +
 	"\x14GetVtxoChainResponse\x12*\n" +
 	"\x05chain\x18\x01 \x03(\v2\x14.ark.v1.IndexerChainR\x05chain\x12/\n" +
 	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\x12\x1d\n" +
 	"\n" +
-	"auth_token\x18\x03 \x01(\tR\tauthToken\"\xad\x01\n" +
+	"auth_token\x18\x03 \x01(\tR\tauthToken\x12&\n" +
+	"\x0fnext_page_token\x18\x04 \x01(\tR\rnextPageToken\"\xad\x01\n" +
 	"\x14GetVirtualTxsRequest\x12\x14\n" +
 	"\x05txids\x18\x01 \x03(\tR\x05txids\x12.\n" +
 	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\x12/\n" +
@@ -2758,7 +2785,7 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\bchildren\x18\x02 \x03(\v2!.ark.v1.IndexerNode.ChildrenEntryR\bchildren\x1a;\n" +
 	"\rChildrenEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\rR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xde\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf4\x03\n" +
 	"\vIndexerVtxo\x123\n" +
 	"\boutpoint\x18\x01 \x01(\v2\x17.ark.v1.IndexerOutpointR\boutpoint\x12\x1d\n" +
 	"\n" +
@@ -2778,7 +2805,8 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\n" +
 	"settled_by\x18\f \x01(\tR\tsettledBy\x12\x19\n" +
 	"\bark_txid\x18\r \x01(\tR\aarkTxid\x12,\n" +
-	"\x06assets\x18\x0e \x03(\v2\x14.ark.v1.IndexerAssetR\x06assets\"A\n" +
+	"\x06assets\x18\x0e \x03(\v2\x14.ark.v1.IndexerAssetR\x06assets\x12\x14\n" +
+	"\x05depth\x18\x0f \x01(\rR\x05depth\"A\n" +
 	"\fIndexerAsset\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\tR\aassetId\x12\x16\n" +
 	"\x06amount\x18\x02 \x01(\x04R\x06amount\"\x8b\x01\n" +

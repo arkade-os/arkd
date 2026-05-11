@@ -240,6 +240,28 @@ func (r *arkRepository) GetOffchainTx(
 	return r.getOffchainTx(ctx, txid)
 }
 
+func (r *arkRepository) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	if len(txids) == 0 {
+		return []*domain.OffchainTx{}, nil
+	}
+
+	txs := make([]*domain.OffchainTx, 0, len(txids))
+	for _, txid := range txids {
+		tx, err := r.getOffchainTx(ctx, txid)
+		if err != nil {
+			if errors.Is(err, badgerhold.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		txs = append(txs, tx)
+	}
+
+	return txs, nil
+}
+
 func (r *arkRepository) Close() {
 	// nolint
 	r.store.Close()
@@ -352,10 +374,10 @@ func (r *arkRepository) getOffchainTx(
 		err = r.store.Get(txid, &offchainTx)
 	}
 	if err != nil && err == badgerhold.ErrNotFound {
-		return nil, fmt.Errorf("offchain tx %s not found", txid)
+		return nil, fmt.Errorf("offchain tx %s: %w", txid, badgerhold.ErrNotFound)
 	}
 	if offchainTx.Stage.Code == int(domain.OffchainTxUndefinedStage) {
-		return nil, fmt.Errorf("offchain tx %s not found", txid)
+		return nil, fmt.Errorf("offchain tx %s: %w", txid, badgerhold.ErrNotFound)
 	}
 
 	return &offchainTx, nil

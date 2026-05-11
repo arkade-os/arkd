@@ -779,8 +779,14 @@ func (c *Config) IndexerService() (application.IndexerService, error) {
 		return nil, fmt.Errorf("failed to get server signing pubkey: %w", err)
 	}
 
+	var offchainTxCache ports.OffChainTxStore
+	if c.liveStore != nil {
+		offchainTxCache = c.liveStore.OffchainTxs()
+	}
+
 	return application.NewIndexerService(
 		c.repo, c.wallet, privkey, signerPubkey, c.IndexerExposure, c.IndexerAuthTokenExpiry,
+		offchainTxCache,
 	)
 }
 

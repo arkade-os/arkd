@@ -144,6 +144,7 @@ func testAcceptOffchainTx(t *testing.T) {
 				commitmentTxsByCheckpointTxid,
 				rootCommitmentTxid,
 				expiryTimestamp,
+				1, []string{"parent-marker"},
 			)
 			require.NoError(t, err)
 			require.NotNil(t, event)
@@ -156,6 +157,8 @@ func testAcceptOffchainTx(t *testing.T) {
 			require.Equal(t, signedCheckpointTxs, offchainTx.CheckpointTxs)
 			require.Equal(t, commitmentTxsByCheckpointTxid, offchainTx.CommitmentTxids)
 			require.Equal(t, rootCommitmentTxid, offchainTx.RootCommitmentTxId)
+			require.Equal(t, uint32(1), offchainTx.Depth)
+			require.Equal(t, []string{"parent-marker"}, offchainTx.ParentMarkerIDs)
 
 			events := offchainTx.Events()
 			require.Len(t, events, 2)
@@ -251,6 +254,7 @@ func testAcceptOffchainTx(t *testing.T) {
 				event, err := f.offchainTx.Accept(
 					f.finalArkTx, f.signedCheckpointTxs,
 					f.commitmentTxids, rootCommitmentTxid, f.expiryTimestamp,
+					0, nil,
 				)
 				require.EqualError(t, err, f.expectedErr)
 				require.Nil(t, event)
@@ -270,6 +274,7 @@ func testFinalizeOffchainTx(t *testing.T) {
 			event, err = offchainTx.Accept(
 				finalArkTx, signedCheckpointTxs,
 				commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiryTimestamp,
+				0, nil,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, event)
@@ -349,6 +354,7 @@ func testFailOffchainTx(t *testing.T) {
 			event, err = offchainTx.Accept(
 				finalArkTx, signedCheckpointTxs,
 				commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiryTimestamp,
+				0, nil,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, event)

@@ -3,6 +3,7 @@ package pgdb
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
+	log "github.com/sirupsen/logrus"
 )
 
 type vtxoRepository struct {
@@ -41,6 +43,16 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 		for i := range vtxos {
 			vtxo := vtxos[i]
 
+			markersToMarshal := vtxo.MarkerIDs
+			if markersToMarshal == nil {
+				markersToMarshal = []string{}
+			}
+			data, err := json.Marshal(markersToMarshal)
+			if err != nil {
+				return fmt.Errorf("failed to marshal markers: %w", err)
+			}
+			markersJSON := json.RawMessage(data)
+
 			if err := querierWithTx.UpsertVtxo(
 				ctx, queries.UpsertVtxoParams{
 					Txid:           vtxo.Txid,
@@ -50,7 +62,6 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					CommitmentTxid: vtxo.RootCommitmentTxid,
 					Spent:          vtxo.Spent,
 					Unrolled:       vtxo.Unrolled,
-					Swept:          vtxo.Swept,
 					Preconfirmed:   vtxo.Preconfirmed,
 					ExpiresAt:      vtxo.ExpiresAt,
 					CreatedAt:      vtxo.CreatedAt,
@@ -63,6 +74,8 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					ArkTxid: sql.NullString{
 						String: vtxo.ArkTxid, Valid: len(vtxo.ArkTxid) > 0,
 					},
+					Depth:   int32(vtxo.Depth),
+					Markers: markersJSON,
 				},
 			); err != nil {
 				return err
@@ -316,35 +329,6 @@ func (v *vtxoRepository) SpendVtxos(
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint) (int, error) {
-	sweptCount := 0
-	txBody := func(querierWithTx *queries.Queries) error {
-		for _, outpoint := range vtxos {
-			affectedRows, err := querierWithTx.UpdateVtxoSweptIfNotSwept(
-				ctx,
-				queries.UpdateVtxoSweptIfNotSweptParams{
-					Txid: outpoint.Txid,
-					Vout: int32(outpoint.VOut),
-				},
-			)
-			if err != nil {
-				return err
-			}
-			if affectedRows > 0 {
-				sweptCount++
-			}
-		}
-
-		return nil
-	}
-
-	if err := execTx(ctx, v.db, txBody); err != nil {
-		return -1, err
-	}
-
-	return sweptCount, nil
-}
-
 func (v *vtxoRepository) UpdateVtxosExpiration(
 	ctx context.Context, vtxos []domain.Outpoint, expiresAt int64,
 ) error {
@@ -422,9 +406,15 @@ func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 }
 
 func (v *vtxoRepository) GetAllChildrenVtxos(
-	ctx context.Context, txid string,
+	ctx context.Context, outpoint domain.Outpoint,
 ) ([]domain.Outpoint, error) {
-	res, err := v.querier.SelectVtxosOutpointsByArkTxidRecursive(ctx, txid)
+	res, err := v.querier.SelectVtxosOutpointsByArkTxidRecursive(
+		ctx,
+		queries.SelectVtxosOutpointsByArkTxidRecursiveParams{
+			Txid: outpoint.Txid,
+			Vout: int32(outpoint.VOut),
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -544,10 +534,12 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 		SpentBy:            row.SpentBy.String,
 		Spent:              row.Spent,
 		Unrolled:           row.Unrolled,
-		Swept:              row.Swept,
+		Swept:              row.Swept.Bool,
 		Preconfirmed:       row.Preconfirmed,
 		ExpiresAt:          row.ExpiresAt,
 		CreatedAt:          row.CreatedAt,
+		Depth:              uint32(row.Depth),
+		MarkerIDs:          parseMarkersJSONBFromVtxo(row.Markers),
 		Assets:             assets,
 	}
 }
@@ -559,6 +551,21 @@ func rowToAsset(row queries.VtxoVw) domain.AssetDenomination {
 		AssetId: row.AssetID,
 		Amount:  amount,
 	}
+}
+
+// parseMarkersJSONBFromVtxo parses a JSONB array into a slice of strings for vtxo repo.
+// Logs and returns nil if the JSON is malformed so that corrupt markers are
+// surfaced instead of silently treated as empty.
+func parseMarkersJSONBFromVtxo(markers json.RawMessage) []string {
+	if len(markers) == 0 {
+		return nil
+	}
+	var markerIDs []string
+	if err := json.Unmarshal(markers, &markerIDs); err != nil {
+		log.WithError(err).Warnf("failed to parse markers JSONB: %q", string(markers))
+		return nil
+	}
+	return markerIDs
 }
 
 func readRows(rows []queries.VtxoVw) ([]domain.Vtxo, error) {

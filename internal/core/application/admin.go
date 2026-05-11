@@ -705,11 +705,18 @@ func (a *adminService) saveBatchSweptEvents(
 				}
 
 				for _, leaf := range vtxosLeaves {
-					vtxo := domain.Outpoint{
-						Txid: leaf.UnsignedTx.TxID(),
-						VOut: 0,
+					// The VTXO is the first non-anchor output; leaf txs can
+					// carry an anchor at vout 0, so the VTXO is not always at
+					// vout 0. extractVtxoOutpoint handles that.
+					vtxo, err := extractVtxoOutpoint(leaf)
+					if err != nil {
+						log.WithError(err).Errorf(
+							"failed to extract vtxo outpoint from leaf %s",
+							leaf.UnsignedTx.TxID(),
+						)
+						continue
 					}
-					leafVtxos = append(leafVtxos, vtxo)
+					leafVtxos = append(leafVtxos, *vtxo)
 				}
 			}
 		}
@@ -729,7 +736,7 @@ func (a *adminService) saveBatchSweptEvents(
 		} else {
 			seen := make(map[string]struct{})
 			for _, leafVtxo := range leafVtxos {
-				children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
+				children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo)
 				if err != nil {
 					log.WithError(err).Error("error while getting children vtxos")
 					continue

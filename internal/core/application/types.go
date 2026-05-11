@@ -141,9 +141,14 @@ type TeleportAsset struct {
 }
 
 type VtxoChainResp struct {
-	Chain     []ChainTx
-	Page      PageResp
-	AuthToken string
+	Chain         []ChainTx
+	Page          PageResp
+	NextPageToken string
+	AuthToken     string
+}
+
+type vtxoChainCursor struct {
+	Frontier []Outpoint `json:"frontier"`
 }
 
 type VOut int
