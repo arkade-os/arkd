@@ -57,6 +57,7 @@ type service struct {
 	unaryConn         *grpc.ClientConn
 	streamConn        *grpc.ClientConn
 	adminConn         *grpc.ClientConn
+	seedDigest        func(context.Context)
 }
 
 func NewService(
@@ -243,6 +244,10 @@ func (s *service) startAppServices() error {
 		s.readinessSvc.MarkAppServiceStarted()
 	}
 
+	if s.seedDigest != nil {
+		s.seedDigest(context.Background())
+	}
+
 	log.Info("ark and indexer services are now ready")
 	return nil
 }
@@ -292,10 +297,11 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		}
 		return ch
 	})
+	digestSvc := interceptors.NewDigestService()
 
 	grpcConfig := []grpc.ServerOption{
-		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc, s.version),
-		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc, s.version),
+		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc, s.version, digestSvc),
+		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc, s.version, digestSvc),
 		grpc.StatsHandler(otelHandler),
 	}
 	creds := insecure.NewCredentials()
@@ -315,7 +321,18 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to create app service: %w", err)
 	}
-	appHandler := handlers.NewAppServiceHandler(s.version, appSvc, s.config.HeartbeatInterval)
+	appHandler := handlers.NewAppServiceHandler(
+		s.version,
+		appSvc,
+		s.config.HeartbeatInterval,
+		digestSvc,
+	)
+	s.seedDigest = func(ctx context.Context) {
+		if _, err := appHandler.GetInfo(ctx, &arkv1.GetInfoRequest{}); err != nil {
+			log.WithError(err).
+				Warn("failed to seed digest on startup, digest validation will be disabled until a client calls GetInfo")
+		}
+	}
 	eventsCh := appSvc.GetIndexerTxChannel(ctx)
 	subscriptionTimeoutDuration := time.Minute
 	indexerSvc, err := s.appConfig.IndexerService()
@@ -392,6 +409,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		switch key {
 		case "X-Macaroon":
 			return "macaroon", true
+		case "X-Ark-Digest":
+			return "x-ark-digest", true
 		case "X-Build-Version":
 			return "x-build-version", true
 		default:

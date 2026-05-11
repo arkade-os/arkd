@@ -23,21 +23,32 @@ type service interface {
 	arkv1.ArkServiceServer
 }
 
+type digestStore interface {
+	SetDigest(string)
+}
+
 type handler struct {
 	version   string
 	heartbeat time.Duration
 
-	svc application.Service
+	svc    application.Service
+	digest digestStore
 
 	eventsListenerHandler       *broker[*arkv1.GetEventStreamResponse]
 	transactionsListenerHandler *broker[*arkv1.GetTransactionsStreamResponse]
 }
 
-func NewAppServiceHandler(version string, service application.Service, heartbeat int64) service {
+func NewAppServiceHandler(
+	version string,
+	service application.Service,
+	heartbeat int64,
+	ds digestStore,
+) service {
 	h := &handler{
 		version:                     version,
 		heartbeat:                   time.Duration(heartbeat) * time.Second,
 		svc:                         service,
+		digest:                      ds,
 		eventsListenerHandler:       newBroker[*arkv1.GetEventStreamResponse](),
 		transactionsListenerHandler: newBroker[*arkv1.GetTransactionsStreamResponse](),
 	}
@@ -84,6 +95,8 @@ func (h *handler) GetInfo(
 	digest := sha256.Sum256(buf)
 	resp.Digest = hex.EncodeToString(digest[:])
 	resp.ScheduledSession = scheduledSession{info.NextScheduledSession}.toProto()
+
+	h.digest.SetDigest(resp.Digest)
 
 	return resp, nil
 }
