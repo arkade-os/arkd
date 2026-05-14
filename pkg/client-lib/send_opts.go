@@ -52,11 +52,33 @@ func WithExtraPacket(packets ...extension.Packet) SendOption {
 	})
 }
 
+// WithOutputTaprootTree sets the PSBT BIP-371 TaprootTapTree field on
+// every output whose hex-encoded pkScript matches a key in the map. Callers
+// pass the BIP-371-encoded tap tree bytes (via txutils.TapTree(scripts).Encode()).
+func WithOutputTaprootTree(byPkScript map[string][]byte) SendOption {
+	return sendOptFn(func(o *sendOptions) error {
+		if len(byPkScript) == 0 {
+			return nil
+		}
+		if o.outputTapTrees == nil {
+			o.outputTapTrees = make(map[string][]byte, len(byPkScript))
+		}
+		for k, v := range byPkScript {
+			if len(v) == 0 {
+				return fmt.Errorf("receiver tap tree must not be empty")
+			}
+			o.outputTapTrees[k] = v
+		}
+		return nil
+	})
+}
+
 type sendOptions struct {
-	withoutExpirySorting bool
-	vtxos                []types.VtxoWithTapTree
-	signingKeys          map[string]string
-	extraPackets         []extension.Packet
+	withoutExpirySorting    bool
+	vtxos                   []types.VtxoWithTapTree
+	signingKeys             map[string]string
+	extraPackets            []extension.Packet
+	outputTapTrees map[string][]byte // pkScript (hex) -> bip371 taptree
 }
 
 func newDefaultSendOptions() *sendOptions {

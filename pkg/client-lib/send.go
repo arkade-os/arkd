@@ -3,6 +3,7 @@ package arksdk
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"slices"
@@ -59,6 +60,20 @@ func (a *service) SendOffChain(
 
 	if err := addExtension(arkPtx, assetPacket, o.extraPackets); err != nil {
 		return nil, err
+	}
+
+	// if set, put the TaprootTapTree field on PSBT output
+	if len(o.outputTapTrees) > 0 {
+		for i, out := range arkPtx.UnsignedTx.TxOut {
+			if i >= len(arkPtx.Outputs) {
+				break
+			}
+			tapTree, ok := o.outputTapTrees[hex.EncodeToString(out.PkScript)]
+			if !ok {
+				continue
+			}
+			arkPtx.Outputs[i].TaprootTapTree = tapTree
+		}
 	}
 
 	arkTx, err := arkPtx.B64Encode()
