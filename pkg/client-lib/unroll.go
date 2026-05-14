@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"bytes"
@@ -106,7 +106,7 @@ func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes
 			return nil, err
 		}
 
-		childTxid, child, err := a.bumpAnchorTx(ctx, &parentTx, options.signingKeys)
+		childTxid, child, err := a.bumpAnchorTx(ctx, &parentTx)
 		if err != nil {
 			return nil, err
 		}
@@ -196,19 +196,17 @@ func (a *service) OnboardAgainAllExpiredBoardings(
 		}
 	}
 
-	_, _, boardingAddr, err := a.newAddress(ctx)
+	addr, err := a.getBoardingReceiver(ctx, options.receiver)
 	if err != nil {
 		return "", err
 	}
 
-	return a.sendExpiredBoardingUtxos(ctx, boardingAddr.Address, options)
+	return a.sendExpiredBoardingUtxos(ctx, addr, options)
 }
 
 // bumpAnchorTx builds and signs a transaction bumping the fees for a given tx with P2A output.
 // Makes use of the onchain P2TR account to select UTXOs to pay fees for parent.
-func (a *service) bumpAnchorTx(
-	ctx context.Context, parent *wire.MsgTx, keys map[string]string,
-) (string, string, error) {
+func (a *service) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string, string, error) {
 	anchor, err := txutils.FindAnchorOutpoint(parent)
 	if err != nil {
 		return "", "", err
@@ -243,8 +241,13 @@ func (a *service) bumpAnchorTx(
 	selectedCoins := make([]explorer.Utxo, 0)
 	selectedAmount := uint64(0)
 	amountToSelect := int64(fees) - txutils.ANCHOR_VALUE
+	keys := make(map[string]string)
 	for _, addr := range addresses {
-		utxos, err := a.explorer.GetUtxos(addr)
+		utxos, err := a.explorer.GetUtxos([]string{addr.Address})
+		if err != nil {
+			return "", "", err
+		}
+		script, err := toOutputScript(addr.Address, a.Network)
 		if err != nil {
 			return "", "", err
 		}
@@ -253,6 +256,7 @@ func (a *service) bumpAnchorTx(
 			selectedCoins = append(selectedCoins, utxo)
 			selectedAmount += utxo.Amount
 			amountToSelect -= int64(selectedAmount)
+			keys[hex.EncodeToString(script)] = addr.KeyID
 			if amountToSelect <= 0 {
 				break
 			}
@@ -318,7 +322,7 @@ func (a *service) bumpAnchorTx(
 			}
 			keyID = id
 		}
-		keyRef, err := a.wallet.GetKey(ctx, keyID)
+		keyRef, err := a.identity.GetKey(ctx, keyID)
 		if err != nil {
 			return "", "", err
 		}
@@ -335,7 +339,7 @@ func (a *service) bumpAnchorTx(
 		return "", "", err
 	}
 
-	tx, err := a.wallet.SignTransaction(ctx, b64, keys)
+	tx, err := a.identity.SignTransaction(ctx, b64, keys)
 	if err != nil {
 		return "", "", err
 	}
@@ -425,7 +429,7 @@ func (a *service) completeUnroll(
 
 	unsignedTx, _ := ptx.B64Encode()
 
-	signedTx, err := a.wallet.SignTransaction(ctx, unsignedTx, opts.signingKeys)
+	signedTx, err := a.identity.SignTransaction(ctx, unsignedTx, opts.signingKeys)
 	if err != nil {
 		return "", err
 	}
@@ -515,7 +519,7 @@ func (a *service) sendExpiredBoardingUtxos(
 
 	unsignedTx, _ := ptx.B64Encode()
 
-	signedTx, err := a.wallet.SignTransaction(ctx, unsignedTx, opts.signingKeys)
+	signedTx, err := a.identity.SignTransaction(ctx, unsignedTx, opts.signingKeys)
 	if err != nil {
 		return "", err
 	}
@@ -554,7 +558,7 @@ func (a *service) getExpiredBoardingUtxos(
 			return nil, err
 		}
 
-		boardingUtxos, err := a.explorer.GetUtxos(addr.Address)
+		boardingUtxos, err := a.explorer.GetUtxos([]string{addr.Address})
 		if err != nil {
 			return nil, err
 		}
@@ -672,17 +676,25 @@ func (a *service) getMatureUtxos(ctx context.Context) ([]types.Utxo, error) {
 	now := time.Now()
 
 	utxos := make([]types.Utxo, 0)
+	addresses := make([]string, 0, len(redemptionAddrs))
+	addrTapscripts := make(map[string][]string)
 	for _, addr := range redemptionAddrs {
-		fetchedUtxos, err := a.explorer.GetUtxos(addr.Address)
-		if err != nil {
-			return nil, err
-		}
+		addresses = append(addresses, addr.Address)
+		// nolint
+		script, _ := toOutputScript(addr.Address, a.Network)
+		addrTapscripts[hex.EncodeToString(script)] = addr.Tapscripts
+	}
 
-		for _, utxo := range fetchedUtxos {
-			u := utxo.ToUtxo(a.UnilateralExitDelay, addr.Tapscripts)
-			if u.SpendableAt.Before(now) {
-				utxos = append(utxos, u)
-			}
+	fetchedUtxos, err := a.explorer.GetUtxos(addresses)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, utxo := range fetchedUtxos {
+		tapscripts := addrTapscripts[utxo.Script]
+		u := utxo.ToUtxo(a.UnilateralExitDelay, tapscripts)
+		if u.SpendableAt.Before(now) {
+			utxos = append(utxos, u)
 		}
 	}
 

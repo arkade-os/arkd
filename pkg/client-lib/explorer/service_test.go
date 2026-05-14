@@ -237,7 +237,7 @@ func TestGetUtxos(t *testing.T) {
 
 		svc := makeExplorer(t, ts.URL)
 
-		utxos, err := svc.GetUtxos(addr)
+		utxos, err := svc.GetUtxos([]string{addr})
 		require.NoError(t, err)
 		require.Len(t, utxos, 1)
 		require.Equal(
@@ -248,12 +248,22 @@ func TestGetUtxos(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
+		t.Run("empty addresses", func(t *testing.T) {
+			ts := newTestServer(t)
+
+			svc := makeExplorer(t, ts.URL)
+
+			resp, err := svc.GetUtxos(nil)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "missing addresses")
+			require.Nil(t, resp)
+		})
 		t.Run("invalid address", func(t *testing.T) {
 			ts := newTestServer(t)
 
 			svc := makeExplorer(t, ts.URL)
 
-			_, err := svc.GetUtxos("not-a-valid-bitcoin-address")
+			_, err := svc.GetUtxos([]string{"not-a-valid-bitcoin-address"})
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid address")
 		})
@@ -266,7 +276,7 @@ func TestGetUtxos(t *testing.T) {
 
 			svc := makeExplorer(t, ts.URL)
 
-			_, err := svc.GetUtxos(addr)
+			_, err := svc.GetUtxos([]string{addr})
 			require.Error(t, err)
 		})
 
@@ -278,7 +288,7 @@ func TestGetUtxos(t *testing.T) {
 
 			svc := makeExplorer(t, ts.URL)
 
-			_, err := svc.GetUtxos(addr)
+			_, err := svc.GetUtxos([]string{addr})
 			require.Error(t, err)
 		})
 	})

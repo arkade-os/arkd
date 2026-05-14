@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"context"
@@ -8,16 +8,16 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
+	"github.com/arkade-os/arkd/pkg/client-lib/identity"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
 )
 
 var Version string
 
-type ArkClient interface {
-	Wallet() wallet.WalletService
-	Transport() client.TransportClient
+type Wallet interface {
+	Identity() identity.Identity
+	Client() client.Client
 	Indexer() indexer.Indexer
 	Explorer() explorer.Explorer
 

@@ -14,7 +14,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
+	"github.com/arkade-os/arkd/pkg/client-lib/identity"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
@@ -22,13 +22,13 @@ import (
 )
 
 type delegateBatchEventsHandler struct {
-	intentId         string
-	signerSession    tree.SignerSession
-	partialForfeitTx string
-	delegatorWallet  wallet.WalletService
-	client           client.TransportClient
-	forfeitPubKey    *btcec.PublicKey
-	batchExpiry      arklib.RelativeLocktime
+	intentId          string
+	signerSession     tree.SignerSession
+	partialForfeitTx  string
+	delegatorIdentity identity.Identity
+	client            client.Client
+	forfeitPubKey     *btcec.PublicKey
+	batchExpiry       arklib.RelativeLocktime
 
 	cacheBatchId string
 }
@@ -206,7 +206,7 @@ func (h *delegateBatchEventsHandler) OnBatchFinalization(
 	}
 
 	// sign the forfeit tx
-	signedForfeitTx, err := h.delegatorWallet.SignTransaction(ctx, encodedForfeitTx, nil)
+	signedForfeitTx, err := h.delegatorIdentity.SignTransaction(ctx, encodedForfeitTx, nil)
 	if err != nil {
 		return nil, err
 	}

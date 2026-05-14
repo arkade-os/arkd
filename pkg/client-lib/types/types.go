@@ -285,6 +285,7 @@ type Utxo struct {
 	Spent       bool
 	SpentBy     string
 	Tx          string
+	Assets      []Asset
 }
 
 func (u Utxo) IsConfirmed() bool {

@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"fmt"
@@ -40,10 +40,10 @@ func WithEventsCh(ch chan<- any) BatchSessionOption {
 	})
 }
 
-// WithoutWalletSigner disables the wallet signer
-func WithoutWalletSigner() BatchSessionOption {
+// WithoutTreeSigner disables the tree signer for the batch session
+func WithoutTreeSigner() BatchSessionOption {
 	return batchOptFn(func(o *batchSessionOptions) error {
-		o.walletSignerDisabled = true
+		o.treeSignerDisabled = true
 		return nil
 	})
 }
@@ -113,13 +113,14 @@ func WithFunds(boardingUtxos []types.Utxo, vtxos []types.VtxoWithTapTree) BatchS
 // batchSessionOptions allows to customize the vtxo signing process
 type batchSessionOptions struct {
 	extraSignerSessions  []tree.SignerSession
-	walletSignerDisabled bool
+	treeSignerDisabled   bool
 	withRecoverableVtxos bool
 	expiryThreshold      int64 // In seconds
 	retryNum             int
 	boardingUtxos        []types.Utxo
 	vtxos                []types.VtxoWithTapTree
 	keyIdsByScript       map[string]string
+	receiver             string
 
 	cancelCh <-chan struct{}
 	eventsCh chan<- any

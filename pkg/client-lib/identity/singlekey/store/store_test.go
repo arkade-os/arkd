@@ -1,19 +1,19 @@
-package store_test
+package identitystore_test
 
 import (
 	"testing"
 
+	identitystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
+	identityfilestore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/file"
+	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	walletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store"
-	filestore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/file"
-	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/require"
 )
 
 func TestWalletStore(t *testing.T) {
 	key, _ := btcec.NewPrivateKey()
-	testWalletData := walletstore.WalletData{
+	testData := identitystore.IdentityData{
 		EncryptedPrvkey: make([]byte, 32),
 		PasswordHash:    make([]byte, 32),
 		PubKey:          key.PubKey(),
@@ -34,31 +34,31 @@ func TestWalletStore(t *testing.T) {
 	for i := range tests {
 		tt := tests[i]
 		t.Run(tt.name, func(t *testing.T) {
-			var storeSvc walletstore.WalletStore
+			var storeSvc identitystore.IdentityStore
 			var err error
 			if tt.name == types.InMemoryStore {
-				storeSvc, err = inmemorystore.NewWalletStore()
+				storeSvc, err = identityinmemorystore.NewStore()
 			} else {
-				storeSvc, err = filestore.NewWalletStore(t.TempDir())
+				storeSvc, err = identityfilestore.NewStore(t.TempDir())
 			}
 			require.NoError(t, err)
 			require.NotNil(t, storeSvc)
 
 			// Check empty data when store is empty.
-			walletData, err := storeSvc.GetWallet()
+			data, err := storeSvc.Get()
 			require.NoError(t, err)
-			require.Nil(t, walletData)
+			require.Nil(t, data)
 
 			// Check add and retrieve data.
-			err = storeSvc.AddWallet(testWalletData)
+			err = storeSvc.Add(testData)
 			require.NoError(t, err)
 
-			walletData, err = storeSvc.GetWallet()
+			data, err = storeSvc.Get()
 			require.NoError(t, err)
-			require.Equal(t, testWalletData, *walletData)
+			require.Equal(t, testData, *data)
 
 			// Check overwriting the store.
-			err = storeSvc.AddWallet(testWalletData)
+			err = storeSvc.Add(testData)
 			require.NoError(t, err)
 		})
 	}

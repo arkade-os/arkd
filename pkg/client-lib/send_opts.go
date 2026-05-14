@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"fmt"
@@ -74,10 +74,11 @@ func WithOutputTaprootTree(byPkScript map[string][]byte) SendOption {
 }
 
 type sendOptions struct {
-	withoutExpirySorting    bool
-	vtxos                   []types.VtxoWithTapTree
-	signingKeys             map[string]string
-	extraPackets            []extension.Packet
+	withoutExpirySorting bool
+	vtxos                []types.VtxoWithTapTree
+	signingKeys          map[string]string
+	extraPackets         []extension.Packet
+	receiver             string
 	outputTapTrees map[string][]byte // pkScript (hex) -> bip371 taptree
 }
 

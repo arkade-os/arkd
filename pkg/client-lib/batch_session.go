@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"bytes"
@@ -61,6 +61,7 @@ func (a *service) Settle(ctx context.Context, opts ...BatchSessionOption) (*Sett
 			vtxos:                options.vtxos,
 			utxos:                options.boardingUtxos,
 		},
+		options.receiver,
 	)
 	if err != nil {
 		return nil, err
@@ -93,21 +94,13 @@ func (a *service) RedeemNotes(
 		amount += uint64(v.Value)
 	}
 
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if len(offchainAddrs) <= 0 {
-		return nil, fmt.Errorf("no funds detected")
-	}
-
-	_, changeAddr, _, err := a.newAddress(ctx)
+	addr, err := a.getReceiver(ctx, options.receiver)
 	if err != nil {
 		return nil, err
 	}
 
 	receiversOutput := []types.Receiver{{
-		To:     changeAddr.Address,
+		To:     addr,
 		Amount: amount,
 	}}
 
@@ -143,21 +136,6 @@ func (a *service) CollaborativeExit(
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
-	getVtxosOpts := &getVtxosFilter{
-		withRecoverableVtxos: options.withRecoverableVtxos,
-		excludeAssetVtxos:    true,
-	}
-	spendableVtxos, err := a.getSpendableVtxos(ctx, getVtxosOpts)
-	if err != nil {
-		return nil, err
-	}
-	balance := uint64(0)
-	for _, vtxo := range spendableVtxos {
-		balance += vtxo.Amount
-	}
-	if balance < amount {
-		return nil, fmt.Errorf("not enough funds to cover amount %d", amount)
-	}
 	// send all case: substract fees from exited amount
 	info, err := a.client.GetInfo(ctx)
 	if err != nil {
@@ -178,6 +156,7 @@ func (a *service) CollaborativeExit(
 			utxos:                options.boardingUtxos,
 			excludeAssetVtxos:    true,
 		},
+		options.receiver,
 	)
 	if err != nil {
 		return nil, err
@@ -213,9 +192,10 @@ func (a *service) RegisterIntent(
 		return "", err
 	}
 
+	signingRequired := len(boardingUtxos)+len(vtxos) > 0
 	proofTx, message, _, err := a.makeRegisterIntent(
 		inputs, assetInputs, tapLeaves, outputs,
-		cosignersPublicKeys, arkFields, options.keyIdsByScript,
+		cosignersPublicKeys, arkFields, signingRequired, options.keyIdsByScript,
 	)
 	if err != nil {
 		return "", err
@@ -251,7 +231,10 @@ func (a *service) DeleteIntent(
 		return err
 	}
 
-	proofTx, message, err := a.makeDeleteIntent(inputs, exitLeaves, arkFields, options.keyIdsByScript)
+	signingRequired := len(boardingUtxos)+len(vtxos) > 0
+	proofTx, message, err := a.makeDeleteIntent(
+		inputs, exitLeaves, arkFields, signingRequired, options.keyIdsByScript,
+	)
 	if err != nil {
 		return err
 	}
@@ -262,17 +245,19 @@ func (a *service) DeleteIntent(
 func (a *service) getFundsToSettle(
 	ctx context.Context,
 	outputs []types.Receiver, feeEstimator *arkfee.Estimator, opts getVtxosFilter,
+	receiver string,
 ) ([]types.Utxo, []types.VtxoWithTapTree, []types.Receiver, error) {
-	_, offchainAddrs, boardingAddrs, _, err := a.getAddresses(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if len(offchainAddrs) <= 0 {
-		return nil, nil, nil, fmt.Errorf("no offchain addresses found")
-	}
-
 	vtxos := opts.vtxos
+	boardingUtxos := opts.utxos
 	if len(opts.vtxos) <= 0 && len(opts.utxos) <= 0 {
+		_, offchainAddrs, boardingAddrs, _, err := a.getAddresses(ctx)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if len(offchainAddrs) <= 0 {
+			return nil, nil, nil, fmt.Errorf("no offchain addresses found")
+		}
+
 		spendableVtxos, err := a.getSpendableVtxos(ctx, &opts)
 		if err != nil {
 			return nil, nil, nil, err
@@ -293,25 +278,32 @@ func (a *service) getFundsToSettle(
 				}
 			}
 		}
-	}
 
-	if opts.expiryThreshold > 0 {
-		vtxos = utils.FilterVtxosByExpiry(vtxos, opts.expiryThreshold)
-	}
-
-	boardingUtxos := opts.utxos
-	if len(opts.vtxos) <= 0 && len(opts.utxos) <= 0 {
 		boardingUtxos, err = a.getClaimableBoardingUtxos(ctx, boardingAddrs, nil)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 	}
 
+	addr, err := a.getReceiver(ctx, receiver)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	if opts.expiryThreshold > 0 {
+		vtxos = utils.FilterVtxosByExpiry(vtxos, opts.expiryThreshold)
+	}
+
 	if len(outputs) <= 0 {
-		// gather all asset balances from vtxos to carry them forward
+		// gather all asset balances from inputs to carry them forward
 		assetBalances := make(map[string]uint64)
 		for _, vtxo := range vtxos {
 			for _, a := range vtxo.Assets {
+				assetBalances[a.AssetId] += a.Amount
+			}
+		}
+		for _, utxo := range boardingUtxos {
+			for _, a := range utxo.Assets {
 				assetBalances[a.AssetId] += a.Amount
 			}
 		}
@@ -324,13 +316,8 @@ func (a *service) getFundsToSettle(
 			})
 		}
 
-		_, changeAddr, _, err := a.newAddress(ctx)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-
 		outputs = []types.Receiver{{
-			To:     changeAddr.Address,
+			To:     addr,
 			Amount: 0,
 			Assets: assets,
 		}}
@@ -370,13 +357,8 @@ func (a *service) getFundsToSettle(
 	}
 
 	if changeAmount > 0 {
-		_, changeAddr, _, err := a.newAddress(ctx)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-
 		outputs = append(outputs, types.Receiver{
-			To:     changeAddr.Address,
+			To:     addr,
 			Amount: changeAmount,
 		})
 	}
@@ -398,7 +380,7 @@ func (a *service) getClaimableBoardingUtxos(
 			return nil, err
 		}
 
-		boardingUtxos, err := a.explorer.GetUtxos(addr.Address)
+		boardingUtxos, err := a.explorer.GetUtxos([]string{addr.Address})
 		if err != nil {
 			return nil, err
 		}
@@ -446,6 +428,7 @@ func (a *service) joinBatchWithRetry(
 	if err != nil {
 		return nil, err
 	}
+	signingRequired := len(selectedCoins)+len(selectedBoardingCoins) > 0
 
 	signerSessions, signerPubKeys, err := a.handleOptions(options, inputs, notes)
 	if err != nil {
@@ -454,7 +437,7 @@ func (a *service) joinBatchWithRetry(
 
 	deleteIntent := func() {
 		proof, message, err := a.makeDeleteIntent(
-			inputs, exitLeaves, arkFields, options.keyIdsByScript,
+			inputs, exitLeaves, arkFields, signingRequired, options.keyIdsByScript,
 		)
 		if err != nil {
 			log.WithError(err).Warn("failed to create delete intent proof")
@@ -476,8 +459,8 @@ func (a *service) joinBatchWithRetry(
 	var batchErr error
 	for retryCount < maxRetry {
 		proofTx, message, ext, err := a.makeRegisterIntent(
-			inputs, assetInputs, exitLeaves, outputs,
-			signerPubKeys, arkFields, options.keyIdsByScript,
+			inputs, assetInputs, exitLeaves, outputs, signerPubKeys,
+			arkFields, signingRequired, options.keyIdsByScript,
 		)
 		if err != nil {
 			return nil, err
@@ -588,7 +571,7 @@ func (a *service) handleOptions(
 	sessions := make([]tree.SignerSession, 0)
 	sessions = append(sessions, options.extraSignerSessions...)
 
-	if !options.walletSignerDisabled {
+	if !options.treeSignerDisabled {
 		outpoints := make([]types.Outpoint, 0, len(inputs))
 		for _, input := range inputs {
 			outpoints = append(outpoints, types.Outpoint{
@@ -597,7 +580,7 @@ func (a *service) handleOptions(
 			})
 		}
 
-		signerSession, err := a.wallet.NewVtxoTreeSigner(context.Background())
+		signerSession, err := a.identity.NewVtxoTreeSigner(context.Background())
 		if err != nil {
 			return nil, nil, err
 		}
@@ -684,7 +667,8 @@ func (a *service) handleBatchEvents(
 func (a *service) makeRegisterIntent(
 	inputs []intent.Input, assetInputs map[int][]types.Asset,
 	leafProofs []*arklib.TaprootMerkleProof, outputs []types.Receiver,
-	cosignersPublicKeys []string, arkFields [][]*psbt.Unknown, keysByScripts map[string]string,
+	cosignersPublicKeys []string, arkFields [][]*psbt.Unknown,
+	signingRequired bool, keysByScripts map[string]string,
 ) (string, string, extension.Extension, error) {
 	message, outputsTxOut, ext, err := registerIntentMessage(
 		assetInputs, outputs, cosignersPublicKeys,
@@ -694,7 +678,7 @@ func (a *service) makeRegisterIntent(
 	}
 
 	proof, message, err := a.makeIntent(
-		message, inputs, outputsTxOut, leafProofs, arkFields, keysByScripts,
+		message, inputs, outputsTxOut, leafProofs, arkFields, signingRequired, keysByScripts,
 	)
 	if err != nil {
 		return "", "", nil, err
@@ -705,7 +689,7 @@ func (a *service) makeRegisterIntent(
 
 func (a *service) makeGetPendingTxIntent(
 	inputs []intent.Input, leafProofs []*arklib.TaprootMerkleProof,
-	arkFields [][]*psbt.Unknown, keysByScripts map[string]string,
+	arkFields [][]*psbt.Unknown, signingRequired bool, keysByScripts map[string]string,
 ) (string, string, error) {
 	message, err := intent.GetPendingTxMessage{
 		BaseMessage: intent.BaseMessage{
@@ -717,12 +701,14 @@ func (a *service) makeGetPendingTxIntent(
 		return "", "", err
 	}
 
-	return a.makeIntent(message, inputs, nil, leafProofs, arkFields, keysByScripts)
+	return a.makeIntent(
+		message, inputs, nil, leafProofs, arkFields, signingRequired, keysByScripts,
+	)
 }
 
 func (a *service) makeDeleteIntent(
 	inputs []intent.Input, leafProofs []*arklib.TaprootMerkleProof,
-	arkFields [][]*psbt.Unknown, keysByScripts map[string]string,
+	arkFields [][]*psbt.Unknown, signingRequired bool, keysByScripts map[string]string,
 ) (string, string, error) {
 	message, err := intent.DeleteMessage{
 		BaseMessage: intent.BaseMessage{
@@ -734,13 +720,15 @@ func (a *service) makeDeleteIntent(
 		return "", "", err
 	}
 
-	return a.makeIntent(message, inputs, nil, leafProofs, arkFields, keysByScripts)
+	return a.makeIntent(
+		message, inputs, nil, leafProofs, arkFields, signingRequired, keysByScripts,
+	)
 }
 
 func (a *service) makeIntent(
 	message string, inputs []intent.Input, outputsTxOut []*wire.TxOut,
 	leafProofs []*arklib.TaprootMerkleProof, arkFields [][]*psbt.Unknown,
-	keysByScript map[string]string,
+	signingRequired bool, keysByScript map[string]string,
 ) (string, string, error) {
 	proof, err := intent.New(message, inputs, outputsTxOut)
 	if err != nil {
@@ -773,7 +761,11 @@ func (a *service) makeIntent(
 		return "", "", err
 	}
 
-	signedTx, err := a.wallet.SignTransaction(context.Background(), unsignedProofTx, keysByScript)
+	if !signingRequired {
+		return unsignedProofTx, message, nil
+	}
+
+	signedTx, err := a.identity.SignTransaction(context.Background(), unsignedProofTx, keysByScript)
 	if err != nil {
 		return "", "", err
 	}

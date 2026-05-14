@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"fmt"
@@ -32,6 +32,7 @@ type unrollOptions struct {
 	vtxos       []types.Vtxo
 	utxos       []types.Utxo
 	signingKeys map[string]string
+	receiver    string
 }
 
 func newDefaultUnrollOptions() *unrollOptions {

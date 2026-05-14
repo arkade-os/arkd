@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"bytes"
