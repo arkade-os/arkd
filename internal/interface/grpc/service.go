@@ -55,7 +55,7 @@ type service struct {
 	otelShutdown      func(context.Context) error
 	pyroscopeShutdown func() error
 	unaryConn         *grpc.ClientConn
-	streamConn        *grpc.ClientConn
+	streamConns       []*grpc.ClientConn
 	adminConn         *grpc.ClientConn
 }
 
@@ -210,8 +210,8 @@ func (s *service) stop() {
 			log.Warn("failed to close unary transport connection")
 		}
 	}
-	if s.streamConn != nil {
-		if err := s.streamConn.Close(); err != nil {
+	for _, sc := range s.streamConns {
+		if err := sc.Close(); err != nil {
 			log.Warn("failed to close stream transport connection")
 		}
 	}
@@ -375,18 +375,40 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	if err != nil {
 		return err
 	}
-	streamConn, err := grpc.NewClient(
-		s.config.gatewayAddress(), gatewayOpts,
-	)
-	if err != nil {
-		if err := unaryConn.Close(); err != nil {
-			log.Warn("failed to close unary transport connection")
-		}
-		return err
-	}
 	s.unaryConn = unaryConn
-	s.streamConn = streamConn
-	conn := &splitConn{unary: unaryConn, stream: streamConn}
+
+	// Connection pool for streaming RPCs. Each connection has its own
+	// HTTP/2 MAX_CONCURRENT_STREAMS budget, so a pool of N multiplies
+	// the gateway's concurrent stream capacity by N.
+	poolSize := s.config.StreamConnPoolSize
+	if poolSize == 0 {
+		poolSize = 1
+	}
+	streamConns := make([]*grpc.ClientConn, 0, poolSize)
+	for i := uint32(0); i < poolSize; i++ {
+		sc, err := grpc.NewClient(
+			s.config.gatewayAddress(), gatewayOpts,
+		)
+		if err != nil {
+			if closeErr := unaryConn.Close(); closeErr != nil {
+				log.Warn("failed to close unary transport connection")
+			}
+			for _, prev := range streamConns {
+				if closeErr := prev.Close(); closeErr != nil {
+					log.Warn("failed to close stream transport connection")
+				}
+			}
+			return err
+		}
+		streamConns = append(streamConns, sc)
+	}
+	s.streamConns = streamConns
+
+	streamPool := make([]grpc.ClientConnInterface, len(streamConns))
+	for i, sc := range streamConns {
+		streamPool[i] = sc
+	}
+	conn := &splitConn{unary: unaryConn, streamPool: streamPool}
 
 	customMatcher := func(key string) (string, bool) {
 		switch key {
@@ -461,10 +483,12 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 				log.Warn("failed to close unary transport connection")
 			}
 			s.unaryConn = nil
-			if closeErr := s.streamConn.Close(); closeErr != nil {
-				log.Warn("failed to close stream transport connection")
+			for _, sc := range s.streamConns {
+				if closeErr := sc.Close(); closeErr != nil {
+					log.Warn("failed to close stream transport connection")
+				}
 			}
-			s.streamConn = nil
+			s.streamConns = nil
 			return err
 		}
 		s.adminConn = adminConn
@@ -647,10 +671,13 @@ func isHttpRequest(req *http.Request) bool {
 		strings.Contains(req.Header.Get("Content-Type"), "application/json")
 }
 
-// splitConn routes unary and streaming RPCs to separate grpc.ClientConn
+// splitConn routes unary RPCs to a dedicated connection and round-robins
+// streaming RPCs across a pool of connections. Each connection carries an
+// independent HTTP/2 MAX_CONCURRENT_STREAMS budget.
 type splitConn struct {
-	unary  grpc.ClientConnInterface
-	stream grpc.ClientConnInterface
+	unary       grpc.ClientConnInterface
+	streamPool  []grpc.ClientConnInterface
+	streamIndex atomic.Uint64
 }
 
 func (c *splitConn) Invoke(
@@ -659,8 +686,13 @@ func (c *splitConn) Invoke(
 	return c.unary.Invoke(ctx, method, args, reply, opts...)
 }
 
+// Called by the meshapi gateway to create new streams. Uses a simple round-robin
+// selection strategy to atomically increment the counter and wrap around
+// the pool size to select the next connection.
 func (c *splitConn) NewStream(
 	ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption,
 ) (grpc.ClientStream, error) {
-	return c.stream.NewStream(ctx, desc, method, opts...)
+	idx := c.streamIndex.Add(1) - 1
+	conn := c.streamPool[idx%uint64(len(c.streamPool))]
+	return conn.NewStream(ctx, desc, method, opts...)
 }
