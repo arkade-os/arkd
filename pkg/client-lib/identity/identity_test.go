@@ -182,20 +182,50 @@ func TestListKeys(t *testing.T) {
 }
 
 func TestClaimKey(t *testing.T) {
-	t.Run("not initialized", func(t *testing.T) {
-		svc := newTestIdentity(t)
-		err := svc.ClaimKey(t.Context(), "anything")
-		require.Error(t, err)
+	t.Run("valid", func(t *testing.T) {
+		t.Run("initialized is a no op", func(t *testing.T) {
+			svc, _ := newUnlockedTestIdentity(t)
+
+			require.NoError(t, svc.ClaimKey(t.Context(), "anything"))
+			require.NoError(t, svc.ClaimKey(t.Context(), "anything")) // idempotent
+
+			keys, err := svc.ListKeys(t.Context())
+			require.NoError(t, err)
+			require.Len(t, keys, 1)
+		})
+
+		t.Run("locked is also a no op in singlekey", func(t *testing.T) {
+			svc, _ := newUnlockedTestIdentity(t)
+			require.NoError(t, svc.Lock(t.Context()))
+			require.True(t, svc.IsLocked())
+
+			// pubkey only operation, callable while locked
+			require.NoError(t, svc.ClaimKey(t.Context(), "anything"))
+
+			keys, err := svc.ListKeys(t.Context())
+			require.NoError(t, err)
+			require.Len(t, keys, 1)
+		})
 	})
 
-	t.Run("initialized is a no op", func(t *testing.T) {
-		svc, _ := newUnlockedTestIdentity(t)
-		require.NoError(t, svc.ClaimKey(t.Context(), "anything"))
-		require.NoError(t, svc.ClaimKey(t.Context(), "anything")) // idempotent
-
-		keys, err := svc.ListKeys(t.Context())
-		require.NoError(t, err)
-		require.Len(t, keys, 1) // singlekey always reports its one key
+	t.Run("invalid", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			setup  func(t *testing.T) identity.Identity
+			expErr string
+		}{
+			{
+				"not initialized",
+				func(t *testing.T) identity.Identity { return newTestIdentity(t) },
+				"identity not initialized",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				err := tt.setup(t).ClaimKey(t.Context(), "anything")
+				require.ErrorContains(t, err, tt.expErr)
+			})
+		}
 	})
 }
 
