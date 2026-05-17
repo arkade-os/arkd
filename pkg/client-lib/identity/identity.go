@@ -31,6 +31,7 @@ type Identity interface {
 	GetKeyIndex(ctx context.Context, id string) (index uint32, err error)
 	NewKey(ctx context.Context) (key *KeyRef, err error)
 	GetKey(ctx context.Context, id string) (key *KeyRef, err error)
+	ClaimKey(ctx context.Context, id string) error
 	ListKeys(ctx context.Context) (keys []KeyRef, err error)
 	SignTransaction(
 		ctx context.Context, tx string, keys map[string]string,
