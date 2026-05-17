@@ -181,6 +181,24 @@ func TestListKeys(t *testing.T) {
 	})
 }
 
+func TestClaimKey(t *testing.T) {
+	t.Run("not initialized", func(t *testing.T) {
+		svc := newTestIdentity(t)
+		err := svc.ClaimKey(t.Context(), "anything")
+		require.Error(t, err)
+	})
+
+	t.Run("initialized is a no op", func(t *testing.T) {
+		svc, _ := newUnlockedTestIdentity(t)
+		require.NoError(t, svc.ClaimKey(t.Context(), "anything"))
+		require.NoError(t, svc.ClaimKey(t.Context(), "anything")) // idempotent
+
+		keys, err := svc.ListKeys(t.Context())
+		require.NoError(t, err)
+		require.Len(t, keys, 1) // singlekey always reports its one key
+	})
+}
+
 func newTestIdentity(t *testing.T) identity.Identity {
 	t.Helper()
 	store, err := identityinmemorystore.NewStore()

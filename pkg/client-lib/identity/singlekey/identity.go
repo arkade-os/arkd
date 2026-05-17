@@ -154,6 +154,13 @@ func (s *service) NewKey(ctx context.Context) (*identity.KeyRef, error) {
 	}, nil
 }
 
+func (s *service) ClaimKey(_ context.Context, _ string) error {
+	if s.data == nil {
+		return ErrNotInitialized
+	}
+	return nil
+}
+
 func (s *service) GetKey(ctx context.Context, _ string) (*identity.KeyRef, error) {
 	if s.data == nil {
 		return nil, ErrNotInitialized
