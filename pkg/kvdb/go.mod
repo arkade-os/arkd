@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd/pkg/kvdb
 
-go 1.26.2
+go 1.26.3
 
 require (
 	github.com/btcsuite/btcwallet/walletdb v1.4.2
