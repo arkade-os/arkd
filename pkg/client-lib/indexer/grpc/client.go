@@ -621,21 +621,28 @@ func (a *grpcClient) ModifySubscriptionScripts(
 		return nil, nil, nil, fmt.Errorf("subscriptionId is not set; cannot modify subscription scripts")
 	}
 
-	req := &arkv1.UpdateSubscriptionScriptsRequest{
+	req := &arkv1.UpdateSubscriptionRequest{
 		SubscriptionId: subID,
-		ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
-			Modify: &arkv1.ModifyScripts{
-				AddScripts:    addScripts,
-				RemoveScripts: removeScripts,
+		Filter: &arkv1.SubscriptionFilter{
+			Filter: &arkv1.SubscriptionFilter_Scripts{
+				Scripts: &arkv1.ScriptsFilter{
+					Change: &arkv1.ScriptsFilter_Modify{
+						Modify: &arkv1.ModifyScripts{
+							AddScripts:    addScripts,
+							RemoveScripts: removeScripts,
+						},
+					},
+				},
 			},
 		},
 	}
-	resp, err := a.svc().UpdateSubscriptionScripts(ctx, req)
+	resp, err := a.svc().UpdateSubscription(ctx, req)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	return resp.GetScriptsAdded(), resp.GetScriptsRemoved(), resp.GetAllScripts(), nil
+	result := resp.GetScripts()
+	return result.GetAdded(), result.GetRemoved(), result.GetAll(), nil
 }
 
 func (a *grpcClient) OverwriteSubscriptionScripts(
@@ -646,20 +653,27 @@ func (a *grpcClient) OverwriteSubscriptionScripts(
 		return nil, nil, nil, fmt.Errorf("subscriptionId is not set; cannot overwrite subscription scripts")
 	}
 
-	req := &arkv1.UpdateSubscriptionScriptsRequest{
+	req := &arkv1.UpdateSubscriptionRequest{
 		SubscriptionId: subID,
-		ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Overwrite{
-			Overwrite: &arkv1.OverwriteScripts{
-				Scripts: scripts,
+		Filter: &arkv1.SubscriptionFilter{
+			Filter: &arkv1.SubscriptionFilter_Scripts{
+				Scripts: &arkv1.ScriptsFilter{
+					Change: &arkv1.ScriptsFilter_Overwrite{
+						Overwrite: &arkv1.OverwriteScripts{
+							Scripts: scripts,
+						},
+					},
+				},
 			},
 		},
 	}
-	resp, err := a.svc().UpdateSubscriptionScripts(ctx, req)
+	resp, err := a.svc().UpdateSubscription(ctx, req)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	return resp.GetScriptsAdded(), resp.GetScriptsRemoved(), resp.GetAllScripts(), nil
+	result := resp.GetScripts()
+	return result.GetAdded(), result.GetRemoved(), result.GetAll(), nil
 }
 
 func (a *grpcClient) getSubscriptionID() string {

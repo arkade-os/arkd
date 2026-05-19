@@ -251,19 +251,25 @@ func TestGetSubscription(t *testing.T) {
 		subId := msg.GetSubscriptionStarted().GetSubscriptionId()
 		require.NotEmpty(t, subId)
 
-		// Update scripts: add testScript2 via UpdateSubscriptionScripts.
-		resp, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		// Update scripts: add testScript2 via UpdateSubscription.
+		resp, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: subId,
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
-					Modify: &arkv1.ModifyScripts{
-						AddScripts: []string{testScript2},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Modify{
+								Modify: &arkv1.ModifyScripts{
+									AddScripts: []string{testScript2},
+								},
+							},
+						},
 					},
 				},
 			},
 		)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{testScript1, testScript2}, resp.GetAllScripts())
+		require.ElementsMatch(t, []string{testScript1, testScript2}, resp.GetScripts().GetAll())
 
 		// Push an event via the broker channel.
 		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
@@ -495,15 +501,15 @@ func TestGetSubscription(t *testing.T) {
 	})
 }
 
-func TestUpdateSubscriptionScripts(t *testing.T) {
+func TestUpdateSubscription(t *testing.T) {
 	t.Parallel()
 
 	t.Run("missing subscription_id", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
 
-		_, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{},
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{},
 		)
 		require.Error(t, err)
 
@@ -512,13 +518,51 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		require.Equal(t, codes.InvalidArgument, st.Code())
 	})
 
-	t.Run("missing scripts_change", func(t *testing.T) {
+	t.Run("missing filter", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
 
-		_, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "some-id",
+			},
+		)
+		require.Error(t, err)
+
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+	})
+
+	t.Run("empty SubscriptionFilter returns InvalidArgument", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "some-id",
+				Filter:         &arkv1.SubscriptionFilter{},
+			},
+		)
+		require.Error(t, err)
+
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+	})
+
+	t.Run("empty ScriptsFilter returns InvalidArgument", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "some-id",
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{},
+					},
+				},
 			},
 		)
 		require.Error(t, err)
@@ -535,18 +579,24 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
-		resp, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		resp, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Overwrite{
-					Overwrite: &arkv1.OverwriteScripts{
-						Scripts: []string{testScript2, testScript3},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Overwrite{
+								Overwrite: &arkv1.OverwriteScripts{
+									Scripts: []string{testScript2, testScript3},
+								},
+							},
+						},
 					},
 				},
 			},
 		)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{testScript2, testScript3}, resp.GetAllScripts())
+		require.ElementsMatch(t, []string{testScript2, testScript3}, resp.GetScripts().GetAll())
 	})
 
 	t.Run("modify adds and removes scripts", func(t *testing.T) {
@@ -558,21 +608,27 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		)
 		svc.scriptSubsHandler.pushListener(listener)
 
-		resp, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		resp, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
-					Modify: &arkv1.ModifyScripts{
-						AddScripts:    []string{testScript3},
-						RemoveScripts: []string{testScript2},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Modify{
+								Modify: &arkv1.ModifyScripts{
+									AddScripts:    []string{testScript3},
+									RemoveScripts: []string{testScript2},
+								},
+							},
+						},
 					},
 				},
 			},
 		)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{testScript3}, resp.GetScriptsAdded())
-		require.ElementsMatch(t, []string{testScript2}, resp.GetScriptsRemoved())
-		require.ElementsMatch(t, []string{testScript1, testScript3}, resp.GetAllScripts())
+		require.ElementsMatch(t, []string{testScript3}, resp.GetScripts().GetAdded())
+		require.ElementsMatch(t, []string{testScript2}, resp.GetScripts().GetRemoved())
+		require.ElementsMatch(t, []string{testScript1, testScript3}, resp.GetScripts().GetAll())
 	})
 
 	t.Run("overwrite with invalid scripts returns InvalidArgument", func(t *testing.T) {
@@ -582,12 +638,18 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
-		_, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Overwrite{
-					Overwrite: &arkv1.OverwriteScripts{
-						Scripts: []string{"invalidhex"},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Overwrite{
+								Overwrite: &arkv1.OverwriteScripts{
+									Scripts: []string{"invalidhex"},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -606,12 +668,18 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
-		_, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
-					Modify: &arkv1.ModifyScripts{
-						AddScripts: []string{"notvalid"},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Modify{
+								Modify: &arkv1.ModifyScripts{
+									AddScripts: []string{"notvalid"},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -630,12 +698,18 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
-		_, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
-					Modify: &arkv1.ModifyScripts{
-						RemoveScripts: []string{"notvalid"},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Modify{
+								Modify: &arkv1.ModifyScripts{
+									RemoveScripts: []string{"notvalid"},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -654,20 +728,26 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
-		resp, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		resp, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
-					Modify: &arkv1.ModifyScripts{
-						AddScripts: []string{testScript2},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Modify{
+								Modify: &arkv1.ModifyScripts{
+									AddScripts: []string{testScript2},
+								},
+							},
+						},
 					},
 				},
 			},
 		)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{testScript2}, resp.GetScriptsAdded())
-		require.Empty(t, resp.GetScriptsRemoved())
-		require.ElementsMatch(t, []string{testScript1, testScript2}, resp.GetAllScripts())
+		require.ElementsMatch(t, []string{testScript2}, resp.GetScripts().GetAdded())
+		require.Empty(t, resp.GetScripts().GetRemoved())
+		require.ElementsMatch(t, []string{testScript1, testScript2}, resp.GetScripts().GetAll())
 	})
 
 	t.Run("modify remove only", func(t *testing.T) {
@@ -679,20 +759,26 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		)
 		svc.scriptSubsHandler.pushListener(listener)
 
-		resp, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		resp, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
-					Modify: &arkv1.ModifyScripts{
-						RemoveScripts: []string{testScript2},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Modify{
+								Modify: &arkv1.ModifyScripts{
+									RemoveScripts: []string{testScript2},
+								},
+							},
+						},
 					},
 				},
 			},
 		)
 		require.NoError(t, err)
-		require.Empty(t, resp.GetScriptsAdded())
-		require.ElementsMatch(t, []string{testScript2}, resp.GetScriptsRemoved())
-		require.ElementsMatch(t, []string{testScript1}, resp.GetAllScripts())
+		require.Empty(t, resp.GetScripts().GetAdded())
+		require.ElementsMatch(t, []string{testScript2}, resp.GetScripts().GetRemoved())
+		require.ElementsMatch(t, []string{testScript1}, resp.GetScripts().GetAll())
 	})
 
 	t.Run("overwrite with empty scripts clears all", func(t *testing.T) {
@@ -704,18 +790,24 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		)
 		svc.scriptSubsHandler.pushListener(listener)
 
-		resp, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		resp, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Overwrite{
-					Overwrite: &arkv1.OverwriteScripts{
-						Scripts: []string{},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Overwrite{
+								Overwrite: &arkv1.OverwriteScripts{
+									Scripts: []string{},
+								},
+							},
+						},
 					},
 				},
 			},
 		)
 		require.NoError(t, err)
-		require.Empty(t, resp.GetAllScripts())
+		require.Empty(t, resp.GetScripts().GetAll())
 	})
 
 	t.Run("modify with empty add and remove returns InvalidArgument", func(t *testing.T) {
@@ -725,11 +817,17 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
-		_, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
-					Modify: &arkv1.ModifyScripts{},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Modify{
+								Modify: &arkv1.ModifyScripts{},
+							},
+						},
+					},
 				},
 			},
 		)
@@ -744,12 +842,18 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
 
-		_, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "nonexistent-id",
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Overwrite{
-					Overwrite: &arkv1.OverwriteScripts{
-						Scripts: []string{testScript1},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Overwrite{
+								Overwrite: &arkv1.OverwriteScripts{
+									Scripts: []string{testScript1},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -765,12 +869,18 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
 
-		_, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "nonexistent-id",
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
-					Modify: &arkv1.ModifyScripts{
-						AddScripts: []string{testScript1},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Modify{
+								Modify: &arkv1.ModifyScripts{
+									AddScripts: []string{testScript1},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -786,12 +896,18 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
 
-		_, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "nonexistent-id",
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
-					Modify: &arkv1.ModifyScripts{
-						RemoveScripts: []string{testScript1},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Modify{
+								Modify: &arkv1.ModifyScripts{
+									RemoveScripts: []string{testScript1},
+								},
+							},
+						},
 					},
 				},
 			},
@@ -810,17 +926,23 @@ func TestUpdateSubscriptionScripts(t *testing.T) {
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
-		resp, err := svc.UpdateSubscriptionScripts(context.Background(),
-			&arkv1.UpdateSubscriptionScriptsRequest{
+		resp, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
-				ScriptsChange: &arkv1.UpdateSubscriptionScriptsRequest_Modify{
-					Modify: &arkv1.ModifyScripts{
-						AddScripts: []string{testScript1, testScript2},
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Scripts{
+						Scripts: &arkv1.ScriptsFilter{
+							Change: &arkv1.ScriptsFilter_Modify{
+								Modify: &arkv1.ModifyScripts{
+									AddScripts: []string{testScript1, testScript2},
+								},
+							},
+						},
 					},
 				},
 			},
 		)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{testScript1, testScript2}, resp.GetAllScripts())
+		require.ElementsMatch(t, []string{testScript1, testScript2}, resp.GetScripts().GetAll())
 	})
 }

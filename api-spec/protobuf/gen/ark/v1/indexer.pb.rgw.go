@@ -125,7 +125,7 @@ func request_IndexerService_GetConnectors_0(ctx context.Context, marshaler gatew
 
 var (
 	query_params_IndexerService_GetVtxoTree_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("vout", "batch_outpoint.txid", "batch_outpoint.vout", "txid"),
+		Filter: trie.New("batch_outpoint.txid", "batch_outpoint.vout", "txid", "vout"),
 	}
 )
 
@@ -173,7 +173,7 @@ func request_IndexerService_GetVtxoTree_0(ctx context.Context, marshaler gateway
 
 var (
 	query_params_IndexerService_GetVtxoTreeLeaves_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("batch_outpoint.vout", "batch_outpoint.txid", "txid", "vout"),
+		Filter: trie.New("batch_outpoint.txid", "batch_outpoint.vout", "txid", "vout"),
 	}
 )
 
@@ -243,7 +243,7 @@ func request_IndexerService_GetVtxos_0(ctx context.Context, marshaler gateway.Ma
 
 var (
 	query_params_IndexerService_GetVtxoChain_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("outpoint.txid", "outpoint.vout", "txid", "vout"),
+		Filter: trie.New("vout", "outpoint.txid", "outpoint.vout", "txid"),
 	}
 )
 
@@ -489,15 +489,15 @@ func request_IndexerService_GetSubscription_1(ctx context.Context, marshaler gat
 
 }
 
-func request_IndexerService_UpdateSubscriptionScripts_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client IndexerServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
-	var protoReq UpdateSubscriptionScriptsRequest
+func request_IndexerService_UpdateSubscription_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client IndexerServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq UpdateSubscriptionRequest
 	var metadata gateway.ServerMetadata
 
 	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && err != io.EOF {
 		return nil, metadata, gateway.ErrMarshal{Err: err, Inbound: true}
 	}
 
-	msg, err := client.UpdateSubscriptionScripts(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	msg, err := client.UpdateSubscription(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
 	return msg, metadata, err
 
 }
@@ -875,13 +875,13 @@ func RegisterIndexerServiceHandlerClient(ctx context.Context, mux *gateway.Serve
 		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
 		var err error
 		var annotatedContext context.Context
-		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.IndexerService/UpdateSubscriptionScripts", gateway.WithHTTPPathPattern("/v1/indexer/script/updateScripts"))
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.IndexerService/UpdateSubscription", gateway.WithHTTPPathPattern("/v1/indexer/script/updateScripts"))
 		if err != nil {
 			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
 			return
 		}
 
-		resp, md, err := request_IndexerService_UpdateSubscriptionScripts_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		resp, md, err := request_IndexerService_UpdateSubscription_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
 		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)

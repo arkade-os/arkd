@@ -32,7 +32,7 @@ const (
 	IndexerService_SubscribeForScripts_FullMethodName       = "/ark.v1.IndexerService/SubscribeForScripts"
 	IndexerService_UnsubscribeForScripts_FullMethodName     = "/ark.v1.IndexerService/UnsubscribeForScripts"
 	IndexerService_GetSubscription_FullMethodName           = "/ark.v1.IndexerService/GetSubscription"
-	IndexerService_UpdateSubscriptionScripts_FullMethodName = "/ark.v1.IndexerService/UpdateSubscriptionScripts"
+	IndexerService_UpdateSubscription_FullMethodName        = "/ark.v1.IndexerService/UpdateSubscription"
 )
 
 // IndexerServiceClient is the client API for IndexerService service.
@@ -92,9 +92,10 @@ type IndexerServiceClient interface {
 	// The subscription can be created or updated by using the SubscribeForScripts and
 	// UnsubscribeForScripts RPCs.
 	GetSubscription(ctx context.Context, in *GetSubscriptionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetSubscriptionResponse], error)
-	// UpdateSubscriptionScripts allows to modify the scripts of an existing subscription
-	// created via GetSubscription.
-	UpdateSubscriptionScripts(ctx context.Context, in *UpdateSubscriptionScriptsRequest, opts ...grpc.CallOption) (*UpdateSubscriptionScriptsResponse, error)
+	// UpdateSubscription allows to update an existing subscription created via
+	// GetSubscription by applying a filter. The filter is mutually exclusive
+	// between the supported filter types (e.g. scripts, and later packet types).
+	UpdateSubscription(ctx context.Context, in *UpdateSubscriptionRequest, opts ...grpc.CallOption) (*UpdateSubscriptionResponse, error)
 }
 
 type indexerServiceClient struct {
@@ -244,10 +245,10 @@ func (c *indexerServiceClient) GetSubscription(ctx context.Context, in *GetSubsc
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type IndexerService_GetSubscriptionClient = grpc.ServerStreamingClient[GetSubscriptionResponse]
 
-func (c *indexerServiceClient) UpdateSubscriptionScripts(ctx context.Context, in *UpdateSubscriptionScriptsRequest, opts ...grpc.CallOption) (*UpdateSubscriptionScriptsResponse, error) {
+func (c *indexerServiceClient) UpdateSubscription(ctx context.Context, in *UpdateSubscriptionRequest, opts ...grpc.CallOption) (*UpdateSubscriptionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpdateSubscriptionScriptsResponse)
-	err := c.cc.Invoke(ctx, IndexerService_UpdateSubscriptionScripts_FullMethodName, in, out, cOpts...)
+	out := new(UpdateSubscriptionResponse)
+	err := c.cc.Invoke(ctx, IndexerService_UpdateSubscription_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -311,9 +312,10 @@ type IndexerServiceServer interface {
 	// The subscription can be created or updated by using the SubscribeForScripts and
 	// UnsubscribeForScripts RPCs.
 	GetSubscription(*GetSubscriptionRequest, grpc.ServerStreamingServer[GetSubscriptionResponse]) error
-	// UpdateSubscriptionScripts allows to modify the scripts of an existing subscription
-	// created via GetSubscription.
-	UpdateSubscriptionScripts(context.Context, *UpdateSubscriptionScriptsRequest) (*UpdateSubscriptionScriptsResponse, error)
+	// UpdateSubscription allows to update an existing subscription created via
+	// GetSubscription by applying a filter. The filter is mutually exclusive
+	// between the supported filter types (e.g. scripts, and later packet types).
+	UpdateSubscription(context.Context, *UpdateSubscriptionRequest) (*UpdateSubscriptionResponse, error)
 }
 
 // UnimplementedIndexerServiceServer should be embedded to have
@@ -362,8 +364,8 @@ func (UnimplementedIndexerServiceServer) UnsubscribeForScripts(context.Context, 
 func (UnimplementedIndexerServiceServer) GetSubscription(*GetSubscriptionRequest, grpc.ServerStreamingServer[GetSubscriptionResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method GetSubscription not implemented")
 }
-func (UnimplementedIndexerServiceServer) UpdateSubscriptionScripts(context.Context, *UpdateSubscriptionScriptsRequest) (*UpdateSubscriptionScriptsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpdateSubscriptionScripts not implemented")
+func (UnimplementedIndexerServiceServer) UpdateSubscription(context.Context, *UpdateSubscriptionRequest) (*UpdateSubscriptionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateSubscription not implemented")
 }
 func (UnimplementedIndexerServiceServer) testEmbeddedByValue() {}
 
@@ -612,20 +614,20 @@ func _IndexerService_GetSubscription_Handler(srv interface{}, stream grpc.Server
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type IndexerService_GetSubscriptionServer = grpc.ServerStreamingServer[GetSubscriptionResponse]
 
-func _IndexerService_UpdateSubscriptionScripts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateSubscriptionScriptsRequest)
+func _IndexerService_UpdateSubscription_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSubscriptionRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(IndexerServiceServer).UpdateSubscriptionScripts(ctx, in)
+		return srv.(IndexerServiceServer).UpdateSubscription(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: IndexerService_UpdateSubscriptionScripts_FullMethodName,
+		FullMethod: IndexerService_UpdateSubscription_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IndexerServiceServer).UpdateSubscriptionScripts(ctx, req.(*UpdateSubscriptionScriptsRequest))
+		return srv.(IndexerServiceServer).UpdateSubscription(ctx, req.(*UpdateSubscriptionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -686,8 +688,8 @@ var IndexerService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _IndexerService_UnsubscribeForScripts_Handler,
 		},
 		{
-			MethodName: "UpdateSubscriptionScripts",
-			Handler:    _IndexerService_UpdateSubscriptionScripts_Handler,
+			MethodName: "UpdateSubscription",
+			Handler:    _IndexerService_UpdateSubscription_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

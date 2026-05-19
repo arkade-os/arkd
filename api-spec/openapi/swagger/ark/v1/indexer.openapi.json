@@ -579,13 +579,13 @@
         "tags": [
           "IndexerService"
         ],
-        "description": "UpdateSubscriptionScripts allows to modify the scripts of an existing subscription\ncreated via GetSubscription.",
-        "operationId": "IndexerService_UpdateSubscriptionScripts",
+        "description": "UpdateSubscription allows to update an existing subscription created via\nGetSubscription by applying a filter. The filter is mutually exclusive\nbetween the supported filter types (e.g. scripts, and later packet types).",
+        "operationId": "IndexerService_UpdateSubscription",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateSubscriptionScriptsRequest"
+                "$ref": "#/components/schemas/UpdateSubscriptionRequest"
               }
             }
           },
@@ -597,7 +597,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UpdateSubscriptionScriptsResponse"
+                  "$ref": "#/components/schemas/UpdateSubscriptionResponse"
                 }
               }
             }
@@ -1641,6 +1641,43 @@
           }
         }
       },
+      "ScriptsFilter": {
+        "title": "ScriptsFilter",
+        "type": "object",
+        "description": "ScriptsFilter updates the set of scripts of a subscription either by\nmodifying it (add/remove) or by overwriting it entirely.",
+        "properties": {
+          "modify": {
+            "$ref": "#/components/schemas/ModifyScripts"
+          },
+          "overwrite": {
+            "$ref": "#/components/schemas/OverwriteScripts"
+          }
+        }
+      },
+      "ScriptsFilterResult": {
+        "title": "ScriptsFilterResult",
+        "type": "object",
+        "properties": {
+          "added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "all": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "Status": {
         "title": "Status",
         "type": "object",
@@ -1685,6 +1722,16 @@
           }
         }
       },
+      "SubscriptionFilter": {
+        "title": "SubscriptionFilter",
+        "type": "object",
+        "description": "SubscriptionFilter is a generic filter applied to a subscription. It is\nmutually exclusive between the supported filter types. New filter types\n(e.g. packet types) will be added here in the future.",
+        "properties": {
+          "scripts": {
+            "$ref": "#/components/schemas/ScriptsFilter"
+          }
+        }
+      },
       "SubscriptionStartedEvent": {
         "title": "SubscriptionStartedEvent",
         "type": "object",
@@ -1714,42 +1761,24 @@
         "title": "UnsubscribeForScriptsResponse",
         "type": "object"
       },
-      "UpdateSubscriptionScriptsRequest": {
-        "title": "UpdateSubscriptionScriptsRequest",
+      "UpdateSubscriptionRequest": {
+        "title": "UpdateSubscriptionRequest",
         "type": "object",
         "properties": {
-          "modify": {
-            "$ref": "#/components/schemas/ModifyScripts"
-          },
-          "overwrite": {
-            "$ref": "#/components/schemas/OverwriteScripts"
+          "filter": {
+            "$ref": "#/components/schemas/SubscriptionFilter"
           },
           "subscriptionId": {
             "type": "string"
           }
         }
       },
-      "UpdateSubscriptionScriptsResponse": {
-        "title": "UpdateSubscriptionScriptsResponse",
+      "UpdateSubscriptionResponse": {
+        "title": "UpdateSubscriptionResponse",
         "type": "object",
         "properties": {
-          "allScripts": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "scriptsAdded": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "scriptsRemoved": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+          "scripts": {
+            "$ref": "#/components/schemas/ScriptsFilterResult"
           }
         }
       }

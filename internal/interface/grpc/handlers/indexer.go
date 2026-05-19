@@ -518,18 +518,36 @@ func (h *indexerService) GetSubscription(
 	}
 }
 
-func (h *indexerService) UpdateSubscriptionScripts(
-	ctx context.Context, req *arkv1.UpdateSubscriptionScriptsRequest,
-) (*arkv1.UpdateSubscriptionScriptsResponse, error) {
+func (h *indexerService) UpdateSubscription(
+	ctx context.Context, req *arkv1.UpdateSubscriptionRequest,
+) (*arkv1.UpdateSubscriptionResponse, error) {
 	if req.GetSubscriptionId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "missing subscription id")
 	}
 
-	switch req.GetScriptsChange().(type) {
+	filter := req.GetFilter()
+	if filter == nil {
+		return nil, status.Error(codes.InvalidArgument, "missing filter")
+	}
+
+	switch filter.GetFilter().(type) {
+	case nil:
+		return nil, status.Error(codes.InvalidArgument, "missing filter")
+	case *arkv1.SubscriptionFilter_Scripts:
+		return h.applyScriptsFilter(req.GetSubscriptionId(), filter.GetScripts())
+	default:
+		return nil, status.Error(codes.InvalidArgument, "unknown filter")
+	}
+}
+
+func (h *indexerService) applyScriptsFilter(
+	subscriptionID string, scriptsFilter *arkv1.ScriptsFilter,
+) (*arkv1.UpdateSubscriptionResponse, error) {
+	switch scriptsFilter.GetChange().(type) {
 	case nil:
 		return nil, status.Error(codes.InvalidArgument, "missing scripts change")
-	case *arkv1.UpdateSubscriptionScriptsRequest_Overwrite:
-		overwrite := req.GetOverwrite()
+	case *arkv1.ScriptsFilter_Overwrite:
+		overwrite := scriptsFilter.GetOverwrite()
 		if overwrite == nil {
 			return nil, status.Error(codes.InvalidArgument, "missing scripts to overwrite")
 		}
@@ -542,15 +560,19 @@ func (h *indexerService) UpdateSubscriptionScripts(
 			}
 		}
 		if err := h.scriptSubsHandler.overwriteTopics(
-			req.GetSubscriptionId(), scripts,
+			subscriptionID, scripts,
 		); err != nil {
 			return nil, status.Error(codes.NotFound, err.Error())
 		}
-		return &arkv1.UpdateSubscriptionScriptsResponse{
-			AllScripts: h.scriptSubsHandler.getTopics(req.GetSubscriptionId()),
+		return &arkv1.UpdateSubscriptionResponse{
+			Result: &arkv1.UpdateSubscriptionResponse_Scripts{
+				Scripts: &arkv1.ScriptsFilterResult{
+					All: h.scriptSubsHandler.getTopics(subscriptionID),
+				},
+			},
 		}, nil
-	case *arkv1.UpdateSubscriptionScriptsRequest_Modify:
-		modify := req.GetModify()
+	case *arkv1.ScriptsFilter_Modify:
+		modify := scriptsFilter.GetModify()
 		if modify == nil {
 			return nil, status.Error(codes.InvalidArgument, "missing scripts to add or remove")
 		}
@@ -574,22 +596,26 @@ func (h *indexerService) UpdateSubscriptionScripts(
 		}
 		if len(addScripts) > 0 {
 			if err := h.scriptSubsHandler.addTopics(
-				req.GetSubscriptionId(), addScripts,
+				subscriptionID, addScripts,
 			); err != nil {
 				return nil, status.Error(codes.NotFound, err.Error())
 			}
 		}
 		if len(removeScripts) > 0 {
 			if err := h.scriptSubsHandler.removeTopics(
-				req.GetSubscriptionId(), removeScripts,
+				subscriptionID, removeScripts,
 			); err != nil {
 				return nil, status.Error(codes.NotFound, err.Error())
 			}
 		}
-		return &arkv1.UpdateSubscriptionScriptsResponse{
-			ScriptsAdded:   modify.GetAddScripts(),
-			ScriptsRemoved: modify.GetRemoveScripts(),
-			AllScripts:     h.scriptSubsHandler.getTopics(req.GetSubscriptionId()),
+		return &arkv1.UpdateSubscriptionResponse{
+			Result: &arkv1.UpdateSubscriptionResponse_Scripts{
+				Scripts: &arkv1.ScriptsFilterResult{
+					Added:   modify.GetAddScripts(),
+					Removed: modify.GetRemoveScripts(),
+					All:     h.scriptSubsHandler.getTopics(subscriptionID),
+				},
+			},
 		}, nil
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unknown scripts change")
