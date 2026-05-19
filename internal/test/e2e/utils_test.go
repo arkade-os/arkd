@@ -22,6 +22,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/identity"
 	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
 	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
+	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/store"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/btcsuite/btcd/btcec/v2"

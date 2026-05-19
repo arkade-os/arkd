@@ -5626,7 +5626,7 @@ func TestGetAssetQueryChurn(t *testing.T) {
 					done <- getAssetErr
 				}()
 
-				time.Sleep(5 * time.Millisecond)
+				time.Sleep(3 * time.Millisecond)
 				cancel()
 
 				getAssetErr := <-done
@@ -5746,7 +5746,20 @@ func TestGetAssetQueryChurn(t *testing.T) {
 				for _, v := range vtxos {
 					dbVtxos[v.Outpoint] = v
 				}
-				break
+
+				allSpent := true
+				for _, spent := range spentVtxos {
+					allSpent = dbVtxos[spent].Spent
+				}
+
+				allPreconf := true
+				for _, unspent := range unspentVtxos {
+					allPreconf = dbVtxos[unspent].Preconfirmed
+				}
+
+				if allSpent && allPreconf {
+					break
+				}
 			}
 
 			time.Sleep(100 * time.Millisecond)
@@ -5810,20 +5823,16 @@ func TestGetAssetQueryChurn(t *testing.T) {
 				bobCtx, bobGetCtxErr = bob.Indexer().
 					GetCommitmentTx(ctx, bobSettleRes.CommitmentTxid)
 
-				dbVtxos, err := alice.Indexer().GetVtxos(ctx, indexer.WithOutpoints(outpoints))
-
+				dbVtxos, err := alice.Indexer().GetVtxos(
+					ctx,
+					indexer.WithOutpoints(outpoints),
+					indexer.WithSpentOnly(),
+				)
 				require.NoError(t, err)
-				require.Len(t, dbVtxos.Vtxos, len(outpoints))
 
-				allSpent := true
-				for _, v := range dbVtxos.Vtxos {
-					allSpent = v.Spent
-					if !allSpent {
-						break
-					}
-				}
-
-				if aliceGetCtxErr == nil && bobGetCtxErr == nil && allSpent {
+				if aliceGetCtxErr == nil &&
+					bobGetCtxErr == nil &&
+					len(dbVtxos.Vtxos) == len(outpoints) {
 					break
 				}
 				time.Sleep(100 * time.Millisecond)
