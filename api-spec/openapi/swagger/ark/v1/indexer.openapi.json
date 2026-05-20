@@ -475,6 +475,42 @@
                 "type": "string"
               }
             }
+          },
+          {
+            "name": "filter.txs.modify.removeExpressions",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.txs.modify.removeExpressions",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.txs.overwrite.expressions",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
         ],
         "responses": {
@@ -544,6 +580,42 @@
           },
           {
             "name": "filter.scripts.overwrite.scripts",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.txs.modify.removeExpressions",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.txs.modify.removeExpressions",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.txs.overwrite.expressions",
             "in": "query",
             "style": "simple",
             "schema": {
@@ -1672,11 +1744,43 @@
           }
         }
       },
+      "ModifyTxFilters": {
+        "title": "ModifyTxFilters",
+        "type": "object",
+        "description": "ModifyTxFilters adds or removes CEL expressions evaluated against each\nindexed tx envelope. A tx matches a subscription when any expression\nreturns true.",
+        "properties": {
+          "addExpressions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removeExpressions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "OverwriteScripts": {
         "title": "OverwriteScripts",
         "type": "object",
         "properties": {
           "scripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "OverwriteTxFilters": {
+        "title": "OverwriteTxFilters",
+        "type": "object",
+        "description": "OverwriteTxFilters replaces the full set of CEL expressions on a\nsubscription.",
+        "properties": {
+          "expressions": {
             "type": "array",
             "items": {
               "type": "string"
@@ -1768,10 +1872,13 @@
       "SubscriptionFilter": {
         "title": "SubscriptionFilter",
         "type": "object",
-        "description": "SubscriptionFilter is a generic filter applied to a subscription. It is\nmutually exclusive between the supported filter types. New filter types\n(e.g. packet types) will be added here in the future.",
+        "description": "SubscriptionFilter is a generic filter applied to a subscription. It is\nmutually exclusive between the supported filter types.",
         "properties": {
           "scripts": {
             "$ref": "#/components/schemas/ScriptsFilter"
+          },
+          "txs": {
+            "$ref": "#/components/schemas/TxFilter"
           }
         }
       },
@@ -1781,6 +1888,43 @@
         "properties": {
           "subscriptionId": {
             "type": "string"
+          }
+        }
+      },
+      "TxFilter": {
+        "title": "TxFilter",
+        "type": "object",
+        "description": "TxFilter updates the set of CEL tx expressions of a subscription either\nby modifying it (add/remove) or by overwriting it entirely.",
+        "properties": {
+          "modify": {
+            "$ref": "#/components/schemas/ModifyTxFilters"
+          },
+          "overwrite": {
+            "$ref": "#/components/schemas/OverwriteTxFilters"
+          }
+        }
+      },
+      "TxFilterResult": {
+        "title": "TxFilterResult",
+        "type": "object",
+        "properties": {
+          "added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "all": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -1822,6 +1966,9 @@
         "properties": {
           "scripts": {
             "$ref": "#/components/schemas/ScriptsFilterResult"
+          },
+          "txs": {
+            "$ref": "#/components/schemas/TxFilterResult"
           }
         }
       }

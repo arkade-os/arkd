@@ -6,11 +6,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/arkade-os/arkd/pkg/ark-lib/indexer/celenv"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/google/cel-go/cel"
 )
 
 type listener[T any] struct {
 	id           string
 	topics       map[string]struct{}
+	txFilters    map[string]cel.Program
 	ch           chan T
 	done         chan struct{}
 	closeDoneMux sync.Once
@@ -24,11 +29,12 @@ func newListener[T any](id string, topics []string) *listener[T] {
 		topicsMap[formatTopic(topic)] = struct{}{}
 	}
 	return &listener[T]{
-		id:     id,
-		topics: topicsMap,
-		ch:     make(chan T, 100),
-		done:   make(chan struct{}),
-		lock:   &sync.RWMutex{},
+		id:        id,
+		topics:    topicsMap,
+		txFilters: make(map[string]cel.Program),
+		ch:        make(chan T, 100),
+		done:      make(chan struct{}),
+		lock:      &sync.RWMutex{},
 	}
 }
 
@@ -94,6 +100,78 @@ func (l *listener[T]) getTopics() []string {
 		out = append(out, t)
 	}
 	return out
+}
+
+func (l *listener[T]) addTxFilters(programs map[string]cel.Program) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+	if l.txFilters == nil {
+		l.txFilters = make(map[string]cel.Program, len(programs))
+	}
+	for expr, prg := range programs {
+		l.txFilters[expr] = prg
+	}
+}
+
+func (l *listener[T]) removeTxFilters(exprs []string) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+	if l.txFilters == nil {
+		return
+	}
+	for _, expr := range exprs {
+		delete(l.txFilters, expr)
+	}
+}
+
+func (l *listener[T]) overwriteTxFilters(programs map[string]cel.Program) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+	l.txFilters = make(map[string]cel.Program, len(programs))
+	for expr, prg := range programs {
+		l.txFilters[expr] = prg
+	}
+}
+
+func (l *listener[T]) getTxFilters() []string {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+	out := make([]string, 0, len(l.txFilters))
+	for expr := range l.txFilters {
+		out = append(out, expr)
+	}
+	return out
+}
+
+// matchesTx evaluates the listener's tx filters against the tx produced by
+// getTx. Returns true if any program evaluates to true. Evaluation errors are
+// skipped, not propagated.
+//
+// getTx is invoked lazily, only after we confirm the listener has at least
+// one tx filter set, so listeners without tx filters do not pay any decoding
+// cost.
+func (l *listener[T]) matchesTx(getTx func() *wire.MsgTx) bool {
+	l.lock.RLock()
+	if len(l.txFilters) == 0 {
+		l.lock.RUnlock()
+		return false
+	}
+	programs := make([]cel.Program, 0, len(l.txFilters))
+	for _, prg := range l.txFilters {
+		programs = append(programs, prg)
+	}
+	l.lock.RUnlock()
+	tx := getTx()
+	if tx == nil {
+		return false
+	}
+	for _, prg := range programs {
+		ok, err := celenv.Eval(prg, tx)
+		if err == nil && ok {
+			return true
+		}
+	}
+	return false
 }
 
 // broker is a simple utility struct to manage subscriptions.
@@ -195,6 +273,69 @@ func (h *broker[T]) overwriteTopics(id string, topics []string) error {
 	}
 	listener.overwriteTopics(topics)
 	return nil
+}
+
+func (h *broker[T]) getTxFilters(id string) []string {
+	h.lock.RLock()
+	listener, ok := h.listeners[id]
+	h.lock.RUnlock()
+	if !ok {
+		return nil
+	}
+	return listener.getTxFilters()
+}
+
+func (h *broker[T]) addTxFilters(id string, exprs []string) error {
+	programs, err := compileTxFilters(exprs)
+	if err != nil {
+		return err
+	}
+	h.lock.RLock()
+	listener, ok := h.listeners[id]
+	h.lock.RUnlock()
+	if !ok {
+		return fmt.Errorf("subscription %s not found", id)
+	}
+	listener.addTxFilters(programs)
+	return nil
+}
+
+func (h *broker[T]) removeTxFilters(id string, exprs []string) error {
+	h.lock.RLock()
+	listener, ok := h.listeners[id]
+	h.lock.RUnlock()
+	if !ok {
+		return fmt.Errorf("subscription %s not found", id)
+	}
+	listener.removeTxFilters(exprs)
+	return nil
+}
+
+func (h *broker[T]) overwriteTxFilters(id string, exprs []string) error {
+	programs, err := compileTxFilters(exprs)
+	if err != nil {
+		return err
+	}
+	h.lock.RLock()
+	listener, ok := h.listeners[id]
+	h.lock.RUnlock()
+	if !ok {
+		return fmt.Errorf("subscription %s not found", id)
+	}
+	listener.overwriteTxFilters(programs)
+	return nil
+}
+
+func compileTxFilters(exprs []string) (map[string]cel.Program, error) {
+	programs := make(map[string]cel.Program, len(exprs))
+	for _, expr := range exprs {
+		prg, err := celenv.Compile(expr)
+		if err != nil {
+			return nil, err
+		}
+		programs[expr] = prg
+	}
+	return programs, nil
 }
 
 func (h *broker[T]) startTimeout(id string, timeout time.Duration) {

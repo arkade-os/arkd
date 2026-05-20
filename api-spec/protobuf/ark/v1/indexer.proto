@@ -428,11 +428,11 @@ message OverwriteScripts {
 }
 
 // SubscriptionFilter is a generic filter applied to a subscription. It is
-// mutually exclusive between the supported filter types. New filter types
-// (e.g. packet types) will be added here in the future.
+// mutually exclusive between the supported filter types.
 message SubscriptionFilter {
   oneof filter {
     ScriptsFilter scripts = 1;
+    TxFilter txs = 2;
   }
 }
 
@@ -445,6 +445,29 @@ message ScriptsFilter {
   }
 }
 
+// ModifyTxFilters adds or removes CEL expressions evaluated against each
+// indexed tx envelope. A tx matches a subscription when any expression
+// returns true.
+message ModifyTxFilters {
+  repeated string add_expressions = 1;
+  repeated string remove_expressions = 2;
+}
+
+// OverwriteTxFilters replaces the full set of CEL expressions on a
+// subscription.
+message OverwriteTxFilters {
+  repeated string expressions = 1;
+}
+
+// TxFilter updates the set of CEL tx expressions of a subscription either
+// by modifying it (add/remove) or by overwriting it entirely.
+message TxFilter {
+  oneof change {
+    ModifyTxFilters modify = 1;
+    OverwriteTxFilters overwrite = 2;
+  }
+}
+
 message UpdateSubscriptionRequest {
   string subscription_id = 1;
   SubscriptionFilter filter = 2;
@@ -454,10 +477,17 @@ message UpdateSubscriptionResponse {
   // Result of the filter update, matches the filter type from the request.
   oneof result {
     ScriptsFilterResult scripts = 1;
+    TxFilterResult txs = 2;
   }
 }
 
 message ScriptsFilterResult {
+  repeated string added = 1;
+  repeated string removed = 2;
+  repeated string all = 3;
+}
+
+message TxFilterResult {
   repeated string added = 1;
   repeated string removed = 2;
   repeated string all = 3;

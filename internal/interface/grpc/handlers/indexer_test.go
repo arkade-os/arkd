@@ -1,11 +1,17 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"testing"
 	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
+	"github.com/arkade-os/arkd/internal/core/application"
+	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -76,6 +82,61 @@ func overwriteScriptsFilter(scripts ...string) *arkv1.SubscriptionFilter {
 			},
 		},
 	}
+}
+
+func overwriteTxFilter(exprs ...string) *arkv1.SubscriptionFilter {
+	return &arkv1.SubscriptionFilter{
+		Filter: &arkv1.SubscriptionFilter_Txs{
+			Txs: &arkv1.TxFilter{
+				Change: &arkv1.TxFilter_Overwrite{
+					Overwrite: &arkv1.OverwriteTxFilters{Expressions: exprs},
+				},
+			},
+		},
+	}
+}
+
+func modifyTxFilter(add, remove []string) *arkv1.SubscriptionFilter {
+	return &arkv1.SubscriptionFilter{
+		Filter: &arkv1.SubscriptionFilter_Txs{
+			Txs: &arkv1.TxFilter{
+				Change: &arkv1.TxFilter_Modify{
+					Modify: &arkv1.ModifyTxFilters{
+						AddExpressions:    add,
+						RemoveExpressions: remove,
+					},
+				},
+			},
+		},
+	}
+}
+
+// buildTxHexWithPackets builds a minimal tx whose only output is the ARK
+// OP_RETURN extension carrying the given packets, and returns it hex-encoded.
+// A dummy input is added because wire.MsgTx.Serialize emits the SegWit marker
+// for txs with zero inputs, making round-trip via Deserialize fail.
+func buildTxHexWithPackets(t *testing.T, pkts ...extension.Packet) string {
+	t.Helper()
+	ext, err := extension.NewExtensionFromPackets(pkts...)
+	require.NoError(t, err)
+	out, err := ext.TxOut()
+	require.NoError(t, err)
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: 0xffffffff}})
+	tx.AddTxOut(out)
+	var buf bytes.Buffer
+	require.NoError(t, tx.Serialize(&buf))
+	return hex.EncodeToString(buf.Bytes())
+}
+
+// buildTxHexEmpty builds a tx with one dummy input and no outputs.
+func buildTxHexEmpty(t *testing.T) string {
+	t.Helper()
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: 0xffffffff}})
+	var buf bytes.Buffer
+	require.NoError(t, tx.Serialize(&buf))
+	return hex.EncodeToString(buf.Bytes())
 }
 
 func TestGetSubscription(t *testing.T) {
@@ -965,4 +1026,403 @@ func TestUpdateSubscription(t *testing.T) {
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{testScript1, testScript2}, resp.GetScripts().GetAll())
 	})
+}
+
+func TestTxFilter(t *testing.T) {
+	t.Parallel()
+
+	const hasExtension = "has(tx.extension)"
+	const hasPacket42 = "has(tx.extension) && hasPacket(tx.extension, 0x42)"
+
+	t.Run("GetSubscription initial tx filter", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		stream := newMockGetSubscriptionServer(ctx)
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{
+					Filter: overwriteTxFilter(hasExtension),
+				},
+				stream,
+			)
+		}()
+
+		msg := stream.recv(t, time.Second)
+		subId := msg.GetSubscriptionStarted().GetSubscriptionId()
+		require.NotEmpty(t, subId)
+
+		require.ElementsMatch(t, []string{hasExtension}, svc.scriptSubsHandler.getTxFilters(subId))
+
+		cancel()
+		select {
+		case err := <-errCh:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("GetSubscription did not return")
+		}
+	})
+
+	t.Run("GetSubscription rejects invalid CEL on init", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		stream := newMockGetSubscriptionServer(context.Background())
+
+		err := svc.GetSubscription(
+			&arkv1.GetSubscriptionRequest{
+				Filter: overwriteTxFilter("not a valid cel"),
+			},
+			stream,
+		)
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+	})
+
+	t.Run("UpdateSubscription Overwrite tx filters", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-overwrite", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		resp, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "sub-overwrite",
+				Filter:         overwriteTxFilter(hasExtension, hasPacket42),
+			},
+		)
+		require.NoError(t, err)
+		require.ElementsMatch(
+			t, []string{hasExtension, hasPacket42}, resp.GetTxs().GetAll(),
+		)
+
+		// Overwrite again with a single expression.
+		resp, err = svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "sub-overwrite",
+				Filter:         overwriteTxFilter(hasExtension),
+			},
+		)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{hasExtension}, resp.GetTxs().GetAll())
+	})
+
+	t.Run("UpdateSubscription Modify add and remove", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-modify", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		resp, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "sub-modify",
+				Filter:         modifyTxFilter([]string{hasExtension, hasPacket42}, nil),
+			},
+		)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{hasExtension, hasPacket42}, resp.GetTxs().GetAll())
+		require.ElementsMatch(t, []string{hasExtension, hasPacket42}, resp.GetTxs().GetAdded())
+
+		resp, err = svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "sub-modify",
+				Filter:         modifyTxFilter(nil, []string{hasPacket42}),
+			},
+		)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{hasExtension}, resp.GetTxs().GetAll())
+		require.ElementsMatch(t, []string{hasPacket42}, resp.GetTxs().GetRemoved())
+	})
+
+	t.Run("UpdateSubscription rejects invalid CEL", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-bad", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "sub-bad",
+				Filter:         overwriteTxFilter("&&&"),
+			},
+		)
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+
+		// Invalid expr must not mutate listener state.
+		require.Empty(t, svc.scriptSubsHandler.getTxFilters("sub-bad"))
+	})
+
+	t.Run("UpdateSubscription rejects missing change", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-empty", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "sub-empty",
+				Filter: &arkv1.SubscriptionFilter{
+					Filter: &arkv1.SubscriptionFilter_Txs{Txs: &arkv1.TxFilter{}},
+				},
+			},
+		)
+		require.Error(t, err)
+		st, _ := status.FromError(err)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+	})
+
+	t.Run("listenToTxEvents dispatches on tx filter match only", func(t *testing.T) {
+		t.Parallel()
+		eventsCh := make(chan application.TransactionEvent, 1)
+		svc := newTestIndexerServiceWithEvents(eventsCh)
+		go svc.listenToTxEvents()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-tx-only", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+		require.NoError(
+			t, svc.scriptSubsHandler.addTxFilters("sub-tx-only", []string{hasExtension}),
+		)
+
+		eventsCh <- application.TransactionEvent{
+			TxData: application.TxData{
+				Txid: "matching-tx",
+				Tx: buildTxHexWithPackets(t, extension.UnknownPacket{
+					PacketType: 0x42, Data: []byte{0x01},
+				}),
+			},
+		}
+
+		select {
+		case ev := <-listener.ch:
+			require.Equal(t, "matching-tx", ev.GetEvent().GetTxid())
+		case <-time.After(time.Second):
+			t.Fatal("listener did not receive tx-filter match")
+		}
+
+		eventsCh <- application.TransactionEvent{
+			TxData: application.TxData{Txid: "no-ext", Tx: buildTxHexEmpty(t)},
+		}
+		select {
+		case ev := <-listener.ch:
+			t.Fatalf("listener received unexpected event: %s", ev.GetEvent().GetTxid())
+		case <-time.After(150 * time.Millisecond):
+		}
+	})
+
+	t.Run("listenToTxEvents OR semantics", func(t *testing.T) {
+		// Asserts that a listener with both scripts and tx filters receives:
+		//   - events whose tx matches the filter even if no script matches
+		//   - events whose vtxos involve a watched script even if tx does not match
+		//   - both-match events exactly once (no duplication)
+		//   - neither-match events are dropped
+		// testScript1 = "5120" + testPubKey1, so a vtxo with this PubKey
+		// produces vtxoScript == testScript1 in listenToTxEvents.
+		const testPubKey1 = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+
+		setup := func(t *testing.T) (
+			chan application.TransactionEvent, *listener[*arkv1.GetSubscriptionResponse],
+		) {
+			t.Helper()
+			eventsCh := make(chan application.TransactionEvent, 4)
+			svc := newTestIndexerServiceWithEvents(eventsCh)
+			go svc.listenToTxEvents()
+
+			listener := newListener[*arkv1.GetSubscriptionResponse](
+				"sub-or", []string{testScript1},
+			)
+			svc.scriptSubsHandler.pushListener(listener)
+			require.NoError(
+				t, svc.scriptSubsHandler.addTxFilters("sub-or", []string{hasExtension}),
+			)
+			return eventsCh, listener
+		}
+
+		t.Run("script match without tx match", func(t *testing.T) {
+			t.Parallel()
+			eventsCh, listener := setup(t)
+			// Tx has no extension; vtxo matches testScript1.
+			eventsCh <- application.TransactionEvent{
+				TxData: application.TxData{Txid: "script-only", Tx: buildTxHexEmpty(t)},
+				SpendableVtxos: []domain.Vtxo{{
+					PubKey: testPubKey1,
+				}},
+			}
+			select {
+			case ev := <-listener.ch:
+				require.Equal(t, "script-only", ev.GetEvent().GetTxid())
+			case <-time.After(time.Second):
+				t.Fatal("listener did not receive script-only event")
+			}
+		})
+
+		t.Run("tx match without script match", func(t *testing.T) {
+			t.Parallel()
+			eventsCh, listener := setup(t)
+			eventsCh <- application.TransactionEvent{
+				TxData: application.TxData{Txid: "tx-only", Tx: buildTxHexWithPackets(t,
+					extension.UnknownPacket{PacketType: 0x01, Data: []byte{0x02}},
+				)},
+			}
+			select {
+			case ev := <-listener.ch:
+				require.Equal(t, "tx-only", ev.GetEvent().GetTxid())
+			case <-time.After(time.Second):
+				t.Fatal("listener did not receive tx-only event")
+			}
+		})
+
+		t.Run("both match dispatches exactly once", func(t *testing.T) {
+			t.Parallel()
+			eventsCh, listener := setup(t)
+			eventsCh <- application.TransactionEvent{
+				TxData: application.TxData{Txid: "both", Tx: buildTxHexWithPackets(t,
+					extension.UnknownPacket{PacketType: 0x01, Data: []byte{0x02}},
+				)},
+				SpendableVtxos: []domain.Vtxo{{PubKey: testPubKey1}},
+			}
+			select {
+			case ev := <-listener.ch:
+				require.Equal(t, "both", ev.GetEvent().GetTxid())
+			case <-time.After(time.Second):
+				t.Fatal("listener did not receive both-match event")
+			}
+			// Confirm no duplicate is delivered.
+			select {
+			case ev := <-listener.ch:
+				t.Fatalf("unexpected duplicate event: %s", ev.GetEvent().GetTxid())
+			case <-time.After(150 * time.Millisecond):
+			}
+		})
+
+		t.Run("neither match is dropped", func(t *testing.T) {
+			t.Parallel()
+			eventsCh, listener := setup(t)
+			eventsCh <- application.TransactionEvent{
+				TxData: application.TxData{Txid: "neither", Tx: buildTxHexEmpty(t)},
+			}
+			select {
+			case ev := <-listener.ch:
+				t.Fatalf("unexpected event: %s", ev.GetEvent().GetTxid())
+			case <-time.After(150 * time.Millisecond):
+			}
+		})
+	})
+
+	t.Run("listenToTxEvents script match when tx is unparseable", func(t *testing.T) {
+		t.Parallel()
+		// Verifies that bad event.Tx bytes don't break the script-match path.
+		const testPubKey1 = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+
+		eventsCh := make(chan application.TransactionEvent, 1)
+		svc := newTestIndexerServiceWithEvents(eventsCh)
+		go svc.listenToTxEvents()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse](
+			"sub-bad-tx", []string{testScript1},
+		)
+		svc.scriptSubsHandler.pushListener(listener)
+		// Even a listener with a tx filter set should still get the event via script.
+		require.NoError(
+			t, svc.scriptSubsHandler.addTxFilters("sub-bad-tx", []string{hasExtension}),
+		)
+
+		eventsCh <- application.TransactionEvent{
+			TxData:         application.TxData{Txid: "bad", Tx: "not-hex"},
+			SpendableVtxos: []domain.Vtxo{{PubKey: testPubKey1}},
+		}
+		select {
+		case ev := <-listener.ch:
+			require.Equal(t, "bad", ev.GetEvent().GetTxid())
+		case <-time.After(time.Second):
+			t.Fatal("listener did not receive event when tx is unparseable")
+		}
+	})
+
+	t.Run("UpdateSubscription Modify-Add invalid CEL leaves state untouched", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-atomic", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+		require.NoError(t, svc.scriptSubsHandler.addTxFilters(
+			"sub-atomic", []string{hasExtension},
+		))
+
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "sub-atomic",
+				Filter: modifyTxFilter(
+					[]string{hasPacket42, "&&& invalid"},
+					[]string{hasExtension},
+				),
+			},
+		)
+		require.Error(t, err)
+		st, _ := status.FromError(err)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+
+		// Pre-existing filter still set, requested adds not applied, removes not applied.
+		require.ElementsMatch(
+			t, []string{hasExtension}, svc.scriptSubsHandler.getTxFilters("sub-atomic"),
+		)
+	})
+
+	t.Run("UpdateSubscription Modify-Remove of unknown expression is idempotent", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-rm", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+		require.NoError(t, svc.scriptSubsHandler.addTxFilters("sub-rm", []string{hasExtension}))
+
+		resp, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "sub-rm",
+				Filter:         modifyTxFilter(nil, []string{"never-added"}),
+			},
+		)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{hasExtension}, resp.GetTxs().GetAll())
+	})
+
+	t.Run("addTxFilters is idempotent for duplicate expressions", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-dup", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		require.NoError(t, svc.scriptSubsHandler.addTxFilters("sub-dup", []string{hasExtension}))
+		require.NoError(t, svc.scriptSubsHandler.addTxFilters("sub-dup", []string{hasExtension}))
+		require.ElementsMatch(
+			t, []string{hasExtension}, svc.scriptSubsHandler.getTxFilters("sub-dup"),
+		)
+	})
+
+	t.Run("matchesTx does not invoke getTx when no filters set", func(t *testing.T) {
+		t.Parallel()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("no-filters", nil)
+		called := false
+		result := listener.matchesTx(func() *wire.MsgTx {
+			called = true
+			return nil
+		})
+		require.False(t, result)
+		require.False(
+			t, called,
+			"getTx should not be invoked when listener has no tx filters",
+		)
+	})
+}
+
+func newTestIndexerServiceWithEvents(
+	eventsCh <-chan application.TransactionEvent,
+) *indexerService {
+	svc := newTestIndexerService()
+	svc.eventsCh = eventsCh
+	return svc
 }

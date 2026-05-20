@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -445,6 +447,12 @@ func (h *indexerService) GetSubscription(
 				); err != nil {
 					return err
 				}
+			case *arkv1.SubscriptionFilter_Txs:
+				if _, err := h.applyTxFilter(
+					subscriptionId, filter.GetTxs(),
+				); err != nil {
+					return err
+				}
 			default:
 				return status.Error(codes.InvalidArgument, "unknown filter")
 			}
@@ -541,6 +549,8 @@ func (h *indexerService) UpdateSubscription(
 		return nil, status.Error(codes.InvalidArgument, "missing filter")
 	case *arkv1.SubscriptionFilter_Scripts:
 		return h.applyScriptsFilter(req.GetSubscriptionId(), filter.GetScripts())
+	case *arkv1.SubscriptionFilter_Txs:
+		return h.applyTxFilter(req.GetSubscriptionId(), filter.GetTxs())
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unknown filter")
 	}
@@ -625,6 +635,69 @@ func (h *indexerService) applyScriptsFilter(
 		}, nil
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unknown scripts change")
+	}
+}
+
+func (h *indexerService) applyTxFilter(
+	subscriptionID string, txFilter *arkv1.TxFilter,
+) (*arkv1.UpdateSubscriptionResponse, error) {
+	switch txFilter.GetChange().(type) {
+	case nil:
+		return nil, status.Error(codes.InvalidArgument, "missing tx filter change")
+	case *arkv1.TxFilter_Overwrite:
+		overwrite := txFilter.GetOverwrite()
+		if overwrite == nil {
+			return nil, status.Error(codes.InvalidArgument, "missing expressions to overwrite")
+		}
+		if err := h.scriptSubsHandler.overwriteTxFilters(
+			subscriptionID, overwrite.GetExpressions(),
+		); err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				return nil, status.Error(codes.NotFound, err.Error())
+			}
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return &arkv1.UpdateSubscriptionResponse{
+			Result: &arkv1.UpdateSubscriptionResponse_Txs{
+				Txs: &arkv1.TxFilterResult{
+					All: h.scriptSubsHandler.getTxFilters(subscriptionID),
+				},
+			},
+		}, nil
+	case *arkv1.TxFilter_Modify:
+		modify := txFilter.GetModify()
+		if modify == nil {
+			return nil, status.Error(codes.InvalidArgument, "missing expressions to add or remove")
+		}
+		addExprs := modify.GetAddExpressions()
+		removeExprs := modify.GetRemoveExpressions()
+		if len(addExprs) == 0 && len(removeExprs) == 0 {
+			return nil, status.Error(codes.InvalidArgument, "missing expressions to add or remove")
+		}
+		if len(addExprs) > 0 {
+			if err := h.scriptSubsHandler.addTxFilters(subscriptionID, addExprs); err != nil {
+				if strings.Contains(err.Error(), "not found") {
+					return nil, status.Error(codes.NotFound, err.Error())
+				}
+				return nil, status.Error(codes.InvalidArgument, err.Error())
+			}
+		}
+		if len(removeExprs) > 0 {
+			if err := h.scriptSubsHandler.removeTxFilters(subscriptionID, removeExprs); err != nil {
+				return nil, status.Error(codes.NotFound, err.Error())
+			}
+		}
+		return &arkv1.UpdateSubscriptionResponse{
+			Result: &arkv1.UpdateSubscriptionResponse_Txs{
+				Txs: &arkv1.TxFilterResult{
+					Added:   addExprs,
+					Removed: removeExprs,
+					All:     h.scriptSubsHandler.getTxFilters(subscriptionID),
+				},
+			},
+		}, nil
+	default:
+		return nil, status.Error(codes.InvalidArgument, "unknown tx filter change")
 	}
 }
 
@@ -721,6 +794,32 @@ func (h *indexerService) listenToTxEvents() {
 			}
 		}
 
+		// Lazily decode the tx for CEL evaluation. The closure is passed into
+		// matchesTx so the decode only runs once we know a listener actually
+		// has at least one tx filter, and only once per event regardless of
+		// how many listeners need it.
+		var parsedTx *wire.MsgTx
+		var parsedTxAttempted bool
+		parseTxOnce := func() *wire.MsgTx {
+			if parsedTxAttempted {
+				return parsedTx
+			}
+			parsedTxAttempted = true
+			if event.Tx == "" {
+				return nil
+			}
+			txBytes, err := hex.DecodeString(event.Tx)
+			if err != nil {
+				return nil
+			}
+			msg := wire.NewMsgTx(2)
+			if err := msg.Deserialize(bytes.NewReader(txBytes)); err != nil {
+				return nil
+			}
+			parsedTx = msg
+			return parsedTx
+		}
+
 		listenersCopy := h.scriptSubsHandler.getListenersCopy()
 		for _, l := range listenersCopy {
 			spendableVtxos := make([]*arkv1.IndexerVtxo, 0)
@@ -737,7 +836,10 @@ func (h *indexerService) listenToTxEvents() {
 				}
 			}
 
-			if len(spendableVtxos) > 0 || len(spentVtxos) > 0 {
+			scriptMatch := len(spendableVtxos) > 0 || len(spentVtxos) > 0
+			txMatch := l.matchesTx(parseTxOnce)
+
+			if scriptMatch || txMatch {
 				go func(listener *listener[*arkv1.GetSubscriptionResponse]) {
 					select {
 					case listener.ch <- &arkv1.GetSubscriptionResponse{
