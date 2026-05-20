@@ -177,7 +177,10 @@ func execTx(
 
 		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
-			_ = closeConn(conn, isInterruptError(ctx, err))
+			if closeErr := closeConn(conn, isInterruptError(ctx, err)); closeErr != nil {
+				log.WithError(closeErr).
+					Warn("failed to close connection on unsuccessful begin transaction")
+			}
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
 		qtx := queries.New(conn).WithTx(tx)
