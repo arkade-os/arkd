@@ -295,6 +295,7 @@ var (
 	defaultIndexerAuthTokenExpiry        = 300 // 5 minutes in seconds
 	defaultMaxConcurrentStreams          = uint32(1000)
 	defaultStreamConnPoolSize            = uint32(4)
+	maxStreamConnPoolSize                = uint32(64)
 	defaultMaxOpReturnOuts               = uint32(3)
 )
 
@@ -462,7 +463,10 @@ func LoadConfig() (*Config, error) {
 		IndexerAuthTokenExpiry:        viper.GetInt64(IndexerAuthTokenExpiry),
 		IndexerSigningKey:             viper.GetString(IndexerSigningKey),
 		MaxConcurrentStreams:          viper.GetUint32(MaxConcurrentStreams),
-		StreamConnPoolSize:            max(1, viper.GetUint32(StreamConnPoolSize)),
+		// Default to 1 or maxStreamConnPoolSize if out of bounds
+		StreamConnPoolSize: min(
+			maxStreamConnPoolSize, max(1, viper.GetUint32(StreamConnPoolSize)),
+		),
 		// Default to 1 if set to 0
 		MaxOpReturnOutputs: max(1, viper.GetUint32(MaxOpReturnOutputs)),
 	}, nil
