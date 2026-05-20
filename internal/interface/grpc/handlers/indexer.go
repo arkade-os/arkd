@@ -430,19 +430,25 @@ func (h *indexerService) GetSubscription(
 
 	if len(subscriptionId) == 0 {
 		// New single-connection flow: create subscription inline.
-		scripts := request.GetScripts()
-		if len(scripts) > 0 {
-			var err error
-			scripts, err = parseScripts(scripts)
-			if err != nil {
-				return status.Error(codes.InvalidArgument, err.Error())
-			}
-		}
-
 		subscriptionId = uuid.NewString()
-		listener := newListener[*arkv1.GetSubscriptionResponse](subscriptionId, scripts)
+		listener := newListener[*arkv1.GetSubscriptionResponse](subscriptionId, nil)
 		h.scriptSubsHandler.pushListener(listener)
 		defer h.scriptSubsHandler.removeListener(subscriptionId)
+
+		// Apply initial filter, if any, through the same machinery used by
+		// UpdateSubscription.
+		if filter := request.GetFilter(); filter != nil {
+			switch filter.GetFilter().(type) {
+			case *arkv1.SubscriptionFilter_Scripts:
+				if _, err := h.applyScriptsFilter(
+					subscriptionId, filter.GetScripts(),
+				); err != nil {
+					return err
+				}
+			default:
+				return status.Error(codes.InvalidArgument, "unknown filter")
+			}
+		}
 
 		scriptCh = listener.ch
 

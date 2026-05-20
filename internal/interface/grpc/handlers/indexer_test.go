@@ -66,6 +66,18 @@ func newTestIndexerService() *indexerService {
 	}
 }
 
+func overwriteScriptsFilter(scripts ...string) *arkv1.SubscriptionFilter {
+	return &arkv1.SubscriptionFilter{
+		Filter: &arkv1.SubscriptionFilter_Scripts{
+			Scripts: &arkv1.ScriptsFilter{
+				Change: &arkv1.ScriptsFilter_Overwrite{
+					Overwrite: &arkv1.OverwriteScripts{Scripts: scripts},
+				},
+			},
+		},
+	}
+}
+
 func TestGetSubscription(t *testing.T) {
 	t.Parallel()
 
@@ -110,7 +122,9 @@ func TestGetSubscription(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() {
 			errCh <- svc.GetSubscription(
-				&arkv1.GetSubscriptionRequest{Scripts: []string{testScript1}},
+				&arkv1.GetSubscriptionRequest{
+					Filter: overwriteScriptsFilter(testScript1),
+				},
 				stream,
 			)
 		}()
@@ -186,7 +200,9 @@ func TestGetSubscription(t *testing.T) {
 		stream := newMockGetSubscriptionServer(context.Background())
 
 		err := svc.GetSubscription(
-			&arkv1.GetSubscriptionRequest{Scripts: []string{"notahex"}},
+			&arkv1.GetSubscriptionRequest{
+				Filter: overwriteScriptsFilter("notahex"),
+			},
 			stream,
 		)
 		require.Error(t, err)
@@ -241,7 +257,9 @@ func TestGetSubscription(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() {
 			errCh <- svc.GetSubscription(
-				&arkv1.GetSubscriptionRequest{Scripts: []string{testScript1}},
+				&arkv1.GetSubscriptionRequest{
+					Filter: overwriteScriptsFilter(testScript1),
+				},
 				stream,
 			)
 		}()
@@ -309,7 +327,9 @@ func TestGetSubscription(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() {
 			errCh <- svc.GetSubscription(
-				&arkv1.GetSubscriptionRequest{Scripts: []string{testScript1}},
+				&arkv1.GetSubscriptionRequest{
+					Filter: overwriteScriptsFilter(testScript1),
+				},
 				stream,
 			)
 		}()

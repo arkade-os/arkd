@@ -401,9 +401,9 @@ message UnsubscribeForScriptsResponse {}
 message GetSubscriptionRequest {
   // If empty, server creates a new subscription automatically.
   string subscription_id = 1;
-  // Optional: scripts to subscribe to on stream creation.
+  // Optional: filter to apply on stream creation.
   // Only used when subscription_id is empty; ignored otherwise.
-  repeated string scripts = 2;
+  SubscriptionFilter filter = 2;
 }
 
 message GetSubscriptionResponse {

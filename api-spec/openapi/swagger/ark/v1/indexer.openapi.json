@@ -441,9 +441,32 @@
             }
           },
           {
-            "name": "scripts",
+            "name": "filter.scripts.modify.removeScripts",
             "in": "query",
-            "description": "Optional: scripts to subscribe to on stream creation.\nOnly used when subscription_id is empty; ignored otherwise.",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.scripts.modify.removeScripts",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.scripts.overwrite.scripts",
+            "in": "query",
             "style": "simple",
             "schema": {
               "minItems": 1,
@@ -496,9 +519,32 @@
             }
           },
           {
-            "name": "scripts",
+            "name": "filter.scripts.modify.removeScripts",
             "in": "query",
-            "description": "Optional: scripts to subscribe to on stream creation.\nOnly used when subscription_id is empty; ignored otherwise.",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.scripts.modify.removeScripts",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.scripts.overwrite.scripts",
+            "in": "query",
             "style": "simple",
             "schema": {
               "minItems": 1,
@@ -1088,12 +1134,9 @@
         "title": "GetSubscriptionRequest",
         "type": "object",
         "properties": {
-          "scripts": {
-            "type": "array",
-            "description": "Optional: scripts to subscribe to on stream creation.\nOnly used when subscription_id is empty; ignored otherwise.",
-            "items": {
-              "type": "string"
-            }
+          "filter": {
+            "$ref": "#/components/schemas/SubscriptionFilter",
+            "description": "Optional: filter to apply on stream creation.\nOnly used when subscription_id is empty; ignored otherwise."
           },
           "subscriptionId": {
             "type": "string",
