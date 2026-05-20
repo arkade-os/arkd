@@ -403,6 +403,7 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		streamConns = append(streamConns, sc)
 	}
 	s.streamConns = streamConns
+	log.Infof("stream connection pool size: %d", poolSize)
 
 	streamPool := make([]grpc.ClientConnInterface, len(streamConns))
 	for i, sc := range streamConns {
