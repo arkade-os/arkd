@@ -26,10 +26,10 @@ const (
 )
 
 type grpcClient struct {
-	conn           *grpc.ClientConn
-	connMu         sync.RWMutex
-	subscriptionMu sync.RWMutex
-	subscriptionId string
+	conn   *grpc.ClientConn
+	connMu *sync.RWMutex
+	// TODO: drop me in https://github.com/arkade-os/arkd/pull/951
+	scripts *scriptsCache
 }
 
 func NewClient(serverUrl string) (indexer.Indexer, error) {
@@ -70,7 +70,9 @@ func NewClient(serverUrl string) (indexer.Indexer, error) {
 	}
 
 	client := &grpcClient{
-		conn: conn,
+		conn:    conn,
+		connMu:  &sync.RWMutex{},
+		scripts: newScriptsCache(),
 	}
 
 	return client, nil
@@ -458,10 +460,18 @@ func (a *grpcClient) GetBatchSweepTxs(
 	return resp.GetSweptBy(), nil
 }
 
-func (a *grpcClient) GetSubscription(
-	ctx context.Context, subscriptionId string, scripts ...string,
-) (<-chan indexer.ScriptEvent, func(), error) {
-	return utils.StartReconnectingStream(ctx, utils.ReconnectingStreamConfig[
+func (a *grpcClient) NewSubscription(
+	ctx context.Context, scripts []string,
+) (string, <-chan indexer.ScriptEvent, func(), error) {
+	resp, err := a.svc().SubscribeForScripts(ctx, &arkv1.SubscribeForScriptsRequest{
+		Scripts: scripts,
+	})
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	subscriptionId := resp.GetSubscriptionId()
+	stream, closeFn, err := utils.StartReconnectingStream(ctx, utils.ReconnectingStreamConfig[
 		arkv1.IndexerService_GetSubscriptionClient,
 		*arkv1.GetSubscriptionResponse,
 		indexer.ScriptEvent,
@@ -469,17 +479,28 @@ func (a *grpcClient) GetSubscription(
 		Connect: func(ctx context.Context) (arkv1.IndexerService_GetSubscriptionClient, error) {
 			return a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
 				SubscriptionId: subscriptionId,
-				Scripts:        scripts,
 			})
 		},
 		Reconnect: func(
 			ctx context.Context,
 		) (string, arkv1.IndexerService_GetSubscriptionClient, error) {
-			stream, err := a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
-				SubscriptionId: a.getSubscriptionID(),
-				Scripts:        scripts,
+			scripts := a.scripts.get(subscriptionId)
+			resp, err := a.svc().SubscribeForScripts(ctx, &arkv1.SubscribeForScriptsRequest{
+				Scripts: scripts,
 			})
-			return "", stream, err
+			if err != nil {
+				return "", nil, err
+			}
+			newSubscriptionId := resp.GetSubscriptionId()
+			stream, err := a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
+				SubscriptionId: newSubscriptionId,
+			})
+			if err != nil {
+				return "", nil, err
+			}
+			// Update the cache by replacing the subscription id for the watched scripts
+			a.scripts.replace(subscriptionId, newSubscriptionId)
+			return newSubscriptionId, stream, nil
 		},
 		Recv: func(
 			stream arkv1.IndexerService_GetSubscriptionClient,
@@ -498,9 +519,6 @@ func (a *grpcClient) GetSubscription(
 			var checkpointTxs map[string]indexer.TxData
 			var event *arkv1.IndexerSubscriptionEvent
 			switch data := resp.GetData().(type) {
-			case *arkv1.GetSubscriptionResponse_SubscriptionStarted:
-				a.setSubscriptionID(data.SubscriptionStarted.GetSubscriptionId())
-				return nil
 			case *arkv1.GetSubscriptionResponse_Event:
 				event = data.Event
 				if len(event.GetCheckpointTxs()) > 0 {
@@ -547,41 +565,43 @@ func (a *grpcClient) GetSubscription(
 			}
 		},
 	})
-}
-
-func (a *grpcClient) SubscribeForScripts(
-	ctx context.Context, subscriptionId string, scripts []string,
-) (string, error) {
-	req := &arkv1.SubscribeForScriptsRequest{
-		Scripts: scripts,
-	}
-	if len(subscriptionId) > 0 {
-		req.SubscriptionId = subscriptionId
-	}
-
-	resp, err := a.svc().SubscribeForScripts(ctx, req)
 	if err != nil {
-		return "", err
+		return "", nil, nil, err
 	}
 
-	return resp.GetSubscriptionId(), nil
+	a.scripts.add(subscriptionId, scripts)
+
+	cancelFn := func() {
+		closeFn()
+		a.scripts.removeSubscription(subscriptionId)
+	}
+	return subscriptionId, stream, cancelFn, nil
 }
 
-func (a *grpcClient) UnsubscribeForScripts(
-	ctx context.Context, subscriptionId string, scripts []string,
+func (a *grpcClient) UpdateSubscription(
+	ctx context.Context, subscriptionId string, scriptsToAdd, scriptsToRemove []string,
 ) error {
-	req := &arkv1.UnsubscribeForScriptsRequest{
-		Scripts: scripts,
+	if subscriptionId == "" {
+		return fmt.Errorf("missing subscription id to update")
 	}
-	if len(subscriptionId) > 0 {
-		req.SubscriptionId = subscriptionId
-	}
-
-	_, err := a.svc().UnsubscribeForScripts(ctx, req)
-	if err != nil {
-		return err
+	if len(scriptsToAdd) <= 0 && len(scriptsToRemove) <= 0 {
+		return fmt.Errorf("missing scripts to add or remove")
 	}
 
+	if !a.scripts.exists(subscriptionId) {
+		return fmt.Errorf("subscription not found with id %s", subscriptionId)
+	}
+
+	if len(scriptsToAdd) > 0 {
+		if err := a.subscribeForScripts(ctx, subscriptionId, scriptsToAdd); err != nil {
+			return err
+		}
+	}
+	if len(scriptsToRemove) > 0 {
+		if err := a.unsubscribeForScripts(ctx, subscriptionId, scriptsToRemove); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -613,83 +633,6 @@ func (a *grpcClient) GetAsset(ctx context.Context, assetID string) (
 	}, nil
 }
 
-func (a *grpcClient) ModifySubscriptionScripts(
-	ctx context.Context, addScripts, removeScripts []string,
-) (scriptsAdded, scriptsRemoved, allScripts []string, err error) {
-	subID := a.getSubscriptionID()
-	if subID == "" {
-		return nil, nil, nil, fmt.Errorf("subscriptionId is not set; cannot modify subscription scripts")
-	}
-
-	req := &arkv1.UpdateSubscriptionRequest{
-		SubscriptionId: subID,
-		Filter: &arkv1.SubscriptionFilter{
-			Filter: &arkv1.SubscriptionFilter_Scripts{
-				Scripts: &arkv1.ScriptsFilter{
-					Change: &arkv1.ScriptsFilter_Modify{
-						Modify: &arkv1.ModifyScripts{
-							AddScripts:    addScripts,
-							RemoveScripts: removeScripts,
-						},
-					},
-				},
-			},
-		},
-	}
-	resp, err := a.svc().UpdateSubscription(ctx, req)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	result := resp.GetScripts()
-	return result.GetAdded(), result.GetRemoved(), result.GetAll(), nil
-}
-
-func (a *grpcClient) OverwriteSubscriptionScripts(
-	ctx context.Context, scripts []string,
-) (scriptsAdded, scriptsRemoved, allScripts []string, err error) {
-	subID := a.getSubscriptionID()
-	if subID == "" {
-		return nil, nil, nil, fmt.Errorf("subscriptionId is not set; cannot overwrite subscription scripts")
-	}
-
-	req := &arkv1.UpdateSubscriptionRequest{
-		SubscriptionId: subID,
-		Filter: &arkv1.SubscriptionFilter{
-			Filter: &arkv1.SubscriptionFilter_Scripts{
-				Scripts: &arkv1.ScriptsFilter{
-					Change: &arkv1.ScriptsFilter_Overwrite{
-						Overwrite: &arkv1.OverwriteScripts{
-							Scripts: scripts,
-						},
-					},
-				},
-			},
-		},
-	}
-	resp, err := a.svc().UpdateSubscription(ctx, req)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	result := resp.GetScripts()
-	return result.GetAdded(), result.GetRemoved(), result.GetAll(), nil
-}
-
-func (a *grpcClient) getSubscriptionID() string {
-	a.subscriptionMu.RLock()
-	defer a.subscriptionMu.RUnlock()
-
-	return a.subscriptionId
-}
-
-func (a *grpcClient) setSubscriptionID(id string) {
-	a.subscriptionMu.Lock()
-	defer a.subscriptionMu.Unlock()
-
-	a.subscriptionId = id
-}
-
 func (a *grpcClient) Close() {
 	a.connMu.Lock()
 	defer a.connMu.Unlock()
@@ -701,6 +644,44 @@ func (a *grpcClient) svc() arkv1.IndexerServiceClient {
 	a.connMu.RLock()
 	defer a.connMu.RUnlock()
 	return arkv1.NewIndexerServiceClient(a.conn)
+}
+
+func (a *grpcClient) subscribeForScripts(
+	ctx context.Context, subscriptionId string, scripts []string,
+) error {
+	subId := a.scripts.resolveId(subscriptionId)
+
+	req := &arkv1.SubscribeForScriptsRequest{
+		Scripts:        scripts,
+		SubscriptionId: subId,
+	}
+
+	if _, err := a.svc().SubscribeForScripts(ctx, req); err != nil {
+		return err
+	}
+
+	a.scripts.add(subId, scripts)
+
+	return nil
+}
+
+func (a *grpcClient) unsubscribeForScripts(
+	ctx context.Context, subscriptionId string, scripts []string,
+) error {
+	subId := a.scripts.resolveId(subscriptionId)
+
+	req := &arkv1.UnsubscribeForScriptsRequest{
+		Scripts:        scripts,
+		SubscriptionId: subId,
+	}
+
+	if _, err := a.svc().UnsubscribeForScripts(ctx, req); err != nil {
+		return err
+	}
+
+	a.scripts.removeScripts(subId, scripts)
+
+	return nil
 }
 
 func (a *grpcClient) paginatedGetVtxos(

@@ -265,7 +265,7 @@ func (a *service) NotifyIncomingFunds(ctx context.Context, addr string) ([]types
 	}
 
 	scripts := []string{hex.EncodeToString(vtxoScript)}
-	eventCh, closeFn, err := a.indexer.GetSubscription(ctx, "", scripts...)
+	_, eventCh, closeFn, err := a.indexer.NewSubscription(ctx, scripts)
 	if err != nil {
 		return nil, err
 	}
