@@ -17,7 +17,7 @@ const (
 	currentRoundKey        = "currentRoundStore:round"
 	boardingInputsKey      = "boardingInputsStore:numOfInputs"
 	boardingInputSigsKey   = "boardingInputsStore:signatures"
-	scheduledTaskKeyPrefix = "scheduled_task"
+	scheduledTaskKeyPrefix = "scheduledTasksStore:task"
 )
 
 type currentRoundStore struct {

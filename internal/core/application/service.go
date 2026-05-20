@@ -197,7 +197,7 @@ func NewService(
 		cache:                     cache,
 		scanner:                   scanner,
 		sweeper: newSweeper(
-			wallet, repoManager, builder, scheduler, noteUriPrefix,
+			wallet, repoManager, builder, scheduler, noteUriPrefix, cache,
 		),
 		boardingExitDelay:             boardingExitDelay,
 		operatorPrvkey:                operatorSigningKey,
@@ -3376,8 +3376,13 @@ func (s *service) listenToScannerNotifications() {
 							// remove sweeper task for the associated checkpoint outputs
 							for _, in := range ptx.UnsignedTx.TxIn {
 								taskId := in.PreviousOutPoint.Hash.String()
-								s.sweeper.removeTask(taskId)
-								log.Debugf("sweeper: unscheduled task for tx %s", taskId)
+								if err := s.sweeper.removeTask(taskId); err != nil {
+									log.WithError(err).Warnf(
+										"sweeper: failed to unschedule task for tx %s", taskId,
+									)
+								} else {
+									log.Debugf("sweeper: unscheduled task for tx %s", taskId)
+								}
 							}
 						}()
 					}

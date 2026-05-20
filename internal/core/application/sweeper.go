@@ -37,26 +37,21 @@ type sweeper struct {
 	scheduler   ports.SchedulerService
 
 	noteUriPrefix string
-
-	// cache of scheduled tasks, avoid scheduling the same sweep event multiple times
-	locker *sync.Mutex
-	// TODO move the scheduled task map to LiveStore port
-	scheduledTasks map[string]struct{}
-	ctx            context.Context
+	cache         ports.LiveStore
+	ctx           context.Context
 }
 
 func newSweeper(
 	wallet ports.WalletService, repoManager ports.RepoManager, builder ports.TxBuilder,
-	scheduler ports.SchedulerService, noteUriPrefix string,
+	scheduler ports.SchedulerService, noteUriPrefix string, cache ports.LiveStore,
 ) *sweeper {
 	return &sweeper{
 		wallet, repoManager, builder, scheduler,
-		noteUriPrefix, &sync.Mutex{}, make(map[string]struct{}), nil,
+		noteUriPrefix, cache, nil,
 	}
 }
 
 func (s *sweeper) start(ctx context.Context) error {
-	s.scheduledTasks = make(map[string]struct{})
 	s.scheduler.Start()
 
 	s.ctx = ctx
@@ -209,11 +204,11 @@ func (s *sweeper) stop() {
 	s.scheduler.Stop()
 }
 
-// removeTask update the cached map of scheduled tasks
-func (s *sweeper) removeTask(id string) {
-	s.locker.Lock()
-	defer s.locker.Unlock()
-	delete(s.scheduledTasks, id)
+// removeTask releases the claim on a scheduled task id. Callers use this
+// to cancel a pending sweep (e.g. when the underlying tx is observed
+// spent before the sweep fires).
+func (s *sweeper) removeTask(id string) error {
+	return s.cache.ScheduledTasks().Remove(s.ctx, id)
 }
 
 func (s *sweeper) scheduleCheckpointSweep(
@@ -387,29 +382,37 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 		return task.execute()
 	}
 
-	s.locker.Lock()
-	defer s.locker.Unlock()
-
-	if _, scheduled := s.scheduledTasks[task.id]; scheduled {
+	claimed, err := s.cache.ScheduledTasks().AddIfAbsent(s.ctx, task.id)
+	if err != nil {
+		return fmt.Errorf("failed to claim scheduled task %s: %w", task.id, err)
+	}
+	if !claimed {
+		// another instance (or this one earlier) already claimed it
 		return nil
 	}
 
-	s.scheduledTasks[task.id] = struct{}{}
-
 	return s.scheduler.ScheduleTaskOnce(task.at, func() {
-		// check if the task is still scheduled before executing it
-		s.locker.Lock()
-		if _, scheduled := s.scheduledTasks[task.id]; !scheduled {
+		// Cancellation check: external code may have called removeTask
+		// because the underlying tx was already spent. If the claim is
+		// gone, skip execution.
+		has, err := s.cache.ScheduledTasks().Has(s.ctx, task.id)
+		if err != nil {
+			log.WithError(err).Errorf(
+				"sweeper: failed to check scheduled task %s, proceeding anyway", task.id,
+			)
+		} else if !has {
 			log.Debugf(
 				"sweeper: task for sweeping tx %s has been unscheduled, nothing left to do",
 				task.id,
 			)
-			s.locker.Unlock()
 			return
 		}
-		s.locker.Unlock()
 
-		s.removeTask(task.id)
+		if err := s.removeTask(task.id); err != nil {
+			log.WithError(err).Errorf(
+				"sweeper: failed to release scheduled task %s", task.id,
+			)
+		}
 
 		if err := task.execute(); err != nil {
 			log.WithError(err).Errorf("failed to execute sweep of tx %s", task.id)
