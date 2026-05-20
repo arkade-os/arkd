@@ -17,6 +17,7 @@ type LiveStore interface {
 	ConfirmationSessions() ConfirmationSessionsStore
 	TreeSigingSessions() TreeSigningSessionsStore
 	BoardingInputs() BoardingInputsStore
+	ScheduledTasks() ScheduledTasksStore
 }
 
 type IntentStore interface {
@@ -87,6 +88,12 @@ type BoardingInputsStore interface {
 	) error
 	GetSignatures(ctx context.Context, batchId string) (map[uint32]SignedBoardingInput, error)
 	DeleteSignatures(ctx context.Context, batchId string) error
+}
+
+type ScheduledTasksStore interface {
+	AddIfAbsent(ctx context.Context, id string) (bool, error)
+	Remove(ctx context.Context, id string) error
+	Has(ctx context.Context, id string) (bool, error)
 }
 
 type TimedIntent struct {

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -763,6 +764,78 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		gotSigs, err = store.BoardingInputs().GetSignatures(ctx, batchId)
 		require.NoError(t, err)
 		require.Empty(t, gotSigs)
+	})
+	t.Run("ScheduledTasksStore", func(t *testing.T) {
+		ctx := t.Context()
+
+		// AddIfAbsent: first call claims the id.
+		claimed, err := store.ScheduledTasks().AddIfAbsent(ctx, "tx-abc")
+		require.NoError(t, err)
+		require.True(t, claimed, "first AddIfAbsent should succeed and return true")
+
+		has, err := store.ScheduledTasks().Has(ctx, "tx-abc")
+		require.NoError(t, err)
+		require.True(t, has)
+
+		// AddIfAbsent: second call with the same id loses the race
+		secondClaim, err := store.ScheduledTasks().AddIfAbsent(ctx, "tx-abc")
+		require.NoError(t, err)
+		require.False(t, secondClaim, "second AddIfAbsent for the same id must return false, not an error")
+
+		// Has: unknown id is false.
+		has, err = store.ScheduledTasks().Has(ctx, "never-added")
+		require.NoError(t, err)
+		require.False(t, has)
+
+		// Remove: releases the claim.
+		err = store.ScheduledTasks().Remove(ctx, "tx-abc")
+		require.NoError(t, err)
+
+		has, err = store.ScheduledTasks().Has(ctx, "tx-abc")
+		require.NoError(t, err)
+		require.False(t, has, "Has must reflect Remove")
+
+		// Remove: idempotent — unknown id is a no-op.
+		err = store.ScheduledTasks().Remove(ctx, "never-added")
+		require.NoError(t, err)
+
+		// After Remove, the same id can be re-claimed.
+		claimed, err = store.ScheduledTasks().AddIfAbsent(ctx, "tx-abc")
+		require.NoError(t, err)
+		require.True(t, claimed)
+
+		require.NoError(t, store.ScheduledTasks().Remove(ctx, "tx-abc"))
+
+		// Concurrent AddIfAbsent on the same id must produce exactly one
+		// winner. This is the load-bearing property of the whole fix:
+		// without atomicity, two arkd processes could both claim the same
+		// task and both broadcast the same sweep tx.
+		const goroutines = 100
+		var wins atomic.Int32
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+
+		for range goroutines {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				claimed, err := store.ScheduledTasks().AddIfAbsent(ctx, "tx-race")
+				require.NoError(t, err)
+				if claimed {
+					wins.Add(1)
+				}
+			}()
+		}
+
+		close(start)
+		wg.Wait()
+
+		require.Equal(t, int32(1), wins.Load(),
+			"AddIfAbsent must be atomic: exactly one goroutine claims the id")
+
+		require.NoError(t, store.ScheduledTasks().Remove(ctx, "tx-race"))
+
 	})
 }
 

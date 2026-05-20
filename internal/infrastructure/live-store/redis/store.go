@@ -13,6 +13,7 @@ type redisLiveStore struct {
 	confirmationSessionsStore ports.ConfirmationSessionsStore
 	treeSigningSessions       ports.TreeSigningSessionsStore
 	boardingInputsStore       ports.BoardingInputsStore
+	scheduledTasksStore       ports.ScheduledTasksStore
 }
 
 func NewLiveStore(rdb *redis.Client, builder ports.TxBuilder, numOfRetries int) ports.LiveStore {
@@ -24,6 +25,7 @@ func NewLiveStore(rdb *redis.Client, builder ports.TxBuilder, numOfRetries int) 
 		confirmationSessionsStore: NewConfirmationSessionsStore(rdb, numOfRetries),
 		treeSigningSessions:       NewTreeSigningSessionsStore(rdb, numOfRetries),
 		boardingInputsStore:       NewBoardingInputsStore(rdb, numOfRetries),
+		scheduledTasksStore:       NewScheduledTasksStore(rdb),
 	}
 }
 
@@ -39,4 +41,7 @@ func (s *redisLiveStore) TreeSigingSessions() ports.TreeSigningSessionsStore {
 }
 func (s *redisLiveStore) BoardingInputs() ports.BoardingInputsStore {
 	return s.boardingInputsStore
+}
+func (s *redisLiveStore) ScheduledTasks() ports.ScheduledTasksStore {
+	return s.scheduledTasksStore
 }

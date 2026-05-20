@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	currentRoundKey      = "currentRoundStore:round"
-	boardingInputsKey    = "boardingInputsStore:numOfInputs"
-	boardingInputSigsKey = "boardingInputsStore:signatures"
+	currentRoundKey        = "currentRoundStore:round"
+	boardingInputsKey      = "boardingInputsStore:numOfInputs"
+	boardingInputSigsKey   = "boardingInputsStore:signatures"
+	scheduledTaskKeyPrefix = "scheduled_task"
 )
 
 type currentRoundStore struct {
