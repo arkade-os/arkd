@@ -5749,12 +5749,12 @@ func TestGetAssetQueryChurn(t *testing.T) {
 
 				allSpent := true
 				for _, spent := range spentVtxos {
-					allSpent = dbVtxos[spent].Spent
+					allSpent = allSpent && dbVtxos[spent].Spent
 				}
 
 				allPreconf := true
 				for _, unspent := range unspentVtxos {
-					allPreconf = dbVtxos[unspent].Preconfirmed
+					allPreconf = allPreconf && dbVtxos[unspent].Preconfirmed
 				}
 
 				if allSpent && allPreconf {
