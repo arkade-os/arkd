@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"fmt"
 	"testing"
 	"time"
 
@@ -1416,6 +1417,84 @@ func TestTxFilter(t *testing.T) {
 			t, called,
 			"getTx should not be invoked when listener has no tx filters",
 		)
+	})
+
+	t.Run("addTxFilters rejects over-cap input", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-cap", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		// Build a slate of unique expressions just over the cap.
+		exprs := make([]string, MaxTxFiltersPerListener+1)
+		for i := range exprs {
+			exprs[i] = fmt.Sprintf("hasPacket(tx.extension, %d)", i)
+		}
+		err := svc.scriptSubsHandler.addTxFilters("sub-cap", exprs)
+		require.ErrorIs(t, err, ErrTxFiltersLimitExceeded)
+		require.Empty(t, svc.scriptSubsHandler.getTxFilters("sub-cap"))
+	})
+
+	t.Run("addTxFilters enforces cap across multiple calls", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-cap-2", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		// Fill exactly to the cap.
+		first := make([]string, MaxTxFiltersPerListener)
+		for i := range first {
+			first[i] = fmt.Sprintf("hasPacket(tx.extension, %d)", i)
+		}
+		require.NoError(t, svc.scriptSubsHandler.addTxFilters("sub-cap-2", first))
+		require.Len(t, svc.scriptSubsHandler.getTxFilters("sub-cap-2"), MaxTxFiltersPerListener)
+
+		// Adding a new distinct expression must be rejected.
+		err := svc.scriptSubsHandler.addTxFilters("sub-cap-2", []string{
+			"hasPacket(tx.extension, 9999)",
+		})
+		require.ErrorIs(t, err, ErrTxFiltersLimitExceeded)
+		require.Len(t, svc.scriptSubsHandler.getTxFilters("sub-cap-2"), MaxTxFiltersPerListener)
+
+		// But re-adding an existing expression should still work (idempotent;
+		// doesn't grow the set).
+		require.NoError(t, svc.scriptSubsHandler.addTxFilters("sub-cap-2", []string{first[0]}))
+		require.Len(t, svc.scriptSubsHandler.getTxFilters("sub-cap-2"), MaxTxFiltersPerListener)
+	})
+
+	t.Run("overwriteTxFilters rejects over-cap input", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-ow-cap", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+		require.NoError(t, svc.scriptSubsHandler.addTxFilters("sub-ow-cap", []string{hasExtension}))
+
+		exprs := make([]string, MaxTxFiltersPerListener+1)
+		for i := range exprs {
+			exprs[i] = fmt.Sprintf("hasPacket(tx.extension, %d)", i)
+		}
+		err := svc.scriptSubsHandler.overwriteTxFilters("sub-ow-cap", exprs)
+		require.ErrorIs(t, err, ErrTxFiltersLimitExceeded)
+		// pre-existing filter unchanged
+		require.ElementsMatch(
+			t, []string{hasExtension},
+			svc.scriptSubsHandler.getTxFilters("sub-ow-cap"),
+		)
+	})
+
+	t.Run("not-found maps to gRPC NotFound via sentinel error", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "missing",
+				Filter:         overwriteTxFilter(hasExtension),
+			},
+		)
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.NotFound, st.Code())
 	})
 }
 

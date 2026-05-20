@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -486,7 +487,7 @@ func (h *indexerService) GetSubscription(
 		var err error
 		scriptCh, err = h.scriptSubsHandler.getListenerChannel(subscriptionId)
 		if err != nil {
-			if strings.Contains(err.Error(), "listener not found") {
+			if errors.Is(err, ErrSubscriptionNotFound) {
 				return status.Error(codes.NotFound, err.Error())
 			}
 			return status.Error(codes.Internal, err.Error())
@@ -652,7 +653,7 @@ func (h *indexerService) applyTxFilter(
 		if err := h.scriptSubsHandler.overwriteTxFilters(
 			subscriptionID, overwrite.GetExpressions(),
 		); err != nil {
-			if strings.Contains(err.Error(), "not found") {
+			if errors.Is(err, ErrSubscriptionNotFound) {
 				return nil, status.Error(codes.NotFound, err.Error())
 			}
 			return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -676,7 +677,7 @@ func (h *indexerService) applyTxFilter(
 		}
 		if len(addExprs) > 0 {
 			if err := h.scriptSubsHandler.addTxFilters(subscriptionID, addExprs); err != nil {
-				if strings.Contains(err.Error(), "not found") {
+				if errors.Is(err, ErrSubscriptionNotFound) {
 					return nil, status.Error(codes.NotFound, err.Error())
 				}
 				return nil, status.Error(codes.InvalidArgument, err.Error())

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"strings"
@@ -10,6 +11,21 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/indexer/celenv"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/google/cel-go/cel"
+)
+
+// MaxTxFiltersPerListener bounds the number of compiled CEL programs a single
+// subscription can hold, preventing memory exhaustion via repeated
+// UpdateSubscription calls.
+const MaxTxFiltersPerListener = 64
+
+// ErrSubscriptionNotFound is returned by broker operations targeting a
+// subscription id that has no live listener.
+var ErrSubscriptionNotFound = errors.New("subscription not found")
+
+// ErrTxFiltersLimitExceeded is returned when an add or overwrite would push
+// the listener's tx filter count above MaxTxFiltersPerListener.
+var ErrTxFiltersLimitExceeded = fmt.Errorf(
+	"tx filters per subscription limit (%d) exceeded", MaxTxFiltersPerListener,
 )
 
 type listener[T any] struct {
@@ -102,17 +118,6 @@ func (l *listener[T]) getTopics() []string {
 	return out
 }
 
-func (l *listener[T]) addTxFilters(programs map[string]cel.Program) {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-	if l.txFilters == nil {
-		l.txFilters = make(map[string]cel.Program, len(programs))
-	}
-	for expr, prg := range programs {
-		l.txFilters[expr] = prg
-	}
-}
-
 func (l *listener[T]) removeTxFilters(exprs []string) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
@@ -149,7 +154,9 @@ func (l *listener[T]) getTxFilters() []string {
 //
 // getTx is invoked lazily, only after we confirm the listener has at least
 // one tx filter set, so listeners without tx filters do not pay any decoding
-// cost.
+// cost. The CEL activation is built once per call and reused across all
+// programs so the OP_RETURN extension is parsed at most once per (event,
+// listener) pair.
 func (l *listener[T]) matchesTx(getTx func() *wire.MsgTx) bool {
 	l.lock.RLock()
 	if len(l.txFilters) == 0 {
@@ -165,8 +172,12 @@ func (l *listener[T]) matchesTx(getTx func() *wire.MsgTx) bool {
 	if tx == nil {
 		return false
 	}
+	act, err := celenv.BuildActivation(tx)
+	if err != nil {
+		return false
+	}
 	for _, prg := range programs {
-		ok, err := celenv.Eval(prg, tx)
+		ok, err := celenv.EvalWithActivation(prg, act)
 		if err == nil && ok {
 			return true
 		}
@@ -216,7 +227,7 @@ func (h *broker[T]) getListenerChannel(id string) (chan T, error) {
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("subscription %s not found", id)
+		return nil, fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
 	}
 	return listener.ch, nil
 }
@@ -236,7 +247,7 @@ func (h *broker[T]) addTopics(id string, topics []string) error {
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
 	if !ok {
-		return fmt.Errorf("subscription %s not found", id)
+		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
 	}
 	listener.addTopics(topics)
 	return nil
@@ -247,7 +258,7 @@ func (h *broker[T]) removeTopics(id string, topics []string) error {
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
 	if !ok {
-		return fmt.Errorf("subscription %s not found", id)
+		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
 	}
 	listener.removeTopics(topics)
 	return nil
@@ -258,7 +269,7 @@ func (h *broker[T]) removeAllTopics(id string) error {
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
 	if !ok {
-		return fmt.Errorf("subscription %s not found", id)
+		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
 	}
 	listener.overwriteTopics([]string{})
 	return nil
@@ -269,7 +280,7 @@ func (h *broker[T]) overwriteTopics(id string, topics []string) error {
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
 	if !ok {
-		return fmt.Errorf("subscription %s not found", id)
+		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
 	}
 	listener.overwriteTopics(topics)
 	return nil
@@ -286,6 +297,9 @@ func (h *broker[T]) getTxFilters(id string) []string {
 }
 
 func (h *broker[T]) addTxFilters(id string, exprs []string) error {
+	if len(exprs) > MaxTxFiltersPerListener {
+		return ErrTxFiltersLimitExceeded
+	}
 	programs, err := compileTxFilters(exprs)
 	if err != nil {
 		return err
@@ -294,9 +308,27 @@ func (h *broker[T]) addTxFilters(id string, exprs []string) error {
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
 	if !ok {
-		return fmt.Errorf("subscription %s not found", id)
+		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
 	}
-	listener.addTxFilters(programs)
+	// Reject if the resulting set would exceed the cap. Compute under the
+	// listener's lock to avoid a TOCTOU race against a concurrent add.
+	listener.lock.Lock()
+	defer listener.lock.Unlock()
+	if listener.txFilters == nil {
+		listener.txFilters = make(map[string]cel.Program, len(programs))
+	}
+	projected := len(listener.txFilters)
+	for expr := range programs {
+		if _, exists := listener.txFilters[expr]; !exists {
+			projected++
+		}
+	}
+	if projected > MaxTxFiltersPerListener {
+		return ErrTxFiltersLimitExceeded
+	}
+	for expr, prg := range programs {
+		listener.txFilters[expr] = prg
+	}
 	return nil
 }
 
@@ -305,13 +337,16 @@ func (h *broker[T]) removeTxFilters(id string, exprs []string) error {
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
 	if !ok {
-		return fmt.Errorf("subscription %s not found", id)
+		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
 	}
 	listener.removeTxFilters(exprs)
 	return nil
 }
 
 func (h *broker[T]) overwriteTxFilters(id string, exprs []string) error {
+	if len(exprs) > MaxTxFiltersPerListener {
+		return ErrTxFiltersLimitExceeded
+	}
 	programs, err := compileTxFilters(exprs)
 	if err != nil {
 		return err
@@ -320,7 +355,7 @@ func (h *broker[T]) overwriteTxFilters(id string, exprs []string) error {
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
 	if !ok {
-		return fmt.Errorf("subscription %s not found", id)
+		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
 	}
 	listener.overwriteTxFilters(programs)
 	return nil

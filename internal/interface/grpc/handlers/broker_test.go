@@ -246,7 +246,7 @@ func TestBroker(t *testing.T) {
 		ch, err = broker.getListenerChannel("non-existent")
 		require.Error(t, err)
 		require.Nil(t, ch)
-		require.ErrorContains(t, err, "subscription non-existent not found")
+		require.ErrorIs(t, err, ErrSubscriptionNotFound)
 	})
 
 	t.Run("getTopics", func(t *testing.T) {
@@ -283,7 +283,7 @@ func TestBroker(t *testing.T) {
 		// add to a non-existent listener
 		err = broker.addTopics("non-existent", []string{"topic1"})
 		require.Error(t, err)
-		require.ErrorContains(t, err, "subscription non-existent not found")
+		require.ErrorIs(t, err, ErrSubscriptionNotFound)
 	})
 
 	t.Run("removeTopics", func(t *testing.T) {
@@ -304,7 +304,7 @@ func TestBroker(t *testing.T) {
 
 		err = broker.removeTopics("non-existent", []string{"topic1"})
 		require.Error(t, err)
-		require.ErrorContains(t, err, "subscription non-existent not found")
+		require.ErrorIs(t, err, ErrSubscriptionNotFound)
 	})
 
 	t.Run("removeAllTopics", func(t *testing.T) {
@@ -321,7 +321,7 @@ func TestBroker(t *testing.T) {
 
 		err = broker.removeAllTopics("non-existent")
 		require.Error(t, err)
-		require.ErrorContains(t, err, "subscription non-existent not found")
+		require.ErrorIs(t, err, ErrSubscriptionNotFound)
 	})
 
 	t.Run("overwriteTopics", func(t *testing.T) {
@@ -353,7 +353,7 @@ func TestBroker(t *testing.T) {
 
 		err = broker.overwriteTopics("non-existent", []string{"topic4", "topic5"})
 		require.Error(t, err)
-		require.ErrorContains(t, err, "subscription non-existent not found")
+		require.ErrorIs(t, err, ErrSubscriptionNotFound)
 	})
 
 	t.Run("concurrent topic modifications", func(t *testing.T) {

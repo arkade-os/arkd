@@ -87,6 +87,47 @@ func TestEval_PacketContains(t *testing.T) {
 	})
 }
 
+func TestEval_CostLimitAbortsRunawayExpression(t *testing.T) {
+	// Build an expression whose contains() runtime cost vastly exceeds
+	// MaxEvalCost, against a small packet payload. Eval should return a
+	// cost-limit error, not a result.
+	prg, err := celenv.Compile(
+		"has(tx.extension) && " +
+			"tx.extension[0x05].contains(tx.extension[0x05]) && " +
+			"tx.extension[0x05].contains(tx.extension[0x05]) && " +
+			"tx.extension[0x05].contains(tx.extension[0x05])",
+	)
+	require.NoError(t, err)
+
+	// A large packet body so the .contains() cost dominates.
+	big := make([]byte, 200_000)
+	tx := txWithExtension(t, extension.UnknownPacket{PacketType: 0x05, Data: big})
+	_, err = celenv.Eval(prg, tx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cost")
+}
+
+func TestEvalWithActivation_ReusesActivation(t *testing.T) {
+	// Sanity check: building the activation once and reusing it across
+	// programs produces the same outcome as calling Eval separately.
+	prg1, err := celenv.Compile("has(tx.extension)")
+	require.NoError(t, err)
+	prg2, err := celenv.Compile("hasPacket(tx.extension, 0x05)")
+	require.NoError(t, err)
+
+	tx := txWithExtension(t, extension.UnknownPacket{PacketType: 0x05, Data: []byte{0xaa}})
+	act, err := celenv.BuildActivation(tx)
+	require.NoError(t, err)
+
+	got1, err := celenv.EvalWithActivation(prg1, act)
+	require.NoError(t, err)
+	require.True(t, got1)
+
+	got2, err := celenv.EvalWithActivation(prg2, act)
+	require.NoError(t, err)
+	require.True(t, got2)
+}
+
 // TestEval_IssueExamples exercises the CEL expression patterns called out in
 // the issue. The issue's examples use packet type 0x00, which is reserved for
 // asset.Packet and dispatches to its specialised deserialiser; constructing a
