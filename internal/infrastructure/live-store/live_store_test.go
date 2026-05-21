@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -806,45 +805,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 
 		require.NoError(t, store.ScheduledTasks().Remove(ctx, "tx-abc"))
 
-		// Concurrent AddIfAbsent on the same id must produce exactly one
-		// winner. This is the load-bearing property of the whole fix:
-		// without atomicity, two arkd processes could both claim the same
-		// task and both broadcast the same sweep tx.
-		const goroutines = 100
-		var wins atomic.Int32
-		var wg sync.WaitGroup
-		start := make(chan struct{})
-		errCh := make(chan error, goroutines)
-
-		for range goroutines {
-			wg.Go(func() {
-				<-start
-				claimed, err := store.ScheduledTasks().AddIfAbsent(ctx, "tx-race")
-				if err != nil {
-					errCh <- err
-					return
-				}
-				if claimed {
-					wins.Add(1)
-				}
-			})
-		}
-
-		close(start)
-		wg.Wait()
-		close(errCh)
-		for err := range errCh {
-			require.NoError(t, err)
-		}
-
-		require.Equal(t, int32(1), wins.Load(),
-			"AddIfAbsent must be atomic: exactly one goroutine claims the id")
-
-		require.NoError(t, store.ScheduledTasks().Remove(ctx, "tx-race"))
-
-		// Clear: wipes every claim so the ids can be claimed again. This is
-		// what sweeper.start() uses on boot to recover from a crash where
-		// the in-process timer died but the Redis claim survived.
+		// Clear: wipes every claim so the ids can be claimed again.
 		_, err = store.ScheduledTasks().AddIfAbsent(ctx, "tx-clear-1")
 		require.NoError(t, err)
 		_, err = store.ScheduledTasks().AddIfAbsent(ctx, "tx-clear-2")

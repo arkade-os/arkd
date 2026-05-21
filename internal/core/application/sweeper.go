@@ -321,8 +321,8 @@ func (s *sweeper) scheduleCheckpointSweep(
 	)
 
 	// scheduleTask handles the in-past case internally — calling it
-	// unconditionally keeps the cross-instance claim path consistent
-	// for both overdue and future checkpoint sweeps.
+	// unconditionally keeps both overdue and future checkpoint sweeps
+	// going through the same claim path.
 	if err := s.scheduleTask(sweeperTask{
 		id:      checkpointTxid.String(),
 		at:      sweepAt,
@@ -376,16 +376,22 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 		return nil
 	}
 
-	// Claim first, before the in-past fast-path: otherwise two instances
-	// recovering the same overdue task on restart would both fall through
-	// to execute() and both broadcast the same sweep tx.
+	// Claim the slot first so no other caller can pick up the same id.
 	claimed, err := s.cache.ScheduledTasks().AddIfAbsent(s.ctx, task.id)
 	if err != nil {
 		return fmt.Errorf("failed to claim scheduled task %s: %w", task.id, err)
 	}
 	if !claimed {
-		// another instance (or this one earlier) already claimed it
 		return nil
+	}
+
+	// Release only after execute() finishes, so the slot stays held while the sweep runs.
+	releaseClaim := func() {
+		if err := s.removeTask(task.id); err != nil {
+			log.WithError(err).Errorf(
+				"sweeper: failed to release scheduled task %s", task.id,
+			)
+		}
 	}
 
 	if !s.scheduler.AfterNow(task.at) {
@@ -393,18 +399,12 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 			"sweeper: trying to schedule task in the past for tx %s, executing it immediately",
 			task.id,
 		)
-		if err := s.removeTask(task.id); err != nil {
-			log.WithError(err).Errorf(
-				"sweeper: failed to release scheduled task %s", task.id,
-			)
-		}
+		defer releaseClaim()
 		return task.execute()
 	}
 
 	return s.scheduler.ScheduleTaskOnce(task.at, func() {
-		// Cancellation check: external code may have called removeTask
-		// because the underlying tx was already spent. If the claim is
-		// gone, skip execution.
+		// Skip if the claim was released externally (e.g. the tx was already spent).
 		has, err := s.cache.ScheduledTasks().Has(s.ctx, task.id)
 		if err != nil {
 			log.WithError(err).Errorf(
@@ -418,11 +418,7 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 			return
 		}
 
-		if err := s.removeTask(task.id); err != nil {
-			log.WithError(err).Errorf(
-				"sweeper: failed to release scheduled task %s", task.id,
-			)
-		}
+		defer releaseClaim()
 
 		if err := task.execute(); err != nil {
 			log.WithError(err).Errorf("failed to execute sweep of tx %s", task.id)
