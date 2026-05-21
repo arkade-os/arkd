@@ -3,6 +3,7 @@ package wallet
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
@@ -20,6 +21,22 @@ func (w *wallet) IssueAsset(
 	vtxos, err := w.getSpendableVtxos(ctx, nil)
 	if err != nil {
 		return nil, err
+	}
+
+	ctrlAsset := controlAsset
+	if c, ok := ctrlAsset.(clientlib.ExistingControlAsset); ok {
+		ctrlAssetAmount := uint64(0)
+		for _, v := range vtxos {
+			if i := slices.IndexFunc(v.Assets, func(asset clientlib.Asset) bool {
+				return asset.AssetId == c.Id
+			}); i >= 0 {
+				ctrlAssetAmount += v.Assets[i].Amount
+			}
+		}
+		ctrlAsset = clientlib.ExistingControlAsset{
+			Id:     c.Id,
+			Amount: ctrlAssetAmount,
+		}
 	}
 
 	_, offchainAddr, _, _, err := w.getAddresses(ctx)
@@ -43,7 +60,7 @@ func (w *wallet) IssueAsset(
 				ChangeAddr: offchainAddr.Address,
 			},
 			Amount:       amount,
-			ControlAsset: controlAsset,
+			ControlAsset: ctrlAsset,
 			Metadata:     metadata,
 		},
 		Client: w.client,

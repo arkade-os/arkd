@@ -25,8 +25,8 @@ const (
 )
 
 var (
-	Version      string
-	arkSdkClient wallet.Wallet
+	Version string
+	client  wallet.Wallet
 )
 
 func main() {
@@ -58,7 +58,7 @@ func main() {
 		if err != nil {
 			return fmt.Errorf("error initializing ark sdk client: %v", err)
 		}
-		arkSdkClient = sdk
+		client = sdk
 
 		return nil
 	}
@@ -305,7 +305,7 @@ func initArkSdk(ctx *cli.Context) error {
 		return err
 	}
 
-	return arkSdkClient.Init(
+	return client.Init(
 		ctx.Context, wallet.InitArgs{
 			ServerUrl:   ctx.String(urlFlag.Name),
 			Seed:        ctx.String(privateKeyFlag.Name),
@@ -316,7 +316,7 @@ func initArkSdk(ctx *cli.Context) error {
 }
 
 func config(ctx *cli.Context) error {
-	cfgData, err := arkSdkClient.GetConfigData(ctx.Context)
+	cfgData, err := client.GetConfigData(ctx.Context)
 	if err != nil {
 		return err
 	}
@@ -344,11 +344,11 @@ func dumpPrivKey(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := arkSdkClient.Unlock(ctx.Context, string(password)); err != nil {
+	if err := client.Unlock(ctx.Context, string(password)); err != nil {
 		return err
 	}
 
-	privateKey, err := arkSdkClient.Dump(ctx.Context)
+	privateKey, err := client.Dump(ctx.Context)
 	if err != nil {
 		return err
 	}
@@ -359,7 +359,7 @@ func dumpPrivKey(ctx *cli.Context) error {
 }
 
 func receive(ctx *cli.Context) error {
-	onchainAddr, offchainAddr, boardingAddr, err := arkSdkClient.Receive(ctx.Context)
+	onchainAddr, offchainAddr, boardingAddr, err := client.Receive(ctx.Context)
 	if err != nil {
 		return err
 	}
@@ -375,11 +375,11 @@ func settle(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := arkSdkClient.Unlock(ctx.Context, string(password)); err != nil {
+	if err := client.Unlock(ctx.Context, string(password)); err != nil {
 		return err
 	}
 
-	res, err := arkSdkClient.Settle(ctx.Context)
+	res, err := client.Settle(ctx.Context)
 	if err != nil {
 		return err
 	}
@@ -408,7 +408,7 @@ func send(ctx *cli.Context) error {
 	} else {
 		// if assetId is provided we send dust+1 with the asset
 		if len(assetId) > 0 {
-			cfg, err := arkSdkClient.GetConfigData(ctx.Context)
+			cfg, err := client.GetConfigData(ctx.Context)
 			if err != nil {
 				return err
 			}
@@ -426,7 +426,7 @@ func send(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := arkSdkClient.Unlock(ctx.Context, string(password)); err != nil {
+	if err := client.Unlock(ctx.Context, string(password)); err != nil {
 		return err
 	}
 
@@ -434,7 +434,7 @@ func send(ctx *cli.Context) error {
 }
 
 func balance(ctx *cli.Context) error {
-	bal, err := arkSdkClient.Balance(ctx.Context)
+	bal, err := client.Balance(ctx.Context)
 	if err != nil {
 		return err
 	}
@@ -446,7 +446,7 @@ func redeem(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := arkSdkClient.Unlock(ctx.Context, string(password)); err != nil {
+	if err := client.Unlock(ctx.Context, string(password)); err != nil {
 		return err
 	}
 
@@ -460,7 +460,7 @@ func redeem(ctx *cli.Context) error {
 	}
 
 	if force {
-		_, err := arkSdkClient.Unroll(ctx.Context)
+		_, err := client.Unroll(ctx.Context)
 		return err
 	}
 
@@ -469,7 +469,7 @@ func redeem(ctx *cli.Context) error {
 		if address != "" {
 			opts = append(opts, wallet.WithReceiver(address))
 		}
-		txid, err := arkSdkClient.CompleteUnroll(ctx.Context, opts...)
+		txid, err := client.CompleteUnroll(ctx.Context, opts...)
 		if err != nil {
 			return err
 		}
@@ -481,7 +481,7 @@ func redeem(ctx *cli.Context) error {
 	if amount == 0 {
 		return fmt.Errorf("missing amount")
 	}
-	res, err := arkSdkClient.CollaborativeExit(
+	res, err := client.CollaborativeExit(
 		ctx.Context, address, amount,
 	)
 	if err != nil {
@@ -497,11 +497,11 @@ func recoverVtxos(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := arkSdkClient.Unlock(ctx.Context, string(password)); err != nil {
+	if err := client.Unlock(ctx.Context, string(password)); err != nil {
 		return err
 	}
 
-	res, err := arkSdkClient.Settle(ctx.Context)
+	res, err := client.Settle(ctx.Context)
 	if err != nil {
 		return err
 	}
@@ -517,11 +517,11 @@ func redeemNotes(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := arkSdkClient.Unlock(ctx.Context, string(password)); err != nil {
+	if err := client.Unlock(ctx.Context, string(password)); err != nil {
 		return err
 	}
 
-	res, err := arkSdkClient.RedeemNotes(ctx.Context, notes)
+	res, err := client.RedeemNotes(ctx.Context, notes)
 	if err != nil {
 		return err
 	}
@@ -539,9 +539,9 @@ func issue(ctx *cli.Context) error {
 	if amount == 0 {
 		return errors.New("amount must be greater than zero")
 	}
-	if controlAssetAmount == 0 && controlAssetId == "" {
-		return errors.New("missing control-asset-amount or control-asset-id")
-	}
+	// if controlAssetAmount == 0 && controlAssetId == "" {
+	// 	return errors.New("missing control-asset-amount or control-asset-id")
+	// }
 	if controlAssetAmount > 0 && controlAssetId != "" {
 		return errors.New("only one of control-asset-amount and control-asset-id can be set")
 	}
@@ -570,17 +570,20 @@ func issue(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := arkSdkClient.Unlock(ctx.Context, string(password)); err != nil {
+	if err := client.Unlock(ctx.Context, string(password)); err != nil {
 		return err
 	}
 
-	controlAssetPolicy := clientlib.ControlAsset(clientlib.ExistingControlAsset{ID: controlAssetId})
-	if controlAssetAmount > 0 {
-		controlAssetPolicy = clientlib.NewControlAsset{Amount: controlAssetAmount}
+	var controlAsset clientlib.ControlAsset
+	if controlAssetAmount > 0 || len(controlAssetId) > 0 {
+		controlAsset = clientlib.ControlAsset(clientlib.ExistingControlAsset{Id: controlAssetId})
+		if controlAssetAmount > 0 {
+			controlAsset = clientlib.NewControlAsset{Amount: controlAssetAmount}
+		}
 	}
 
-	res, err := arkSdkClient.IssueAsset(
-		ctx.Context, amount, controlAssetPolicy, metadataList,
+	res, err := client.IssueAsset(
+		ctx.Context, amount, controlAsset, metadataList,
 	)
 	if err != nil {
 		return err
@@ -614,11 +617,11 @@ func reissue(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := arkSdkClient.Unlock(ctx.Context, string(password)); err != nil {
+	if err := client.Unlock(ctx.Context, string(password)); err != nil {
 		return err
 	}
 
-	res, err := arkSdkClient.ReissueAsset(ctx.Context, assetId, amount)
+	res, err := client.ReissueAsset(ctx.Context, assetId, amount)
 	if err != nil {
 		return err
 	}
@@ -642,11 +645,11 @@ func burn(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := arkSdkClient.Unlock(ctx.Context, string(password)); err != nil {
+	if err := client.Unlock(ctx.Context, string(password)); err != nil {
 		return err
 	}
 
-	res, err := arkSdkClient.BurnAsset(ctx.Context, assetId, amount)
+	res, err := client.BurnAsset(ctx.Context, assetId, amount)
 	if err != nil {
 		return err
 	}
@@ -656,7 +659,7 @@ func burn(ctx *cli.Context) error {
 }
 
 func listVtxos(ctx *cli.Context) error {
-	spendable, spent, err := arkSdkClient.ListVtxos(ctx.Context)
+	spendable, spent, err := client.ListVtxos(ctx.Context)
 	if err != nil {
 		return err
 	}
@@ -752,7 +755,7 @@ func sendOffchain(ctx *cli.Context, receivers []clientlib.Receiver) error {
 	}
 
 	if len(onchainReceivers) > 0 {
-		res, err := arkSdkClient.CollaborativeExit(
+		res, err := client.CollaborativeExit(
 			ctx.Context, onchainReceivers[0].To, onchainReceivers[0].Amount,
 		)
 		if err != nil {
@@ -761,7 +764,7 @@ func sendOffchain(ctx *cli.Context, receivers []clientlib.Receiver) error {
 		return printJSON(map[string]string{"txid": res.CommitmentTxid})
 	}
 
-	res, err := arkSdkClient.SendOffChain(ctx.Context, offchainReceivers)
+	res, err := client.SendOffChain(ctx.Context, offchainReceivers)
 	if err != nil {
 		return err
 	}
