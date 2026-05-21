@@ -274,6 +274,9 @@ func (e *explorerSvc) IsAddressSubscribed(address string) bool {
 }
 
 func (e *explorerSvc) GetAddressesEvents() <-chan clientlib.OnchainAddressEvent {
+	if e.listeners == nil {
+		return nil
+	}
 	ch := make(chan clientlib.OnchainAddressEvent)
 	e.listeners.add(ch)
 	return ch

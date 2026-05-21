@@ -115,11 +115,13 @@ type ExplorerUtxo struct {
 func (u ExplorerUtxo) ToUtxo(
 	delay arklib.RelativeLocktime, tapscripts []string, signingClosure script.Closure,
 ) Utxo {
-	utxoTime := u.Status.BlockTime
-	createdAt := time.Unix(utxoTime, 0)
-	if utxoTime == 0 {
-		createdAt = time.Time{}
-		utxoTime = time.Now().Unix()
+	var (
+		createdAt    time.Time
+		redeemableAt time.Time
+	)
+	if u.Status.BlockTime > 0 {
+		createdAt = time.Unix(u.Status.BlockTime, 0)
+		redeemableAt = createdAt.Add(time.Duration(delay.Seconds()) * time.Second)
 	}
 
 	return Utxo{
@@ -130,7 +132,7 @@ func (u ExplorerUtxo) ToUtxo(
 		Amount:         u.Amount,
 		Script:         u.Script,
 		Delay:          delay,
-		RedeemableAt:   time.Unix(utxoTime, 0).Add(time.Duration(delay.Seconds()) * time.Second),
+		RedeemableAt:   redeemableAt,
 		CreatedAt:      createdAt,
 		Tapscripts:     tapscripts,
 		SigningClosure: signingClosure,

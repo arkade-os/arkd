@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"math"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
@@ -13,7 +12,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -431,7 +429,7 @@ func createOffchainTx(
 					}
 				}
 
-				assetCoins, assetChangeAmount, err := utils.CoinSelectAsset(
+				assetCoins, assetChangeAmount, err := clientlib.CoinSelectAsset(
 					availableVtxos, amountToSelect, asset.AssetId, false,
 				)
 				if err != nil {
@@ -483,7 +481,7 @@ func createOffchainTx(
 				btcAmountToSelect = int64(args.ServerInfo.Dust)
 			}
 
-			_, selectedBtcCoins, changeBtcAmount, err := utils.CoinSelect(
+			_, selectedBtcCoins, changeBtcAmount, err := clientlib.CoinSelect(
 				nil, availableVtxos,
 				// use a "fake" receiver to select only the remaining btc amount
 				// it works for offchain tx because feeEstimator is nil (no offchain fee)
@@ -510,7 +508,7 @@ func createOffchainTx(
 			}
 		}
 	} else {
-		changeAmount = uint64(math.Abs(float64(btcAmountToSelect)))
+		changeAmount = uint64(-btcAmountToSelect)
 	}
 
 	var changeReceiver *clientlib.Receiver
@@ -535,7 +533,7 @@ func createOffchainTx(
 			}
 		}
 
-		_, selectedBtcCoins, changeBtcAmount, err := utils.CoinSelect(
+		_, selectedBtcCoins, changeBtcAmount, err := clientlib.CoinSelect(
 			nil, availableVtxos, []clientlib.Receiver{{Amount: args.ServerInfo.Dust}},
 			args.ServerInfo.Dust, nil,
 		)

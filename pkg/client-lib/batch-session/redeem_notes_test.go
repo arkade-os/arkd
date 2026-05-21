@@ -55,9 +55,13 @@ func TestRedeemNotes(t *testing.T) {
 // corresponding validation error.
 func newTestRedeemNotesArgs() RedeemNotesArgs {
 	return RedeemNotesArgs{
-		Client:       mockClient{},
-		SignTx:       clientlib.SignFn(mockSignTx),
-		ServerInfo:   clientlib.Info{Network: "regtest"},
+		Client: mockClient{},
+		SignTx: clientlib.SignFn(mockSignTx),
+		ServerInfo: clientlib.Info{
+			Network:        "regtest",
+			ForfeitPubKey:  testForfeitPubKey,
+			ForfeitAddress: testAddr,
+		},
 		Notes:        []string{"somenote"},
 		ReceiverAddr: "tark1qexample",
 	}

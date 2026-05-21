@@ -2,10 +2,12 @@ package batchsession
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	"github.com/btcsuite/btcd/btcec/v2"
 )
 
 // RedeemNotesArgs configures a RedeemNotes call: the Notes to redeem and the
@@ -26,14 +28,26 @@ func (a RedeemNotesArgs) validate() error {
 	if a.SignTx == nil {
 		return fmt.Errorf("missing sign tx function")
 	}
-	if len(a.ServerInfo.Network) <= 0 {
-		return fmt.Errorf("missing server info")
-	}
 	if len(a.Notes) <= 0 {
 		return fmt.Errorf("missing notes to redeem")
 	}
 	if len(a.ReceiverAddr) <= 0 {
 		return fmt.Errorf("missing receiver")
+	}
+	info := a.ServerInfo
+	if len(info.Network) <= 0 ||
+		len(info.ForfeitPubKey) <= 0 ||
+		len(info.ForfeitAddress) <= 0 {
+		return fmt.Errorf("missing server info")
+	}
+	buf, err := hex.DecodeString(info.ForfeitPubKey)
+	if err != nil {
+		return fmt.Errorf(
+			"expected hex format for forfeit pubkey, got %s", info.ForfeitPubKey,
+		)
+	}
+	if _, err := btcec.ParsePubKey(buf); err != nil {
+		return fmt.Errorf("failed to parse forfeit pubkey: %w", err)
 	}
 	return nil
 }

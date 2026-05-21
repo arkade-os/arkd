@@ -192,7 +192,7 @@ func (v Vtxo) ToArkFeeInput() arkfee.OffchainInput {
 }
 
 func (v Vtxo) ParseClosure() ([]byte, *arklib.TaprootMerkleProof, error) {
-	pkScript, leafProof, err := parseClosure(v.Outpoint, v.SigningClosure, v.Tapscripts)
+	pkScript, leafProof, err := ParseClosure(v.Outpoint, v.SigningClosure, v.Tapscripts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("vtxo %w", err)
 	}
@@ -269,7 +269,7 @@ func (u Utxo) ToArkFeeInput() arkfee.OnchainInput {
 }
 
 func (u Utxo) ParseClosure() ([]byte, *arklib.TaprootMerkleProof, error) {
-	pkScript, leafProof, err := parseClosure(u.Outpoint, u.SigningClosure, u.Tapscripts)
+	pkScript, leafProof, err := ParseClosure(u.Outpoint, u.SigningClosure, u.Tapscripts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("utxo %w", err)
 	}

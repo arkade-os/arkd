@@ -51,8 +51,18 @@ func JoinBatch(ctx context.Context, args JoinBatchArgs, opts ...Option) (*BatchT
 		return nil, err
 	}
 
+	// Key offchain outputs by (script, amount) and track counts so that
+	// receivers sharing the same script (with same or different amounts)
+	// are each matched to a distinct tree-leaf TxOut. The match loop below
+	// decrements on each hit and does NOT break, so a leaf carrying multiple
+	// matching outputs (Ark packs all of a participant's receivers into one
+	// leaf) contributes one vtxo per matching TxOut.
+	type outKey struct {
+		script string
+		amount int64
+	}
 	utxoOuts := make([]clientlib.Receiver, 0, len(args.Outputs))
-	indexedOutputs := make(map[string]struct{})
+	indexedOutputs := make(map[outKey]int)
 	for _, output := range args.Outputs {
 		if output.IsOnchain() {
 			utxoOuts = append(utxoOuts, output)
@@ -63,7 +73,10 @@ func JoinBatch(ctx context.Context, args JoinBatchArgs, opts ...Option) (*BatchT
 		if err != nil {
 			return nil, err
 		}
-		indexedOutputs[hex.EncodeToString(txOut.PkScript)] = struct{}{}
+		indexedOutputs[outKey{
+			script: hex.EncodeToString(txOut.PkScript),
+			amount: txOut.Value,
+		}]++
 	}
 
 	var leaves []*psbt.Packet
@@ -75,39 +88,45 @@ func JoinBatch(ctx context.Context, args JoinBatchArgs, opts ...Option) (*BatchT
 	vtxoOuts := make([]clientlib.Vtxo, 0, len(args.Outputs))
 	for _, leaf := range leaves {
 		for i, out := range leaf.UnsignedTx.TxOut {
-			if _, ok := indexedOutputs[hex.EncodeToString(out.PkScript)]; ok {
-				ext, _ := extension.NewExtensionFromTx(leaf.UnsignedTx)
-				var assets []clientlib.Asset
-				if len(ext) > 0 {
-					packet := ext.GetAssetPacket()
-					if len(packet) > 0 {
-						for _, asset := range packet {
-							for _, assetOut := range asset.Outputs {
-								if assetOut.Vout == uint16(i) {
-									assets = append(assets, clientlib.Asset{
-										AssetId: asset.AssetId.String(),
-										Amount:  assetOut.Amount,
-									})
-									break
-								}
+			k := outKey{
+				script: hex.EncodeToString(out.PkScript),
+				amount: out.Value,
+			}
+			if indexedOutputs[k] <= 0 {
+				continue
+			}
+			indexedOutputs[k]--
+
+			ext, _ := extension.NewExtensionFromTx(leaf.UnsignedTx)
+			var assets []clientlib.Asset
+			if len(ext) > 0 {
+				packet := ext.GetAssetPacket()
+				if len(packet) > 0 {
+					for _, asset := range packet {
+						for _, assetOut := range asset.Outputs {
+							if assetOut.Vout == uint16(i) {
+								assets = append(assets, clientlib.Asset{
+									AssetId: asset.AssetId.String(),
+									Amount:  assetOut.Amount,
+								})
+								break
 							}
 						}
 					}
 				}
-				vtxoOuts = append(vtxoOuts, clientlib.Vtxo{
-					Outpoint: clientlib.Outpoint{
-						Txid: leaf.UnsignedTx.TxID(),
-						VOut: uint32(i),
-					},
-					Script:          hex.EncodeToString(out.PkScript),
-					Amount:          uint64(out.Value),
-					CommitmentTxids: []string{commitmentTxid},
-					ExpiresAt:       now.Add(batchExpiry),
-					CreatedAt:       now,
-					Assets:          assets,
-				})
-				break
 			}
+			vtxoOuts = append(vtxoOuts, clientlib.Vtxo{
+				Outpoint: clientlib.Outpoint{
+					Txid: leaf.UnsignedTx.TxID(),
+					VOut: uint32(i),
+				},
+				Script:          hex.EncodeToString(out.PkScript),
+				Amount:          uint64(out.Value),
+				CommitmentTxids: []string{commitmentTxid},
+				ExpiresAt:       now.Add(batchExpiry),
+				CreatedAt:       now,
+				Assets:          assets,
+			})
 		}
 	}
 
@@ -184,7 +203,11 @@ func joinBatchWithRetry(
 		}, opts...)
 		if err != nil {
 			if retryCount < maxRetry-1 {
-				time.Sleep(100 * time.Millisecond)
+				select {
+				case <-time.After(100 * time.Millisecond):
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
 				deleteIntent()
 				log.WithError(err).Warn("batch failed, retrying...")
 			}

@@ -57,12 +57,10 @@ func JoinBatchSession(
 			}
 
 			if options.replayEventsCh != nil {
-				go func() {
-					select {
-					case options.replayEventsCh <- notify.Event:
-					default:
-					}
-				}()
+				select {
+				case options.replayEventsCh <- notify.Event:
+				default:
+				}
 			}
 
 			switch event := notify.Event; event.(type) {

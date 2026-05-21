@@ -6,12 +6,11 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 )
 
 // SettleArgs configures a Settle call: the BoardingUtxos and Vtxos to settle
 // into a fresh vtxo at ReceiverAddr. ExpiryThreshold (in seconds) filters out
-// vtxos expiring sooner than the threshold. FeeEstimator sizes the change
+// vtxos expiring later than the threshold. FeeEstimator sizes the change
 // output; SignTx signs the intent proof; Client/ServerInfo are used to talk
 // to the server.
 type SettleArgs struct {
@@ -153,7 +152,7 @@ func selectFunds(
 		outs[0].Amount = totalAmount - totalFeeAmount
 	}
 
-	selectedBoardingUtxos, selectedVtxos, changeAmount, err := utils.CoinSelect(
+	selectedBoardingUtxos, selectedVtxos, changeAmount, err := clientlib.CoinSelect(
 		boardingUtxos, vtxos, outs, dust, feeEstimator,
 	)
 	if err != nil {

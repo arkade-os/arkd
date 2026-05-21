@@ -10,7 +10,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
@@ -55,7 +54,7 @@ func validateReceivers(
 ) error {
 	netParams := clientlib.ToBitcoinNetwork(network)
 	for _, receiver := range receivers {
-		isOnChain, onchainScript, err := utils.ParseBitcoinAddress(receiver.To, netParams)
+		isOnChain, onchainScript, err := clientlib.ParseBitcoinAddress(receiver.To, netParams)
 		if err != nil {
 			return fmt.Errorf("invalid receiver address: %s err = %s", receiver.To, err)
 		}
@@ -201,4 +200,14 @@ func validateAssetGroupOutput(
 		return fmt.Errorf("asset output not found in asset group: %s", expectedAsset.AssetId)
 	}
 	return nil
+}
+
+func isOnchainOnly(receivers []clientlib.Receiver) bool {
+	for _, receiver := range receivers {
+		if !receiver.IsOnchain() {
+			return false
+		}
+	}
+
+	return true
 }

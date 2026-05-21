@@ -76,7 +76,7 @@ func WithCancelCh(ch <-chan struct{}) Option {
 }
 
 // WithExpiryThreshold overrides the default vtxo-expiry filter (in seconds):
-// vtxos expiring sooner than the threshold are excluded from coin selection.
+// vtxos expiring later than the threshold are excluded from coin selection.
 func WithExpiryThreshold(threshold int64) Option {
 	return optFn(func(o *options) error {
 		o.expiryThreshold = threshold

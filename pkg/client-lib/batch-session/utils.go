@@ -72,7 +72,7 @@ func handleBatchEvents(
 	eventsCh, close, err := args.Client.GetEventStream(ctx, topics)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
-			return "", "", -1, nil, nil, fmt.Errorf("connection closed by server")
+			return "", "", -1, nil, nil, clientlib.ErrConnectionClosedByServer
 		}
 		return "", "", -1, nil, nil, err
 	}

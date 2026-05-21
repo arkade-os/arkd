@@ -13,6 +13,10 @@ import (
 // parseable on-chain address is required.
 const testAddr = "bcrt1qhhq55mut9easvrncy4se8q6vg3crlug7yj4j56"
 
+// testForfeitPubKey is a real compressed pubkey hex; satisfies
+// validateServerInfo's hex-decode + ParsePubKey checks.
+const testForfeitPubKey = "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+
 func TestSettle(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		tests := []struct {

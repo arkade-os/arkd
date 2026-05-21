@@ -21,10 +21,9 @@ func WithCancel(cancelCh <-chan struct{}) HandlerOption {
 }
 
 type options struct {
-	signVtxoTree   bool              // default: true
-	replayEventsCh chan<- any        // default: nil
-	cancelCh       <-chan struct{}   // default: nil
-	keysByScript   map[string]string // default: nil
+	signVtxoTree   bool            // default: true
+	replayEventsCh chan<- any      // default: nil
+	cancelCh       <-chan struct{} // default: nil
 }
 
 func newOptions() *options {

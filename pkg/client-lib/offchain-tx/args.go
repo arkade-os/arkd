@@ -102,7 +102,7 @@ func (a BuildAndSignReissuanceTxArgs) validate() error {
 		return fmt.Errorf("missing control asset id")
 	}
 	if a.ControlAsset.Amount == 0 {
-		return fmt.Errorf("missing control assset amount")
+		return fmt.Errorf("missing control asset amount")
 	}
 	return nil
 }

@@ -16,7 +16,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -298,18 +297,32 @@ func (h *defaultHandler) OnTreeNonces(
 	waitGroup.Wait()
 	close(resChan)
 
+	// Drain the full channel and tally the signed count locally; commit the
+	// increment to h.countSigningDone only if no signer errored. This keeps
+	// the handler in a consistent state even if the same instance is reused
+	// across retry attempts (e.g. via WithHandler) — partial successes on a
+	// failed attempt no longer leak into the next attempt's count.
+	signedCount := 0
+	var firstErr error
 	for res := range resChan {
 		if res.err != nil {
-			return false, res.err
+			if firstErr == nil {
+				firstErr = res.err
+			}
+			continue
 		}
 		if res.signed {
-			h.countSigningDone++
-			if h.countSigningDone == len(h.SignerSessions) {
-				return true, nil
-			}
+			signedCount++
 		}
 	}
+	if firstErr != nil {
+		return false, firstErr
+	}
 
+	h.countSigningDone += signedCount
+	if h.countSigningDone == len(h.SignerSessions) {
+		return true, nil
+	}
 	return false, nil
 }
 
@@ -445,7 +458,7 @@ func (h *defaultHandler) validateVtxoTree(
 	}
 
 	// validate the vtxo tree is well formed
-	if !utils.IsOnchainOnly(h.Receivers) {
+	if !isOnchainOnly(h.Receivers) {
 		if err := tree.ValidateVtxoTree(
 			vtxoTree, commitmentPtx, h.forfeitPubkey, h.batchExpiry,
 		); err != nil {
@@ -504,7 +517,8 @@ func (h *defaultHandler) validateVtxoTree(
 func (h *defaultHandler) createAndSignForfeits(
 	ctx context.Context, vtxosToSign []clientlib.Vtxo, connectorsLeaves []*psbt.Packet,
 ) ([]string, error) {
-	parsedForfeitAddr, err := btcutil.DecodeAddress(h.ServerInfo.ForfeitAddress, nil)
+	network := clientlib.ToBitcoinNetwork(h.network)
+	parsedForfeitAddr, err := btcutil.DecodeAddress(h.ServerInfo.ForfeitAddress, &network)
 	if err != nil {
 		return nil, err
 	}
