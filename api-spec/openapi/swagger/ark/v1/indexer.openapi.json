@@ -1922,6 +1922,7 @@
           },
           "removed": {
             "type": "array",
+            "description": "Echoes the expressions requested for removal; removing an expression\nthat was not subscribed is a no-op (idempotent), and the echoed list\ndoes not reflect actual delta. Use `all` for the authoritative\npost-mutation state.",
             "items": {
               "type": "string"
             }

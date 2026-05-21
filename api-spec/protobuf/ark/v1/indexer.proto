@@ -489,6 +489,10 @@ message ScriptsFilterResult {
 
 message TxFilterResult {
   repeated string added = 1;
+  // Echoes the expressions requested for removal; removing an expression
+  // that was not subscribed is a no-op (idempotent), and the echoed list
+  // does not reflect actual delta. Use `all` for the authoritative
+  // post-mutation state.
   repeated string removed = 2;
   repeated string all = 3;
 }

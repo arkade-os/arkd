@@ -476,8 +476,12 @@ func (h *indexerService) GetSubscription(
 		// Old flow: subscription_id provided, use existing listener.
 		h.scriptSubsHandler.stopTimeout(subscriptionId)
 		defer func() {
+			// Keep the listener alive on disconnect if either filter type is
+			// non-empty, so the client can reconnect within the timeout window
+			// without losing scripts or tx filters.
 			topics := h.scriptSubsHandler.getTopics(subscriptionId)
-			if len(topics) > 0 {
+			txFilters := h.scriptSubsHandler.getTxFilters(subscriptionId)
+			if len(topics) > 0 || len(txFilters) > 0 {
 				h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
 			} else {
 				h.scriptSubsHandler.removeListener(subscriptionId)

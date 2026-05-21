@@ -1482,6 +1482,47 @@ func TestTxFilter(t *testing.T) {
 		)
 	})
 
+	t.Run("old-flow disconnect keeps listener alive if only tx filters set", func(t *testing.T) {
+		t.Parallel()
+		// Regression for the cleanup path that previously only checked
+		// scripts: a listener with tx filters but no scripts should be put
+		// on the timeout window, not destroyed, on disconnect.
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-old-tx", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+		require.NoError(t, svc.scriptSubsHandler.addTxFilters(
+			"sub-old-tx", []string{hasExtension},
+		))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		stream := newMockGetSubscriptionServer(ctx)
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{SubscriptionId: "sub-old-tx"},
+				stream,
+			)
+		}()
+
+		// Wait briefly for the handler to enter its loop, then disconnect.
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+		select {
+		case err := <-errCh:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("GetSubscription did not return")
+		}
+
+		// Listener should still be present (timeout-scheduled), not removed.
+		_, err := svc.scriptSubsHandler.getListenerChannel("sub-old-tx")
+		require.NoError(t, err)
+		require.ElementsMatch(
+			t, []string{hasExtension},
+			svc.scriptSubsHandler.getTxFilters("sub-old-tx"),
+		)
+	})
+
 	t.Run("not-found maps to gRPC NotFound via sentinel error", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()

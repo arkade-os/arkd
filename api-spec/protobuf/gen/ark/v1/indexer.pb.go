@@ -3186,10 +3186,14 @@ func (x *ScriptsFilterResult) GetAll() []string {
 }
 
 type TxFilterResult struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Added         []string               `protobuf:"bytes,1,rep,name=added,proto3" json:"added,omitempty"`
-	Removed       []string               `protobuf:"bytes,2,rep,name=removed,proto3" json:"removed,omitempty"`
-	All           []string               `protobuf:"bytes,3,rep,name=all,proto3" json:"all,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Added []string               `protobuf:"bytes,1,rep,name=added,proto3" json:"added,omitempty"`
+	// Echoes the expressions requested for removal; removing an expression
+	// that was not subscribed is a no-op (idempotent), and the echoed list
+	// does not reflect actual delta. Use `all` for the authoritative
+	// post-mutation state.
+	Removed       []string `protobuf:"bytes,2,rep,name=removed,proto3" json:"removed,omitempty"`
+	All           []string `protobuf:"bytes,3,rep,name=all,proto3" json:"all,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
