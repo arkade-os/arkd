@@ -44,8 +44,8 @@ func IssueAsset(
 	}
 	if existing, ok := args.ControlAsset.(clientlib.ExistingControlAsset); ok {
 		receiver.Assets = append(receiver.Assets, clientlib.Asset{
-			AssetId: existing.ID,
-			Amount:  1,
+			AssetId: existing.Id,
+			Amount:  existing.Amount,
 		})
 	}
 	for i, id := range build.IssuedAssets {
@@ -115,10 +115,7 @@ func ReissueAsset(
 	receiver := clientlib.Receiver{
 		To:     args.ChangeAddr,
 		Amount: args.ServerInfo.Dust,
-		Assets: []clientlib.Asset{
-			{AssetId: args.ControlAssetId, Amount: 1},
-			{AssetId: args.AssetId, Amount: args.Amount},
-		},
+		Assets: []clientlib.Asset{args.ControlAsset, args.Asset},
 	}
 
 	outs := []clientlib.Receiver{receiver}

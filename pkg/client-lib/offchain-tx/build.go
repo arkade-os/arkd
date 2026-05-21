@@ -104,8 +104,8 @@ func BuildAndSignIssuanceTx(
 	receiverAsset := make([]clientlib.Asset, 0)
 	if existing, ok := args.ControlAsset.(clientlib.ExistingControlAsset); ok {
 		receiverAsset = append(receiverAsset, clientlib.Asset{
-			AssetId: existing.ID,
-			Amount:  1,
+			AssetId: existing.Id,
+			Amount:  existing.Amount,
 		})
 	}
 
@@ -155,7 +155,7 @@ func BuildAndSignIssuanceTx(
 		assetGroups = append(assetGroups, *controlAssetGroup)
 		assetRef = &asset.AssetRef{Type: asset.AssetRefByGroup, GroupIndex: 0}
 	case clientlib.ExistingControlAsset:
-		controlAssetId, err := asset.NewAssetIdFromString(ca.ID)
+		controlAssetId, err := asset.NewAssetIdFromString(ca.Id)
 		if err != nil {
 			return nil, err
 		}
@@ -251,10 +251,7 @@ func BuildAndSignReissuanceTx(
 	receiver := clientlib.Receiver{
 		To:     args.ChangeAddr,
 		Amount: args.ServerInfo.Dust,
-		Assets: []clientlib.Asset{{
-			AssetId: args.ControlAssetId,
-			Amount:  1, // TODO: should send all denominated amount of the asset vtxo
-		}},
+		Assets: []clientlib.Asset{args.ControlAsset},
 	}
 
 	receivers := []clientlib.Receiver{receiver}
@@ -281,7 +278,7 @@ func BuildAndSignReissuanceTx(
 		return nil, fmt.Errorf("failed to create asset packet")
 	}
 
-	issuedAssetOutput, err := asset.NewAssetOutput(0, args.Amount)
+	issuedAssetOutput, err := asset.NewAssetOutput(0, args.Asset.Amount)
 	if err != nil {
 		return nil, err
 	}
@@ -291,13 +288,13 @@ func BuildAndSignReissuanceTx(
 		if g.AssetId == nil {
 			continue
 		}
-		if g.AssetId.String() == args.AssetId {
+		if g.AssetId.String() == args.Asset.AssetId {
 			groupIndex = i
 		}
 	}
 
 	if groupIndex == -1 {
-		reissueAssetId, err := asset.NewAssetIdFromString(args.AssetId)
+		reissueAssetId, err := asset.NewAssetIdFromString(args.Asset.AssetId)
 		if err != nil {
 			return nil, err
 		}

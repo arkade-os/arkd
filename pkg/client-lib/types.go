@@ -371,7 +371,8 @@ func (NewControlAsset) isControlAsset() {}
 
 // ExistingControlAsset references an existing control asset by its ID.
 type ExistingControlAsset struct {
-	ID string
+	Id     string
+	Amount uint64
 }
 
 func (ExistingControlAsset) isControlAsset() {}

@@ -156,18 +156,23 @@ func TestReissueAsset(t *testing.T) {
 			},
 			{
 				name:      "missing asset id",
-				mutate:    func(a *ReissueAssetArgs) { a.AssetId = "" },
+				mutate:    func(a *ReissueAssetArgs) { a.Asset.AssetId = "" },
 				errSubstr: "missing asset id",
 			},
 			{
 				name:      "missing control asset id",
-				mutate:    func(a *ReissueAssetArgs) { a.ControlAssetId = "" },
+				mutate:    func(a *ReissueAssetArgs) { a.ControlAsset.AssetId = "" },
 				errSubstr: "missing control asset id",
 			},
 			{
-				name:      "zero amount",
-				mutate:    func(a *ReissueAssetArgs) { a.Amount = 0 },
-				errSubstr: "amount must be > 0",
+				name:      "missing asset amount",
+				mutate:    func(a *ReissueAssetArgs) { a.Asset.Amount = 0 },
+				errSubstr: "missing asset amount",
+			},
+			{
+				name:      "missing control asset amount",
+				mutate:    func(a *ReissueAssetArgs) { a.ControlAsset.Amount = 0 },
+				errSubstr: "missing control asset amount",
 			},
 		}
 
@@ -218,18 +223,23 @@ func TestBuildAndSignReissuanceTx(t *testing.T) {
 			},
 			{
 				name:      "missing asset id",
-				mutate:    func(a *BuildAndSignReissuanceTxArgs) { a.AssetId = "" },
+				mutate:    func(a *BuildAndSignReissuanceTxArgs) { a.Asset.AssetId = "" },
 				errSubstr: "missing asset id",
 			},
 			{
 				name:      "missing control asset id",
-				mutate:    func(a *BuildAndSignReissuanceTxArgs) { a.ControlAssetId = "" },
+				mutate:    func(a *BuildAndSignReissuanceTxArgs) { a.ControlAsset.AssetId = "" },
 				errSubstr: "missing control asset id",
 			},
 			{
-				name:      "zero amount",
-				mutate:    func(a *BuildAndSignReissuanceTxArgs) { a.Amount = 0 },
-				errSubstr: "amount must be > 0",
+				name:      "missing asset amount",
+				mutate:    func(a *BuildAndSignReissuanceTxArgs) { a.Asset.Amount = 0 },
+				errSubstr: "missing asset amount",
+			},
+			{
+				name:      "missing control asset amount",
+				mutate:    func(a *BuildAndSignReissuanceTxArgs) { a.ControlAsset.Amount = 0 },
+				errSubstr: "missing control asset amount",
 			},
 		}
 
@@ -393,7 +403,7 @@ func newTestIssueAssetBuildArgs() BuildAndSignIssuanceTxArgs {
 func newTestReissueAssetArgs() ReissueAssetArgs {
 	return ReissueAssetArgs{
 		BuildAndSignReissuanceTxArgs: newTestReissueAssetBuildArgs(),
-		Client:                     mockClient{},
+		Client:                       mockClient{},
 	}
 }
 
@@ -407,9 +417,14 @@ func newTestReissueAssetBuildArgs() BuildAndSignReissuanceTxArgs {
 			SignTx:     mockSignTx,
 			ChangeAddr: "tark1qexample",
 		},
-		AssetId:        "fakeassetid",
-		ControlAssetId: "fakecontrolassetid",
-		Amount:         100,
+		Asset: clientlib.Asset{
+			AssetId: "fakeassetid",
+			Amount:  100,
+		},
+		ControlAsset: clientlib.Asset{
+			AssetId: "fakecontrolassetid",
+			Amount:  2,
+		},
 	}
 }
 

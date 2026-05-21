@@ -84,23 +84,25 @@ func (a IssueAssetArgs) validate() error {
 // expected to resolve it from the indexer); Amount is the quantity to mint.
 type BuildAndSignReissuanceTxArgs struct {
 	BaseArgs
-	AssetId        string
-	ControlAssetId string
-	Amount         uint64
+	Asset        clientlib.Asset
+	ControlAsset clientlib.Asset
 }
 
 func (a BuildAndSignReissuanceTxArgs) validate() error {
 	if err := a.validateBase(); err != nil {
 		return err
 	}
-	if a.AssetId == "" {
+	if len(a.Asset.AssetId) <= 0 {
 		return fmt.Errorf("missing asset id")
 	}
-	if a.ControlAssetId == "" {
+	if a.Asset.Amount == 0 {
+		return fmt.Errorf("missing asset amount")
+	}
+	if len(a.ControlAsset.AssetId) <= 0 {
 		return fmt.Errorf("missing control asset id")
 	}
-	if a.Amount == 0 {
-		return fmt.Errorf("amount must be > 0")
+	if a.ControlAsset.Amount == 0 {
+		return fmt.Errorf("missing control assset amount")
 	}
 	return nil
 }

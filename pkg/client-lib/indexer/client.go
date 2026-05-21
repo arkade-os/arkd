@@ -3,6 +3,7 @@ package indexer
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -625,9 +626,14 @@ func (a *grpcClient) GetAsset(ctx context.Context, assetID string) (
 		}
 	}
 
+	supply, err := strconv.ParseUint(resp.GetSupply(), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse supply: %w", err)
+	}
+
 	return &clientlib.AssetInfo{
 		AssetId:        resp.GetAssetId(),
-		Supply:         resp.GetSupply(),
+		Supply:         supply,
 		ControlAssetId: resp.GetControlAsset(),
 		Metadata:       metadata,
 	}, nil

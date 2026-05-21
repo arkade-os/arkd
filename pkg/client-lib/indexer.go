@@ -45,7 +45,7 @@ type Indexer interface {
 
 type AssetInfo struct {
 	AssetId        string
-	Supply         string
+	Supply         uint64
 	ControlAssetId string
 	Metadata       []asset.Metadata
 }

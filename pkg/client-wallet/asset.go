@@ -57,11 +57,11 @@ func (w *wallet) ReissueAsset(
 		return nil, err
 	}
 
-	controlAssetId, err := w.getControlAssetId(ctx, assetId)
+	controlAsset, err := w.getControlAsset(ctx, assetId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get control asset: %w", err)
 	}
-	if controlAssetId == "" {
+	if controlAsset == nil {
 		return nil, fmt.Errorf("%s can't be reissued, no control asset", assetId)
 	}
 
@@ -90,9 +90,11 @@ func (w *wallet) ReissueAsset(
 				Vtxos:      vtxos,
 				ChangeAddr: offchainAddr.Address,
 			},
-			AssetId:        assetId,
-			ControlAssetId: controlAssetId,
-			Amount:         amount,
+			Asset: clientlib.Asset{
+				AssetId: assetId,
+				Amount:  amount,
+			},
+			ControlAsset: *controlAsset,
 		},
 		Client: w.client,
 	}, opts...)
@@ -137,10 +139,17 @@ func (w *wallet) BurnAsset(
 	}, opts...)
 }
 
-func (w *wallet) getControlAssetId(ctx context.Context, assetId string) (string, error) {
-	indexerAssetInfo, err := w.indexer.GetAsset(ctx, assetId)
+func (w *wallet) getControlAsset(ctx context.Context, assetId string) (*clientlib.Asset, error) {
+	info, err := w.indexer.GetAsset(ctx, assetId)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch asset from indexer: %w", err)
+		return nil, fmt.Errorf("failed to fetch asset data: %w", err)
 	}
-	return indexerAssetInfo.ControlAssetId, nil
+	controlAssetInfo, err := w.indexer.GetAsset(ctx, info.ControlAssetId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch control asset data: %w", err)
+	}
+	return &clientlib.Asset{
+		AssetId: controlAssetInfo.AssetId,
+		Amount:  controlAssetInfo.Supply,
+	}, nil
 }

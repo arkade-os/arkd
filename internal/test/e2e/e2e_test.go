@@ -5384,7 +5384,7 @@ func TestAsset(t *testing.T) {
 			res2, err := alice.IssueAsset(
 				ctx,
 				1,
-				clientlib.ExistingControlAsset{ID: controlAssetId},
+				clientlib.ExistingControlAsset{Id: controlAssetId, Amount: 1},
 				nil,
 			)
 			require.NoError(t, err)
