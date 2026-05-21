@@ -803,6 +803,11 @@ func (h *indexerService) listenToTxEvents() {
 		// matchesTx so the decode only runs once we know a listener actually
 		// has at least one tx filter, and only once per event regardless of
 		// how many listeners need it.
+		//
+		// event.Tx may be either a base64-encoded PSBT (commitment txs,
+		// ark txs, checkpoint txs all use this format) or a hex-encoded raw
+		// signed tx (sweep txs). We try PSBT first because it is the more
+		// common shape; on parse failure we fall back to hex.
 		var parsedTx *wire.MsgTx
 		var parsedTxAttempted bool
 		parseTxOnce := func() *wire.MsgTx {
@@ -813,16 +818,20 @@ func (h *indexerService) listenToTxEvents() {
 			if event.Tx == "" {
 				return nil
 			}
-			txBytes, err := hex.DecodeString(event.Tx)
-			if err != nil {
-				return nil
+			if ptx, err := psbt.NewFromRawBytes(
+				strings.NewReader(event.Tx), true,
+			); err == nil {
+				parsedTx = ptx.UnsignedTx
+				return parsedTx
 			}
-			msg := wire.NewMsgTx(2)
-			if err := msg.Deserialize(bytes.NewReader(txBytes)); err != nil {
-				return nil
+			if txBytes, err := hex.DecodeString(event.Tx); err == nil {
+				msg := wire.NewMsgTx(2)
+				if err := msg.Deserialize(bytes.NewReader(txBytes)); err == nil {
+					parsedTx = msg
+					return parsedTx
+				}
 			}
-			parsedTx = msg
-			return parsedTx
+			return nil
 		}
 
 		listenersCopy := h.scriptSubsHandler.getListenersCopy()

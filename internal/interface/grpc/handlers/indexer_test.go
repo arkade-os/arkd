@@ -12,6 +12,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -112,8 +113,42 @@ func modifyTxFilter(add, remove []string) *arkv1.SubscriptionFilter {
 	}
 }
 
-// buildTxHexWithPackets builds a minimal tx whose only output is the ARK
-// OP_RETURN extension carrying the given packets, and returns it hex-encoded.
+// buildTxBase64WithPackets builds a tx carrying the given ARK OP_RETURN
+// extension packets and returns it as a base64-encoded PSBT, matching the
+// shape that the production producer puts in TransactionEvent.Tx for
+// commitment and ark txs.
+func buildTxBase64WithPackets(t *testing.T, pkts ...extension.Packet) string {
+	t.Helper()
+	ext, err := extension.NewExtensionFromPackets(pkts...)
+	require.NoError(t, err)
+	out, err := ext.TxOut()
+	require.NoError(t, err)
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: 0xffffffff}})
+	tx.AddTxOut(out)
+	ptx, err := psbt.NewFromUnsignedTx(tx)
+	require.NoError(t, err)
+	b64, err := ptx.B64Encode()
+	require.NoError(t, err)
+	return b64
+}
+
+// buildTxBase64Empty builds a tx with one dummy input and no outputs,
+// base64-encoded as a PSBT.
+func buildTxBase64Empty(t *testing.T) string {
+	t.Helper()
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: 0xffffffff}})
+	ptx, err := psbt.NewFromUnsignedTx(tx)
+	require.NoError(t, err)
+	b64, err := ptx.B64Encode()
+	require.NoError(t, err)
+	return b64
+}
+
+// buildTxHexWithPackets builds the same tx as buildTxBase64WithPackets but
+// hex-encoded as a raw signed tx, matching the shape used for sweep txs in
+// production. Retained to exercise the hex fallback path in parseTxOnce.
 // A dummy input is added because wire.MsgTx.Serialize emits the SegWit marker
 // for txs with zero inputs, making round-trip via Deserialize fail.
 func buildTxHexWithPackets(t *testing.T, pkts ...extension.Packet) string {
@@ -125,16 +160,6 @@ func buildTxHexWithPackets(t *testing.T, pkts ...extension.Packet) string {
 	tx := wire.NewMsgTx(2)
 	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: 0xffffffff}})
 	tx.AddTxOut(out)
-	var buf bytes.Buffer
-	require.NoError(t, tx.Serialize(&buf))
-	return hex.EncodeToString(buf.Bytes())
-}
-
-// buildTxHexEmpty builds a tx with one dummy input and no outputs.
-func buildTxHexEmpty(t *testing.T) string {
-	t.Helper()
-	tx := wire.NewMsgTx(2)
-	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: 0xffffffff}})
 	var buf bytes.Buffer
 	require.NoError(t, tx.Serialize(&buf))
 	return hex.EncodeToString(buf.Bytes())
@@ -1194,7 +1219,7 @@ func TestTxFilter(t *testing.T) {
 		eventsCh <- application.TransactionEvent{
 			TxData: application.TxData{
 				Txid: "matching-tx",
-				Tx: buildTxHexWithPackets(t, extension.UnknownPacket{
+				Tx: buildTxBase64WithPackets(t, extension.UnknownPacket{
 					PacketType: 0x42, Data: []byte{0x01},
 				}),
 			},
@@ -1208,7 +1233,7 @@ func TestTxFilter(t *testing.T) {
 		}
 
 		eventsCh <- application.TransactionEvent{
-			TxData: application.TxData{Txid: "no-ext", Tx: buildTxHexEmpty(t)},
+			TxData: application.TxData{Txid: "no-ext", Tx: buildTxBase64Empty(t)},
 		}
 		select {
 		case ev := <-listener.ch:
@@ -1250,7 +1275,7 @@ func TestTxFilter(t *testing.T) {
 			eventsCh, listener := setup(t)
 			// Tx has no extension; vtxo matches testScript1.
 			eventsCh <- application.TransactionEvent{
-				TxData: application.TxData{Txid: "script-only", Tx: buildTxHexEmpty(t)},
+				TxData: application.TxData{Txid: "script-only", Tx: buildTxBase64Empty(t)},
 				SpendableVtxos: []domain.Vtxo{{
 					PubKey: testPubKey1,
 				}},
@@ -1267,7 +1292,7 @@ func TestTxFilter(t *testing.T) {
 			t.Parallel()
 			eventsCh, listener := setup(t)
 			eventsCh <- application.TransactionEvent{
-				TxData: application.TxData{Txid: "tx-only", Tx: buildTxHexWithPackets(t,
+				TxData: application.TxData{Txid: "tx-only", Tx: buildTxBase64WithPackets(t,
 					extension.UnknownPacket{PacketType: 0x01, Data: []byte{0x02}},
 				)},
 			}
@@ -1283,7 +1308,7 @@ func TestTxFilter(t *testing.T) {
 			t.Parallel()
 			eventsCh, listener := setup(t)
 			eventsCh <- application.TransactionEvent{
-				TxData: application.TxData{Txid: "both", Tx: buildTxHexWithPackets(t,
+				TxData: application.TxData{Txid: "both", Tx: buildTxBase64WithPackets(t,
 					extension.UnknownPacket{PacketType: 0x01, Data: []byte{0x02}},
 				)},
 				SpendableVtxos: []domain.Vtxo{{PubKey: testPubKey1}},
@@ -1306,7 +1331,7 @@ func TestTxFilter(t *testing.T) {
 			t.Parallel()
 			eventsCh, listener := setup(t)
 			eventsCh <- application.TransactionEvent{
-				TxData: application.TxData{Txid: "neither", Tx: buildTxHexEmpty(t)},
+				TxData: application.TxData{Txid: "neither", Tx: buildTxBase64Empty(t)},
 			}
 			select {
 			case ev := <-listener.ch:
@@ -1521,6 +1546,98 @@ func TestTxFilter(t *testing.T) {
 			t, []string{hasExtension},
 			svc.scriptSubsHandler.getTxFilters("sub-old-tx"),
 		)
+	})
+
+	t.Run("UpdateSubscription Overwrite over-cap returns InvalidArgument", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-cap-grpc", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		exprs := make([]string, MaxTxFiltersPerListener+1)
+		for i := range exprs {
+			exprs[i] = fmt.Sprintf("hasPacket(tx.extension, %d)", i)
+		}
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "sub-cap-grpc",
+				Filter:         overwriteTxFilter(exprs...),
+			},
+		)
+		require.Error(t, err)
+		st, _ := status.FromError(err)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+		require.Empty(t, svc.scriptSubsHandler.getTxFilters("sub-cap-grpc"))
+	})
+
+	t.Run("listenToTxEvents routes per-listener (filter scoping)", func(t *testing.T) {
+		t.Parallel()
+		// Two listeners with disjoint tx filters; an event that matches A's
+		// filter should not reach B.
+		eventsCh := make(chan application.TransactionEvent, 2)
+		svc := newTestIndexerServiceWithEvents(eventsCh)
+		go svc.listenToTxEvents()
+
+		listenerA := newListener[*arkv1.GetSubscriptionResponse]("a", nil)
+		svc.scriptSubsHandler.pushListener(listenerA)
+		require.NoError(t, svc.scriptSubsHandler.addTxFilters("a",
+			[]string{"has(tx.extension) && hasPacket(tx.extension, 0x42)"},
+		))
+
+		listenerB := newListener[*arkv1.GetSubscriptionResponse]("b", nil)
+		svc.scriptSubsHandler.pushListener(listenerB)
+		require.NoError(t, svc.scriptSubsHandler.addTxFilters("b",
+			[]string{"has(tx.extension) && hasPacket(tx.extension, 0x07)"},
+		))
+
+		// Tx carries packet 0x42 — only A should match.
+		eventsCh <- application.TransactionEvent{
+			TxData: application.TxData{Txid: "for-a", Tx: buildTxBase64WithPackets(t,
+				extension.UnknownPacket{PacketType: 0x42, Data: []byte{0xaa}},
+			)},
+		}
+		select {
+		case ev := <-listenerA.ch:
+			require.Equal(t, "for-a", ev.GetEvent().GetTxid())
+		case <-time.After(time.Second):
+			t.Fatal("listener A did not receive event")
+		}
+		select {
+		case ev := <-listenerB.ch:
+			t.Fatalf("listener B unexpectedly received: %s", ev.GetEvent().GetTxid())
+		case <-time.After(150 * time.Millisecond):
+		}
+	})
+
+	t.Run("listenToTxEvents parses hex-encoded raw tx as fallback", func(t *testing.T) {
+		t.Parallel()
+		// Sweep txs go on the wire as hex-encoded raw txs (not PSBTs). Confirm
+		// the parser falls back from PSBT parse failure to hex decoding so
+		// tx filters still match sweep events.
+		eventsCh := make(chan application.TransactionEvent, 1)
+		svc := newTestIndexerServiceWithEvents(eventsCh)
+		go svc.listenToTxEvents()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-hex", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+		require.NoError(t, svc.scriptSubsHandler.addTxFilters(
+			"sub-hex", []string{hasExtension},
+		))
+
+		eventsCh <- application.TransactionEvent{
+			TxData: application.TxData{
+				Txid: "hex-sweep",
+				Tx: buildTxHexWithPackets(t, extension.UnknownPacket{
+					PacketType: 0x42, Data: []byte{0x01},
+				}),
+			},
+		}
+		select {
+		case ev := <-listener.ch:
+			require.Equal(t, "hex-sweep", ev.GetEvent().GetTxid())
+		case <-time.After(time.Second):
+			t.Fatal("listener did not receive event for hex-encoded tx")
+		}
 	})
 
 	t.Run("not-found maps to gRPC NotFound via sentinel error", func(t *testing.T) {
