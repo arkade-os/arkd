@@ -10,26 +10,22 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
-	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 )
 
-type CovenantlessRedeemBranch struct {
-	vtxo     types.Vtxo
-	branch   []indexer.ChainWithExpiry
-	explorer explorer.Explorer
-	indexer  indexer.Indexer
+type RedeemBranch struct {
+	vtxo     clientlib.Vtxo
+	branch   []clientlib.ChainWithExpiry
+	explorer clientlib.Explorer
+	indexer  clientlib.Indexer
 }
 
 func NewRedeemBranch(
 	ctx context.Context,
-	explorer explorer.Explorer,
-	indexerSvc indexer.Indexer,
-	vtxo types.Vtxo,
-) (*CovenantlessRedeemBranch, error) {
-	chain, err := indexerSvc.GetVtxoChain(ctx, types.Outpoint{
+	explorer clientlib.Explorer, indexer clientlib.Indexer, vtxo clientlib.Vtxo,
+) (*RedeemBranch, error) {
+	chain, err := indexer.GetVtxoChain(ctx, clientlib.Outpoint{
 		Txid: vtxo.Txid,
 		VOut: vtxo.VOut,
 	})
@@ -37,24 +33,24 @@ func NewRedeemBranch(
 		return nil, err
 	}
 
-	return &CovenantlessRedeemBranch{
+	return &RedeemBranch{
 		vtxo:     vtxo,
 		branch:   chain.Chain,
 		explorer: explorer,
-		indexer:  indexerSvc,
+		indexer:  indexer,
 	}, nil
 }
 
 // RedeemPath returns the list of transactions to broadcast in order to access the vtxo output
 // due to current P2A relay policy, we can't broadcast the branch tx until its parent tx is
 // confirmed so we'll broadcast only the first tx of every branch
-func (r *CovenantlessRedeemBranch) NextRedeemTx() (string, error) {
+func (r *RedeemBranch) NextRedeemTx() (string, error) {
 	nextTxToBroadcast := ""
 	for i := len(r.branch) - 1; i >= 0; i-- {
 		tx := r.branch[i]
 		// commitment txs are always onchain, so we can skip them
 		switch tx.Type {
-		case indexer.IndexerChainedTxTypeCommitment, indexer.IndexerChainedTxTypeUnspecified:
+		case clientlib.IndexerChainedTxTypeCommitment, clientlib.IndexerChainedTxTypeUnspecified:
 			continue
 		}
 
@@ -125,7 +121,9 @@ func (r *CovenantlessRedeemBranch) NextRedeemTx() (string, error) {
 			args := make(map[string][]byte)
 			if len(conditionWitnessFields) > 0 {
 				var conditionWitnessBytes bytes.Buffer
-				if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitnessFields[0]); err != nil {
+				if err := psbt.WriteTxWitness(
+					&conditionWitnessBytes, conditionWitnessFields[0],
+				); err != nil {
 					return "", err
 				}
 				args[string(txutils.ArkFieldConditionWitness)] = conditionWitnessBytes.Bytes()
@@ -166,7 +164,7 @@ func (r *CovenantlessRedeemBranch) NextRedeemTx() (string, error) {
 	return hex.EncodeToString(txBytes.Bytes()), nil
 }
 
-func (r *CovenantlessRedeemBranch) ExpiresAt() (*time.Time, error) {
+func (r *RedeemBranch) ExpiresAt() (*time.Time, error) {
 	lastKnownBlocktime := int64(0)
 	for _, node := range r.branch {
 		confirmed, _, err := r.explorer.GetTxBlockTime(node.Txid)
@@ -186,8 +184,10 @@ func (r *CovenantlessRedeemBranch) ExpiresAt() (*time.Time, error) {
 	return &t, nil
 }
 
-// ErrPendingConfirmation is returned when computing the offchain path of a redeem branch. Due to P2A relay policy, only 1C1P packages are accepted.
-// This error is returned when the tx is found onchain but not confirmed yet, allowing the user to know when to wait for the tx to be confirmed or to continue with the redemption.
+// ErrPendingConfirmation is returned when computing the offchain path of a redeem branch.
+// Due to P2A relay policy, only 1C1P packages are accepted.
+// This error is returned when the tx is found onchain but not confirmed yet, allowing the user to
+// know when to wait for the tx to be confirmed or to continue with the redemption.
 type ErrPendingConfirmation struct {
 	Txid string
 }
