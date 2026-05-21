@@ -61,9 +61,10 @@ import (
 )
 
 const (
-	BitcoinExplorer = "bitcoin"
-	pongInterval    = 60 * time.Second
-	pingInterval    = (pongInterval * 9) / 10
+	BitcoinExplorer     = "bitcoin"
+	defaultPollInterval = 10 * time.Second
+	pongInterval        = 60 * time.Second
+	pingInterval        = (pongInterval * 9) / 10
 )
 
 var (
@@ -117,7 +118,9 @@ func NewExplorer(baseUrl string, net arklib.Network, opts ...Option) (explorer.E
 		return nil, fmt.Errorf("invalid base url: %s", err)
 	}
 
-	svcOpts := &explorerSvc{}
+	svcOpts := &explorerSvc{
+		pollInterval: defaultPollInterval,
+	}
 	for _, opt := range opts {
 		opt(svcOpts)
 	}
@@ -129,6 +132,9 @@ func NewExplorer(baseUrl string, net arklib.Network, opts ...Option) (explorer.E
 			net:        net,
 			noTracking: svcOpts.noTracking,
 		}, nil
+	}
+	if svcOpts.pollInterval <= 0 {
+		return nil, fmt.Errorf("poll interval must be positive")
 	}
 
 	svc := &explorerSvc{
