@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	batchsessionhandler "github.com/arkade-os/arkd/pkg/client-lib/batch-session/handler"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,7 +56,7 @@ func TestRedeemNotes(t *testing.T) {
 func newTestRedeemNotesArgs() RedeemNotesArgs {
 	return RedeemNotesArgs{
 		Client:       mockClient{},
-		SignTx:       batchsessionhandler.SignFn(mockSignTx),
+		SignTx:       clientlib.SignFn(mockSignTx),
 		ServerInfo:   clientlib.Info{Network: "regtest"},
 		Notes:        []string{"somenote"},
 		ReceiverAddr: "tark1qexample",

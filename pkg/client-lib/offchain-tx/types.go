@@ -1,16 +1,10 @@
 package offchaintx
 
 import (
-	"context"
-
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 )
-
-// SignFn signs the provided base64-encoded PSBT with the caller's identity
-// and returns the signed PSBT base64.
-type SignFn func(ctx context.Context, tx string) (string, error)
 
 // BuildAndSignTxRes is the output of every BuildAndSign...Tx primitive
 // except BuildAndSignIssuanceTx (which also adds the derived asset IDs).

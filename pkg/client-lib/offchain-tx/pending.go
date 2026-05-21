@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	batchsession "github.com/arkade-os/arkd/pkg/client-lib/batch-session"
-	batchsessionhandler "github.com/arkade-os/arkd/pkg/client-lib/batch-session/handler"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -21,7 +21,7 @@ func FinalizePendingTxs(
 	proofTx, message, err := batchsession.BuildAndSignGetPendingTxIntent(
 		ctx, batchsession.IntentArgs{BaseArgs: batchsession.BaseArgs{
 			Vtxos:  args.Vtxos,
-			SignTx: batchsessionhandler.SignFn(args.SignTx),
+			SignTx: clientlib.SignFn(args.SignTx),
 		}},
 	)
 	if err != nil {

@@ -163,7 +163,7 @@ func (a BurnAssetArgs) validate() error {
 // txs were considered.
 type FinalizePendingTxsArgs struct {
 	Client       clientlib.Client
-	SignTx       SignFn
+	SignTx       clientlib.SignFn
 	Vtxos        []clientlib.Vtxo
 	CreatedAfter *time.Time // informational only; caller already filtered Vtxos
 }
@@ -185,7 +185,7 @@ func (a FinalizePendingTxsArgs) validate() error {
 // and the orchestrators that wrap them.
 type BaseArgs struct {
 	ServerInfo clientlib.Info   // provides Dust, SignerPubKey (hex), CheckpointTapscript (hex)
-	SignTx     SignFn           // signs ark tx + checkpoint txs
+	SignTx     clientlib.SignFn // signs ark tx + checkpoint txs
 	Vtxos      []clientlib.Vtxo // pre-fetched spendable vtxos (selection runs inside the primitive)
 	ChangeAddr string           // pre-derived offchain change address
 

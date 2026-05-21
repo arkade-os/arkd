@@ -6,7 +6,6 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	batchsessionhandler "github.com/arkade-os/arkd/pkg/client-lib/batch-session/handler"
 	"github.com/btcsuite/btcd/btcutil"
 )
 
@@ -18,7 +17,7 @@ type CollaborativeExitArgs struct {
 	Client       clientlib.Client
 	FeeEstimator *arkfee.Estimator
 	ServerInfo   clientlib.Info
-	SignTx       batchsessionhandler.SignFn
+	SignTx       clientlib.SignFn
 	Vtxos        []clientlib.Vtxo
 	Receiver     clientlib.Receiver
 	ChangeAddr   string

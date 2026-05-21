@@ -6,7 +6,6 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	batchsessionhandler "github.com/arkade-os/arkd/pkg/client-lib/batch-session/handler"
 )
 
 // RedeemNotesArgs configures a RedeemNotes call: the Notes to redeem and the
@@ -14,7 +13,7 @@ import (
 // proof, and Client/ServerInfo are used to talk to the server.
 type RedeemNotesArgs struct {
 	Client       clientlib.Client
-	SignTx       batchsessionhandler.SignFn
+	SignTx       clientlib.SignFn
 	ServerInfo   clientlib.Info
 	Notes        []string
 	ReceiverAddr string

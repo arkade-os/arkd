@@ -6,7 +6,6 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	batchsessionhandler "github.com/arkade-os/arkd/pkg/client-lib/batch-session/handler"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 )
 
@@ -18,7 +17,7 @@ import (
 type SettleArgs struct {
 	Client        clientlib.Client
 	ServerInfo    clientlib.Info
-	SignTx        batchsessionhandler.SignFn
+	SignTx        clientlib.SignFn
 	BoardingUtxos []clientlib.Utxo
 	Vtxos         []clientlib.Vtxo
 	ReceiverAddr  string

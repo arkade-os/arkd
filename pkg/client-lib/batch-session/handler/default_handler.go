@@ -29,7 +29,7 @@ import (
 type Args struct {
 	Client     clientlib.Client
 	ServerInfo clientlib.Info
-	SignTx     SignFn
+	SignTx     clientlib.SignFn
 
 	IntentId       string
 	Vtxos          []clientlib.Vtxo

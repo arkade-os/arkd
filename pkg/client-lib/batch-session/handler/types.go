@@ -8,8 +8,6 @@ import (
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 )
 
-type SignFn func(ctx context.Context, tx string) (string, error)
-
 type Handler interface {
 	OnBatchStarted(
 		ctx context.Context, event clientlib.BatchStartedEvent,

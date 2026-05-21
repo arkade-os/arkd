@@ -607,7 +607,7 @@ func createOffchainTx(
 // Returns the final ark txid, the fully-signed ark tx, and  checkpoint txs.
 // Shared by every orchestrator (Send, IssueAsset, ReissueAsset, BurnAsset).
 func submitAndFinalize(
-	ctx context.Context, c clientlib.Client, signTx SignFn,
+	ctx context.Context, c clientlib.Client, signTx clientlib.SignFn,
 	signerPubKey *btcec.PublicKey, build *BuildAndSignTxRes,
 ) (string, string, []string, error) {
 	arkTxid, signedArk, signedCps, err := c.SubmitTx(
@@ -640,7 +640,7 @@ func submitAndFinalize(
 // FinalizeTx on the client, and returns the ark txid plus the finalized
 // checkpoint txs.
 func finalizeTx(
-	ctx context.Context, c clientlib.Client, signTx SignFn,
+	ctx context.Context, c clientlib.Client, signTx clientlib.SignFn,
 	acceptedTx clientlib.AcceptedOffchainTx,
 ) (string, []string, error) {
 	finalCheckpoints := make([]string, 0, len(acceptedTx.SignedCheckpointTxs))

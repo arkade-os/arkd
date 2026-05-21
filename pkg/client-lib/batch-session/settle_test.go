@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	batchsessionhandler "github.com/arkade-os/arkd/pkg/client-lib/batch-session/handler"
 	"github.com/stretchr/testify/require"
 )
 
@@ -82,7 +81,7 @@ func newTestSettleArgs(t *testing.T) SettleArgs {
 	return SettleArgs{
 		Client:     mockClient{},
 		ServerInfo: clientlib.Info{Dust: 1000, Network: "regtest"},
-		SignTx:     batchsessionhandler.SignFn(mockSignTx),
+		SignTx:     clientlib.SignFn(mockSignTx),
 		Vtxos: []clientlib.Vtxo{{
 			Outpoint: clientlib.Outpoint{Txid: "deadbeef", VOut: 0},
 			Amount:   10000,

@@ -1,6 +1,7 @@
 package clientlib
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -199,50 +200,6 @@ func (v Vtxo) ParseClosure() ([]byte, *arklib.TaprootMerkleProof, error) {
 	return pkScript, leafProof, nil
 }
 
-type UtxoEventType int
-
-const (
-	UtxosAdded UtxoEventType = iota
-	UtxosConfirmed
-	UtxosReplaced
-	UtxosSpent
-)
-
-func (e UtxoEventType) String() string {
-	return map[UtxoEventType]string{
-		UtxosAdded:     "UTXOS_ADDED",
-		UtxosConfirmed: "UTXOS_CONFIRMED",
-		UtxosReplaced:  "UTXOS_REPLACED",
-		UtxosSpent:     "UTXOS_SPENT",
-	}[e]
-}
-
-type UtxoEvent struct {
-	Type  UtxoEventType
-	Utxos []Utxo
-}
-
-type VtxoEventType int
-
-const (
-	VtxosAdded VtxoEventType = iota
-	VtxosSpent
-	VtxosUpdated
-)
-
-func (e VtxoEventType) String() string {
-	return map[VtxoEventType]string{
-		VtxosAdded:   "VTXOS_ADDED",
-		VtxosSpent:   "VTXOS_SPENT",
-		VtxosUpdated: "VTXOS_UPDATED",
-	}[e]
-}
-
-type VtxoEvent struct {
-	Type  VtxoEventType
-	Vtxos []Vtxo
-}
-
 const (
 	TxSent     TxType = "SENT"
 	TxReceived TxType = "RECEIVED"
@@ -280,26 +237,6 @@ type Transaction struct {
 func (t Transaction) String() string {
 	buf, _ := json.MarshalIndent(t, "", "  ")
 	return string(buf)
-}
-
-type TxEventType int
-
-const (
-	TxsAdded TxEventType = iota
-	TxsSettled
-	TxsConfirmed
-	TxsReplaced
-	TxsUpdated
-)
-
-func (e TxEventType) String() string {
-	return map[TxEventType]string{
-		TxsAdded:     "TXS_ADDED",
-		TxsSettled:   "TXS_SETTLED",
-		TxsConfirmed: "TXS_CONFIRMED",
-		TxsReplaced:  "TXS_REPLACED",
-		TxsUpdated:   "TXS_UPDATED",
-	}[e]
 }
 
 type Utxo struct {
@@ -439,43 +376,6 @@ type ExistingControlAsset struct {
 
 func (ExistingControlAsset) isControlAsset() {}
 
-func parseClosure(
-	outpoint Outpoint, closure script.Closure, tapscripts []string,
-) ([]byte, *arklib.TaprootMerkleProof, error) {
-	if closure == nil {
-		return nil, nil, fmt.Errorf("%s has no signing closure", outpoint.String())
-	}
-	if len(tapscripts) <= 0 {
-		return nil, nil, fmt.Errorf("%s has no tapscripts", outpoint.String())
-	}
-
-	vtxoScript, err := script.ParseVtxoScript(tapscripts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%s has invalid tapscripts: %w", outpoint.String(), err)
-	}
-	forfeitScript, err := closure.Script()
-	if err != nil {
-		return nil, nil, fmt.Errorf(
-			"%s has invalid signing closure: %w", outpoint.String(), err,
-		)
-	}
-
-	taprootKey, taprootTree, err := vtxoScript.TapTree()
-	if err != nil {
-		return nil, nil, fmt.Errorf("%s has invalid taptree: %w", outpoint.String(), err)
-	}
-
-	forfeitLeaf := txscript.NewBaseTapLeaf(forfeitScript)
-	leafProof, err := taprootTree.GetTaprootMerkleProof(forfeitLeaf.TapHash())
-	if err != nil {
-		return nil, nil, fmt.Errorf(
-			"%s has invalid signing script: %w", outpoint.String(), err,
-		)
-	}
-	pkScript, err := script.P2TRScript(taprootKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%s has invalid tapkey: %w", outpoint.String(), err)
-	}
-
-	return pkScript, leafProof, nil
-}
+// SignFn signs the provided base64-encoded PSBT with the caller's identity
+// and returns the signed PSBT base64.
+type SignFn func(ctx context.Context, tx string) (string, error)

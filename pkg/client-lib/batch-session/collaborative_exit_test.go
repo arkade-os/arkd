@@ -6,7 +6,6 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	batchsessionhandler "github.com/arkade-os/arkd/pkg/client-lib/batch-session/handler"
 	"github.com/stretchr/testify/require"
 )
 
@@ -78,7 +77,7 @@ func newTestCollaborativeExitArgs(t *testing.T) CollaborativeExitArgs {
 		Client:       mockClient{},
 		FeeEstimator: feeEstimator,
 		ServerInfo:   clientlib.Info{Dust: 1000, Network: "regtest"},
-		SignTx:       batchsessionhandler.SignFn(mockSignTx),
+		SignTx:       clientlib.SignFn(mockSignTx),
 		Vtxos: []clientlib.Vtxo{{
 			Outpoint: clientlib.Outpoint{Txid: "deadbeef", VOut: 0},
 			Amount:   10000,

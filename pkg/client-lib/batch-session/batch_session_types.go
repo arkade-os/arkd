@@ -8,7 +8,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	batchsessionhandler "github.com/arkade-os/arkd/pkg/client-lib/batch-session/handler"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 )
 
@@ -123,7 +122,7 @@ type BaseArgs struct {
 	Vtxos         []clientlib.Vtxo
 	BoardingUtxos []clientlib.Utxo
 	Outputs       []clientlib.Receiver
-	SignTx        batchsessionhandler.SignFn
+	SignTx        clientlib.SignFn
 }
 
 func (a BaseArgs) signingRequired() bool {

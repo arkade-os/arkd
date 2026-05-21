@@ -6,7 +6,6 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	batchsessionhandler "github.com/arkade-os/arkd/pkg/client-lib/batch-session/handler"
 	"github.com/stretchr/testify/require"
 )
 
@@ -75,7 +74,7 @@ func newTestJoinBatchArgs(t *testing.T) JoinBatchArgs {
 				Amount:   10000,
 			}},
 			Outputs: []clientlib.Receiver{{To: "tark1qexample", Amount: 10000}},
-			SignTx:  batchsessionhandler.SignFn(mockSignTx),
+			SignTx:  clientlib.SignFn(mockSignTx),
 		},
 		Client:      mockClient{},
 		ServerInfo:  clientlib.Info{Network: "regtest", Dust: 1000},
