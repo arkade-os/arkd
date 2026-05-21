@@ -67,7 +67,9 @@ func WithOutputTaprootTree(byPkScript map[string][]byte) SendOption {
 			if len(v) == 0 {
 				return fmt.Errorf("receiver tap tree must not be empty")
 			}
-			o.outputTapTrees[k] = v
+			cp := make([]byte, len(v))
+			copy(cp, v)
+			o.outputTapTrees[k] = cp
 		}
 		return nil
 	})

@@ -64,10 +64,13 @@ func (a *service) SendOffChain(
 
 	// if set, put the TaprootTapTree field on PSBT output
 	if len(o.outputTapTrees) > 0 {
+		if len(arkPtx.UnsignedTx.TxOut) != len(arkPtx.Outputs) {
+			return nil, fmt.Errorf(
+				"output count mismatch: unsigned tx has %d outputs but arkPtx has %d",
+				len(arkPtx.UnsignedTx.TxOut), len(arkPtx.Outputs),
+			)
+		}
 		for i, out := range arkPtx.UnsignedTx.TxOut {
-			if i >= len(arkPtx.Outputs) {
-				break
-			}
 			tapTree, ok := o.outputTapTrees[hex.EncodeToString(out.PkScript)]
 			if !ok {
 				continue
