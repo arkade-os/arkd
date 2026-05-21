@@ -69,11 +69,11 @@ const (
 
 var (
 	defaultExplorerUrls = utils.SupportedType[string]{
-		arklib.Bitcoin.Name:        "https://mempool.space/api",
+		arklib.Bitcoin.Name:        "https://mempool.arkade.sh/api",
 		arklib.BitcoinTestNet.Name: "https://mempool.space/testnet/api",
 		//arklib.BitcoinTestNet4.Name: "https://mempool.space/testnet4/api", //TODO uncomment once supported
-		arklib.BitcoinSigNet.Name:    "https://mempool.space/signet/api",
-		arklib.BitcoinMutinyNet.Name: "https://mutinynet.com/api",
+		arklib.BitcoinSigNet.Name:    "https://mempool.signet.arkade.sh/api",
+		arklib.BitcoinMutinyNet.Name: "https://mempool.mutinynet.arkade.sh/api",
 		arklib.BitcoinRegTest.Name:   "http://127.0.0.1:3000",
 	}
 )
