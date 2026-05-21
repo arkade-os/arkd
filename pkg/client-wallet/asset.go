@@ -18,7 +18,7 @@ func (w *wallet) IssueAsset(
 		return nil, err
 	}
 
-	vtxos, err := w.getSpendableVtxos(ctx, nil)
+	vtxos, err := w.getSpendableVtxos(ctx, &getVtxosFilter{excludeRecoverableVtxos: true})
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (w *wallet) ReissueAsset(
 		return nil, fmt.Errorf("%s can't be reissued, no control asset", assetId)
 	}
 
-	vtxos, err := w.getSpendableVtxos(ctx, nil)
+	vtxos, err := w.getSpendableVtxos(ctx, &getVtxosFilter{excludeRecoverableVtxos: true})
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (w *wallet) BurnAsset(
 		return nil, err
 	}
 
-	vtxos, err := w.getSpendableVtxos(ctx, nil)
+	vtxos, err := w.getSpendableVtxos(ctx, &getVtxosFilter{excludeRecoverableVtxos: true})
 	if err != nil {
 		return nil, err
 	}

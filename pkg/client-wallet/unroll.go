@@ -44,7 +44,7 @@ func (w *wallet) Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes,
 	vtxos := o.vtxos
 	if len(vtxos) <= 0 {
 		var err error
-		vtxos, err = w.getSpendableVtxos(ctx, nil)
+		vtxos, err = w.getSpendableVtxos(ctx, &getVtxosFilter{excludeRecoverableVtxos: true})
 		if err != nil {
 			return nil, err
 		}

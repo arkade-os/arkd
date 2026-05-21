@@ -208,6 +208,17 @@ func (a *BaseArgs) validateBase() error {
 	if a.ChangeAddr == "" {
 		return fmt.Errorf("missing change address")
 	}
+	for _, v := range a.Vtxos {
+		if v.IsRecoverable() {
+			return fmt.Errorf("invalid funds: vtxo %s is recoverable", v.String())
+		}
+		if v.Spent {
+			return fmt.Errorf("invalid funds: vtxo %s is spent", v.String())
+		}
+		if v.Unrolled {
+			return fmt.Errorf("invalid funds: vtxo %s is unrolled", v.String())
+		}
+	}
 	signerPubkey, err := parsePubkey(a.ServerInfo.SignerPubKey)
 	if err != nil {
 		return fmt.Errorf("invalid signer pubkey: %w", err)

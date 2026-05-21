@@ -15,7 +15,7 @@ func (w *wallet) SendOffChain(
 		return nil, err
 	}
 
-	vtxos, err := w.getSpendableVtxos(ctx, nil)
+	vtxos, err := w.getSpendableVtxos(ctx, &getVtxosFilter{excludeRecoverableVtxos: true})
 	if err != nil {
 		return nil, err
 	}
