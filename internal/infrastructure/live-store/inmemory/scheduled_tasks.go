@@ -41,3 +41,10 @@ func (s *scheduledTasksStore) Has(_ context.Context, id string) (bool, error) {
 	_, ok := s.ids[id]
 	return ok, nil
 }
+
+func (s *scheduledTasksStore) Clear(_ context.Context) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.ids = make(map[string]struct{})
+	return nil
+}

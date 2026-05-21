@@ -52,6 +52,10 @@ func newSweeper(
 }
 
 func (s *sweeper) start(ctx context.Context) error {
+	if err := s.cache.ScheduledTasks().Clear(ctx); err != nil {
+		return fmt.Errorf("sweeper: failed to clear stale scheduled task claims: %w", err)
+	}
+
 	s.scheduler.Start()
 
 	s.ctx = ctx
@@ -316,11 +320,9 @@ func (s *sweeper) scheduleCheckpointSweep(
 		vtxo,
 	)
 
-	// if the sweep checkpoint tapscript is available, execute the task immediately
-	if !s.scheduler.AfterNow(sweepAt) {
-		return execute()
-	}
-
+	// scheduleTask handles the in-past case internally — calling it
+	// unconditionally keeps the cross-instance claim path consistent
+	// for both overdue and future checkpoint sweeps.
 	if err := s.scheduleTask(sweeperTask{
 		id:      checkpointTxid.String(),
 		at:      sweepAt,
@@ -374,14 +376,9 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 		return nil
 	}
 
-	if !s.scheduler.AfterNow(task.at) {
-		log.Debugf(
-			"sweeper: trying to schedule task in the past for tx %s, executing it immediately",
-			task.id,
-		)
-		return task.execute()
-	}
-
+	// Claim first, before the in-past fast-path: otherwise two instances
+	// recovering the same overdue task on restart would both fall through
+	// to execute() and both broadcast the same sweep tx.
 	claimed, err := s.cache.ScheduledTasks().AddIfAbsent(s.ctx, task.id)
 	if err != nil {
 		return fmt.Errorf("failed to claim scheduled task %s: %w", task.id, err)
@@ -389,6 +386,19 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 	if !claimed {
 		// another instance (or this one earlier) already claimed it
 		return nil
+	}
+
+	if !s.scheduler.AfterNow(task.at) {
+		log.Debugf(
+			"sweeper: trying to schedule task in the past for tx %s, executing it immediately",
+			task.id,
+		)
+		if err := s.removeTask(task.id); err != nil {
+			log.WithError(err).Errorf(
+				"sweeper: failed to release scheduled task %s", task.id,
+			)
+		}
+		return task.execute()
 	}
 
 	return s.scheduler.ScheduleTaskOnce(task.at, func() {

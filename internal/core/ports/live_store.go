@@ -94,6 +94,7 @@ type ScheduledTasksStore interface {
 	AddIfAbsent(ctx context.Context, id string) (bool, error)
 	Remove(ctx context.Context, id string) error
 	Has(ctx context.Context, id string) (bool, error)
+	Clear(ctx context.Context) error
 }
 
 type TimedIntent struct {

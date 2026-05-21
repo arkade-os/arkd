@@ -3,11 +3,13 @@ package redislivestore
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/redis/go-redis/v9"
 )
 
+const scheduledTaskTTL = 30 * 24 * time.Hour
 
 type scheduledTasksStore struct {
 	rdb *redis.Client
@@ -18,15 +20,11 @@ func NewScheduledTasksStore(rdb *redis.Client) ports.ScheduledTasksStore {
 }
 
 func (s *scheduledTasksStore) AddIfAbsent(ctx context.Context, id string) (bool, error) {
-	// SETNX is atomic on the Redis server: returns true iff this call set
-	// the key. Multiple arkd processes racing to claim the same task id
-	// will see exactly one true and the rest false.
-	return s.rdb.SetNX(ctx, scheduledTaskKey(id), "1", 0).Result()
+	return s.rdb.SetNX(ctx, scheduledTaskKey(id), "1", scheduledTaskTTL).Result()
 }
 
 func (s *scheduledTasksStore) Remove(ctx context.Context, id string) error {
-	// Del returns the number of keys removed; we don't care if it was 0
-	// (Remove is idempotent per the interface contract).
+	// Safe to call when the key isn't there — Del returns 0, not an error.
 	return s.rdb.Del(ctx, scheduledTaskKey(id)).Err()
 }
 
@@ -36,6 +34,28 @@ func (s *scheduledTasksStore) Has(ctx context.Context, id string) (bool, error) 
 		return false, err
 	}
 	return n > 0, nil
+}
+
+func (s *scheduledTasksStore) Clear(ctx context.Context) error {
+	pattern := scheduledTaskKeyPrefix + ":*"
+	iter := s.rdb.Scan(ctx, 0, pattern, 100).Iterator()
+	var batch []string
+	for iter.Next(ctx) {
+		batch = append(batch, iter.Val())
+		if len(batch) >= 100 {
+			if err := s.rdb.Del(ctx, batch...).Err(); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return err
+	}
+	if len(batch) > 0 {
+		return s.rdb.Del(ctx, batch...).Err()
+	}
+	return nil
 }
 
 func scheduledTaskKey(id string) string {

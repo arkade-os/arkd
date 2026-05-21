@@ -814,28 +814,60 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		var wins atomic.Int32
 		var wg sync.WaitGroup
 		start := make(chan struct{})
+		errCh := make(chan error, goroutines)
 
 		for range goroutines {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				<-start
 				claimed, err := store.ScheduledTasks().AddIfAbsent(ctx, "tx-race")
-				require.NoError(t, err)
+				if err != nil {
+					errCh <- err
+					return
+				}
 				if claimed {
 					wins.Add(1)
 				}
-			}()
+			})
 		}
 
 		close(start)
 		wg.Wait()
+		close(errCh)
+		for err := range errCh {
+			require.NoError(t, err)
+		}
 
 		require.Equal(t, int32(1), wins.Load(),
 			"AddIfAbsent must be atomic: exactly one goroutine claims the id")
 
 		require.NoError(t, store.ScheduledTasks().Remove(ctx, "tx-race"))
 
+		// Clear: wipes every claim so the ids can be claimed again. This is
+		// what sweeper.start() uses on boot to recover from a crash where
+		// the in-process timer died but the Redis claim survived.
+		_, err = store.ScheduledTasks().AddIfAbsent(ctx, "tx-clear-1")
+		require.NoError(t, err)
+		_, err = store.ScheduledTasks().AddIfAbsent(ctx, "tx-clear-2")
+		require.NoError(t, err)
+
+		require.NoError(t, store.ScheduledTasks().Clear(ctx))
+
+		has, err = store.ScheduledTasks().Has(ctx, "tx-clear-1")
+		require.NoError(t, err)
+		require.False(t, has, "Clear must remove every claim")
+		has, err = store.ScheduledTasks().Has(ctx, "tx-clear-2")
+		require.NoError(t, err)
+		require.False(t, has, "Clear must remove every claim")
+
+		// Re-claim proves the slot was actually freed, not just hidden.
+		claimed, err = store.ScheduledTasks().AddIfAbsent(ctx, "tx-clear-1")
+		require.NoError(t, err)
+		require.True(t, claimed)
+		claimed, err = store.ScheduledTasks().AddIfAbsent(ctx, "tx-clear-2")
+		require.NoError(t, err)
+		require.True(t, claimed)
+
+		require.NoError(t, store.ScheduledTasks().Clear(ctx))
 	})
 }
 
