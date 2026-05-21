@@ -10,7 +10,7 @@ replace github.com/arkade-os/arkd/pkg/errors => ../errors
 
 replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.3
 
-go 1.26.2
+go 1.26.3
 
 require (
 	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-00010101000000-000000000000
