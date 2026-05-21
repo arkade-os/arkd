@@ -12,9 +12,10 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
-	wallet "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/arkade-os/arkd/pkg/client-lib/store"
-	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	wallet "github.com/arkade-os/arkd/pkg/client-wallet"
+	"github.com/arkade-os/arkd/pkg/client-wallet/store"
+	"github.com/arkade-os/arkd/pkg/client-wallet/types"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/term"
 )
@@ -396,7 +397,7 @@ func send(ctx *cli.Context) error {
 		return fmt.Errorf("missing destination, use --to and --amount or --receivers")
 	}
 
-	var receivers []types.Receiver
+	var receivers []clientlib.Receiver
 	var err error
 	if receiversJSON != "" {
 		// set of receivers from JSON
@@ -411,13 +412,13 @@ func send(ctx *cli.Context) error {
 			if err != nil {
 				return err
 			}
-			receivers = []types.Receiver{{
+			receivers = []clientlib.Receiver{{
 				To: to, Amount: cfg.Dust + 1,
-				Assets: []types.Asset{{AssetId: assetId, Amount: amount}},
+				Assets: []clientlib.Asset{{AssetId: assetId, Amount: amount}},
 			}}
 		} else {
 			// otherwise, we treat the amount as a bitcoin amount
-			receivers = []types.Receiver{{To: to, Amount: amount}}
+			receivers = []clientlib.Receiver{{To: to, Amount: amount}}
 		}
 	}
 
@@ -464,12 +465,16 @@ func redeem(ctx *cli.Context) error {
 	}
 
 	if complete {
-		txID, err := arkSdkClient.CompleteUnroll(ctx.Context, address)
+		var opts []wallet.UnrollOption
+		if address != "" {
+			opts = append(opts, wallet.WithReceiver(address))
+		}
+		txid, err := arkSdkClient.CompleteUnroll(ctx.Context, opts...)
 		if err != nil {
 			return err
 		}
 		return printJSON(map[string]interface{}{
-			"txid": txID,
+			"txid": txid,
 		})
 	}
 
@@ -569,9 +574,9 @@ func issue(ctx *cli.Context) error {
 		return err
 	}
 
-	controlAssetPolicy := types.ControlAsset(types.ExistingControlAsset{ID: controlAssetId})
+	controlAssetPolicy := clientlib.ControlAsset(clientlib.ExistingControlAsset{ID: controlAssetId})
 	if controlAssetAmount > 0 {
-		controlAssetPolicy = types.NewControlAsset{Amount: controlAssetAmount}
+		controlAssetPolicy = clientlib.NewControlAsset{Amount: controlAssetAmount}
 	}
 
 	res, err := arkSdkClient.IssueAsset(
@@ -662,16 +667,13 @@ func listVtxos(ctx *cli.Context) error {
 }
 
 func getArkSdkClient(ctx *cli.Context) (wallet.Wallet, error) {
-	dataDir := ctx.String(datadirFlag.Name)
-	sdkRepository, err := store.NewStore(store.Config{
-		ConfigStoreType: types.FileStore,
-		BaseDir:         dataDir,
-	})
+	datadir := ctx.String(datadirFlag.Name)
+	sdkRepository, err := store.NewStore(wallet.FileStore, datadir)
 	if err != nil {
 		return nil, err
 	}
 
-	cfgData, err := sdkRepository.ConfigStore().GetData(context.Background())
+	cfgData, err := sdkRepository.GetData(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -681,7 +683,7 @@ func getArkSdkClient(ctx *cli.Context) (wallet.Wallet, error) {
 		return nil, fmt.Errorf("CLI not initialized, run 'init' cmd to initialize")
 	}
 
-	opts := make([]wallet.ServiceOption, 0)
+	opts := make([]wallet.WalletOption, 0)
 	if ctx.Bool(verboseFlag.Name) {
 		opts = append(opts, wallet.WithVerbose())
 	}
@@ -692,8 +694,8 @@ func getArkSdkClient(ctx *cli.Context) (wallet.Wallet, error) {
 }
 
 func loadOrCreateClient(
-	loadFunc, newFunc func(types.Store, ...wallet.ServiceOption) (wallet.Wallet, error),
-	sdkRepository types.Store, opts []wallet.ServiceOption,
+	loadFunc, newFunc func(types.Store, ...wallet.WalletOption) (wallet.Wallet, error),
+	sdkRepository types.Store, opts []wallet.WalletOption,
 ) (wallet.Wallet, error) {
 	client, err := loadFunc(sdkRepository, opts...)
 	if err != nil {
@@ -716,30 +718,30 @@ type assetJSON struct {
 	Amount  uint64 `json:"amount"`
 }
 
-func parseReceivers(receveirsJSON string) ([]types.Receiver, error) {
+func parseReceivers(receveirsJSON string) ([]clientlib.Receiver, error) {
 	list := make([]receiverJSON, 0)
 	if err := json.Unmarshal([]byte(receveirsJSON), &list); err != nil {
 		return nil, err
 	}
 
-	receivers := make([]types.Receiver, 0, len(list))
+	receivers := make([]clientlib.Receiver, 0, len(list))
 	for _, v := range list {
-		assets := make([]types.Asset, 0, len(v.Assets))
+		assets := make([]clientlib.Asset, 0, len(v.Assets))
 		for _, asset := range v.Assets {
-			assets = append(assets, types.Asset{
+			assets = append(assets, clientlib.Asset{
 				AssetId: asset.AssetID, Amount: asset.Amount,
 			})
 		}
 
-		receivers = append(receivers, types.Receiver{
+		receivers = append(receivers, clientlib.Receiver{
 			To: v.To, Amount: v.Amount, Assets: assets,
 		})
 	}
 	return receivers, nil
 }
 
-func sendOffchain(ctx *cli.Context, receivers []types.Receiver) error {
-	var onchainReceivers, offchainReceivers []types.Receiver
+func sendOffchain(ctx *cli.Context, receivers []clientlib.Receiver) error {
+	var onchainReceivers, offchainReceivers []clientlib.Receiver
 
 	for _, receiver := range receivers {
 		if receiver.IsOnchain() {
