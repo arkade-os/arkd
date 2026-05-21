@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/application"
-	wallet "github.com/arkade-os/arkd/pkg/client-lib"
+	wallet "github.com/arkade-os/arkd/pkg/client-wallet"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
