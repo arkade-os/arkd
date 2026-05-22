@@ -4,13 +4,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/google/cel-go/cel"
 )
-
-var TxEnv *cel.Env
 
 // MaxEvalCost is the maximum CEL runtime cost permitted for a single tx filter
 // evaluation. Programs that exceed this are aborted with a "runtime cost limit
@@ -19,22 +18,25 @@ var TxEnv *cel.Env
 // enough to kill pathological expressions before they stall the dispatch loop.
 const MaxEvalCost uint64 = 1_000_000
 
-func init() {
-	var err error
-	TxEnv, err = cel.NewEnv(
+// txEnv lazily builds the CEL environment for tx filters on first use and
+// caches the result. Construction errors are surfaced to the caller instead
+// of panicking at package load time.
+var txEnv = sync.OnceValues(func() (*cel.Env, error) {
+	return cel.NewEnv(
 		tx,
 		hasPacketFunction,
 	)
-	if err != nil {
-		panic(err)
-	}
-}
+})
 
-// Compile parses, type-checks and compiles a CEL expression against TxEnv.
-// The expression must yield a bool. Programs are produced with a cost limit
-// so a single Eval call cannot consume unbounded CPU.
+// Compile parses, type-checks and compiles a CEL expression against the tx
+// environment. The expression must yield a bool. Programs are produced with a
+// cost limit so a single Eval call cannot consume unbounded CPU.
 func Compile(expr string) (cel.Program, error) {
-	ast, iss := TxEnv.Compile(expr)
+	env, err := txEnv()
+	if err != nil {
+		return nil, fmt.Errorf("build tx env: %w", err)
+	}
+	ast, iss := env.Compile(expr)
 	if iss != nil && iss.Err() != nil {
 		return nil, fmt.Errorf("compile %q: %w", expr, iss.Err())
 	}
@@ -43,7 +45,7 @@ func Compile(expr string) (cel.Program, error) {
 			"compile %q: expression must return bool, got %s", expr, ast.OutputType(),
 		)
 	}
-	return TxEnv.Program(ast, cel.CostLimit(MaxEvalCost))
+	return env.Program(ast, cel.CostLimit(MaxEvalCost))
 }
 
 // Eval runs a compiled program against a transaction. It returns true when
