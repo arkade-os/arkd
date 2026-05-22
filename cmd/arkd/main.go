@@ -45,6 +45,7 @@ func startAction(_ *cli.Context) error {
 		HeartbeatInterval:    cfg.HeartbeatInterval,
 		EnablePprof:          cfg.EnablePprof,
 		MaxConcurrentStreams: cfg.MaxConcurrentStreams,
+		StreamConnPoolSize:   cfg.StreamConnPoolSize,
 	}
 
 	svc, err := grpcservice.NewService(Version, svcConfig, cfg)

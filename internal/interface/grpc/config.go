@@ -21,6 +21,7 @@ type Config struct {
 	HeartbeatInterval    int64
 	EnablePprof          bool
 	MaxConcurrentStreams uint32
+	StreamConnPoolSize   uint32
 }
 
 func (c Config) Validate() error {

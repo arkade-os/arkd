@@ -147,6 +147,7 @@ type Config struct {
 	// SENSITIVE: must never be logged.
 	IndexerSigningKey    string
 	MaxConcurrentStreams uint32
+	StreamConnPoolSize   uint32
 
 	fee            ports.FeeManager
 	repo           ports.RepoManager
@@ -252,6 +253,7 @@ var (
 	// IndexerSigningKey is a hex-encoded private key. SENSITIVE: never log this value.
 	IndexerSigningKey    = "INDEXER_SIGNING_PRIVKEY" // #nosec G101
 	MaxConcurrentStreams = "MAX_CONCURRENT_STREAMS"
+	StreamConnPoolSize   = "STREAM_CONN_POOL_SIZE"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -292,6 +294,8 @@ var (
 	defaultIndexerExposure               = "public"
 	defaultIndexerAuthTokenExpiry        = 300 // 5 minutes in seconds
 	defaultMaxConcurrentStreams          = uint32(1000)
+	defaultStreamConnPoolSize            = uint32(4)
+	maxStreamConnPoolSize                = uint32(64)
 	defaultMaxOpReturnOuts               = uint32(3)
 )
 
@@ -342,6 +346,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(IndexerExposure, defaultIndexerExposure)
 	viper.SetDefault(IndexerAuthTokenExpiry, defaultIndexerAuthTokenExpiry)
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
+	viper.SetDefault(StreamConnPoolSize, defaultStreamConnPoolSize)
 	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
 
 	if err := initDatadir(); err != nil {
@@ -458,6 +463,10 @@ func LoadConfig() (*Config, error) {
 		IndexerAuthTokenExpiry:        viper.GetInt64(IndexerAuthTokenExpiry),
 		IndexerSigningKey:             viper.GetString(IndexerSigningKey),
 		MaxConcurrentStreams:          viper.GetUint32(MaxConcurrentStreams),
+		// Default to 1 or maxStreamConnPoolSize if out of bounds
+		StreamConnPoolSize: min(
+			maxStreamConnPoolSize, max(1, viper.GetUint32(StreamConnPoolSize)),
+		),
 		// Default to 1 if set to 0
 		MaxOpReturnOutputs: max(1, viper.GetUint32(MaxOpReturnOutputs)),
 	}, nil
