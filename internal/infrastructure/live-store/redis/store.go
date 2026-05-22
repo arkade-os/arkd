@@ -18,7 +18,10 @@ type redisLiveStore struct {
 	scheduledTasksStore       ports.ScheduledTasksStore
 }
 
-func NewLiveStore(rdb *redis.Client, builder ports.TxBuilder, numOfRetries int, scheduledTaskTTL time.Duration) ports.LiveStore {
+func NewLiveStore(
+	rdb *redis.Client, builder ports.TxBuilder, numOfRetries int,
+	scheduledTaskTTL time.Duration,
+) ports.LiveStore {
 	return &redisLiveStore{
 		intentStore:               NewIntentStore(rdb, numOfRetries),
 		forfeitTxsStore:           NewForfeitTxsStore(rdb, builder, numOfRetries),
