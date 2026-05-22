@@ -268,7 +268,7 @@ func TestAddExtension(t *testing.T) {
 	})
 }
 
-func TestWithOutputTaprootTree(t *testing.T) {
+func TestWithTxOutsTaprootTree(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		t.Run("populates state and defensively copies values", func(t *testing.T) {
 			tree := sampleTapTreeBytes(t)
