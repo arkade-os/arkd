@@ -2637,7 +2637,8 @@ func (x *OverwriteScripts) GetScripts() []string {
 }
 
 // SubscriptionFilter is a generic filter applied to a subscription. It is
-// mutually exclusive between the supported filter types.
+// mutually exclusive between the supported filter types. New filter types
+// (e.g. packet types) will be added here in the future.
 type SubscriptionFilter struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Filter:
@@ -3673,7 +3674,7 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\"INDEXER_CHAINED_TX_TYPE_COMMITMENT\x10\x01\x12\x1f\n" +
 	"\x1bINDEXER_CHAINED_TX_TYPE_ARK\x10\x02\x12 \n" +
 	"\x1cINDEXER_CHAINED_TX_TYPE_TREE\x10\x03\x12&\n" +
-	"\"INDEXER_CHAINED_TX_TYPE_CHECKPOINT\x10\x042\x95\x0f\n" +
+	"\"INDEXER_CHAINED_TX_TYPE_CHECKPOINT\x10\x042\x8d\x0f\n" +
 	"\x0eIndexerService\x12x\n" +
 	"\x0fGetCommitmentTx\x12\x1e.ark.v1.GetCommitmentTxRequest\x1a\x1f.ark.v1.GetCommitmentTxResponse\"$\xb2J!\x12\x1f/v1/indexer/commitmentTx/{txid}\x12}\n" +
 	"\rGetForfeitTxs\x12\x1c.ark.v1.GetForfeitTxsRequest\x1a\x1d.ark.v1.GetForfeitTxsResponse\"/\xb2J,\x12*/v1/indexer/commitmentTx/{txid}/forfeitTxs\x12}\n" +
@@ -3686,9 +3687,9 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\bGetAsset\x12\x17.ark.v1.GetAssetRequest\x1a\x18.ark.v1.GetAssetResponse\"!\xb2J\x1e\x12\x1c/v1/indexer/asset/{asset_id}\x12\xbd\x01\n" +
 	"\x19GetBatchSweepTransactions\x12(.ark.v1.GetBatchSweepTransactionsRequest\x1a).ark.v1.GetBatchSweepTransactionsResponse\"K\xb2JH\x12F/v1/indexer/batch/{batch_outpoint.txid}/{batch_outpoint.vout}/sweepTxs\x12\x84\x01\n" +
 	"\x13SubscribeForScripts\x12\".ark.v1.SubscribeForScriptsRequest\x1a#.ark.v1.SubscribeForScriptsResponse\"$\xb2J!B\x01*\"\x1c/v1/indexer/script/subscribe\x12\x8c\x01\n" +
-	"\x15UnsubscribeForScripts\x12$.ark.v1.UnsubscribeForScriptsRequest\x1a%.ark.v1.UnsubscribeForScriptsResponse\"&\xb2J#B\x01*\"\x1e/v1/indexer/script/unsubscribe\x12\xbb\x01\n" +
-	"\x0fGetSubscription\x12\x1e.ark.v1.GetSubscriptionRequest\x1a\x1f.ark.v1.GetSubscriptionResponse\"e\xb2JbR'b\x04\b\x01\x18\x01\x12\x1f/v1/indexer/script/subscriptionb\x04\b\x01\x18\x01\x121/v1/indexer/script/subscription/{subscription_id}0\x01\x12\x85\x01\n" +
-	"\x12UpdateSubscription\x12!.ark.v1.UpdateSubscriptionRequest\x1a\".ark.v1.UpdateSubscriptionResponse\"(\xb2J%B\x01*\" /v1/indexer/script/updateScriptsB{\n" +
+	"\x15UnsubscribeForScripts\x12$.ark.v1.UnsubscribeForScriptsRequest\x1a%.ark.v1.UnsubscribeForScriptsResponse\"&\xb2J#B\x01*\"\x1e/v1/indexer/script/unsubscribe\x12\xb4\x01\n" +
+	"\x0fGetSubscription\x12\x1e.ark.v1.GetSubscriptionRequest\x1a\x1f.ark.v1.GetSubscriptionResponse\"^\xb2J[R b\x04\b\x01\x18\x01\x12\x18/v1/indexer/subscriptionb\x04\b\x01\x18\x01\x121/v1/indexer/script/subscription/{subscription_id}0\x01\x12\x84\x01\n" +
+	"\x12UpdateSubscription\x12!.ark.v1.UpdateSubscriptionRequest\x1a\".ark.v1.UpdateSubscriptionResponse\"'\xb2J$B\x01*\"\x1f/v1/indexer/subscription/updateB{\n" +
 	"\n" +
 	"com.ark.v1B\fIndexerProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"
 

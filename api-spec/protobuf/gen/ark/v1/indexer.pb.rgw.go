@@ -837,13 +837,13 @@ func RegisterIndexerServiceHandlerClient(ctx context.Context, mux *gateway.Serve
 
 	})
 
-	mux.HandleWithParams("GET", "/v1/indexer/script/subscription", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+	mux.HandleWithParams("GET", "/v1/indexer/subscription", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
 		var err error
 		var annotatedContext context.Context
-		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.IndexerService/GetSubscription", gateway.WithHTTPPathPattern("/v1/indexer/script/subscription"))
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.IndexerService/GetSubscription", gateway.WithHTTPPathPattern("/v1/indexer/subscription"))
 		if err != nil {
 			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
 			return
@@ -869,13 +869,13 @@ func RegisterIndexerServiceHandlerClient(ctx context.Context, mux *gateway.Serve
 
 	})
 
-	mux.HandleWithParams("POST", "/v1/indexer/script/updateScripts", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+	mux.HandleWithParams("POST", "/v1/indexer/subscription/update", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
 		var err error
 		var annotatedContext context.Context
-		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.IndexerService/UpdateSubscription", gateway.WithHTTPPathPattern("/v1/indexer/script/updateScripts"))
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.IndexerService/UpdateSubscription", gateway.WithHTTPPathPattern("/v1/indexer/subscription/update"))
 		if err != nil {
 			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
 			return

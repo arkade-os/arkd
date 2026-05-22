@@ -128,7 +128,7 @@ service IndexerService {
       }
       additional_bindings: [
         {
-          get: "/v1/indexer/script/subscription"
+          get: "/v1/indexer/subscription"
           stream: {
             disable_chunked_transfer: true
             disable_websockets: true
@@ -144,7 +144,7 @@ service IndexerService {
   rpc UpdateSubscription(UpdateSubscriptionRequest)
       returns (UpdateSubscriptionResponse) {
     option (meshapi.gateway.http) = {
-      post: "/v1/indexer/script/updateScripts"
+      post: "/v1/indexer/subscription/update"
       body: "*"
     };
   };
@@ -428,7 +428,8 @@ message OverwriteScripts {
 }
 
 // SubscriptionFilter is a generic filter applied to a subscription. It is
-// mutually exclusive between the supported filter types.
+// mutually exclusive between the supported filter types. New filter types
+// (e.g. packet types) will be added here in the future.
 message SubscriptionFilter {
   oneof filter {
     ScriptsFilter scripts = 1;
