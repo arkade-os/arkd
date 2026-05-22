@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -62,21 +63,8 @@ func (a *service) SendOffChain(
 		return nil, err
 	}
 
-	// if set, put the TaprootTapTree field on PSBT output
-	if len(o.outputTapTrees) > 0 {
-		if len(arkPtx.UnsignedTx.TxOut) != len(arkPtx.Outputs) {
-			return nil, fmt.Errorf(
-				"output count mismatch: unsigned tx has %d outputs but arkPtx has %d",
-				len(arkPtx.UnsignedTx.TxOut), len(arkPtx.Outputs),
-			)
-		}
-		for i, out := range arkPtx.UnsignedTx.TxOut {
-			tapTree, ok := o.outputTapTrees[hex.EncodeToString(out.PkScript)]
-			if !ok {
-				continue
-			}
-			arkPtx.Outputs[i].TaprootTapTree = tapTree
-		}
+	if err := applyOutputTapTrees(arkPtx, o.outputsTapTree); err != nil {
+		return nil, err
 	}
 
 	arkTx, err := arkPtx.B64Encode()
@@ -500,6 +488,46 @@ func (a *service) finalizePendingTxs(
 	}
 
 	return txids, nil
+}
+
+// applyOutputTapTrees sets the BIP-371 TaprootTapTree field on every PSBT
+// output whose hex-encoded pkScript matches a key in byPkScript. An error is
+// returned when a key matches no output: silently ignoring an unmatched key
+// would let a caller think the tree was set on the wire while the PSBT goes
+// out without it — a footgun in a VTXO-spending path.
+func applyOutputTapTrees(ptx *psbt.Packet, taprootTrees map[string][]byte) error {
+	if len(taprootTrees) <= 0 {
+		return nil
+	}
+	if len(ptx.UnsignedTx.TxOut) != len(ptx.Outputs) {
+		return fmt.Errorf(
+			"output count mismatch: unsigned tx has %d outputs but ptx has %d",
+			len(ptx.UnsignedTx.TxOut), len(ptx.Outputs),
+		)
+	}
+	matched := make(map[string]bool, len(taprootTrees))
+	for i, out := range ptx.UnsignedTx.TxOut {
+		pkHex := hex.EncodeToString(out.PkScript)
+		tapTree, ok := taprootTrees[pkHex]
+		if !ok {
+			continue
+		}
+		ptx.Outputs[i].TaprootTapTree = tapTree
+		matched[pkHex] = true
+	}
+	if len(matched) == len(taprootTrees) {
+		return nil
+	}
+	unmatched := make([]string, 0, len(taprootTrees)-len(matched))
+	for k := range taprootTrees {
+		if !matched[k] {
+			unmatched = append(unmatched, k)
+		}
+	}
+	sort.Strings(unmatched)
+	return fmt.Errorf(
+		"no matching output for pkScript(s): %s", strings.Join(unmatched, ", "),
+	)
 }
 
 func (a *service) finalizeTx(

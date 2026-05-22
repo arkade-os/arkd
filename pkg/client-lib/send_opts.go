@@ -5,6 +5,7 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 )
 
@@ -52,24 +53,30 @@ func WithExtraPacket(packets ...extension.Packet) SendOption {
 	})
 }
 
-// WithOutputTaprootTree sets the PSBT BIP-371 TaprootTapTree field on
+// WithTxOutsTaprootTree sets the PSBT BIP-371 TaprootTapTree field on
 // every output whose hex-encoded pkScript matches a key in the map. Callers
 // pass the BIP-371-encoded tap tree bytes (via txutils.TapTree(scripts).Encode()).
-func WithOutputTaprootTree(byPkScript map[string][]byte) SendOption {
+// SendOffChain returns an error if any pkScript key matches no output of the
+// ark tx, surfacing what would otherwise be a silent footgun for protocol-
+// critical VTXO spending.
+func WithTxOutsTaprootTree(tapTrees map[string][]byte) SendOption {
 	return sendOptFn(func(o *sendOptions) error {
-		if len(byPkScript) == 0 {
-			return nil
+		if len(tapTrees) <= 0 {
+			return fmt.Errorf("missing taproot trees")
 		}
-		if o.outputTapTrees == nil {
-			o.outputTapTrees = make(map[string][]byte, len(byPkScript))
+		if o.outputsTapTree == nil {
+			o.outputsTapTree = make(map[string][]byte, len(tapTrees))
 		}
-		for k, v := range byPkScript {
+		for k, v := range tapTrees {
 			if len(v) == 0 {
 				return fmt.Errorf("receiver tap tree must not be empty")
 			}
+			if _, err := txutils.DecodeTapTree(v); err != nil {
+				return fmt.Errorf("invalid bip-371 tap tree for tx out with script %s: %w", k, err)
+			}
 			cp := make([]byte, len(v))
 			copy(cp, v)
-			o.outputTapTrees[k] = cp
+			o.outputsTapTree[k] = cp
 		}
 		return nil
 	})
@@ -81,7 +88,7 @@ type sendOptions struct {
 	signingKeys          map[string]string
 	extraPackets         []extension.Packet
 	receiver             string
-	outputTapTrees map[string][]byte // pkScript (hex) -> bip371 taptree
+	outputsTapTree       map[string][]byte // pkScript (hex) -> bip371 taptree
 }
 
 func newDefaultSendOptions() *sendOptions {
