@@ -720,7 +720,11 @@ func (h *indexerService) UnsubscribeForScripts(
 		if err := h.scriptSubsHandler.removeAllTopics(subscriptionId); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
-		h.scriptSubsHandler.removeListener(subscriptionId)
+		// Only tear down the listener if no tx filters remain on it, otherwise
+		// tx-only subscriptions would be silently dropped.
+		if len(h.scriptSubsHandler.getTxFilters(subscriptionId)) == 0 {
+			h.scriptSubsHandler.removeListener(subscriptionId)
+		}
 		return &arkv1.UnsubscribeForScriptsResponse{}, nil
 	}
 

@@ -1207,6 +1207,7 @@ func TestTxFilter(t *testing.T) {
 	t.Run("listenToTxEvents dispatches on tx filter match only", func(t *testing.T) {
 		t.Parallel()
 		eventsCh := make(chan application.TransactionEvent, 1)
+		t.Cleanup(func() { close(eventsCh) })
 		svc := newTestIndexerServiceWithEvents(eventsCh)
 		go svc.listenToTxEvents()
 
@@ -1257,6 +1258,7 @@ func TestTxFilter(t *testing.T) {
 		) {
 			t.Helper()
 			eventsCh := make(chan application.TransactionEvent, 4)
+			t.Cleanup(func() { close(eventsCh) })
 			svc := newTestIndexerServiceWithEvents(eventsCh)
 			go svc.listenToTxEvents()
 
@@ -1347,6 +1349,7 @@ func TestTxFilter(t *testing.T) {
 		const testPubKey1 = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 
 		eventsCh := make(chan application.TransactionEvent, 1)
+		t.Cleanup(func() { close(eventsCh) })
 		svc := newTestIndexerServiceWithEvents(eventsCh)
 		go svc.listenToTxEvents()
 
@@ -1575,6 +1578,7 @@ func TestTxFilter(t *testing.T) {
 		// Two listeners with disjoint tx filters; an event that matches A's
 		// filter should not reach B.
 		eventsCh := make(chan application.TransactionEvent, 2)
+		t.Cleanup(func() { close(eventsCh) })
 		svc := newTestIndexerServiceWithEvents(eventsCh)
 		go svc.listenToTxEvents()
 
@@ -1615,6 +1619,7 @@ func TestTxFilter(t *testing.T) {
 		// the parser falls back from PSBT parse failure to hex decoding so
 		// tx filters still match sweep events.
 		eventsCh := make(chan application.TransactionEvent, 1)
+		t.Cleanup(func() { close(eventsCh) })
 		svc := newTestIndexerServiceWithEvents(eventsCh)
 		go svc.listenToTxEvents()
 
@@ -1653,6 +1658,48 @@ func TestTxFilter(t *testing.T) {
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.NotFound, st.Code())
+	})
+
+	t.Run("UnsubscribeForScripts keeps listener with tx filters", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse](
+			"sub-keep", []string{testScript1},
+		)
+		svc.scriptSubsHandler.pushListener(listener)
+		require.NoError(
+			t, svc.scriptSubsHandler.addTxFilters("sub-keep", []string{hasExtension}),
+		)
+
+		_, err := svc.UnsubscribeForScripts(context.Background(),
+			&arkv1.UnsubscribeForScriptsRequest{SubscriptionId: "sub-keep"},
+		)
+		require.NoError(t, err)
+
+		// Scripts are cleared but the listener and its tx filters survive.
+		require.Empty(t, svc.scriptSubsHandler.getTopics("sub-keep"))
+		require.ElementsMatch(
+			t, []string{hasExtension}, svc.scriptSubsHandler.getTxFilters("sub-keep"),
+		)
+		_, err = svc.scriptSubsHandler.getListenerChannel("sub-keep")
+		require.NoError(t, err)
+	})
+
+	t.Run("UnsubscribeForScripts removes listener without tx filters", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse](
+			"sub-drop", []string{testScript1},
+		)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		_, err := svc.UnsubscribeForScripts(context.Background(),
+			&arkv1.UnsubscribeForScriptsRequest{SubscriptionId: "sub-drop"},
+		)
+		require.NoError(t, err)
+
+		_, err = svc.scriptSubsHandler.getListenerChannel("sub-drop")
+		require.ErrorIs(t, err, ErrSubscriptionNotFound)
 	})
 }
 
