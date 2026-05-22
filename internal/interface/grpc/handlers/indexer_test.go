@@ -1701,6 +1701,32 @@ func TestTxFilter(t *testing.T) {
 		_, err = svc.scriptSubsHandler.getListenerChannel("sub-drop")
 		require.ErrorIs(t, err, ErrSubscriptionNotFound)
 	})
+
+	t.Run("UnsubscribeForScripts unknown subscription returns NotFound", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+
+		// Empty scripts path goes through removeAllTopics.
+		_, err := svc.UnsubscribeForScripts(context.Background(),
+			&arkv1.UnsubscribeForScriptsRequest{SubscriptionId: "missing"},
+		)
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.NotFound, st.Code())
+
+		// Non-empty scripts path goes through removeTopics.
+		_, err = svc.UnsubscribeForScripts(context.Background(),
+			&arkv1.UnsubscribeForScriptsRequest{
+				SubscriptionId: "missing",
+				Scripts:        []string{testScript1},
+			},
+		)
+		require.Error(t, err)
+		st, ok = status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.NotFound, st.Code())
+	})
 }
 
 func newTestIndexerServiceWithEvents(

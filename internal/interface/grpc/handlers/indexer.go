@@ -718,6 +718,9 @@ func (h *indexerService) UnsubscribeForScripts(
 	if len(scripts) == 0 {
 		// remove all topics
 		if err := h.scriptSubsHandler.removeAllTopics(subscriptionId); err != nil {
+			if errors.Is(err, ErrSubscriptionNotFound) {
+				return nil, status.Error(codes.NotFound, err.Error())
+			}
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 		// Only tear down the listener if no tx filters remain on it, otherwise
@@ -729,6 +732,9 @@ func (h *indexerService) UnsubscribeForScripts(
 	}
 
 	if err := h.scriptSubsHandler.removeTopics(subscriptionId, scripts); err != nil {
+		if errors.Is(err, ErrSubscriptionNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
