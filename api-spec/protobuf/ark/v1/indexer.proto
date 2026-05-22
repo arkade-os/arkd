@@ -126,6 +126,26 @@ service IndexerService {
         disable_chunked_transfer: true
         disable_websockets: true
       }
+      additional_bindings: [
+        {
+          get: "/v1/indexer/subscription"
+          stream: {
+            disable_chunked_transfer: true
+            disable_websockets: true
+          }
+        }
+      ]
+    };
+  };
+
+  // UpdateSubscription allows to update an existing subscription created via
+  // GetSubscription by applying a filter. The filter is mutually exclusive
+  // between the supported filter types (e.g. scripts, and later packet types).
+  rpc UpdateSubscription(UpdateSubscriptionRequest)
+      returns (UpdateSubscriptionResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/indexer/subscription/update"
+      body: "*"
     };
   };
 }
@@ -379,14 +399,68 @@ message UnsubscribeForScriptsResponse {}
 
 
 message GetSubscriptionRequest {
+  // If empty, server creates a new subscription automatically.
   string subscription_id = 1;
+  // Optional: filter to apply on stream creation.
+  // Only used when subscription_id is empty; ignored otherwise.
+  SubscriptionFilter filter = 2;
 }
 
 message GetSubscriptionResponse {
   oneof data {
     IndexerHeartbeat heartbeat = 1;
     IndexerSubscriptionEvent event = 2;
+    SubscriptionStartedEvent subscription_started = 3;
   }
+}
+
+message SubscriptionStartedEvent {
+  string subscription_id = 1;
+}
+
+message ModifyScripts {
+  repeated string add_scripts = 1;
+  repeated string remove_scripts = 2;
+}
+
+message OverwriteScripts {
+  repeated string scripts = 1;
+}
+
+// SubscriptionFilter is a generic filter applied to a subscription. It is
+// mutually exclusive between the supported filter types. New filter types
+// (e.g. packet types) will be added here in the future.
+message SubscriptionFilter {
+  oneof filter {
+    ScriptsFilter scripts = 1;
+  }
+}
+
+// ScriptsFilter updates the set of scripts of a subscription either by
+// modifying it (add/remove) or by overwriting it entirely.
+message ScriptsFilter {
+  oneof change {
+    ModifyScripts modify = 1;
+    OverwriteScripts overwrite = 2;
+  }
+}
+
+message UpdateSubscriptionRequest {
+  string subscription_id = 1;
+  SubscriptionFilter filter = 2;
+}
+
+message UpdateSubscriptionResponse {
+  // Result of the filter update, matches the filter type from the request.
+  oneof result {
+    ScriptsFilterResult scripts = 1;
+  }
+}
+
+message ScriptsFilterResult {
+  repeated string added = 1;
+  repeated string removed = 2;
+  repeated string all = 3;
 }
 
 message IndexerTxData {
