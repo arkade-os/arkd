@@ -9,18 +9,17 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const scheduledTaskTTL = 30 * 24 * time.Hour
-
 type scheduledTasksStore struct {
 	rdb *redis.Client
+	ttl time.Duration
 }
 
-func NewScheduledTasksStore(rdb *redis.Client) ports.ScheduledTasksStore {
-	return &scheduledTasksStore{rdb: rdb}
+func NewScheduledTasksStore(rdb *redis.Client, ttl time.Duration) ports.ScheduledTasksStore {
+	return &scheduledTasksStore{rdb: rdb, ttl: ttl}
 }
 
 func (s *scheduledTasksStore) AddIfAbsent(ctx context.Context, id string) (bool, error) {
-	return s.rdb.SetNX(ctx, scheduledTaskKey(id), "1", scheduledTaskTTL).Result()
+	return s.rdb.SetNX(ctx, scheduledTaskKey(id), "1", s.ttl).Result()
 }
 
 func (s *scheduledTasksStore) Remove(ctx context.Context, id string) error {

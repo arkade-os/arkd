@@ -97,7 +97,7 @@ func TestLiveStoreImplementations(t *testing.T) {
 		store ports.LiveStore
 	}{
 		{"inmemory", inmemory.NewLiveStore(txBuilder)},
-		{"redis", redislivestore.NewLiveStore(rdb, txBuilder, 5)},
+		{"redis", redislivestore.NewLiveStore(rdb, txBuilder, 5, 30*24*time.Hour)},
 	}
 
 	for _, tt := range stores {

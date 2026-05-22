@@ -403,7 +403,7 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 		return task.execute()
 	}
 
-	return s.scheduler.ScheduleTaskOnce(task.at, func() {
+	err = s.scheduler.ScheduleTaskOnce(task.at, func() {
 		// Skip if the claim was released externally (e.g. the tx was already spent).
 		has, err := s.cache.ScheduledTasks().Has(s.ctx, task.id)
 		if err != nil {
@@ -424,6 +424,13 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 			log.WithError(err).Errorf("failed to execute sweep of tx %s", task.id)
 		}
 	})
+
+	if err != nil {
+		releaseClaim()
+		return err
+	}
+
+	return nil
 }
 
 // createBatchSweepTask returns a function passed as handler in the scheduler
