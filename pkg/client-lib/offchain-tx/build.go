@@ -2,7 +2,9 @@ package offchaintx
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
@@ -53,6 +55,10 @@ func BuildAndSignTx(
 	}
 
 	if err := addExtension(arkPtx, assetPacket, o.extraPackets); err != nil {
+		return nil, err
+	}
+
+	if err := addOutputsTaprootTree(arkPtx, o.outputsTapTree); err != nil {
 		return nil, err
 	}
 
@@ -420,4 +426,40 @@ func BuildAndSignBurnTx(
 		AssetPacket:    assetPacket,
 		Extension:      ext,
 	}, nil
+}
+
+// addOutputsTaprootTree sets the BIP-371 TaprootTapTree field on every PSBT output whose
+// hex-encoded pkScript matches a key in byPkScript. An error is returned when a key matches no
+// output.
+func addOutputsTaprootTree(ptx *psbt.Packet, taprootTrees map[string][]byte) error {
+	if len(taprootTrees) <= 0 {
+		return nil
+	}
+	if len(ptx.UnsignedTx.TxOut) != len(ptx.Outputs) {
+		return fmt.Errorf(
+			"output count mismatch: unsigned tx has %d outputs but ptx has %d",
+			len(ptx.UnsignedTx.TxOut), len(ptx.Outputs),
+		)
+	}
+	matched := make(map[string]bool, len(taprootTrees))
+	for i, out := range ptx.UnsignedTx.TxOut {
+		pkHex := hex.EncodeToString(out.PkScript)
+		tapTree, ok := taprootTrees[pkHex]
+		if !ok {
+			continue
+		}
+		ptx.Outputs[i].TaprootTapTree = tapTree
+		matched[pkHex] = true
+	}
+	if len(matched) == len(taprootTrees) {
+		return nil
+	}
+	unmatched := make([]string, 0, len(taprootTrees)-len(matched))
+	for k := range taprootTrees {
+		if !matched[k] {
+			unmatched = append(unmatched, k)
+		}
+	}
+	sort.Strings(unmatched)
+	return fmt.Errorf("no matching output for pkScript(s): %s", strings.Join(unmatched, ", "))
 }

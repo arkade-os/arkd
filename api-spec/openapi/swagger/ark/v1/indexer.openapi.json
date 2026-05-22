@@ -435,9 +435,46 @@
           {
             "name": "subscriptionId",
             "in": "path",
+            "description": "If empty, server creates a new subscription automatically.",
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "filter.scripts.modify.removeScripts",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.scripts.modify.removeScripts",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.scripts.overwrite.scripts",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         ],
@@ -489,6 +526,124 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnsubscribeForScriptsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/subscription": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetSubscription is a server-side streaming RPC which allows clients to receive real-time\nnotifications on transactions related to the subscribed vtxo scripts.\nThe subscription can be created or updated by using the SubscribeForScripts and\nUnsubscribeForScripts RPCs.",
+        "operationId": "IndexerService_GetSubscription2",
+        "parameters": [
+          {
+            "name": "subscriptionId",
+            "in": "query",
+            "description": "If empty, server creates a new subscription automatically.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filter.scripts.modify.removeScripts",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.scripts.modify.removeScripts",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.scripts.overwrite.scripts",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response. (streaming responses)",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/subscription/update": {
+      "post": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "UpdateSubscription allows to update an existing subscription created via\nGetSubscription by applying a filter. The filter is mutually exclusive\nbetween the supported filter types (e.g. scripts, and later packet types).",
+        "operationId": "IndexerService_UpdateSubscription",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSubscriptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateSubscriptionResponse"
                 }
               }
             }
@@ -979,8 +1134,13 @@
         "title": "GetSubscriptionRequest",
         "type": "object",
         "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/SubscriptionFilter",
+            "description": "Optional: filter to apply on stream creation.\nOnly used when subscription_id is empty; ignored otherwise."
+          },
           "subscriptionId": {
-            "type": "string"
+            "type": "string",
+            "description": "If empty, server creates a new subscription automatically."
           }
         }
       },
@@ -993,6 +1153,9 @@
           },
           "heartbeat": {
             "$ref": "#/components/schemas/IndexerHeartbeat"
+          },
+          "subscriptionStarted": {
+            "$ref": "#/components/schemas/SubscriptionStartedEvent"
           }
         }
       },
@@ -1491,6 +1654,73 @@
           }
         }
       },
+      "ModifyScripts": {
+        "title": "ModifyScripts",
+        "type": "object",
+        "properties": {
+          "addScripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removeScripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "OverwriteScripts": {
+        "title": "OverwriteScripts",
+        "type": "object",
+        "properties": {
+          "scripts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ScriptsFilter": {
+        "title": "ScriptsFilter",
+        "type": "object",
+        "description": "ScriptsFilter updates the set of scripts of a subscription either by\nmodifying it (add/remove) or by overwriting it entirely.",
+        "properties": {
+          "modify": {
+            "$ref": "#/components/schemas/ModifyScripts"
+          },
+          "overwrite": {
+            "$ref": "#/components/schemas/OverwriteScripts"
+          }
+        }
+      },
+      "ScriptsFilterResult": {
+        "title": "ScriptsFilterResult",
+        "type": "object",
+        "properties": {
+          "added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "all": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "Status": {
         "title": "Status",
         "type": "object",
@@ -1535,6 +1765,25 @@
           }
         }
       },
+      "SubscriptionFilter": {
+        "title": "SubscriptionFilter",
+        "type": "object",
+        "description": "SubscriptionFilter is a generic filter applied to a subscription. It is\nmutually exclusive between the supported filter types. New filter types\n(e.g. packet types) will be added here in the future.",
+        "properties": {
+          "scripts": {
+            "$ref": "#/components/schemas/ScriptsFilter"
+          }
+        }
+      },
+      "SubscriptionStartedEvent": {
+        "title": "SubscriptionStartedEvent",
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string"
+          }
+        }
+      },
       "UnsubscribeForScriptsRequest": {
         "title": "UnsubscribeForScriptsRequest",
         "type": "object",
@@ -1554,6 +1803,27 @@
       "UnsubscribeForScriptsResponse": {
         "title": "UnsubscribeForScriptsResponse",
         "type": "object"
+      },
+      "UpdateSubscriptionRequest": {
+        "title": "UpdateSubscriptionRequest",
+        "type": "object",
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/SubscriptionFilter"
+          },
+          "subscriptionId": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateSubscriptionResponse": {
+        "title": "UpdateSubscriptionResponse",
+        "type": "object",
+        "properties": {
+          "scripts": {
+            "$ref": "#/components/schemas/ScriptsFilterResult"
+          }
+        }
       }
     }
   },

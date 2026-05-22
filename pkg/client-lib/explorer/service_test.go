@@ -1105,8 +1105,8 @@ func TestNewExplorerPollInterval(t *testing.T) {
 		//It does not register /v1/ws, so websocket setup fails and the explorer falls back to polling.
 		ts := newTestServer(t)
 
-		svc, err := mempool.NewExplorer(
-			ts.URL, arklib.Bitcoin, mempool.WithTracker(true),
+		svc, err := explorer.NewExplorer(
+			ts.URL, arklib.Bitcoin, explorer.WithTracker(true),
 		)
 		require.NoError(t, err)
 
@@ -1121,10 +1121,10 @@ func TestNewExplorerPollInterval(t *testing.T) {
 		ts := newTestServer(t)
 
 		for _, interval := range []time.Duration{0, -time.Second} {
-			_, err := mempool.NewExplorer(
+			_, err := explorer.NewExplorer(
 				ts.URL, arklib.Bitcoin,
-				mempool.WithTracker(true),
-				mempool.WithPollInterval(interval),
+				explorer.WithTracker(true),
+				explorer.WithPollInterval(interval),
 			)
 			require.ErrorContains(t, err, "poll interval must be positive")
 		}

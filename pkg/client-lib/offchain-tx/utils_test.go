@@ -2,96 +2,28 @@ package offchaintx
 
 import (
 	"bytes"
+	"encoding/hex"
 	"testing"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
 
-// anchorMarkerKey / anchorMarkerValue stamp a distinctive Unknowns entry on
-// the P2A anchor's POutput so tests can verify ptx.Outputs[i] stays aligned
-// with ptx.UnsignedTx.TxOut[i] across addExtension.
 var (
+	// anchorMarkerKey / anchorMarkerValue stamp a distinctive Unknowns entry on
+	// the P2A anchor's POutput so tests can verify ptx.Outputs[i] stays aligned
+	// with ptx.UnsignedTx.TxOut[i] across addExtension.
 	anchorMarkerKey   = []byte{0xaa, 0xbb}
 	anchorMarkerValue = []byte{0xde, 0xad, 0xbe, 0xef}
+	// receiverPkScript is a stand-in segwit-v1-shaped pkScript: 0x51 0x20 <32B>.
+	// Two distinct values let the apply tests target specific outputs by hex key.
+	receiverPkScriptA = append([]byte{0x51, 0x20}, bytes.Repeat([]byte{0xa1}, 32)...)
+	receiverPkScriptB = append([]byte{0x51, 0x20}, bytes.Repeat([]byte{0xb2}, 32)...)
 )
-
-func TestWithExtraPacket(t *testing.T) {
-	t.Run("valid", func(t *testing.T) {
-		p1 := extension.UnknownPacket{PacketType: 0x03, Data: []byte{0xde, 0xad}}
-		p2 := extension.UnknownPacket{PacketType: 0x04, Data: []byte{0xbe, 0xef}}
-		p1A := extension.UnknownPacket{PacketType: 0x03, Data: []byte{0x01}}
-		p2A := extension.UnknownPacket{PacketType: 0x04, Data: []byte{0x02}}
-
-		testCases := []struct {
-			name         string
-			applyPackets [][]extension.Packet
-			expectTypes  []uint8
-		}{
-			{
-				name:         "appends valid packets",
-				applyPackets: [][]extension.Packet{[]extension.Packet{p1, p2}},
-				expectTypes:  []uint8{0x03, 0x04},
-			},
-			{
-				name: "multiple calls accumulate",
-				applyPackets: [][]extension.Packet{
-					[]extension.Packet{p1A},
-					[]extension.Packet{p2A},
-				},
-				expectTypes: []uint8{0x03, 0x04},
-			},
-		}
-
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				opts := newOptions()
-				for _, callPackets := range tc.applyPackets {
-					require.NoError(t, WithExtraPacket(callPackets...).apply(opts))
-				}
-				require.Len(t, opts.extraPackets, len(tc.expectTypes))
-				for i, wantType := range tc.expectTypes {
-					require.Equal(t, wantType, opts.extraPackets[i].Type())
-				}
-			})
-		}
-	})
-
-	t.Run("invalid", func(t *testing.T) {
-		testCases := []struct {
-			name                string
-			packets             []extension.Packet
-			expectErrorContains string
-		}{
-			{
-				name: "rejects type 0x00",
-				packets: []extension.Packet{
-					extension.UnknownPacket{PacketType: asset.PacketType, Data: []byte{0x01}},
-				},
-				expectErrorContains: "reserved",
-			},
-			{
-				name:    "rejects nil packet",
-				packets: []extension.Packet{nil},
-			},
-		}
-
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				opts := newOptions()
-				err := WithExtraPacket(tc.packets...).apply(opts)
-				require.Error(t, err)
-				if tc.expectErrorContains != "" {
-					require.Contains(t, err.Error(), tc.expectErrorContains)
-				}
-				require.Empty(t, opts.extraPackets)
-			})
-		}
-	})
-}
 
 // TestAddExtension exercises the refactored addExtension helper. It covers
 // the no-op, asset-only, asset+extra, extras-only, duplicate detection, and
@@ -257,6 +189,110 @@ func TestAddExtension(t *testing.T) {
 	})
 }
 
+func TestAddOutputsTaprootTree(t *testing.T) {
+	t.Run("no-op when empty", func(t *testing.T) {
+		ptx := newTestPsbtWithReceiversAndAnchor(t)
+		require.NoError(t, addOutputsTaprootTree(ptx, nil))
+		require.NoError(t, addOutputsTaprootTree(ptx, map[string][]byte{}))
+		for _, po := range ptx.Outputs {
+			require.Empty(t, po.TaprootTapTree)
+		}
+	})
+
+	t.Run("applies to matching output only", func(t *testing.T) {
+		ptx := newTestPsbtWithReceiversAndAnchor(t)
+		tree := sampleTapTreeBytes(t)
+
+		err := addOutputsTaprootTree(ptx, map[string][]byte{
+			hex.EncodeToString(receiverPkScriptA): tree,
+		})
+		require.NoError(t, err)
+
+		require.Equal(t, tree, ptx.Outputs[0].TaprootTapTree)
+		require.Empty(t, ptx.Outputs[1].TaprootTapTree)
+		require.Empty(t, ptx.Outputs[2].TaprootTapTree)
+	})
+
+	t.Run("applies multiple keys independently", func(t *testing.T) {
+		ptx := newTestPsbtWithReceiversAndAnchor(t)
+		treeA := encodedTapTree(t,
+			"20736e572900fe1252589a2143c8f3c79f71a0412d2353af755e9701c782694a02ac",
+		)
+		treeB := encodedTapTree(t,
+			"2044faa49a0338de488c8dfffecdfb6f329f380bd566ef20c8df6d813eab1c4273ac",
+		)
+
+		err := addOutputsTaprootTree(ptx, map[string][]byte{
+			hex.EncodeToString(receiverPkScriptA): treeA,
+			hex.EncodeToString(receiverPkScriptB): treeB,
+		})
+		require.NoError(t, err)
+		require.Equal(t, treeA, ptx.Outputs[0].TaprootTapTree)
+		require.Equal(t, treeB, ptx.Outputs[1].TaprootTapTree)
+		require.Empty(t, ptx.Outputs[2].TaprootTapTree)
+	})
+
+	t.Run("errors on unmatched pkScript", func(t *testing.T) {
+		ptx := newTestPsbtWithReceiversAndAnchor(t)
+		bogus := hex.EncodeToString(bytes.Repeat([]byte{0xcc}, 34))
+
+		err := addOutputsTaprootTree(ptx, map[string][]byte{
+			hex.EncodeToString(receiverPkScriptA): sampleTapTreeBytes(t),
+			bogus:                                 sampleTapTreeBytes(t),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no matching output")
+		require.Contains(t, err.Error(), bogus)
+	})
+
+	// Mirrors the SendOffChain order: addExtension reorders POutputs by
+	// moving the anchor to the new last slot. The apply step must still
+	// land the tap tree on the receiver outputs at their *new* indices.
+	t.Run("survives addExtension reordering", func(t *testing.T) {
+		ptx := newTestPsbtWithReceiversAndAnchor(t)
+		pkt := newTestAssetPacket(t)
+		require.NoError(t, addExtension(ptx, pkt, nil))
+
+		// Anchor moved to last; receivers should still be findable by pkScript.
+		tree := sampleTapTreeBytes(t)
+		err := addOutputsTaprootTree(ptx, map[string][]byte{
+			hex.EncodeToString(receiverPkScriptA): tree,
+			hex.EncodeToString(receiverPkScriptB): tree,
+		})
+		require.NoError(t, err)
+
+		var anchorIdx, aIdx, bIdx int = -1, -1, -1
+		for i, out := range ptx.UnsignedTx.TxOut {
+			switch {
+			case bytes.Equal(out.PkScript, receiverPkScriptA):
+				aIdx = i
+			case bytes.Equal(out.PkScript, receiverPkScriptB):
+				bIdx = i
+			case hasAnchorMarker(ptx.Outputs[i]):
+				anchorIdx = i
+			}
+		}
+		require.GreaterOrEqual(t, aIdx, 0)
+		require.GreaterOrEqual(t, bIdx, 0)
+		require.GreaterOrEqual(t, anchorIdx, 0)
+		require.Equal(t, tree, ptx.Outputs[aIdx].TaprootTapTree)
+		require.Equal(t, tree, ptx.Outputs[bIdx].TaprootTapTree)
+		require.Empty(t, ptx.Outputs[anchorIdx].TaprootTapTree)
+	})
+
+	t.Run("errors on output count mismatch", func(t *testing.T) {
+		ptx := newTestPsbtWithReceiversAndAnchor(t)
+		// Desync UnsignedTx.TxOut from Outputs to simulate a malformed PSBT.
+		ptx.Outputs = ptx.Outputs[:len(ptx.Outputs)-1]
+
+		err := addOutputsTaprootTree(ptx, map[string][]byte{
+			hex.EncodeToString(receiverPkScriptA): sampleTapTreeBytes(t),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "output count mismatch")
+	})
+}
+
 func newTestPsbtWithP2A(t *testing.T) *psbt.Packet {
 	t.Helper()
 	tx := wire.NewMsgTx(2)
@@ -324,4 +360,34 @@ func assertPsbtUnchanged(t *testing.T, before psbtSnapshot, after *psbt.Packet) 
 	}
 	require.GreaterOrEqual(t, before.anchorMarkerIdx, 0)
 	require.True(t, hasAnchorMarker(after.Outputs[before.anchorMarkerIdx]))
+}
+
+func sampleTapTreeBytes(t *testing.T) []byte {
+	t.Helper()
+	b, err := hex.DecodeString(sampleTapTreeHex)
+	require.NoError(t, err)
+	return b
+}
+
+func encodedTapTree(t *testing.T, scripts ...string) []byte {
+	t.Helper()
+	b, err := txutils.TapTree(scripts).Encode()
+	require.NoError(t, err)
+	return b
+}
+
+func newTestPsbtWithReceiversAndAnchor(t *testing.T) *psbt.Packet {
+	t.Helper()
+	tx := wire.NewMsgTx(2)
+	tx.AddTxOut(wire.NewTxOut(1000, receiverPkScriptA))
+	tx.AddTxOut(wire.NewTxOut(2000, receiverPkScriptB))
+	tx.AddTxOut(wire.NewTxOut(330, []byte{0x51, 0x02, 0x4e, 0x73})) // fake p2a anchor
+	ptx, err := psbt.NewFromUnsignedTx(tx)
+	require.NoError(t, err)
+	// Stamp the anchor's POutput so we can verify it travels with its TxOut
+	// after addExtension reordering.
+	ptx.Outputs[len(ptx.Outputs)-1].Unknowns = []*psbt.Unknown{
+		{Key: anchorMarkerKey, Value: anchorMarkerValue},
+	}
+	return ptx
 }

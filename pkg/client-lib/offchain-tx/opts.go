@@ -5,6 +5,7 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 )
 
 // Option customizes the behavior of an offchain-tx operation (Send,
@@ -46,12 +47,42 @@ func WithExtraPacket(packets ...extension.Packet) Option {
 	})
 }
 
+// WithTxOutsTaprootTree sets the PSBT BIP-371 TaprootTapTree field on
+// every output whose hex-encoded pkScript matches a key in the map. Callers
+// pass the BIP-371-encoded tap tree bytes (via txutils.TapTree(scripts).Encode()).
+// SendOffChain returns an error if any pkScript key matches no output of the
+// ark tx, surfacing what would otherwise be a silent footgun for protocol-
+// critical VTXO spending.
+func WithTxOutsTaprootTree(tapTrees map[string][]byte) Option {
+	return optFn(func(o *options) error {
+		if len(tapTrees) <= 0 {
+			return fmt.Errorf("missing taproot trees")
+		}
+		if o.outputsTapTree == nil {
+			o.outputsTapTree = make(map[string][]byte, len(tapTrees))
+		}
+		for k, v := range tapTrees {
+			if len(v) == 0 {
+				return fmt.Errorf("receiver tap tree must not be empty")
+			}
+			if _, err := txutils.DecodeTapTree(v); err != nil {
+				return fmt.Errorf("invalid bip-371 tap tree for tx out with script %s: %w", k, err)
+			}
+			cp := make([]byte, len(v))
+			copy(cp, v)
+			o.outputsTapTree[k] = cp
+		}
+		return nil
+	})
+}
+
 type optFn func(*options) error
 
 func (f optFn) apply(o *options) error { return f(o) }
 
 type options struct {
-	extraPackets []extension.Packet
+	extraPackets   []extension.Packet
+	outputsTapTree map[string][]byte // pkScript (hex) -> bip371 taptree
 }
 
 func newOptions() *options {
