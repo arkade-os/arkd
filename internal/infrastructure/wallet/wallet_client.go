@@ -5,11 +5,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
+	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	log "github.com/sirupsen/logrus"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
@@ -32,6 +34,14 @@ func New(addr, otelCollectorEndpoint string) (ports.WalletService, *arklib.Netwo
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	}
+	retryOpts := []grpc_retry.CallOption{
+		grpc_retry.WithMax(5),
+		grpc_retry.WithBackoff(grpc_retry.BackoffExponential(100 * time.Millisecond)),
+		grpc_retry.WithCodes(codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted),
+	}
+
+	opts = append(opts, grpc.WithUnaryInterceptor(grpc_retry.UnaryClientInterceptor(retryOpts...)))
+
 	if otelCollectorEndpoint != "" {
 		otelHandler := otelgrpc.NewClientHandler(
 			otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
@@ -441,8 +451,12 @@ func (w *walletDaemonClient) GetCurrentBlockTime(
 func (w *walletDaemonClient) Withdraw(
 	ctx context.Context, address string, amount uint64, all bool,
 ) (string, error) {
-	resp, err := w.client.Withdraw(ctx, &arkwalletv1.WithdrawRequest{
-		Address: address, Amount: amount, All: all},
+	// Withdraw moves funds to an external address; retrying after an
+	// ambiguous failure could double-spend, so opt out of the interceptor.
+	resp, err := w.client.Withdraw(
+		ctx,
+		&arkwalletv1.WithdrawRequest{Address: address, Amount: amount, All: all},
+		grpc_retry.WithMax(0),
 	)
 	if err != nil {
 		return "", err

@@ -3549,11 +3549,11 @@ func (s *service) scheduleSweepBatchOutput(round domain.Round) {
 
 	blockTimestamp, err := waitForConfirmation(context.Background(), round.CommitmentTxid, s.wallet)
 	if err != nil {
-		log.WithError(err).Warnf(
-			"failed to wait for confirmation of commitment tx %s, schedule task time may be inaccurate",
+		log.WithError(err).Errorf(
+			"wallet unavailable; cannot schedule sweep for %s — will be picked up on next startup",
 			round.CommitmentTxid,
 		)
-		blockTimestamp = &ports.BlockTimestamp{Time: time.Now().Unix()}
+		return
 	}
 
 	var expirationTimestamp int64
