@@ -3547,7 +3547,9 @@ func (s *service) scheduleSweepBatchOutput(round domain.Round) {
 		return
 	}
 
-	blockTimestamp, err := waitForConfirmation(context.Background(), round.CommitmentTxid, s.wallet)
+	// Use s.ctx so this poll stops on shutdown. On error we bail instead of
+	// guessing the height; the round is re-scheduled on next boot.
+	blockTimestamp, err := waitForConfirmation(s.ctx, round.CommitmentTxid, s.wallet)
 	if err != nil {
 		log.WithError(err).Errorf(
 			"wallet unavailable; cannot schedule sweep for %s — will be picked up on next startup",

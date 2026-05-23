@@ -542,6 +542,10 @@ func waitForConfirmation(
 		case <-ticker.C:
 			confirmed, blockTimestamp, err := wallet.IsTransactionConfirmed(ctx, txid)
 			if err != nil {
+				// On shutdown, stop instead of retrying.
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
 				log.WithError(err).Warnf(
 					"transient error checking confirmation of %s; will retry on next tick", txid,
 				)
