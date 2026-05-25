@@ -8,9 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arkade-os/arkd/pkg/ark-lib/indexer/celenv"
+	"github.com/arkade-os/arkd/internal/interface/grpc/handlers/txfilter"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/google/cel-go/cel"
 )
 
 // MaxTxFiltersPerListener bounds the number of compiled CEL programs a single
@@ -31,7 +30,7 @@ var ErrTxFiltersLimitExceeded = fmt.Errorf(
 type listener[T any] struct {
 	id           string
 	topics       map[string]struct{}
-	txFilters    map[string]cel.Program
+	txFilters    map[string]txfilter.Filter
 	ch           chan T
 	done         chan struct{}
 	closeDoneMux sync.Once
@@ -47,7 +46,7 @@ func newListener[T any](id string, topics []string) *listener[T] {
 	return &listener[T]{
 		id:        id,
 		topics:    topicsMap,
-		txFilters: make(map[string]cel.Program),
+		txFilters: make(map[string]txfilter.Filter),
 		ch:        make(chan T, 100),
 		done:      make(chan struct{}),
 		lock:      &sync.RWMutex{},
@@ -129,12 +128,12 @@ func (l *listener[T]) removeTxFilters(exprs []string) {
 	}
 }
 
-func (l *listener[T]) overwriteTxFilters(programs map[string]cel.Program) {
+func (l *listener[T]) overwriteTxFilters(filters map[string]txfilter.Filter) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
-	l.txFilters = make(map[string]cel.Program, len(programs))
-	for expr, prg := range programs {
-		l.txFilters[expr] = prg
+	l.txFilters = make(map[string]txfilter.Filter, len(filters))
+	for expr, f := range filters {
+		l.txFilters[expr] = f
 	}
 }
 
@@ -149,35 +148,35 @@ func (l *listener[T]) getTxFilters() []string {
 }
 
 // matchesTx evaluates the listener's tx filters against the tx produced by
-// getTx. Returns true if any program evaluates to true. Evaluation errors are
+// getTx. Returns true if any filter evaluates to true. Evaluation errors are
 // skipped, not propagated.
 //
 // getTx is invoked lazily, only after we confirm the listener has at least
 // one tx filter set, so listeners without tx filters do not pay any decoding
-// cost. The CEL activation is built once per call and reused across all
-// programs so the OP_RETURN extension is parsed at most once per (event,
-// listener) pair.
+// cost. The tx envelope is built once per call and reused across all filters
+// so the OP_RETURN extension is parsed at most once per (event, listener)
+// pair.
 func (l *listener[T]) matchesTx(getTx func() *wire.MsgTx) bool {
 	l.lock.RLock()
 	if len(l.txFilters) == 0 {
 		l.lock.RUnlock()
 		return false
 	}
-	programs := make([]cel.Program, 0, len(l.txFilters))
-	for _, prg := range l.txFilters {
-		programs = append(programs, prg)
+	filters := make([]txfilter.Filter, 0, len(l.txFilters))
+	for _, f := range l.txFilters {
+		filters = append(filters, f)
 	}
 	l.lock.RUnlock()
-	tx := getTx()
-	if tx == nil {
+	rawTx := getTx()
+	if rawTx == nil {
 		return false
 	}
-	act, err := celenv.BuildActivation(tx)
+	tx, err := txfilter.NewTx(rawTx)
 	if err != nil {
 		return false
 	}
-	for _, prg := range programs {
-		ok, err := celenv.EvalWithActivation(prg, act)
+	for _, f := range filters {
+		ok, err := f.Eval(tx)
 		if err == nil && ok {
 			return true
 		}
@@ -300,7 +299,7 @@ func (h *broker[T]) addTxFilters(id string, exprs []string) error {
 	if len(exprs) > MaxTxFiltersPerListener {
 		return ErrTxFiltersLimitExceeded
 	}
-	programs, err := compileTxFilters(exprs)
+	filters, err := compileTxFilters(exprs)
 	if err != nil {
 		return err
 	}
@@ -315,10 +314,10 @@ func (h *broker[T]) addTxFilters(id string, exprs []string) error {
 	listener.lock.Lock()
 	defer listener.lock.Unlock()
 	if listener.txFilters == nil {
-		listener.txFilters = make(map[string]cel.Program, len(programs))
+		listener.txFilters = make(map[string]txfilter.Filter, len(filters))
 	}
 	projected := len(listener.txFilters)
-	for expr := range programs {
+	for expr := range filters {
 		if _, exists := listener.txFilters[expr]; !exists {
 			projected++
 		}
@@ -326,8 +325,8 @@ func (h *broker[T]) addTxFilters(id string, exprs []string) error {
 	if projected > MaxTxFiltersPerListener {
 		return ErrTxFiltersLimitExceeded
 	}
-	for expr, prg := range programs {
-		listener.txFilters[expr] = prg
+	for expr, f := range filters {
+		listener.txFilters[expr] = f
 	}
 	return nil
 }
@@ -347,7 +346,7 @@ func (h *broker[T]) overwriteTxFilters(id string, exprs []string) error {
 	if len(exprs) > MaxTxFiltersPerListener {
 		return ErrTxFiltersLimitExceeded
 	}
-	programs, err := compileTxFilters(exprs)
+	filters, err := compileTxFilters(exprs)
 	if err != nil {
 		return err
 	}
@@ -357,20 +356,20 @@ func (h *broker[T]) overwriteTxFilters(id string, exprs []string) error {
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
 	}
-	listener.overwriteTxFilters(programs)
+	listener.overwriteTxFilters(filters)
 	return nil
 }
 
-func compileTxFilters(exprs []string) (map[string]cel.Program, error) {
-	programs := make(map[string]cel.Program, len(exprs))
+func compileTxFilters(exprs []string) (map[string]txfilter.Filter, error) {
+	filters := make(map[string]txfilter.Filter, len(exprs))
 	for _, expr := range exprs {
-		prg, err := celenv.Compile(expr)
+		f, err := txfilter.Parse(expr)
 		if err != nil {
 			return nil, err
 		}
-		programs[expr] = prg
+		filters[expr] = *f
 	}
-	return programs, nil
+	return filters, nil
 }
 
 func (h *broker[T]) startTimeout(id string, timeout time.Duration) {
