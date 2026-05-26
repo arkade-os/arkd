@@ -92,9 +92,9 @@ type IndexerServiceClient interface {
 	// The subscription can be created or updated by using the SubscribeForScripts and
 	// UnsubscribeForScripts RPCs.
 	GetSubscription(ctx context.Context, in *GetSubscriptionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetSubscriptionResponse], error)
-	// UpdateSubscription allows to update an existing subscription created via
-	// GetSubscription by applying a filter. The filter is mutually exclusive
-	// between the supported filter types (e.g. scripts, and later packet types).
+	// UpdateSubscription updates an existing subscription created via
+	// GetSubscription. See UpdateSubscriptionRequest for the full set of
+	// supported filter combinations and their semantics.
 	UpdateSubscription(ctx context.Context, in *UpdateSubscriptionRequest, opts ...grpc.CallOption) (*UpdateSubscriptionResponse, error)
 }
 
@@ -312,9 +312,9 @@ type IndexerServiceServer interface {
 	// The subscription can be created or updated by using the SubscribeForScripts and
 	// UnsubscribeForScripts RPCs.
 	GetSubscription(*GetSubscriptionRequest, grpc.ServerStreamingServer[GetSubscriptionResponse]) error
-	// UpdateSubscription allows to update an existing subscription created via
-	// GetSubscription by applying a filter. The filter is mutually exclusive
-	// between the supported filter types (e.g. scripts, and later packet types).
+	// UpdateSubscription updates an existing subscription created via
+	// GetSubscription. See UpdateSubscriptionRequest for the full set of
+	// supported filter combinations and their semantics.
 	UpdateSubscription(context.Context, *UpdateSubscriptionRequest) (*UpdateSubscriptionResponse, error)
 }
 

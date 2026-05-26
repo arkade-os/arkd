@@ -74,42 +74,28 @@ func newTestIndexerService() *indexerService {
 	}
 }
 
-func overwriteScriptsFilter(scripts ...string) *arkv1.SubscriptionFilter {
+// seedTxFilters installs the given CEL expressions on a listener for test
+// fixtures. The handler's applyFilter is the production code path; this
+// helper exists so tests can populate state without going through the full
+// SubscriptionFilter plumbing.
+func seedTxFilters(
+	t *testing.T, svc *indexerService, id string, exprs ...string,
+) {
+	t.Helper()
+	filters, err := compileTxFilters(exprs)
+	require.NoError(t, err)
+	require.NoError(t, svc.scriptSubsHandler.installTxFilters(id, filters))
+}
+
+func scriptsAddFilter(scripts ...string) *arkv1.SubscriptionFilter {
 	return &arkv1.SubscriptionFilter{
-		Filter: &arkv1.SubscriptionFilter_Scripts{
-			Scripts: &arkv1.ScriptsFilter{
-				Change: &arkv1.ScriptsFilter_Overwrite{
-					Overwrite: &arkv1.OverwriteScripts{Scripts: scripts},
-				},
-			},
-		},
+		Scripts: &arkv1.ScriptFilter{Add: scripts},
 	}
 }
 
-func overwriteTxFilter(exprs ...string) *arkv1.SubscriptionFilter {
+func txExpressionsFilter(exprs ...string) *arkv1.SubscriptionFilter {
 	return &arkv1.SubscriptionFilter{
-		Filter: &arkv1.SubscriptionFilter_Txs{
-			Txs: &arkv1.TxFilter{
-				Change: &arkv1.TxFilter_Overwrite{
-					Overwrite: &arkv1.OverwriteTxFilters{Expressions: exprs},
-				},
-			},
-		},
-	}
-}
-
-func modifyTxFilter(add, remove []string) *arkv1.SubscriptionFilter {
-	return &arkv1.SubscriptionFilter{
-		Filter: &arkv1.SubscriptionFilter_Txs{
-			Txs: &arkv1.TxFilter{
-				Change: &arkv1.TxFilter_Modify{
-					Modify: &arkv1.ModifyTxFilters{
-						AddExpressions:    add,
-						RemoveExpressions: remove,
-					},
-				},
-			},
-		},
+		Expressions: exprs,
 	}
 }
 
@@ -210,7 +196,7 @@ func TestGetSubscription(t *testing.T) {
 		go func() {
 			errCh <- svc.GetSubscription(
 				&arkv1.GetSubscriptionRequest{
-					Filter: overwriteScriptsFilter(testScript1),
+					Filter: scriptsAddFilter(testScript1),
 				},
 				stream,
 			)
@@ -288,7 +274,7 @@ func TestGetSubscription(t *testing.T) {
 
 		err := svc.GetSubscription(
 			&arkv1.GetSubscriptionRequest{
-				Filter: overwriteScriptsFilter("notahex"),
+				Filter: scriptsAddFilter("notahex"),
 			},
 			stream,
 		)
@@ -297,6 +283,49 @@ func TestGetSubscription(t *testing.T) {
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.InvalidArgument, st.Code())
+	})
+
+	t.Run("new flow ignores scripts.remove on creation", func(t *testing.T) {
+		t.Parallel()
+		// On stream creation there is nothing to remove yet. A populated (even
+		// invalid) scripts.remove must be ignored without erroring or wiping
+		// the freshly-added scripts.
+		svc := newTestIndexerService()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		stream := newMockGetSubscriptionServer(ctx)
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{
+					Filter: &arkv1.SubscriptionFilter{
+						Scripts: &arkv1.ScriptFilter{
+							Add:    []string{testScript1},
+							Remove: []string{"bad-hex"},
+						},
+					},
+				},
+				stream,
+			)
+		}()
+
+		msg := stream.recv(t, time.Second)
+		subId := msg.GetSubscriptionStarted().GetSubscriptionId()
+		require.NotEmpty(t, subId)
+
+		require.ElementsMatch(
+			t, []string{testScript1}, svc.scriptSubsHandler.getTopics(subId),
+		)
+
+		cancel()
+		select {
+		case err := <-errCh:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("GetSubscription did not return")
+		}
 	})
 
 	t.Run("new flow sends heartbeat when idle", func(t *testing.T) {
@@ -345,7 +374,7 @@ func TestGetSubscription(t *testing.T) {
 		go func() {
 			errCh <- svc.GetSubscription(
 				&arkv1.GetSubscriptionRequest{
-					Filter: overwriteScriptsFilter(testScript1),
+					Filter: scriptsAddFilter(testScript1),
 				},
 				stream,
 			)
@@ -357,24 +386,17 @@ func TestGetSubscription(t *testing.T) {
 		require.NotEmpty(t, subId)
 
 		// Update scripts: add testScript2 via UpdateSubscription.
-		resp, err := svc.UpdateSubscription(context.Background(),
+		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: subId,
-				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Modify{
-								Modify: &arkv1.ModifyScripts{
-									AddScripts: []string{testScript2},
-								},
-							},
-						},
-					},
-				},
+				Filter:         scriptsAddFilter(testScript2),
 			},
 		)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{testScript1, testScript2}, resp.GetScripts().GetAll())
+		require.ElementsMatch(
+			t, []string{testScript1, testScript2},
+			svc.scriptSubsHandler.getTopics(subId),
+		)
 
 		// Push an event via the broker channel.
 		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
@@ -415,7 +437,7 @@ func TestGetSubscription(t *testing.T) {
 		go func() {
 			errCh <- svc.GetSubscription(
 				&arkv1.GetSubscriptionRequest{
-					Filter: overwriteScriptsFilter(testScript1),
+					Filter: scriptsAddFilter(testScript1),
 				},
 				stream,
 			)
@@ -641,107 +663,79 @@ func TestUpdateSubscription(t *testing.T) {
 		require.Equal(t, codes.InvalidArgument, st.Code())
 	})
 
-	t.Run("empty SubscriptionFilter returns InvalidArgument", func(t *testing.T) {
+	t.Run("empty SubscriptionFilter leaves scripts untouched", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse](
+			"sub-noop", []string{testScript1},
+		)
+		svc.scriptSubsHandler.pushListener(listener)
 
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
-				SubscriptionId: "some-id",
+				SubscriptionId: "sub-noop",
 				Filter:         &arkv1.SubscriptionFilter{},
 			},
 		)
-		require.Error(t, err)
-
-		st, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.InvalidArgument, st.Code())
+		require.NoError(t, err)
+		// Scripts field is nil so scripts are untouched. Expressions are
+		// overwritten with the empty list, which is a no-op when none were set.
+		// The expressions-wipe case is covered by TestTxFilter.
+		require.ElementsMatch(
+			t, []string{testScript1}, svc.scriptSubsHandler.getTopics("sub-noop"),
+		)
+		require.Empty(t, svc.scriptSubsHandler.getTxFilters("sub-noop"))
 	})
 
-	t.Run("empty ScriptsFilter returns InvalidArgument", func(t *testing.T) {
+	t.Run("empty ScriptFilter clears all scripts", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse](
+			"sub-clear", []string{testScript1, testScript2},
+		)
+		svc.scriptSubsHandler.pushListener(listener)
 
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
-				SubscriptionId: "some-id",
+				SubscriptionId: "sub-clear",
 				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{},
-					},
-				},
-			},
-		)
-		require.Error(t, err)
-
-		st, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.InvalidArgument, st.Code())
-	})
-
-	t.Run("overwrite replaces all scripts", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestIndexerService()
-
-		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
-		svc.scriptSubsHandler.pushListener(listener)
-
-		resp, err := svc.UpdateSubscription(context.Background(),
-			&arkv1.UpdateSubscriptionRequest{
-				SubscriptionId: "test-sub",
-				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Overwrite{
-								Overwrite: &arkv1.OverwriteScripts{
-									Scripts: []string{testScript2, testScript3},
-								},
-							},
-						},
-					},
+					Scripts: &arkv1.ScriptFilter{},
 				},
 			},
 		)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{testScript2, testScript3}, resp.GetScripts().GetAll())
+		require.Empty(t, svc.scriptSubsHandler.getTopics("sub-clear"))
 	})
 
-	t.Run("modify adds and removes scripts", func(t *testing.T) {
+	t.Run("scripts add and remove applied together", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
-
 		listener := newListener[*arkv1.GetSubscriptionResponse](
 			"test-sub", []string{testScript1, testScript2},
 		)
 		svc.scriptSubsHandler.pushListener(listener)
 
-		resp, err := svc.UpdateSubscription(context.Background(),
+		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
 				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Modify{
-								Modify: &arkv1.ModifyScripts{
-									AddScripts:    []string{testScript3},
-									RemoveScripts: []string{testScript2},
-								},
-							},
-						},
+					Scripts: &arkv1.ScriptFilter{
+						Add:    []string{testScript3},
+						Remove: []string{testScript2},
 					},
 				},
 			},
 		)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{testScript3}, resp.GetScripts().GetAdded())
-		require.ElementsMatch(t, []string{testScript2}, resp.GetScripts().GetRemoved())
-		require.ElementsMatch(t, []string{testScript1, testScript3}, resp.GetScripts().GetAll())
+		require.ElementsMatch(
+			t, []string{testScript1, testScript3},
+			svc.scriptSubsHandler.getTopics("test-sub"),
+		)
 	})
 
-	t.Run("overwrite with invalid scripts returns InvalidArgument", func(t *testing.T) {
+	t.Run("invalid script in add returns InvalidArgument", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
-
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
@@ -749,29 +743,22 @@ func TestUpdateSubscription(t *testing.T) {
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
 				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Overwrite{
-								Overwrite: &arkv1.OverwriteScripts{
-									Scripts: []string{"invalidhex"},
-								},
-							},
-						},
-					},
+					Scripts: &arkv1.ScriptFilter{Add: []string{"notvalid"}},
 				},
 			},
 		)
 		require.Error(t, err)
-
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.InvalidArgument, st.Code())
+		require.ElementsMatch(
+			t, []string{testScript1}, svc.scriptSubsHandler.getTopics("test-sub"),
+		)
 	})
 
-	t.Run("modify with invalid add scripts returns InvalidArgument", func(t *testing.T) {
+	t.Run("invalid script in remove returns InvalidArgument", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
-
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
@@ -779,200 +766,74 @@ func TestUpdateSubscription(t *testing.T) {
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
 				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Modify{
-								Modify: &arkv1.ModifyScripts{
-									AddScripts: []string{"notvalid"},
-								},
-							},
-						},
-					},
+					Scripts: &arkv1.ScriptFilter{Remove: []string{"notvalid"}},
 				},
 			},
 		)
 		require.Error(t, err)
-
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.InvalidArgument, st.Code())
 	})
 
-	t.Run("modify with invalid remove scripts returns InvalidArgument", func(t *testing.T) {
+	t.Run("scripts add only", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
-
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
-				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Modify{
-								Modify: &arkv1.ModifyScripts{
-									RemoveScripts: []string{"notvalid"},
-								},
-							},
-						},
-					},
-				},
-			},
-		)
-		require.Error(t, err)
-
-		st, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.InvalidArgument, st.Code())
-	})
-
-	t.Run("modify add only", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestIndexerService()
-
-		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
-		svc.scriptSubsHandler.pushListener(listener)
-
-		resp, err := svc.UpdateSubscription(context.Background(),
-			&arkv1.UpdateSubscriptionRequest{
-				SubscriptionId: "test-sub",
-				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Modify{
-								Modify: &arkv1.ModifyScripts{
-									AddScripts: []string{testScript2},
-								},
-							},
-						},
-					},
-				},
+				Filter:         scriptsAddFilter(testScript2),
 			},
 		)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{testScript2}, resp.GetScripts().GetAdded())
-		require.Empty(t, resp.GetScripts().GetRemoved())
-		require.ElementsMatch(t, []string{testScript1, testScript2}, resp.GetScripts().GetAll())
+		require.ElementsMatch(
+			t, []string{testScript1, testScript2},
+			svc.scriptSubsHandler.getTopics("test-sub"),
+		)
 	})
 
-	t.Run("modify remove only", func(t *testing.T) {
+	t.Run("scripts remove only", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
-
 		listener := newListener[*arkv1.GetSubscriptionResponse](
 			"test-sub", []string{testScript1, testScript2},
 		)
 		svc.scriptSubsHandler.pushListener(listener)
 
-		resp, err := svc.UpdateSubscription(context.Background(),
-			&arkv1.UpdateSubscriptionRequest{
-				SubscriptionId: "test-sub",
-				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Modify{
-								Modify: &arkv1.ModifyScripts{
-									RemoveScripts: []string{testScript2},
-								},
-							},
-						},
-					},
-				},
-			},
-		)
-		require.NoError(t, err)
-		require.Empty(t, resp.GetScripts().GetAdded())
-		require.ElementsMatch(t, []string{testScript2}, resp.GetScripts().GetRemoved())
-		require.ElementsMatch(t, []string{testScript1}, resp.GetScripts().GetAll())
-	})
-
-	t.Run("overwrite with empty scripts clears all", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestIndexerService()
-
-		listener := newListener[*arkv1.GetSubscriptionResponse](
-			"test-sub", []string{testScript1, testScript2},
-		)
-		svc.scriptSubsHandler.pushListener(listener)
-
-		resp, err := svc.UpdateSubscription(context.Background(),
-			&arkv1.UpdateSubscriptionRequest{
-				SubscriptionId: "test-sub",
-				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Overwrite{
-								Overwrite: &arkv1.OverwriteScripts{
-									Scripts: []string{},
-								},
-							},
-						},
-					},
-				},
-			},
-		)
-		require.NoError(t, err)
-		require.Empty(t, resp.GetScripts().GetAll())
-	})
-
-	t.Run("modify with empty add and remove returns InvalidArgument", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestIndexerService()
-
-		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
-		svc.scriptSubsHandler.pushListener(listener)
-
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
 				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Modify{
-								Modify: &arkv1.ModifyScripts{},
-							},
-						},
-					},
+					Scripts: &arkv1.ScriptFilter{Remove: []string{testScript2}},
 				},
 			},
 		)
-		require.Error(t, err)
-
-		st, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.InvalidArgument, st.Code())
+		require.NoError(t, err)
+		require.ElementsMatch(
+			t, []string{testScript1}, svc.scriptSubsHandler.getTopics("test-sub"),
+		)
 	})
 
-	t.Run("unknown subscription_id overwrite returns NotFound", func(t *testing.T) {
+	t.Run("unknown subscription_id with scripts returns NotFound", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
 
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "nonexistent-id",
-				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Overwrite{
-								Overwrite: &arkv1.OverwriteScripts{
-									Scripts: []string{testScript1},
-								},
-							},
-						},
-					},
-				},
+				Filter:         scriptsAddFilter(testScript1),
 			},
 		)
 		require.Error(t, err)
-
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.NotFound, st.Code())
 	})
 
-	t.Run("unknown subscription_id modify returns NotFound", func(t *testing.T) {
+	t.Run("unknown subscription_id with remove returns NotFound", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
 
@@ -980,47 +841,11 @@ func TestUpdateSubscription(t *testing.T) {
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "nonexistent-id",
 				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Modify{
-								Modify: &arkv1.ModifyScripts{
-									AddScripts: []string{testScript1},
-								},
-							},
-						},
-					},
+					Scripts: &arkv1.ScriptFilter{Remove: []string{testScript1}},
 				},
 			},
 		)
 		require.Error(t, err)
-
-		st, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.NotFound, st.Code())
-	})
-
-	t.Run("modify remove unknown subscription_id returns NotFound", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestIndexerService()
-
-		_, err := svc.UpdateSubscription(context.Background(),
-			&arkv1.UpdateSubscriptionRequest{
-				SubscriptionId: "nonexistent-id",
-				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Modify{
-								Modify: &arkv1.ModifyScripts{
-									RemoveScripts: []string{testScript1},
-								},
-							},
-						},
-					},
-				},
-			},
-		)
-		require.Error(t, err)
-
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.NotFound, st.Code())
@@ -1029,28 +854,112 @@ func TestUpdateSubscription(t *testing.T) {
 	t.Run("adding duplicate scripts is idempotent", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
-
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
-		resp, err := svc.UpdateSubscription(context.Background(),
+		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "test-sub",
+				Filter:         scriptsAddFilter(testScript1, testScript2),
+			},
+		)
+		require.NoError(t, err)
+		require.ElementsMatch(
+			t, []string{testScript1, testScript2},
+			svc.scriptSubsHandler.getTopics("test-sub"),
+		)
+	})
+
+	t.Run("expressions and scripts.add applied in one call", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("combo", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "combo",
 				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Scripts{
-						Scripts: &arkv1.ScriptsFilter{
-							Change: &arkv1.ScriptsFilter_Modify{
-								Modify: &arkv1.ModifyScripts{
-									AddScripts: []string{testScript1, testScript2},
-								},
-							},
-						},
-					},
+					Expressions: []string{"has(tx.extension)"},
+					Scripts:     &arkv1.ScriptFilter{Add: []string{testScript1}},
 				},
 			},
 		)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{testScript1, testScript2}, resp.GetScripts().GetAll())
+		require.ElementsMatch(
+			t, []string{"has(tx.extension)"},
+			svc.scriptSubsHandler.getTxFilters("combo"),
+		)
+		require.ElementsMatch(
+			t, []string{testScript1}, svc.scriptSubsHandler.getTopics("combo"),
+		)
+	})
+
+	t.Run("invalid scripts.add does not mutate expressions", func(t *testing.T) {
+		// Regression: a SubscriptionFilter carrying valid expressions and an
+		// invalid script in scripts.add must not overwrite the pre-existing
+		// expressions before failing. All inputs are validated up front.
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-atom", nil)
+		svc.scriptSubsHandler.pushListener(listener)
+		seedTxFilters(t, svc, "sub-atom", "has(tx.extension)")
+
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "sub-atom",
+				Filter: &arkv1.SubscriptionFilter{
+					Expressions: []string{"hasPacket(tx.extension, 0x42)"},
+					Scripts:     &arkv1.ScriptFilter{Add: []string{"bad-hex"}},
+				},
+			},
+		)
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+
+		// Expressions untouched: still the original single entry.
+		require.ElementsMatch(
+			t, []string{"has(tx.extension)"},
+			svc.scriptSubsHandler.getTxFilters("sub-atom"),
+		)
+		require.Empty(t, svc.scriptSubsHandler.getTopics("sub-atom"))
+	})
+
+	t.Run("invalid scripts.remove does not mutate expressions or add", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService()
+		listener := newListener[*arkv1.GetSubscriptionResponse](
+			"sub-atom2", []string{testScript1},
+		)
+		svc.scriptSubsHandler.pushListener(listener)
+		seedTxFilters(t, svc, "sub-atom2", "has(tx.extension)")
+
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "sub-atom2",
+				Filter: &arkv1.SubscriptionFilter{
+					Expressions: []string{"hasPacket(tx.extension, 0x42)"},
+					Scripts: &arkv1.ScriptFilter{
+						Add:    []string{testScript2},
+						Remove: []string{"bad-hex"},
+					},
+				},
+			},
+		)
+		require.Error(t, err)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		require.Equal(t, codes.InvalidArgument, st.Code())
+
+		require.ElementsMatch(
+			t, []string{"has(tx.extension)"},
+			svc.scriptSubsHandler.getTxFilters("sub-atom2"),
+		)
+		require.ElementsMatch(
+			t, []string{testScript1}, svc.scriptSubsHandler.getTopics("sub-atom2"),
+		)
 	})
 }
 
@@ -1071,7 +980,7 @@ func TestTxFilter(t *testing.T) {
 		go func() {
 			errCh <- svc.GetSubscription(
 				&arkv1.GetSubscriptionRequest{
-					Filter: overwriteTxFilter(hasExtension),
+					Filter: txExpressionsFilter(hasExtension),
 				},
 				stream,
 			)
@@ -1099,7 +1008,7 @@ func TestTxFilter(t *testing.T) {
 
 		err := svc.GetSubscription(
 			&arkv1.GetSubscriptionRequest{
-				Filter: overwriteTxFilter("not a valid cel"),
+				Filter: txExpressionsFilter("not a valid cel"),
 			},
 			stream,
 		)
@@ -1109,59 +1018,54 @@ func TestTxFilter(t *testing.T) {
 		require.Equal(t, codes.InvalidArgument, st.Code())
 	})
 
-	t.Run("UpdateSubscription Overwrite tx filters", func(t *testing.T) {
+	t.Run("UpdateSubscription overwrites tx filters", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-overwrite", nil)
 		svc.scriptSubsHandler.pushListener(listener)
 
-		resp, err := svc.UpdateSubscription(context.Background(),
+		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "sub-overwrite",
-				Filter:         overwriteTxFilter(hasExtension, hasPacket42),
+				Filter:         txExpressionsFilter(hasExtension, hasPacket42),
 			},
 		)
 		require.NoError(t, err)
 		require.ElementsMatch(
-			t, []string{hasExtension, hasPacket42}, resp.GetTxs().GetAll(),
+			t, []string{hasExtension, hasPacket42},
+			svc.scriptSubsHandler.getTxFilters("sub-overwrite"),
 		)
 
-		// Overwrite again with a single expression.
-		resp, err = svc.UpdateSubscription(context.Background(),
+		// A second call with a single expression overwrites the first set.
+		_, err = svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "sub-overwrite",
-				Filter:         overwriteTxFilter(hasExtension),
+				Filter:         txExpressionsFilter(hasExtension),
 			},
 		)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{hasExtension}, resp.GetTxs().GetAll())
+		require.ElementsMatch(
+			t, []string{hasExtension},
+			svc.scriptSubsHandler.getTxFilters("sub-overwrite"),
+		)
 	})
 
-	t.Run("UpdateSubscription Modify add and remove", func(t *testing.T) {
+	t.Run("UpdateSubscription with empty expressions wipes them", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
-		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-modify", nil)
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-wipe", nil)
 		svc.scriptSubsHandler.pushListener(listener)
+		seedTxFilters(t, svc, "sub-wipe", hasExtension, hasPacket42)
 
-		resp, err := svc.UpdateSubscription(context.Background(),
+		// Filter has no expressions field set: literal overwrite clears them.
+		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
-				SubscriptionId: "sub-modify",
-				Filter:         modifyTxFilter([]string{hasExtension, hasPacket42}, nil),
+				SubscriptionId: "sub-wipe",
+				Filter:         &arkv1.SubscriptionFilter{},
 			},
 		)
 		require.NoError(t, err)
-		require.ElementsMatch(t, []string{hasExtension, hasPacket42}, resp.GetTxs().GetAll())
-		require.ElementsMatch(t, []string{hasExtension, hasPacket42}, resp.GetTxs().GetAdded())
-
-		resp, err = svc.UpdateSubscription(context.Background(),
-			&arkv1.UpdateSubscriptionRequest{
-				SubscriptionId: "sub-modify",
-				Filter:         modifyTxFilter(nil, []string{hasPacket42}),
-			},
-		)
-		require.NoError(t, err)
-		require.ElementsMatch(t, []string{hasExtension}, resp.GetTxs().GetAll())
-		require.ElementsMatch(t, []string{hasPacket42}, resp.GetTxs().GetRemoved())
+		require.Empty(t, svc.scriptSubsHandler.getTxFilters("sub-wipe"))
 	})
 
 	t.Run("UpdateSubscription rejects invalid CEL", func(t *testing.T) {
@@ -1173,7 +1077,7 @@ func TestTxFilter(t *testing.T) {
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "sub-bad",
-				Filter:         overwriteTxFilter("&&&"),
+				Filter:         txExpressionsFilter("&&&"),
 			},
 		)
 		require.Error(t, err)
@@ -1185,23 +1089,25 @@ func TestTxFilter(t *testing.T) {
 		require.Empty(t, svc.scriptSubsHandler.getTxFilters("sub-bad"))
 	})
 
-	t.Run("UpdateSubscription rejects missing change", func(t *testing.T) {
+	t.Run("UpdateSubscription invalid CEL leaves existing filters untouched", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
-		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-empty", nil)
+		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-atomic", nil)
 		svc.scriptSubsHandler.pushListener(listener)
+		seedTxFilters(t, svc, "sub-atomic", hasExtension)
 
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
-				SubscriptionId: "sub-empty",
-				Filter: &arkv1.SubscriptionFilter{
-					Filter: &arkv1.SubscriptionFilter_Txs{Txs: &arkv1.TxFilter{}},
-				},
+				SubscriptionId: "sub-atomic",
+				Filter:         txExpressionsFilter(hasPacket42, "&&& invalid"),
 			},
 		)
 		require.Error(t, err)
 		st, _ := status.FromError(err)
 		require.Equal(t, codes.InvalidArgument, st.Code())
+		require.ElementsMatch(
+			t, []string{hasExtension}, svc.scriptSubsHandler.getTxFilters("sub-atomic"),
+		)
 	})
 
 	t.Run("listenToTxEvents dispatches on tx filter match only", func(t *testing.T) {
@@ -1213,9 +1119,7 @@ func TestTxFilter(t *testing.T) {
 
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-tx-only", nil)
 		svc.scriptSubsHandler.pushListener(listener)
-		require.NoError(
-			t, svc.scriptSubsHandler.addTxFilters("sub-tx-only", []string{hasExtension}),
-		)
+		seedTxFilters(t, svc, "sub-tx-only", hasExtension)
 
 		eventsCh <- application.TransactionEvent{
 			TxData: application.TxData{
@@ -1266,9 +1170,7 @@ func TestTxFilter(t *testing.T) {
 				"sub-or", []string{testScript1},
 			)
 			svc.scriptSubsHandler.pushListener(listener)
-			require.NoError(
-				t, svc.scriptSubsHandler.addTxFilters("sub-or", []string{hasExtension}),
-			)
+			seedTxFilters(t, svc, "sub-or", hasExtension)
 			return eventsCh, listener
 		}
 
@@ -1358,9 +1260,7 @@ func TestTxFilter(t *testing.T) {
 		)
 		svc.scriptSubsHandler.pushListener(listener)
 		// Even a listener with a tx filter set should still get the event via script.
-		require.NoError(
-			t, svc.scriptSubsHandler.addTxFilters("sub-bad-tx", []string{hasExtension}),
-		)
+		seedTxFilters(t, svc, "sub-bad-tx", hasExtension)
 
 		eventsCh <- application.TransactionEvent{
 			TxData:         application.TxData{Txid: "bad", Tx: "not-hex"},
@@ -1374,59 +1274,19 @@ func TestTxFilter(t *testing.T) {
 		}
 	})
 
-	t.Run("UpdateSubscription Modify-Add invalid CEL leaves state untouched", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestIndexerService()
-		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-atomic", nil)
-		svc.scriptSubsHandler.pushListener(listener)
-		require.NoError(t, svc.scriptSubsHandler.addTxFilters(
-			"sub-atomic", []string{hasExtension},
-		))
-
-		_, err := svc.UpdateSubscription(context.Background(),
-			&arkv1.UpdateSubscriptionRequest{
-				SubscriptionId: "sub-atomic",
-				Filter: modifyTxFilter(
-					[]string{hasPacket42, "&&& invalid"},
-					[]string{hasExtension},
-				),
-			},
-		)
-		require.Error(t, err)
-		st, _ := status.FromError(err)
-		require.Equal(t, codes.InvalidArgument, st.Code())
-
-		// Pre-existing filter still set, requested adds not applied, removes not applied.
-		require.ElementsMatch(
-			t, []string{hasExtension}, svc.scriptSubsHandler.getTxFilters("sub-atomic"),
-		)
-	})
-
-	t.Run("UpdateSubscription Modify-Remove of unknown expression is idempotent", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestIndexerService()
-		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-rm", nil)
-		svc.scriptSubsHandler.pushListener(listener)
-		require.NoError(t, svc.scriptSubsHandler.addTxFilters("sub-rm", []string{hasExtension}))
-
-		resp, err := svc.UpdateSubscription(context.Background(),
-			&arkv1.UpdateSubscriptionRequest{
-				SubscriptionId: "sub-rm",
-				Filter:         modifyTxFilter(nil, []string{"never-added"}),
-			},
-		)
-		require.NoError(t, err)
-		require.ElementsMatch(t, []string{hasExtension}, resp.GetTxs().GetAll())
-	})
-
-	t.Run("addTxFilters is idempotent for duplicate expressions", func(t *testing.T) {
+	t.Run("UpdateSubscription dedupes duplicate expressions", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService()
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-dup", nil)
 		svc.scriptSubsHandler.pushListener(listener)
 
-		require.NoError(t, svc.scriptSubsHandler.addTxFilters("sub-dup", []string{hasExtension}))
-		require.NoError(t, svc.scriptSubsHandler.addTxFilters("sub-dup", []string{hasExtension}))
+		_, err := svc.UpdateSubscription(context.Background(),
+			&arkv1.UpdateSubscriptionRequest{
+				SubscriptionId: "sub-dup",
+				Filter:         txExpressionsFilter(hasExtension, hasExtension),
+			},
+		)
+		require.NoError(t, err)
 		require.ElementsMatch(
 			t, []string{hasExtension}, svc.scriptSubsHandler.getTxFilters("sub-dup"),
 		)
@@ -1447,69 +1307,6 @@ func TestTxFilter(t *testing.T) {
 		)
 	})
 
-	t.Run("addTxFilters rejects over-cap input", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestIndexerService()
-		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-cap", nil)
-		svc.scriptSubsHandler.pushListener(listener)
-
-		// Build a slate of unique expressions just over the cap.
-		exprs := make([]string, MaxTxFiltersPerListener+1)
-		for i := range exprs {
-			exprs[i] = fmt.Sprintf("hasPacket(tx.extension, %d)", i)
-		}
-		err := svc.scriptSubsHandler.addTxFilters("sub-cap", exprs)
-		require.ErrorIs(t, err, ErrTxFiltersLimitExceeded)
-		require.Empty(t, svc.scriptSubsHandler.getTxFilters("sub-cap"))
-	})
-
-	t.Run("addTxFilters enforces cap across multiple calls", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestIndexerService()
-		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-cap-2", nil)
-		svc.scriptSubsHandler.pushListener(listener)
-
-		// Fill exactly to the cap.
-		first := make([]string, MaxTxFiltersPerListener)
-		for i := range first {
-			first[i] = fmt.Sprintf("hasPacket(tx.extension, %d)", i)
-		}
-		require.NoError(t, svc.scriptSubsHandler.addTxFilters("sub-cap-2", first))
-		require.Len(t, svc.scriptSubsHandler.getTxFilters("sub-cap-2"), MaxTxFiltersPerListener)
-
-		// Adding a new distinct expression must be rejected.
-		err := svc.scriptSubsHandler.addTxFilters("sub-cap-2", []string{
-			"hasPacket(tx.extension, 9999)",
-		})
-		require.ErrorIs(t, err, ErrTxFiltersLimitExceeded)
-		require.Len(t, svc.scriptSubsHandler.getTxFilters("sub-cap-2"), MaxTxFiltersPerListener)
-
-		// But re-adding an existing expression should still work (idempotent;
-		// doesn't grow the set).
-		require.NoError(t, svc.scriptSubsHandler.addTxFilters("sub-cap-2", []string{first[0]}))
-		require.Len(t, svc.scriptSubsHandler.getTxFilters("sub-cap-2"), MaxTxFiltersPerListener)
-	})
-
-	t.Run("overwriteTxFilters rejects over-cap input", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestIndexerService()
-		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-ow-cap", nil)
-		svc.scriptSubsHandler.pushListener(listener)
-		require.NoError(t, svc.scriptSubsHandler.addTxFilters("sub-ow-cap", []string{hasExtension}))
-
-		exprs := make([]string, MaxTxFiltersPerListener+1)
-		for i := range exprs {
-			exprs[i] = fmt.Sprintf("hasPacket(tx.extension, %d)", i)
-		}
-		err := svc.scriptSubsHandler.overwriteTxFilters("sub-ow-cap", exprs)
-		require.ErrorIs(t, err, ErrTxFiltersLimitExceeded)
-		// pre-existing filter unchanged
-		require.ElementsMatch(
-			t, []string{hasExtension},
-			svc.scriptSubsHandler.getTxFilters("sub-ow-cap"),
-		)
-	})
-
 	t.Run("old-flow disconnect keeps listener alive if only tx filters set", func(t *testing.T) {
 		t.Parallel()
 		// Regression for the cleanup path that previously only checked
@@ -1518,9 +1315,7 @@ func TestTxFilter(t *testing.T) {
 		svc := newTestIndexerService()
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-old-tx", nil)
 		svc.scriptSubsHandler.pushListener(listener)
-		require.NoError(t, svc.scriptSubsHandler.addTxFilters(
-			"sub-old-tx", []string{hasExtension},
-		))
+		seedTxFilters(t, svc, "sub-old-tx", hasExtension)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		stream := newMockGetSubscriptionServer(ctx)
@@ -1564,7 +1359,7 @@ func TestTxFilter(t *testing.T) {
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "sub-cap-grpc",
-				Filter:         overwriteTxFilter(exprs...),
+				Filter:         txExpressionsFilter(exprs...),
 			},
 		)
 		require.Error(t, err)
@@ -1584,15 +1379,15 @@ func TestTxFilter(t *testing.T) {
 
 		listenerA := newListener[*arkv1.GetSubscriptionResponse]("a", nil)
 		svc.scriptSubsHandler.pushListener(listenerA)
-		require.NoError(t, svc.scriptSubsHandler.addTxFilters("a",
-			[]string{"has(tx.extension) && hasPacket(tx.extension, 0x42)"},
-		))
+		seedTxFilters(
+			t, svc, "a", "has(tx.extension) && hasPacket(tx.extension, 0x42)",
+		)
 
 		listenerB := newListener[*arkv1.GetSubscriptionResponse]("b", nil)
 		svc.scriptSubsHandler.pushListener(listenerB)
-		require.NoError(t, svc.scriptSubsHandler.addTxFilters("b",
-			[]string{"has(tx.extension) && hasPacket(tx.extension, 0x07)"},
-		))
+		seedTxFilters(
+			t, svc, "b", "has(tx.extension) && hasPacket(tx.extension, 0x07)",
+		)
 
 		// Tx carries packet 0x42 — only A should match.
 		eventsCh <- application.TransactionEvent{
@@ -1625,9 +1420,7 @@ func TestTxFilter(t *testing.T) {
 
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-hex", nil)
 		svc.scriptSubsHandler.pushListener(listener)
-		require.NoError(t, svc.scriptSubsHandler.addTxFilters(
-			"sub-hex", []string{hasExtension},
-		))
+		seedTxFilters(t, svc, "sub-hex", hasExtension)
 
 		eventsCh <- application.TransactionEvent{
 			TxData: application.TxData{
@@ -1651,7 +1444,7 @@ func TestTxFilter(t *testing.T) {
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "missing",
-				Filter:         overwriteTxFilter(hasExtension),
+				Filter:         txExpressionsFilter(hasExtension),
 			},
 		)
 		require.Error(t, err)
@@ -1667,9 +1460,7 @@ func TestTxFilter(t *testing.T) {
 			"sub-keep", []string{testScript1},
 		)
 		svc.scriptSubsHandler.pushListener(listener)
-		require.NoError(
-			t, svc.scriptSubsHandler.addTxFilters("sub-keep", []string{hasExtension}),
-		)
+		seedTxFilters(t, svc, "sub-keep", hasExtension)
 
 		_, err := svc.UnsubscribeForScripts(context.Background(),
 			&arkv1.UnsubscribeForScriptsRequest{SubscriptionId: "sub-keep"},

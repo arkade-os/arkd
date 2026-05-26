@@ -442,7 +442,20 @@
             }
           },
           {
-            "name": "filter.scripts.modify.removeScripts",
+            "name": "filter.expressions",
+            "in": "query",
+            "description": "CEL expressions evaluated against each indexed tx envelope. The\nindexer combines them with OR.",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.scripts.add",
             "in": "query",
             "style": "simple",
             "schema": {
@@ -454,55 +467,7 @@
             }
           },
           {
-            "name": "filter.scripts.modify.removeScripts",
-            "in": "query",
-            "style": "simple",
-            "schema": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "name": "filter.scripts.overwrite.scripts",
-            "in": "query",
-            "style": "simple",
-            "schema": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "name": "filter.txs.modify.removeExpressions",
-            "in": "query",
-            "style": "simple",
-            "schema": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "name": "filter.txs.modify.removeExpressions",
-            "in": "query",
-            "style": "simple",
-            "schema": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "name": "filter.txs.overwrite.expressions",
+            "name": "filter.scripts.remove",
             "in": "query",
             "style": "simple",
             "schema": {
@@ -596,7 +561,20 @@
             }
           },
           {
-            "name": "filter.scripts.modify.removeScripts",
+            "name": "filter.expressions",
+            "in": "query",
+            "description": "CEL expressions evaluated against each indexed tx envelope. The\nindexer combines them with OR.",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.scripts.add",
             "in": "query",
             "style": "simple",
             "schema": {
@@ -608,55 +586,7 @@
             }
           },
           {
-            "name": "filter.scripts.modify.removeScripts",
-            "in": "query",
-            "style": "simple",
-            "schema": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "name": "filter.scripts.overwrite.scripts",
-            "in": "query",
-            "style": "simple",
-            "schema": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "name": "filter.txs.modify.removeExpressions",
-            "in": "query",
-            "style": "simple",
-            "schema": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "name": "filter.txs.modify.removeExpressions",
-            "in": "query",
-            "style": "simple",
-            "schema": {
-              "minItems": 1,
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          {
-            "name": "filter.txs.overwrite.expressions",
+            "name": "filter.scripts.remove",
             "in": "query",
             "style": "simple",
             "schema": {
@@ -697,7 +627,7 @@
         "tags": [
           "IndexerService"
         ],
-        "description": "UpdateSubscription allows to update an existing subscription created via\nGetSubscription by applying a filter. The filter is mutually exclusive\nbetween the supported filter types (e.g. scripts, and later packet types).",
+        "description": "UpdateSubscription updates an existing subscription created via\nGetSubscription. See UpdateSubscriptionRequest for the full set of\nsupported filter combinations and their semantics.",
         "operationId": "IndexerService_UpdateSubscription",
         "requestBody": {
           "content": {
@@ -1208,7 +1138,7 @@
         "properties": {
           "filter": {
             "$ref": "#/components/schemas/SubscriptionFilter",
-            "description": "Optional: filter to apply on stream creation.\nOnly used when subscription_id is empty; ignored otherwise."
+            "description": "Optional: filter to apply on stream creation. Only used when\nsubscription_id is empty; ignored otherwise. See\nUpdateSubscriptionRequest for filter semantics."
           },
           "subscriptionId": {
             "type": "string",
@@ -1726,98 +1656,17 @@
           }
         }
       },
-      "ModifyScripts": {
-        "title": "ModifyScripts",
+      "ScriptFilter": {
+        "title": "ScriptFilter",
         "type": "object",
         "properties": {
-          "addScripts": {
+          "add": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "removeScripts": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "ModifyTxFilters": {
-        "title": "ModifyTxFilters",
-        "type": "object",
-        "description": "ModifyTxFilters adds or removes CEL expressions evaluated against each\nindexed tx envelope. A tx matches a subscription when any expression\nreturns true.",
-        "properties": {
-          "addExpressions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "removeExpressions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "OverwriteScripts": {
-        "title": "OverwriteScripts",
-        "type": "object",
-        "properties": {
-          "scripts": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "OverwriteTxFilters": {
-        "title": "OverwriteTxFilters",
-        "type": "object",
-        "description": "OverwriteTxFilters replaces the full set of CEL expressions on a\nsubscription.",
-        "properties": {
-          "expressions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "ScriptsFilter": {
-        "title": "ScriptsFilter",
-        "type": "object",
-        "description": "ScriptsFilter updates the set of scripts of a subscription either by\nmodifying it (add/remove) or by overwriting it entirely.",
-        "properties": {
-          "modify": {
-            "$ref": "#/components/schemas/ModifyScripts"
-          },
-          "overwrite": {
-            "$ref": "#/components/schemas/OverwriteScripts"
-          }
-        }
-      },
-      "ScriptsFilterResult": {
-        "title": "ScriptsFilterResult",
-        "type": "object",
-        "properties": {
-          "added": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "all": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "removed": {
+          "remove": {
             "type": "array",
             "items": {
               "type": "string"
@@ -1872,13 +1721,18 @@
       "SubscriptionFilter": {
         "title": "SubscriptionFilter",
         "type": "object",
-        "description": "SubscriptionFilter is a generic filter applied to a subscription. It is\nmutually exclusive between the supported filter types. New filter types\n(e.g. packet types) will be added here in the future.",
+        "description": "SubscriptionFilter is the payload carried by GetSubscription's initial\nfilter and by UpdateSubscription. See UpdateSubscriptionRequest for the\nper-call semantics of each field.\n\nAt runtime, a tx event is dispatched to a subscription when any of its\nexpressions evaluates to true on the event's tx, OR when the event\ncarries a vtxo whose script is in the subscription's script set.",
         "properties": {
-          "scripts": {
-            "$ref": "#/components/schemas/ScriptsFilter"
+          "expressions": {
+            "type": "array",
+            "description": "CEL expressions evaluated against each indexed tx envelope. The\nindexer combines them with OR.",
+            "items": {
+              "type": "string"
+            }
           },
-          "txs": {
-            "$ref": "#/components/schemas/TxFilter"
+          "scripts": {
+            "$ref": "#/components/schemas/ScriptFilter",
+            "description": "Script add/remove operations. Will be migrated to a CEL formula in a\nfuture protocol version and removed."
           }
         }
       },
@@ -1888,44 +1742,6 @@
         "properties": {
           "subscriptionId": {
             "type": "string"
-          }
-        }
-      },
-      "TxFilter": {
-        "title": "TxFilter",
-        "type": "object",
-        "description": "TxFilter updates the set of CEL tx expressions of a subscription either\nby modifying it (add/remove) or by overwriting it entirely.",
-        "properties": {
-          "modify": {
-            "$ref": "#/components/schemas/ModifyTxFilters"
-          },
-          "overwrite": {
-            "$ref": "#/components/schemas/OverwriteTxFilters"
-          }
-        }
-      },
-      "TxFilterResult": {
-        "title": "TxFilterResult",
-        "type": "object",
-        "properties": {
-          "added": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "all": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "removed": {
-            "type": "array",
-            "description": "Echoes the expressions requested for removal; removing an expression\nthat was not subscribed is a no-op (idempotent), and the echoed list\ndoes not reflect actual delta. Use `all` for the authoritative\npost-mutation state.",
-            "items": {
-              "type": "string"
-            }
           }
         }
       },
@@ -1952,6 +1768,7 @@
       "UpdateSubscriptionRequest": {
         "title": "UpdateSubscriptionRequest",
         "type": "object",
+        "description": "UpdateSubscriptionRequest mutates an existing subscription. Both filter\nfields are optional and may be set together. The subscription_id must\nbe non-empty and the filter must be present; otherwise InvalidArgument\nis returned.\n\nExpressions (filter.expressions):\n- Always overwritten as a whole. The field's contents replace any\npreviously-set expressions even when the list is empty (which\nclears them entirely).\n- Duplicate expressions are deduplicated, since the underlying set\nis keyed by expression string.\n- Bounded by a server-side per-subscription cap; exceeding it returns\nInvalidArgument.\n\nScripts (filter.scripts):\n- When the scripts field is unset, scripts are left untouched.\n- When set with both `add` and `remove` empty, the call clears all\nscripts (mirrors UnsubscribeForScripts with an empty scripts list).\n- When set with `add` non-empty, those scripts are added.\n- When set with `remove` non-empty, those scripts are removed.\n- `add` and `remove` may be combined in a single call. When the two\nlists overlap, remove takes precedence, since add is applied first\nand remove second.\n- Both operations are idempotent: adding an already-subscribed\nscript is a no-op, and removing an unsubscribed script is a no-op.\n\nAtomicity:\n- All inputs (CEL expressions, scripts to add, scripts to remove) are\nvalidated before any state is mutated. If any single input fails\nvalidation, no mutations are applied and even valid entries in the\nsame request are discarded. An InvalidArgument response therefore\nguarantees the subscription is unchanged.\n- A successful response guarantees all requested mutations were\napplied.\n\nErrors:\n- NotFound: subscription_id does not match a live subscription.\n- InvalidArgument: any CEL compile error, any script parse error, or\nthe expressions cap exceeded.\n\nGetSubscription initial filter:\n- The same SubscriptionFilter shape is accepted by\nGetSubscriptionRequest.filter on stream creation, with the same\nsemantics as above and two exceptions.\n- `scripts.remove` is ignored on creation, since a freshly-created\nsubscription has no scripts to remove.\n- When `scripts` is set with both `add` and `remove` empty on\ncreation, the clear-all behavior does not fire either, since there\nis nothing to clear. An empty SubscriptionFilter is therefore a\nno-op on creation.",
         "properties": {
           "filter": {
             "$ref": "#/components/schemas/SubscriptionFilter"
@@ -1963,15 +1780,7 @@
       },
       "UpdateSubscriptionResponse": {
         "title": "UpdateSubscriptionResponse",
-        "type": "object",
-        "properties": {
-          "scripts": {
-            "$ref": "#/components/schemas/ScriptsFilterResult"
-          },
-          "txs": {
-            "$ref": "#/components/schemas/TxFilterResult"
-          }
-        }
+        "type": "object"
       }
     }
   },

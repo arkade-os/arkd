@@ -117,18 +117,7 @@ func (l *listener[T]) getTopics() []string {
 	return out
 }
 
-func (l *listener[T]) removeTxFilters(exprs []string) {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-	if l.txFilters == nil {
-		return
-	}
-	for _, expr := range exprs {
-		delete(l.txFilters, expr)
-	}
-}
-
-func (l *listener[T]) overwriteTxFilters(filters map[string]txfilter.Filter) {
+func (l *listener[T]) setTxFilters(filters map[string]txfilter.Filter) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	l.txFilters = make(map[string]txfilter.Filter, len(filters))
@@ -295,13 +284,13 @@ func (h *broker[T]) getTxFilters(id string) []string {
 	return listener.getTxFilters()
 }
 
-func (h *broker[T]) addTxFilters(id string, exprs []string) error {
-	if len(exprs) > MaxTxFiltersPerListener {
+// installTxFilters atomically replaces the listener's tx filter set with
+// pre-compiled filters. Enforces MaxTxFiltersPerListener; the caller
+// compiles upfront so that compile-time CEL errors can be raised
+// alongside other input validation before any mutation.
+func (h *broker[T]) installTxFilters(id string, filters map[string]txfilter.Filter) error {
+	if len(filters) > MaxTxFiltersPerListener {
 		return ErrTxFiltersLimitExceeded
-	}
-	filters, err := compileTxFilters(exprs)
-	if err != nil {
-		return err
 	}
 	h.lock.RLock()
 	listener, ok := h.listeners[id]
@@ -309,54 +298,7 @@ func (h *broker[T]) addTxFilters(id string, exprs []string) error {
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
 	}
-	// Reject if the resulting set would exceed the cap. Compute under the
-	// listener's lock to avoid a TOCTOU race against a concurrent add.
-	listener.lock.Lock()
-	defer listener.lock.Unlock()
-	if listener.txFilters == nil {
-		listener.txFilters = make(map[string]txfilter.Filter, len(filters))
-	}
-	projected := len(listener.txFilters)
-	for expr := range filters {
-		if _, exists := listener.txFilters[expr]; !exists {
-			projected++
-		}
-	}
-	if projected > MaxTxFiltersPerListener {
-		return ErrTxFiltersLimitExceeded
-	}
-	for expr, f := range filters {
-		listener.txFilters[expr] = f
-	}
-	return nil
-}
-
-func (h *broker[T]) removeTxFilters(id string, exprs []string) error {
-	h.lock.RLock()
-	listener, ok := h.listeners[id]
-	h.lock.RUnlock()
-	if !ok {
-		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
-	}
-	listener.removeTxFilters(exprs)
-	return nil
-}
-
-func (h *broker[T]) overwriteTxFilters(id string, exprs []string) error {
-	if len(exprs) > MaxTxFiltersPerListener {
-		return ErrTxFiltersLimitExceeded
-	}
-	filters, err := compileTxFilters(exprs)
-	if err != nil {
-		return err
-	}
-	h.lock.RLock()
-	listener, ok := h.listeners[id]
-	h.lock.RUnlock()
-	if !ok {
-		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
-	}
-	listener.overwriteTxFilters(filters)
+	listener.setTxFilters(filters)
 	return nil
 }
 
