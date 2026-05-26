@@ -4059,6 +4059,9 @@ func TestIntent(t *testing.T) {
 		}
 		require.Equal(t, 1, successCount, fmt.Sprintf("expected 1 success, got %d", successCount))
 		require.Equal(t, 1, errCount, fmt.Sprintf("expected 1 error, got %d", errCount))
+
+		err = alice.DeleteIntent(ctx, aliceVtxos, []types.Utxo{}, nil)
+		require.NoError(t, err)
 	})
 }
 
