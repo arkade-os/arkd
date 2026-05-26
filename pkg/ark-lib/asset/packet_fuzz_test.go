@@ -38,20 +38,28 @@ func FuzzNewPacketFromBytes(f *testing.F) {
 			return
 		}
 
-		// If parsing succeeded, serialization should succeed.
+		// Canonical property: any input that parses successfully must be its own
+		// canonical serialization. A failure here means NewPacketFromBytes accepted
+		// a non-canonical encoding that some guard failed to reject.
 		serialized, err := pkt.Serialize()
 		require.NoError(t, err)
-
-		// Re-parsing serialized bytes should also succeed.
-		pkt2, err := asset.NewPacketFromBytes(serialized)
-		require.NoError(t, err)
-
-		reserialized, err := pkt2.Serialize()
-		require.NoError(t, err)
-
-		// Canonical serialized bytes should be stable across parse/serialize cycles.
-		require.Equalf(t, serialized, reserialized, "non-stable roundtrip: pkt=%x pkt2=%x", serialized, reserialized)
+		require.Equalf(t, data, serialized,
+			"non-canonical input accepted: data=%x reserialized=%x", data, serialized)
 	})
+}
+
+func TestPacketRejectsOverlongGroupCount(t *testing.T) {
+	// Canonical: group count 0x01 + one canonical issuance group.
+	canonical, err := hex.DecodeString("0100000101000001")
+	require.NoError(t, err)
+	_, err = asset.NewPacketFromBytes(canonical)
+	require.NoError(t, err)
+
+	// Non-canonical: the leading count 0x01 re-encoded overlong as 0x81 0x00.
+	nonCanonical, err := hex.DecodeString("810000000101000001")
+	require.NoError(t, err)
+	_, err = asset.NewPacketFromBytes(nonCanonical)
+	require.Error(t, err)
 }
 
 func addHexSeed(f *testing.F, s string) {
