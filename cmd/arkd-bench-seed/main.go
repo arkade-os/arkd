@@ -1,6 +1,8 @@
 // THROWAWAY: synthetic round/vtxo seeder for measuring restoreWatchingVtxos
 // at scale. Plan:
-//   /home/bob/.claude/plans/theres-likely-improvmeents-in-abstract-hummingbird.md
+//
+//	/home/bob/.claude/plans/theres-likely-improvmeents-in-abstract-hummingbird.md
+//
 // Delete this binary once we've gathered the data we need.
 //
 // The seeder inserts N rounds × M vtxos directly through the same domain
@@ -9,14 +11,16 @@
 // and each vtxo has a fresh schnorr x-only pubkey under RootCommitmentTxid.
 //
 // Usage (sqlite/badger, mirrors arkd's regtest setup):
-//   ARKD_DB_TYPE=sqlite ARKD_EVENT_DB_TYPE=badger \
-//   ARKD_DATADIR=./data/regtest/arkd \
-//   go run ./cmd/arkd-bench-seed -rounds 1000 -vtxos-per-round 10
+//
+//	ARKD_DB_TYPE=sqlite ARKD_EVENT_DB_TYPE=badger \
+//	ARKD_DATADIR=./data/regtest/arkd \
+//	go run ./cmd/arkd-bench-seed -rounds 1000 -vtxos-per-round 10
 //
 // Usage (postgres, mirrors arkd's dev setup):
-//   ARKD_DB_TYPE=postgres ARKD_EVENT_DB_TYPE=postgres \
-//   ARKD_PG_DB_URL=postgresql://... ARKD_PG_EVENT_DB_URL=postgresql://... \
-//   go run ./cmd/arkd-bench-seed -rounds 1000 -vtxos-per-round 10
+//
+//	ARKD_DB_TYPE=postgres ARKD_EVENT_DB_TYPE=postgres \
+//	ARKD_PG_DB_URL=postgresql://... ARKD_PG_EVENT_DB_URL=postgresql://... \
+//	go run ./cmd/arkd-bench-seed -rounds 1000 -vtxos-per-round 10
 package main
 
 import (
@@ -70,10 +74,14 @@ func main() {
 		now := time.Now().Unix()
 		commitmentTxid := randomHex(32)
 		round := domain.Round{
-			Id:                 uuid.New().String(),
-			StartingTimestamp:  now - 60,
-			EndingTimestamp:    now,
-			Stage:              domain.Stage{Code: int(domain.RoundFinalizationStage), Ended: true, Failed: false},
+			Id:                uuid.New().String(),
+			StartingTimestamp: now - 60,
+			EndingTimestamp:   now,
+			Stage: domain.Stage{
+				Code:   int(domain.RoundFinalizationStage),
+				Ended:  true,
+				Failed: false,
+			},
 			Intents:            map[string]domain.Intent{},
 			CommitmentTxid:     commitmentTxid,
 			CommitmentTx:       "synthetic-bench-tx",
@@ -95,9 +103,9 @@ func main() {
 		vtxos := make([]domain.Vtxo, 0, vtxosPerRound)
 		for v := 0; v < vtxosPerRound; v++ {
 			vtxos = append(vtxos, domain.Vtxo{
-				Outpoint: domain.Outpoint{Txid: randomHex(32), VOut: uint32(v)},
-				Amount:   1000,
-				PubKey:   randomXOnlyPubKey(),
+				Outpoint:           domain.Outpoint{Txid: randomHex(32), VOut: uint32(v)},
+				Amount:             1000,
+				PubKey:             randomXOnlyPubKey(),
 				CommitmentTxids:    []string{commitmentTxid},
 				RootCommitmentTxid: commitmentTxid,
 				CreatedAt:          now,
