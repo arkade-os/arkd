@@ -37,26 +37,25 @@ type sweeper struct {
 	scheduler   ports.SchedulerService
 
 	noteUriPrefix string
-
-	// cache of scheduled tasks, avoid scheduling the same sweep event multiple times
-	locker *sync.Mutex
-	// TODO move the scheduled task map to LiveStore port
-	scheduledTasks map[string]struct{}
-	ctx            context.Context
+	cache         ports.LiveStore
+	ctx           context.Context
 }
 
 func newSweeper(
 	wallet ports.WalletService, repoManager ports.RepoManager, builder ports.TxBuilder,
-	scheduler ports.SchedulerService, noteUriPrefix string,
+	scheduler ports.SchedulerService, noteUriPrefix string, cache ports.LiveStore,
 ) *sweeper {
 	return &sweeper{
 		wallet, repoManager, builder, scheduler,
-		noteUriPrefix, &sync.Mutex{}, make(map[string]struct{}), nil,
+		noteUriPrefix, cache, nil,
 	}
 }
 
 func (s *sweeper) start(ctx context.Context) error {
-	s.scheduledTasks = make(map[string]struct{})
+	if err := s.cache.ScheduledTasks().Clear(ctx); err != nil {
+		return fmt.Errorf("sweeper: failed to clear stale scheduled task claims: %w", err)
+	}
+
 	s.scheduler.Start()
 
 	s.ctx = ctx
@@ -209,11 +208,11 @@ func (s *sweeper) stop() {
 	s.scheduler.Stop()
 }
 
-// removeTask update the cached map of scheduled tasks
-func (s *sweeper) removeTask(id string) {
-	s.locker.Lock()
-	defer s.locker.Unlock()
-	delete(s.scheduledTasks, id)
+// removeTask releases the claim on a scheduled task id. Callers use this
+// to cancel a pending sweep (e.g. when the underlying tx is observed
+// spent before the sweep fires).
+func (s *sweeper) removeTask(id string) error {
+	return s.cache.ScheduledTasks().Remove(s.ctx, id)
 }
 
 func (s *sweeper) scheduleCheckpointSweep(
@@ -321,11 +320,9 @@ func (s *sweeper) scheduleCheckpointSweep(
 		vtxo,
 	)
 
-	// if the sweep checkpoint tapscript is available, execute the task immediately
-	if !s.scheduler.AfterNow(sweepAt) {
-		return execute()
-	}
-
+	// scheduleTask handles the in-past case internally — calling it
+	// unconditionally keeps both overdue and future checkpoint sweeps
+	// going through the same claim path.
 	if err := s.scheduleTask(sweeperTask{
 		id:      checkpointTxid.String(),
 		at:      sweepAt,
@@ -379,42 +376,61 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 		return nil
 	}
 
+	// Claim the slot first so no other caller can pick up the same id.
+	claimed, err := s.cache.ScheduledTasks().AddIfAbsent(s.ctx, task.id)
+	if err != nil {
+		return fmt.Errorf("failed to claim scheduled task %s: %w", task.id, err)
+	}
+	if !claimed {
+		return nil
+	}
+
+	// Release only after execute() finishes, so the slot stays held while the sweep runs.
+	releaseClaim := func() {
+		if err := s.removeTask(task.id); err != nil {
+			log.WithError(err).Errorf(
+				"sweeper: failed to release scheduled task %s", task.id,
+			)
+		}
+	}
+
 	if !s.scheduler.AfterNow(task.at) {
 		log.Debugf(
 			"sweeper: trying to schedule task in the past for tx %s, executing it immediately",
 			task.id,
 		)
+		defer releaseClaim()
 		return task.execute()
 	}
 
-	s.locker.Lock()
-	defer s.locker.Unlock()
-
-	if _, scheduled := s.scheduledTasks[task.id]; scheduled {
-		return nil
-	}
-
-	s.scheduledTasks[task.id] = struct{}{}
-
-	return s.scheduler.ScheduleTaskOnce(task.at, func() {
-		// check if the task is still scheduled before executing it
-		s.locker.Lock()
-		if _, scheduled := s.scheduledTasks[task.id]; !scheduled {
+	err = s.scheduler.ScheduleTaskOnce(task.at, func() {
+		// Skip if the claim was released externally (e.g. the tx was already spent).
+		has, err := s.cache.ScheduledTasks().Has(s.ctx, task.id)
+		if err != nil {
+			log.WithError(err).Errorf(
+				"sweeper: failed to check scheduled task %s, proceeding anyway", task.id,
+			)
+		} else if !has {
 			log.Debugf(
 				"sweeper: task for sweeping tx %s has been unscheduled, nothing left to do",
 				task.id,
 			)
-			s.locker.Unlock()
 			return
 		}
-		s.locker.Unlock()
 
-		s.removeTask(task.id)
+		defer releaseClaim()
 
 		if err := task.execute(); err != nil {
 			log.WithError(err).Errorf("failed to execute sweep of tx %s", task.id)
 		}
 	})
+
+	if err != nil {
+		releaseClaim()
+		return err
+	}
+
+	return nil
 }
 
 // createBatchSweepTask returns a function passed as handler in the scheduler

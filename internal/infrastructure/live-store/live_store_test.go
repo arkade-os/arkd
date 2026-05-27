@@ -97,7 +97,7 @@ func TestLiveStoreImplementations(t *testing.T) {
 		store ports.LiveStore
 	}{
 		{"inmemory", inmemory.NewLiveStore(txBuilder)},
-		{"redis", redislivestore.NewLiveStore(rdb, txBuilder, 5)},
+		{"redis", redislivestore.NewLiveStore(rdb, txBuilder, 5, 30*24*time.Hour)},
 	}
 
 	for _, tt := range stores {
@@ -763,6 +763,72 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		gotSigs, err = store.BoardingInputs().GetSignatures(ctx, batchId)
 		require.NoError(t, err)
 		require.Empty(t, gotSigs)
+	})
+	t.Run("ScheduledTasksStore", func(t *testing.T) {
+		ctx := t.Context()
+
+		// AddIfAbsent: first call claims the id.
+		claimed, err := store.ScheduledTasks().AddIfAbsent(ctx, "tx-abc")
+		require.NoError(t, err)
+		require.True(t, claimed, "first AddIfAbsent should succeed and return true")
+
+		has, err := store.ScheduledTasks().Has(ctx, "tx-abc")
+		require.NoError(t, err)
+		require.True(t, has)
+
+		// AddIfAbsent: second call with the same id loses the race
+		secondClaim, err := store.ScheduledTasks().AddIfAbsent(ctx, "tx-abc")
+		require.NoError(t, err)
+		require.False(t, secondClaim, "second AddIfAbsent for the same id must return false, not an error")
+
+		// Has: unknown id is false.
+		has, err = store.ScheduledTasks().Has(ctx, "never-added")
+		require.NoError(t, err)
+		require.False(t, has)
+
+		// Remove: releases the claim.
+		err = store.ScheduledTasks().Remove(ctx, "tx-abc")
+		require.NoError(t, err)
+
+		has, err = store.ScheduledTasks().Has(ctx, "tx-abc")
+		require.NoError(t, err)
+		require.False(t, has, "Has must reflect Remove")
+
+		// Remove: idempotent — unknown id is a no-op.
+		err = store.ScheduledTasks().Remove(ctx, "never-added")
+		require.NoError(t, err)
+
+		// After Remove, the same id can be re-claimed.
+		claimed, err = store.ScheduledTasks().AddIfAbsent(ctx, "tx-abc")
+		require.NoError(t, err)
+		require.True(t, claimed)
+
+		require.NoError(t, store.ScheduledTasks().Remove(ctx, "tx-abc"))
+
+		// Clear: wipes every claim so the ids can be claimed again.
+		_, err = store.ScheduledTasks().AddIfAbsent(ctx, "tx-clear-1")
+		require.NoError(t, err)
+		_, err = store.ScheduledTasks().AddIfAbsent(ctx, "tx-clear-2")
+		require.NoError(t, err)
+
+		require.NoError(t, store.ScheduledTasks().Clear(ctx))
+
+		has, err = store.ScheduledTasks().Has(ctx, "tx-clear-1")
+		require.NoError(t, err)
+		require.False(t, has, "Clear must remove every claim")
+		has, err = store.ScheduledTasks().Has(ctx, "tx-clear-2")
+		require.NoError(t, err)
+		require.False(t, has, "Clear must remove every claim")
+
+		// Re-claim proves the slot was actually freed, not just hidden.
+		claimed, err = store.ScheduledTasks().AddIfAbsent(ctx, "tx-clear-1")
+		require.NoError(t, err)
+		require.True(t, claimed)
+		claimed, err = store.ScheduledTasks().AddIfAbsent(ctx, "tx-clear-2")
+		require.NoError(t, err)
+		require.True(t, claimed)
+
+		require.NoError(t, store.ScheduledTasks().Clear(ctx))
 	})
 }
 

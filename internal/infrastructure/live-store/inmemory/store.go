@@ -12,6 +12,7 @@ type inMemoryLiveStore struct {
 	confirmationSessionsStore ports.ConfirmationSessionsStore
 	treeSigningSessions       ports.TreeSigningSessionsStore
 	boardingInputsStore       ports.BoardingInputsStore
+	scheduledTasksStore       ports.ScheduledTasksStore
 }
 
 func NewLiveStore(txBuilder ports.TxBuilder) ports.LiveStore {
@@ -23,6 +24,7 @@ func NewLiveStore(txBuilder ports.TxBuilder) ports.LiveStore {
 		confirmationSessionsStore: NewConfirmationSessionsStore(),
 		treeSigningSessions:       NewTreeSigningSessionsStore(),
 		boardingInputsStore:       NewBoardingInputsStore(),
+		scheduledTasksStore:       NewScheduledTasksStore(),
 	}
 }
 
@@ -46,4 +48,7 @@ func (s *inMemoryLiveStore) TreeSigingSessions() ports.TreeSigningSessionsStore 
 }
 func (s *inMemoryLiveStore) BoardingInputs() ports.BoardingInputsStore {
 	return s.boardingInputsStore
+}
+func (s *inMemoryLiveStore) ScheduledTasks() ports.ScheduledTasksStore {
+	return s.scheduledTasksStore
 }

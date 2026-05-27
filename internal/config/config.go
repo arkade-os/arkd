@@ -937,6 +937,14 @@ func (c *Config) liveStoreService() error {
 		return fmt.Errorf("tx builder not set")
 	}
 
+	// TTL must outlive the longest sweep schedule, with a safety buffer.
+	longestSweep := c.VtxoTreeExpiry.Seconds()
+	if d := c.CheckpointExitDelay.Seconds(); d > longestSweep {
+		longestSweep = d
+	}
+
+	scheduledTaskTTL := time.Duration(longestSweep)*time.Second + 24*time.Hour
+
 	var liveStoreSvc ports.LiveStore
 	var err error
 	switch c.LiveStoreType {
@@ -948,7 +956,9 @@ func (c *Config) liveStoreService() error {
 			return fmt.Errorf("invalid REDIS_URL: %w", err)
 		}
 		rdb := redis.NewClient(redisOpts)
-		liveStoreSvc = redislivestore.NewLiveStore(rdb, c.txBuilder, c.RedisTxNumOfRetries)
+		liveStoreSvc = redislivestore.NewLiveStore(
+			rdb, c.txBuilder, c.RedisTxNumOfRetries, scheduledTaskTTL,
+		)
 	default:
 		err = fmt.Errorf("unknown liveStore type")
 	}
