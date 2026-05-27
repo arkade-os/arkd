@@ -3547,13 +3547,15 @@ func (s *service) scheduleSweepBatchOutput(round domain.Round) {
 		return
 	}
 
-	blockTimestamp, err := waitForConfirmation(context.Background(), round.CommitmentTxid, s.wallet)
+	// Use s.ctx so this poll stops on shutdown. On error we bail instead of
+	// guessing the height; the round is re-scheduled on next boot.
+	blockTimestamp, err := waitForConfirmation(s.ctx, round.CommitmentTxid, s.wallet)
 	if err != nil {
-		log.WithError(err).Warnf(
-			"failed to wait for confirmation of commitment tx %s, schedule task time may be inaccurate",
+		log.WithError(err).Errorf(
+			"wallet unavailable; cannot schedule sweep for %s — will be picked up on next startup",
 			round.CommitmentTxid,
 		)
-		blockTimestamp = &ports.BlockTimestamp{Time: time.Now().Unix()}
+		return
 	}
 
 	var expirationTimestamp int64

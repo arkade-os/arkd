@@ -5,11 +5,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
+	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	log "github.com/sirupsen/logrus"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
@@ -27,11 +29,25 @@ type walletDaemonClient struct {
 	conn   *grpc.ClientConn
 }
 
+// retryCallOptions is the retry policy applied to every wallet gRPC call.
+// It lives here (not inline in New) so tests exercise the same config.
+func retryCallOptions() []grpc_retry.CallOption {
+	return []grpc_retry.CallOption{
+		grpc_retry.WithMax(5),
+		grpc_retry.WithBackoff(grpc_retry.BackoffExponential(100 * time.Millisecond)),
+		grpc_retry.WithCodes(codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted),
+	}
+}
+
 // New creates a ports.WalletService backed by a gRPC client.
 func New(addr, otelCollectorEndpoint string) (ports.WalletService, *arklib.Network, error) {
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(
+			grpc_retry.UnaryClientInterceptor(retryCallOptions()...),
+		),
 	}
+
 	if otelCollectorEndpoint != "" {
 		otelHandler := otelgrpc.NewClientHandler(
 			otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
@@ -441,8 +457,12 @@ func (w *walletDaemonClient) GetCurrentBlockTime(
 func (w *walletDaemonClient) Withdraw(
 	ctx context.Context, address string, amount uint64, all bool,
 ) (string, error) {
-	resp, err := w.client.Withdraw(ctx, &arkwalletv1.WithdrawRequest{
-		Address: address, Amount: amount, All: all},
+	// Don't retry Withdraw: it moves money, and a retry after an unclear
+	// failure could send it twice. WithMax(0) means zero retries.
+	resp, err := w.client.Withdraw(
+		ctx,
+		&arkwalletv1.WithdrawRequest{Address: address, Amount: amount, All: all},
+		grpc_retry.WithMax(0),
 	)
 	if err != nil {
 		return "", err

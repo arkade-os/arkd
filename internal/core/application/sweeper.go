@@ -470,15 +470,16 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 				return
 			}
 
-			// schedule AFTER the root input is confirmed
+			// Wait for the root input to confirm (s.ctx so it stops on shutdown).
+			// On error, bail instead of guessing the height; re-scheduled on next boot.
 			rootInput := vtxoTree.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
-			blockTimestamp, err := waitForConfirmation(context.Background(), rootInput, s.wallet)
+			blockTimestamp, err := waitForConfirmation(s.ctx, rootInput, s.wallet)
 			if err != nil {
-				log.WithError(err).Warnf(
-					"failed to wait for confirmation of batch input tx %s, schedule task time "+
-						"may be inaccurate", rootInput,
+				log.WithError(err).Errorf(
+					"wallet unavailable; cannot schedule sweep for batch input tx %s — "+
+						"will be picked up on next startup", rootInput,
 				)
-				blockTimestamp = &ports.BlockTimestamp{Time: time.Now().Unix()}
+				return
 			}
 
 			var expirationTimestamp int64
