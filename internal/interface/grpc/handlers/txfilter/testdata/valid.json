@@ -1,0 +1,100 @@
+{
+  "cases": [
+    {
+      "name": "has(tx.extension) true when extension present",
+      "expression": "has(tx.extension)",
+      "tx": {"extension": {"1": "deadbeef"}},
+      "expected": true
+    },
+    {
+      "name": "has(tx.extension) false when no extension",
+      "expression": "has(tx.extension)",
+      "tx": {},
+      "expected": false
+    },
+    {
+      "name": "hasPacket matches existing packet type",
+      "expression": "hasPacket(tx.extension, 1)",
+      "tx": {"extension": {"1": "deadbeef"}},
+      "expected": true
+    },
+    {
+      "name": "hasPacket matches packet type using hex literal",
+      "expression": "hasPacket(tx.extension, 0x42)",
+      "tx": {"extension": {"66": "cafebabe"}},
+      "expected": true
+    },
+    {
+      "name": "hasPacket misses absent packet type",
+      "expression": "hasPacket(tx.extension, 99)",
+      "tx": {"extension": {"1": "deadbeef"}},
+      "expected": false
+    },
+    {
+      "name": "hasPacket on tx without extension is false",
+      "expression": "has(tx.extension) && hasPacket(tx.extension, 1)",
+      "tx": {},
+      "expected": false
+    },
+    {
+      "name": "compound has + hasPacket true",
+      "expression": "has(tx.extension) && hasPacket(tx.extension, 0x42)",
+      "tx": {"extension": {"66": "ff"}},
+      "expected": true
+    },
+    {
+      "name": "compound has + hasPacket false on missing packet",
+      "expression": "has(tx.extension) && hasPacket(tx.extension, 0x42)",
+      "tx": {"extension": {"7": "ff"}},
+      "expected": false
+    },
+    {
+      "name": "OR over multiple packet types matches",
+      "expression": "hasPacket(tx.extension, 1) || hasPacket(tx.extension, 2)",
+      "tx": {"extension": {"2": "aa"}},
+      "expected": true
+    },
+    {
+      "name": "OR over multiple packet types misses",
+      "expression": "hasPacket(tx.extension, 1) || hasPacket(tx.extension, 2)",
+      "tx": {"extension": {"3": "aa"}},
+      "expected": false
+    },
+    {
+      "name": "size(tx.extension) > 1 matches",
+      "expression": "size(tx.extension) > 1",
+      "tx": {"extension": {"1": "aa", "2": "bb"}},
+      "expected": true
+    },
+    {
+      "name": "size(tx.extension) > 1 misses single-entry extension",
+      "expression": "size(tx.extension) > 1",
+      "tx": {"extension": {"1": "aa"}},
+      "expected": false
+    },
+    {
+      "name": "indexing tx.extension returns hex string",
+      "expression": "has(tx.extension) && tx.extension[1] == 'deadbeef'",
+      "tx": {"extension": {"1": "deadbeef"}},
+      "expected": true
+    },
+    {
+      "name": "indexing tx.extension mismatches different hex",
+      "expression": "has(tx.extension) && tx.extension[1] == 'deadbeef'",
+      "tx": {"extension": {"1": "cafebabe"}},
+      "expected": false
+    },
+    {
+      "name": "true literal always matches",
+      "expression": "true",
+      "tx": {"extension": {"1": "aa"}},
+      "expected": true
+    },
+    {
+      "name": "false literal never matches",
+      "expression": "false",
+      "tx": {"extension": {"1": "aa"}},
+      "expected": false
+    }
+  ]
+}

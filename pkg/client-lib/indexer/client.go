@@ -697,29 +697,59 @@ func (a *grpcClient) paginatedGetVtxos(
 	o, _ := clientlib.ApplyGetVtxosOptions(opts...)
 	svc := a.svc()
 
-	vtxos, err := paginatedFetch(ctx, func(
-		ctx context.Context, page *arkv1.IndexerPageRequest,
-	) ([]clientlib.Vtxo, *arkv1.IndexerPageResponse, error) {
-		resp, err := svc.GetVtxos(ctx, &arkv1.GetVtxosRequest{
-			Scripts:         o.Scripts,
-			Outpoints:       o.FormattedOutpoints(),
-			SpendableOnly:   o.SpendableOnly,
-			SpentOnly:       o.SpentOnly,
-			RecoverableOnly: o.RecoverableOnly,
-			PendingOnly:     o.PendingOnly,
-			After:           o.After,
-			Before:          o.Before,
-			Page:            page,
+	fetchPages := func(scripts []string, outpoints []clientlib.Outpoint) ([]clientlib.Vtxo, error) {
+		return paginatedFetch(ctx, func(
+			ctx context.Context, page *arkv1.IndexerPageRequest,
+		) ([]clientlib.Vtxo, *arkv1.IndexerPageResponse, error) {
+			resp, err := svc.GetVtxos(ctx, &arkv1.GetVtxosRequest{
+				Scripts:         scripts,
+				Outpoints:       formatOutpoints(outpoints),
+				SpendableOnly:   o.SpendableOnly,
+				SpentOnly:       o.SpentOnly,
+				RecoverableOnly: o.RecoverableOnly,
+				PendingOnly:     o.PendingOnly,
+				After:           o.After,
+				Before:          o.Before,
+				Page:            page,
+			})
+			if err != nil {
+				return nil, nil, err
+			}
+			return newIndexerVtxos(resp.GetVtxos()), resp.GetPage(), nil
 		})
+	}
+
+	var vtxos []clientlib.Vtxo
+	appendPages := func(scripts []string, outpoints []clientlib.Outpoint) error {
+		pageVtxos, err := fetchPages(scripts, outpoints)
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
-		return newIndexerVtxos(resp.GetVtxos()), resp.GetPage(), nil
-	})
-	if err != nil {
-		return nil, err
+		vtxos = append(vtxos, pageVtxos...)
+		return nil
+	}
+
+	for offset := 0; offset < len(o.Scripts); offset += maxPageSize {
+		end := min(offset+maxPageSize, len(o.Scripts))
+		if err := appendPages(o.Scripts[offset:end], nil); err != nil {
+			return nil, err
+		}
+	}
+	for offset := 0; offset < len(o.Outpoints); offset += maxPageSize {
+		end := min(offset+maxPageSize, len(o.Outpoints))
+		if err := appendPages(nil, o.Outpoints[offset:end]); err != nil {
+			return nil, err
+		}
 	}
 	return &clientlib.VtxosResponse{Vtxos: vtxos}, nil
+}
+
+func formatOutpoints(outpoints []clientlib.Outpoint) []string {
+	outs := make([]string, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		outs = append(outs, fmt.Sprintf("%s:%d", outpoint.Txid, outpoint.VOut))
+	}
+	return outs
 }
 
 func (a *grpcClient) paginatedGetVirtualTxs(
@@ -754,7 +784,7 @@ func paginatedFetch[T any](
 	) ([]T, *arkv1.IndexerPageResponse, error),
 ) ([]T, error) {
 	var all []T
-	pageIndex := int32(0)
+	pageIndex := int32(1)
 	reqCount := 0
 	for {
 		items, page, err := fetch(ctx, &arkv1.IndexerPageRequest{
@@ -768,7 +798,7 @@ func paginatedFetch[T any](
 		all = append(all, items...)
 		reqCount++
 
-		if page == nil || page.GetNext() >= page.GetTotal() {
+		if page == nil || page.GetCurrent() >= page.GetTotal() {
 			break
 		}
 		if reqCount >= maxPages {
