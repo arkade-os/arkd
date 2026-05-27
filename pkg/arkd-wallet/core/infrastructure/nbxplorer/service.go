@@ -60,7 +60,7 @@ func New(rawURL string) (ports.Nbxplorer, error) {
 
 	svc := &nbxplorer{
 		url:        rawURL,
-		httpClient: &http.Client{},
+		httpClient: newProfilingHTTPClient(),
 		wsDialer:   websocket.Dialer{},
 		wsMutex:    sync.RWMutex{},
 		wsConn:     nil,

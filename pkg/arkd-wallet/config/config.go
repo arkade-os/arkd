@@ -123,10 +123,12 @@ func (c *Config) initServices() error {
 
 	cryptoSvc := cypher.New()
 
+	nbxplorer.PhaseMark("config.initServices.nbxplorer.New begin")
 	nbxplorerSvc, err := nbxplorer.New(c.NbxplorerURL)
 	if err != nil {
 		return err
 	}
+	nbxplorer.PhaseMark("config.initServices.nbxplorer.New done")
 
 	network, err := getNetwork()
 	if err != nil {
@@ -141,10 +143,12 @@ func (c *Config) initServices() error {
 		SignerKey:      signerKey,
 	})
 
+	nbxplorer.PhaseMark("config.initServices.scanner.New begin")
 	scannerSvc, err := scanner.New(nbxplorerSvc, network.Name)
 	if err != nil {
 		return fmt.Errorf("error while creating scanner: %w", err)
 	}
+	nbxplorer.PhaseMark("config.initServices.scanner.New done")
 
 	c.WalletSvc = walletSvc
 	c.ScannerSvc = scannerSvc
