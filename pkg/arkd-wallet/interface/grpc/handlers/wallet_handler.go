@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
-	"strconv"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
 	application "github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
-	nbxprofile "github.com/arkade-os/arkd/pkg/arkd-wallet/core/infrastructure/nbxplorer"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -114,14 +112,9 @@ func (h *walletHandler) GetForfeitPubkey(
 func (h *walletHandler) WatchScripts(
 	ctx context.Context, request *arkwalletv1.WatchScriptsRequest,
 ) (*arkwalletv1.WatchScriptsResponse, error) {
-	nbxprofile.PhaseMark("wallet.grpc.WatchScripts begin scripts=" +
-		strconv.Itoa(len(request.Scripts)))
 	if err := h.scanner.WatchScripts(ctx, request.Scripts); err != nil {
 		return nil, err
 	}
-	nbxprofile.PhaseMark("wallet.grpc.WatchScripts done scripts=" +
-		strconv.Itoa(len(request.Scripts)))
-	nbxprofile.LogSummary()
 	return &arkwalletv1.WatchScriptsResponse{}, nil
 }
 

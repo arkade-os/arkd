@@ -232,9 +232,6 @@ func (s *service) Start() error {
 		return fmt.Errorf("service already started")
 	}
 
-	startupProfilePhase("appsvc.Start begin")
-	defer startupProfilePhase("appsvc.Start return")
-
 	ctx := context.Background()
 	dustAmount, err := s.wallet.GetDustAmount(ctx)
 	if err != nil {
@@ -279,11 +276,9 @@ func (s *service) Start() error {
 	s.registerEventHandlers()
 
 	log.Debug("starting restore watching vtxos...")
-	startupProfilePhase("appsvc.restoreWatchingVtxos begin")
 	if err := s.restoreWatchingVtxos(); err != nil {
 		return fmt.Errorf("failed to restore watching vtxos: %s", err)
 	}
-	startupProfilePhase("appsvc.restoreWatchingVtxos done")
 
 	go s.listenToScannerNotifications()
 
@@ -3633,28 +3628,20 @@ func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
 func (s *service) restoreWatchingVtxos() error {
 	ctx := context.Background()
 
-	startupProfilePhase("restoreWatchingVtxos.GetSweepableRounds begin")
 	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
 	if err != nil {
 		return err
 	}
-	startupProfilePhase(fmt.Sprintf(
-		"restoreWatchingVtxos.GetSweepableRounds done rounds=%d", len(commitmentTxIds),
-	))
 
 	if len(commitmentTxIds) == 0 {
 		return nil
 	}
 
-	startupProfilePhase("restoreWatchingVtxos.GetVtxoPubKeys begin")
 	tapKeys, err := s.repoManager.Vtxos().
 		GetVtxoPubKeysByCommitmentTxids(ctx, commitmentTxIds, 0)
 	if err != nil {
 		return err
 	}
-	startupProfilePhase(fmt.Sprintf(
-		"restoreWatchingVtxos.GetVtxoPubKeys done keys=%d", len(tapKeys),
-	))
 
 	scripts := make([]string, 0, len(tapKeys))
 	for _, key := range tapKeys {
@@ -3669,13 +3656,9 @@ func (s *service) restoreWatchingVtxos() error {
 		return nil
 	}
 
-	startupProfilePhase("restoreWatchingVtxos.WatchScripts begin")
 	if err := s.scanner.WatchScripts(ctx, scripts); err != nil {
 		return err
 	}
-	startupProfilePhase(fmt.Sprintf(
-		"restoreWatchingVtxos.WatchScripts done scripts=%d", len(scripts),
-	))
 
 	log.Debugf("restored watching %d vtxo scripts", len(scripts))
 	return nil

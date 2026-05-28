@@ -318,15 +318,17 @@ func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 		return nil, err
 	}
 
-	// Combine and deduplicate by pubkey
+	// Combine and deduplicate by pubkey. The amount comparison must be >= to
+	// match the WHERE v.amount >= $1 contract used by the sqlite and postgres
+	// backends; a VTXO with Amount equal to the filter is included.
 	pubkeyMap := make(map[string]bool)
 	for _, vtxo := range vtxos1 {
-		if vtxo.Amount > amountFilter {
+		if vtxo.Amount >= amountFilter {
 			pubkeyMap[vtxo.PubKey] = true
 		}
 	}
 	for _, vtxo := range vtxos2 {
-		if vtxo.Amount > amountFilter {
+		if vtxo.Amount >= amountFilter {
 			pubkeyMap[vtxo.PubKey] = true
 		}
 	}
@@ -395,14 +397,16 @@ func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxids(
 		return nil, err
 	}
 
+	// Amount comparison is >= to match the sqlite/postgres
+	// WHERE v.amount >= $1 contract; including amount == amountFilter.
 	pubkeyMap := make(map[string]struct{})
 	for _, vtxo := range vtxos1 {
-		if vtxo.Amount > amountFilter {
+		if vtxo.Amount >= amountFilter {
 			pubkeyMap[vtxo.PubKey] = struct{}{}
 		}
 	}
 	for _, vtxo := range vtxos2 {
-		if vtxo.Amount > amountFilter {
+		if vtxo.Amount >= amountFilter {
 			pubkeyMap[vtxo.PubKey] = struct{}{}
 		}
 	}

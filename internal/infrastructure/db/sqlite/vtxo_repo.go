@@ -486,11 +486,15 @@ func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 // This replaces a per-round loop in restoreWatchingVtxos / stopWatchingVtxos
 // that previously fired one query per sweepable round (the N+1 pattern).
 //
-// The two CommitmentTxids* fields are populated with the same slice because
-// sqlc's sqlite generator expands a slice placeholder only once per
-// generated query, so the query template needs two distinct names. The
-// runtime cost is identical to a single expansion: the values are bound
-// twice as parameters but the underlying scan is one pass.
+// The generated SelectVtxoPubKeysByCommitmentTxidsParams struct exposes two
+// CommitmentTxids* fields, but the public API of this method takes a single
+// slice and binds it to both. Both fields MUST receive the same slice; the
+// query template has two distinct slice placeholders only because sqlc's
+// sqlite generator expands a slice placeholder only once per generated
+// query, and the bulk query needs to look in two places (the root column
+// and the join table). Passing different slices to the two fields would
+// silently produce wrong results, so all calls to the generated method
+// must go through this wrapper.
 func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxids(
 	ctx context.Context, commitmentTxids []string, withMinimumAmount uint64,
 ) ([]string, error) {
@@ -498,6 +502,7 @@ func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxids(
 		return nil, nil
 	}
 
+	// Same slice in both fields by construction; see method doc above.
 	taprootKeys, err := v.querier.SelectVtxoPubKeysByCommitmentTxids(ctx,
 		queries.SelectVtxoPubKeysByCommitmentTxidsParams{
 			MinAmount:          int64(withMinimumAmount),

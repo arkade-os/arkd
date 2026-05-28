@@ -13,7 +13,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
-	nbxprofile "github.com/arkade-os/arkd/pkg/arkd-wallet/core/infrastructure/nbxplorer"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -149,7 +148,6 @@ func (w *wallet) Unlock(ctx context.Context, password string) error {
 
 	w.keyMgr = keyMgr
 
-	nbxprofile.PhaseMark("wallet.Unlock done")
 	go func() {
 		// To not send the notification immediately after unlocking
 		<-time.After(500 * time.Millisecond)
