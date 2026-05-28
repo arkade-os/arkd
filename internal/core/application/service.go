@@ -3645,8 +3645,12 @@ func (s *service) restoreWatchingVtxos() error {
 
 	scripts := make([]string, 0, len(tapKeys))
 	for _, key := range tapKeys {
-		// skip if the key is not a valid x-only hex encoded pubkey
-		if len(key) != 64 {
+		// Skip values that are not a 32-byte x-only pubkey encoded as 64
+		// hex chars. arkd writes valid keys, but defending against a
+		// corrupted DB row here means a single bad pubkey cannot poison
+		// the entire WatchScripts gRPC payload at startup recovery.
+		decoded, err := hex.DecodeString(key)
+		if err != nil || len(decoded) != 32 {
 			continue
 		}
 		scripts = append(scripts, fmt.Sprintf("5120%s", key))

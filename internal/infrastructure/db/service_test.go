@@ -1037,9 +1037,14 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		for k, n := range seen {
 			require.Equalf(t, 1, n, "duplicate pubkey %s in bulk result", k)
 		}
+		// Verify the full union: keys from both commitment txids must be
+		// present (tapkey1/2/3 from otherCommitmentTxid, plus pubkey and
+		// pubkey2 from the earlier commitmentTxid seed).
 		require.Contains(t, bulkKeys, "tapkey1")
 		require.Contains(t, bulkKeys, "tapkey2")
 		require.Contains(t, bulkKeys, "tapkey3")
+		require.Contains(t, bulkKeys, pubkey)
+		require.Contains(t, bulkKeys, pubkey2)
 
 		bulkKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxids(ctx, nil, 0)
 		require.NoError(t, err)
