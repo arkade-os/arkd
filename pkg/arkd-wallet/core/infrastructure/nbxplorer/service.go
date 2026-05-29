@@ -45,7 +45,7 @@ type nbxplorer struct {
 }
 
 const (
-	nbxplorerMaxRetries   = 30
+	nbxplorerMaxRetries    = 30
 	nbxplorerRetryInterval = 5 * time.Second
 )
 
