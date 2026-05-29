@@ -30,10 +30,6 @@ type VtxoRepository interface {
 	) (
 		[]string, error,
 	)
-	// GetVtxoPubKeysByCommitmentTxids is the bulk variant of
-	// GetVtxoPubKeysByCommitmentTxid. Implementations must return the
-	// deduplicated union of pubkeys matching any of the given commitment
-	// txids, with the same semantics as the singular variant.
 	GetVtxoPubKeysByCommitmentTxids(
 		ctx context.Context, commitmentTxids []string, withMinimumAmount uint64,
 	) (
