@@ -524,7 +524,10 @@ func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxids(
 // batchSize, issues one query per chunk, and merges the deduplicated union
 // of results in Go. Kept as a method (not a free function) so the
 // underlying querier is the live one from the repository. batchSize <= 0 is
-// treated as "no batching" and runs a single call.
+// treated as "no batching" and runs a single call. This differs from
+// chunkStrings (which panics on size <= 0) because the production caller
+// always passes sqliteVtxoPubKeysBatchSize > 0; the permissive fallback
+// only matters when tests reach this method directly with batchSize=0.
 func (v *vtxoRepository) getVtxoPubKeysByCommitmentTxidsBatched(
 	ctx context.Context,
 	commitmentTxids []string,

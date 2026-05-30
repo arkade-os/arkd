@@ -430,7 +430,12 @@ func (s *service) Stop() {
 		tapkeys, err := s.repoManager.Vtxos().
 			GetVtxoPubKeysByCommitmentTxids(ctx, commitmentTxIds, 0)
 		if err != nil {
-			log.WithError(err).Warn("failed to get vtxo tap keys")
+			log.WithError(err).Warnf(
+				"failed to get vtxo tap keys for %d sweepable rounds; "+
+					"skipping UnwatchScripts on shutdown, wallet may keep "+
+					"watching these scripts until the next restart",
+				len(commitmentTxIds),
+			)
 		} else {
 			s.stopWatchingVtxos(tapkeys)
 		}
@@ -3664,7 +3669,10 @@ func (s *service) restoreWatchingVtxos() error {
 		return err
 	}
 
-	log.Debugf("restored watching %d vtxo scripts", len(scripts))
+	log.Debugf(
+		"restored watching %d vtxo scripts from %d sweepable rounds",
+		len(scripts), len(commitmentTxIds),
+	)
 	return nil
 }
 
