@@ -89,11 +89,13 @@ func TestGetVtxoPubKeysByCommitmentTxidsBatched_MinAmount(t *testing.T) {
 
 	setupVtxoTables(t, db)
 
-	// Two commitment txids, each with one low-amount and one high-amount
-	// vtxo. With min_amount=1000 only the high-amount keys should come
-	// back, across multiple batches.
+	// Two commitment txids, each with a below-threshold and an
+	// above-threshold vtxo. commitment-A also gets a vtxo whose amount
+	// equals min_amount to lock the inclusive >= predicate (the badger
+	// backend was previously > and is fixed in this PR for parity).
 	commitmentTxids := []string{"commitment-A", "commitment-B"}
 	insertVtxoRow(t, db, "vtxo-a-low", 0, "pubkey-a-low", 100, commitmentTxids[0])
+	insertVtxoRow(t, db, "vtxo-a-eq", 0, "pubkey-a-eq", 1000, commitmentTxids[0])
 	insertVtxoRow(t, db, "vtxo-a-high", 0, "pubkey-a-high", 5000, commitmentTxids[0])
 	insertVtxoRow(t, db, "vtxo-b-low", 0, "pubkey-b-low", 200, commitmentTxids[1])
 	insertVtxoRow(t, db, "vtxo-b-high", 0, "pubkey-b-high", 7500, commitmentTxids[1])
@@ -105,7 +107,8 @@ func TestGetVtxoPubKeysByCommitmentTxidsBatched_MinAmount(t *testing.T) {
 		ctx, repo, commitmentTxids, 1000, 1,
 	)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"pubkey-a-high", "pubkey-b-high"}, got)
+	require.ElementsMatch(t,
+		[]string{"pubkey-a-eq", "pubkey-a-high", "pubkey-b-high"}, got)
 }
 
 func setupVtxoTables(t *testing.T, db *sql.DB) {
