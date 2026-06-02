@@ -18,12 +18,13 @@ func IssueAsset(
 		return nil, fmt.Errorf("invalid args: %w", err)
 	}
 
-	signerPubKey, err := args.signerPubKey()
+	buildArgs := args.toBuildArgs()
+	signerPubKey, err := buildArgs.signerPubKey()
 	if err != nil {
 		return nil, fmt.Errorf("invalid signer pubkey: %w", err)
 	}
 
-	build, err := BuildAndSignIssuanceTx(ctx, args.BuildAndSignIssuanceTxArgs, opts...)
+	build, err := BuildAndSignIssuanceTx(ctx, buildArgs, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -95,12 +96,13 @@ func ReissueAsset(
 		return nil, fmt.Errorf("invalid args: %w", err)
 	}
 
-	signerPubKey, err := args.signerPubKey()
+	buildArgs := args.toBuildArgs()
+	signerPubKey, err := buildArgs.signerPubKey()
 	if err != nil {
 		return nil, fmt.Errorf("invalid signer pubkey: %w", err)
 	}
 
-	build, err := BuildAndSignReissuanceTx(ctx, args.BuildAndSignReissuanceTxArgs, opts...)
+	build, err := BuildAndSignReissuanceTx(ctx, buildArgs, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -141,12 +143,13 @@ func BurnAsset(ctx context.Context, args BurnAssetArgs, opts ...Option) (*Offcha
 		return nil, fmt.Errorf("invalid args: %w", err)
 	}
 
-	signerPubKey, err := args.signerPubKey()
+	buildArgs := args.toBuildArgs()
+	signerPubKey, err := buildArgs.signerPubKey()
 	if err != nil {
 		return nil, fmt.Errorf("invalid signer pubkey: %w", err)
 	}
 
-	build, err := BuildAndSignBurnTx(ctx, args.BuildAndSignBurnTxArgs, opts...)
+	build, err := BuildAndSignBurnTx(ctx, buildArgs, opts...)
 	if err != nil {
 		return nil, err
 	}

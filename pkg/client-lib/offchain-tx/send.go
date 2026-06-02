@@ -14,12 +14,13 @@ func Send(ctx context.Context, args SendArgs, opts ...Option) (*OffchainTxRes, e
 		return nil, fmt.Errorf("invalid args: %w", err)
 	}
 
-	signerPubKey, err := args.signerPubKey()
+	buildArgs := args.toBuildArgs()
+	signerPubKey, err := buildArgs.signerPubKey()
 	if err != nil {
 		return nil, fmt.Errorf("invalid signer pubkey: %w", err)
 	}
 
-	build, err := BuildAndSignTx(ctx, args.BuildAndSignTxArgs, opts...)
+	build, err := BuildAndSignTx(ctx, buildArgs, opts...)
 	if err != nil {
 		return nil, err
 	}

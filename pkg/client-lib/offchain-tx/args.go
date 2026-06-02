@@ -28,18 +28,36 @@ func (a *BuildAndSignTxArgs) validate() error {
 	return nil
 }
 
-// SendArgs configures the Send orchestrator: the same inputs as
-// BuildAndSignTxArgs plus a Client used to submit and finalize the tx.
+// SendArgs configures the Send orchestrator. It carries the Client used to
+// submit and finalize the tx plus every input needed to build it: ServerInfo,
+// SignTx, the Vtxos to spend, the change address and the payment Receivers.
 type SendArgs struct {
-	BuildAndSignTxArgs
-	Client clientlib.Client
+	Client     clientlib.Client
+	ServerInfo clientlib.Info
+	SignTx     clientlib.SignFn
+	Vtxos      []clientlib.Vtxo
+	ChangeAddr string
+	Receivers  []clientlib.Receiver
 }
 
 func (a SendArgs) validate() error {
 	if a.Client == nil {
 		return fmt.Errorf("missing client")
 	}
-	return a.BuildAndSignTxArgs.validate()
+	buildArgs := a.toBuildArgs()
+	return buildArgs.validate()
+}
+
+func (a SendArgs) toBuildArgs() BuildAndSignTxArgs {
+	return BuildAndSignTxArgs{
+		BaseArgs: BaseArgs{
+			ServerInfo: a.ServerInfo,
+			SignTx:     a.SignTx,
+			Vtxos:      a.Vtxos,
+			ChangeAddr: a.ChangeAddr,
+		},
+		Receivers: a.Receivers,
+	}
 }
 
 // BuildAndSignIssuanceTxArgs configures the BuildAndSignIssuanceTx primitive.
@@ -64,18 +82,42 @@ func (a BuildAndSignIssuanceTxArgs) validate() error {
 	return nil
 }
 
-// IssueAssetArgs configures the IssueAsset orchestrator: the same inputs as
-// BuildAndSignIssuanceTxArgs plus a Client used to submit and finalize the tx.
+// IssueAssetArgs configures the IssueAsset orchestrator. It carries the Client
+// used to submit and finalize the tx plus every input needed to build it:
+// ServerInfo, SignTx, the Vtxos to spend, the change address, the Amount of the
+// new asset to issue, the optional ControlAsset and the asset Metadata. See
+// BuildAndSignIssuanceTxArgs for the ControlAsset semantics.
 type IssueAssetArgs struct {
-	BuildAndSignIssuanceTxArgs
-	Client clientlib.Client
+	Client       clientlib.Client
+	ServerInfo   clientlib.Info
+	SignTx       clientlib.SignFn
+	Vtxos        []clientlib.Vtxo
+	ChangeAddr   string
+	Amount       uint64
+	ControlAsset clientlib.ControlAsset
+	Metadata     []asset.Metadata
 }
 
 func (a IssueAssetArgs) validate() error {
 	if a.Client == nil {
 		return fmt.Errorf("missing client")
 	}
-	return a.BuildAndSignIssuanceTxArgs.validate()
+	buildArgs := a.toBuildArgs()
+	return buildArgs.validate()
+}
+
+func (a IssueAssetArgs) toBuildArgs() BuildAndSignIssuanceTxArgs {
+	return BuildAndSignIssuanceTxArgs{
+		BaseArgs: BaseArgs{
+			ServerInfo: a.ServerInfo,
+			SignTx:     a.SignTx,
+			Vtxos:      a.Vtxos,
+			ChangeAddr: a.ChangeAddr,
+		},
+		Amount:       a.Amount,
+		ControlAsset: a.ControlAsset,
+		Metadata:     a.Metadata,
+	}
 }
 
 // BuildAndSignReissuanceTxArgs configures the BuildAndSignReissuanceTx
@@ -107,19 +149,40 @@ func (a BuildAndSignReissuanceTxArgs) validate() error {
 	return nil
 }
 
-// ReissueAssetArgs configures the ReissueAsset orchestrator: the same inputs
-// as BuildAndSignReissuanceTxArgs plus a Client used to submit and finalize
-// the tx.
+// ReissueAssetArgs configures the ReissueAsset orchestrator. It carries the
+// Client used to submit and finalize the tx plus every input needed to build
+// it: ServerInfo, SignTx, the Vtxos to spend, the change address, the Asset to
+// mint more of and the ControlAsset that authorizes the reissuance. See
+// BuildAndSignReissuanceTxArgs for the Asset/ControlAsset semantics.
 type ReissueAssetArgs struct {
-	BuildAndSignReissuanceTxArgs
-	Client clientlib.Client
+	Client       clientlib.Client
+	ServerInfo   clientlib.Info
+	SignTx       clientlib.SignFn
+	Vtxos        []clientlib.Vtxo
+	ChangeAddr   string
+	Asset        clientlib.Asset
+	ControlAsset clientlib.Asset
 }
 
 func (a ReissueAssetArgs) validate() error {
 	if a.Client == nil {
 		return fmt.Errorf("missing client")
 	}
-	return a.BuildAndSignReissuanceTxArgs.validate()
+	buildArgs := a.toBuildArgs()
+	return buildArgs.validate()
+}
+
+func (a ReissueAssetArgs) toBuildArgs() BuildAndSignReissuanceTxArgs {
+	return BuildAndSignReissuanceTxArgs{
+		BaseArgs: BaseArgs{
+			ServerInfo: a.ServerInfo,
+			SignTx:     a.SignTx,
+			Vtxos:      a.Vtxos,
+			ChangeAddr: a.ChangeAddr,
+		},
+		Asset:        a.Asset,
+		ControlAsset: a.ControlAsset,
+	}
 }
 
 // BuildAndSignBurnTxArgs configures the BuildAndSignBurnTx primitive: which
@@ -127,35 +190,53 @@ func (a ReissueAssetArgs) validate() error {
 // balance is returned to the caller's change address.
 type BuildAndSignBurnTxArgs struct {
 	BaseArgs
-	AssetId string
-	Amount  uint64
+	Asset clientlib.Asset
 }
 
 func (a BuildAndSignBurnTxArgs) validate() error {
 	if err := a.validateBase(); err != nil {
 		return err
 	}
-	if a.AssetId == "" {
+	if len(a.Asset.AssetId) <= 0 {
 		return fmt.Errorf("missing asset id")
 	}
-	if a.Amount == 0 {
+	if a.Asset.Amount == 0 {
 		return fmt.Errorf("amount must be > 0")
 	}
 	return nil
 }
 
-// BurnAssetArgs configures the BurnAsset orchestrator: the same inputs as
-// BuildAndSignBurnTxArgs plus a Client used to submit and finalize the tx.
+// BurnAssetArgs configures the BurnAsset orchestrator. It carries the Client
+// used to submit and finalize the tx plus every input needed to build it:
+// ServerInfo, SignTx, the Vtxos to spend, the change address and the Asset to
+// destroy. See BuildAndSignBurnTxArgs for the Asset semantics.
 type BurnAssetArgs struct {
-	BuildAndSignBurnTxArgs
-	Client clientlib.Client
+	Client     clientlib.Client
+	ServerInfo clientlib.Info
+	SignTx     clientlib.SignFn
+	Vtxos      []clientlib.Vtxo
+	ChangeAddr string
+	Asset      clientlib.Asset
 }
 
 func (a BurnAssetArgs) validate() error {
 	if a.Client == nil {
 		return fmt.Errorf("missing client")
 	}
-	return a.BuildAndSignBurnTxArgs.validate()
+	buildArgs := a.toBuildArgs()
+	return buildArgs.validate()
+}
+
+func (a BurnAssetArgs) toBuildArgs() BuildAndSignBurnTxArgs {
+	return BuildAndSignBurnTxArgs{
+		BaseArgs: BaseArgs{
+			ServerInfo: a.ServerInfo,
+			SignTx:     a.SignTx,
+			Vtxos:      a.Vtxos,
+			ChangeAddr: a.ChangeAddr,
+		},
+		Asset: a.Asset,
+	}
 }
 
 // FinalizePendingTxsArgs configures the FinalizePendingTxs orchestrator.

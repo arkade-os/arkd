@@ -52,18 +52,14 @@ func (w *wallet) IssueAsset(
 	defer w.txLock.Unlock()
 
 	return offchaintx.IssueAsset(ctx, offchaintx.IssueAssetArgs{
-		BuildAndSignIssuanceTxArgs: offchaintx.BuildAndSignIssuanceTxArgs{
-			BaseArgs: offchaintx.BaseArgs{
-				ServerInfo: w.Config.ClientInfo(),
-				SignTx:     signTx,
-				Vtxos:      vtxos,
-				ChangeAddr: offchainAddr.Address,
-			},
-			Amount:       amount,
-			ControlAsset: ctrlAsset,
-			Metadata:     metadata,
-		},
-		Client: w.client,
+		Client:       w.client,
+		ServerInfo:   w.Config.ClientInfo(),
+		SignTx:       signTx,
+		Vtxos:        vtxos,
+		ChangeAddr:   offchainAddr.Address,
+		Amount:       amount,
+		ControlAsset: ctrlAsset,
+		Metadata:     metadata,
 	}, opts...)
 }
 
@@ -100,20 +96,16 @@ func (w *wallet) ReissueAsset(
 	defer w.txLock.Unlock()
 
 	return offchaintx.ReissueAsset(ctx, offchaintx.ReissueAssetArgs{
-		BuildAndSignReissuanceTxArgs: offchaintx.BuildAndSignReissuanceTxArgs{
-			BaseArgs: offchaintx.BaseArgs{
-				ServerInfo: w.Config.ClientInfo(),
-				SignTx:     signTx,
-				Vtxos:      vtxos,
-				ChangeAddr: offchainAddr.Address,
-			},
-			Asset: clientlib.Asset{
-				AssetId: assetId,
-				Amount:  amount,
-			},
-			ControlAsset: *controlAsset,
+		Client:     w.client,
+		ServerInfo: w.Config.ClientInfo(),
+		SignTx:     signTx,
+		Vtxos:      vtxos,
+		ChangeAddr: offchainAddr.Address,
+		Asset: clientlib.Asset{
+			AssetId: assetId,
+			Amount:  amount,
 		},
-		Client: w.client,
+		ControlAsset: *controlAsset,
 	}, opts...)
 }
 
@@ -142,17 +134,15 @@ func (w *wallet) BurnAsset(
 	defer w.txLock.Unlock()
 
 	return offchaintx.BurnAsset(ctx, offchaintx.BurnAssetArgs{
-		BuildAndSignBurnTxArgs: offchaintx.BuildAndSignBurnTxArgs{
-			BaseArgs: offchaintx.BaseArgs{
-				ServerInfo: w.Config.ClientInfo(),
-				SignTx:     signTx,
-				Vtxos:      vtxos,
-				ChangeAddr: offchainAddr.Address,
-			},
+		Client:     w.client,
+		ServerInfo: w.Config.ClientInfo(),
+		SignTx:     signTx,
+		Vtxos:      vtxos,
+		ChangeAddr: offchainAddr.Address,
+		Asset: clientlib.Asset{
 			AssetId: assetId,
 			Amount:  amount,
 		},
-		Client: w.client,
 	}, opts...)
 }
 

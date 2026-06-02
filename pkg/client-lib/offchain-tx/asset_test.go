@@ -295,12 +295,12 @@ func TestBurnAsset(t *testing.T) {
 			},
 			{
 				name:      "missing asset id",
-				mutate:    func(a *BurnAssetArgs) { a.AssetId = "" },
+				mutate:    func(a *BurnAssetArgs) { a.Asset = clientlib.Asset{Amount: a.Asset.Amount} },
 				errSubstr: "missing asset id",
 			},
 			{
 				name:      "zero amount",
-				mutate:    func(a *BurnAssetArgs) { a.Amount = 0 },
+				mutate:    func(a *BurnAssetArgs) { a.Asset = clientlib.Asset{AssetId: a.Asset.AssetId} },
 				errSubstr: "amount must be > 0",
 			},
 		}
@@ -352,12 +352,12 @@ func TestBuildAndSignBurnTx(t *testing.T) {
 			},
 			{
 				name:      "missing asset id",
-				mutate:    func(a *BuildAndSignBurnTxArgs) { a.AssetId = "" },
+				mutate:    func(a *BuildAndSignBurnTxArgs) { a.Asset = clientlib.Asset{Amount: a.Asset.Amount} },
 				errSubstr: "missing asset id",
 			},
 			{
 				name:      "zero amount",
-				mutate:    func(a *BuildAndSignBurnTxArgs) { a.Amount = 0 },
+				mutate:    func(a *BuildAndSignBurnTxArgs) { a.Asset = clientlib.Asset{AssetId: a.Asset.AssetId} },
 				errSubstr: "amount must be > 0",
 			},
 		}
@@ -378,9 +378,16 @@ func TestBuildAndSignBurnTx(t *testing.T) {
 // newTestIssueAssetArgs returns a valid baseline IssueAssetArgs. Tests in this
 // file mutate a single field to exercise the corresponding validation error.
 func newTestIssueAssetArgs() IssueAssetArgs {
+	b := newTestIssueAssetBuildArgs()
 	return IssueAssetArgs{
-		BuildAndSignIssuanceTxArgs: newTestIssueAssetBuildArgs(),
-		Client:                     mockClient{},
+		Client:       mockClient{},
+		ServerInfo:   b.ServerInfo,
+		SignTx:       b.SignTx,
+		Vtxos:        b.Vtxos,
+		ChangeAddr:   b.ChangeAddr,
+		Amount:       b.Amount,
+		ControlAsset: b.ControlAsset,
+		Metadata:     b.Metadata,
 	}
 }
 
@@ -401,9 +408,15 @@ func newTestIssueAssetBuildArgs() BuildAndSignIssuanceTxArgs {
 
 // newTestReissueAssetArgs returns a valid baseline ReissueAssetArgs.
 func newTestReissueAssetArgs() ReissueAssetArgs {
+	b := newTestReissueAssetBuildArgs()
 	return ReissueAssetArgs{
-		BuildAndSignReissuanceTxArgs: newTestReissueAssetBuildArgs(),
-		Client:                       mockClient{},
+		Client:       mockClient{},
+		ServerInfo:   b.ServerInfo,
+		SignTx:       b.SignTx,
+		Vtxos:        b.Vtxos,
+		ChangeAddr:   b.ChangeAddr,
+		Asset:        b.Asset,
+		ControlAsset: b.ControlAsset,
 	}
 }
 
@@ -430,9 +443,14 @@ func newTestReissueAssetBuildArgs() BuildAndSignReissuanceTxArgs {
 
 // newTestBurnAssetArgs returns a valid baseline BurnAssetArgs.
 func newTestBurnAssetArgs() BurnAssetArgs {
+	b := newTestBurnAssetBuildArgs()
 	return BurnAssetArgs{
-		BuildAndSignBurnTxArgs: newTestBurnAssetBuildArgs(),
-		Client:                 mockClient{},
+		Client:     mockClient{},
+		ServerInfo: b.ServerInfo,
+		SignTx:     b.SignTx,
+		Vtxos:      b.Vtxos,
+		ChangeAddr: b.ChangeAddr,
+		Asset:      b.Asset,
 	}
 }
 
@@ -445,7 +463,9 @@ func newTestBurnAssetBuildArgs() BuildAndSignBurnTxArgs {
 			SignTx:     mockSignTx,
 			ChangeAddr: "tark1qexample",
 		},
-		AssetId: "fakeassetid",
-		Amount:  100,
+		Asset: clientlib.Asset{
+			AssetId: "fakeassetid",
+			Amount:  100,
+		},
 	}
 }

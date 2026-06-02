@@ -14,13 +14,12 @@ import (
 // output, SignTx signs the intent proof, and ServerInfo/Client are used to talk
 // to the server.
 type CollaborativeExitArgs struct {
-	Client       clientlib.Client
-	FeeEstimator *arkfee.Estimator
-	ServerInfo   clientlib.Info
-	SignTx       clientlib.SignFn
-	Vtxos        []clientlib.Vtxo
-	Receiver     clientlib.Receiver
-	ChangeAddr   string
+	Client     clientlib.Client
+	ServerInfo clientlib.Info
+	SignTx     clientlib.SignFn
+	Vtxos      []clientlib.Vtxo
+	Receiver   clientlib.Receiver
+	ChangeAddr string
 }
 
 func (a CollaborativeExitArgs) validate() error {
@@ -29,9 +28,6 @@ func (a CollaborativeExitArgs) validate() error {
 	}
 	if a.SignTx == nil {
 		return fmt.Errorf("missing sign tx function")
-	}
-	if a.FeeEstimator == nil {
-		return fmt.Errorf("missing fee estimator")
 	}
 	if len(a.Vtxos) <= 0 {
 		return fmt.Errorf("missing funds for collaborative exit")
@@ -73,8 +69,13 @@ func CollaborativeExit(
 		}
 	}
 
+	feeEstimator, err := arkfee.New(args.ServerInfo.Fees.IntentFees)
+	if err != nil {
+		return nil, err
+	}
+
 	vtxos, _, outputs, err := selectFunds(
-		ctx, args.FeeEstimator, args.Vtxos, nil, []clientlib.Receiver{args.Receiver},
+		ctx, feeEstimator, args.Vtxos, nil, []clientlib.Receiver{args.Receiver},
 		args.ChangeAddr, o.expiryThreshold, args.ServerInfo.Dust,
 	)
 	if err != nil {

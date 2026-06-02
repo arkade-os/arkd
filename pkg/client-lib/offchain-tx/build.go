@@ -366,10 +366,7 @@ func BuildAndSignBurnTx(
 	burnReceiver := clientlib.Receiver{
 		To:     args.ChangeAddr,
 		Amount: args.ServerInfo.Dust,
-		Assets: []clientlib.Asset{{
-			AssetId: args.AssetId,
-			Amount:  args.Amount,
-		}},
+		Assets: []clientlib.Asset{args.Asset},
 	}
 
 	receivers := []clientlib.Receiver{burnReceiver}

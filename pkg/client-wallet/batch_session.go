@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	batchsession "github.com/arkade-os/arkd/pkg/client-lib/batch-session"
 )
@@ -108,11 +107,6 @@ func (w *wallet) CollaborativeExit(
 		return nil, err
 	}
 
-	feeEstimator, err := arkfee.New(info.Fees.IntentFees)
-	if err != nil {
-		return nil, err
-	}
-
 	vtxos, err := w.getSpendableVtxos(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -123,13 +117,12 @@ func (w *wallet) CollaborativeExit(
 	}
 
 	return batchsession.CollaborativeExit(ctx, batchsession.CollaborativeExitArgs{
-		Client:       w.client,
-		SignTx:       signTx,
-		FeeEstimator: feeEstimator,
-		ServerInfo:   *info,
-		Vtxos:        vtxos,
-		Receiver:     clientlib.Receiver{To: addr, Amount: amount},
-		ChangeAddr:   offchainAddr.Address,
+		Client:     w.client,
+		SignTx:     signTx,
+		ServerInfo: *info,
+		Vtxos:      vtxos,
+		Receiver:   clientlib.Receiver{To: addr, Amount: amount},
+		ChangeAddr: offchainAddr.Address,
 	}, opts...)
 }
 

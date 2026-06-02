@@ -135,9 +135,14 @@ func mockSignTx(context.Context, string) (string, error) { return "", nil }
 // a single field on the returned value to exercise the corresponding
 // validation error.
 func newTestSendArgs() SendArgs {
+	b := newTestSendBuildArgs()
 	return SendArgs{
-		BuildAndSignTxArgs: newTestSendBuildArgs(),
-		Client:             mockClient{},
+		Client:     mockClient{},
+		ServerInfo: b.ServerInfo,
+		SignTx:     b.SignTx,
+		Vtxos:      b.Vtxos,
+		ChangeAddr: b.ChangeAddr,
+		Receivers:  b.Receivers,
 	}
 }
 

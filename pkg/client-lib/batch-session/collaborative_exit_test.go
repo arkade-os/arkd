@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/stretchr/testify/require"
 )
@@ -25,11 +24,6 @@ func TestCollaborativeExit(t *testing.T) {
 				name:      "missing sign tx",
 				mutate:    func(a *CollaborativeExitArgs) { a.SignTx = nil },
 				errSubstr: "missing sign tx function",
-			},
-			{
-				name:      "missing fee estimator",
-				mutate:    func(a *CollaborativeExitArgs) { a.FeeEstimator = nil },
-				errSubstr: "missing fee estimator",
 			},
 			{
 				name:      "missing funds",
@@ -71,13 +65,11 @@ func TestCollaborativeExit(t *testing.T) {
 // the corresponding validation error.
 func newTestCollaborativeExitArgs(t *testing.T) CollaborativeExitArgs {
 	t.Helper()
-	feeEstimator, err := arkfee.New(arkfee.Config{})
-	require.NoError(t, err)
+
 	return CollaborativeExitArgs{
-		Client:       mockClient{},
-		FeeEstimator: feeEstimator,
-		ServerInfo:   clientlib.Info{Dust: 1000, Network: "regtest"},
-		SignTx:       clientlib.SignFn(mockSignTx),
+		Client:     mockClient{},
+		ServerInfo: clientlib.Info{Dust: 1000, Network: "regtest"},
+		SignTx:     clientlib.SignFn(mockSignTx),
 		Vtxos: []clientlib.Vtxo{{
 			Outpoint: clientlib.Outpoint{Txid: "deadbeef", VOut: 0},
 			Amount:   10000,
