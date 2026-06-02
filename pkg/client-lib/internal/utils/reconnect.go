@@ -59,7 +59,7 @@ func ShouldReconnect(err error) (bool, time.Duration) {
 	case codes.Unavailable, codes.Internal, codes.DeadlineExceeded, codes.Aborted:
 		return true, time.Second
 	case codes.FailedPrecondition:
-		// Ark service may return this while wallet is still locked/syncing after restart.
+		// Arkd service may return this while wallet is still locked/syncing after restart.
 		return true, 5 * time.Second
 	case codes.Canceled,
 		codes.InvalidArgument,

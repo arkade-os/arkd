@@ -2,7 +2,7 @@ module github.com/arkade-os/arkd/pkg/errors
 
 replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 
-go 1.26.2
+go 1.26.3
 
 require (
 	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-00010101000000-000000000000
