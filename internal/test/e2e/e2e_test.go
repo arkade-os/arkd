@@ -27,7 +27,7 @@ import (
 	batchsession "github.com/arkade-os/arkd/pkg/client-lib/batch-session"
 	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client"
 	mempoolexplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	"github.com/arkade-os/arkd/pkg/client-lib/redemption"
+	"github.com/arkade-os/arkd/pkg/client-lib/unroll"
 	wallet "github.com/arkade-os/arkd/pkg/client-wallet"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -2851,7 +2851,7 @@ func TestReactToFraud(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			branch, err := redemption.NewRedeemBranch(ctx, explorer, indexerClient, vtxo)
+			branch, err := unroll.NewRedeemBranch(ctx, explorer, indexerClient, vtxo)
 			require.NoError(t, err)
 
 			// The tree we want to unroll contains only one tx, therefore there's only one tx to broadcast.
@@ -2953,7 +2953,7 @@ func TestReactToFraud(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			branch, err := redemption.NewRedeemBranch(ctx, explorer, indexerClient, vtxo)
+			branch, err := unroll.NewRedeemBranch(ctx, explorer, indexerClient, vtxo)
 			require.NoError(t, err)
 
 			// The tree we want to unroll contains only one tx, therefore there's only one tx to broadcast.
@@ -3075,7 +3075,7 @@ func TestReactToFraud(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			branch, err := redemption.NewRedeemBranch(ctx, explorer, indexerClient, vtxo)
+			branch, err := unroll.NewRedeemBranch(ctx, explorer, indexerClient, vtxo)
 			require.NoError(t, err)
 
 			for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
@@ -3345,7 +3345,7 @@ func TestReactToFraud(t *testing.T) {
 			}
 			require.True(t, found)
 
-			branch, err := redemption.NewRedeemBranch(ctx, explorer, indexerClient, initialTreeVtxo)
+			branch, err := unroll.NewRedeemBranch(ctx, explorer, indexerClient, initialTreeVtxo)
 			require.NoError(t, err)
 
 			for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {
@@ -3558,7 +3558,7 @@ func TestSweep(t *testing.T) {
 			mempoolexplorer.WithTracker(false))
 		require.NoError(t, err)
 
-		branch, err := redemption.NewRedeemBranch(ctx, explorer, alice.Indexer(), boardedVtxo)
+		branch, err := unroll.NewRedeemBranch(ctx, explorer, alice.Indexer(), boardedVtxo)
 		require.NoError(t, err)
 
 		for parentTx, err := branch.NextRedeemTx(); err == nil; parentTx, err = branch.NextRedeemTx() {

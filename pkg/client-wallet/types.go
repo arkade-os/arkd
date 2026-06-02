@@ -8,6 +8,7 @@ import (
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	batchsession "github.com/arkade-os/arkd/pkg/client-lib/batch-session"
 	offchaintx "github.com/arkade-os/arkd/pkg/client-lib/offchain-tx"
+	unroll "github.com/arkade-os/arkd/pkg/client-lib/unroll"
 	"github.com/arkade-os/arkd/pkg/client-wallet/types"
 )
 
@@ -95,9 +96,4 @@ type CollaborativeExitRes = batchsession.BatchTxRes
 
 type RedeemNotesRes = batchsession.BatchTxRes
 
-type UnrollRes struct {
-	ParentTx   string
-	ParentTxid string
-	ChildTx    string
-	ChildTxid  string
-}
+type UnrollRes = unroll.UnrollRes

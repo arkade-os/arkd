@@ -1,7 +1,6 @@
 package wallet
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -10,21 +9,14 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
-	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/arkade-os/arkd/pkg/client-lib/redemption"
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/arkade-os/arkd/pkg/client-lib/unroll"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightningnetwork/lnd/input"
-	"github.com/lightningnetwork/lnd/lntypes"
-	log "github.com/sirupsen/logrus"
 )
-
-var ErrWaitingForConfirmation = fmt.Errorf("waiting for confirmation(s), please retry later")
 
 func (w *wallet) Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes, error) {
 	if err := w.safeCheck(); err != nil {
@@ -54,79 +46,29 @@ func (w *wallet) Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes,
 		return nil, fmt.Errorf("no vtxos to unroll")
 	}
 
-	totalVtxosAmount := uint64(0)
-	for _, vtxo := range vtxos {
-		totalVtxosAmount += vtxo.Amount
-	}
-
-	// transactionsMap avoid duplicates
-	transactionsMap := make(map[string]struct{}, 0)
-	transactions := make([]string, 0)
-
-	branches, err := w.getBranchesToUnroll(ctx, vtxos)
+	onchainAddr, _, _, _, err := w.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	isWaitingForConfirmation := false
-
-	for _, branch := range branches {
-		nextTx, err := branch.NextRedeemTx()
-		if err != nil {
-			if err, ok := err.(redemption.ErrPendingConfirmation); ok {
-				// the branch tx is in the mempool, we must wait for confirmation
-				// print only, do not make the function to fail
-				// continue to try other branches
-				log.Debug(err.Error())
-				isWaitingForConfirmation = true
-				continue
-			}
-
-			return nil, err
-		}
-
-		if _, ok := transactionsMap[nextTx]; !ok {
-			transactions = append(transactions, nextTx)
-			transactionsMap[nextTx] = struct{}{}
-		}
+	keyRef, err := w.identity.GetKey(ctx, "")
+	if err != nil {
+		return nil, err
 	}
 
-	if len(transactions) == 0 {
-		if isWaitingForConfirmation {
-			return nil, ErrWaitingForConfirmation
-		}
-
-		return nil, nil
+	signTx := func(ctx context.Context, tx string) (string, error) {
+		return w.identity.SignTransaction(ctx, tx, nil)
 	}
 
-	res := make([]UnrollRes, 0, len(transactions))
-	for _, parent := range transactions {
-		var parentTx wire.MsgTx
-		if err := parentTx.Deserialize(hex.NewDecoder(strings.NewReader(parent))); err != nil {
-			return nil, err
-		}
-
-		childTxid, child, err := w.bumpAnchorTx(ctx, &parentTx)
-		if err != nil {
-			return nil, err
-		}
-
-		// broadcast the package (parent + child)
-		packageResponse, err := w.explorer.Broadcast(parent, child)
-		if err != nil {
-			return nil, err
-		}
-
-		res = append(res, UnrollRes{
-			ParentTx:   parent,
-			ParentTxid: parentTx.TxID(),
-			ChildTx:    child,
-			ChildTxid:  childTxid,
-		})
-		log.Debugf("package broadcasted: %s", packageResponse)
-	}
-
-	return res, nil
+	return unroll.Unroll(ctx, unroll.UnrollArgs{
+		Explorer:   w.explorer,
+		Indexer:    w.indexer,
+		SignTx:     signTx,
+		ServerInfo: w.Config.ClientInfo(),
+		Vtxos:      vtxos,
+		BumpAddr:   onchainAddr.Address,
+		BumpPubKey: keyRef.PubKey,
+	})
 }
 
 func (w *wallet) CompleteUnroll(ctx context.Context, opts ...UnrollOption) (string, error) {
@@ -141,20 +83,27 @@ func (w *wallet) CompleteUnroll(ctx context.Context, opts ...UnrollOption) (stri
 		}
 	}
 
+	onchainAddr, _, _, arkAddr, err := w.getAddresses(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	to := options.receiver
 	if len(to) <= 0 {
-		onchainAddr, _, _, _, err := w.getAddresses(ctx)
-		if err != nil {
-			return "", err
-		}
-
 		to = onchainAddr.Address
 	}
-	if _, err := btcutil.DecodeAddress(to, nil); err != nil {
-		return "", fmt.Errorf("invalid receiver address '%s': must be onchain", to)
+
+	signTx := func(ctx context.Context, tx string) (string, error) {
+		return w.identity.SignTransaction(ctx, tx, nil)
 	}
 
-	return w.completeUnroll(ctx, to)
+	return unroll.CompleteUnroll(ctx, unroll.CompleteUnrollArgs{
+		Explorer:   w.explorer,
+		SignTx:     signTx,
+		ServerInfo: w.Config.ClientInfo(),
+		ArkAddr:    *arkAddr,
+		Receiver:   to,
+	})
 }
 
 func (w *wallet) WithdrawFromAllExpiredBoardings(
@@ -202,243 +151,6 @@ func (w *wallet) OnboardAgainAllExpiredBoardings(ctx context.Context) (string, e
 	}
 
 	return w.sendExpiredBoardingUtxos(ctx, boardingAddr.Address)
-}
-
-// bumpAnchorTx builds and signs a transaction bumping the fees for a given tx with P2A output.
-// Makes use of the onchain P2TR account to select UTXOs to pay fees for parent.
-func (w *wallet) bumpAnchorTx(ctx context.Context, parent *wire.MsgTx) (string, string, error) {
-	anchor, err := txutils.FindAnchorOutpoint(parent)
-	if err != nil {
-		return "", "", err
-	}
-
-	// estimate for the size of the bump transaction
-	weightEstimator := input.TxWeightEstimator{}
-
-	// WeightEstimator doesn't support P2A size, using P2WSH will lead to a small overestimation
-	// TODO use the exact P2A size
-	weightEstimator.AddNestedP2WSHInput(lntypes.VByte(3).ToWU())
-
-	// We assume only one UTXO will be selected to have a correct estimation
-	weightEstimator.AddTaprootKeySpendInput(txscript.SigHashDefault)
-	weightEstimator.AddP2TROutput()
-
-	childVSize := weightEstimator.Weight().ToVB()
-
-	packageSize := childVSize + computeVSize(parent)
-	feeRate, err := w.explorer.GetFeeRate()
-	if err != nil {
-		return "", "", err
-	}
-
-	fees := uint64(math.Ceil(float64(packageSize) * feeRate))
-
-	onchainAddr, _, _, _, err := w.getAddresses(ctx)
-	if err != nil {
-		return "", "", err
-	}
-
-	addr := onchainAddr.Address
-	pkScript, err := toOutputScript(addr, w.Network)
-	if err != nil {
-		return "", "", err
-	}
-
-	keyRef, err := w.identity.GetKey(ctx, "")
-	if err != nil {
-		return "", "", err
-	}
-
-	selectedCoins := make([]clientlib.ExplorerUtxo, 0)
-	selectedAmount := uint64(0)
-	amountToSelect := int64(fees) - txutils.ANCHOR_VALUE
-
-	utxos, err := w.explorer.GetUtxos([]string{addr})
-	if err != nil {
-		return "", "", err
-	}
-
-	for _, utxo := range utxos {
-		selectedCoins = append(selectedCoins, utxo)
-		selectedAmount += utxo.Amount
-		amountToSelect -= int64(utxo.Amount)
-		if amountToSelect <= 0 {
-			break
-		}
-	}
-
-	if amountToSelect > 0 {
-		return "", "", fmt.Errorf("not enough funds to select %d", amountToSelect)
-	}
-
-	changeAmount := selectedAmount - fees
-
-	inputs := []*wire.OutPoint{anchor}
-	sequences := []uint32{
-		wire.MaxTxInSequenceNum,
-	}
-	outputs := []*wire.TxOut{
-		{
-			Value:    int64(changeAmount),
-			PkScript: pkScript,
-		},
-	}
-
-	for _, utxo := range selectedCoins {
-		txid, err := chainhash.NewHashFromStr(utxo.Txid)
-		if err != nil {
-			return "", "", err
-		}
-		inputs = append(inputs, &wire.OutPoint{
-			Hash:  *txid,
-			Index: utxo.Vout,
-		})
-		sequences = append(sequences, wire.MaxTxInSequenceNum)
-	}
-
-	ptx, err := psbt.New(inputs, outputs, 3, 0, sequences)
-	if err != nil {
-		return "", "", err
-	}
-
-	ptx.Inputs[0].WitnessUtxo = txutils.AnchorOutput()
-
-	for i, utxo := range selectedCoins {
-		pkScript, err := hex.DecodeString(utxo.Script)
-		if err != nil {
-			return "", "", err
-		}
-
-		ptx.Inputs[i+1].WitnessUtxo = &wire.TxOut{
-			Value:    int64(utxo.Amount),
-			PkScript: pkScript,
-		}
-		ptx.Inputs[i+1].TaprootInternalKey = schnorr.SerializePubKey(keyRef.PubKey)
-	}
-
-	b64, err := ptx.B64Encode()
-	if err != nil {
-		return "", "", err
-	}
-
-	tx, err := w.identity.SignTransaction(ctx, b64, nil)
-	if err != nil {
-		return "", "", err
-	}
-
-	signedPtx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
-	if err != nil {
-		return "", "", err
-	}
-
-	for inIndex := range signedPtx.Inputs[1:] {
-		if _, err := psbt.MaybeFinalize(signedPtx, inIndex+1); err != nil {
-			return "", "", err
-		}
-	}
-
-	childTx, err := txutils.ExtractWithAnchors(signedPtx)
-	if err != nil {
-		return "", "", err
-	}
-
-	var serializedTx bytes.Buffer
-	if err := childTx.Serialize(&serializedTx); err != nil {
-		return "", "", err
-	}
-
-	return childTx.TxID(), hex.EncodeToString(serializedTx.Bytes()), nil
-}
-
-func (w *wallet) completeUnroll(
-	ctx context.Context, to string,
-) (string, error) {
-	pkscript, err := toOutputScript(to, w.Network)
-	if err != nil {
-		return "", err
-	}
-
-	utxos, err := w.getMatureUtxos(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	targetAmount := uint64(0)
-	for _, u := range utxos {
-		targetAmount += u.Amount
-	}
-
-	if targetAmount == 0 {
-		return "", fmt.Errorf("no mature funds available")
-	}
-
-	ptx, err := psbt.New(nil, nil, 2, 0, nil)
-	if err != nil {
-		return "", err
-	}
-
-	updater, err := psbt.NewUpdater(ptx)
-	if err != nil {
-		return "", err
-	}
-
-	updater.Upsbt.UnsignedTx.AddTxOut(&wire.TxOut{
-		Value:    int64(targetAmount),
-		PkScript: pkscript,
-	})
-	updater.Upsbt.Outputs = append(updater.Upsbt.Outputs, psbt.POutput{})
-
-	if err := w.addInputs(ctx, updater, utxos); err != nil {
-		return "", err
-	}
-
-	vbytes := computeVSize(updater.Upsbt.UnsignedTx)
-	feeRate, err := w.explorer.GetFeeRate()
-	if err != nil {
-		return "", err
-	}
-
-	feeAmount := uint64(math.Ceil(float64(vbytes)*feeRate) + 100)
-
-	if targetAmount-feeAmount <= w.Dust {
-		return "", fmt.Errorf("not enough funds to cover network fees")
-	}
-
-	updater.Upsbt.UnsignedTx.TxOut[0].Value -= int64(feeAmount)
-
-	unsignedTx, err := ptx.B64Encode()
-	if err != nil {
-		return "", err
-	}
-
-	signedTx, err := w.identity.SignTransaction(ctx, unsignedTx, nil)
-	if err != nil {
-		return "", err
-	}
-
-	ptx, err = psbt.NewFromRawBytes(strings.NewReader(signedTx), true)
-	if err != nil {
-		return "", err
-	}
-
-	for i := range ptx.Inputs {
-		if err := psbt.Finalize(ptx, i); err != nil {
-			return "", err
-		}
-	}
-
-	tx, err := psbt.Extract(ptx)
-	if err != nil {
-		return "", err
-	}
-
-	buf := bytes.NewBuffer(nil)
-	if err := tx.Serialize(buf); err != nil {
-		return "", err
-	}
-
-	txHex := hex.EncodeToString(buf.Bytes())
-	return w.explorer.Broadcast(txHex)
 }
 
 func (w *wallet) sendExpiredBoardingUtxos(ctx context.Context, to string) (string, error) {
@@ -616,50 +328,6 @@ func (w *wallet) addInputs(
 	return nil
 }
 
-func (w *wallet) getMatureUtxos(ctx context.Context) ([]clientlib.Utxo, error) {
-	_, _, _, addr, err := w.getAddresses(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	rawScript, err := addr.RawScript()
-	if err != nil {
-		return nil, err
-	}
-
-	signingClosure, err := addr.ExitClosure()
-	if err != nil {
-		return nil, err
-	}
-
-	exitDelay, err := rawScript.SmallestExitDelay()
-	if err != nil {
-		return nil, err
-	}
-
-	now := time.Now()
-
-	addrTapscripts := make(map[string][]string)
-	// nolint
-	script, _ := toOutputScript(addr.Address, w.Network)
-	addrTapscripts[hex.EncodeToString(script)] = addr.Tapscripts
-
-	fetchedUtxos, err := w.explorer.GetUtxos([]string{addr.Address})
-	if err != nil {
-		return nil, err
-	}
-
-	utxos := make([]clientlib.Utxo, 0)
-	for _, utxo := range fetchedUtxos {
-		tapscripts := addrTapscripts[utxo.Script]
-		u := utxo.ToUtxo(*exitDelay, tapscripts, signingClosure)
-		if u.RedeemableAt.Before(now) {
-			utxos = append(utxos, u)
-		}
-	}
-	return utxos, nil
-}
-
 type getUtxosFilter struct {
 	expired   bool
 	claimable bool
@@ -725,19 +393,3 @@ func (w *wallet) getUtxos(
 	return utxos, nil
 }
 
-func (w *wallet) getBranchesToUnroll(
-	ctx context.Context, vtxos []clientlib.Vtxo,
-) (map[string]*redemption.RedeemBranch, error) {
-	redeemBranches := make(map[string]*redemption.RedeemBranch, 0)
-
-	for _, vtxo := range vtxos {
-		redeemBranch, err := redemption.NewRedeemBranch(ctx, w.explorer, w.indexer, vtxo)
-		if err != nil {
-			return nil, err
-		}
-
-		redeemBranches[vtxo.Txid] = redeemBranch
-	}
-
-	return redeemBranches, nil
-}
