@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/arkade-os/arkd/internal/config"
 	grpcservice "github.com/arkade-os/arkd/internal/interface/grpc"
+	"github.com/arkade-os/arkd/internal/interface/nostr"
 	"github.com/arkade-os/arkd/internal/telemetry"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
@@ -34,6 +36,19 @@ func startAction(_ *cli.Context) error {
 		log.AddHook(telemetry.NewOTelHook())
 	}
 
+	var nostrIdentity *nostr.Identity
+	if cfg.NostrEnabled {
+		keyPath := cfg.NostrKeyFile
+		if keyPath == "" {
+			keyPath = filepath.Join(cfg.Datadir, "nostr", "nostr.key")
+		}
+		nostrIdentity, err = nostr.LoadOrCreate(keyPath)
+		if err != nil {
+			return fmt.Errorf("failed to load nostr identity: %w", err)
+		}
+		log.Infof("nostr identity pubkey: %s", nostrIdentity.PubKeyHex())
+	}
+
 	svcConfig := grpcservice.Config{
 		Datadir:              cfg.Datadir,
 		Port:                 cfg.Port,
@@ -46,6 +61,10 @@ func startAction(_ *cli.Context) error {
 		EnablePprof:          cfg.EnablePprof,
 		MaxConcurrentStreams: cfg.MaxConcurrentStreams,
 		StreamConnPoolSize:   cfg.StreamConnPoolSize,
+	}
+
+	if nostrIdentity != nil {
+		svcConfig.NostrPubkey = nostrIdentity.PubKeyHex()
 	}
 
 	svc, err := grpcservice.NewService(Version, svcConfig, cfg)
@@ -61,6 +80,14 @@ func startAction(_ *cli.Context) error {
 	}
 
 	log.RegisterExitHandler(svc.Stop)
+
+	if nostrIdentity != nil {
+		nostrSvc := nostr.NewService(nostrIdentity, cfg.NostrRelays, cfg)
+		if err := nostrSvc.Start(); err != nil {
+			return err
+		}
+		log.RegisterExitHandler(nostrSvc.Stop)
+	}
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(
