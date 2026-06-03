@@ -644,7 +644,8 @@ func (a *adminService) GetCollectedFees(
 
 	if len(batchesToPatch) > 0 {
 		go func() {
-			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
 			if err := a.repoManager.Rounds().PatchCollectedFees(ctx, batchesToPatch); err != nil {
 				log.WithError(err).WithField("patches", batchesToPatch).Warn(
 					"failed to patch collected fees",
