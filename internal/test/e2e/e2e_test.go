@@ -5486,24 +5486,9 @@ func TestTxListenerChurn(t *testing.T) {
 	// Wait for the stress window to expire, then drain all goroutines and
 	// close the sentinel stream.
 	<-stressCtx.Done()
+	wg.Wait()
 	closeSentinelStream()
-
-	wgDone := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(wgDone)
-	}()
-	select {
-	case <-wgDone:
-	case <-time.After(10 * time.Second):
-		t.Log("churn/producer goroutines did not exit within 10s")
-	}
-
-	select {
-	case <-sentinelDone:
-	case <-time.After(5 * time.Second):
-		t.Log("sentinel goroutine did not exit within 5s")
-	}
+	<-sentinelDone
 
 	// Drain the error channel — any non-retryable error from a churn
 	// worker or the tx producer is a test failure.
@@ -5634,7 +5619,6 @@ func TestEventListenerChurn(t *testing.T) {
 			for {
 				select {
 				case <-stressCtx.Done():
-					closeStream()
 					return
 				case ev, ok := <-sentinelStream:
 					if !ok {
@@ -5794,9 +5778,6 @@ func TestEventListenerChurn(t *testing.T) {
 
 			select {
 			case <-roundDone:
-			case <-stressCtx.Done():
-				cancelRound()
-				return
 			case <-time.After(roundTimeout + 2*time.Second):
 				cancelRound()
 				continue
@@ -5853,24 +5834,9 @@ func TestEventListenerChurn(t *testing.T) {
 	// Wait for the stress window to expire, then drain all goroutines and
 	// close the sentinel stream.
 	<-stressCtx.Done()
+	wg.Wait()
 	closeSentinelStream()
-
-	wgDone := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(wgDone)
-	}()
-	select {
-	case <-wgDone:
-	case <-time.After(10 * time.Second):
-		t.Log("churn/producer goroutines did not exit within 10s")
-	}
-
-	select {
-	case <-sentinelDone:
-	case <-time.After(5 * time.Second):
-		t.Log("sentinel goroutine did not exit within 5s")
-	}
+	<-sentinelDone
 
 	// At least one round must have completed and the sentinel must have
 	// observed events. Transient sentinel errors are tolerated (the
