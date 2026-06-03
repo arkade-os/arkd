@@ -330,27 +330,6 @@ func (q *Queries) SelectAssetsByIds(ctx context.Context, dollar_1 []string) ([]A
 	return items, nil
 }
 
-const selectCollectedFees = `-- name: SelectCollectedFees :one
-SELECT COALESCE(SUM(fees), 0)::bigint AS fees
-FROM round
-WHERE ended = true
-  AND failed = false
-  AND ($1::bigint <= 0 OR starting_timestamp > $1)
-  AND ($2::bigint <= 0 OR starting_timestamp < $2)
-`
-
-type SelectCollectedFeesParams struct {
-	After  int64
-	Before int64
-}
-
-func (q *Queries) SelectCollectedFees(ctx context.Context, arg SelectCollectedFeesParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, selectCollectedFees, arg.After, arg.Before)
-	var fees int64
-	err := row.Scan(&fees)
-	return fees, err
-}
-
 const selectControlAssetByID = `-- name: SelectControlAssetByID :one
 SELECT control_asset_id FROM asset WHERE id = $1
 `
@@ -1784,6 +1763,20 @@ UPDATE conviction SET pardoned = true WHERE id = $1
 
 func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, updateConvictionPardoned, id)
+	return err
+}
+
+const updateRoundCollectedFees = `-- name: UpdateRoundCollectedFees :exec
+UPDATE round SET fees = $1 WHERE id = $2
+`
+
+type UpdateRoundCollectedFeesParams struct {
+	Fees int64
+	ID   string
+}
+
+func (q *Queries) UpdateRoundCollectedFees(ctx context.Context, arg UpdateRoundCollectedFeesParams) error {
+	_, err := q.db.ExecContext(ctx, updateRoundCollectedFees, arg.Fees, arg.ID)
 	return err
 }
 

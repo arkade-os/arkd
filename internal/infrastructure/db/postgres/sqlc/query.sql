@@ -437,13 +437,8 @@ VALUES (@asset_id, @txid, @vout, @amount);
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id = ANY($1::varchar[]);
 
--- name: SelectCollectedFees :one
-SELECT COALESCE(SUM(fees), 0)::bigint AS fees
-FROM round
-WHERE ended = true
-  AND failed = false
-  AND (@after::bigint <= 0 OR starting_timestamp > @after)
-  AND (@before::bigint <= 0 OR starting_timestamp < @before);
+-- name: UpdateRoundCollectedFees :exec
+UPDATE round SET fees = @fees WHERE id = @id;
 
 -- name: SelectAssetSupply :one
 SELECT (COALESCE(SUM(ap.amount), 0))::TEXT AS supply

@@ -53,7 +53,7 @@ type Round struct {
 	Version            uint
 	Swept              bool
 	VtxoTreeExpiration int64
-	CollectedFees      int64
+	CollectedFees      uint64
 	SweepTxs           map[string]string
 	FailReason         string
 	Changes            []Event
@@ -164,9 +164,7 @@ func (r *Round) StartFinalization(
 }
 
 func (r *Round) EndFinalization(
-	forfeitTxs []ForfeitTx,
-	finalCommitmentTx string,
-	collectedFees int64,
+	forfeitTxs []ForfeitTx, finalCommitmentTx string, collectedFees uint64,
 ) ([]Event, error) {
 	if len(forfeitTxs) <= 0 {
 		for _, intent := range r.Intents {

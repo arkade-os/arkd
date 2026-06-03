@@ -25,7 +25,10 @@ type RoundRepository interface {
 	GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error)
 	GetRoundsWithCommitmentTxids(ctx context.Context, txids []string) (map[string]any, error)
 	GetIntentByTxid(ctx context.Context, txid string) (*Intent, error)
-	GetCollectedFees(ctx context.Context, after, before int64) (int64, error)
+	// PatchCollectedFees sets the collected fees of the given rounds (by id),
+	// used to lazily persist fees recomputed for rounds finalized before fee
+	// persistence was introduced (https://github.com/arkade-os/arkd/pull/933).
+	PatchCollectedFees(ctx context.Context, feesByRoundId map[string]uint64) error
 	Close()
 }
 

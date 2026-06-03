@@ -58,7 +58,7 @@ func (s *service) getBatchStats(
 		inputValue := uint64(input.WitnessUtxo.Value)
 		totalIn += inputValue
 
-		if len(input.TaprootLeafScript) > 0 {
+		if isBoardingInput(input) {
 			a.BoardingInputCount++
 			a.BoardingInputAmount += inputValue
 		} else {

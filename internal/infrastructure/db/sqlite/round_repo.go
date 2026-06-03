@@ -91,7 +91,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 				ConnectorAddress:   round.ConnectorAddress,
 				Version:            int64(round.Version),
 				Swept:              round.Swept,
-				Fees:               round.CollectedFees,
+				Fees:               int64(round.CollectedFees),
 				FailReason: sql.NullString{
 					String: round.FailReason, Valid: len(round.FailReason) > 0,
 				},
@@ -512,17 +512,21 @@ func (r *roundRepository) GetIntentByTxid(
 	}, nil
 }
 
-func (r *roundRepository) GetCollectedFees(
-	ctx context.Context, after, before int64,
-) (int64, error) {
-	fees, err := r.querier.SelectCollectedFees(ctx, queries.SelectCollectedFeesParams{
-		After:  after,
-		Before: before,
-	})
-	if err != nil {
-		return 0, err
+func (r *roundRepository) PatchCollectedFees(
+	ctx context.Context, feesByRoundId map[string]uint64,
+) error {
+	txBody := func(querierWithTx *queries.Queries) error {
+		for id, fees := range feesByRoundId {
+			if err := querierWithTx.UpdateRoundCollectedFees(
+				ctx,
+				queries.UpdateRoundCollectedFeesParams{Fees: int64(fees), ID: id},
+			); err != nil {
+				return fmt.Errorf("failed to patch collected fees for round %s: %w", id, err)
+			}
+		}
+		return nil
 	}
-	return fees, nil
+	return execTx(ctx, r.db, txBody)
 }
 
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
@@ -564,7 +568,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 				Swept:              v.round.Swept,
 				Intents:            make(map[string]domain.Intent),
 				VtxoTreeExpiration: v.round.VtxoTreeExpiration,
-				CollectedFees:      v.round.Fees,
+				CollectedFees:      uint64(v.round.Fees),
 				FailReason:         v.round.FailReason.String,
 			}
 		}

@@ -439,13 +439,8 @@ VALUES (@id, @is_immutable, @metadata_hash, @metadata, @control_asset_id);
 INSERT INTO asset_projection (asset_id, txid, vout, amount)
 VALUES (@asset_id, @txid, @vout, @amount);
 
--- name: SelectCollectedFees :one
-SELECT CAST(COALESCE(SUM(fees), 0) AS INTEGER) AS fees
-FROM round
-WHERE ended = true
-  AND failed = false
-  AND (CAST(sqlc.arg('after') AS INTEGER) <= 0 OR starting_timestamp > sqlc.arg('after'))
-  AND (CAST(sqlc.arg('before') AS INTEGER) <= 0 OR starting_timestamp < sqlc.arg('before'));
+-- name: UpdateRoundCollectedFees :exec
+UPDATE round SET fees = sqlc.arg('fees') WHERE id = sqlc.arg('id');
 
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id IN (sqlc.slice('ids'));

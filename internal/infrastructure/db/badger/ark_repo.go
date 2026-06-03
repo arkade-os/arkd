@@ -83,6 +83,22 @@ func (r *arkRepository) GetRoundWithId(
 	return round, nil
 }
 
+func (r *arkRepository) PatchCollectedFees(
+	ctx context.Context, feesByRoundId map[string]uint64,
+) error {
+	for id, fees := range feesByRoundId {
+		round, err := r.GetRoundWithId(ctx, id)
+		if err != nil {
+			return fmt.Errorf("failed to get round %s: %w", id, err)
+		}
+		round.CollectedFees = fees
+		if err := r.addOrUpdateRound(ctx, *round); err != nil {
+			return fmt.Errorf("failed to patch collected fees for round %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
 func (r *arkRepository) GetRoundWithCommitmentTxid(
 	ctx context.Context, txid string,
 ) (*domain.Round, error) {
@@ -122,28 +138,6 @@ func (r *arkRepository) GetRoundStats(
 ) (*domain.RoundStats, error) {
 	// TODO implement
 	return nil, nil
-}
-
-func (r *arkRepository) GetCollectedFees(
-	ctx context.Context, after, before int64,
-) (int64, error) {
-	query := badgerhold.Where("Stage.Ended").Eq(true).
-		And("Stage.Failed").Eq(false)
-	if after > 0 {
-		query = query.And("StartingTimestamp").Gt(after)
-	}
-	if before > 0 {
-		query = query.And("StartingTimestamp").Lt(before)
-	}
-	rounds, err := r.findRound(ctx, query)
-	if err != nil {
-		return 0, err
-	}
-	var total int64
-	for _, round := range rounds {
-		total += round.CollectedFees
-	}
-	return total, nil
 }
 
 func (r *arkRepository) GetRoundForfeitTxs(

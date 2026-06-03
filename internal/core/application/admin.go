@@ -49,7 +49,7 @@ type AdminService interface {
 	) (string, string, error)
 	GetExpiringLiquidity(ctx context.Context, after, before int64) (uint64, error)
 	GetRecoverableLiquidity(ctx context.Context) (uint64, error)
-	GetCollectedFees(ctx context.Context, after, before int64) (int64, error)
+	GetCollectedFees(ctx context.Context, after, before int64) (uint64, error)
 }
 
 type adminService struct {
@@ -609,8 +609,48 @@ func (a *adminService) GetRecoverableLiquidity(ctx context.Context) (uint64, err
 
 func (a *adminService) GetCollectedFees(
 	ctx context.Context, after, before int64,
-) (int64, error) {
-	return a.repoManager.Rounds().GetCollectedFees(ctx, after, before)
+) (uint64, error) {
+	roundIds, err := a.repoManager.Rounds().GetRoundIds(ctx, after, before, false, true)
+	if err != nil {
+		return 0, err
+	}
+
+	var total uint64
+	// batchesToPatch is used to keep track of the batches for which we calculcated fees,
+	// so we can lazily patch the missing info in storage for batches prior
+	// https://github.com/arkade-os/arkd/pull/933.
+	batchesToPatch := make(map[string]uint64)
+	for _, id := range roundIds {
+		round, err := a.repoManager.Rounds().GetRoundWithId(ctx, id)
+		if err != nil {
+			return 0, err
+		}
+
+		// Rounds finalized before fee persistence have a zero (default) collected
+		// fee; recompute it on the fly from intents (boarding inputs excluded).
+		if round.CollectedFees == 0 {
+			fees := calculateCollectedFees(round, 0)
+			total += fees
+			if fees > 0 {
+				batchesToPatch[round.Id] = fees
+			}
+			continue
+		}
+		total += round.CollectedFees
+	}
+
+	if len(batchesToPatch) > 0 {
+		go func() {
+			ctx := context.Background()
+			if err := a.repoManager.Rounds().PatchCollectedFees(ctx, batchesToPatch); err != nil {
+				log.WithError(err).WithField("patches", batchesToPatch).Warn(
+					"failed to patch collected fees",
+				)
+			}
+		}()
+	}
+
+	return total, nil
 }
 
 func (a *adminService) getScheduledSweep(
@@ -784,7 +824,7 @@ type RoundDetails struct {
 	ForfeitedAmount  uint64
 	TotalVtxosAmount uint64
 	TotalExitAmount  uint64
-	FeesAmount       int64
+	FeesAmount       uint64
 	InputVtxos       []string
 	OutputVtxos      []string
 	ExitAddresses    []string
