@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -17,10 +18,20 @@ import (
 
 var (
 	serverUrl    = "127.0.0.1:7070"
-	explorerUrl  = "http://127.0.0.1:3000"
+	explorerUrl  = "http://127.0.0.1:3000/api"
 	password     = "password"
 	identityType = wallet.SingleKeyIdentity
 )
+
+// regtestCLI is the arkade-regtest Node CLI (the in-house replacement for the
+// nigiri binary). Run this example from the repo root, or set REGTEST_CLI to the
+// path of regtest.mjs.
+func regtestCLI() string {
+	if p := os.Getenv("REGTEST_CLI"); p != "" {
+		return p
+	}
+	return "regtest/regtest.mjs"
+}
 
 func main() {
 	var (
@@ -59,7 +70,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if _, err := runCommand("nigiri", "faucet", boardingAddr.Address); err != nil {
+	if _, err := runCommand("node", regtestCLI(), "faucet", boardingAddr.Address, "0.01", "--confirm"); err != nil {
 		log.Fatal(err)
 	}
 
@@ -242,7 +253,7 @@ func newCommand(name string, arg ...string) *exec.Cmd {
 }
 
 func generateBlock() error {
-	if _, err := runCommand("nigiri", "rpc", "generatetoaddress", "1", "bcrt1qgqsguk6wax7ynvav4zys5x290xftk49h5agg0l"); err != nil {
+	if _, err := runCommand("node", regtestCLI(), "rpc", "generatetoaddress", "1", "bcrt1qgqsguk6wax7ynvav4zys5x290xftk49h5agg0l"); err != nil {
 		return err
 	}
 

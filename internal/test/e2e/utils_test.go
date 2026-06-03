@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,17 +39,29 @@ import (
 )
 
 const (
-	adminUrl    = "http://127.0.0.1:7071"
-	serverUrl   = "127.0.0.1:7070"
-	explorerUrl = "http://127.0.0.1:3000"
+	adminUrl  = "http://127.0.0.1:7071"
+	serverUrl = "127.0.0.1:7070"
+	// mempool serves the Esplora-compatible REST API under /api (the in-house
+	// replacement for nigiri's chopsticks esplora at :3000).
+	explorerUrl = "http://127.0.0.1:3000/api"
 )
 
+// regtestCLI resolves the path to the arkade-regtest Node CLI (the in-house
+// replacement for the nigiri binary), which lives in the `regtest` submodule at
+// the repo root. The e2e package runs from internal/test/e2e, so walk three
+// levels up to the module root.
+func regtestCLI() string {
+	_, file, _, _ := runtime.Caller(0)
+	root := filepath.Join(filepath.Dir(file), "..", "..", "..")
+	return filepath.Join(root, "regtest", "regtest.mjs")
+}
+
 func generateBlocks(n int) error {
-	_, err := runCommand("nigiri", "rpc", "--generate", fmt.Sprintf("%d", n))
+	_, err := runCommand("node", regtestCLI(), "mine", fmt.Sprintf("%d", n))
 	return err
 }
 func getBlockHeight() (uint32, error) {
-	out, err := runCommand("nigiri", "rpc", "getblockcount")
+	out, err := runCommand("node", regtestCLI(), "rpc", "getblockcount")
 	if err != nil {
 		return 0, err
 	}
@@ -165,7 +179,7 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 	fees := uint64(10000)
 
 	// send 1_000_000 sats to the address
-	_, err = runCommand("nigiri", "faucet", addr.EncodeAddress(), "0.01")
+	_, err = runCommand("node", regtestCLI(), "faucet", addr.EncodeAddress(), "0.01", "--confirm")
 	require.NoError(t, err)
 
 	changeAmount := 1_000_000 - fees
@@ -351,7 +365,7 @@ func generateNote(t *testing.T, amount uint64) string {
 }
 
 func faucetOnchain(t *testing.T, address string, amount float64) {
-	_, err := runCommand("nigiri", "faucet", address, fmt.Sprintf("%.8f", amount))
+	_, err := runCommand("node", regtestCLI(), "faucet", address, fmt.Sprintf("%.8f", amount), "--confirm")
 	require.NoError(t, err)
 }
 
@@ -669,8 +683,11 @@ func refill(httpClient *http.Client) error {
 			return err
 		}
 
+		// Each old `nigiri faucet <addr>` (no amount) sent 1 BTC, and delta is
+		// sized in whole BTC, so fund 1 BTC per iteration. --confirm mines the
+		// block (faucet no longer auto-confirms).
 		for range int(delta) {
-			if _, err := runCommand("nigiri", "faucet", address.Address); err != nil {
+			if _, err := runCommand("node", regtestCLI(), "faucet", address.Address, "1", "--confirm"); err != nil {
 				return err
 			}
 		}

@@ -150,12 +150,12 @@ redis-test-down:
 	@docker stop ark-redis-test > /dev/null 2>&1 || true
 	@docker rm ark-redis-test > /dev/null 2>&1 || true
 
-## redis-test-up: start redis db for unit tests (no nigiri network required)
+## redis-test-up: start redis db for unit tests (no regtest network required)
 redis-test-up:
 	@echo "Starting redis for unit tests..."
 	@docker run -d --name ark-redis-test -p 6379:6379 redis:7-alpine > /dev/null 2>&1 || true
 
-## redis-up: start redis db inside docker container (compose, requires nigiri network)
+## redis-up: start redis db inside docker container (compose, requires the arkade-regtest network)
 redis-up:
 	@echo "Starting redis via docker compose (integration/dev)..."
 	@docker compose -f docker-compose.regtest.yml up -d redis
@@ -176,7 +176,7 @@ run-light: clean
 ## run-signer: run arkd wallet as signer without a wallet
 run-signer:
 	@echo "Running signer in dev mode"
-	@docker compose -f docker-compose.regtest.yml up -d pg nbxplorer
+	@docker compose -f docker-compose.regtest.yml up -d pg arkd-nbxplorer
 	$(call setup_env, envs/signer.dev.env)
 	@go run ./cmd/arkd-wallet
 
@@ -216,14 +216,14 @@ run-simulation:
 ## run-wallet: run arkd wallet based on nbxplorer in dev mode on regtest with a pre-loaded signer private key
 run-wallet:
 	@echo "Running arkd wallet in dev mode with NBXplorer on regtest with pre-loaded signer private key..."
-	@docker compose -f docker-compose.regtest.yml up -d pg nbxplorer
+	@docker compose -f docker-compose.regtest.yml up -d pg arkd-nbxplorer
 	$(call setup_env, envs/arkd-wallet.regtest.env)
 	@go run ./cmd/arkd-wallet
 
 ## run-wallet-nosigner: run arkd wallet based on nbxplorer in dev mode on regtest without a pre-loaded signer private key
 run-wallet-nosigner:
 	@echo "Running arkd wallet in dev mode with NBXplorer on regtest..."
-	@docker compose -f docker-compose.regtest.yml up -d pg nbxplorer
+	@docker compose -f docker-compose.regtest.yml up -d pg arkd-nbxplorer
 	$(call setup_env, envs/arkd-wallet-nosigner.regtest.env)
 	@go run ./cmd/arkd-wallet
 

@@ -265,19 +265,21 @@ To compile the `arkd` binary from source, you can use the following Make command
 
 ### Local Development Setup
 
-1. Install Go (version 1.23 or later)
-2. Install [Nigiri](https://nigiri.vulpem.com/) for local Bitcoin networks
-3. Start Nigiri to setup a regtest Bitcoin environment:
+1. Install Go (version 1.23 or later) and Node.js (>= 18)
+2. Clone this repository with submodules (the regtest env is a git submodule):
 
    ```sh
-   nigiri start
+   git clone --recurse-submodules https://github.com/arkade-os/arkd.git
+   cd arkd
    ```
 
-4. Clone this repository:
+3. Start the regtest base stack (Bitcoin Core + Fulcrum + mempool). The in-house
+   [arkade-regtest](https://github.com/ArkLabsHQ/arkade-regtest) Node CLI replaces
+   nigiri; `AUTOMINE_INTERVAL=0` keeps block production explicit (the tests mine
+   on demand):
 
    ```sh
-   git clone https://github.com/arkade-os/arkd.git
-   cd arkd
+   AUTOMINE_INTERVAL=0 REGTEST_PROFILES=base node regtest/regtest.mjs start
    ```
 
 5. Install dependencies:
@@ -297,7 +299,7 @@ To compile the `arkd` binary from source, you can use the following Make command
    make run-signer
    ```
 
-   NOTE: This command starts `pg` and `nbxplorer` services defined in `docker-compose.regtest.yml`, make sure to tear them down once you want to delete your dev env with `make docker-stop`
+   NOTE: This command starts `pg` and `arkd-nbxplorer` services defined in `docker-compose.regtest.yml` (NBXplorer indexes the base stack's bitcoin node, so the regtest base stack from step 3 must be running). Tear them down with `make docker-stop` when deleting your dev env.
 
 7. Run arkd in dev mode:
 
@@ -322,12 +324,15 @@ To compile the `arkd` binary from source, you can use the following Make command
    make test
    ```
 
-3. Run integration tests ([start nigiri](https://github.com/arkade-os/arkd/tree/master/README.md#L218) if needed first):
+3. Run integration tests (start the regtest base stack first — see Local
+   Development Setup step 3):
 
    ```sh
+   AUTOMINE_INTERVAL=0 REGTEST_PROFILES=base node regtest/regtest.mjs start
    make docker-run
    make integrationtest
    make docker-stop
+   node regtest/regtest.mjs clean
    ```
 
 ### Protobuf Breaking Change Detection
