@@ -426,21 +426,19 @@ func (s *service) Stop() {
 	s.sweeper.stop()
 
 	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
-	if err == nil {
-		tapkeys := make([]string, 0)
-
-		for _, commitmentTxId := range commitmentTxIds {
-			keys, err := s.repoManager.Vtxos().
-				GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
-			if err != nil {
-				log.WithError(err).Warn("failed to get vtxo tap keys")
-				continue
-			}
-
-			tapkeys = append(tapkeys, keys...)
+	if err == nil && len(commitmentTxIds) > 0 {
+		tapkeys, err := s.repoManager.Vtxos().
+			GetVtxoPubKeysByCommitmentTxids(ctx, commitmentTxIds, 0)
+		if err != nil {
+			log.WithError(err).Warnf(
+				"failed to get vtxo tap keys for %d sweepable rounds; "+
+					"skipping UnwatchScripts on shutdown, wallet may keep "+
+					"watching these scripts until the next restart",
+				len(commitmentTxIds),
+			)
+		} else {
+			s.stopWatchingVtxos(tapkeys)
 		}
-
-		s.stopWatchingVtxos(tapkeys)
 	}
 
 	// nolint
@@ -3624,6 +3622,14 @@ func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
 	return s.scanner.WatchScripts(context.Background(), scripts)
 }
 
+// restoreWatchingVtxos re-registers every sweepable round's vtxo pubkeys
+// with the chain scanner so we resume receiving notifications after a
+// restart. The pubkey lookup uses the bulk repo method
+// GetVtxoPubKeysByCommitmentTxids so we issue exactly two DB queries
+// (one for the round list, one for all keys) regardless of how many
+// sweepable rounds exist. The cross-process WatchScripts gRPC call is
+// chunked by walletclient.WatchScripts to stay below the default
+// 4 MiB gRPC max-message size at large script counts.
 func (s *service) restoreWatchingVtxos() error {
 	ctx := context.Background()
 
@@ -3632,30 +3638,30 @@ func (s *service) restoreWatchingVtxos() error {
 		return err
 	}
 
-	total := len(commitmentTxIds)
-	lastMilestone := 0
-	scripts := make([]string, 0)
-	for i, commitmentTxId := range commitmentTxIds {
-		tapKeys, err := s.repoManager.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
-		if err != nil {
-			return err
-		}
-
-		for _, key := range tapKeys {
-			// skip if the key is not a valid x-only hex encoded pubkey
-			if len(key) != 64 {
-				continue
-			}
-			scripts = append(scripts, fmt.Sprintf("5120%s", key))
-		}
-
-		if milestone := (i + 1) * 100 / total / 10; milestone > lastMilestone {
-			lastMilestone = milestone
-			log.Debugf("restore watching vtxos: %d%%...", milestone*10)
-		}
+	if len(commitmentTxIds) == 0 {
+		return nil
 	}
 
-	if len(scripts) <= 0 {
+	tapKeys, err := s.repoManager.Vtxos().
+		GetVtxoPubKeysByCommitmentTxids(ctx, commitmentTxIds, 0)
+	if err != nil {
+		return err
+	}
+
+	scripts := make([]string, 0, len(tapKeys))
+	for _, key := range tapKeys {
+		// Skip values that are not a 32-byte x-only pubkey encoded as 64
+		// hex chars. arkd writes valid keys, but defending against a
+		// corrupted DB row here means a single bad pubkey cannot poison
+		// the entire WatchScripts gRPC payload at startup recovery.
+		decoded, err := hex.DecodeString(key)
+		if err != nil || len(decoded) != 32 {
+			continue
+		}
+		scripts = append(scripts, fmt.Sprintf("5120%s", key))
+	}
+
+	if len(scripts) == 0 {
 		return nil
 	}
 
@@ -3663,7 +3669,10 @@ func (s *service) restoreWatchingVtxos() error {
 		return err
 	}
 
-	log.Debugf("restored watching %d vtxo scripts", len(scripts))
+	log.Debugf(
+		"restored watching %d vtxo scripts from %d sweepable rounds",
+		len(scripts), len(commitmentTxIds),
+	)
 	return nil
 }
 

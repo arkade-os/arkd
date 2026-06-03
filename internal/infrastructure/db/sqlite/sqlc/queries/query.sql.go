@@ -1772,6 +1772,78 @@ func (q *Queries) SelectVtxoPubKeysByCommitmentTxid(ctx context.Context, arg Sel
 	return items, nil
 }
 
+const selectVtxoPubKeysByCommitmentTxids = `-- name: SelectVtxoPubKeysByCommitmentTxids :many
+SELECT DISTINCT v.pubkey
+FROM vtxo v
+WHERE v.amount >= ?1
+  AND (
+    v.commitment_txid IN (/*SLICE:commitment_txids*/?)
+    OR EXISTS (
+      SELECT 1 FROM vtxo_commitment_txid vc
+      WHERE vc.vtxo_txid = v.txid AND vc.vtxo_vout = v.vout
+        AND vc.commitment_txid IN (/*SLICE:commitment_txids_alt*/?)
+    )
+  )
+`
+
+type SelectVtxoPubKeysByCommitmentTxidsParams struct {
+	MinAmount          int64
+	CommitmentTxids    []string
+	CommitmentTxidsAlt []string
+}
+
+// Bulk variant of SelectVtxoPubKeysByCommitmentTxid: returns the
+// deduplicated set of vtxo pubkeys for any of the given commitment_txids.
+// Used at startup by restoreWatchingVtxos to collapse what was an N+1
+// per-round loop into a single SQL call.
+//
+// Two slice placeholders bind the same list of txids: sqlc's sqlite
+// generator only rewrites the first occurrence of sqlc.slice('name') per
+// query, so checking both v.commitment_txid and the join table forces
+// the second IN clause to use a distinct slice name. The Go caller
+// passes the same []string to both.
+func (q *Queries) SelectVtxoPubKeysByCommitmentTxids(ctx context.Context, arg SelectVtxoPubKeysByCommitmentTxidsParams) ([]string, error) {
+	query := selectVtxoPubKeysByCommitmentTxids
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.MinAmount)
+	if len(arg.CommitmentTxids) > 0 {
+		for _, v := range arg.CommitmentTxids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:commitment_txids*/?", strings.Repeat(",?", len(arg.CommitmentTxids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:commitment_txids*/?", "NULL", 1)
+	}
+	if len(arg.CommitmentTxidsAlt) > 0 {
+		for _, v := range arg.CommitmentTxidsAlt {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:commitment_txids_alt*/?", strings.Repeat(",?", len(arg.CommitmentTxidsAlt))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:commitment_txids_alt*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var pubkey string
+		if err := rows.Scan(&pubkey); err != nil {
+			return nil, err
+		}
+		items = append(items, pubkey)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectVtxosOutpointsByArkTxidRecursive = `-- name: SelectVtxosOutpointsByArkTxidRecursive :many
 WITH RECURSIVE descendants_chain AS (
     -- seed

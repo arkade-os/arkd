@@ -1009,6 +1009,53 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Empty(t, tapKeys)
 
+		// Bulk variant: must return the deduplicated union of the per-txid
+		// results across all provided commitment_txids.
+		bulkKeys, err := svc.Vtxos().GetVtxoPubKeysByCommitmentTxids(
+			ctx, []string{otherCommitmentTxid}, 0,
+		)
+		require.NoError(t, err)
+		require.Len(t, bulkKeys, 3)
+		require.ElementsMatch(t, []string{"tapkey1", "tapkey2", "tapkey3"}, bulkKeys)
+
+		bulkKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxids(
+			ctx, []string{otherCommitmentTxid}, 3000,
+		)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"tapkey1", "tapkey3"}, bulkKeys)
+
+		// Combine with a known existing commitmentTxid that has keys too,
+		// expect the dedup'd union, no duplicates.
+		bulkKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxids(
+			ctx, []string{otherCommitmentTxid, commitmentTxid}, 0,
+		)
+		require.NoError(t, err)
+		seen := make(map[string]int)
+		for _, k := range bulkKeys {
+			seen[k]++
+		}
+		for k, n := range seen {
+			require.Equalf(t, 1, n, "duplicate pubkey %s in bulk result", k)
+		}
+		// Verify the full union: keys from both commitment txids must be
+		// present (tapkey1/2/3 from otherCommitmentTxid, plus pubkey and
+		// pubkey2 from the earlier commitmentTxid seed).
+		require.Contains(t, bulkKeys, "tapkey1")
+		require.Contains(t, bulkKeys, "tapkey2")
+		require.Contains(t, bulkKeys, "tapkey3")
+		require.Contains(t, bulkKeys, pubkey)
+		require.Contains(t, bulkKeys, pubkey2)
+
+		bulkKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxids(ctx, nil, 0)
+		require.NoError(t, err)
+		require.Empty(t, bulkKeys)
+
+		bulkKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxids(
+			ctx, []string{nonExistentCommitmentTxid}, 0,
+		)
+		require.NoError(t, err)
+		require.Empty(t, bulkKeys)
+
 		t.Run("test_get_pending_spent_vtxos", func(t *testing.T) {
 			ctx := t.Context()
 

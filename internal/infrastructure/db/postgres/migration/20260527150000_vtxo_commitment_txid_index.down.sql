@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_vtxo_commitment_txid_commitment_txid;
