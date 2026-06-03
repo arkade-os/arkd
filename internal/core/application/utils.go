@@ -642,3 +642,23 @@ func calculateBoardingInputAmount(ptx *psbt.Packet) uint64 {
 func isBoardingInput(in psbt.PInput) bool {
 	return in.WitnessUtxo != nil && len(in.TaprootLeafScript) > 0
 }
+
+// isBoardingWitness reports whether a finalized (raw tx) input witness is a
+// taproot script-path spend, which is how boarding inputs are spent. The last
+// witness element of a taproot script-path spend is the control block: a
+// (33 + 32*m)-byte blob whose first byte encodes leaf version 0xc0 (with the
+// parity bit), distinguishing it from a key-path signature (a single witness
+// element) or a p2wpkh pubkey (33 bytes starting with 0x02/0x03).
+//
+// TODO: fragile — same caveat as isBoardingInput: it assumes only boarding
+// inputs are spent via taproot script path in a commitment tx.
+func isBoardingWitness(witness wire.TxWitness) bool {
+	if len(witness) < 2 {
+		return false
+	}
+	controlBlock := witness[len(witness)-1]
+	if len(controlBlock) < 33 || (len(controlBlock)-33)%32 != 0 {
+		return false
+	}
+	return controlBlock[0]&0xfe == 0xc0
+}

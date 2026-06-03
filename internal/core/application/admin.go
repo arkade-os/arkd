@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -12,6 +13,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -626,12 +628,13 @@ func (a *adminService) GetCollectedFees(
 			return 0, err
 		}
 
-		// Rounds finalized before fee persistence have a zero (default) collected
-		// fee; recompute it on the fly from intents (boarding inputs excluded).
+		// Batches finalized before fee persistence have a zero (default) collected fee;
+		// recompute it on the fly. Only patch (persist) when the recomputation is complete,
+		// so we never persist a value that under-counts boarding.
 		if round.CollectedFees == 0 {
-			fees := calculateCollectedFees(round, 0)
+			fees, complete := a.recomputeCollectedFees(ctx, round)
 			total += fees
-			if fees > 0 {
+			if complete && fees > 0 {
 				batchesToPatch[round.Id] = fees
 			}
 			continue
@@ -648,6 +651,65 @@ func (a *adminService) GetCollectedFees(
 				)
 			}
 		}()
+	}
+
+	return total, nil
+}
+
+// recomputeCollectedFees recomputes the fees collected by the operator for a batch whose fee was
+// not persisted (finalized before fee persistence). It recovers the boarding input amount from the
+// finalized commitment tx and returns whether the recomputation was complete.
+// When complete is false the boarding amount could not be recovered, so the returned value
+// under-counts the real fee and must not be persisted (a later call can retry).
+func (a *adminService) recomputeCollectedFees(
+	ctx context.Context, round *domain.Round,
+) (fees uint64, complete bool) {
+	boardingInputAmount, err := a.boardingInputAmount(ctx, round.CommitmentTx)
+	if err != nil {
+		log.WithError(err).WithField("round_id", round.Id).Warn(
+			"failed to recover boarding input amount, collected fees may be underestimated",
+		)
+		return calculateCollectedFees(round, 0), false
+	}
+	return calculateCollectedFees(round, boardingInputAmount), true
+}
+
+// boardingInputAmount computes the total amount (sats) of the boarding inputs of
+// a finalized (raw) commitment tx. Boarding inputs are detected by their taproot
+// script-path witness; since a raw tx carries no input amounts, each boarding
+// input's value is looked up from its prevout via the wallet.
+func (a *adminService) boardingInputAmount(
+	ctx context.Context, commitmentTx string,
+) (uint64, error) {
+	var tx wire.MsgTx
+	if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(commitmentTx))); err != nil {
+		return 0, fmt.Errorf("failed to deserialize commitment tx: %w", err)
+	}
+
+	var total uint64
+	for _, in := range tx.TxIn {
+		if !isBoardingWitness(in.Witness) {
+			continue
+		}
+
+		prevTxid := in.PreviousOutPoint.Hash.String()
+		prevTxHex, err := a.walletSvc.GetTransaction(ctx, prevTxid)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get boarding prevout tx %s: %w", prevTxid, err)
+		}
+
+		var prevTx wire.MsgTx
+		if err := prevTx.Deserialize(hex.NewDecoder(strings.NewReader(prevTxHex))); err != nil {
+			return 0, fmt.Errorf("failed to deserialize boarding prevout tx %s: %w", prevTxid, err)
+		}
+
+		vout := in.PreviousOutPoint.Index
+		if int(vout) >= len(prevTx.TxOut) {
+			return 0, fmt.Errorf(
+				"boarding prevout %s:%d out of range", prevTxid, vout,
+			)
+		}
+		total += uint64(prevTx.TxOut[vout].Value)
 	}
 
 	return total, nil
