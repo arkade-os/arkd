@@ -245,6 +245,10 @@ message GetVtxoChainResponse {
   string auth_token = 3;
 }
 
+// GetVirtualTxs returns offchain (ark) transactions only. Checkpoint
+// transactions and round commitment transactions are not in scope of
+// this RPC even when a caller supplies their txid. Use the rounds /
+// vtxo-tree RPCs to retrieve those.
 message GetVirtualTxsRequest {
   repeated string txids = 1;
   IndexerPageRequest page = 2;
@@ -261,12 +265,19 @@ message GetVirtualTxsRequest {
   // expressions evaluated against the tx envelope (see SubscriptionFilter).
   // Only the structured subset of CEL is supported on this unary RPC: a
   // flat AND of `has(tx.extension)`, `hasPacket(tx.extension, N)`, and
-  // `tx.extension[N] == 'hex'` predicates. Unsupported shapes are rejected
-  // with InvalidArgument. The scripts field is ignored.
+  // `tx.extension[N] == 'hex'` predicates. `tx.extension[N] == 'hex'`
+  // matches exactly (same semantics as the streaming SubscriptionFilter).
+  // Unsupported shapes (OR, NOT, !=, size(), .contains(), non-bool
+  // expressions, etc.) are rejected with InvalidArgument. The scripts
+  // field must be left empty; non-empty scripts are also rejected with
+  // InvalidArgument.
   SubscriptionFilter filter = 5;
   // Optional mutually exclusive time-range selector applied to the
-  // offchain tx starting_timestamp. `within` is equivalent to setting
-  // both `after` and `before`.
+  // offchain tx starting_timestamp. Bounds are inclusive: `after`
+  // matches starting_timestamp >= timestamp, `before` matches
+  // starting_timestamp <= timestamp, and `within` is equivalent to
+  // setting both. `within(t, t)` selects rows whose timestamp is
+  // exactly t.
   oneof time_range {
     TimeRangeAfter after = 6;
     TimeRangeBefore before = 7;

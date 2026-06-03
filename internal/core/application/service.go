@@ -515,7 +515,12 @@ func (s *service) SubmitOffchainTx(
 		).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 	}
 
-	packets := extractPacketTypes(arkPtx.UnsignedTx)
+	packets, err := extractPacketTypes(arkPtx.UnsignedTx)
+	if err != nil {
+		return nil, errors.INVALID_ARK_PSBT.New(
+			"failed to parse ark tx extension: %s", err,
+		).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+	}
 
 	event, err := offchainTx.Request(txid, signedArkTx, checkpointTxs, packets)
 	if err != nil {

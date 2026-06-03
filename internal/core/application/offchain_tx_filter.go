@@ -6,10 +6,9 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/interface/grpc/handlers/txfilter"
+	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/ast"
 	"github.com/google/cel-go/common/operators"
-	"github.com/google/cel-go/common/types/ref"
-	"github.com/google/cel-go/common/types/traits"
 )
 
 // ExtractOffchainTxFilter compiles a CEL expression and projects it onto
@@ -32,9 +31,14 @@ func ExtractOffchainTxFilter(expression string) (domain.OffchainTxFilter, error)
 		return out, nil
 	}
 
-	parsedAST, issues := txfilter.TxFilterEnv.Parse(expression)
+	parsedAST, issues := txfilter.TxFilterEnv.Compile(expression)
 	if issues.Err() != nil {
 		return out, issues.Err()
+	}
+	if parsedAST.OutputType() != cel.BoolType {
+		return out, fmt.Errorf(
+			"expected bool expression, got %v", parsedAST.OutputType(),
+		)
 	}
 
 	root := parsedAST.NativeRep().Expr()
@@ -187,16 +191,31 @@ func isTxIdent(e ast.Expr) bool {
 	return e.Kind() == ast.IdentKind && e.AsIdent() == "tx"
 }
 
+// asIntLiteral extracts a CEL integer literal and range-checks it to
+// the packet-type byte range (0..255). Returns an error for any other
+// CEL value kind or out-of-range integer.
 func asIntLiteral(e ast.Expr) (int, error) {
 	if e.Kind() != ast.LiteralKind {
 		return 0, fmt.Errorf("expected int literal")
 	}
-	v := e.AsLiteral()
-	asInt, ok := v.(refIntLike)
-	if !ok {
+	var n int64
+	switch v := e.AsLiteral().Value().(type) {
+	case int64:
+		n = v
+	case int:
+		n = int64(v)
+	case uint64:
+		if v > uint64(maxPacketType) {
+			return 0, fmt.Errorf("packet type %d out of range", v)
+		}
+		n = int64(v)
+	default:
 		return 0, fmt.Errorf("expected int literal, got %T", v)
 	}
-	return int(asInt.Value().(int64)), nil
+	if n < 0 || n > int64(maxPacketType) {
+		return 0, fmt.Errorf("packet type %d out of range (must be 0..%d)", n, maxPacketType)
+	}
+	return int(n), nil
 }
 
 func asStringLiteral(e ast.Expr) (string, error) {
@@ -211,9 +230,6 @@ func asStringLiteral(e ast.Expr) (string, error) {
 	return asStr, nil
 }
 
-// refIntLike is the minimal interface CEL int literals satisfy; it
-// avoids depending on the concrete types.Int type for the assertion.
-type refIntLike interface {
-	ref.Val
-	traits.Adder
-}
+// maxPacketType is the upper bound on ARK extension packet types, which
+// are uint8 in the wire format (see pkg/ark-lib/extension/packet.go).
+const maxPacketType = 0xff

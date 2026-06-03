@@ -3,17 +3,12 @@ package sqlitedb
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
-	"encoding/hex"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
-	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
-	"github.com/btcsuite/btcd/btcutil/psbt"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -35,9 +30,7 @@ func NewOffchainTxRepository(config ...interface{}) (domain.OffchainTxRepository
 		db:      db,
 		querier: queries.New(db),
 	}
-	if err := repo.backfillPackets(context.Background()); err != nil {
-		return nil, fmt.Errorf("failed to backfill offchain_tx.packets: %w", err)
-	}
+	repo.startBackfill(context.Background())
 	return repo, nil
 }
 
@@ -170,7 +163,11 @@ func (v *offchainTxRepository) GetOffchainTxs(
 	out := make([]*domain.OffchainTx, 0, len(order))
 	for _, txid := range order {
 		off := byTxid[txid]
-		if !matchPacketFilter(off, filter.WithPacket) {
+		match, err := filter.MatchPackets(off)
+		if err != nil {
+			return nil, err
+		}
+		if !match {
 			continue
 		}
 		out = append(out, off)
@@ -182,32 +179,69 @@ func (v *offchainTxRepository) Close() {
 	_ = v.db.Close()
 }
 
-func (v *offchainTxRepository) backfillPackets(ctx context.Context) error {
-	rows, err := v.querier.SelectOffchainTxsWithoutPackets(ctx)
-	if err != nil {
-		return err
-	}
-	if len(rows) == 0 {
-		return nil
-	}
+// backfillBatchSize controls how many rows the background backfill
+// reads + updates per loop iteration. Small enough to keep transactions
+// short, large enough to amortize the round-trip on a cold cache.
+const backfillBatchSize = 500
 
-	updated := 0
-	for _, row := range rows {
-		packets, decodeErr := decodePacketsFromTx(row.Tx)
-		if decodeErr != nil {
-			log.WithError(decodeErr).
-				Warnf("failed to decode packets for offchain tx %s during backfill", row.Txid)
-			continue
+// startBackfill kicks the offchain_tx.packets backfill off in a
+// goroutine so process startup is not blocked. The backfill keyset-
+// paginates over rows with NULL packets, decodes each PSBT, and writes
+// either the parsed list or the empty string (for rows whose PSBT
+// cannot be decoded, so they are not revisited on every restart).
+func (v *offchainTxRepository) startBackfill(ctx context.Context) {
+	go func() {
+		if err := v.backfillPackets(ctx); err != nil {
+			log.WithError(err).
+				Error("offchain_tx.packets backfill stopped before completion")
 		}
-		if err := v.querier.UpdateOffchainTxPackets(ctx, queries.UpdateOffchainTxPacketsParams{
-			Txid:    row.Txid,
-			Packets: encodePacketsColumn(packets),
-		}); err != nil {
-			return fmt.Errorf("failed to update packets for offchain tx %s: %w", row.Txid, err)
+	}()
+}
+
+func (v *offchainTxRepository) backfillPackets(ctx context.Context) error {
+	cursor := ""
+	totalUpdated := 0
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		updated++
+		rows, err := v.querier.SelectOffchainTxsWithoutPackets(
+			ctx, queries.SelectOffchainTxsWithoutPacketsParams{
+				Cursor: cursor,
+				Lim:    int64(backfillBatchSize),
+			},
+		)
+		if err != nil {
+			return err
+		}
+		if len(rows) == 0 {
+			break
+		}
+		for _, row := range rows {
+			packets, decodeErr := domain.PacketTypesFromPSBT64(row.Tx)
+			col := encodePacketsColumn(packets)
+			if decodeErr != nil {
+				log.WithError(decodeErr).Warnf(
+					"failed to decode packets for offchain tx %s during backfill; "+
+						"marking row as having no extension to avoid retry",
+					row.Txid,
+				)
+				col = sql.NullString{String: "", Valid: true}
+			}
+			if err := v.querier.UpdateOffchainTxPackets(
+				ctx, queries.UpdateOffchainTxPacketsParams{
+					Txid: row.Txid, Packets: col,
+				},
+			); err != nil {
+				return fmt.Errorf("update packets for offchain tx %s: %w", row.Txid, err)
+			}
+			cursor = row.Txid
+			totalUpdated++
+		}
 	}
-	log.Infof("backfilled packets column for %d offchain tx(s)", updated)
+	if totalUpdated > 0 {
+		log.Infof("backfilled packets column for %d offchain tx(s)", totalUpdated)
+	}
 	return nil
 }
 
@@ -219,8 +253,8 @@ func boolToInt64(b bool) int64 {
 }
 
 // encodePacketsColumn formats a packet-type list into the CSV
-// representation persisted in offchain_tx.packets. An empty list (no
-// extension) is persisted as the empty string so that a NULL value can be
+// representation persisted in offchain_tx.packets. An empty (but
+// non-nil) list is persisted as the empty string so that NULL can be
 // reserved to mean "not yet backfilled".
 func encodePacketsColumn(packets []int) sql.NullString {
 	if packets == nil {
@@ -233,8 +267,6 @@ func encodePacketsColumn(packets []int) sql.NullString {
 	return sql.NullString{String: strings.Join(parts, ","), Valid: true}
 }
 
-// decodePacketsColumn parses the CSV representation produced by
-// encodePacketsColumn back into the in-memory []int form.
 func decodePacketsColumn(col sql.NullString) []int {
 	if !col.Valid || col.String == "" {
 		return nil
@@ -253,57 +285,4 @@ func decodePacketsColumn(col sql.NullString) []int {
 		out = append(out, n)
 	}
 	return out
-}
-
-// decodePacketsFromTx parses the ARK extension OP_RETURN in the persisted
-// ark tx (base64 PSBT) and returns the list of packet types. Returns nil
-// (no error) when the tx carries no extension.
-func decodePacketsFromTx(tx string) ([]int, error) {
-	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
-	if err != nil {
-		return nil, fmt.Errorf("parse psbt: %w", err)
-	}
-	ext, err := extension.NewExtensionFromTx(ptx.UnsignedTx)
-	if err != nil {
-		if errors.Is(err, extension.ErrExtensionNotFound) {
-			return []int{}, nil
-		}
-		return nil, fmt.Errorf("parse extension: %w", err)
-	}
-	out := make([]int, 0, len(ext))
-	for _, p := range ext {
-		out = append(out, int(p.Type()))
-	}
-	return out, nil
-}
-
-// matchPacketFilter applies the post-SQL portion of an OffchainTxFilter:
-// a tx matches when it carries every requested packet type, and (when a
-// payload is provided) the persisted ark tx contains the base64-encoded
-// payload bytes. An empty filter matches every tx.
-func matchPacketFilter(off *domain.OffchainTx, want map[int]string) bool {
-	if len(want) == 0 {
-		return true
-	}
-	carried := make(map[int]struct{}, len(off.Packets))
-	for _, p := range off.Packets {
-		carried[p] = struct{}{}
-	}
-	for t, data := range want {
-		if _, ok := carried[t]; !ok {
-			return false
-		}
-		if data == "" {
-			continue
-		}
-		raw, err := hex.DecodeString(data)
-		if err != nil {
-			return false
-		}
-		needle := base64.StdEncoding.EncodeToString(raw)
-		if !strings.Contains(off.ArkTx, needle) {
-			return false
-		}
-	}
-	return true
 }

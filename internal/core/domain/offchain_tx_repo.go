@@ -16,10 +16,12 @@ type OffchainTxRepository interface {
 // non-failed offchain txs.
 //
 // WithPacket maps a packet type (the int byte value carried in the ARK
-// OP_RETURN extension) to an optional hex-encoded payload. When the payload
-// is empty, the row matches if it carries a packet of that type. When the
-// payload is non-empty, the row must additionally carry a packet of that
-// type whose serialized bytes contain the given hex-decoded payload.
+// OP_RETURN extension) to an optional hex-encoded payload. When the
+// payload is empty, the row matches if it carries a packet of that
+// type. When the payload is non-empty, the row must additionally carry
+// a packet of that type whose serialized bytes, hex-encoded, equal the
+// payload exactly. This matches the SubscriptionFilter streaming
+// semantics for `tx.extension[N] == 'hex'`.
 type OffchainTxFilter struct {
 	WithTxids      []string
 	WithExtension  bool
@@ -30,8 +32,9 @@ type OffchainTxFilter struct {
 
 // Validate enforces the structural invariants of the filter. The empty
 // filter is allowed. WithAfterDate / WithBeforeDate may be set together
-// (forming a "within" range) or individually, but their values must be
-// non-negative and consistent.
+// (forming a "within" range) or individually. Bounds are inclusive on
+// both sides, so before == after is permitted and selects rows whose
+// starting_timestamp equals that value.
 func (f OffchainTxFilter) Validate() error {
 	if f.WithAfterDate < 0 {
 		return fmt.Errorf("with_after_date must be non-negative")
@@ -39,8 +42,8 @@ func (f OffchainTxFilter) Validate() error {
 	if f.WithBeforeDate < 0 {
 		return fmt.Errorf("with_before_date must be non-negative")
 	}
-	if f.WithAfterDate > 0 && f.WithBeforeDate > 0 && f.WithBeforeDate <= f.WithAfterDate {
-		return fmt.Errorf("with_before_date must be greater than with_after_date")
+	if f.WithAfterDate > 0 && f.WithBeforeDate > 0 && f.WithBeforeDate < f.WithAfterDate {
+		return fmt.Errorf("with_before_date must be greater than or equal to with_after_date")
 	}
 	return nil
 }

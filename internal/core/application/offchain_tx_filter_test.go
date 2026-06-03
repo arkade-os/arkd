@@ -135,10 +135,13 @@ func TestOffchainTxFilterValidate(t *testing.T) {
 		}.Validate())
 	})
 
-	t.Run("within is rejected when before <= after", func(t *testing.T) {
-		require.Error(t, domain.OffchainTxFilter{
+	t.Run("within is valid when before == after", func(t *testing.T) {
+		require.NoError(t, domain.OffchainTxFilter{
 			WithAfterDate: 10, WithBeforeDate: 10,
 		}.Validate())
+	})
+
+	t.Run("within is rejected when before < after", func(t *testing.T) {
 		require.Error(t, domain.OffchainTxFilter{
 			WithAfterDate: 10, WithBeforeDate: 5,
 		}.Validate())

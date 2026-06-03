@@ -86,6 +86,20 @@ func TestParseVirtualTxsFilter(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("within with equal bounds is accepted", func(t *testing.T) {
+		f, err := parseVirtualTxsFilter(&arkv1.GetVirtualTxsRequest{
+			TimeRange: &arkv1.GetVirtualTxsRequest_Within{
+				Within: &arkv1.TimeRangeWithin{
+					StartTimestamp: 1234,
+					EndTimestamp:   1234,
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(1234), f.WithAfterDate)
+		require.Equal(t, int64(1234), f.WithBeforeDate)
+	})
+
 	t.Run("invalid CEL expression surfaces error", func(t *testing.T) {
 		_, err := parseVirtualTxsFilter(&arkv1.GetVirtualTxsRequest{
 			Filter: &arkv1.SubscriptionFilter{
@@ -93,5 +107,37 @@ func TestParseVirtualTxsFilter(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
+	})
+
+	t.Run("non-bool expression is rejected", func(t *testing.T) {
+		_, err := parseVirtualTxsFilter(&arkv1.GetVirtualTxsRequest{
+			Filter: &arkv1.SubscriptionFilter{
+				Expressions: []string{"tx.extension[1]"},
+			},
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("filter.scripts is rejected with InvalidArgument", func(t *testing.T) {
+		_, err := parseVirtualTxsFilter(&arkv1.GetVirtualTxsRequest{
+			Filter: &arkv1.SubscriptionFilter{
+				Scripts: &arkv1.ScriptFilter{
+					Add: []string{
+						"00140000000000000000000000000000000000000000",
+					},
+				},
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "filter.scripts")
+	})
+
+	t.Run("filter.scripts empty mutator is accepted", func(t *testing.T) {
+		_, err := parseVirtualTxsFilter(&arkv1.GetVirtualTxsRequest{
+			Filter: &arkv1.SubscriptionFilter{
+				Scripts: &arkv1.ScriptFilter{},
+			},
+		})
+		require.NoError(t, err)
 	})
 }

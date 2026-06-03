@@ -421,6 +421,12 @@ func parseVirtualTxsFilter(
 	filter := domain.OffchainTxFilter{}
 
 	if f := request.GetFilter(); f != nil {
+		if s := f.GetScripts(); s != nil &&
+			(len(s.GetAdd()) > 0 || len(s.GetRemove()) > 0) {
+			return filter, fmt.Errorf(
+				"filter.scripts is not supported by GetVirtualTxs; leave empty",
+			)
+		}
 		exprs := f.GetExpressions()
 		switch len(exprs) {
 		case 0:
@@ -433,7 +439,8 @@ func parseVirtualTxsFilter(
 			filter.WithPacket = extracted.WithPacket
 		default:
 			return filter, fmt.Errorf(
-				"multiple OR-combined expressions are not supported by GetVirtualTxs",
+				"GetVirtualTxs accepts at most one filter expression; got %d",
+				len(exprs),
 			)
 		}
 	}

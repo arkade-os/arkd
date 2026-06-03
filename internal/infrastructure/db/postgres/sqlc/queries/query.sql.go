@@ -634,9 +634,11 @@ func (q *Queries) SelectNotUnrolledVtxosWithPubkey(ctx context.Context, pubkey s
 const selectOffchainTxs = `-- name: SelectOffchainTxs :many
 SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.packets, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw
 WHERE COALESCE(fail_reason, '') = ''
+  AND stage_code <> 0
   AND ($1::boolean = false OR COALESCE(packets, '') != '')
   AND ($2::boolean = false OR starting_timestamp >= $3::bigint)
   AND ($4::boolean = false OR starting_timestamp <= $5::bigint)
+ORDER BY starting_timestamp DESC, txid ASC
 `
 
 type SelectOffchainTxsParams struct {
@@ -697,10 +699,12 @@ func (q *Queries) SelectOffchainTxs(ctx context.Context, arg SelectOffchainTxsPa
 const selectOffchainTxsByTxids = `-- name: SelectOffchainTxsByTxids :many
 SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.packets, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw
 WHERE COALESCE(fail_reason, '') = ''
+  AND stage_code <> 0
   AND txid = ANY($1::varchar[])
   AND ($2::boolean = false OR COALESCE(packets, '') != '')
   AND ($3::boolean = false OR starting_timestamp >= $4::bigint)
   AND ($5::boolean = false OR starting_timestamp <= $6::bigint)
+ORDER BY starting_timestamp DESC, txid ASC
 `
 
 type SelectOffchainTxsByTxidsParams struct {
@@ -761,16 +765,25 @@ func (q *Queries) SelectOffchainTxsByTxids(ctx context.Context, arg SelectOffcha
 }
 
 const selectOffchainTxsWithoutPackets = `-- name: SelectOffchainTxsWithoutPackets :many
-SELECT txid, tx FROM offchain_tx WHERE packets IS NULL
+SELECT txid, tx FROM offchain_tx
+WHERE packets IS NULL
+  AND txid > $1::varchar
+ORDER BY txid ASC
+LIMIT $2::int
 `
+
+type SelectOffchainTxsWithoutPacketsParams struct {
+	Cursor string
+	Lim    int32
+}
 
 type SelectOffchainTxsWithoutPacketsRow struct {
 	Txid string
 	Tx   string
 }
 
-func (q *Queries) SelectOffchainTxsWithoutPackets(ctx context.Context) ([]SelectOffchainTxsWithoutPacketsRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectOffchainTxsWithoutPackets)
+func (q *Queries) SelectOffchainTxsWithoutPackets(ctx context.Context, arg SelectOffchainTxsWithoutPacketsParams) ([]SelectOffchainTxsWithoutPacketsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectOffchainTxsWithoutPackets, arg.Cursor, arg.Lim)
 	if err != nil {
 		return nil, err
 	}

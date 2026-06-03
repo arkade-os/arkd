@@ -1233,6 +1233,7 @@
       "GetVirtualTxsRequest": {
         "title": "GetVirtualTxsRequest",
         "type": "object",
+        "description": "GetVirtualTxs returns offchain (ark) transactions only. Checkpoint\ntransactions and round commitment transactions are not in scope of\nthis RPC even when a caller supplies their txid. Use the rounds /\nvtxo-tree RPCs to retrieve those.",
         "properties": {
           "after": {
             "$ref": "#/components/schemas/TimeRangeAfter"
@@ -1242,7 +1243,7 @@
           },
           "filter": {
             "$ref": "#/components/schemas/SubscriptionFilter",
-            "description": "Optional filter on tx contents. The expressions field carries CEL\nexpressions evaluated against the tx envelope (see SubscriptionFilter).\nOnly the structured subset of CEL is supported on this unary RPC: a\nflat AND of `has(tx.extension)`, `hasPacket(tx.extension, N)`, and\n`tx.extension[N] == 'hex'` predicates. Unsupported shapes are rejected\nwith InvalidArgument. The scripts field is ignored."
+            "description": "Optional filter on tx contents. The expressions field carries CEL\nexpressions evaluated against the tx envelope (see SubscriptionFilter).\nOnly the structured subset of CEL is supported on this unary RPC: a\nflat AND of `has(tx.extension)`, `hasPacket(tx.extension, N)`, and\n`tx.extension[N] == 'hex'` predicates. `tx.extension[N] == 'hex'`\nmatches exactly (same semantics as the streaming SubscriptionFilter).\nUnsupported shapes (OR, NOT, !=, size(), .contains(), non-bool\nexpressions, etc.) are rejected with InvalidArgument. The scripts\nfield must be left empty; non-empty scripts are also rejected with\nInvalidArgument."
           },
           "intent": {
             "$ref": "#/components/schemas/IndexerIntent",

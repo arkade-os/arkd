@@ -1013,6 +1013,10 @@ func (x *GetVtxoChainResponse) GetAuthToken() string {
 	return ""
 }
 
+// GetVirtualTxs returns offchain (ark) transactions only. Checkpoint
+// transactions and round commitment transactions are not in scope of
+// this RPC even when a caller supplies their txid. Use the rounds /
+// vtxo-tree RPCs to retrieve those.
 type GetVirtualTxsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Txids []string               `protobuf:"bytes,1,rep,name=txids,proto3" json:"txids,omitempty"`
@@ -1028,12 +1032,19 @@ type GetVirtualTxsRequest struct {
 	// expressions evaluated against the tx envelope (see SubscriptionFilter).
 	// Only the structured subset of CEL is supported on this unary RPC: a
 	// flat AND of `has(tx.extension)`, `hasPacket(tx.extension, N)`, and
-	// `tx.extension[N] == 'hex'` predicates. Unsupported shapes are rejected
-	// with InvalidArgument. The scripts field is ignored.
+	// `tx.extension[N] == 'hex'` predicates. `tx.extension[N] == 'hex'`
+	// matches exactly (same semantics as the streaming SubscriptionFilter).
+	// Unsupported shapes (OR, NOT, !=, size(), .contains(), non-bool
+	// expressions, etc.) are rejected with InvalidArgument. The scripts
+	// field must be left empty; non-empty scripts are also rejected with
+	// InvalidArgument.
 	Filter *SubscriptionFilter `protobuf:"bytes,5,opt,name=filter,proto3" json:"filter,omitempty"`
 	// Optional mutually exclusive time-range selector applied to the
-	// offchain tx starting_timestamp. `within` is equivalent to setting
-	// both `after` and `before`.
+	// offchain tx starting_timestamp. Bounds are inclusive: `after`
+	// matches starting_timestamp >= timestamp, `before` matches
+	// starting_timestamp <= timestamp, and `within` is equivalent to
+	// setting both. `within(t, t)` selects rows whose timestamp is
+	// exactly t.
 	//
 	// Types that are valid to be assigned to TimeRange:
 	//
