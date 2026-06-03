@@ -21,7 +21,7 @@ type CompleteUnrollArgs struct {
 	Explorer   clientlib.Explorer
 	SignTx     clientlib.SignFn
 	ServerInfo clientlib.Info
-	ArkAddr    clientlib.Address
+	Utxos      []clientlib.Utxo
 	Receiver   string
 }
 
@@ -38,11 +38,8 @@ func (a CompleteUnrollArgs) validate() error {
 	if a.ServerInfo.Dust == 0 {
 		return fmt.Errorf("missing server info")
 	}
-	if len(a.ArkAddr.Address) <= 0 {
-		return fmt.Errorf("missing ark address")
-	}
-	if len(a.ArkAddr.Tapscripts) <= 0 {
-		return fmt.Errorf("missing ark address tapscripts")
+	if len(a.Utxos) <= 0 {
+		return fmt.Errorf("missing utxos")
 	}
 	if len(a.Receiver) <= 0 {
 		return fmt.Errorf("missing receiver address")
@@ -69,13 +66,8 @@ func CompleteUnroll(ctx context.Context, args CompleteUnrollArgs) (string, error
 		return "", err
 	}
 
-	utxos, err := getMatureUtxos(ctx, args.Explorer, args.ArkAddr, network)
-	if err != nil {
-		return "", err
-	}
-
 	targetAmount := uint64(0)
-	for _, u := range utxos {
+	for _, u := range args.Utxos {
 		targetAmount += u.Amount
 	}
 
@@ -99,7 +91,7 @@ func CompleteUnroll(ctx context.Context, args CompleteUnrollArgs) (string, error
 	})
 	updater.Upsbt.Outputs = append(updater.Upsbt.Outputs, psbt.POutput{})
 
-	if err := addInputs(updater, utxos); err != nil {
+	if err := addInputs(updater, args.Utxos); err != nil {
 		return "", err
 	}
 

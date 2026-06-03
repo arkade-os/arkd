@@ -56,14 +56,10 @@ func (w *wallet) Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes,
 		return nil, err
 	}
 
-	signTx := func(ctx context.Context, tx string) (string, error) {
-		return w.identity.SignTransaction(ctx, tx, nil)
-	}
-
 	return unroll.Unroll(ctx, unroll.UnrollArgs{
 		Explorer:   w.explorer,
 		Indexer:    w.indexer,
-		SignTx:     signTx,
+		SignTx:     w.SignTransaction,
 		ServerInfo: w.Config.ClientInfo(),
 		Vtxos:      vtxos,
 		BumpAddr:   onchainAddr.Address,
@@ -83,25 +79,25 @@ func (w *wallet) CompleteUnroll(ctx context.Context, opts ...UnrollOption) (stri
 		}
 	}
 
-	onchainAddr, _, _, arkAddr, err := w.getAddresses(ctx)
+	utxos, err := w.getMatureUtxos(ctx)
 	if err != nil {
 		return "", err
 	}
 
 	to := options.receiver
 	if len(to) <= 0 {
+		onchainAddr, _, _, _, err := w.getAddresses(ctx)
+		if err != nil {
+			return "", err
+		}
 		to = onchainAddr.Address
-	}
-
-	signTx := func(ctx context.Context, tx string) (string, error) {
-		return w.identity.SignTransaction(ctx, tx, nil)
 	}
 
 	return unroll.CompleteUnroll(ctx, unroll.CompleteUnrollArgs{
 		Explorer:   w.explorer,
-		SignTx:     signTx,
+		SignTx:     w.SignTransaction,
 		ServerInfo: w.Config.ClientInfo(),
-		ArkAddr:    *arkAddr,
+		Utxos:      utxos,
 		Receiver:   to,
 	})
 }
@@ -151,6 +147,34 @@ func (w *wallet) OnboardAgainAllExpiredBoardings(ctx context.Context) (string, e
 	}
 
 	return w.sendExpiredBoardingUtxos(ctx, boardingAddr.Address)
+}
+
+func (w *wallet) getMatureUtxos(ctx context.Context) ([]clientlib.Utxo, error) {
+	_, _, _, addr, err := w.getAddresses(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	fetchedUtxos, err := w.explorer.GetUtxos([]string{addr.Address})
+	if err != nil {
+		return nil, err
+	}
+
+	signingClosure, err := addr.ExitClosure()
+	if err != nil {
+		return nil, err
+	}
+
+	utxos := make([]clientlib.Utxo, 0, len(fetchedUtxos))
+	for _, utxo := range fetchedUtxos {
+		u := utxo.ToUtxo(w.UnilateralExitDelay, addr.Tapscripts, signingClosure)
+		if u.RedeemableAt.Before(now) {
+			utxos = append(utxos, u)
+		}
+	}
+
+	return utxos, nil
 }
 
 func (w *wallet) sendExpiredBoardingUtxos(ctx context.Context, to string) (string, error) {
@@ -392,4 +416,3 @@ func (w *wallet) getUtxos(
 
 	return utxos, nil
 }
-
