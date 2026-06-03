@@ -1538,9 +1538,12 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		ctx := context.Background()
 		repo := svc.OffchainTxs()
 
-		offchainTx, err := repo.GetOffchainTx(ctx, arkTxid)
-		require.Nil(t, offchainTx)
-		require.Error(t, err)
+		offchainTxs, err := repo.GetOffchainTxs(
+			ctx, domain.OffchainTxFilter{WithTxids: []string{arkTxid}},
+		)
+		require.NoError(t, err)
+		require.Empty(t, offchainTxs)
+		var offchainTx *domain.OffchainTx
 
 		checkpointTxid1 := "0000000000000000000000000000000000000000000000000000000000000001"
 		signedCheckpointPtx1 := "cHNldP8BAgQCAAAAAQQBAAEFAQABBgEDAfsEAgAAAAA=signed"
@@ -1579,8 +1582,12 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
 		require.NoError(t, err)
 
-		gotOffchainTx, err := repo.GetOffchainTx(ctx, arkTxid)
+		gotOffchainTxs, err := repo.GetOffchainTxs(
+			ctx, domain.OffchainTxFilter{WithTxids: []string{arkTxid}},
+		)
 		require.NoError(t, err)
+		require.Len(t, gotOffchainTxs, 1)
+		gotOffchainTx := gotOffchainTxs[0]
 		require.NotNil(t, offchainTx)
 		require.True(t, gotOffchainTx.IsAccepted())
 		require.Equal(t, rootCommitmentTxid, gotOffchainTx.RootCommitmentTxId)
@@ -1601,11 +1608,43 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
 		require.NoError(t, err)
 
-		gotOffchainTx, err = repo.GetOffchainTx(ctx, arkTxid)
+		gotOffchainTxs, err = repo.GetOffchainTxs(
+			ctx, domain.OffchainTxFilter{WithTxids: []string{arkTxid}},
+		)
 		require.NoError(t, err)
+		require.Len(t, gotOffchainTxs, 1)
+		gotOffchainTx = gotOffchainTxs[0]
 		require.NotNil(t, offchainTx)
 		require.True(t, gotOffchainTx.IsFinalized())
 		require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
+
+		// Filter pushdown coverage: the row persisted above has no extension
+		// (empty Packets), so WithExtension must hide it and a time range that
+		// excludes its starting_timestamp must do likewise. We also assert that
+		// an unrelated txid returns an empty result.
+		hidden, err := repo.GetOffchainTxs(
+			ctx, domain.OffchainTxFilter{WithExtension: true},
+		)
+		require.NoError(t, err)
+		require.Empty(t, hidden)
+
+		outOfRange, err := repo.GetOffchainTxs(
+			ctx, domain.OffchainTxFilter{WithAfterDate: now.Add(time.Hour).Unix()},
+		)
+		require.NoError(t, err)
+		require.Empty(t, outOfRange)
+
+		notFound, err := repo.GetOffchainTxs(
+			ctx, domain.OffchainTxFilter{WithTxids: []string{txidb}},
+		)
+		require.NoError(t, err)
+		require.Empty(t, notFound)
+
+		invalid, err := repo.GetOffchainTxs(
+			ctx, domain.OffchainTxFilter{WithAfterDate: 10, WithBeforeDate: 5},
+		)
+		require.Error(t, err)
+		require.Nil(t, invalid)
 	})
 }
 

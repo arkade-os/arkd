@@ -257,6 +257,34 @@ message GetVirtualTxsRequest {
     // A valid token obtained from GetVtxoChain rpc can be recycled for this request.
     string token = 4;
   }
+  // Optional filter on tx contents. The expressions field carries CEL
+  // expressions evaluated against the tx envelope (see SubscriptionFilter).
+  // Only the structured subset of CEL is supported on this unary RPC: a
+  // flat AND of `has(tx.extension)`, `hasPacket(tx.extension, N)`, and
+  // `tx.extension[N] == 'hex'` predicates. Unsupported shapes are rejected
+  // with InvalidArgument. The scripts field is ignored.
+  SubscriptionFilter filter = 5;
+  // Optional mutually exclusive time-range selector applied to the
+  // offchain tx starting_timestamp. `within` is equivalent to setting
+  // both `after` and `before`.
+  oneof time_range {
+    TimeRangeAfter after = 6;
+    TimeRangeBefore before = 7;
+    TimeRangeWithin within = 8;
+  }
+}
+
+message TimeRangeAfter {
+  int64 timestamp = 1;
+}
+
+message TimeRangeBefore {
+  int64 timestamp = 1;
+}
+
+message TimeRangeWithin {
+  int64 start_timestamp = 1;
+  int64 end_timestamp = 2;
 }
 
 message GetVirtualTxsResponse {

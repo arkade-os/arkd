@@ -721,6 +721,75 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "filter.expressions",
+            "in": "query",
+            "description": "CEL expressions evaluated against each indexed tx envelope. The\nindexer combines them with OR.",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "after.timestamp",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "before.timestamp",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "within.startTimestamp",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "within.endTimestamp",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "filter.scripts.add",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.scripts.remove",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
         ],
         "responses": {
@@ -1165,6 +1234,16 @@
         "title": "GetVirtualTxsRequest",
         "type": "object",
         "properties": {
+          "after": {
+            "$ref": "#/components/schemas/TimeRangeAfter"
+          },
+          "before": {
+            "$ref": "#/components/schemas/TimeRangeBefore"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/SubscriptionFilter",
+            "description": "Optional filter on tx contents. The expressions field carries CEL\nexpressions evaluated against the tx envelope (see SubscriptionFilter).\nOnly the structured subset of CEL is supported on this unary RPC: a\nflat AND of `has(tx.extension)`, `hasPacket(tx.extension, N)`, and\n`tx.extension[N] == 'hex'` predicates. Unsupported shapes are rejected\nwith InvalidArgument. The scripts field is ignored."
+          },
           "intent": {
             "$ref": "#/components/schemas/IndexerIntent",
             "description": "Intent that directly proves ownership of the transaction inputs.\nIf passed, the txids field is ignored."
@@ -1181,6 +1260,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "within": {
+            "$ref": "#/components/schemas/TimeRangeWithin"
           }
         }
       },
@@ -1742,6 +1824,40 @@
         "properties": {
           "subscriptionId": {
             "type": "string"
+          }
+        }
+      },
+      "TimeRangeAfter": {
+        "title": "TimeRangeAfter",
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TimeRangeBefore": {
+        "title": "TimeRangeBefore",
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TimeRangeWithin": {
+        "title": "TimeRangeWithin",
+        "type": "object",
+        "properties": {
+          "endTimestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "startTimestamp": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

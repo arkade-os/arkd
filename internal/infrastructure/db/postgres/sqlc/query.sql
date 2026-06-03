@@ -74,15 +74,16 @@ INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
 VALUES (@vtxo_txid, @vtxo_vout, @commitment_txid);
 
 -- name: UpsertOffchainTx :exec
-INSERT INTO offchain_tx (txid, tx, starting_timestamp, ending_timestamp, expiry_timestamp, fail_reason, stage_code)
-VALUES (@txid, @tx, @starting_timestamp, @ending_timestamp, @expiry_timestamp, @fail_reason, @stage_code)
+INSERT INTO offchain_tx (txid, tx, starting_timestamp, ending_timestamp, expiry_timestamp, fail_reason, stage_code, packets)
+VALUES (@txid, @tx, @starting_timestamp, @ending_timestamp, @expiry_timestamp, @fail_reason, @stage_code, @packets)
 ON CONFLICT(txid) DO UPDATE SET
     tx = EXCLUDED.tx,
     starting_timestamp = EXCLUDED.starting_timestamp,
     ending_timestamp = EXCLUDED.ending_timestamp,
     expiry_timestamp = EXCLUDED.expiry_timestamp,
     fail_reason = EXCLUDED.fail_reason,
-    stage_code = EXCLUDED.stage_code;
+    stage_code = EXCLUDED.stage_code,
+    packets = EXCLUDED.packets;
 
 -- name: UpsertCheckpointTx :exec
 INSERT INTO checkpoint_tx (txid, tx, commitment_txid, is_root_commitment_txid, offchain_txid)
@@ -276,8 +277,26 @@ FROM vtxo
 WHERE swept = true
   AND spent = false;
 
--- name: SelectOffchainTx :many
-SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid AND COALESCE(fail_reason, '') = '';
+-- name: SelectOffchainTxsByTxids :many
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw
+WHERE COALESCE(fail_reason, '') = ''
+  AND txid = ANY(sqlc.arg('txids')::varchar[])
+  AND (sqlc.arg('with_extension')::boolean = false OR COALESCE(packets, '') != '')
+  AND (sqlc.arg('with_after')::boolean = false OR starting_timestamp >= sqlc.arg('after_ts')::bigint)
+  AND (sqlc.arg('with_before')::boolean = false OR starting_timestamp <= sqlc.arg('before_ts')::bigint);
+
+-- name: SelectOffchainTxs :many
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw
+WHERE COALESCE(fail_reason, '') = ''
+  AND (sqlc.arg('with_extension')::boolean = false OR COALESCE(packets, '') != '')
+  AND (sqlc.arg('with_after')::boolean = false OR starting_timestamp >= sqlc.arg('after_ts')::bigint)
+  AND (sqlc.arg('with_before')::boolean = false OR starting_timestamp <= sqlc.arg('before_ts')::bigint);
+
+-- name: SelectOffchainTxsWithoutPackets :many
+SELECT txid, tx FROM offchain_tx WHERE packets IS NULL;
+
+-- name: UpdateOffchainTxPackets :exec
+UPDATE offchain_tx SET packets = @packets WHERE txid = @txid;
 
 -- name: SelectLatestScheduledSession :one
 SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;

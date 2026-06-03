@@ -73,9 +73,11 @@ type IndexerService interface {
 	) (*VtxoChainResp, error)
 	GetVtxoChainByIntent(ctx context.Context, intent Intent, page *Page) (*VtxoChainResp, error)
 	GetVirtualTxs(
-		ctx context.Context, authToken string, txids []string, page *Page,
+		ctx context.Context, authToken string, filter domain.OffchainTxFilter, page *Page,
 	) (*VirtualTxsResp, error)
-	GetVirtualTxsByIntent(ctx context.Context, intent Intent, page *Page) (*VirtualTxsResp, error)
+	GetVirtualTxsByIntent(
+		ctx context.Context, intent Intent, filter domain.OffchainTxFilter, page *Page,
+	) (*VirtualTxsResp, error)
 	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error)
 	GetAsset(ctx context.Context, assetID string) ([]Asset, error)
 	ListTokens(ctx context.Context, token, hash, outpoint, txid string) ([]TokenEntry, error)
@@ -405,7 +407,7 @@ func (i *indexerService) GetVtxoChainByIntent(
 }
 
 func (i *indexerService) GetVirtualTxs(
-	ctx context.Context, authToken string, txids []string, page *Page,
+	ctx context.Context, authToken string, filter domain.OffchainTxFilter, page *Page,
 ) (*VirtualTxsResp, error) {
 	var valid bool
 	switch i.txExposure {
@@ -425,7 +427,7 @@ func (i *indexerService) GetVirtualTxs(
 				break
 			}
 			valid = true
-			for _, txid := range txids {
+			for _, txid := range filter.WithTxids {
 				if _, ok := txidWhitelist[txid]; !ok {
 					valid = false
 					break
@@ -443,7 +445,7 @@ func (i *indexerService) GetVirtualTxs(
 		if !ok {
 			return nil, fmt.Errorf("auth token not found")
 		}
-		for _, txid := range txids {
+		for _, txid := range filter.WithTxids {
 			if _, ok := txidWhitelist[txid]; !ok {
 				return nil, fmt.Errorf("auth token is not for txid %s", txid)
 			}
@@ -451,7 +453,7 @@ func (i *indexerService) GetVirtualTxs(
 		valid = true
 	}
 
-	resp, err := i.getVirtualTxs(ctx, txids, page, "")
+	resp, err := i.getVirtualTxs(ctx, filter, page, "")
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +466,7 @@ func (i *indexerService) GetVirtualTxs(
 }
 
 func (i *indexerService) GetVirtualTxsByIntent(
-	ctx context.Context, intent Intent, page *Page,
+	ctx context.Context, intent Intent, filter domain.OffchainTxFilter, page *Page,
 ) (*VirtualTxsResp, error) {
 	outpoints, err := i.extractOutpointsFromIntent(intent)
 	if err != nil {
@@ -474,10 +476,11 @@ func (i *indexerService) GetVirtualTxsByIntent(
 	for _, outpoint := range outpoints {
 		txids = append(txids, outpoint.Txid)
 	}
+	filter.WithTxids = txids
 
 	switch i.txExposure {
 	case exposurePublic:
-		return i.getVirtualTxs(ctx, txids, page, "")
+		return i.getVirtualTxs(ctx, filter, page, "")
 	case exposureWithheld, exposurePrivate:
 		if err := i.validateIntent(ctx, intent); err != nil {
 			return nil, err
@@ -489,7 +492,7 @@ func (i *indexerService) GetVirtualTxsByIntent(
 		return nil, fmt.Errorf("failed to create auth token: %w", err)
 	}
 
-	return i.getVirtualTxs(ctx, txids, page, token)
+	return i.getVirtualTxs(ctx, filter, page, token)
 }
 
 func (i *indexerService) GetBatchSweepTxs(
@@ -555,10 +558,16 @@ func (i *indexerService) buildVtxoChain(
 			// also, we have to populate the newNextVtxos with the checkpoints inputs
 			// in order to continue the chain in the next iteration
 			if vtxo.Preconfirmed {
-				offchainTx, err := i.repoManager.OffchainTxs().GetOffchainTx(ctx, vtxo.Txid)
+				offchainTxs, err := i.repoManager.OffchainTxs().GetOffchainTxs(
+					ctx, domain.OffchainTxFilter{WithTxids: []string{vtxo.Txid}},
+				)
 				if err != nil {
 					return nil, nil, fmt.Errorf("failed to retrieve offchain tx: %s", err)
 				}
+				if len(offchainTxs) == 0 {
+					return nil, nil, fmt.Errorf("offchain tx %s not found", vtxo.Txid)
+				}
+				offchainTx := offchainTxs[0]
 
 				chainTx := ChainTx{
 					Txid:      vtxo.Txid,
@@ -667,11 +676,15 @@ func (i *indexerService) buildVtxoChain(
 }
 
 func (i *indexerService) getVirtualTxs(
-	ctx context.Context, txids []string, page *Page, authToken string,
+	ctx context.Context, filter domain.OffchainTxFilter, page *Page, authToken string,
 ) (*VirtualTxsResp, error) {
-	txs, err := i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
+	offchainTxs, err := i.repoManager.OffchainTxs().GetOffchainTxs(ctx, filter)
 	if err != nil {
 		return nil, err
+	}
+	txs := make([]string, 0, len(offchainTxs))
+	for _, off := range offchainTxs {
+		txs = append(txs, off.ArkTx)
 	}
 	virtualTxs, resp := paginate(txs, page, maxPageSizeVirtualTxs)
 	return &VirtualTxsResp{

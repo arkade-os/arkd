@@ -2,9 +2,12 @@ package badgerdb
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -250,10 +253,93 @@ func (r *arkRepository) AddOrUpdateOffchainTx(
 	return r.addCheckpointTxs(ctx, *offchainTx)
 }
 
-func (r *arkRepository) GetOffchainTx(
-	ctx context.Context, txid string,
-) (*domain.OffchainTx, error) {
-	return r.getOffchainTx(ctx, txid)
+func (r *arkRepository) GetOffchainTxs(
+	ctx context.Context, filter domain.OffchainTxFilter,
+) ([]*domain.OffchainTx, error) {
+	if err := filter.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Badger backs a small in-memory store used by tests; we scan all
+	// offchain_tx records and apply the filter in Go.
+	var all []domain.OffchainTx
+	if ctx.Value("tx") != nil {
+		tx := ctx.Value("tx").(*badger.Txn)
+		if err := r.store.TxFind(tx, &all, nil); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := r.store.Find(&all, nil); err != nil {
+			return nil, err
+		}
+	}
+
+	wantTxids := make(map[string]struct{}, len(filter.WithTxids))
+	for _, t := range filter.WithTxids {
+		wantTxids[t] = struct{}{}
+	}
+
+	out := make([]*domain.OffchainTx, 0)
+	for i := range all {
+		off := all[i]
+		if off.Stage.Code == int(domain.OffchainTxUndefinedStage) {
+			continue
+		}
+		if off.IsFailed() {
+			continue
+		}
+		if len(wantTxids) > 0 {
+			if _, ok := wantTxids[off.ArkTxid]; !ok {
+				continue
+			}
+		}
+		if (filter.WithExtension || len(filter.WithPacket) > 0) && len(off.Packets) == 0 {
+			continue
+		}
+		if filter.WithAfterDate > 0 && off.StartingTimestamp < filter.WithAfterDate {
+			continue
+		}
+		if filter.WithBeforeDate > 0 && off.StartingTimestamp > filter.WithBeforeDate {
+			continue
+		}
+		if !matchOffchainTxPackets(&off, filter.WithPacket) {
+			continue
+		}
+		offCopy := off
+		out = append(out, &offCopy)
+	}
+	return out, nil
+}
+
+// matchOffchainTxPackets returns true if off carries every packet type
+// listed in want. When the value associated with a key is non-empty, the
+// persisted ArkTx (base64 PSBT) must also contain the base64-encoded form
+// of the hex-decoded value.
+func matchOffchainTxPackets(off *domain.OffchainTx, want map[int]string) bool {
+	if len(want) == 0 {
+		return true
+	}
+	carried := make(map[int]struct{}, len(off.Packets))
+	for _, p := range off.Packets {
+		carried[p] = struct{}{}
+	}
+	for t, data := range want {
+		if _, ok := carried[t]; !ok {
+			return false
+		}
+		if data == "" {
+			continue
+		}
+		raw, err := hex.DecodeString(data)
+		if err != nil {
+			return false
+		}
+		needle := base64.StdEncoding.EncodeToString(raw)
+		if !strings.Contains(off.ArkTx, needle) {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *arkRepository) Close() {

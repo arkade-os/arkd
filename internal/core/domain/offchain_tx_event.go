@@ -15,6 +15,7 @@ type OffchainTxRequested struct {
 	ArkTx                 string
 	UnsignedCheckpointTxs map[string]string
 	StartingTimestamp     int64
+	Packets               []int
 }
 
 type OffchainTxAccepted struct {

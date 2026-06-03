@@ -501,19 +501,23 @@ func (s *service) SubmitOffchainTx(
 		spentVtxoKeys = append(spentVtxoKeys, vtxoKey)
 	}
 
-	existingOffchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, txid)
-	if err != nil && !strings.Contains(err.Error(), "not found") {
+	existingOffchainTxs, err := s.repoManager.OffchainTxs().GetOffchainTxs(
+		ctx, domain.OffchainTxFilter{WithTxids: []string{txid}},
+	)
+	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to fetch offchain tx").
 			WithMetadata(map[string]any{"txid": txid})
 	}
 
-	if existingOffchainTx != nil {
+	if len(existingOffchainTxs) > 0 {
 		return nil, errors.INVALID_ARK_PSBT.New(
 			"duplicated offchain tx %s", txid,
 		).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 	}
 
-	event, err := offchainTx.Request(txid, signedArkTx, checkpointTxs)
+	packets := extractPacketTypes(arkPtx.UnsignedTx)
+
+	event, err := offchainTx.Request(txid, signedArkTx, checkpointTxs, packets)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.Wrap(err)
 	}
@@ -1144,11 +1148,14 @@ func (s *service) FinalizeOffchainTx(
 			WithMetadata(map[string]any{"txid": txid})
 	}
 	if offchainTx == nil {
-		offchainTx, err = s.repoManager.OffchainTxs().GetOffchainTx(ctx, txid)
-		if err != nil {
+		offchainTxs, err := s.repoManager.OffchainTxs().GetOffchainTxs(
+			ctx, domain.OffchainTxFilter{WithTxids: []string{txid}},
+		)
+		if err != nil || len(offchainTxs) == 0 {
 			return errors.TX_NOT_FOUND.New("offchain tx %s not found", txid).
 				WithMetadata(errors.TxNotFoundMetadata{Txid: txid})
 		}
+		offchainTx = offchainTxs[0]
 	}
 
 	defer func() {
@@ -1447,11 +1454,18 @@ func (s *service) GetPendingOffchainTxs(
 			continue
 		}
 
-		offchainTx, err := offchainTxRepo.GetOffchainTx(ctx, vtxo.ArkTxid)
+		offchainTxs, err := offchainTxRepo.GetOffchainTxs(
+			ctx, domain.OffchainTxFilter{WithTxids: []string{vtxo.ArkTxid}},
+		)
 		if err != nil {
 			log.WithError(err).Errorf("failed to get offchain tx %s", vtxo.ArkTxid)
 			continue
 		}
+		if len(offchainTxs) == 0 {
+			log.Errorf("offchain tx %s not found", vtxo.ArkTxid)
+			continue
+		}
+		offchainTx := offchainTxs[0]
 
 		seen[vtxo.ArkTxid] = struct{}{}
 		acceptedOffchainTxs = append(acceptedOffchainTxs, AcceptedOffchainTx{
