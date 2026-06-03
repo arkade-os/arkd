@@ -5147,8 +5147,8 @@ func TestCollectedFees(t *testing.T) {
 	require.NoError(t, clearIntentFees())
 
 	ctx := t.Context()
-	alice := setupArkSDK(t)
-	bob := setupArkSDK(t)
+	alice := setupClientWallet(t)
+	bob := setupClientWallet(t)
 
 	_, aliceOffchainAddr, aliceBoardingAddr, err := alice.Receive(ctx)
 	require.NoError(t, err)
