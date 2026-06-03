@@ -1,4 +1,4 @@
-package indexer
+package grpcindexer
 
 import (
 	"context"
@@ -52,6 +52,7 @@ func NewClient(serverUrl string) (indexer.Indexer, error) {
 	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
 		grpc.WithDisableServiceConfig(),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(20 << 20)),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff: backoff.Config{
 				BaseDelay:  1 * time.Second,
@@ -459,10 +460,18 @@ func (a *grpcClient) GetBatchSweepTxs(
 	return resp.GetSweptBy(), nil
 }
 
-func (a *grpcClient) GetSubscription(
-	ctx context.Context, subscriptionId string,
-) (<-chan indexer.ScriptEvent, func(), error) {
-	return utils.StartReconnectingStream(ctx, utils.ReconnectingStreamConfig[
+func (a *grpcClient) NewSubscription(
+	ctx context.Context, scripts []string,
+) (string, <-chan indexer.ScriptEvent, func(), error) {
+	resp, err := a.svc().SubscribeForScripts(ctx, &arkv1.SubscribeForScriptsRequest{
+		Scripts: scripts,
+	})
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	subscriptionId := resp.GetSubscriptionId()
+	stream, closeFn, err := utils.StartReconnectingStream(ctx, utils.ReconnectingStreamConfig[
 		arkv1.IndexerService_GetSubscriptionClient,
 		*arkv1.GetSubscriptionResponse,
 		indexer.ScriptEvent,
@@ -472,17 +481,26 @@ func (a *grpcClient) GetSubscription(
 				SubscriptionId: subscriptionId,
 			})
 		},
-		Reconnect: func(ctx context.Context) (arkv1.IndexerService_GetSubscriptionClient, error) {
-			scripts := a.scripts.get()
+		Reconnect: func(
+			ctx context.Context,
+		) (string, arkv1.IndexerService_GetSubscriptionClient, error) {
+			scripts := a.scripts.get(subscriptionId)
 			resp, err := a.svc().SubscribeForScripts(ctx, &arkv1.SubscribeForScriptsRequest{
 				Scripts: scripts,
 			})
 			if err != nil {
-				return nil, err
+				return "", nil, err
 			}
-			return a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
-				SubscriptionId: resp.GetSubscriptionId(),
+			newSubscriptionId := resp.GetSubscriptionId()
+			stream, err := a.svc().GetSubscription(ctx, &arkv1.GetSubscriptionRequest{
+				SubscriptionId: newSubscriptionId,
 			})
+			if err != nil {
+				return "", nil, err
+			}
+			// Update the cache by replacing the subscription id for the watched scripts
+			a.scripts.replace(subscriptionId, newSubscriptionId)
+			return newSubscriptionId, stream, nil
 		},
 		Recv: func(
 			stream arkv1.IndexerService_GetSubscriptionClient,
@@ -547,45 +565,43 @@ func (a *grpcClient) GetSubscription(
 			}
 		},
 	})
-}
-
-func (a *grpcClient) SubscribeForScripts(
-	ctx context.Context, subscriptionId string, scripts []string,
-) (string, error) {
-	req := &arkv1.SubscribeForScriptsRequest{
-		Scripts: scripts,
-	}
-	if len(subscriptionId) > 0 {
-		req.SubscriptionId = subscriptionId
-	}
-
-	resp, err := a.svc().SubscribeForScripts(ctx, req)
 	if err != nil {
-		return "", err
+		return "", nil, nil, err
 	}
 
-	a.scripts.add(scripts)
+	a.scripts.add(subscriptionId, scripts)
 
-	return resp.GetSubscriptionId(), nil
+	cancelFn := func() {
+		closeFn()
+		a.scripts.removeSubscription(subscriptionId)
+	}
+	return subscriptionId, stream, cancelFn, nil
 }
 
-func (a *grpcClient) UnsubscribeForScripts(
-	ctx context.Context, subscriptionId string, scripts []string,
+func (a *grpcClient) UpdateSubscription(
+	ctx context.Context, subscriptionId string, scriptsToAdd, scriptsToRemove []string,
 ) error {
-	req := &arkv1.UnsubscribeForScriptsRequest{
-		Scripts: scripts,
+	if subscriptionId == "" {
+		return fmt.Errorf("missing subscription id to update")
 	}
-	if len(subscriptionId) > 0 {
-		req.SubscriptionId = subscriptionId
-	}
-
-	_, err := a.svc().UnsubscribeForScripts(ctx, req)
-	if err != nil {
-		return err
+	if len(scriptsToAdd) <= 0 && len(scriptsToRemove) <= 0 {
+		return fmt.Errorf("missing scripts to add or remove")
 	}
 
-	a.scripts.remove(scripts)
+	if !a.scripts.exists(subscriptionId) {
+		return fmt.Errorf("subscription not found with id %s", subscriptionId)
+	}
 
+	if len(scriptsToAdd) > 0 {
+		if err := a.subscribeForScripts(ctx, subscriptionId, scriptsToAdd); err != nil {
+			return err
+		}
+	}
+	if len(scriptsToRemove) > 0 {
+		if err := a.unsubscribeForScripts(ctx, subscriptionId, scriptsToRemove); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -630,6 +646,44 @@ func (a *grpcClient) svc() arkv1.IndexerServiceClient {
 	return arkv1.NewIndexerServiceClient(a.conn)
 }
 
+func (a *grpcClient) subscribeForScripts(
+	ctx context.Context, subscriptionId string, scripts []string,
+) error {
+	subId := a.scripts.resolveId(subscriptionId)
+
+	req := &arkv1.SubscribeForScriptsRequest{
+		Scripts:        scripts,
+		SubscriptionId: subId,
+	}
+
+	if _, err := a.svc().SubscribeForScripts(ctx, req); err != nil {
+		return err
+	}
+
+	a.scripts.add(subId, scripts)
+
+	return nil
+}
+
+func (a *grpcClient) unsubscribeForScripts(
+	ctx context.Context, subscriptionId string, scripts []string,
+) error {
+	subId := a.scripts.resolveId(subscriptionId)
+
+	req := &arkv1.UnsubscribeForScriptsRequest{
+		Scripts:        scripts,
+		SubscriptionId: subId,
+	}
+
+	if _, err := a.svc().UnsubscribeForScripts(ctx, req); err != nil {
+		return err
+	}
+
+	a.scripts.removeScripts(subId, scripts)
+
+	return nil
+}
+
 func (a *grpcClient) paginatedGetVtxos(
 	ctx context.Context, opts ...indexer.GetVtxosOption,
 ) (*indexer.VtxosResponse, error) {
@@ -637,29 +691,59 @@ func (a *grpcClient) paginatedGetVtxos(
 	o, _ := indexer.ApplyGetVtxosOptions(opts...)
 	svc := a.svc()
 
-	vtxos, err := paginatedFetch(ctx, func(
-		ctx context.Context, page *arkv1.IndexerPageRequest,
-	) ([]types.Vtxo, *arkv1.IndexerPageResponse, error) {
-		resp, err := svc.GetVtxos(ctx, &arkv1.GetVtxosRequest{
-			Scripts:         o.Scripts,
-			Outpoints:       o.FormattedOutpoints(),
-			SpendableOnly:   o.SpendableOnly,
-			SpentOnly:       o.SpentOnly,
-			RecoverableOnly: o.RecoverableOnly,
-			PendingOnly:     o.PendingOnly,
-			After:           o.After,
-			Before:          o.Before,
-			Page:            page,
+	fetchPages := func(scripts []string, outpoints []types.Outpoint) ([]types.Vtxo, error) {
+		return paginatedFetch(ctx, func(
+			ctx context.Context, page *arkv1.IndexerPageRequest,
+		) ([]types.Vtxo, *arkv1.IndexerPageResponse, error) {
+			resp, err := svc.GetVtxos(ctx, &arkv1.GetVtxosRequest{
+				Scripts:         scripts,
+				Outpoints:       formatOutpoints(outpoints),
+				SpendableOnly:   o.SpendableOnly,
+				SpentOnly:       o.SpentOnly,
+				RecoverableOnly: o.RecoverableOnly,
+				PendingOnly:     o.PendingOnly,
+				After:           o.After,
+				Before:          o.Before,
+				Page:            page,
+			})
+			if err != nil {
+				return nil, nil, err
+			}
+			return newIndexerVtxos(resp.GetVtxos()), resp.GetPage(), nil
 		})
+	}
+
+	var vtxos []types.Vtxo
+	appendPages := func(scripts []string, outpoints []types.Outpoint) error {
+		pageVtxos, err := fetchPages(scripts, outpoints)
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
-		return newIndexerVtxos(resp.GetVtxos()), resp.GetPage(), nil
-	})
-	if err != nil {
-		return nil, err
+		vtxos = append(vtxos, pageVtxos...)
+		return nil
+	}
+
+	for offset := 0; offset < len(o.Scripts); offset += maxPageSize {
+		end := min(offset+maxPageSize, len(o.Scripts))
+		if err := appendPages(o.Scripts[offset:end], nil); err != nil {
+			return nil, err
+		}
+	}
+	for offset := 0; offset < len(o.Outpoints); offset += maxPageSize {
+		end := min(offset+maxPageSize, len(o.Outpoints))
+		if err := appendPages(nil, o.Outpoints[offset:end]); err != nil {
+			return nil, err
+		}
 	}
 	return &indexer.VtxosResponse{Vtxos: vtxos}, nil
+}
+
+func formatOutpoints(outpoints []types.Outpoint) []string {
+	outs := make([]string, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		outs = append(outs, fmt.Sprintf("%s:%d", outpoint.Txid, outpoint.VOut))
+	}
+	return outs
 }
 
 func (a *grpcClient) paginatedGetVirtualTxs(
@@ -694,7 +778,7 @@ func paginatedFetch[T any](
 	) ([]T, *arkv1.IndexerPageResponse, error),
 ) ([]T, error) {
 	var all []T
-	pageIndex := int32(0)
+	pageIndex := int32(1)
 	reqCount := 0
 	for {
 		items, page, err := fetch(ctx, &arkv1.IndexerPageRequest{
@@ -708,7 +792,7 @@ func paginatedFetch[T any](
 		all = append(all, items...)
 		reqCount++
 
-		if page == nil || page.GetNext() >= page.GetTotal() {
+		if page == nil || page.GetCurrent() >= page.GetTotal() {
 			break
 		}
 		if reqCount >= maxPages {

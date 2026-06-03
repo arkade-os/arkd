@@ -1,7 +1,7 @@
 services:
   pg:
     restart: unless-stopped
-    image: postgres:16
+    image: postgres:17.8
     container_name: pg
     ports:
       - 5432:5432
@@ -20,7 +20,7 @@ services:
     container_name: nbxplorer
     ports:
       - 32838:32838
-    image: nicolasdorier/nbxplorer:2.5.30
+    image: nicolasdorier/nbxplorer:2.6.7
     environment:
       - NBXPLORER_NETWORK=regtest
       - NBXPLORER_CHAINS=btc
@@ -108,6 +108,7 @@ services:
       - ARKD_SESSION_DURATION=${ARKD_SESSION_DURATION:-10}
       - ARKD_ROUND_REPORT_ENABLED=${ARKD_ROUND_REPORT_ENABLED:-true}
       - ARKD_BAN_THRESHOLD=1
+      - ARKD_UNROLLED_VTXO_MIN_EXPIRY_MARGIN=10
 
 volumes:
   arkd-wallet-volume:

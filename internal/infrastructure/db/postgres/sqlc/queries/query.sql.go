@@ -1041,6 +1041,40 @@ func (q *Queries) SelectRoundStats(ctx context.Context, txid string) (SelectRoun
 	return i, err
 }
 
+const selectRoundSweepTxs = `-- name: SelectRoundSweepTxs :many
+SELECT t.txid, t.tx FROM tx t WHERE t.round_id = (
+    SELECT tx.round_id FROM tx WHERE tx.txid = $1 AND type = 'commitment'
+) AND t.type = 'sweep'
+`
+
+type SelectRoundSweepTxsRow struct {
+	Txid string
+	Tx   string
+}
+
+func (q *Queries) SelectRoundSweepTxs(ctx context.Context, txid string) ([]SelectRoundSweepTxsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectRoundSweepTxs, txid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectRoundSweepTxsRow
+	for rows.Next() {
+		var i SelectRoundSweepTxsRow
+		if err := rows.Scan(&i.Txid, &i.Tx); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectRoundVtxoTree = `-- name: SelectRoundVtxoTree :many
 SELECT txid, tx, round_id, type, position, children FROM tx WHERE round_id = (
     SELECT tx.round_id FROM tx WHERE tx.txid = $1 AND type = 'commitment'
@@ -1601,7 +1635,7 @@ func (q *Queries) SelectVtxo(ctx context.Context, arg SelectVtxoParams) ([]Selec
 }
 
 const selectVtxoPubKeysByCommitmentTxid = `-- name: SelectVtxoPubKeysByCommitmentTxid :many
-SELECT DISTINCT v.pubkey 
+SELECT DISTINCT v.pubkey
 FROM vtxo_vw v
 WHERE v.amount >= $1
   AND (v.commitment_txid = $2
@@ -1615,6 +1649,53 @@ type SelectVtxoPubKeysByCommitmentTxidParams struct {
 
 func (q *Queries) SelectVtxoPubKeysByCommitmentTxid(ctx context.Context, arg SelectVtxoPubKeysByCommitmentTxidParams) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, selectVtxoPubKeysByCommitmentTxid, arg.MinAmount, arg.CommitmentTxid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var pubkey string
+		if err := rows.Scan(&pubkey); err != nil {
+			return nil, err
+		}
+		items = append(items, pubkey)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectVtxoPubKeysByCommitmentTxids = `-- name: SelectVtxoPubKeysByCommitmentTxids :many
+SELECT DISTINCT v.pubkey
+FROM vtxo v
+WHERE v.amount >= $1
+  AND (
+    v.commitment_txid = ANY($2::text[])
+    OR EXISTS (
+      SELECT 1 FROM vtxo_commitment_txid vc
+      WHERE vc.vtxo_txid = v.txid AND vc.vtxo_vout = v.vout
+        AND vc.commitment_txid = ANY($2::text[])
+    )
+  )
+`
+
+type SelectVtxoPubKeysByCommitmentTxidsParams struct {
+	MinAmount       int64
+	CommitmentTxids []string
+}
+
+// Bulk variant of SelectVtxoPubKeysByCommitmentTxid: returns the
+// deduplicated set of vtxo pubkeys for any of the given commitment_txids.
+// Used at startup by restoreWatchingVtxos to collapse what was an N+1
+// per-round loop into a single SQL call. The named parameter is reused
+// in both IN/ANY clauses; postgres binds it once.
+func (q *Queries) SelectVtxoPubKeysByCommitmentTxids(ctx context.Context, arg SelectVtxoPubKeysByCommitmentTxidsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxoPubKeysByCommitmentTxids, arg.MinAmount, pq.Array(arg.CommitmentTxids))
 	if err != nil {
 		return nil, err
 	}

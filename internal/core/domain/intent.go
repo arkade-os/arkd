@@ -13,22 +13,22 @@ type Intent struct {
 	Proof     string
 	Message   string
 	Txid      string
-	// asset packet that should be added to vtxo tree leaf transaction (hex format)
-	LeafTxAssetPacket string
+	// hex-encoded extension OP_RETURN script to be added as output of the vtxo tree leaf transaction
+	LeafTxExtension string
 }
 
 func NewIntent(
 	proofTxid, proof, message string,
 	inputs []Vtxo,
-	leafTxPacket string,
+	leafTxExtension string,
 ) (*Intent, error) {
 	intent := &Intent{
-		Id:                uuid.New().String(),
-		Inputs:            inputs,
-		Proof:             proof,
-		Message:           message,
-		Txid:              proofTxid,
-		LeafTxAssetPacket: leafTxPacket,
+		Id:              uuid.New().String(),
+		Inputs:          inputs,
+		Proof:           proof,
+		Message:         message,
+		Txid:            proofTxid,
+		LeafTxExtension: leafTxExtension,
 	}
 	if err := intent.validate(true); err != nil {
 		return nil, err

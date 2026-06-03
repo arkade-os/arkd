@@ -1123,6 +1123,40 @@ func (q *Queries) SelectRoundStats(ctx context.Context, txid string) (SelectRoun
 	return i, err
 }
 
+const selectRoundSweepTxs = `-- name: SelectRoundSweepTxs :many
+SELECT t.txid, t.tx FROM tx t WHERE t.round_id = (
+    SELECT tx.round_id FROM tx WHERE tx.txid = ?1 AND type = 'commitment'
+) AND t.type = 'sweep'
+`
+
+type SelectRoundSweepTxsRow struct {
+	Txid string
+	Tx   string
+}
+
+func (q *Queries) SelectRoundSweepTxs(ctx context.Context, txid string) ([]SelectRoundSweepTxsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectRoundSweepTxs, txid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectRoundSweepTxsRow
+	for rows.Next() {
+		var i SelectRoundSweepTxsRow
+		if err := rows.Scan(&i.Txid, &i.Tx); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectRoundVtxoTree = `-- name: SelectRoundVtxoTree :many
 SELECT txid, tx, round_id, type, position, children FROM tx WHERE round_id = (
     SELECT tx.round_id FROM tx WHERE tx.txid = ?1 AND type = 'commitment'
@@ -1719,6 +1753,78 @@ type SelectVtxoPubKeysByCommitmentTxidParams struct {
 
 func (q *Queries) SelectVtxoPubKeysByCommitmentTxid(ctx context.Context, arg SelectVtxoPubKeysByCommitmentTxidParams) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, selectVtxoPubKeysByCommitmentTxid, arg.MinAmount, arg.CommitmentTxid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var pubkey string
+		if err := rows.Scan(&pubkey); err != nil {
+			return nil, err
+		}
+		items = append(items, pubkey)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectVtxoPubKeysByCommitmentTxids = `-- name: SelectVtxoPubKeysByCommitmentTxids :many
+SELECT DISTINCT v.pubkey
+FROM vtxo v
+WHERE v.amount >= ?1
+  AND (
+    v.commitment_txid IN (/*SLICE:commitment_txids*/?)
+    OR EXISTS (
+      SELECT 1 FROM vtxo_commitment_txid vc
+      WHERE vc.vtxo_txid = v.txid AND vc.vtxo_vout = v.vout
+        AND vc.commitment_txid IN (/*SLICE:commitment_txids_alt*/?)
+    )
+  )
+`
+
+type SelectVtxoPubKeysByCommitmentTxidsParams struct {
+	MinAmount          int64
+	CommitmentTxids    []string
+	CommitmentTxidsAlt []string
+}
+
+// Bulk variant of SelectVtxoPubKeysByCommitmentTxid: returns the
+// deduplicated set of vtxo pubkeys for any of the given commitment_txids.
+// Used at startup by restoreWatchingVtxos to collapse what was an N+1
+// per-round loop into a single SQL call.
+//
+// Two slice placeholders bind the same list of txids: sqlc's sqlite
+// generator only rewrites the first occurrence of sqlc.slice('name') per
+// query, so checking both v.commitment_txid and the join table forces
+// the second IN clause to use a distinct slice name. The Go caller
+// passes the same []string to both.
+func (q *Queries) SelectVtxoPubKeysByCommitmentTxids(ctx context.Context, arg SelectVtxoPubKeysByCommitmentTxidsParams) ([]string, error) {
+	query := selectVtxoPubKeysByCommitmentTxids
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.MinAmount)
+	if len(arg.CommitmentTxids) > 0 {
+		for _, v := range arg.CommitmentTxids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:commitment_txids*/?", strings.Repeat(",?", len(arg.CommitmentTxids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:commitment_txids*/?", "NULL", 1)
+	}
+	if len(arg.CommitmentTxidsAlt) > 0 {
+		for _, v := range arg.CommitmentTxidsAlt {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:commitment_txids_alt*/?", strings.Repeat(",?", len(arg.CommitmentTxidsAlt))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:commitment_txids_alt*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}

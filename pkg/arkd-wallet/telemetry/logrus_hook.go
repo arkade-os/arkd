@@ -79,6 +79,21 @@ func (h *OTelHook) Fire(e *logrus.Entry) error {
 	logger := global.GetLoggerProvider().Logger("arkd.wallet")
 	logger.Emit(ctx, rec)
 
+	if e.Level <= logrus.ErrorLevel {
+		type flusher interface {
+			ForceFlush(context.Context) error
+		}
+		if f, ok := global.GetLoggerProvider().(flusher); ok {
+			// Bound the flush to avoid freezing the caller if the OTLP/Loki
+			// endpoint is slow or unreachable.
+			flushCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			//nolint:errcheck // ignoring flush error on purpose: logging it
+			// from inside a log hook would risk infinite recursion.
+			f.ForceFlush(flushCtx)
+			cancel()
+		}
+	}
+
 	return nil
 }
 

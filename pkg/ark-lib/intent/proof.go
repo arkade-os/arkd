@@ -3,7 +3,6 @@ package intent
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -101,42 +100,27 @@ func Verify(proofB64, message string, skip []*btcec.PublicKey) error {
 		return ErrInvalidTxWrongOutputIndex
 	}
 
-	signedInputs, err := script.VerifyTapscriptSigs(ptx, prevoutFetcher, skip)
-	if err != nil {
+	if _, err := script.VerifyTapscriptSigs(
+		ptx, prevoutFetcher,
+		script.WithSkipPublicKeys(skip...),
+	); err != nil {
 		return fmt.Errorf("invalid intent proof: %w", err)
 	}
 
-	// Ensure every ownership input (index 1+) was actually validated.
-	// VerifyTapscriptSigs silently skips unsigned inputs, so we must check
-	// that no applicable input slipped through without a signature.
-	signedSet := make(map[int]struct{}, len(signedInputs))
-	for _, idx := range signedInputs {
-		signedSet[idx] = struct{}{}
-	}
+	// Note closures use hash-locks, not signatures — VerifyTapscriptSigs
+	// skips them entirely, so we must verify the preimage here.
 	for i := 1; i < len(ptx.Inputs); i++ {
-		if _, ok := signedSet[i]; ok {
+		in := ptx.Inputs[i]
+		if len(in.TaprootLeafScript) != 1 {
+			return fmt.Errorf("malformed input %d: missing TaprootLeafScript", i)
+		}
+		
+		if !script.IsNoteClosureScript(in.TaprootLeafScript[0].Script) {
 			continue
 		}
-
-		in := ptx.Inputs[i]
-		if len(in.TaprootLeafScript) == 1 {
-			// Note closures use hash-locks, not signatures — verify the
-			// preimage and control block instead.
-			if script.IsNoteClosureScript(in.TaprootLeafScript[0].Script) {
-				if err := verifyNoteInput(ptx, i, prevoutFetcher); err != nil {
-					return fmt.Errorf("invalid intent proof: %w", err)
-				}
-				continue
-			}
-
-			// For unsigned condition closures, the input is valid only if
-			// every expected signer is in the skip list.
-			if allSignersSkipped(in.TaprootLeafScript[0].Script, skip) {
-				continue
-			}
+		if err := verifyNoteInput(ptx, i, prevoutFetcher); err != nil {
+			return fmt.Errorf("invalid intent proof: %w", err)
 		}
-
-		return fmt.Errorf("missing signature for input %d", i)
 	}
 
 	return nil
@@ -458,33 +442,3 @@ func verifyNoteInput(
 	return nil
 }
 
-// allSignersSkipped returns true if every public key in the closure
-// is present in the skip list.
-func allSignersSkipped(closureScript []byte, skip []*btcec.PublicKey) bool {
-	closure, err := script.DecodeClosure(closureScript)
-	if err != nil {
-		return false
-	}
-
-	var pubKeys []*btcec.PublicKey
-	switch c := closure.(type) {
-	case *script.ConditionMultisigClosure:
-		pubKeys = c.PubKeys
-	case *script.ConditionCSVMultisigClosure:
-		pubKeys = c.PubKeys
-	default:
-		return false
-	}
-
-	skipSet := make(map[string]struct{}, len(skip))
-	for _, k := range skip {
-		skipSet[hex.EncodeToString(schnorr.SerializePubKey(k))] = struct{}{}
-	}
-
-	for _, k := range pubKeys {
-		if _, ok := skipSet[hex.EncodeToString(schnorr.SerializePubKey(k))]; !ok {
-			return false
-		}
-	}
-	return len(pubKeys) > 0
-}

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -19,17 +18,28 @@ func NewRedisKVStore[T any](rdb *redis.Client, prefix string) *KVStore[T] {
 	return &KVStore[T]{rdb: rdb, prefix: prefix}
 }
 
-// NewIntentKVStore returns a KVStore for TimedIntent with the proper prefix.
-func NewIntentKVStore(rdb *redis.Client) *KVStore[ports.TimedIntent] {
-	return &KVStore[ports.TimedIntent]{rdb: rdb, prefix: "intent:"}
-}
-
 func (s *KVStore[T]) key(id string) string {
 	return s.prefix + id
 }
 
+// Key returns the fully-prefixed Redis key for id, so callers can WATCH a
+// specific entry without leaking the KVStore prefix.
+func (s *KVStore[T]) Key(id string) string {
+	return s.key(id)
+}
+
 func (s *KVStore[T]) Get(ctx context.Context, id string) (*T, error) {
-	val, err := s.rdb.Get(ctx, s.key(id)).Result()
+	return s.getWith(ctx, s.rdb, id)
+}
+
+// GetWith reads through an arbitrary redis.Cmdable (e.g. a *redis.Tx inside a
+// Watch callback) so reads share the same connection as the transaction.
+func (s *KVStore[T]) GetWith(ctx context.Context, c redis.Cmdable, id string) (*T, error) {
+	return s.getWith(ctx, c, id)
+}
+
+func (s *KVStore[T]) getWith(ctx context.Context, c redis.Cmdable, id string) (*T, error) {
+	val, err := c.Get(ctx, s.key(id)).Result()
 	if errors.Is(err, redis.Nil) {
 		return nil, nil
 	}
@@ -53,6 +63,12 @@ func (s *KVStore[T]) Set(ctx context.Context, id string, value *T) error {
 
 func (s *KVStore[T]) Delete(ctx context.Context, id string) error {
 	return s.rdb.Del(ctx, s.key(id)).Err()
+}
+
+// DeletePipe queues a DEL for the given id on the pipeline, keeping the key
+// prefix encapsulated in the KVStore.
+func (s *KVStore[T]) DeletePipe(ctx context.Context, pipe redis.Pipeliner, id string) {
+	pipe.Del(ctx, s.key(id))
 }
 
 func (s *KVStore[T]) GetMulti(ctx context.Context, ids []string) ([]*T, error) {
@@ -97,13 +113,16 @@ func (s *KVStore[T]) SetPipe(
 	return nil
 }
 
-// ListPush pushes a value to the front of a Redis list
-func (s *KVStore[T]) ListPush(ctx context.Context, key string, value *T) error {
+// ListPushPipe pushes a value to the front of a Redis list (in pipeline)
+func (s *KVStore[T]) ListPushPipe(
+	ctx context.Context, pipe redis.Pipeliner, key string, value *T,
+) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	return s.rdb.LPush(ctx, key, data).Err()
+	pipe.LPush(ctx, key, data)
+	return nil
 }
 
 // ListRange gets all items from a Redis list

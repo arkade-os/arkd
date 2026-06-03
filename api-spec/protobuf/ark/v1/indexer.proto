@@ -126,6 +126,26 @@ service IndexerService {
         disable_chunked_transfer: true
         disable_websockets: true
       }
+      additional_bindings: [
+        {
+          get: "/v1/indexer/subscription"
+          stream: {
+            disable_chunked_transfer: true
+            disable_websockets: true
+          }
+        }
+      ]
+    };
+  };
+
+  // UpdateSubscription updates an existing subscription created via
+  // GetSubscription. See UpdateSubscriptionRequest for the full set of
+  // supported filter combinations and their semantics.
+  rpc UpdateSubscription(UpdateSubscriptionRequest)
+      returns (UpdateSubscriptionResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/indexer/subscription/update"
+      body: "*"
     };
   };
 }
@@ -379,15 +399,103 @@ message UnsubscribeForScriptsResponse {}
 
 
 message GetSubscriptionRequest {
+  // If empty, server creates a new subscription automatically.
   string subscription_id = 1;
+  // Optional: filter to apply on stream creation. Only used when
+  // subscription_id is empty; ignored otherwise. See
+  // UpdateSubscriptionRequest for filter semantics.
+  SubscriptionFilter filter = 2;
 }
 
 message GetSubscriptionResponse {
   oneof data {
     IndexerHeartbeat heartbeat = 1;
     IndexerSubscriptionEvent event = 2;
+    SubscriptionStartedEvent subscription_started = 3;
   }
 }
+
+message SubscriptionStartedEvent {
+  string subscription_id = 1;
+}
+
+// SubscriptionFilter is the payload carried by GetSubscription's initial
+// filter and by UpdateSubscription. See UpdateSubscriptionRequest for the
+// per-call semantics of each field.
+//
+// At runtime, a tx event is dispatched to a subscription when any of its
+// expressions evaluates to true on the event's tx, OR when the event
+// carries a vtxo whose script is in the subscription's script set.
+message SubscriptionFilter {
+  // CEL expressions evaluated against each indexed tx envelope. The
+  // indexer combines them with OR.
+  repeated string expressions = 1;
+  // Script add/remove operations. Will be migrated to a CEL formula in a
+  // future protocol version and removed.
+  ScriptFilter scripts = 2;
+}
+
+message ScriptFilter {
+  repeated string add = 1;
+  repeated string remove = 2;
+}
+
+// UpdateSubscriptionRequest mutates an existing subscription. Both filter
+// fields are optional and may be set together. The subscription_id must
+// be non-empty and the filter must be present; otherwise InvalidArgument
+// is returned.
+//
+// Expressions (filter.expressions):
+//   - Always overwritten as a whole. The field's contents replace any
+//     previously-set expressions even when the list is empty (which
+//     clears them entirely).
+//   - Duplicate expressions are deduplicated, since the underlying set
+//     is keyed by expression string.
+//   - Bounded by a server-side per-subscription cap; exceeding it returns
+//     InvalidArgument.
+//
+// Scripts (filter.scripts):
+//   - When the scripts field is unset, scripts are left untouched.
+//   - When set with both `add` and `remove` empty, the call clears all
+//     scripts (mirrors UnsubscribeForScripts with an empty scripts list).
+//   - When set with `add` non-empty, those scripts are added.
+//   - When set with `remove` non-empty, those scripts are removed.
+//   - `add` and `remove` may be combined in a single call. When the two
+//     lists overlap, remove takes precedence, since add is applied first
+//     and remove second.
+//   - Both operations are idempotent: adding an already-subscribed
+//     script is a no-op, and removing an unsubscribed script is a no-op.
+//
+// Atomicity:
+//   - All inputs (CEL expressions, scripts to add, scripts to remove) are
+//     validated before any state is mutated. If any single input fails
+//     validation, no mutations are applied and even valid entries in the
+//     same request are discarded. An InvalidArgument response therefore
+//     guarantees the subscription is unchanged.
+//   - A successful response guarantees all requested mutations were
+//     applied.
+//
+// Errors:
+//   - NotFound: subscription_id does not match a live subscription.
+//   - InvalidArgument: any CEL compile error, any script parse error, or
+//     the expressions cap exceeded.
+//
+// GetSubscription initial filter:
+//   - The same SubscriptionFilter shape is accepted by
+//     GetSubscriptionRequest.filter on stream creation, with the same
+//     semantics as above and two exceptions.
+//   - `scripts.remove` is ignored on creation, since a freshly-created
+//     subscription has no scripts to remove.
+//   - When `scripts` is set with both `add` and `remove` empty on
+//     creation, the clear-all behavior does not fire either, since there
+//     is nothing to clear. An empty SubscriptionFilter is therefore a
+//     no-op on creation.
+message UpdateSubscriptionRequest {
+  string subscription_id = 1;
+  SubscriptionFilter filter = 2;
+}
+
+message UpdateSubscriptionResponse {}
 
 message IndexerTxData {
   string txid = 1;

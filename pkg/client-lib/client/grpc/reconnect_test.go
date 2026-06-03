@@ -125,8 +125,6 @@ func TestGetTransactionsStreamEmitsConnectionLifecycleEvents(t *testing.T) {
 	}
 }
 
-
-
 func TestGetTransactionsStreamReconnectsAfterServerRestart(t *testing.T) {
 	originalCfg := utils.GrpcReconnectConfig
 	utils.GrpcReconnectConfig.InitialDelay = 100 * time.Millisecond

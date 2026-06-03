@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/btcsuite/btcd/txscript"
@@ -19,6 +20,37 @@ var (
 
 // Extension is a set of packet (typed data) encoded in OP_RETURN output script
 type Extension []Packet
+
+// NewExtensionFromPackets constructs an Extension from already-parsed packets.
+// It rejects nil packets and duplicate type bytes.
+func NewExtensionFromPackets(pkts ...Packet) (Extension, error) {
+	if len(pkts) == 0 {
+		return nil, fmt.Errorf("missing packets")
+	}
+
+	ext := make(Extension, 0, len(pkts))
+	seen := make(map[uint8]struct{}, len(pkts))
+	for _, p := range pkts {
+		if p == nil {
+			return nil, fmt.Errorf("extension packet must not be nil")
+		}
+		v := reflect.ValueOf(p)
+		switch v.Kind() {
+		case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+			if v.IsNil() {
+				return nil, fmt.Errorf("extension packet must not be nil")
+			}
+		}
+		t := p.Type()
+		if _, dup := seen[t]; dup {
+			return nil, fmt.Errorf("duplicate packet type 0x%02x", t)
+		}
+		seen[t] = struct{}{}
+		ext = append(ext, p)
+	}
+
+	return ext, nil
+}
 
 // Serialize the extension as a complete OP_RETURN script
 // OP_RETURN <magic_bytes> <tlv_packets>
@@ -95,6 +127,21 @@ func (e Extension) GetAssetPacket() asset.Packet {
 	for _, p := range e {
 		if ap, ok := p.(asset.Packet); ok {
 			return ap
+		}
+	}
+	return nil
+}
+
+// GetPacketByType returns the first Packet in the extension whose type byte equals t.
+// It returns nil if no match is present and is safe to call on a nil Extension.
+//
+//   - For type 0x00 (asset), prefer GetAssetPacket for the concrete asset.Packet type.
+//   - NewExtensionFromBytes rejects duplicate type bytes; if an Extension is constructed manually with
+//     duplicates, the first match in slice order is returned.
+func (e Extension) GetPacketByType(t uint8) Packet {
+	for _, p := range e {
+		if p.Type() == t {
+			return p
 		}
 	}
 	return nil

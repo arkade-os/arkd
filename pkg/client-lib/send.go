@@ -1,10 +1,13 @@
-package arksdk
+package wallet
 
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,11 +30,18 @@ func (a *service) SendOffChain(
 		return nil, err
 	}
 
+	o := newDefaultSendOptions()
+	for _, opt := range opts {
+		if err := opt.applySend(o); err != nil {
+			return nil, err
+		}
+	}
+
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
 	baseArkTx, checkpointTxs, selectedCoins, changeReceiver, err := a.createOffchainTx(
-		ctx, receivers, opts...,
+		ctx, receivers, o,
 	)
 	if err != nil {
 		return nil, err
@@ -49,7 +59,11 @@ func (a *service) SendOffChain(
 		return nil, err
 	}
 
-	if err := addAssetPacket(arkPtx, assetPacket); err != nil {
+	if err := addExtension(arkPtx, assetPacket, o.extraPackets); err != nil {
+		return nil, err
+	}
+
+	if err := applyOutputTapTrees(arkPtx, o.outputsTapTree); err != nil {
 		return nil, err
 	}
 
@@ -58,7 +72,7 @@ func (a *service) SendOffChain(
 		return nil, err
 	}
 
-	signedArkTx, err := a.wallet.SignTransaction(ctx, a.explorer, arkTx)
+	signedArkTx, err := a.identity.SignTransaction(ctx, arkTx, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +97,7 @@ func (a *service) SendOffChain(
 		Txid:                arkTxid,
 		FinalArkTx:          signedArkTx,
 		SignedCheckpointTxs: signedCheckpointTxs,
-	})
+	}, o.signingKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -97,39 +111,44 @@ func (a *service) SendOffChain(
 		outs = append(outs, *changeReceiver)
 	}
 
+	ext := make(extension.Extension, 0, 1+len(o.extraPackets))
+	if len(assetPacket) > 0 {
+		ext = append(ext, assetPacket)
+	}
+	ext = append(ext, o.extraPackets...)
+
 	return &SendOffChainRes{
 		Txid:        txid,
 		Tx:          signedArkTx,
 		Checkpoints: checkpointTxs,
 		Inputs:      ins,
 		Outputs:     outs,
-		Extension:   extension.Extension{assetPacket},
+		Extension:   ext,
 	}, nil
 }
 
 func (a *service) FinalizePendingTxs(
-	ctx context.Context, createdAfter *time.Time,
+	ctx context.Context, createdAfter *time.Time, opts ...SendOption,
 ) ([]string, error) {
 	if err := a.safeCheck(); err != nil {
 		return nil, err
 	}
 
-	return a.finalizePendingTxs(ctx, createdAfter)
+	o := newDefaultSendOptions()
+	for _, opt := range opts {
+		if err := opt.applySend(o); err != nil {
+			return nil, err
+		}
+	}
+
+	return a.finalizePendingTxs(ctx, createdAfter, o.vtxos, o.signingKeys)
 }
 
 func (a *service) createOffchainTx(
-	ctx context.Context, receivers []types.Receiver, opts ...SendOption,
+	ctx context.Context, receivers []types.Receiver, opts *sendOptions,
 ) (string, []string, []types.VtxoWithTapTree, *types.Receiver, error) {
 	if len(receivers) <= 0 {
 		return "", nil, nil, nil, fmt.Errorf("missing receivers")
-	}
-
-	_, offchainAddrs, _, _, err := a.wallet.GetAddresses(ctx)
-	if err != nil {
-		return "", nil, nil, nil, err
-	}
-	if len(offchainAddrs) == 0 {
-		return "", nil, nil, nil, fmt.Errorf("no offchain addresses")
 	}
 
 	expectedSignerPubkey := schnorr.SerializePubKey(a.SignerPubKey)
@@ -155,37 +174,42 @@ func (a *service) createOffchainTx(
 		}
 	}
 
-	options := newDefaultSendOptions()
-	for _, opt := range opts {
-		if err := opt(options); err != nil {
+	vtxos := make([]types.VtxoWithTapTree, 0)
+	if len(opts.vtxos) > 0 {
+		vtxos = slices.Clone(opts.vtxos)
+	} else {
+		_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+		if err != nil {
 			return "", nil, nil, nil, err
 		}
-	}
+		if len(offchainAddrs) == 0 {
+			return "", nil, nil, nil, fmt.Errorf("no offchain addresses")
+		}
 
-	vtxos := make([]types.VtxoWithTapTree, 0)
-	spendableVtxos, err := a.getSpendableVtxos(ctx, &getVtxosFilter{
-		withoutExpirySorting: options.withoutExpirySorting,
-	})
-	if err != nil {
-		return "", nil, nil, nil, err
-	}
+		spendableVtxos, err := a.getSpendableVtxos(ctx, &getVtxosFilter{
+			withoutExpirySorting: opts.withoutExpirySorting,
+		})
+		if err != nil {
+			return "", nil, nil, nil, err
+		}
 
-	for _, offchainAddr := range offchainAddrs {
-		for _, v := range spendableVtxos {
-			if v.IsRecoverable() {
-				continue
-			}
+		for _, offchainAddr := range offchainAddrs {
+			for _, v := range spendableVtxos {
+				if v.IsRecoverable() {
+					continue
+				}
 
-			vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
-			if err != nil {
-				return "", nil, nil, nil, err
-			}
+				vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
+				if err != nil {
+					return "", nil, nil, nil, err
+				}
 
-			if vtxoAddr == offchainAddr.Address {
-				vtxos = append(vtxos, types.VtxoWithTapTree{
-					Vtxo:       v,
-					Tapscripts: offchainAddr.Tapscripts,
-				})
+				if vtxoAddr == offchainAddr.Address {
+					vtxos = append(vtxos, types.VtxoWithTapTree{
+						Vtxo:       v,
+						Tapscripts: offchainAddr.Tapscripts,
+					})
+				}
 			}
 		}
 	}
@@ -225,7 +249,7 @@ func (a *service) createOffchainTx(
 				}
 
 				assetCoins, assetChangeAmount, err := utils.CoinSelectAsset(
-					availableVtxos, amountToSelect, asset.AssetId, options.withoutExpirySorting,
+					availableVtxos, amountToSelect, asset.AssetId, opts.withoutExpirySorting,
 				)
 				if err != nil {
 					return "", nil, nil, nil, err
@@ -281,7 +305,7 @@ func (a *service) createOffchainTx(
 				// use a "fake" receiver to select only the remaining btc amount
 				// it works for offchain tx because feeEstimator is nil (no offchain fee)
 				[]types.Receiver{{Amount: uint64(btcAmountToSelect)}},
-				a.Dust, options.withoutExpirySorting, nil,
+				a.Dust, opts.withoutExpirySorting, nil,
 			)
 			if err != nil {
 				return "", nil, nil, nil, err
@@ -330,7 +354,7 @@ func (a *service) createOffchainTx(
 
 		_, selectedBtcCoins, changeBtcAmount, err := utils.CoinSelect(
 			nil, availableVtxos, []types.Receiver{{Amount: a.Dust}},
-			a.Dust, options.withoutExpirySorting, nil,
+			a.Dust, opts.withoutExpirySorting, nil,
 		)
 		if err != nil {
 			return "", nil, nil, nil, fmt.Errorf(
@@ -344,8 +368,13 @@ func (a *service) createOffchainTx(
 	}
 
 	if changeAmount > 0 {
+		addr, err := a.getReceiver(ctx, opts.receiver)
+		if err != nil {
+			return "", nil, nil, nil, err
+		}
+
 		changeReceiver = &types.Receiver{
-			To: offchainAddrs[0].Address, Amount: changeAmount,
+			To: addr, Amount: changeAmount,
 		}
 		if len(assetChanges) > 0 {
 			for assetID, amount := range assetChanges {
@@ -395,14 +424,21 @@ func (a *service) createOffchainTx(
 
 func (a *service) finalizePendingTxs(
 	ctx context.Context, createdAfter *time.Time,
+	vtxosWithTapscripts []types.VtxoWithTapTree, keysByScript map[string]string,
 ) ([]string, error) {
-	vtxos, err := a.fetchPendingSpentVtxos(ctx)
-	if err != nil {
-		return nil, err
+	if len(vtxosWithTapscripts) <= 0 {
+		vtxos, err := a.fetchPendingSpentVtxos(ctx)
+		if err != nil {
+			return nil, err
+		}
+		vtxosWithTapscripts, err = a.populateVtxosWithTapscripts(ctx, vtxos)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	filtered := make([]types.Vtxo, 0, len(vtxos))
-	for _, vtxo := range vtxos {
+	filtered := make([]types.VtxoWithTapTree, 0, len(vtxosWithTapscripts))
+	for _, vtxo := range vtxosWithTapscripts {
 		if createdAfter != nil && !createdAfter.IsZero() {
 			if !vtxo.CreatedAt.After(*createdAfter) {
 				continue
@@ -415,18 +451,14 @@ func (a *service) finalizePendingTxs(
 		return nil, nil
 	}
 
-	vtxosWithTapscripts, err := a.populateVtxosWithTapscripts(ctx, filtered)
-	if err != nil {
-		return nil, err
-	}
-
-	inputs, exitLeaves, arkFields, _, err := toIntentInputs(nil, vtxosWithTapscripts, nil)
+	inputs, exitLeaves, arkFields, _, err := toIntentInputs(nil, filtered, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	txids := make([]string, 0)
 	const MAX_INPUTS_PER_INTENT = 20
+	signingRequired := true
 
 	for i := 0; i < len(inputs); i += MAX_INPUTS_PER_INTENT {
 		end := min(i+MAX_INPUTS_PER_INTENT, len(inputs))
@@ -434,7 +466,7 @@ func (a *service) finalizePendingTxs(
 		exitLeavesSubset := exitLeaves[i:end]
 		arkFieldsSubset := arkFields[i:end]
 		proofTx, message, err := a.makeGetPendingTxIntent(
-			inputsSubset, exitLeavesSubset, arkFieldsSubset,
+			inputsSubset, exitLeavesSubset, arkFieldsSubset, signingRequired, keysByScript,
 		)
 		if err != nil {
 			return nil, err
@@ -446,7 +478,7 @@ func (a *service) finalizePendingTxs(
 		}
 
 		for _, tx := range pendingTxs {
-			txid, _, err := a.finalizeTx(ctx, tx)
+			txid, _, err := a.finalizeTx(ctx, tx, keysByScript)
 			if err != nil {
 				log.WithError(err).Errorf("failed to finalize pending tx: %s", tx.Txid)
 				continue
@@ -458,13 +490,53 @@ func (a *service) finalizePendingTxs(
 	return txids, nil
 }
 
+// applyOutputTapTrees sets the BIP-371 TaprootTapTree field on every PSBT
+// output whose hex-encoded pkScript matches a key in byPkScript. An error is
+// returned when a key matches no output: silently ignoring an unmatched key
+// would let a caller think the tree was set on the wire while the PSBT goes
+// out without it — a footgun in a VTXO-spending path.
+func applyOutputTapTrees(ptx *psbt.Packet, taprootTrees map[string][]byte) error {
+	if len(taprootTrees) <= 0 {
+		return nil
+	}
+	if len(ptx.UnsignedTx.TxOut) != len(ptx.Outputs) {
+		return fmt.Errorf(
+			"output count mismatch: unsigned tx has %d outputs but ptx has %d",
+			len(ptx.UnsignedTx.TxOut), len(ptx.Outputs),
+		)
+	}
+	matched := make(map[string]bool, len(taprootTrees))
+	for i, out := range ptx.UnsignedTx.TxOut {
+		pkHex := hex.EncodeToString(out.PkScript)
+		tapTree, ok := taprootTrees[pkHex]
+		if !ok {
+			continue
+		}
+		ptx.Outputs[i].TaprootTapTree = tapTree
+		matched[pkHex] = true
+	}
+	if len(matched) == len(taprootTrees) {
+		return nil
+	}
+	unmatched := make([]string, 0, len(taprootTrees)-len(matched))
+	for k := range taprootTrees {
+		if !matched[k] {
+			unmatched = append(unmatched, k)
+		}
+	}
+	sort.Strings(unmatched)
+	return fmt.Errorf(
+		"no matching output for pkScript(s): %s", strings.Join(unmatched, ", "),
+	)
+}
+
 func (a *service) finalizeTx(
-	ctx context.Context, acceptedTx client.AcceptedOffchainTx,
+	ctx context.Context, acceptedTx client.AcceptedOffchainTx, keysByScript map[string]string,
 ) (string, []string, error) {
 	finalCheckpoints := make([]string, 0, len(acceptedTx.SignedCheckpointTxs))
 
 	for _, checkpoint := range acceptedTx.SignedCheckpointTxs {
-		signedTx, err := a.wallet.SignTransaction(ctx, a.explorer, checkpoint)
+		signedTx, err := a.identity.SignTransaction(ctx, checkpoint, keysByScript)
 		if err != nil {
 			return "", nil, err
 		}

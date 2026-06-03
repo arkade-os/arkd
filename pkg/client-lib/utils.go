@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import (
 	"bytes"
@@ -22,14 +22,14 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	"github.com/arkade-os/arkd/pkg/client-lib/identity"
+	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
+	identitystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store"
+	identityfilestore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/file"
+	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/client-lib/wallet"
-	singlekeywallet "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey"
-	walletstore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store"
-	filestore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/file"
-	inmemorystore "github.com/arkade-os/arkd/pkg/client-lib/wallet/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -44,7 +44,7 @@ import (
 func getClient(
 	supportedClients utils.SupportedType[utils.ClientFactory],
 	clientType, serverUrl string, withMonitorConn bool,
-) (client.TransportClient, error) {
+) (client.Client, error) {
 	factory := supportedClients[clientType]
 	return factory(serverUrl, withMonitorConn)
 }
@@ -57,37 +57,23 @@ func getIndexer(
 	return factory(serverUrl, withMonitorConn)
 }
 
-func getWallet(
-	configStore types.ConfigStore, walletType string,
-	supportedWallets utils.SupportedType[struct{}],
-) (wallet.WalletService, error) {
-	switch walletType {
-	case wallet.SingleKeyWallet:
-		return getSingleKeyWallet(configStore)
-	default:
-		return nil, fmt.Errorf(
-			"unsupported wallet type '%s', please select one of: %s", walletType, supportedWallets,
-		)
-	}
-}
-
-func getSingleKeyWallet(configStore types.ConfigStore) (wallet.WalletService, error) {
-	walletStore, err := getWalletStore(configStore.GetType(), configStore.GetDatadir())
+func getSingleKeyIdentity(datadir, storeType string) (identity.Identity, error) {
+	store, err := getIdentityStore(storeType, datadir)
 	if err != nil {
 		return nil, err
 	}
 
-	return singlekeywallet.NewBitcoinWallet(configStore, walletStore)
+	return singlekeyidentity.NewIdentity(store)
 }
 
-func getWalletStore(storeType, datadir string) (walletstore.WalletStore, error) {
+func getIdentityStore(storeType, datadir string) (identitystore.IdentityStore, error) {
 	switch storeType {
 	case types.InMemoryStore:
-		return inmemorystore.NewWalletStore()
+		return identityinmemorystore.NewStore()
 	case types.FileStore:
-		return filestore.NewWalletStore(datadir)
+		return identityfilestore.NewStore(datadir)
 	default:
-		return nil, fmt.Errorf("unknown wallet store type")
+		return nil, fmt.Errorf("unknown identity store type")
 	}
 }
 
@@ -493,7 +479,7 @@ func toIntentInputs(
 		arkFields = append(arkFields, []*psbt.Unknown{taptreeField})
 	}
 
-	for _, coin := range boardingUtxos {
+	for boardingIndex, coin := range boardingUtxos {
 		hash, err := chainhash.NewHashFromStr(coin.Txid)
 		if err != nil {
 			return nil, nil, nil, nil, err
@@ -515,6 +501,12 @@ func toIntentInputs(
 				PkScript: pkScript,
 			},
 		})
+
+		if len(coin.Assets) > 0 {
+			// boarding utxos sit after vtxos in the proof PSBT, and the +1
+			// accounts for the fake intent input at index 0.
+			assetInputs[len(vtxos)+boardingIndex+1] = coin.Assets
+		}
 
 		taptreeField, err := txutils.VtxoTaprootTreeField.Encode(coin.Tapscripts)
 		if err != nil {
@@ -777,22 +769,43 @@ func createAssetPacket(
 	return asset.NewPacket(assetGroups)
 }
 
-// addAssetPacket adds the asset packet output to the given partial tx by keeping the P2A output as
-// the very last one.
-func addAssetPacket(ptx *psbt.Packet, assetPacket asset.Packet) error {
-	if len(assetPacket) == 0 {
+// addExtension inserts an extension OP_RETURN (asset packet + extras) right
+// before the P2A anchor output, which remains last. If both assetPacket and
+// extraPkts are empty it is a no-op. Duplicate packet types are rejected.
+func addExtension(
+	ptx *psbt.Packet, assetPacket asset.Packet, extraPkts []extension.Packet,
+) error {
+	// Nothing to add when we have neither an asset packet nor extras.
+	if len(assetPacket) == 0 && len(extraPkts) == 0 {
 		return nil
 	}
 
-	packetOut, err := extension.Extension{assetPacket}.TxOut()
+	pkts := make([]extension.Packet, 0, 1+len(extraPkts))
+	if len(assetPacket) > 0 {
+		pkts = append(pkts, assetPacket)
+	}
+	pkts = append(pkts, extraPkts...)
+
+	ext, err := extension.NewExtensionFromPackets(pkts...)
 	if err != nil {
 		return err
 	}
-	// add the asset packet output, P2A should stay as last output
-	ptx.Outputs = append(ptx.Outputs, psbt.POutput{})
-	p2aOutput := ptx.UnsignedTx.TxOut[len(ptx.UnsignedTx.TxOut)-1]
-	ptx.UnsignedTx.TxOut[len(ptx.UnsignedTx.TxOut)-1] = packetOut
-	ptx.UnsignedTx.TxOut = append(ptx.UnsignedTx.TxOut, p2aOutput)
+
+	packetOut, err := ext.TxOut()
+	if err != nil {
+		return fmt.Errorf("building extension txout: %w", err)
+	}
+	// Insert the extension output immediately before the P2A anchor, keeping
+	// ptx.Outputs[i] aligned with ptx.UnsignedTx.TxOut[i]. The anchor's own
+	// PSBT-level metadata must follow its TxOut to the new last index; the
+	// fresh empty POutput goes next to the EXT TxOut.
+	lastIdx := len(ptx.UnsignedTx.TxOut) - 1
+	p2aTxOut := ptx.UnsignedTx.TxOut[lastIdx]
+	p2aPOutput := ptx.Outputs[lastIdx]
+	ptx.UnsignedTx.TxOut[lastIdx] = packetOut
+	ptx.Outputs[lastIdx] = psbt.POutput{}
+	ptx.UnsignedTx.TxOut = append(ptx.UnsignedTx.TxOut, p2aTxOut)
+	ptx.Outputs = append(ptx.Outputs, p2aPOutput)
 	return nil
 }
 

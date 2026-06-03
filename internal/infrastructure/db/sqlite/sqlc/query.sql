@@ -205,6 +205,11 @@ SELECT t.* FROM tx t WHERE t.round_id IN (
     SELECT tx.round_id FROM tx WHERE tx.txid = @txid AND type = 'commitment'
 ) AND t.type = 'forfeit';
 
+-- name: SelectRoundSweepTxs :many
+SELECT t.txid, t.tx FROM tx t WHERE t.round_id = (
+    SELECT tx.round_id FROM tx WHERE tx.txid = @txid AND type = 'commitment'
+) AND t.type = 'sweep';
+
 -- name: SelectRoundStats :one
 SELECT
     r.swept,
@@ -289,6 +294,29 @@ FROM vtxo_vw v
 WHERE v.amount >= sqlc.arg('min_amount')
   AND (v.commitment_txid = sqlc.arg('commitment_txid')
     OR (',' || COALESCE(v.commitments, '') || ',') LIKE '%,' || sqlc.arg('commitment_txid') || ',%');
+
+-- Bulk variant of SelectVtxoPubKeysByCommitmentTxid: returns the
+-- deduplicated set of vtxo pubkeys for any of the given commitment_txids.
+-- Used at startup by restoreWatchingVtxos to collapse what was an N+1
+-- per-round loop into a single SQL call.
+--
+-- Two slice placeholders bind the same list of txids: sqlc's sqlite
+-- generator only rewrites the first occurrence of sqlc.slice('name') per
+-- query, so checking both v.commitment_txid and the join table forces
+-- the second IN clause to use a distinct slice name. The Go caller
+-- passes the same []string to both.
+-- name: SelectVtxoPubKeysByCommitmentTxids :many
+SELECT DISTINCT v.pubkey
+FROM vtxo v
+WHERE v.amount >= sqlc.arg('min_amount')
+  AND (
+    v.commitment_txid IN (sqlc.slice('commitment_txids'))
+    OR EXISTS (
+      SELECT 1 FROM vtxo_commitment_txid vc
+      WHERE vc.vtxo_txid = v.txid AND vc.vtxo_vout = v.vout
+        AND vc.commitment_txid IN (sqlc.slice('commitment_txids_alt'))
+    )
+  );
 
 -- name: SelectSweepableVtxoOutpointsByCommitmentTxid :many
 SELECT DISTINCT v.txid AS vtxo_txid, v.vout AS vtxo_vout
