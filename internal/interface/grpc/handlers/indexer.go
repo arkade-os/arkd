@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -16,6 +18,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -432,24 +435,62 @@ func (h *indexerService) GetSubscription(
 	request *arkv1.GetSubscriptionRequest, stream arkv1.IndexerService_GetSubscriptionServer,
 ) error {
 	subscriptionId := request.GetSubscriptionId()
-	if len(subscriptionId) == 0 {
-		return status.Error(codes.InvalidArgument, "missing subscription id")
-	}
 
-	h.scriptSubsHandler.stopTimeout(subscriptionId)
-	defer func() {
-		topics := h.scriptSubsHandler.getTopics(subscriptionId)
-		if len(topics) > 0 {
-			h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
-		} else {
-			h.scriptSubsHandler.removeListener(subscriptionId)
+	var scriptCh chan *arkv1.GetSubscriptionResponse
+
+	if len(subscriptionId) == 0 {
+		// New single-connection flow: create subscription inline.
+		subscriptionId = uuid.NewString()
+		listener := newListener[*arkv1.GetSubscriptionResponse](subscriptionId, nil)
+		h.scriptSubsHandler.pushListener(listener)
+		defer h.scriptSubsHandler.removeListener(subscriptionId)
+
+		// Apply initial filter, if any, through the same machinery used by
+		// UpdateSubscription. `scripts.remove` is ignored on creation
+		// because the subscription has no scripts to remove yet.
+		if filter := request.GetFilter(); filter != nil {
+			if err := h.applyFilter(subscriptionId, filter, true); err != nil {
+				return err
+			}
 		}
 
-	}()
+		scriptCh = listener.ch
 
-	scriptCh, err := h.scriptSubsHandler.getListenerChannel(subscriptionId)
-	if err != nil && !strings.Contains(err.Error(), "listener not found") {
-		return status.Error(codes.Internal, err.Error())
+		// Send SubscriptionStartedEvent as first message.
+		startedEvt := &arkv1.GetSubscriptionResponse{
+			Data: &arkv1.GetSubscriptionResponse_SubscriptionStarted{
+				SubscriptionStarted: &arkv1.SubscriptionStartedEvent{
+					SubscriptionId: subscriptionId,
+				},
+			},
+		}
+		if err := stream.Send(startedEvt); err != nil {
+			return err
+		}
+	} else {
+		// Old flow: subscription_id provided, use existing listener.
+		h.scriptSubsHandler.stopTimeout(subscriptionId)
+		defer func() {
+			// Keep the listener alive on disconnect if either filter type is
+			// non-empty, so the client can reconnect within the timeout window
+			// without losing scripts or tx filters.
+			topics := h.scriptSubsHandler.getTopics(subscriptionId)
+			txFilters := h.scriptSubsHandler.getTxFilters(subscriptionId)
+			if len(topics) > 0 || len(txFilters) > 0 {
+				h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
+			} else {
+				h.scriptSubsHandler.removeListener(subscriptionId)
+			}
+		}()
+
+		var err error
+		scriptCh, err = h.scriptSubsHandler.getListenerChannel(subscriptionId)
+		if err != nil {
+			if errors.Is(err, ErrSubscriptionNotFound) {
+				return status.Error(codes.NotFound, err.Error())
+			}
+			return status.Error(codes.Internal, err.Error())
+		}
 	}
 
 	// create a Timer that will fire after one heartbeat interval
@@ -491,6 +532,112 @@ func (h *indexerService) GetSubscription(
 	}
 }
 
+func (h *indexerService) UpdateSubscription(
+	ctx context.Context, req *arkv1.UpdateSubscriptionRequest,
+) (*arkv1.UpdateSubscriptionResponse, error) {
+	if req.GetSubscriptionId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "missing subscription id")
+	}
+
+	filter := req.GetFilter()
+	if filter == nil {
+		return nil, status.Error(codes.InvalidArgument, "missing filter")
+	}
+
+	if err := h.applyFilter(req.GetSubscriptionId(), filter, false); err != nil {
+		return nil, err
+	}
+	return &arkv1.UpdateSubscriptionResponse{}, nil
+}
+
+// applyFilter applies the expressions and script mutations carried by a
+// SubscriptionFilter. Expressions are always overwritten as a whole
+// (including with an empty list, which clears them). Scripts are mutated
+// with the same semantics as SubscribeForScripts / UnsubscribeForScripts:
+// if both `add` and `remove` are empty the call removes all scripts;
+// otherwise `add` and `remove` apply independently. When initial is true
+// the call is part of GetSubscription's stream-creation path, and
+// `scripts.remove` is ignored since the subscription has no scripts yet.
+//
+// All inputs are validated (CEL compile + script parse) before any
+// mutation, so an InvalidArgument response guarantees the listener state
+// is untouched.
+func (h *indexerService) applyFilter(
+	subscriptionID string, filter *arkv1.SubscriptionFilter, initial bool,
+) error {
+	exprs := filter.GetExpressions()
+	scripts := filter.GetScripts()
+
+	// Validate all inputs upfront before any mutation. Cap enforcement on
+	// the compiled set is the broker's responsibility (see installTxFilters
+	// below); we still surface it as InvalidArgument when it fires.
+	compiledExprs, err := compileTxFilters(exprs)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	var parsedAdd, parsedRemove []string
+	if scripts != nil {
+		if len(scripts.GetAdd()) > 0 {
+			parsedAdd, err = parseScripts(scripts.GetAdd())
+			if err != nil {
+				return status.Error(codes.InvalidArgument, err.Error())
+			}
+		}
+		if !initial && len(scripts.GetRemove()) > 0 {
+			parsedRemove, err = parseScripts(scripts.GetRemove())
+			if err != nil {
+				return status.Error(codes.InvalidArgument, err.Error())
+			}
+		}
+	}
+
+	// Mutate: expressions first (literal overwrite), then scripts.
+	if err := h.scriptSubsHandler.installTxFilters(subscriptionID, compiledExprs); err != nil {
+		switch {
+		case errors.Is(err, ErrSubscriptionNotFound):
+			return status.Error(codes.NotFound, err.Error())
+		case errors.Is(err, ErrTxFiltersLimitExceeded):
+			return status.Error(codes.InvalidArgument, err.Error())
+		default:
+			return status.Error(codes.Internal, err.Error())
+		}
+	}
+
+	if len(parsedAdd) > 0 {
+		if err := h.scriptSubsHandler.addTopics(subscriptionID, parsedAdd); err != nil {
+			if errors.Is(err, ErrSubscriptionNotFound) {
+				return status.Error(codes.NotFound, err.Error())
+			}
+			return status.Error(codes.Internal, err.Error())
+		}
+	}
+
+	if initial || scripts == nil {
+		return nil
+	}
+
+	switch {
+	case len(parsedRemove) > 0:
+		if err := h.scriptSubsHandler.removeTopics(subscriptionID, parsedRemove); err != nil {
+			if errors.Is(err, ErrSubscriptionNotFound) {
+				return status.Error(codes.NotFound, err.Error())
+			}
+			return status.Error(codes.Internal, err.Error())
+		}
+	case len(parsedAdd) == 0:
+		// Both add and remove empty: mirror UnsubscribeForScripts and clear all.
+		if err := h.scriptSubsHandler.removeAllTopics(subscriptionID); err != nil {
+			if errors.Is(err, ErrSubscriptionNotFound) {
+				return status.Error(codes.NotFound, err.Error())
+			}
+			return status.Error(codes.Internal, err.Error())
+		}
+	}
+
+	return nil
+}
+
 func (h *indexerService) UnsubscribeForScripts(
 	ctx context.Context, request *arkv1.UnsubscribeForScriptsRequest,
 ) (*arkv1.UnsubscribeForScriptsResponse, error) {
@@ -503,13 +650,23 @@ func (h *indexerService) UnsubscribeForScripts(
 	if len(scripts) == 0 {
 		// remove all topics
 		if err := h.scriptSubsHandler.removeAllTopics(subscriptionId); err != nil {
+			if errors.Is(err, ErrSubscriptionNotFound) {
+				return nil, status.Error(codes.NotFound, err.Error())
+			}
 			return nil, status.Error(codes.Internal, err.Error())
 		}
-		h.scriptSubsHandler.removeListener(subscriptionId)
+		// Only tear down the listener if no tx filters remain on it, otherwise
+		// tx-only subscriptions would be silently dropped.
+		if len(h.scriptSubsHandler.getTxFilters(subscriptionId)) == 0 {
+			h.scriptSubsHandler.removeListener(subscriptionId)
+		}
 		return &arkv1.UnsubscribeForScriptsResponse{}, nil
 	}
 
 	if err := h.scriptSubsHandler.removeTopics(subscriptionId, scripts); err != nil {
+		if errors.Is(err, ErrSubscriptionNotFound) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -584,6 +741,41 @@ func (h *indexerService) listenToTxEvents() {
 			}
 		}
 
+		// Lazily decode the tx for CEL evaluation. The closure is passed into
+		// matchesTx so the decode only runs once we know a listener actually
+		// has at least one tx filter, and only once per event regardless of
+		// how many listeners need it.
+		//
+		// event.Tx may be either a base64-encoded PSBT (commitment txs,
+		// ark txs, checkpoint txs all use this format) or a hex-encoded raw
+		// signed tx (sweep txs). We try PSBT first because it is the more
+		// common shape; on parse failure we fall back to hex.
+		var parsedTx *wire.MsgTx
+		var parsedTxAttempted bool
+		parseTxOnce := func() *wire.MsgTx {
+			if parsedTxAttempted {
+				return parsedTx
+			}
+			parsedTxAttempted = true
+			if event.Tx == "" {
+				return nil
+			}
+			if ptx, err := psbt.NewFromRawBytes(
+				strings.NewReader(event.Tx), true,
+			); err == nil {
+				parsedTx = ptx.UnsignedTx
+				return parsedTx
+			}
+			if txBytes, err := hex.DecodeString(event.Tx); err == nil {
+				msg := wire.NewMsgTx(2)
+				if err := msg.Deserialize(bytes.NewReader(txBytes)); err == nil {
+					parsedTx = msg
+					return parsedTx
+				}
+			}
+			return nil
+		}
+
 		listenersCopy := h.scriptSubsHandler.getListenersCopy()
 		for _, l := range listenersCopy {
 			spendableVtxos := make([]*arkv1.IndexerVtxo, 0)
@@ -600,7 +792,10 @@ func (h *indexerService) listenToTxEvents() {
 				}
 			}
 
-			if len(spendableVtxos) > 0 || len(spentVtxos) > 0 {
+			scriptMatch := len(spendableVtxos) > 0 || len(spentVtxos) > 0
+			txMatch := l.matchesTx(parseTxOnce)
+
+			if scriptMatch || txMatch {
 				go func(listener *listener[*arkv1.GetSubscriptionResponse]) {
 					select {
 					case listener.ch <- &arkv1.GetSubscriptionResponse{

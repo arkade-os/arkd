@@ -25,6 +25,11 @@ import (
 type walletDaemonClient struct {
 	client arkwalletv1.WalletServiceClient
 	conn   *grpc.ClientConn
+	// chunkSize bounds how many scripts are sent per WatchScripts /
+	// UnwatchScripts gRPC call. Zero means use defaultWatchScriptsChunkSize.
+	// Only set explicitly by tests; production callers go through New() and
+	// always get the default.
+	chunkSize int
 }
 
 // New creates a ports.WalletService backed by a gRPC client.
@@ -99,14 +104,81 @@ func (w *walletDaemonClient) GetTransaction(ctx context.Context, txid string) (s
 	return resp.GetTxHex(), nil
 }
 
-func (w *walletDaemonClient) WatchScripts(ctx context.Context, scripts []string) error {
-	_, err := w.client.WatchScripts(ctx, &arkwalletv1.WatchScriptsRequest{Scripts: scripts})
-	return err
+// defaultWatchScriptsChunkSize bounds the number of scripts sent in a
+// single WatchScripts / UnwatchScripts gRPC call when the caller has not
+// configured an override. Each script is a hex-encoded taproot output
+// (68 bytes) plus protobuf overhead, so 2000 scripts is roughly 150 KiB,
+// well under the default gRPC 4 MiB message cap.
+const defaultWatchScriptsChunkSize = 2000
+
+// effectiveChunkSize returns the chunk size this client should use,
+// falling back to the package default if no explicit size was set.
+func (w *walletDaemonClient) effectiveChunkSize() int {
+	if w.chunkSize > 0 {
+		return w.chunkSize
+	}
+	return defaultWatchScriptsChunkSize
 }
 
+// chunkStrings splits in into groups of at most size elements. The
+// returned slices share backing storage with in, so callers must not
+// mutate the input until they are done iterating. Panics on size <= 0
+// because the caller is the one in control of the size (it is a
+// programming error to pass a non-positive value here) and silently
+// returning the whole slice as one chunk would defeat the purpose of
+// chunking.
+func chunkStrings(in []string, size int) [][]string {
+	if size <= 0 {
+		panic(fmt.Sprintf("chunkStrings: size must be > 0, got %d", size))
+	}
+	if len(in) == 0 {
+		return nil
+	}
+	chunks := make([][]string, 0, (len(in)+size-1)/size)
+	for i := 0; i < len(in); i += size {
+		end := i + size
+		if end > len(in) {
+			end = len(in)
+		}
+		chunks = append(chunks, in[i:end])
+	}
+	return chunks
+}
+
+// WatchScripts registers the given scripts with the wallet daemon. The
+// scripts list is split into chunks of effectiveChunkSize() and sent as
+// sequential gRPC calls so the request payload stays below the default
+// 4 MiB gRPC max-message size at very large script counts (eg. boot-time
+// restore of every tap key across all sweepable rounds).
+func (w *walletDaemonClient) WatchScripts(ctx context.Context, scripts []string) error {
+	if len(scripts) == 0 {
+		return nil
+	}
+	for _, chunk := range chunkStrings(scripts, w.effectiveChunkSize()) {
+		_, err := w.client.WatchScripts(
+			ctx, &arkwalletv1.WatchScriptsRequest{Scripts: chunk},
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UnwatchScripts is chunked for the same reason as WatchScripts.
 func (w *walletDaemonClient) UnwatchScripts(ctx context.Context, scripts []string) error {
-	_, err := w.client.UnwatchScripts(ctx, &arkwalletv1.UnwatchScriptsRequest{Scripts: scripts})
-	return err
+	if len(scripts) == 0 {
+		return nil
+	}
+	for _, chunk := range chunkStrings(scripts, w.effectiveChunkSize()) {
+		_, err := w.client.UnwatchScripts(
+			ctx, &arkwalletv1.UnwatchScriptsRequest{Scripts: chunk},
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (w *walletDaemonClient) SignMessage(ctx context.Context, message []byte) ([]byte, error) {

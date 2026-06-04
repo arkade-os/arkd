@@ -29,6 +29,11 @@ type VtxoRepository interface {
 	) (
 		[]string, error,
 	)
+	GetVtxoPubKeysByCommitmentTxids(
+		ctx context.Context, commitmentTxids []string, withMinimumAmount uint64,
+	) (
+		[]string, error,
+	)
 	GetPendingSpentVtxosWithPubKeys(
 		ctx context.Context,
 		pubkeys []string,

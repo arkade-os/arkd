@@ -42,6 +42,7 @@ const (
 	AdminService_RevokeTokens_FullMethodName                 = "/ark.v1.AdminService/RevokeTokens"
 	AdminService_GetExpiringLiquidity_FullMethodName         = "/ark.v1.AdminService/GetExpiringLiquidity"
 	AdminService_GetRecoverableLiquidity_FullMethodName      = "/ark.v1.AdminService/GetRecoverableLiquidity"
+	AdminService_GetCollectedFees_FullMethodName             = "/ark.v1.AdminService/GetCollectedFees"
 	AdminService_Sweep_FullMethodName                        = "/ark.v1.AdminService/Sweep"
 )
 
@@ -72,6 +73,7 @@ type AdminServiceClient interface {
 	RevokeTokens(ctx context.Context, in *RevokeTokensRequest, opts ...grpc.CallOption) (*RevokeTokensResponse, error)
 	GetExpiringLiquidity(ctx context.Context, in *GetExpiringLiquidityRequest, opts ...grpc.CallOption) (*GetExpiringLiquidityResponse, error)
 	GetRecoverableLiquidity(ctx context.Context, in *GetRecoverableLiquidityRequest, opts ...grpc.CallOption) (*GetRecoverableLiquidityResponse, error)
+	GetCollectedFees(ctx context.Context, in *GetCollectedFeesRequest, opts ...grpc.CallOption) (*GetCollectedFeesResponse, error)
 	Sweep(ctx context.Context, in *SweepRequest, opts ...grpc.CallOption) (*SweepResponse, error)
 }
 
@@ -313,6 +315,16 @@ func (c *adminServiceClient) GetRecoverableLiquidity(ctx context.Context, in *Ge
 	return out, nil
 }
 
+func (c *adminServiceClient) GetCollectedFees(ctx context.Context, in *GetCollectedFeesRequest, opts ...grpc.CallOption) (*GetCollectedFeesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCollectedFeesResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetCollectedFees_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) Sweep(ctx context.Context, in *SweepRequest, opts ...grpc.CallOption) (*SweepResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SweepResponse)
@@ -350,6 +362,7 @@ type AdminServiceServer interface {
 	RevokeTokens(context.Context, *RevokeTokensRequest) (*RevokeTokensResponse, error)
 	GetExpiringLiquidity(context.Context, *GetExpiringLiquidityRequest) (*GetExpiringLiquidityResponse, error)
 	GetRecoverableLiquidity(context.Context, *GetRecoverableLiquidityRequest) (*GetRecoverableLiquidityResponse, error)
+	GetCollectedFees(context.Context, *GetCollectedFeesRequest) (*GetCollectedFeesResponse, error)
 	Sweep(context.Context, *SweepRequest) (*SweepResponse, error)
 }
 
@@ -428,6 +441,9 @@ func (UnimplementedAdminServiceServer) GetExpiringLiquidity(context.Context, *Ge
 }
 func (UnimplementedAdminServiceServer) GetRecoverableLiquidity(context.Context, *GetRecoverableLiquidityRequest) (*GetRecoverableLiquidityResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRecoverableLiquidity not implemented")
+}
+func (UnimplementedAdminServiceServer) GetCollectedFees(context.Context, *GetCollectedFeesRequest) (*GetCollectedFeesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetCollectedFees not implemented")
 }
 func (UnimplementedAdminServiceServer) Sweep(context.Context, *SweepRequest) (*SweepResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Sweep not implemented")
@@ -866,6 +882,24 @@ func _AdminService_GetRecoverableLiquidity_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_GetCollectedFees_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCollectedFeesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetCollectedFees(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetCollectedFees_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetCollectedFees(ctx, req.(*GetCollectedFeesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_Sweep_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SweepRequest)
 	if err := dec(in); err != nil {
@@ -982,6 +1016,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRecoverableLiquidity",
 			Handler:    _AdminService_GetRecoverableLiquidity_Handler,
+		},
+		{
+			MethodName: "GetCollectedFees",
+			Handler:    _AdminService_GetCollectedFees_Handler,
 		},
 		{
 			MethodName: "Sweep",

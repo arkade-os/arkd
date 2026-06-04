@@ -237,7 +237,7 @@ func TestGetUtxos(t *testing.T) {
 
 		svc := makeExplorer(t, ts.URL)
 
-		utxos, err := svc.GetUtxos(addr)
+		utxos, err := svc.GetUtxos([]string{addr})
 		require.NoError(t, err)
 		require.Len(t, utxos, 1)
 		require.Equal(
@@ -248,12 +248,22 @@ func TestGetUtxos(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
+		t.Run("empty addresses", func(t *testing.T) {
+			ts := newTestServer(t)
+
+			svc := makeExplorer(t, ts.URL)
+
+			resp, err := svc.GetUtxos(nil)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "missing addresses")
+			require.Nil(t, resp)
+		})
 		t.Run("invalid address", func(t *testing.T) {
 			ts := newTestServer(t)
 
 			svc := makeExplorer(t, ts.URL)
 
-			_, err := svc.GetUtxos("not-a-valid-bitcoin-address")
+			_, err := svc.GetUtxos([]string{"not-a-valid-bitcoin-address"})
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "invalid address")
 		})
@@ -266,7 +276,7 @@ func TestGetUtxos(t *testing.T) {
 
 			svc := makeExplorer(t, ts.URL)
 
-			_, err := svc.GetUtxos(addr)
+			_, err := svc.GetUtxos([]string{addr})
 			require.Error(t, err)
 		})
 
@@ -278,7 +288,7 @@ func TestGetUtxos(t *testing.T) {
 
 			svc := makeExplorer(t, ts.URL)
 
-			_, err := svc.GetUtxos(addr)
+			_, err := svc.GetUtxos([]string{addr})
 			require.Error(t, err)
 		})
 	})
@@ -1080,6 +1090,38 @@ func TestStopClearsSubscriptions(t *testing.T) {
 			svc.Stop()
 			require.NotPanics(t, func() { svc.Stop() })
 		})
+	})
+}
+
+func TestNewExplorerPollInterval(t *testing.T) {
+	t.Run("uses default interval on websocket fallback", func(t *testing.T) {
+		//The test server is just a plain HTTP test server.
+		//It does not register /v1/ws, so websocket setup fails and the explorer falls back to polling.
+		ts := newTestServer(t)
+
+		svc, err := mempool.NewExplorer(
+			ts.URL, arklib.Bitcoin, mempool.WithTracker(true),
+		)
+		require.NoError(t, err)
+
+		require.NotPanics(t, func() { svc.Start() })
+		t.Cleanup(svc.Stop)
+		time.Sleep(25 * time.Millisecond)
+
+		require.Equal(t, 0, svc.GetConnectionCount())
+	})
+
+	t.Run("rejects non-positive interval", func(t *testing.T) {
+		ts := newTestServer(t)
+
+		for _, interval := range []time.Duration{0, -time.Second} {
+			_, err := mempool.NewExplorer(
+				ts.URL, arklib.Bitcoin,
+				mempool.WithTracker(true),
+				mempool.WithPollInterval(interval),
+			)
+			require.ErrorContains(t, err, "poll interval must be positive")
+		}
 	})
 }
 

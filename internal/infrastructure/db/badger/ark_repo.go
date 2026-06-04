@@ -83,6 +83,22 @@ func (r *arkRepository) GetRoundWithId(
 	return round, nil
 }
 
+func (r *arkRepository) PatchCollectedFees(
+	ctx context.Context, feesByRoundId map[string]uint64,
+) error {
+	for id, fees := range feesByRoundId {
+		round, err := r.GetRoundWithId(ctx, id)
+		if err != nil {
+			return fmt.Errorf("failed to get round %s: %w", id, err)
+		}
+		round.CollectedFees = fees
+		if err := r.addOrUpdateRound(ctx, *round); err != nil {
+			return fmt.Errorf("failed to patch collected fees for round %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
 func (r *arkRepository) GetRoundWithCommitmentTxid(
 	ctx context.Context, txid string,
 ) (*domain.Round, error) {
@@ -302,6 +318,7 @@ func (r *arkRepository) addOrUpdateRound(
 		Swept:              round.Swept,
 		VtxoTreeExpiration: round.VtxoTreeExpiration,
 		SweepTxs:           round.SweepTxs,
+		CollectedFees:      round.CollectedFees,
 	}
 	var upsertFn func() error
 	if ctx.Value("tx") != nil {
