@@ -43,18 +43,25 @@ func PacketTypesFromPSBT64(b64 string) ([]int, error) {
 	return PacketTypesFromMsgTx(ptx.UnsignedTx)
 }
 
+// MaxPacketType is the upper bound on ARK extension packet types,
+// which are uint8 in the wire format (see pkg/ark-lib/extension/packet.go).
+const MaxPacketType = 0xff
+
 // MatchPackets reports whether off satisfies the WithPacket portion of
 // the filter. It does not re-check WithTxids / WithExtension /
 // time-range; those are pushed down by the repository (or applied in
 // memory by the badger backend).
 //
 // For each (packetType, hexPayload) entry in WithPacket:
-//   - off.Packets must contain packetType (carries-the-type check); and
-//   - when hexPayload is non-empty, off.ArkTx (the persisted base64
+//   - packetType must be in [0, MaxPacketType] (wire-format range);
+//     out-of-range keys are a programming error and surface as an error.
+//   - off.Packets must contain packetType (carries-the-type check).
+//   - When hexPayload is non-empty, off.ArkTx (the persisted base64
 //     PSBT) must embed an ARK extension whose packet of that type, when
-//     serialized and hex-encoded, equals hexPayload exactly. This mirrors
-//     the streaming SubscriptionFilter's `tx.extension[N] == 'hex'`
-//     semantics so the unary and stream RPCs return the same set.
+//     serialized and hex-encoded, equals hexPayload exactly. This
+//     mirrors the streaming SubscriptionFilter's `tx.extension[N] ==
+//     'hex'` semantics so the unary and stream RPCs return the same
+//     set.
 //
 // A PSBT/extension parse error on a row that needs payload matching is
 // surfaced as an error rather than swallowed; persisted data that fails
@@ -62,6 +69,13 @@ func PacketTypesFromPSBT64(b64 string) ([]int, error) {
 func (f OffchainTxFilter) MatchPackets(off *OffchainTx) (bool, error) {
 	if len(f.WithPacket) == 0 {
 		return true, nil
+	}
+	for t := range f.WithPacket {
+		if t < 0 || t > MaxPacketType {
+			return false, fmt.Errorf(
+				"packet type %d out of range (must be 0..%d)", t, MaxPacketType,
+			)
+		}
 	}
 	carried := make(map[int]struct{}, len(off.Packets))
 	for _, p := range off.Packets {

@@ -700,7 +700,7 @@ const selectOffchainTxs = `-- name: SelectOffchainTxs :many
 SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.packets, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw
 WHERE COALESCE(fail_reason, '') = ''
   AND stage_code <> 0
-  AND (CAST(?1 AS INTEGER) = 0 OR COALESCE(packets, '') != '')
+  AND (CAST(?1 AS INTEGER) = 0 OR (packets IS NOT NULL AND packets <> ''))
   AND (CAST(?2 AS INTEGER) = 0 OR starting_timestamp >= CAST(?3 AS INTEGER))
   AND (CAST(?4 AS INTEGER) = 0 OR starting_timestamp <= CAST(?5 AS INTEGER))
 ORDER BY starting_timestamp DESC, txid ASC
@@ -766,7 +766,7 @@ SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp
 WHERE COALESCE(fail_reason, '') = ''
   AND stage_code <> 0
   AND txid IN (/*SLICE:txids*/?)
-  AND (CAST(?2 AS INTEGER) = 0 OR COALESCE(packets, '') != '')
+  AND (CAST(?2 AS INTEGER) = 0 OR (packets IS NOT NULL AND packets <> ''))
   AND (CAST(?3 AS INTEGER) = 0 OR starting_timestamp >= CAST(?4 AS INTEGER))
   AND (CAST(?5 AS INTEGER) = 0 OR starting_timestamp <= CAST(?6 AS INTEGER))
 ORDER BY starting_timestamp DESC, txid ASC

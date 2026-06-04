@@ -635,7 +635,7 @@ const selectOffchainTxs = `-- name: SelectOffchainTxs :many
 SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.packets, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw
 WHERE COALESCE(fail_reason, '') = ''
   AND stage_code <> 0
-  AND ($1::boolean = false OR COALESCE(packets, '') != '')
+  AND ($1::boolean = false OR (packets IS NOT NULL AND packets <> ''))
   AND ($2::boolean = false OR starting_timestamp >= $3::bigint)
   AND ($4::boolean = false OR starting_timestamp <= $5::bigint)
 ORDER BY starting_timestamp DESC, txid ASC
@@ -701,7 +701,7 @@ SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp
 WHERE COALESCE(fail_reason, '') = ''
   AND stage_code <> 0
   AND txid = ANY($1::varchar[])
-  AND ($2::boolean = false OR COALESCE(packets, '') != '')
+  AND ($2::boolean = false OR (packets IS NOT NULL AND packets <> ''))
   AND ($3::boolean = false OR starting_timestamp >= $4::bigint)
   AND ($5::boolean = false OR starting_timestamp <= $6::bigint)
 ORDER BY starting_timestamp DESC, txid ASC

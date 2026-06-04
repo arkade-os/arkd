@@ -282,7 +282,7 @@ SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw
 WHERE COALESCE(fail_reason, '') = ''
   AND stage_code <> 0
   AND txid = ANY(sqlc.arg('txids')::varchar[])
-  AND (sqlc.arg('with_extension')::boolean = false OR COALESCE(packets, '') != '')
+  AND (sqlc.arg('with_extension')::boolean = false OR (packets IS NOT NULL AND packets <> ''))
   AND (sqlc.arg('with_after')::boolean = false OR starting_timestamp >= sqlc.arg('after_ts')::bigint)
   AND (sqlc.arg('with_before')::boolean = false OR starting_timestamp <= sqlc.arg('before_ts')::bigint)
 ORDER BY starting_timestamp DESC, txid ASC;
@@ -291,7 +291,7 @@ ORDER BY starting_timestamp DESC, txid ASC;
 SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw
 WHERE COALESCE(fail_reason, '') = ''
   AND stage_code <> 0
-  AND (sqlc.arg('with_extension')::boolean = false OR COALESCE(packets, '') != '')
+  AND (sqlc.arg('with_extension')::boolean = false OR (packets IS NOT NULL AND packets <> ''))
   AND (sqlc.arg('with_after')::boolean = false OR starting_timestamp >= sqlc.arg('after_ts')::bigint)
   AND (sqlc.arg('with_before')::boolean = false OR starting_timestamp <= sqlc.arg('before_ts')::bigint)
 ORDER BY starting_timestamp DESC, txid ASC;

@@ -192,8 +192,8 @@ func isTxIdent(e ast.Expr) bool {
 }
 
 // asIntLiteral extracts a CEL integer literal and range-checks it to
-// the packet-type byte range (0..255). Returns an error for any other
-// CEL value kind or out-of-range integer.
+// the packet-type byte range. Returns an error for any other CEL value
+// kind or out-of-range integer.
 func asIntLiteral(e ast.Expr) (int, error) {
 	if e.Kind() != ast.LiteralKind {
 		return 0, fmt.Errorf("expected int literal")
@@ -205,15 +205,18 @@ func asIntLiteral(e ast.Expr) (int, error) {
 	case int:
 		n = int64(v)
 	case uint64:
-		if v > uint64(maxPacketType) {
+		if v > uint64(domain.MaxPacketType) {
 			return 0, fmt.Errorf("packet type %d out of range", v)
 		}
 		n = int64(v)
 	default:
 		return 0, fmt.Errorf("expected int literal, got %T", v)
 	}
-	if n < 0 || n > int64(maxPacketType) {
-		return 0, fmt.Errorf("packet type %d out of range (must be 0..%d)", n, maxPacketType)
+	if n < 0 || n > int64(domain.MaxPacketType) {
+		return 0, fmt.Errorf(
+			"packet type %d out of range (must be 0..%d)",
+			n, domain.MaxPacketType,
+		)
 	}
 	return int(n), nil
 }
@@ -229,7 +232,3 @@ func asStringLiteral(e ast.Expr) (string, error) {
 	}
 	return asStr, nil
 }
-
-// maxPacketType is the upper bound on ARK extension packet types, which
-// are uint8 in the wire format (see pkg/ark-lib/extension/packet.go).
-const maxPacketType = 0xff

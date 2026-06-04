@@ -102,6 +102,22 @@ func TestOffchainTxFilterMatchPackets(t *testing.T) {
 		}.MatchPackets(bad)
 		require.Error(t, err)
 	})
+
+	t.Run("out-of-range packet type surfaces an error", func(t *testing.T) {
+		_, err := domain.OffchainTxFilter{
+			WithPacket: map[int]string{domain.MaxPacketType + 1: ""},
+		}.MatchPackets(off)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "out of range")
+	})
+
+	t.Run("negative packet type surfaces an error", func(t *testing.T) {
+		_, err := domain.OffchainTxFilter{
+			WithPacket: map[int]string{-1: ""},
+		}.MatchPackets(off)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "out of range")
+	})
 }
 
 func TestPacketTypesFromMsgTx(t *testing.T) {
@@ -134,7 +150,7 @@ func parseTx(t *testing.T, hexStr string) *wire.MsgTx {
 }
 
 // psbtBase64FromTxHex wraps a raw tx in a minimal PSBT envelope and
-// returns the base64-encoded result — matching what the application
+// returns the base64-encoded result, matching what the application
 // layer persists in offchain_tx.tx.
 func psbtBase64FromTxHex(t *testing.T, txHex string) string {
 	t.Helper()

@@ -288,7 +288,7 @@ SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw
 WHERE COALESCE(fail_reason, '') = ''
   AND stage_code <> 0
   AND txid IN (sqlc.slice('txids'))
-  AND (CAST(@with_extension AS INTEGER) = 0 OR COALESCE(packets, '') != '')
+  AND (CAST(@with_extension AS INTEGER) = 0 OR (packets IS NOT NULL AND packets <> ''))
   AND (CAST(@with_after AS INTEGER) = 0 OR starting_timestamp >= CAST(@after_ts AS INTEGER))
   AND (CAST(@with_before AS INTEGER) = 0 OR starting_timestamp <= CAST(@before_ts AS INTEGER))
 ORDER BY starting_timestamp DESC, txid ASC;
@@ -297,7 +297,7 @@ ORDER BY starting_timestamp DESC, txid ASC;
 SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw
 WHERE COALESCE(fail_reason, '') = ''
   AND stage_code <> 0
-  AND (CAST(@with_extension AS INTEGER) = 0 OR COALESCE(packets, '') != '')
+  AND (CAST(@with_extension AS INTEGER) = 0 OR (packets IS NOT NULL AND packets <> ''))
   AND (CAST(@with_after AS INTEGER) = 0 OR starting_timestamp >= CAST(@after_ts AS INTEGER))
   AND (CAST(@with_before AS INTEGER) = 0 OR starting_timestamp <= CAST(@before_ts AS INTEGER))
 ORDER BY starting_timestamp DESC, txid ASC;
