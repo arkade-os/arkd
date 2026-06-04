@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -53,6 +55,7 @@ type AdminService interface {
 	GetSettings(ctx context.Context) (*domain.Settings, error)
 	UpdateSettings(ctx context.Context, settings domain.Settings, updateFields []string) error
 	ClearSettings(ctx context.Context) error
+	GetCollectedFees(ctx context.Context, after, before int64) (uint64, error)
 }
 
 type adminService struct {
@@ -112,7 +115,6 @@ func (a *adminService) GetRoundDetails(
 	inputVtxos := make([]string, 0)
 	outputVtxos := make([]string, 0)
 	for _, intent := range round.Intents {
-		// TODO: Add fees amount
 		totalForfeitAmount += intent.TotalInputAmount()
 
 		for _, receiver := range intent.Receivers {
@@ -146,7 +148,7 @@ func (a *adminService) GetRoundDetails(
 		TotalVtxosAmount: totalVtxosAmount,
 		TotalExitAmount:  totalExitAmount,
 		ExitAddresses:    exitAddresses,
-		FeesAmount:       0,
+		FeesAmount:       round.CollectedFees,
 		InputVtxos:       inputVtxos,
 		OutputVtxos:      outputVtxos,
 		StartedAt:        round.StartingTimestamp,
@@ -623,9 +625,7 @@ func (a *adminService) GetSettings(ctx context.Context) (*domain.Settings, error
 }
 
 func (a *adminService) UpdateSettings(
-	ctx context.Context,
-	settings domain.Settings,
-	updateFields []string,
+	ctx context.Context, settings domain.Settings, updateFields []string,
 ) error {
 	a.settingsMu.Lock()
 	defer a.settingsMu.Unlock()
@@ -694,6 +694,113 @@ func (a *adminService) ClearSettings(ctx context.Context) error {
 	a.roundMaxParticipantsCount = defaults.RoundMaxParticipantsCount
 	a.onInfoChange()
 	return nil
+}
+
+func (a *adminService) GetCollectedFees(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	roundIds, err := a.repoManager.Rounds().GetRoundIds(ctx, after, before, false, true)
+	if err != nil {
+		return 0, err
+	}
+
+	var total uint64
+	// batchesToPatch is used to keep track of the batches for which we calculcated fees,
+	// so we can lazily patch the missing info in storage for batches prior
+	// https://github.com/arkade-os/arkd/pull/933.
+	batchesToPatch := make(map[string]uint64)
+	for _, id := range roundIds {
+		round, err := a.repoManager.Rounds().GetRoundWithId(ctx, id)
+		if err != nil {
+			return 0, err
+		}
+
+		// Batches finalized before fee persistence have a zero (default) collected fee;
+		// recompute it on the fly. Only patch (persist) when the recomputation is complete,
+		// so we never persist a value that under-counts boarding.
+		if round.CollectedFees == 0 {
+			fees, complete := a.recomputeCollectedFees(ctx, round)
+			total += fees
+			if complete && fees > 0 {
+				batchesToPatch[round.Id] = fees
+			}
+			continue
+		}
+		total += round.CollectedFees
+	}
+
+	if len(batchesToPatch) > 0 {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			if err := a.repoManager.Rounds().PatchCollectedFees(ctx, batchesToPatch); err != nil {
+				log.WithError(err).WithField("patches", batchesToPatch).Warn(
+					"failed to patch collected fees",
+				)
+			}
+		}()
+	}
+
+	return total, nil
+}
+
+// recomputeCollectedFees recomputes the fees collected by the operator for a batch whose fee was
+// not persisted (finalized before fee persistence). It recovers the boarding input amount from the
+// finalized commitment tx and returns whether the recomputation was complete.
+// When complete is false the boarding amount could not be recovered, so the returned value
+// under-counts the real fee and must not be persisted (a later call can retry).
+func (a *adminService) recomputeCollectedFees(
+	ctx context.Context, round *domain.Round,
+) (fees uint64, complete bool) {
+	boardingInputAmount, err := a.boardingInputAmount(ctx, round.CommitmentTx)
+	if err != nil {
+		log.WithError(err).WithField("round_id", round.Id).Warn(
+			"failed to recover boarding input amount, collected fees may be underestimated",
+		)
+		return calculateCollectedFees(round, 0), false
+	}
+	return calculateCollectedFees(round, boardingInputAmount), true
+}
+
+// boardingInputAmount computes the total amount (sats) of the boarding inputs of
+// a finalized (raw) commitment tx. Boarding inputs are detected by their taproot
+// script-path witness; since a raw tx carries no input amounts, each boarding
+// input's value is looked up from its prevout via the wallet.
+func (a *adminService) boardingInputAmount(
+	ctx context.Context, commitmentTx string,
+) (uint64, error) {
+	var tx wire.MsgTx
+	if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(commitmentTx))); err != nil {
+		return 0, fmt.Errorf("failed to deserialize commitment tx: %w", err)
+	}
+
+	var total uint64
+	for _, in := range tx.TxIn {
+		if !isBoardingWitness(in.Witness) {
+			continue
+		}
+
+		prevTxid := in.PreviousOutPoint.Hash.String()
+		prevTxHex, err := a.walletSvc.GetTransaction(ctx, prevTxid)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get boarding prevout tx %s: %w", prevTxid, err)
+		}
+
+		var prevTx wire.MsgTx
+		if err := prevTx.Deserialize(hex.NewDecoder(strings.NewReader(prevTxHex))); err != nil {
+			return 0, fmt.Errorf("failed to deserialize boarding prevout tx %s: %w", prevTxid, err)
+		}
+
+		vout := in.PreviousOutPoint.Index
+		if int(vout) >= len(prevTx.TxOut) {
+			return 0, fmt.Errorf(
+				"boarding prevout %s:%d out of range", prevTxid, vout,
+			)
+		}
+		total += uint64(prevTx.TxOut[vout].Value)
+	}
+
+	return total, nil
 }
 
 func (a *adminService) getScheduledSweep(

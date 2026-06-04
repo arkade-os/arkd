@@ -2658,6 +2658,102 @@ func (x *GetRecoverableLiquidityResponse) GetAmount() uint64 {
 	return 0
 }
 
+type GetCollectedFeesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	After         int64                  `protobuf:"varint,1,opt,name=after,proto3" json:"after,omitempty"`   // Unix timestamp (UTC, exclusive). Only include rounds starting after this time. 0 means no lower bound.
+	Before        int64                  `protobuf:"varint,2,opt,name=before,proto3" json:"before,omitempty"` // Unix timestamp (UTC, exclusive). Only include rounds starting before this time. 0 means no upper bound.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetCollectedFeesRequest) Reset() {
+	*x = GetCollectedFeesRequest{}
+	mi := &file_ark_v1_admin_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetCollectedFeesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetCollectedFeesRequest) ProtoMessage() {}
+
+func (x *GetCollectedFeesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_admin_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetCollectedFeesRequest.ProtoReflect.Descriptor instead.
+func (*GetCollectedFeesRequest) Descriptor() ([]byte, []int) {
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *GetCollectedFeesRequest) GetAfter() int64 {
+	if x != nil {
+		return x.After
+	}
+	return 0
+}
+
+func (x *GetCollectedFeesRequest) GetBefore() int64 {
+	if x != nil {
+		return x.Before
+	}
+	return 0
+}
+
+type GetCollectedFeesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CollectedFees uint64                 `protobuf:"varint,1,opt,name=collected_fees,json=collectedFees,proto3" json:"collected_fees,omitempty"` // Total collected fees in satoshis.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetCollectedFeesResponse) Reset() {
+	*x = GetCollectedFeesResponse{}
+	mi := &file_ark_v1_admin_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetCollectedFeesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetCollectedFeesResponse) ProtoMessage() {}
+
+func (x *GetCollectedFeesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_admin_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetCollectedFeesResponse.ProtoReflect.Descriptor instead.
+func (*GetCollectedFeesResponse) Descriptor() ([]byte, []int) {
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *GetCollectedFeesResponse) GetCollectedFees() uint64 {
+	if x != nil {
+		return x.CollectedFees
+	}
+	return 0
+}
+
 type SweepRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Connectors      bool                   `protobuf:"varint,1,opt,name=connectors,proto3" json:"connectors,omitempty"`
@@ -2668,7 +2764,7 @@ type SweepRequest struct {
 
 func (x *SweepRequest) Reset() {
 	*x = SweepRequest{}
-	mi := &file_ark_v1_admin_proto_msgTypes[50]
+	mi := &file_ark_v1_admin_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2680,7 +2776,7 @@ func (x *SweepRequest) String() string {
 func (*SweepRequest) ProtoMessage() {}
 
 func (x *SweepRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[50]
+	mi := &file_ark_v1_admin_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2693,7 +2789,7 @@ func (x *SweepRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SweepRequest.ProtoReflect.Descriptor instead.
 func (*SweepRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{50}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *SweepRequest) GetConnectors() bool {
@@ -2720,7 +2816,7 @@ type SweepResponse struct {
 
 func (x *SweepResponse) Reset() {
 	*x = SweepResponse{}
-	mi := &file_ark_v1_admin_proto_msgTypes[51]
+	mi := &file_ark_v1_admin_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2732,7 +2828,7 @@ func (x *SweepResponse) String() string {
 func (*SweepResponse) ProtoMessage() {}
 
 func (x *SweepResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[51]
+	mi := &file_ark_v1_admin_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2745,7 +2841,7 @@ func (x *SweepResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SweepResponse.ProtoReflect.Descriptor instead.
 func (*SweepResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{51}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *SweepResponse) GetTxid() string {
@@ -2787,7 +2883,7 @@ type Settings struct {
 
 func (x *Settings) Reset() {
 	*x = Settings{}
-	mi := &file_ark_v1_admin_proto_msgTypes[52]
+	mi := &file_ark_v1_admin_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2799,7 +2895,7 @@ func (x *Settings) String() string {
 func (*Settings) ProtoMessage() {}
 
 func (x *Settings) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[52]
+	mi := &file_ark_v1_admin_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2812,7 +2908,7 @@ func (x *Settings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Settings.ProtoReflect.Descriptor instead.
 func (*Settings) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{52}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *Settings) GetBanThreshold() int64 {
@@ -2942,7 +3038,7 @@ type GetSettingsRequest struct {
 
 func (x *GetSettingsRequest) Reset() {
 	*x = GetSettingsRequest{}
-	mi := &file_ark_v1_admin_proto_msgTypes[53]
+	mi := &file_ark_v1_admin_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2954,7 +3050,7 @@ func (x *GetSettingsRequest) String() string {
 func (*GetSettingsRequest) ProtoMessage() {}
 
 func (x *GetSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[53]
+	mi := &file_ark_v1_admin_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2967,7 +3063,7 @@ func (x *GetSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSettingsRequest.ProtoReflect.Descriptor instead.
 func (*GetSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{53}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{55}
 }
 
 type GetSettingsResponse struct {
@@ -2979,7 +3075,7 @@ type GetSettingsResponse struct {
 
 func (x *GetSettingsResponse) Reset() {
 	*x = GetSettingsResponse{}
-	mi := &file_ark_v1_admin_proto_msgTypes[54]
+	mi := &file_ark_v1_admin_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2991,7 +3087,7 @@ func (x *GetSettingsResponse) String() string {
 func (*GetSettingsResponse) ProtoMessage() {}
 
 func (x *GetSettingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[54]
+	mi := &file_ark_v1_admin_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3004,7 +3100,7 @@ func (x *GetSettingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSettingsResponse.ProtoReflect.Descriptor instead.
 func (*GetSettingsResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{54}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *GetSettingsResponse) GetSettings() *Settings {
@@ -3029,7 +3125,7 @@ type UpdateSettingsRequest struct {
 
 func (x *UpdateSettingsRequest) Reset() {
 	*x = UpdateSettingsRequest{}
-	mi := &file_ark_v1_admin_proto_msgTypes[55]
+	mi := &file_ark_v1_admin_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3041,7 +3137,7 @@ func (x *UpdateSettingsRequest) String() string {
 func (*UpdateSettingsRequest) ProtoMessage() {}
 
 func (x *UpdateSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[55]
+	mi := &file_ark_v1_admin_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3054,7 +3150,7 @@ func (x *UpdateSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSettingsRequest.ProtoReflect.Descriptor instead.
 func (*UpdateSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{55}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *UpdateSettingsRequest) GetSettings() *Settings {
@@ -3079,7 +3175,7 @@ type UpdateSettingsResponse struct {
 
 func (x *UpdateSettingsResponse) Reset() {
 	*x = UpdateSettingsResponse{}
-	mi := &file_ark_v1_admin_proto_msgTypes[56]
+	mi := &file_ark_v1_admin_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3091,7 +3187,7 @@ func (x *UpdateSettingsResponse) String() string {
 func (*UpdateSettingsResponse) ProtoMessage() {}
 
 func (x *UpdateSettingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[56]
+	mi := &file_ark_v1_admin_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3104,7 +3200,7 @@ func (x *UpdateSettingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSettingsResponse.ProtoReflect.Descriptor instead.
 func (*UpdateSettingsResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{56}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{58}
 }
 
 type ClearSettingsRequest struct {
@@ -3115,7 +3211,7 @@ type ClearSettingsRequest struct {
 
 func (x *ClearSettingsRequest) Reset() {
 	*x = ClearSettingsRequest{}
-	mi := &file_ark_v1_admin_proto_msgTypes[57]
+	mi := &file_ark_v1_admin_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3127,7 +3223,7 @@ func (x *ClearSettingsRequest) String() string {
 func (*ClearSettingsRequest) ProtoMessage() {}
 
 func (x *ClearSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[57]
+	mi := &file_ark_v1_admin_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3140,7 +3236,7 @@ func (x *ClearSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearSettingsRequest.ProtoReflect.Descriptor instead.
 func (*ClearSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{57}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{59}
 }
 
 type ClearSettingsResponse struct {
@@ -3151,7 +3247,7 @@ type ClearSettingsResponse struct {
 
 func (x *ClearSettingsResponse) Reset() {
 	*x = ClearSettingsResponse{}
-	mi := &file_ark_v1_admin_proto_msgTypes[58]
+	mi := &file_ark_v1_admin_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3163,7 +3259,7 @@ func (x *ClearSettingsResponse) String() string {
 func (*ClearSettingsResponse) ProtoMessage() {}
 
 func (x *ClearSettingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[58]
+	mi := &file_ark_v1_admin_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3176,7 +3272,7 @@ func (x *ClearSettingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClearSettingsResponse.ProtoReflect.Descriptor instead.
 func (*ClearSettingsResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{58}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{60}
 }
 
 type ListTokensRequest struct {
@@ -3191,7 +3287,7 @@ type ListTokensRequest struct {
 
 func (x *ListTokensRequest) Reset() {
 	*x = ListTokensRequest{}
-	mi := &file_ark_v1_admin_proto_msgTypes[59]
+	mi := &file_ark_v1_admin_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3203,7 +3299,7 @@ func (x *ListTokensRequest) String() string {
 func (*ListTokensRequest) ProtoMessage() {}
 
 func (x *ListTokensRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[59]
+	mi := &file_ark_v1_admin_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3216,7 +3312,7 @@ func (x *ListTokensRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTokensRequest.ProtoReflect.Descriptor instead.
 func (*ListTokensRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{59}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *ListTokensRequest) GetToken() string {
@@ -3256,7 +3352,7 @@ type ListTokensResponse struct {
 
 func (x *ListTokensResponse) Reset() {
 	*x = ListTokensResponse{}
-	mi := &file_ark_v1_admin_proto_msgTypes[60]
+	mi := &file_ark_v1_admin_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3268,7 +3364,7 @@ func (x *ListTokensResponse) String() string {
 func (*ListTokensResponse) ProtoMessage() {}
 
 func (x *ListTokensResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[60]
+	mi := &file_ark_v1_admin_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3281,7 +3377,7 @@ func (x *ListTokensResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTokensResponse.ProtoReflect.Descriptor instead.
 func (*ListTokensResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{60}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *ListTokensResponse) GetTokens() []*TokenInfo {
@@ -3302,7 +3398,7 @@ type TokenInfo struct {
 
 func (x *TokenInfo) Reset() {
 	*x = TokenInfo{}
-	mi := &file_ark_v1_admin_proto_msgTypes[61]
+	mi := &file_ark_v1_admin_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3314,7 +3410,7 @@ func (x *TokenInfo) String() string {
 func (*TokenInfo) ProtoMessage() {}
 
 func (x *TokenInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[61]
+	mi := &file_ark_v1_admin_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3327,7 +3423,7 @@ func (x *TokenInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenInfo.ProtoReflect.Descriptor instead.
 func (*TokenInfo) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{61}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *TokenInfo) GetHash() string {
@@ -3363,7 +3459,7 @@ type RevokeTokensRequest struct {
 
 func (x *RevokeTokensRequest) Reset() {
 	*x = RevokeTokensRequest{}
-	mi := &file_ark_v1_admin_proto_msgTypes[62]
+	mi := &file_ark_v1_admin_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3375,7 +3471,7 @@ func (x *RevokeTokensRequest) String() string {
 func (*RevokeTokensRequest) ProtoMessage() {}
 
 func (x *RevokeTokensRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[62]
+	mi := &file_ark_v1_admin_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3388,7 +3484,7 @@ func (x *RevokeTokensRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeTokensRequest.ProtoReflect.Descriptor instead.
 func (*RevokeTokensRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{62}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *RevokeTokensRequest) GetToken() string {
@@ -3428,7 +3524,7 @@ type RevokeTokensResponse struct {
 
 func (x *RevokeTokensResponse) Reset() {
 	*x = RevokeTokensResponse{}
-	mi := &file_ark_v1_admin_proto_msgTypes[63]
+	mi := &file_ark_v1_admin_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3440,7 +3536,7 @@ func (x *RevokeTokensResponse) String() string {
 func (*RevokeTokensResponse) ProtoMessage() {}
 
 func (x *RevokeTokensResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[63]
+	mi := &file_ark_v1_admin_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3453,7 +3549,7 @@ func (x *RevokeTokensResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeTokensResponse.ProtoReflect.Descriptor instead.
 func (*RevokeTokensResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{63}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *RevokeTokensResponse) GetRevokedCount() int32 {
@@ -3619,7 +3715,12 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x06amount\x18\x01 \x01(\x04R\x06amount\" \n" +
 	"\x1eGetRecoverableLiquidityRequest\"9\n" +
 	"\x1fGetRecoverableLiquidityResponse\x12\x16\n" +
-	"\x06amount\x18\x01 \x01(\x04R\x06amount\"Y\n" +
+	"\x06amount\x18\x01 \x01(\x04R\x06amount\"G\n" +
+	"\x17GetCollectedFeesRequest\x12\x14\n" +
+	"\x05after\x18\x01 \x01(\x03R\x05after\x12\x16\n" +
+	"\x06before\x18\x02 \x01(\x03R\x06before\"A\n" +
+	"\x18GetCollectedFeesResponse\x12%\n" +
+	"\x0ecollected_fees\x18\x01 \x01(\x04R\rcollectedFees\"Y\n" +
 	"\fSweepRequest\x12\x1e\n" +
 	"\n" +
 	"connectors\x18\x01 \x01(\bR\n" +
@@ -3687,7 +3788,7 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x15CRIME_TYPE_MANUAL_BAN\x10\a*M\n" +
 	"\x0eConvictionType\x12\x1f\n" +
 	"\x1bCONVICTION_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
-	"\x16CONVICTION_TYPE_SCRIPT\x10\x012\x99\x19\n" +
+	"\x16CONVICTION_TYPE_SCRIPT\x10\x012\x8f\x1a\n" +
 	"\fAdminService\x12o\n" +
 	"\x11GetScheduledSweep\x12 .ark.v1.GetScheduledSweepRequest\x1a!.ark.v1.GetScheduledSweepResponse\"\x15\xb2J\x12\x12\x10/v1/admin/sweeps\x12s\n" +
 	"\x0fGetRoundDetails\x12\x1e.ark.v1.GetRoundDetailsRequest\x1a\x1f.ark.v1.GetRoundDetailsResponse\"\x1f\xb2J\x1c\x12\x1a/v1/admin/round/{round_id}\x12W\n" +
@@ -3714,7 +3815,8 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"ListTokens\x12\x19.ark.v1.ListTokensRequest\x1a\x1a.ark.v1.ListTokensResponse\"\x18\xb2J\x15B\x01*\"\x10/v1/admin/tokens\x12j\n" +
 	"\fRevokeTokens\x12\x1b.ark.v1.RevokeTokensRequest\x1a\x1c.ark.v1.RevokeTokensResponse\"\x1f\xb2J\x1cB\x01*\"\x17/v1/admin/tokens/revoke\x12\x84\x01\n" +
 	"\x14GetExpiringLiquidity\x12#.ark.v1.GetExpiringLiquidityRequest\x1a$.ark.v1.GetExpiringLiquidityResponse\"!\xb2J\x1e\x12\x1c/v1/admin/liquidity/expiring\x12\x90\x01\n" +
-	"\x17GetRecoverableLiquidity\x12&.ark.v1.GetRecoverableLiquidityRequest\x1a'.ark.v1.GetRecoverableLiquidityResponse\"$\xb2J!\x12\x1f/v1/admin/liquidity/recoverable\x12M\n" +
+	"\x17GetRecoverableLiquidity\x12&.ark.v1.GetRecoverableLiquidityRequest\x1a'.ark.v1.GetRecoverableLiquidityResponse\"$\xb2J!\x12\x1f/v1/admin/liquidity/recoverable\x12t\n" +
+	"\x10GetCollectedFees\x12\x1f.ark.v1.GetCollectedFeesRequest\x1a .ark.v1.GetCollectedFeesResponse\"\x1d\xb2J\x1a\x12\x18/v1/admin/fees/collected\x12M\n" +
 	"\x05Sweep\x12\x14.ark.v1.SweepRequest\x1a\x15.ark.v1.SweepResponse\"\x17\xb2J\x14B\x01*\"\x0f/v1/admin/sweep\x12_\n" +
 	"\vGetSettings\x12\x1a.ark.v1.GetSettingsRequest\x1a\x1b.ark.v1.GetSettingsResponse\"\x17\xb2J\x14\x12\x12/v1/admin/settings\x12k\n" +
 	"\x0eUpdateSettings\x12\x1d.ark.v1.UpdateSettingsRequest\x1a\x1e.ark.v1.UpdateSettingsResponse\"\x1a\xb2J\x17B\x01*\"\x12/v1/admin/settings\x12n\n" +
@@ -3736,7 +3838,7 @@ func file_ark_v1_admin_proto_rawDescGZIP() []byte {
 }
 
 var file_ark_v1_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_ark_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
+var file_ark_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 66)
 var file_ark_v1_admin_proto_goTypes = []any{
 	(CrimeType)(0),                               // 0: ark.v1.CrimeType
 	(ConvictionType)(0),                          // 1: ark.v1.ConvictionType
@@ -3790,22 +3892,24 @@ var file_ark_v1_admin_proto_goTypes = []any{
 	(*GetExpiringLiquidityResponse)(nil),         // 49: ark.v1.GetExpiringLiquidityResponse
 	(*GetRecoverableLiquidityRequest)(nil),       // 50: ark.v1.GetRecoverableLiquidityRequest
 	(*GetRecoverableLiquidityResponse)(nil),      // 51: ark.v1.GetRecoverableLiquidityResponse
-	(*SweepRequest)(nil),                         // 52: ark.v1.SweepRequest
-	(*SweepResponse)(nil),                        // 53: ark.v1.SweepResponse
-	(*Settings)(nil),                             // 54: ark.v1.Settings
-	(*GetSettingsRequest)(nil),                   // 55: ark.v1.GetSettingsRequest
-	(*GetSettingsResponse)(nil),                  // 56: ark.v1.GetSettingsResponse
-	(*UpdateSettingsRequest)(nil),                // 57: ark.v1.UpdateSettingsRequest
-	(*UpdateSettingsResponse)(nil),               // 58: ark.v1.UpdateSettingsResponse
-	(*ClearSettingsRequest)(nil),                 // 59: ark.v1.ClearSettingsRequest
-	(*ClearSettingsResponse)(nil),                // 60: ark.v1.ClearSettingsResponse
-	(*ListTokensRequest)(nil),                    // 61: ark.v1.ListTokensRequest
-	(*ListTokensResponse)(nil),                   // 62: ark.v1.ListTokensResponse
-	(*TokenInfo)(nil),                            // 63: ark.v1.TokenInfo
-	(*RevokeTokensRequest)(nil),                  // 64: ark.v1.RevokeTokensRequest
-	(*RevokeTokensResponse)(nil),                 // 65: ark.v1.RevokeTokensResponse
-	(*FeeInfo)(nil),                              // 66: ark.v1.FeeInfo
-	(*Intent)(nil),                               // 67: ark.v1.Intent
+	(*GetCollectedFeesRequest)(nil),              // 52: ark.v1.GetCollectedFeesRequest
+	(*GetCollectedFeesResponse)(nil),             // 53: ark.v1.GetCollectedFeesResponse
+	(*SweepRequest)(nil),                         // 54: ark.v1.SweepRequest
+	(*SweepResponse)(nil),                        // 55: ark.v1.SweepResponse
+	(*Settings)(nil),                             // 56: ark.v1.Settings
+	(*GetSettingsRequest)(nil),                   // 57: ark.v1.GetSettingsRequest
+	(*GetSettingsResponse)(nil),                  // 58: ark.v1.GetSettingsResponse
+	(*UpdateSettingsRequest)(nil),                // 59: ark.v1.UpdateSettingsRequest
+	(*UpdateSettingsResponse)(nil),               // 60: ark.v1.UpdateSettingsResponse
+	(*ClearSettingsRequest)(nil),                 // 61: ark.v1.ClearSettingsRequest
+	(*ClearSettingsResponse)(nil),                // 62: ark.v1.ClearSettingsResponse
+	(*ListTokensRequest)(nil),                    // 63: ark.v1.ListTokensRequest
+	(*ListTokensResponse)(nil),                   // 64: ark.v1.ListTokensResponse
+	(*TokenInfo)(nil),                            // 65: ark.v1.TokenInfo
+	(*RevokeTokensRequest)(nil),                  // 66: ark.v1.RevokeTokensRequest
+	(*RevokeTokensResponse)(nil),                 // 67: ark.v1.RevokeTokensResponse
+	(*FeeInfo)(nil),                              // 68: ark.v1.FeeInfo
+	(*Intent)(nil),                               // 69: ark.v1.Intent
 }
 var file_ark_v1_admin_proto_depIdxs = []int32{
 	41, // 0: ark.v1.GetScheduledSweepResponse.sweeps:type_name -> ark.v1.ScheduledSweep
@@ -3819,16 +3923,16 @@ var file_ark_v1_admin_proto_depIdxs = []int32{
 	47, // 8: ark.v1.GetConvictionsByRoundResponse.convictions:type_name -> ark.v1.Conviction
 	47, // 9: ark.v1.GetActiveScriptConvictionsResponse.convictions:type_name -> ark.v1.Conviction
 	40, // 10: ark.v1.ScheduledSweep.outputs:type_name -> ark.v1.SweepableOutput
-	66, // 11: ark.v1.ScheduledSessionConfig.fees:type_name -> ark.v1.FeeInfo
+	68, // 11: ark.v1.ScheduledSessionConfig.fees:type_name -> ark.v1.FeeInfo
 	46, // 12: ark.v1.IntentInfo.receivers:type_name -> ark.v1.Output
 	43, // 13: ark.v1.IntentInfo.inputs:type_name -> ark.v1.IntentInput
 	43, // 14: ark.v1.IntentInfo.boarding_inputs:type_name -> ark.v1.IntentInput
-	67, // 15: ark.v1.IntentInfo.intent:type_name -> ark.v1.Intent
+	69, // 15: ark.v1.IntentInfo.intent:type_name -> ark.v1.Intent
 	1,  // 16: ark.v1.Conviction.type:type_name -> ark.v1.ConvictionType
 	0,  // 17: ark.v1.Conviction.crime_type:type_name -> ark.v1.CrimeType
-	54, // 18: ark.v1.GetSettingsResponse.settings:type_name -> ark.v1.Settings
-	54, // 19: ark.v1.UpdateSettingsRequest.settings:type_name -> ark.v1.Settings
-	63, // 20: ark.v1.ListTokensResponse.tokens:type_name -> ark.v1.TokenInfo
+	56, // 18: ark.v1.GetSettingsResponse.settings:type_name -> ark.v1.Settings
+	56, // 19: ark.v1.UpdateSettingsRequest.settings:type_name -> ark.v1.Settings
+	65, // 20: ark.v1.ListTokensResponse.tokens:type_name -> ark.v1.TokenInfo
 	2,  // 21: ark.v1.AdminService.GetScheduledSweep:input_type -> ark.v1.GetScheduledSweepRequest
 	4,  // 22: ark.v1.AdminService.GetRoundDetails:input_type -> ark.v1.GetRoundDetailsRequest
 	6,  // 23: ark.v1.AdminService.GetRounds:input_type -> ark.v1.GetRoundsRequest
@@ -3848,43 +3952,45 @@ var file_ark_v1_admin_proto_depIdxs = []int32{
 	34, // 37: ark.v1.AdminService.PardonConviction:input_type -> ark.v1.PardonConvictionRequest
 	36, // 38: ark.v1.AdminService.BanScript:input_type -> ark.v1.BanScriptRequest
 	38, // 39: ark.v1.AdminService.RevokeAuth:input_type -> ark.v1.RevokeAuthRequest
-	61, // 40: ark.v1.AdminService.ListTokens:input_type -> ark.v1.ListTokensRequest
-	64, // 41: ark.v1.AdminService.RevokeTokens:input_type -> ark.v1.RevokeTokensRequest
+	63, // 40: ark.v1.AdminService.ListTokens:input_type -> ark.v1.ListTokensRequest
+	66, // 41: ark.v1.AdminService.RevokeTokens:input_type -> ark.v1.RevokeTokensRequest
 	48, // 42: ark.v1.AdminService.GetExpiringLiquidity:input_type -> ark.v1.GetExpiringLiquidityRequest
 	50, // 43: ark.v1.AdminService.GetRecoverableLiquidity:input_type -> ark.v1.GetRecoverableLiquidityRequest
-	52, // 44: ark.v1.AdminService.Sweep:input_type -> ark.v1.SweepRequest
-	55, // 45: ark.v1.AdminService.GetSettings:input_type -> ark.v1.GetSettingsRequest
-	57, // 46: ark.v1.AdminService.UpdateSettings:input_type -> ark.v1.UpdateSettingsRequest
-	59, // 47: ark.v1.AdminService.ClearSettings:input_type -> ark.v1.ClearSettingsRequest
-	3,  // 48: ark.v1.AdminService.GetScheduledSweep:output_type -> ark.v1.GetScheduledSweepResponse
-	5,  // 49: ark.v1.AdminService.GetRoundDetails:output_type -> ark.v1.GetRoundDetailsResponse
-	7,  // 50: ark.v1.AdminService.GetRounds:output_type -> ark.v1.GetRoundsResponse
-	9,  // 51: ark.v1.AdminService.CreateNote:output_type -> ark.v1.CreateNoteResponse
-	11, // 52: ark.v1.AdminService.GetScheduledSessionConfig:output_type -> ark.v1.GetScheduledSessionConfigResponse
-	13, // 53: ark.v1.AdminService.UpdateScheduledSessionConfig:output_type -> ark.v1.UpdateScheduledSessionConfigResponse
-	15, // 54: ark.v1.AdminService.ClearScheduledSessionConfig:output_type -> ark.v1.ClearScheduledSessionConfigResponse
-	17, // 55: ark.v1.AdminService.ListIntents:output_type -> ark.v1.ListIntentsResponse
-	19, // 56: ark.v1.AdminService.DeleteIntents:output_type -> ark.v1.DeleteIntentsResponse
-	21, // 57: ark.v1.AdminService.GetIntentFees:output_type -> ark.v1.GetIntentFeesResponse
-	23, // 58: ark.v1.AdminService.UpdateIntentFees:output_type -> ark.v1.UpdateIntentFeesResponse
-	25, // 59: ark.v1.AdminService.ClearIntentFees:output_type -> ark.v1.ClearIntentFeesResponse
-	27, // 60: ark.v1.AdminService.GetConvictions:output_type -> ark.v1.GetConvictionsResponse
-	29, // 61: ark.v1.AdminService.GetConvictionsInRange:output_type -> ark.v1.GetConvictionsInRangeResponse
-	31, // 62: ark.v1.AdminService.GetConvictionsByRound:output_type -> ark.v1.GetConvictionsByRoundResponse
-	33, // 63: ark.v1.AdminService.GetActiveScriptConvictions:output_type -> ark.v1.GetActiveScriptConvictionsResponse
-	35, // 64: ark.v1.AdminService.PardonConviction:output_type -> ark.v1.PardonConvictionResponse
-	37, // 65: ark.v1.AdminService.BanScript:output_type -> ark.v1.BanScriptResponse
-	39, // 66: ark.v1.AdminService.RevokeAuth:output_type -> ark.v1.RevokeAuthResponse
-	62, // 67: ark.v1.AdminService.ListTokens:output_type -> ark.v1.ListTokensResponse
-	65, // 68: ark.v1.AdminService.RevokeTokens:output_type -> ark.v1.RevokeTokensResponse
-	49, // 69: ark.v1.AdminService.GetExpiringLiquidity:output_type -> ark.v1.GetExpiringLiquidityResponse
-	51, // 70: ark.v1.AdminService.GetRecoverableLiquidity:output_type -> ark.v1.GetRecoverableLiquidityResponse
-	53, // 71: ark.v1.AdminService.Sweep:output_type -> ark.v1.SweepResponse
-	56, // 72: ark.v1.AdminService.GetSettings:output_type -> ark.v1.GetSettingsResponse
-	58, // 73: ark.v1.AdminService.UpdateSettings:output_type -> ark.v1.UpdateSettingsResponse
-	60, // 74: ark.v1.AdminService.ClearSettings:output_type -> ark.v1.ClearSettingsResponse
-	48, // [48:75] is the sub-list for method output_type
-	21, // [21:48] is the sub-list for method input_type
+	52, // 44: ark.v1.AdminService.GetCollectedFees:input_type -> ark.v1.GetCollectedFeesRequest
+	54, // 45: ark.v1.AdminService.Sweep:input_type -> ark.v1.SweepRequest
+	57, // 46: ark.v1.AdminService.GetSettings:input_type -> ark.v1.GetSettingsRequest
+	59, // 47: ark.v1.AdminService.UpdateSettings:input_type -> ark.v1.UpdateSettingsRequest
+	61, // 48: ark.v1.AdminService.ClearSettings:input_type -> ark.v1.ClearSettingsRequest
+	3,  // 49: ark.v1.AdminService.GetScheduledSweep:output_type -> ark.v1.GetScheduledSweepResponse
+	5,  // 50: ark.v1.AdminService.GetRoundDetails:output_type -> ark.v1.GetRoundDetailsResponse
+	7,  // 51: ark.v1.AdminService.GetRounds:output_type -> ark.v1.GetRoundsResponse
+	9,  // 52: ark.v1.AdminService.CreateNote:output_type -> ark.v1.CreateNoteResponse
+	11, // 53: ark.v1.AdminService.GetScheduledSessionConfig:output_type -> ark.v1.GetScheduledSessionConfigResponse
+	13, // 54: ark.v1.AdminService.UpdateScheduledSessionConfig:output_type -> ark.v1.UpdateScheduledSessionConfigResponse
+	15, // 55: ark.v1.AdminService.ClearScheduledSessionConfig:output_type -> ark.v1.ClearScheduledSessionConfigResponse
+	17, // 56: ark.v1.AdminService.ListIntents:output_type -> ark.v1.ListIntentsResponse
+	19, // 57: ark.v1.AdminService.DeleteIntents:output_type -> ark.v1.DeleteIntentsResponse
+	21, // 58: ark.v1.AdminService.GetIntentFees:output_type -> ark.v1.GetIntentFeesResponse
+	23, // 59: ark.v1.AdminService.UpdateIntentFees:output_type -> ark.v1.UpdateIntentFeesResponse
+	25, // 60: ark.v1.AdminService.ClearIntentFees:output_type -> ark.v1.ClearIntentFeesResponse
+	27, // 61: ark.v1.AdminService.GetConvictions:output_type -> ark.v1.GetConvictionsResponse
+	29, // 62: ark.v1.AdminService.GetConvictionsInRange:output_type -> ark.v1.GetConvictionsInRangeResponse
+	31, // 63: ark.v1.AdminService.GetConvictionsByRound:output_type -> ark.v1.GetConvictionsByRoundResponse
+	33, // 64: ark.v1.AdminService.GetActiveScriptConvictions:output_type -> ark.v1.GetActiveScriptConvictionsResponse
+	35, // 65: ark.v1.AdminService.PardonConviction:output_type -> ark.v1.PardonConvictionResponse
+	37, // 66: ark.v1.AdminService.BanScript:output_type -> ark.v1.BanScriptResponse
+	39, // 67: ark.v1.AdminService.RevokeAuth:output_type -> ark.v1.RevokeAuthResponse
+	64, // 68: ark.v1.AdminService.ListTokens:output_type -> ark.v1.ListTokensResponse
+	67, // 69: ark.v1.AdminService.RevokeTokens:output_type -> ark.v1.RevokeTokensResponse
+	49, // 70: ark.v1.AdminService.GetExpiringLiquidity:output_type -> ark.v1.GetExpiringLiquidityResponse
+	51, // 71: ark.v1.AdminService.GetRecoverableLiquidity:output_type -> ark.v1.GetRecoverableLiquidityResponse
+	53, // 72: ark.v1.AdminService.GetCollectedFees:output_type -> ark.v1.GetCollectedFeesResponse
+	55, // 73: ark.v1.AdminService.Sweep:output_type -> ark.v1.SweepResponse
+	58, // 74: ark.v1.AdminService.GetSettings:output_type -> ark.v1.GetSettingsResponse
+	60, // 75: ark.v1.AdminService.UpdateSettings:output_type -> ark.v1.UpdateSettingsResponse
+	62, // 76: ark.v1.AdminService.ClearSettings:output_type -> ark.v1.ClearSettingsResponse
+	49, // [49:77] is the sub-list for method output_type
+	21, // [21:49] is the sub-list for method input_type
 	21, // [21:21] is the sub-list for extension type_name
 	21, // [21:21] is the sub-list for extension extendee
 	0,  // [0:21] is the sub-list for field type_name
@@ -3906,7 +4012,7 @@ func file_ark_v1_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ark_v1_admin_proto_rawDesc), len(file_ark_v1_admin_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   64,
+			NumMessages:   66,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

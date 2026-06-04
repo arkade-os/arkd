@@ -140,6 +140,33 @@ func TestDecodeTx(t *testing.T) {
 	})
 }
 
+func TestIsBoardingWitness(t *testing.T) {
+	pubkey := append([]byte{0x02}, make([]byte, 32)...) // 33 bytes, not a control block
+	controlBlock := append([]byte{0xc0}, make([]byte, 32)...)
+	controlBlockParity := append([]byte{0xc1}, make([]byte, 32)...)
+	controlBlockLong := append([]byte{0xc0}, make([]byte, 64)...) // 33 + 32
+
+	tests := []struct {
+		name    string
+		witness wire.TxWitness
+		want    bool
+	}{
+		{"script-path with sig", wire.TxWitness{[]byte("sig"), []byte("script"), controlBlock}, true},
+		{"script-path minimal", wire.TxWitness{[]byte("script"), controlBlock}, true},
+		{"script-path parity bit", wire.TxWitness{[]byte("script"), controlBlockParity}, true},
+		{"script-path long control block", wire.TxWitness{[]byte("script"), controlBlockLong}, true},
+		{"key-path single element", wire.TxWitness{make([]byte, 64)}, false},
+		{"p2wpkh", wire.TxWitness{make([]byte, 72), pubkey}, false},
+		{"empty witness", wire.TxWitness{}, false},
+		{"bad control block length", wire.TxWitness{[]byte("script"), make([]byte, 34)}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, isBoardingWitness(tc.witness))
+		})
+	}
+}
+
 func newTestTx(inputs []wire.OutPoint, scripts [][]byte) *wire.MsgTx {
 	tx := wire.NewMsgTx(2)
 	for _, in := range inputs {

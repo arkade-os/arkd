@@ -1284,7 +1284,7 @@ func (q *Queries) SelectRoundVtxoTreeLeaves(ctx context.Context, commitmentTxid 
 }
 
 const selectRoundWithId = `-- name: SelectRoundWithId :many
-SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason,
+SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason, round.fees,
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message, round_intents_vw.txid,
     round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children
 FROM round
@@ -1320,6 +1320,7 @@ func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRou
 			&i.Round.Swept,
 			&i.Round.VtxoTreeExpiration,
 			&i.Round.FailReason,
+			&i.Round.Fees,
 			&i.RoundIntentsVw.ID,
 			&i.RoundIntentsVw.RoundID,
 			&i.RoundIntentsVw.Proof,
@@ -1346,7 +1347,7 @@ func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRou
 }
 
 const selectRoundWithTxid = `-- name: SelectRoundWithTxid :many
-SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason,
+SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason, round.fees,
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message, round_intents_vw.txid,
     round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children
 FROM round
@@ -1384,6 +1385,7 @@ func (q *Queries) SelectRoundWithTxid(ctx context.Context, txid string) ([]Selec
 			&i.Round.Swept,
 			&i.Round.VtxoTreeExpiration,
 			&i.Round.FailReason,
+			&i.Round.Fees,
 			&i.RoundIntentsVw.ID,
 			&i.RoundIntentsVw.RoundID,
 			&i.RoundIntentsVw.Proof,
@@ -1811,6 +1813,78 @@ func (q *Queries) SelectVtxoPubKeysByCommitmentTxid(ctx context.Context, arg Sel
 	return items, nil
 }
 
+const selectVtxoPubKeysByCommitmentTxids = `-- name: SelectVtxoPubKeysByCommitmentTxids :many
+SELECT DISTINCT v.pubkey
+FROM vtxo v
+WHERE v.amount >= ?1
+  AND (
+    v.commitment_txid IN (/*SLICE:commitment_txids*/?)
+    OR EXISTS (
+      SELECT 1 FROM vtxo_commitment_txid vc
+      WHERE vc.vtxo_txid = v.txid AND vc.vtxo_vout = v.vout
+        AND vc.commitment_txid IN (/*SLICE:commitment_txids_alt*/?)
+    )
+  )
+`
+
+type SelectVtxoPubKeysByCommitmentTxidsParams struct {
+	MinAmount          int64
+	CommitmentTxids    []string
+	CommitmentTxidsAlt []string
+}
+
+// Bulk variant of SelectVtxoPubKeysByCommitmentTxid: returns the
+// deduplicated set of vtxo pubkeys for any of the given commitment_txids.
+// Used at startup by restoreWatchingVtxos to collapse what was an N+1
+// per-round loop into a single SQL call.
+//
+// Two slice placeholders bind the same list of txids: sqlc's sqlite
+// generator only rewrites the first occurrence of sqlc.slice('name') per
+// query, so checking both v.commitment_txid and the join table forces
+// the second IN clause to use a distinct slice name. The Go caller
+// passes the same []string to both.
+func (q *Queries) SelectVtxoPubKeysByCommitmentTxids(ctx context.Context, arg SelectVtxoPubKeysByCommitmentTxidsParams) ([]string, error) {
+	query := selectVtxoPubKeysByCommitmentTxids
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.MinAmount)
+	if len(arg.CommitmentTxids) > 0 {
+		for _, v := range arg.CommitmentTxids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:commitment_txids*/?", strings.Repeat(",?", len(arg.CommitmentTxids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:commitment_txids*/?", "NULL", 1)
+	}
+	if len(arg.CommitmentTxidsAlt) > 0 {
+		for _, v := range arg.CommitmentTxidsAlt {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:commitment_txids_alt*/?", strings.Repeat(",?", len(arg.CommitmentTxidsAlt))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:commitment_txids_alt*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var pubkey string
+		if err := rows.Scan(&pubkey); err != nil {
+			return nil, err
+		}
+		items = append(items, pubkey)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectVtxosOutpointsByArkTxidRecursive = `-- name: SelectVtxosOutpointsByArkTxidRecursive :many
 WITH RECURSIVE descendants_chain AS (
     -- seed
@@ -1948,6 +2022,20 @@ UPDATE conviction SET pardoned = true WHERE id = ?1
 
 func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, updateConvictionPardoned, id)
+	return err
+}
+
+const updateRoundCollectedFees = `-- name: UpdateRoundCollectedFees :exec
+UPDATE round SET fees = ?1 WHERE id = ?2
+`
+
+type UpdateRoundCollectedFeesParams struct {
+	Fees int64
+	ID   string
+}
+
+func (q *Queries) UpdateRoundCollectedFees(ctx context.Context, arg UpdateRoundCollectedFeesParams) error {
+	_, err := q.db.ExecContext(ctx, updateRoundCollectedFees, arg.Fees, arg.ID)
 	return err
 }
 
@@ -2214,10 +2302,10 @@ func (q *Queries) UpsertReceiver(ctx context.Context, arg UpsertReceiverParams) 
 const upsertRound = `-- name: UpsertRound :exec
 INSERT INTO round (
     id, starting_timestamp, ending_timestamp, ended, failed, fail_reason,
-    stage_code, connector_address, version, swept, vtxo_tree_expiration
+    stage_code, connector_address, version, swept, vtxo_tree_expiration, fees
 ) VALUES (
     ?1, ?2, ?3, ?4, ?5, ?6,
-    ?7, ?8, ?9, ?10, ?11
+    ?7, ?8, ?9, ?10, ?11, ?12
 )
 ON CONFLICT(id) DO UPDATE SET
     starting_timestamp = EXCLUDED.starting_timestamp,
@@ -2229,7 +2317,8 @@ ON CONFLICT(id) DO UPDATE SET
     connector_address = EXCLUDED.connector_address,
     version = EXCLUDED.version,
     swept = EXCLUDED.swept,
-    vtxo_tree_expiration = EXCLUDED.vtxo_tree_expiration
+    vtxo_tree_expiration = EXCLUDED.vtxo_tree_expiration,
+    fees = EXCLUDED.fees
 `
 
 type UpsertRoundParams struct {
@@ -2244,6 +2333,7 @@ type UpsertRoundParams struct {
 	Version            int64
 	Swept              bool
 	VtxoTreeExpiration int64
+	Fees               int64
 }
 
 func (q *Queries) UpsertRound(ctx context.Context, arg UpsertRoundParams) error {
@@ -2259,6 +2349,7 @@ func (q *Queries) UpsertRound(ctx context.Context, arg UpsertRoundParams) error 
 		arg.Version,
 		arg.Swept,
 		arg.VtxoTreeExpiration,
+		arg.Fees,
 	)
 	return err
 }

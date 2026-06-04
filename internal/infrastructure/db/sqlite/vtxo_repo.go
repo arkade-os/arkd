@@ -479,6 +479,98 @@ func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 	return taprootKeys, nil
 }
 
+// sqliteVtxoPubKeysBatchSize bounds the number of commitment_txids bound to
+// a single SelectVtxoPubKeysByCommitmentTxids invocation. Because the query
+// expands the same slice into two IN clauses, each call binds (1 + 2N)
+// parameters: one for the amount filter, plus N for each of the two slice
+// placeholders. modernc.org/sqlite caps total bound parameters at
+// SQLITE_MAX_VARIABLE_NUMBER = 32766; with batchSize = 5000 a single call
+// binds at most 10001 params, leaving generous headroom. The wrapper below
+// splits the input slice into batches of this size and merges the
+// deduplicated results in Go.
+const sqliteVtxoPubKeysBatchSize = 5000
+
+// GetVtxoPubKeysByCommitmentTxids is the bulk variant of
+// GetVtxoPubKeysByCommitmentTxid. It returns the deduplicated set of vtxo
+// pubkeys whose root commitment_txid is in the given list, or whose
+// vtxo_commitment_txid join row references one of those commitment txids.
+// This replaces a per-round loop in restoreWatchingVtxos / stopWatchingVtxos
+// that previously fired one query per sweepable round (the N+1 pattern).
+//
+// The input slice is split into batches of sqliteVtxoPubKeysBatchSize to
+// stay below the sqlite parameter cap (see the const doc above). For inputs
+// up to 5000 txids the loop iterates once and the behaviour is identical
+// to a single underlying query call.
+//
+// The generated SelectVtxoPubKeysByCommitmentTxidsParams struct exposes two
+// CommitmentTxids* fields, but the public API of this method takes a single
+// slice and binds it to both. Both fields MUST receive the same slice; the
+// query template has two distinct slice placeholders only because sqlc's
+// sqlite generator expands a slice placeholder only once per generated
+// query, and the bulk query needs to look in two places (the root column
+// and the join table). Passing different slices to the two fields would
+// silently produce wrong results, so all calls to the generated method
+// must go through this wrapper.
+func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxids(
+	ctx context.Context, commitmentTxids []string, withMinimumAmount uint64,
+) ([]string, error) {
+	return v.getVtxoPubKeysByCommitmentTxidsBatched(
+		ctx, commitmentTxids, withMinimumAmount, sqliteVtxoPubKeysBatchSize,
+	)
+}
+
+// getVtxoPubKeysByCommitmentTxidsBatched is the testable inner of
+// GetVtxoPubKeysByCommitmentTxids that splits commitmentTxids into chunks of
+// batchSize, issues one query per chunk, and merges the deduplicated union
+// of results in Go. Kept as a method (not a free function) so the
+// underlying querier is the live one from the repository. batchSize <= 0 is
+// treated as "no batching" and runs a single call. This differs from
+// chunkStrings (which panics on size <= 0) because the production caller
+// always passes sqliteVtxoPubKeysBatchSize > 0; the permissive fallback
+// only matters when tests reach this method directly with batchSize=0.
+func (v *vtxoRepository) getVtxoPubKeysByCommitmentTxidsBatched(
+	ctx context.Context,
+	commitmentTxids []string,
+	withMinimumAmount uint64,
+	batchSize int,
+) ([]string, error) {
+	if len(commitmentTxids) == 0 {
+		return nil, nil
+	}
+	if batchSize <= 0 {
+		batchSize = len(commitmentTxids)
+	}
+
+	seen := make(map[string]struct{})
+	for start := 0; start < len(commitmentTxids); start += batchSize {
+		end := start + batchSize
+		if end > len(commitmentTxids) {
+			end = len(commitmentTxids)
+		}
+		batch := commitmentTxids[start:end]
+		// Same slice in both fields by construction; see public method
+		// doc for the sqlc dual-placeholder explanation.
+		keys, err := v.querier.SelectVtxoPubKeysByCommitmentTxids(ctx,
+			queries.SelectVtxoPubKeysByCommitmentTxidsParams{
+				MinAmount:          int64(withMinimumAmount),
+				CommitmentTxids:    batch,
+				CommitmentTxidsAlt: batch,
+			})
+		if err != nil {
+			return nil, err
+		}
+		for _, k := range keys {
+			seen[k] = struct{}{}
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	return out, nil
+}
+
 func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
 	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
