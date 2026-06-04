@@ -93,7 +93,9 @@ func (s *OffchainTx) Request(
 		ArkTx:                 arkTx,
 		UnsignedCheckpointTxs: unsignedCheckpointTxs,
 		StartingTimestamp:     time.Now().Unix(),
-		Packets:               packets,
+		// Snapshot the slice so a later mutation of the caller's
+		// backing array can't alias the event payload.
+		Packets: append([]int(nil), packets...),
 	}
 	s.raise(event)
 	return event, nil
@@ -240,7 +242,10 @@ func (s *OffchainTx) on(event Event, replayed bool) {
 		s.ArkTx = e.ArkTx
 		s.CheckpointTxs = e.UnsignedCheckpointTxs
 		s.StartingTimestamp = e.StartingTimestamp
-		s.Packets = e.Packets
+		// Snapshot the slice so future mutation of the event's backing
+		// array (e.g. by a replayer holding the same event) can't alias
+		// aggregate state.
+		s.Packets = append([]int(nil), e.Packets...)
 	case OffchainTxAccepted:
 		if s.Stage.Code != int(OffchainTxRequestedStage) || s.Stage.Failed {
 			return

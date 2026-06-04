@@ -426,6 +426,12 @@ func (i *indexerService) GetVirtualTxs(
 			if !ok {
 				break
 			}
+			// Defense in depth: an empty WithTxids must not silently bypass
+			// the token's txid scope. Scope the storage query to the
+			// token's whitelist so the caller cannot see txs outside it.
+			if len(filter.WithTxids) == 0 {
+				filter.WithTxids = txidWhitelistToSlice(txidWhitelist)
+			}
 			valid = true
 			for _, txid := range filter.WithTxids {
 				if _, ok := txidWhitelist[txid]; !ok {
@@ -444,6 +450,12 @@ func (i *indexerService) GetVirtualTxs(
 		txidWhitelist, ok := i.tokenCache.getTxids(hash)
 		if !ok {
 			return nil, fmt.Errorf("auth token not found")
+		}
+		// Defense in depth: same reasoning as the withheld branch. In
+		// private mode the token IS the auth, so silently letting an
+		// empty WithTxids bypass the scope would be a full bypass.
+		if len(filter.WithTxids) == 0 {
+			filter.WithTxids = txidWhitelistToSlice(txidWhitelist)
 		}
 		for _, txid := range filter.WithTxids {
 			if _, ok := txidWhitelist[txid]; !ok {
@@ -714,6 +726,16 @@ func (i *indexerService) getVirtualTxs(
 		Page:      resp,
 		AuthToken: authToken,
 	}, nil
+}
+
+// txidWhitelistToSlice projects the token cache's set-shaped txid
+// whitelist into the slice shape OffchainTxFilter.WithTxids expects.
+func txidWhitelistToSlice(set map[string]struct{}) []string {
+	out := make([]string, 0, len(set))
+	for txid := range set {
+		out = append(out, txid)
+	}
+	return out
 }
 
 // isPureTxidLookup is true when the filter narrows by caller-supplied

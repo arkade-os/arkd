@@ -289,6 +289,7 @@ func TestGetVirtualTxs(t *testing.T) {
 				require.Len(t, resp.Txs, tc.wantTxs)
 
 				off.AssertExpectations(t)
+				rounds.AssertExpectations(t)
 			})
 		}
 	})

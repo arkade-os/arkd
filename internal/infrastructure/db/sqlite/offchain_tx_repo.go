@@ -13,8 +13,10 @@ import (
 )
 
 type offchainTxRepository struct {
-	db      *sql.DB
-	querier *queries.Queries
+	db             *sql.DB
+	querier        *queries.Queries
+	backfillCancel context.CancelFunc
+	backfillDone   chan struct{}
 }
 
 func NewOffchainTxRepository(config ...interface{}) (domain.OffchainTxRepository, error) {
@@ -26,11 +28,14 @@ func NewOffchainTxRepository(config ...interface{}) (domain.OffchainTxRepository
 		return nil, fmt.Errorf("cannot open offchain tx repository: invalid config")
 	}
 
+	backfillCtx, cancel := context.WithCancel(context.Background())
 	repo := &offchainTxRepository{
-		db:      db,
-		querier: queries.New(db),
+		db:             db,
+		querier:        queries.New(db),
+		backfillCancel: cancel,
+		backfillDone:   make(chan struct{}),
 	}
-	repo.startBackfill(context.Background())
+	repo.startBackfill(backfillCtx)
 	return repo, nil
 }
 
@@ -177,6 +182,12 @@ func (v *offchainTxRepository) GetOffchainTxs(
 }
 
 func (v *offchainTxRepository) Close() {
+	if v.backfillCancel != nil {
+		v.backfillCancel()
+	}
+	if v.backfillDone != nil {
+		<-v.backfillDone
+	}
 	_ = v.db.Close()
 }
 
@@ -189,9 +200,12 @@ const backfillBatchSize = 500
 // goroutine so process startup is not blocked. The backfill keyset-
 // paginates over rows with NULL packets, decodes each PSBT, and writes
 // either the parsed list or the empty string (for rows whose PSBT
-// cannot be decoded, so they are not revisited on every restart).
+// cannot be decoded, so they are not revisited on every restart). The
+// goroutine signals completion on backfillDone so Close can wait for
+// it before tearing down the DB.
 func (v *offchainTxRepository) startBackfill(ctx context.Context) {
 	go func() {
+		defer close(v.backfillDone)
 		if err := BackfillPackets(ctx, v.db); err != nil {
 			log.WithError(err).
 				Error("offchain_tx.packets backfill stopped before completion")

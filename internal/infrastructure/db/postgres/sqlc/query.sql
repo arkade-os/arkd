@@ -288,14 +288,23 @@ WHERE COALESCE(fail_reason, '') = ''
 ORDER BY starting_timestamp DESC, txid ASC;
 
 -- name: SelectOffchainTxs :many
+-- The cap is enforced over a deduplicated set of base txids in the CTE,
+-- then expanded back through the LEFT JOIN view so a tx with N
+-- checkpoint rows still contributes one txid to the cap.
+WITH limited_txids AS (
+    SELECT txid
+    FROM offchain_tx
+    WHERE COALESCE(fail_reason, '') = ''
+      AND stage_code <> 0
+      AND (sqlc.arg('with_extension')::boolean = false OR (packets IS NOT NULL AND packets <> ''))
+      AND (sqlc.arg('with_after')::boolean = false OR starting_timestamp >= sqlc.arg('after_ts')::bigint)
+      AND (sqlc.arg('with_before')::boolean = false OR starting_timestamp <= sqlc.arg('before_ts')::bigint)
+    ORDER BY starting_timestamp DESC, txid ASC
+    LIMIT sqlc.arg('lim')::int
+)
 SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw
-WHERE COALESCE(fail_reason, '') = ''
-  AND stage_code <> 0
-  AND (sqlc.arg('with_extension')::boolean = false OR (packets IS NOT NULL AND packets <> ''))
-  AND (sqlc.arg('with_after')::boolean = false OR starting_timestamp >= sqlc.arg('after_ts')::bigint)
-  AND (sqlc.arg('with_before')::boolean = false OR starting_timestamp <= sqlc.arg('before_ts')::bigint)
-ORDER BY starting_timestamp DESC, txid ASC
-LIMIT sqlc.arg('lim')::int;
+JOIN limited_txids USING (txid)
+ORDER BY offchain_tx_vw.starting_timestamp DESC, offchain_tx_vw.txid ASC;
 
 -- name: SelectOffchainTxsWithoutPackets :many
 SELECT txid, tx FROM offchain_tx
