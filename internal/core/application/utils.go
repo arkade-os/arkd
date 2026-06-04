@@ -610,3 +610,58 @@ func maxAssetsPerVtxo(maxTxWeight uint64, spendingWeightThreshold float64) int {
 	availableWU := maxPacketWU - assetPacketOverheadWU
 	return int(availableWU / refGroupWeight)
 }
+
+// calculateCollectedFees computes the total fees (sats) collected by the coordinator for a given round.
+func calculateCollectedFees(round *domain.Round, boardingInputAmount uint64) uint64 {
+	totalIn := boardingInputAmount
+	totalOut := uint64(0)
+	for _, intent := range round.Intents {
+		totalIn += intent.TotalInputAmount()
+		totalOut += intent.TotalOutputAmount()
+	}
+	if totalOut >= totalIn {
+		return 0
+	}
+	return totalIn - totalOut
+}
+
+// calculateBoardingInputAmount computes the total amount (sats) of boarding inputs in a PSBT.
+func calculateBoardingInputAmount(ptx *psbt.Packet) uint64 {
+	boardingInputAmount := uint64(0)
+	for _, input := range ptx.Inputs {
+		if isBoardingInput(input) {
+			boardingInputAmount += uint64(input.WitnessUtxo.Value)
+		}
+	}
+	return boardingInputAmount
+}
+
+// isBoardingInput reports whether a PSBT input is a boarding input, i.e. an
+// onchain UTXO spent through a taproot script-path leaf.
+//
+// TODO: fragile — this assumes only boarding inputs carry a TaprootLeafScript.
+// It may misclassify inputs if arkd-wallet starts populating TaprootLeafScript
+// for other input types in the future.
+func isBoardingInput(in psbt.PInput) bool {
+	return in.WitnessUtxo != nil && len(in.TaprootLeafScript) > 0
+}
+
+// isBoardingWitness reports whether a finalized (raw tx) input witness is a
+// taproot script-path spend, which is how boarding inputs are spent. The last
+// witness element of a taproot script-path spend is the control block: a
+// (33 + 32*m)-byte blob whose first byte encodes leaf version 0xc0 (with the
+// parity bit), distinguishing it from a key-path signature (a single witness
+// element) or a p2wpkh pubkey (33 bytes starting with 0x02/0x03).
+//
+// TODO: fragile — same caveat as isBoardingInput: it assumes only boarding
+// inputs are spent via taproot script path in a commitment tx.
+func isBoardingWitness(witness wire.TxWitness) bool {
+	if len(witness) < 2 {
+		return false
+	}
+	controlBlock := witness[len(witness)-1]
+	if len(controlBlock) < 33 || (len(controlBlock)-33)%32 != 0 {
+		return false
+	}
+	return controlBlock[0]&0xfe == 0xc0
+}

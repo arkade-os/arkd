@@ -132,6 +132,14 @@ func (m *mockVtxoRepoForIndexer) GetVtxoPubKeysByCommitmentTxid(
 	return nil, nil
 }
 
+func (m *mockVtxoRepoForIndexer) GetVtxoPubKeysByCommitmentTxids(
+	ctx context.Context,
+	commitmentTxids []string,
+	withMinimumAmount uint64,
+) ([]string, error) {
+	return nil, nil
+}
+
 func (m *mockVtxoRepoForIndexer) GetPendingSpentVtxosWithPubKeys(
 	ctx context.Context,
 	pubkeys []string,

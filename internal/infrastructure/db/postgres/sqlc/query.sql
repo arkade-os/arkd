@@ -1,10 +1,10 @@
 -- name: UpsertRound :exec
 INSERT INTO round (
     id, starting_timestamp, ending_timestamp, ended, failed, fail_reason,
-    stage_code, connector_address, version, swept, vtxo_tree_expiration
+    stage_code, connector_address, version, swept, vtxo_tree_expiration, fees
 ) VALUES (
     @id, @starting_timestamp, @ending_timestamp, @ended, @failed, @fail_reason,
-    @stage_code, @connector_address, @version, @swept, @vtxo_tree_expiration
+    @stage_code, @connector_address, @version, @swept, @vtxo_tree_expiration, @fees
 )
 ON CONFLICT(id) DO UPDATE SET
     starting_timestamp = EXCLUDED.starting_timestamp,
@@ -16,7 +16,8 @@ ON CONFLICT(id) DO UPDATE SET
     connector_address = EXCLUDED.connector_address,
     version = EXCLUDED.version,
     swept = EXCLUDED.swept,
-    vtxo_tree_expiration = EXCLUDED.vtxo_tree_expiration;
+    vtxo_tree_expiration = EXCLUDED.vtxo_tree_expiration,
+    fees = EXCLUDED.fees;
 
 -- name: UpsertTx :exec
 INSERT INTO tx (tx, round_id, type, position, txid, children)
@@ -289,11 +290,29 @@ SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = ANY(@txids::v
 SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
 
 -- name: SelectVtxoPubKeysByCommitmentTxid :many
-SELECT DISTINCT v.pubkey 
+SELECT DISTINCT v.pubkey
 FROM vtxo_vw v
 WHERE v.amount >= @min_amount
   AND (v.commitment_txid = @commitment_txid
     OR (',' || COALESCE(v.commitments::text, '') || ',') LIKE '%,' || @commitment_txid || ',%');
+
+-- Bulk variant of SelectVtxoPubKeysByCommitmentTxid: returns the
+-- deduplicated set of vtxo pubkeys for any of the given commitment_txids.
+-- Used at startup by restoreWatchingVtxos to collapse what was an N+1
+-- per-round loop into a single SQL call. The named parameter is reused
+-- in both IN/ANY clauses; postgres binds it once.
+-- name: SelectVtxoPubKeysByCommitmentTxids :many
+SELECT DISTINCT v.pubkey
+FROM vtxo v
+WHERE v.amount >= @min_amount
+  AND (
+    v.commitment_txid = ANY(@commitment_txids::text[])
+    OR EXISTS (
+      SELECT 1 FROM vtxo_commitment_txid vc
+      WHERE vc.vtxo_txid = v.txid AND vc.vtxo_vout = v.vout
+        AND vc.commitment_txid = ANY(@commitment_txids::text[])
+    )
+  );
 
 -- name: SelectSweepableVtxoOutpointsByCommitmentTxid :many
 SELECT DISTINCT v.txid AS vtxo_txid, v.vout AS vtxo_vout
@@ -538,6 +557,9 @@ VALUES (@asset_id, @txid, @vout, @amount);
 
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id = ANY($1::varchar[]);
+
+-- name: UpdateRoundCollectedFees :exec
+UPDATE round SET fees = @fees WHERE id = @id;
 
 -- name: SelectAssetSupply :one
 SELECT (COALESCE(SUM(ap.amount), 0))::TEXT AS supply

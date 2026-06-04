@@ -33,7 +33,7 @@
 // # Thread Safety
 //
 // All public methods are thread-safe and can be called concurrently.
-package mempool_explorer
+package mempoolexplorer
 
 import (
 	"bytes"
@@ -61,18 +61,19 @@ import (
 )
 
 const (
-	BitcoinExplorer = "bitcoin"
-	pongInterval    = 60 * time.Second
-	pingInterval    = (pongInterval * 9) / 10
+	BitcoinExplorer     = "bitcoin"
+	defaultPollInterval = 10 * time.Second
+	pongInterval        = 60 * time.Second
+	pingInterval        = (pongInterval * 9) / 10
 )
 
 var (
 	defaultExplorerUrls = utils.SupportedType[string]{
-		arklib.Bitcoin.Name:        "https://mempool.space/api",
+		arklib.Bitcoin.Name:        "https://mempool.arkade.sh/api",
 		arklib.BitcoinTestNet.Name: "https://mempool.space/testnet/api",
 		//arklib.BitcoinTestNet4.Name: "https://mempool.space/testnet4/api", //TODO uncomment once supported
-		arklib.BitcoinSigNet.Name:    "https://mempool.space/signet/api",
-		arklib.BitcoinMutinyNet.Name: "https://mutinynet.com/api",
+		arklib.BitcoinSigNet.Name:    "https://mempool.signet.arkade.sh/api",
+		arklib.BitcoinMutinyNet.Name: "https://mempool.mutinynet.arkade.sh/api",
 		arklib.BitcoinRegTest.Name:   "http://127.0.0.1:3000",
 	}
 )
@@ -117,7 +118,9 @@ func NewExplorer(baseUrl string, net arklib.Network, opts ...Option) (explorer.E
 		return nil, fmt.Errorf("invalid base url: %s", err)
 	}
 
-	svcOpts := &explorerSvc{}
+	svcOpts := &explorerSvc{
+		pollInterval: defaultPollInterval,
+	}
 	for _, opt := range opts {
 		opt(svcOpts)
 	}
@@ -129,6 +132,9 @@ func NewExplorer(baseUrl string, net arklib.Network, opts ...Option) (explorer.E
 			net:        net,
 			noTracking: svcOpts.noTracking,
 		}, nil
+	}
+	if svcOpts.pollInterval <= 0 {
+		return nil, fmt.Errorf("poll interval must be positive")
 	}
 
 	svc := &explorerSvc{
@@ -361,11 +367,22 @@ func (e *explorerSvc) SubscribeForAddresses(addresses []string) error {
 	defer e.subscribedMu.Unlock()
 
 	addressesToSubscribe := make([]string, 0, len(addresses))
+	scripts := make(map[string]string)
 	for _, addr := range addresses {
 		if _, ok := e.subscribedMap[addr]; ok {
 			continue
 		}
+		decoded, err := btcutil.DecodeAddress(addr, nil)
+		if err != nil {
+			return fmt.Errorf("invalid address: %s", err)
+		}
+
+		outputScript, err := txscript.PayToAddrScript(decoded)
+		if err != nil {
+			return fmt.Errorf("invalid address: %s", err)
+		}
 		addressesToSubscribe = append(addressesToSubscribe, addr)
+		scripts[addr] = hex.EncodeToString(outputScript)
 	}
 
 	// Nothing to do if no addresses to subscribe.
@@ -402,7 +419,7 @@ func (e *explorerSvc) SubscribeForAddresses(addresses []string) error {
 
 	// Add new addresses to the subscribed map
 	for _, addr := range addressesToSubscribe {
-		e.subscribedMap[addr] = addressData{}
+		e.subscribedMap[addr] = addressData{script: scripts[addr]}
 	}
 
 	if numAddressesLeftToSubscribe > 0 {
@@ -485,18 +502,48 @@ func (e *explorerSvc) GetTxOutspends(txid string) ([]explorer.SpentStatus, error
 	return spentStatuses, nil
 }
 
-func (e *explorerSvc) GetUtxos(addr string) ([]explorer.Utxo, error) {
-	utxos, err := e.getUtxos(addr)
-	if err != nil {
-		return nil, err
+func (e *explorerSvc) GetUtxos(addresses []string) ([]explorer.Utxo, error) {
+	if len(addresses) <= 0 {
+		return nil, fmt.Errorf("missing addresses")
 	}
-	return utxos.toUtxoList(), nil
+
+	addrs := make(map[string]string)
+	for _, addr := range addresses {
+		decoded, err := btcutil.DecodeAddress(addr, nil)
+		if err != nil {
+			return nil, fmt.Errorf("invalid address: %s", err)
+		}
+
+		outputScript, err := txscript.PayToAddrScript(decoded)
+		if err != nil {
+			return nil, fmt.Errorf("invalid address: %s", err)
+		}
+
+		addrs[addr] = hex.EncodeToString(outputScript)
+	}
+
+	allUtxos := make([]explorer.Utxo, 0)
+	count := 0
+	for addr, script := range addrs {
+		utxos, err := e.getUtxos(addr, script)
+		if err != nil {
+			return nil, err
+		}
+		allUtxos = append(allUtxos, utxos.toUtxoList()...)
+		count++
+
+		// Throttle requests to not overload the explorer.
+		if count%20 == 0 {
+			time.Sleep(time.Second)
+		}
+	}
+	return allUtxos, nil
 }
 
 func (e *explorerSvc) GetRedeemedVtxosBalance(
 	addr string, unilateralExitDelay arklib.RelativeLocktime,
 ) (spendableBalance uint64, lockedBalance map[int64]uint64, err error) {
-	utxos, err := e.GetUtxos(addr)
+	utxos, err := e.GetUtxos([]string{addr})
 	if err != nil {
 		return
 	}
@@ -700,8 +747,9 @@ func (e *explorerSvc) trackWithPolling(ctx context.Context) {
 				copy(utxosCopy, data.utxos)
 
 				subscribedMap[addr] = addressData{
-					hash:  hashCopy,
-					utxos: utxosCopy,
+					hash:   hashCopy,
+					utxos:  utxosCopy,
+					script: data.script,
 				}
 			}
 			e.subscribedMu.RUnlock()
@@ -709,8 +757,8 @@ func (e *explorerSvc) trackWithPolling(ctx context.Context) {
 			if len(subscribedMap) == 0 {
 				continue
 			}
-			for addr, oldUtxos := range subscribedMap {
-				newUtxos, err := e.getUtxos(addr)
+			for addr, data := range subscribedMap {
+				newUtxos, err := e.getUtxos(addr, data.script)
 				if err != nil {
 					log.WithError(err).Error("explorer: failed to poll explorer")
 					go e.listeners.broadcast(types.OnchainAddressEvent{
@@ -719,12 +767,13 @@ func (e *explorerSvc) trackWithPolling(ctx context.Context) {
 					continue
 				}
 				hashedResp := newUtxos.hash()
-				if !bytes.Equal(oldUtxos.hash, hashedResp) {
-					go e.sendAddressEventFromPolling(oldUtxos.utxos, newUtxos)
+				if !bytes.Equal(data.hash, hashedResp) {
+					go e.sendAddressEventFromPolling(data.utxos, newUtxos)
 					e.subscribedMu.Lock()
 					e.subscribedMap[addr] = addressData{
-						hash:  hashedResp,
-						utxos: newUtxos,
+						hash:   hashedResp,
+						utxos:  newUtxos,
+						script: data.script,
 					}
 					e.subscribedMu.Unlock()
 				}
@@ -734,17 +783,7 @@ func (e *explorerSvc) trackWithPolling(ctx context.Context) {
 	}
 }
 
-func (e *explorerSvc) getUtxos(addr string) (utxos, error) {
-	decoded, err := btcutil.DecodeAddress(addr, nil)
-	if err != nil {
-		return nil, fmt.Errorf("invalid address: %s", err)
-	}
-
-	outputScript, err := txscript.PayToAddrScript(decoded)
-	if err != nil {
-		return nil, fmt.Errorf("invalid address: %s", err)
-	}
-
+func (e *explorerSvc) getUtxos(addr, script string) (utxos, error) {
 	resp, err := http.Get(fmt.Sprintf("%s/address/%s/utxo", e.baseUrl, addr))
 	if err != nil {
 		return nil, err
@@ -765,7 +804,7 @@ func (e *explorerSvc) getUtxos(addr string) (utxos, error) {
 	}
 
 	for i := range utxos {
-		utxos[i].Script = hex.EncodeToString(outputScript)
+		utxos[i].Script = script
 	}
 
 	return utxos, nil

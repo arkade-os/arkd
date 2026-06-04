@@ -1,4 +1,4 @@
-package arksdk
+package wallet
 
 import "github.com/arkade-os/arkd/pkg/client-lib/types"
 
@@ -27,15 +27,6 @@ type OffchainBalance struct {
 type VtxoDetails struct {
 	ExpiryTime string `json:"expiry_time"`
 	Amount     uint64 `json:"amount"`
-}
-
-type balanceRes struct {
-	offchainBalance             uint64
-	onchainSpendableBalance     uint64
-	onchainLockedBalance        map[int64]uint64
-	offchainBalanceByExpiration map[int64]uint64
-	assetBalances               map[string]uint64
-	err                         error
 }
 
 type getVtxosFilter struct {

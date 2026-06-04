@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
+	wallet "github.com/arkade-os/arkd/pkg/client-lib"
 	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/store"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
@@ -44,7 +44,7 @@ func TestVtxoChain(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	client, err := arksdk.NewArkClient(appDataStore)
+	client, err := wallet.NewWallet(appDataStore)
 	require.NoError(t, err)
 	t.Cleanup(client.Stop)
 
@@ -56,7 +56,7 @@ func TestVtxoChain(t *testing.T) {
 	}
 	t.Logf("wallet seed: %s", seed)
 
-	err = client.Init(ctx, arksdk.InitArgs{
+	err = client.Init(ctx, wallet.InitArgs{
 		ServerUrl:   *arkServerUrl,
 		Password:    password,
 		Seed:        seed,
@@ -80,9 +80,9 @@ func TestVtxoChain(t *testing.T) {
 			_, notifyErr = client.NotifyIncomingFunds(ctx, offchainAddr.Address)
 		})
 
-		redeemTxid, err := client.RedeemNotes(ctx, []string{note})
+		redeemRes, err := client.RedeemNotes(ctx, []string{note})
 		require.NoError(t, err)
-		require.NotEmpty(t, redeemTxid)
+		require.NotEmpty(t, redeemRes.CommitmentTxid)
 
 		wg.Wait()
 		require.NoError(t, notifyErr)

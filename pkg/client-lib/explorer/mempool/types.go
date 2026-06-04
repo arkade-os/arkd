@@ -1,4 +1,4 @@
-package mempool_explorer
+package mempoolexplorer
 
 import (
 	"bytes"
@@ -120,8 +120,9 @@ type RBFTxn struct {
 
 // addressData stores cached UTXO data for an address to detect changes during polling.
 type addressData struct {
-	hash  []byte
-	utxos []utxo
+	hash   []byte
+	utxos  []utxo
+	script string
 }
 
 type utxo struct {

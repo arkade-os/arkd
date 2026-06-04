@@ -28,8 +28,8 @@ type Explorer interface {
 	// GetTxOutspends returns the spent status of all outputs for a given transaction.
 	GetTxOutspends(tx string) ([]SpentStatus, error)
 
-	// GetUtxos retrieves all unspent transaction outputs (UTXOs) for a given address.
-	GetUtxos(addr string) ([]Utxo, error)
+	// GetUtxos retrieves all unspent transaction outputs (UTXOs) for the given addresses.
+	GetUtxos(addresses []string) ([]Utxo, error)
 
 	// GetRedeemedVtxosBalance calculates the redeemed virtual UTXO balance for an address
 	// considering the unilateral exit delay.
@@ -130,6 +130,7 @@ func newUtxo(explorerUtxo Utxo, delay arklib.RelativeLocktime, tapscripts []stri
 			VOut: explorerUtxo.Vout,
 		},
 		Amount:      explorerUtxo.Amount,
+		Script:      explorerUtxo.Script,
 		Delay:       delay,
 		SpendableAt: time.Unix(utxoTime, 0).Add(time.Duration(delay.Seconds()) * time.Second),
 		CreatedAt:   createdAt,

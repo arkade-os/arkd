@@ -449,6 +449,31 @@ func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 	return taprootKeys, nil
 }
 
+// GetVtxoPubKeysByCommitmentTxids is the bulk variant of
+// GetVtxoPubKeysByCommitmentTxid. It returns the deduplicated set of vtxo
+// pubkeys whose root commitment_txid is in the given list, or whose
+// vtxo_commitment_txid join row references one of those commitment txids.
+// This replaces a per-round loop in restoreWatchingVtxos / stopWatchingVtxos
+// that previously fired one query per sweepable round (the N+1 pattern).
+func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxids(
+	ctx context.Context, commitmentTxids []string, withMinimumAmount uint64,
+) ([]string, error) {
+	if len(commitmentTxids) == 0 {
+		return nil, nil
+	}
+
+	taprootKeys, err := v.querier.SelectVtxoPubKeysByCommitmentTxids(ctx,
+		queries.SelectVtxoPubKeysByCommitmentTxidsParams{
+			MinAmount:       int64(withMinimumAmount),
+			CommitmentTxids: commitmentTxids,
+		})
+	if err != nil {
+		return nil, err
+	}
+
+	return taprootKeys, nil
+}
+
 func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
 	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
