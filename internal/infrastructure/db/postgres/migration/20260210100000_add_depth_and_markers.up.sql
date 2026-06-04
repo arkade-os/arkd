@@ -81,12 +81,17 @@ ALTER TABLE vtxo DROP COLUMN IF EXISTS swept;
 
 -- Recreate views to compute swept status dynamically
 
+-- swept lookup unnests v.markers and probes swept_marker_pkey per marker_id.
+-- The earlier `markers @> jsonb_build_array(sm.marker_id)` form forced a seq
+-- scan of swept_marker per outer row (the GIN index on vtxo.markers is on the
+-- wrong side of the @> operator), which made every vtxo_vw read O(swept_marker).
 CREATE VIEW vtxo_vw AS
 SELECT v.*,
     COALESCE(vc.commitments, '') AS commitments,
     EXISTS (
-        SELECT 1 FROM swept_marker sm
-        WHERE v.markers @> jsonb_build_array(sm.marker_id)
+        SELECT 1
+        FROM jsonb_array_elements_text(v.markers) AS m(marker_id)
+        JOIN swept_marker sm ON sm.marker_id = m.marker_id
     ) AS swept,
     COALESCE(ap.asset_id, '') AS asset_id,
     COALESCE(ap.amount, 0) AS asset_amount
