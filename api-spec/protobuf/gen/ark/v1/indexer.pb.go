@@ -1041,6 +1041,13 @@ type GetVirtualTxsRequest struct {
 	// expressions, etc.) are rejected with InvalidArgument. The scripts
 	// field must be left empty; non-empty scripts are also rejected with
 	// InvalidArgument.
+	//
+	// Result-set cap: when a filter is supplied without a `txids` set,
+	// the server applies a safety LIMIT (currently 10000 rows) at the
+	// SQL layer. Callers using the "fill the gap" pattern after a
+	// dropped stream should pair the filter with a `time_range` bound
+	// to keep the scan set small and avoid silent truncation. Cursor-
+	// based pagination over the filtered set is a planned follow-up.
 	Filter *SubscriptionFilter `protobuf:"bytes,5,opt,name=filter,proto3" json:"filter,omitempty"`
 	// Optional mutually exclusive time-range selector applied to the
 	// offchain tx starting_timestamp. Bounds are inclusive: `after`

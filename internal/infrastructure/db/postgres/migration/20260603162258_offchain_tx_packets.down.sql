@@ -1,4 +1,5 @@
 DROP VIEW IF EXISTS offchain_tx_vw;
+ALTER TABLE offchain_tx DROP COLUMN packets;
 CREATE VIEW offchain_tx_vw AS
 SELECT
     offchain_tx.*,
@@ -10,5 +11,3 @@ SELECT
 FROM offchain_tx
 LEFT JOIN checkpoint_tx
 ON offchain_tx.txid = checkpoint_tx.offchain_txid;
-
-ALTER TABLE offchain_tx DROP COLUMN packets;
