@@ -1013,10 +1013,13 @@ func (x *GetVtxoChainResponse) GetAuthToken() string {
 	return ""
 }
 
-// GetVirtualTxs returns offchain (ark) transactions only. Checkpoint
-// transactions and round commitment transactions are not in scope of
-// this RPC even when a caller supplies their txid. Use the rounds /
-// vtxo-tree RPCs to retrieve those.
+// GetVirtualTxs resolves txs by id and/or by filter. A pure-txid
+// lookup (no filter expression, no time range) preserves the
+// pre-filter behavior of resolving offchain (ark), checkpoint, and
+// round commitment txs in one call. When a `filter` or `time_range`
+// is supplied, the response is narrowed to offchain txs only, since
+// the filter predicates (`tx.extension[N]`, etc.) and the
+// `starting_timestamp` time range are only defined for offchain txs.
 type GetVirtualTxsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Txids []string               `protobuf:"bytes,1,rep,name=txids,proto3" json:"txids,omitempty"`

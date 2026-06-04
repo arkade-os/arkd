@@ -187,7 +187,7 @@ func TestGetVirtualTxs(t *testing.T) {
 			name       string
 			exposure   exposure
 			makeToken  func(*testing.T, *indexerService) string
-			setupMocks func(*mockedOffchainTxRepo)
+			setupMocks func(*mockedOffchainTxRepo, *mockedRoundRepo)
 			wantTxs    int
 		}{
 			{
@@ -196,9 +196,13 @@ func TestGetVirtualTxs(t *testing.T) {
 				name:      "public, no token",
 				exposure:  exposurePublic,
 				makeToken: func(_ *testing.T, indexer *indexerService) string { return "" },
-				setupMocks: func(off *mockedOffchainTxRepo) {
+				setupMocks: func(off *mockedOffchainTxRepo, rounds *mockedRoundRepo) {
 					off.On("GetOffchainTxs", mock.Anything, mock.Anything).
 						Return([]*domain.OffchainTx{}, nil)
+					// Pure-txid fallback into the rounds repo for txids
+					// the offchain repo didn't return.
+					rounds.On("GetTxsWithTxids", mock.Anything, testTxids).
+						Return([]string{}, nil)
 				},
 				wantTxs: 0,
 			},
@@ -209,9 +213,11 @@ func TestGetVirtualTxs(t *testing.T) {
 				name:      "public, bad token is ignored",
 				exposure:  exposurePublic,
 				makeToken: func(_ *testing.T, indexer *indexerService) string { return "badtoken" },
-				setupMocks: func(off *mockedOffchainTxRepo) {
+				setupMocks: func(off *mockedOffchainTxRepo, rounds *mockedRoundRepo) {
 					off.On("GetOffchainTxs", mock.Anything, mock.Anything).
 						Return([]*domain.OffchainTx{}, nil)
+					rounds.On("GetTxsWithTxids", mock.Anything, testTxids).
+						Return([]string{}, nil)
 				},
 				wantTxs: 0,
 			},
@@ -221,9 +227,11 @@ func TestGetVirtualTxs(t *testing.T) {
 				name:      "withheld, no token",
 				exposure:  exposureWithheld,
 				makeToken: func(_ *testing.T, indexer *indexerService) string { return "" },
-				setupMocks: func(off *mockedOffchainTxRepo) {
+				setupMocks: func(off *mockedOffchainTxRepo, rounds *mockedRoundRepo) {
 					off.On("GetOffchainTxs", mock.Anything, mock.Anything).
 						Return([]*domain.OffchainTx{}, nil)
+					rounds.On("GetTxsWithTxids", mock.Anything, testTxids).
+						Return([]string{}, nil)
 				},
 				wantTxs: 0,
 			},
@@ -237,15 +245,18 @@ func TestGetVirtualTxs(t *testing.T) {
 					require.NoError(t, err)
 					return token
 				},
-				setupMocks: func(off *mockedOffchainTxRepo) {
+				setupMocks: func(off *mockedOffchainTxRepo, rounds *mockedRoundRepo) {
 					off.On("GetOffchainTxs", mock.Anything, mock.Anything).
 						Return([]*domain.OffchainTx{}, nil)
+					rounds.On("GetTxsWithTxids", mock.Anything, testTxids).
+						Return([]string{}, nil)
 				},
 				wantTxs: 0,
 			},
 			{
 				// private + valid token: cache hit → valid=true → signatures not stripped.
-				// Fake tx strings are returned as-is since stripping is skipped.
+				// Offchain repo returns the requested tx, so the rounds fallback
+				// doesn't fire.
 				name:     "private, valid token",
 				exposure: exposurePrivate,
 				makeToken: func(t *testing.T, i *indexerService) string {
@@ -253,7 +264,7 @@ func TestGetVirtualTxs(t *testing.T) {
 					require.NoError(t, err)
 					return token
 				},
-				setupMocks: func(off *mockedOffchainTxRepo) {
+				setupMocks: func(off *mockedOffchainTxRepo, _ *mockedRoundRepo) {
 					off.On("GetOffchainTxs", mock.Anything, mock.Anything).
 						Return([]*domain.OffchainTx{{ArkTxid: testTxids[0], ArkTx: "fake"}}, nil)
 				},
@@ -264,9 +275,10 @@ func TestGetVirtualTxs(t *testing.T) {
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				off := &mockedOffchainTxRepo{}
-				tc.setupMocks(off)
+				rounds := &mockedRoundRepo{}
+				tc.setupMocks(off, rounds)
 
-				indexer := newTestIndexer(t, privkey, tc.exposure, nil, nil, nil, off)
+				indexer := newTestIndexer(t, privkey, tc.exposure, rounds, nil, nil, off)
 				token := tc.makeToken(t, indexer)
 
 				resp, err := indexer.GetVirtualTxs(

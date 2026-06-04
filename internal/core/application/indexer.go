@@ -683,8 +683,30 @@ func (i *indexerService) getVirtualTxs(
 		return nil, err
 	}
 	txs := make([]string, 0, len(offchainTxs))
+	found := make(map[string]struct{}, len(offchainTxs))
 	for _, off := range offchainTxs {
 		txs = append(txs, off.ArkTx)
+		found[off.ArkTxid] = struct{}{}
+	}
+	// Fall back to the rounds repo for any caller-supplied txid that
+	// didn't resolve to an offchain tx. Client code (e.g. client-lib's
+	// redeem path) walks chains of mixed offchain / checkpoint /
+	// commitment txs through this RPC, so we preserve the master
+	// behavior of resolving any of those three types by txid. We only
+	// fall back for pure-txid lookups; CEL / time-range constraints
+	// only make sense for offchain txs.
+	if isPureTxidLookup(filter) && len(filter.WithTxids) > len(found) {
+		missing := make([]string, 0, len(filter.WithTxids)-len(found))
+		for _, txid := range filter.WithTxids {
+			if _, ok := found[txid]; !ok {
+				missing = append(missing, txid)
+			}
+		}
+		roundTxs, err := i.repoManager.Rounds().GetTxsWithTxids(ctx, missing)
+		if err != nil {
+			return nil, err
+		}
+		txs = append(txs, roundTxs...)
 	}
 	virtualTxs, resp := paginate(txs, page, maxPageSizeVirtualTxs)
 	return &VirtualTxsResp{
@@ -692,6 +714,17 @@ func (i *indexerService) getVirtualTxs(
 		Page:      resp,
 		AuthToken: authToken,
 	}, nil
+}
+
+// isPureTxidLookup is true when the filter narrows by caller-supplied
+// txids and nothing else. CEL / time-range constraints only apply to
+// offchain txs, so they disable the rounds-repo fallback.
+func isPureTxidLookup(f domain.OffchainTxFilter) bool {
+	return len(f.WithTxids) > 0 &&
+		!f.WithExtension &&
+		len(f.WithPacket) == 0 &&
+		f.WithAfterDate == 0 &&
+		f.WithBeforeDate == 0
 }
 
 func (i *indexerService) stripSignerSignatures(virtualTxs []string) error {
