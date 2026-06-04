@@ -149,6 +149,22 @@
           }
         }
       },
+      "IntentDisruptedEvent": {
+        "title": "IntentDisruptedEvent",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "round id"
+          },
+          "intentId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "IntentFeeInfo": {
         "title": "IntentFeeInfo",
         "type": "object",

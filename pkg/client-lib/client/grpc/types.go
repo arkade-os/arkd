@@ -14,6 +14,7 @@ import (
 // wrapper for GetEventStreamResponse
 type eventResponse interface {
 	GetBatchFailed() *arkv1.BatchFailedEvent
+	GetIntentDisrupted() *arkv1.IntentDisruptedEvent
 	GetBatchStarted() *arkv1.BatchStartedEvent
 	GetBatchFinalization() *arkv1.BatchFinalizationEvent
 	GetBatchFinalized() *arkv1.BatchFinalizedEvent
@@ -39,6 +40,14 @@ func (e event) toBatchEvent() (any, error) {
 		return client.BatchFailedEvent{
 			Id:     ee.GetId(),
 			Reason: ee.GetReason(),
+		}, nil
+	}
+
+	if ee := e.GetIntentDisrupted(); ee != nil {
+		return client.IntentDisruptedEvent{
+			Id:       ee.GetId(),
+			IntentId: ee.GetIntentId(),
+			Reason:   ee.GetReason(),
 		}, nil
 	}
 

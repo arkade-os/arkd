@@ -52,6 +52,7 @@ func (s *service) banCosignerInputs(
 	registeredIntents []ports.TimedIntent,
 ) {
 	convictions := make([]domain.Conviction, 0)
+	notifiedIntents := make(map[string]struct{})
 
 	for cosignerPublicKey, crime := range toBan {
 		for _, intent := range registeredIntents {
@@ -91,6 +92,21 @@ func (s *service) banCosignerInputs(
 					convictions,
 					domain.NewScriptConviction(script, crime, &s.banDuration),
 				)
+			}
+			if _, already := notifiedIntents[intent.Id]; !already {
+				notifiedIntents[intent.Id] = struct{}{}
+
+				topics := intentTopics(intent)
+				s.eventsCh <- []domain.Event{IntentDisrupted{
+					RoundEvent: domain.RoundEvent{
+						Id:   crime.RoundID,
+						Type: domain.EventTypeIntentDisrupted,
+					},
+					IntentId: intent.Id,
+					Reason:   crime.Reason,
+					Topic:    topics,
+				}}
+
 			}
 		}
 	}
@@ -148,7 +164,7 @@ func (s *service) banSignaturesCollectionTimeout(
 }
 
 func (s *service) banForfeitCollectionTimeout(
-	ctx context.Context, roundId string,
+	ctx context.Context, roundId string, registeredIntents []ports.TimedIntent,
 ) {
 	unsignedVtxoKeys, err := s.cache.ForfeitTxs().GetUnsignedInputs(ctx)
 	if err != nil {
@@ -184,4 +200,42 @@ func (s *service) banForfeitCollectionTimeout(
 	if err := s.repoManager.Convictions().Add(ctx, convictions...); err != nil {
 		log.WithError(err).Warn("failed to ban vtxos")
 	}
+	// build a set of unsigned outpoints for fast lookup
+	unsignedOutpoints := make(map[string]struct{})
+	for _, vtxo := range vtxos {
+		unsignedOutpoints[vtxo.Outpoint.String()] = struct{}{}
+	}
+
+	// find which intents own those unsigned vtxos and notify them
+	for _, intent := range registeredIntents {
+		for _, input := range intent.Inputs {
+			if _, found := unsignedOutpoints[input.Outpoint.String()]; !found {
+				continue
+			}
+
+			// this intent has at least one unsigned vtxo — it caused the failure
+			s.eventsCh <- []domain.Event{IntentDisrupted{
+				RoundEvent: domain.RoundEvent{
+					Id:   roundId,
+					Type: domain.EventTypeIntentDisrupted,
+				},
+				IntentId: intent.Id,
+				Reason:   "missing forfeit signature",
+				Topic:    intentTopics(intent),
+			}}
+			break
+		}
+	}
+
+}
+
+func intentTopics(intent ports.TimedIntent) []string {
+	topics := make([]string, 0, len(intent.Inputs)+len(intent.BoardingInputs))
+	for _, input := range intent.Inputs {
+		topics = append(topics, input.Outpoint.String())
+	}
+	for _, boardingInput := range intent.BoardingInputs {
+		topics = append(topics, boardingInput.String())
+	}
+	return topics
 }

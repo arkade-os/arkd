@@ -1082,6 +1082,66 @@ func (x *BatchFailedEvent) GetReason() string {
 	return ""
 }
 
+type IntentDisruptedEvent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"` // round id
+	IntentId      string                 `protobuf:"bytes,2,opt,name=intent_id,json=intentId,proto3" json:"intent_id,omitempty"`
+	Reason        string                 `protobuf:"bytes,3,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IntentDisruptedEvent) Reset() {
+	*x = IntentDisruptedEvent{}
+	mi := &file_ark_v1_types_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IntentDisruptedEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IntentDisruptedEvent) ProtoMessage() {}
+
+func (x *IntentDisruptedEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_ark_v1_types_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IntentDisruptedEvent.ProtoReflect.Descriptor instead.
+func (*IntentDisruptedEvent) Descriptor() ([]byte, []int) {
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *IntentDisruptedEvent) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *IntentDisruptedEvent) GetIntentId() string {
+	if x != nil {
+		return x.IntentId
+	}
+	return ""
+}
+
+func (x *IntentDisruptedEvent) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 type TreeSigningStartedEvent struct {
 	state                protoimpl.MessageState `protogen:"open.v1"`
 	Id                   string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -1093,7 +1153,7 @@ type TreeSigningStartedEvent struct {
 
 func (x *TreeSigningStartedEvent) Reset() {
 	*x = TreeSigningStartedEvent{}
-	mi := &file_ark_v1_types_proto_msgTypes[17]
+	mi := &file_ark_v1_types_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1105,7 +1165,7 @@ func (x *TreeSigningStartedEvent) String() string {
 func (*TreeSigningStartedEvent) ProtoMessage() {}
 
 func (x *TreeSigningStartedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[17]
+	mi := &file_ark_v1_types_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1118,7 +1178,7 @@ func (x *TreeSigningStartedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TreeSigningStartedEvent.ProtoReflect.Descriptor instead.
 func (*TreeSigningStartedEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{17}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *TreeSigningStartedEvent) GetId() string {
@@ -1152,7 +1212,7 @@ type TreeNoncesAggregatedEvent struct {
 
 func (x *TreeNoncesAggregatedEvent) Reset() {
 	*x = TreeNoncesAggregatedEvent{}
-	mi := &file_ark_v1_types_proto_msgTypes[18]
+	mi := &file_ark_v1_types_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1164,7 +1224,7 @@ func (x *TreeNoncesAggregatedEvent) String() string {
 func (*TreeNoncesAggregatedEvent) ProtoMessage() {}
 
 func (x *TreeNoncesAggregatedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[18]
+	mi := &file_ark_v1_types_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1177,7 +1237,7 @@ func (x *TreeNoncesAggregatedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TreeNoncesAggregatedEvent.ProtoReflect.Descriptor instead.
 func (*TreeNoncesAggregatedEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{18}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *TreeNoncesAggregatedEvent) GetId() string {
@@ -1206,7 +1266,7 @@ type TreeNoncesEvent struct {
 
 func (x *TreeNoncesEvent) Reset() {
 	*x = TreeNoncesEvent{}
-	mi := &file_ark_v1_types_proto_msgTypes[19]
+	mi := &file_ark_v1_types_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1218,7 +1278,7 @@ func (x *TreeNoncesEvent) String() string {
 func (*TreeNoncesEvent) ProtoMessage() {}
 
 func (x *TreeNoncesEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[19]
+	mi := &file_ark_v1_types_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1231,7 +1291,7 @@ func (x *TreeNoncesEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TreeNoncesEvent.ProtoReflect.Descriptor instead.
 func (*TreeNoncesEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{19}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *TreeNoncesEvent) GetId() string {
@@ -1276,7 +1336,7 @@ type TreeTxEvent struct {
 
 func (x *TreeTxEvent) Reset() {
 	*x = TreeTxEvent{}
-	mi := &file_ark_v1_types_proto_msgTypes[20]
+	mi := &file_ark_v1_types_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1288,7 +1348,7 @@ func (x *TreeTxEvent) String() string {
 func (*TreeTxEvent) ProtoMessage() {}
 
 func (x *TreeTxEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[20]
+	mi := &file_ark_v1_types_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1301,7 +1361,7 @@ func (x *TreeTxEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TreeTxEvent.ProtoReflect.Descriptor instead.
 func (*TreeTxEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{20}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *TreeTxEvent) GetId() string {
@@ -1359,7 +1419,7 @@ type TreeSignatureEvent struct {
 
 func (x *TreeSignatureEvent) Reset() {
 	*x = TreeSignatureEvent{}
-	mi := &file_ark_v1_types_proto_msgTypes[21]
+	mi := &file_ark_v1_types_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1371,7 +1431,7 @@ func (x *TreeSignatureEvent) String() string {
 func (*TreeSignatureEvent) ProtoMessage() {}
 
 func (x *TreeSignatureEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[21]
+	mi := &file_ark_v1_types_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1384,7 +1444,7 @@ func (x *TreeSignatureEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TreeSignatureEvent.ProtoReflect.Descriptor instead.
 func (*TreeSignatureEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{21}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *TreeSignatureEvent) GetId() string {
@@ -1430,7 +1490,7 @@ type Heartbeat struct {
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_ark_v1_types_proto_msgTypes[22]
+	mi := &file_ark_v1_types_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1442,7 +1502,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[22]
+	mi := &file_ark_v1_types_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1455,7 +1515,7 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{22}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{23}
 }
 
 type StreamStartedEvent struct {
@@ -1467,7 +1527,7 @@ type StreamStartedEvent struct {
 
 func (x *StreamStartedEvent) Reset() {
 	*x = StreamStartedEvent{}
-	mi := &file_ark_v1_types_proto_msgTypes[23]
+	mi := &file_ark_v1_types_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1479,7 +1539,7 @@ func (x *StreamStartedEvent) String() string {
 func (*StreamStartedEvent) ProtoMessage() {}
 
 func (x *StreamStartedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[23]
+	mi := &file_ark_v1_types_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1492,7 +1552,7 @@ func (x *StreamStartedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamStartedEvent.ProtoReflect.Descriptor instead.
 func (*StreamStartedEvent) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{23}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *StreamStartedEvent) GetId() string {
@@ -1514,7 +1574,7 @@ type ErrorDetails struct {
 
 func (x *ErrorDetails) Reset() {
 	*x = ErrorDetails{}
-	mi := &file_ark_v1_types_proto_msgTypes[24]
+	mi := &file_ark_v1_types_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1526,7 +1586,7 @@ func (x *ErrorDetails) String() string {
 func (*ErrorDetails) ProtoMessage() {}
 
 func (x *ErrorDetails) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_types_proto_msgTypes[24]
+	mi := &file_ark_v1_types_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1539,7 +1599,7 @@ func (x *ErrorDetails) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorDetails.ProtoReflect.Descriptor instead.
 func (*ErrorDetails) Descriptor() ([]byte, []int) {
-	return file_ark_v1_types_proto_rawDescGZIP(), []int{24}
+	return file_ark_v1_types_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ErrorDetails) GetCode() int32 {
@@ -1661,7 +1721,11 @@ const file_ark_v1_types_proto_rawDesc = "" +
 	"\x0fcommitment_txid\x18\x02 \x01(\tR\x0ecommitmentTxid\":\n" +
 	"\x10BatchFailedEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x8c\x01\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"[\n" +
+	"\x14IntentDisruptedEvent\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
+	"\tintent_id\x18\x02 \x01(\tR\bintentId\x12\x16\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x8c\x01\n" +
 	"\x17TreeSigningStartedEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12+\n" +
 	"\x11cosigners_pubkeys\x18\x02 \x03(\tR\x10cosignersPubkeys\x124\n" +
@@ -1726,7 +1790,7 @@ func file_ark_v1_types_proto_rawDescGZIP() []byte {
 	return file_ark_v1_types_proto_rawDescData
 }
 
-var file_ark_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_ark_v1_types_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_ark_v1_types_proto_goTypes = []any{
 	(*Outpoint)(nil),                  // 0: ark.v1.Outpoint
 	(*Input)(nil),                     // 1: ark.v1.Input
@@ -1745,19 +1809,20 @@ var file_ark_v1_types_proto_goTypes = []any{
 	(*BatchFinalizationEvent)(nil),    // 14: ark.v1.BatchFinalizationEvent
 	(*BatchFinalizedEvent)(nil),       // 15: ark.v1.BatchFinalizedEvent
 	(*BatchFailedEvent)(nil),          // 16: ark.v1.BatchFailedEvent
-	(*TreeSigningStartedEvent)(nil),   // 17: ark.v1.TreeSigningStartedEvent
-	(*TreeNoncesAggregatedEvent)(nil), // 18: ark.v1.TreeNoncesAggregatedEvent
-	(*TreeNoncesEvent)(nil),           // 19: ark.v1.TreeNoncesEvent
-	(*TreeTxEvent)(nil),               // 20: ark.v1.TreeTxEvent
-	(*TreeSignatureEvent)(nil),        // 21: ark.v1.TreeSignatureEvent
-	(*Heartbeat)(nil),                 // 22: ark.v1.Heartbeat
-	(*StreamStartedEvent)(nil),        // 23: ark.v1.StreamStartedEvent
-	(*ErrorDetails)(nil),              // 24: ark.v1.ErrorDetails
-	nil,                               // 25: ark.v1.TxNotification.CheckpointTxsEntry
-	nil,                               // 26: ark.v1.TreeNoncesAggregatedEvent.TreeNoncesEntry
-	nil,                               // 27: ark.v1.TreeNoncesEvent.NoncesEntry
-	nil,                               // 28: ark.v1.TreeTxEvent.ChildrenEntry
-	nil,                               // 29: ark.v1.ErrorDetails.MetadataEntry
+	(*IntentDisruptedEvent)(nil),      // 17: ark.v1.IntentDisruptedEvent
+	(*TreeSigningStartedEvent)(nil),   // 18: ark.v1.TreeSigningStartedEvent
+	(*TreeNoncesAggregatedEvent)(nil), // 19: ark.v1.TreeNoncesAggregatedEvent
+	(*TreeNoncesEvent)(nil),           // 20: ark.v1.TreeNoncesEvent
+	(*TreeTxEvent)(nil),               // 21: ark.v1.TreeTxEvent
+	(*TreeSignatureEvent)(nil),        // 22: ark.v1.TreeSignatureEvent
+	(*Heartbeat)(nil),                 // 23: ark.v1.Heartbeat
+	(*StreamStartedEvent)(nil),        // 24: ark.v1.StreamStartedEvent
+	(*ErrorDetails)(nil),              // 25: ark.v1.ErrorDetails
+	nil,                               // 26: ark.v1.TxNotification.CheckpointTxsEntry
+	nil,                               // 27: ark.v1.TreeNoncesAggregatedEvent.TreeNoncesEntry
+	nil,                               // 28: ark.v1.TreeNoncesEvent.NoncesEntry
+	nil,                               // 29: ark.v1.TreeTxEvent.ChildrenEntry
+	nil,                               // 30: ark.v1.ErrorDetails.MetadataEntry
 }
 var file_ark_v1_types_proto_depIdxs = []int32{
 	0,  // 0: ark.v1.Input.outpoint:type_name -> ark.v1.Outpoint
@@ -1766,14 +1831,14 @@ var file_ark_v1_types_proto_depIdxs = []int32{
 	3,  // 3: ark.v1.Vtxo.assets:type_name -> ark.v1.Asset
 	2,  // 4: ark.v1.TxNotification.spent_vtxos:type_name -> ark.v1.Vtxo
 	2,  // 5: ark.v1.TxNotification.spendable_vtxos:type_name -> ark.v1.Vtxo
-	25, // 6: ark.v1.TxNotification.checkpoint_txs:type_name -> ark.v1.TxNotification.CheckpointTxsEntry
+	26, // 6: ark.v1.TxNotification.checkpoint_txs:type_name -> ark.v1.TxNotification.CheckpointTxsEntry
 	0,  // 7: ark.v1.TxNotification.swept_vtxos:type_name -> ark.v1.Outpoint
 	9,  // 8: ark.v1.ScheduledSession.fees:type_name -> ark.v1.FeeInfo
 	10, // 9: ark.v1.FeeInfo.intent_fee:type_name -> ark.v1.IntentFeeInfo
-	26, // 10: ark.v1.TreeNoncesAggregatedEvent.tree_nonces:type_name -> ark.v1.TreeNoncesAggregatedEvent.TreeNoncesEntry
-	27, // 11: ark.v1.TreeNoncesEvent.nonces:type_name -> ark.v1.TreeNoncesEvent.NoncesEntry
-	28, // 12: ark.v1.TreeTxEvent.children:type_name -> ark.v1.TreeTxEvent.ChildrenEntry
-	29, // 13: ark.v1.ErrorDetails.metadata:type_name -> ark.v1.ErrorDetails.MetadataEntry
+	27, // 10: ark.v1.TreeNoncesAggregatedEvent.tree_nonces:type_name -> ark.v1.TreeNoncesAggregatedEvent.TreeNoncesEntry
+	28, // 11: ark.v1.TreeNoncesEvent.nonces:type_name -> ark.v1.TreeNoncesEvent.NoncesEntry
+	29, // 12: ark.v1.TreeTxEvent.children:type_name -> ark.v1.TreeTxEvent.ChildrenEntry
+	30, // 13: ark.v1.ErrorDetails.metadata:type_name -> ark.v1.ErrorDetails.MetadataEntry
 	4,  // 14: ark.v1.TxNotification.CheckpointTxsEntry.value:type_name -> ark.v1.TxData
 	15, // [15:15] is the sub-list for method output_type
 	15, // [15:15] is the sub-list for method input_type
@@ -1793,7 +1858,7 @@ func file_ark_v1_types_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ark_v1_types_proto_rawDesc), len(file_ark_v1_types_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   30,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
