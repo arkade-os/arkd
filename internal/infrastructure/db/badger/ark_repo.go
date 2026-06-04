@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -257,6 +258,11 @@ func (r *arkRepository) GetOffchainTxs(
 		return nil, err
 	}
 
+	// NOTE: badgerhold has no per-field ordering or LIMIT push-down, so
+	// this call reads every offchain_tx row into memory before any
+	// predicate runs. Acceptable for the small-scale dev/test setups
+	// that use the badger backend; production deployments should use
+	// the SQL backends, which push the LIMIT to the DB engine.
 	var all []domain.OffchainTx
 	if ctx.Value("tx") != nil {
 		tx := ctx.Value("tx").(*badger.Txn)
@@ -276,11 +282,6 @@ func (r *arkRepository) GetOffchainTxs(
 
 	out := make([]*domain.OffchainTx, 0)
 	for i := range all {
-		// Cap unconstrained queries to bound memory, matching the SQL
-		// backends' SelectOffchainTxs LIMIT.
-		if len(wantTxids) == 0 && len(out) >= domain.OffchainTxsScanLimit {
-			break
-		}
 		off := all[i]
 		if off.Stage.Code == int(domain.OffchainTxUndefinedStage) {
 			continue
@@ -311,6 +312,23 @@ func (r *arkRepository) GetOffchainTxs(
 			continue
 		}
 		out = append(out, &offCopy)
+	}
+
+	// Match the SQL backends' ORDER BY starting_timestamp DESC, txid ASC
+	// so the same filter yields the same row order regardless of
+	// storage backend (important for client-side after=lastSeen
+	// pagination).
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].StartingTimestamp != out[j].StartingTimestamp {
+			return out[i].StartingTimestamp > out[j].StartingTimestamp
+		}
+		return out[i].ArkTxid < out[j].ArkTxid
+	})
+
+	// Apply the unconstrained-scan cap after sorting so the visible
+	// page is deterministic for any caller paginating in Go.
+	if len(wantTxids) == 0 && len(out) > domain.OffchainTxsScanLimit {
+		out = out[:domain.OffchainTxsScanLimit]
 	}
 	return out, nil
 }

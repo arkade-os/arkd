@@ -285,6 +285,10 @@ func decodePacketsColumn(col sql.NullString) []int {
 		}
 		n, err := strconv.Atoi(p)
 		if err != nil {
+			log.WithError(err).Warnf(
+				"offchain_tx.packets contains non-integer entry %q; "+
+					"skipping (storage may be corrupt)", p,
+			)
 			continue
 		}
 		out = append(out, n)
