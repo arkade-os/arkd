@@ -1163,7 +1163,7 @@ func (q *Queries) SelectRoundVtxoTreeLeaves(ctx context.Context, commitmentTxid 
 }
 
 const selectRoundWithId = `-- name: SelectRoundWithId :many
-SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason,
+SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason, round.fees,
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message, round_intents_vw.txid,
     round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children,
     intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message, intent_with_receivers_vw.txid,
@@ -1205,6 +1205,7 @@ func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRou
 			&i.Round.Swept,
 			&i.Round.VtxoTreeExpiration,
 			&i.Round.FailReason,
+			&i.Round.Fees,
 			&i.RoundIntentsVw.ID,
 			&i.RoundIntentsVw.RoundID,
 			&i.RoundIntentsVw.Proof,
@@ -1264,7 +1265,7 @@ func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRou
 }
 
 const selectRoundWithTxid = `-- name: SelectRoundWithTxid :many
-SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason,
+SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason, round.fees,
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message, round_intents_vw.txid,
     round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children,
     intent_with_receivers_vw.intent_id, intent_with_receivers_vw.pubkey, intent_with_receivers_vw.onchain_address, intent_with_receivers_vw.amount, intent_with_receivers_vw.id, intent_with_receivers_vw.round_id, intent_with_receivers_vw.proof, intent_with_receivers_vw.message, intent_with_receivers_vw.txid,
@@ -1308,6 +1309,7 @@ func (q *Queries) SelectRoundWithTxid(ctx context.Context, txid string) ([]Selec
 			&i.Round.Swept,
 			&i.Round.VtxoTreeExpiration,
 			&i.Round.FailReason,
+			&i.Round.Fees,
 			&i.RoundIntentsVw.ID,
 			&i.RoundIntentsVw.RoundID,
 			&i.RoundIntentsVw.Proof,
@@ -1845,6 +1847,20 @@ func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error
 	return err
 }
 
+const updateRoundCollectedFees = `-- name: UpdateRoundCollectedFees :exec
+UPDATE round SET fees = $1 WHERE id = $2
+`
+
+type UpdateRoundCollectedFeesParams struct {
+	Fees int64
+	ID   string
+}
+
+func (q *Queries) UpdateRoundCollectedFees(ctx context.Context, arg UpdateRoundCollectedFeesParams) error {
+	_, err := q.db.ExecContext(ctx, updateRoundCollectedFees, arg.Fees, arg.ID)
+	return err
+}
+
 const updateVtxoExpiration = `-- name: UpdateVtxoExpiration :exec
 UPDATE vtxo SET expires_at = $1 WHERE txid = $2 AND vout = $3
 `
@@ -2108,10 +2124,10 @@ func (q *Queries) UpsertReceiver(ctx context.Context, arg UpsertReceiverParams) 
 const upsertRound = `-- name: UpsertRound :exec
 INSERT INTO round (
     id, starting_timestamp, ending_timestamp, ended, failed, fail_reason,
-    stage_code, connector_address, version, swept, vtxo_tree_expiration
+    stage_code, connector_address, version, swept, vtxo_tree_expiration, fees
 ) VALUES (
     $1, $2, $3, $4, $5, $6,
-    $7, $8, $9, $10, $11
+    $7, $8, $9, $10, $11, $12
 )
 ON CONFLICT(id) DO UPDATE SET
     starting_timestamp = EXCLUDED.starting_timestamp,
@@ -2123,7 +2139,8 @@ ON CONFLICT(id) DO UPDATE SET
     connector_address = EXCLUDED.connector_address,
     version = EXCLUDED.version,
     swept = EXCLUDED.swept,
-    vtxo_tree_expiration = EXCLUDED.vtxo_tree_expiration
+    vtxo_tree_expiration = EXCLUDED.vtxo_tree_expiration,
+    fees = EXCLUDED.fees
 `
 
 type UpsertRoundParams struct {
@@ -2138,6 +2155,7 @@ type UpsertRoundParams struct {
 	Version            int32
 	Swept              bool
 	VtxoTreeExpiration int64
+	Fees               int64
 }
 
 func (q *Queries) UpsertRound(ctx context.Context, arg UpsertRoundParams) error {
@@ -2153,6 +2171,7 @@ func (q *Queries) UpsertRound(ctx context.Context, arg UpsertRoundParams) error 
 		arg.Version,
 		arg.Swept,
 		arg.VtxoTreeExpiration,
+		arg.Fees,
 	)
 	return err
 }

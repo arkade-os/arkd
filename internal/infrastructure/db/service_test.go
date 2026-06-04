@@ -665,6 +665,59 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		// - second round has no vtxo tree
 		require.Empty(t, sweepableRounds)
 	})
+
+	t.Run("test_patch_collected_fees", func(t *testing.T) {
+		ctx := context.Background()
+		repo := svc.Rounds()
+
+		// Create two completed rounds with zero (unpersisted) collected fees.
+		patches := map[string]uint64{}
+		for _, fee := range []uint64{1500, 2500} {
+			id := uuid.New().String()
+			patches[id] = fee
+			round := domain.NewRoundFromEvents([]domain.Event{
+				domain.RoundStarted{
+					RoundEvent: domain.RoundEvent{
+						Id:   id,
+						Type: domain.EventTypeRoundStarted,
+					},
+					Timestamp: 100,
+				},
+				domain.RoundFinalizationStarted{
+					RoundEvent: domain.RoundEvent{
+						Id:   id,
+						Type: domain.EventTypeRoundFinalizationStarted,
+					},
+					CommitmentTxid: randomString(32),
+					CommitmentTx:   emptyTx,
+				},
+				domain.RoundFinalized{
+					RoundEvent: domain.RoundEvent{
+						Id:   id,
+						Type: domain.EventTypeRoundFinalized,
+					},
+					FinalCommitmentTx: emptyTx,
+					Fees:              0,
+					Timestamp:         110,
+				},
+			})
+			require.NoError(t, repo.AddOrUpdateRound(ctx, *round))
+
+			// sanity: stored fee is zero before patching
+			stored, err := repo.GetRoundWithId(ctx, id)
+			require.NoError(t, err)
+			require.Zero(t, stored.CollectedFees)
+		}
+
+		require.NoError(t, repo.PatchCollectedFees(ctx, patches))
+
+		for id, want := range patches {
+			round, err := repo.GetRoundWithId(ctx, id)
+			require.NoError(t, err)
+			require.Equal(t, want, round.CollectedFees)
+		}
+	})
+
 }
 
 func testVtxoRepository(t *testing.T, svc ports.RepoManager) {

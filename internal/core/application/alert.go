@@ -58,7 +58,7 @@ func (s *service) getBatchStats(
 		inputValue := uint64(input.WitnessUtxo.Value)
 		totalIn += inputValue
 
-		if len(input.TaprootLeafScript) > 0 {
+		if isBoardingInput(input) {
 			a.BoardingInputCount++
 			a.BoardingInputAmount += inputValue
 		} else {
@@ -74,8 +74,8 @@ func (s *service) getBatchStats(
 		a.OnchainFees = totalIn - totalOut
 	}
 
+	a.CollectedFees = calculateCollectedFees(round, a.BoardingInputAmount)
 	for _, intent := range round.Intents {
-		a.CollectedFees += intent.TotalInputAmount() + a.BoardingInputAmount - intent.TotalOutputAmount()
 		a.ForfeitCount += len(intent.Inputs)
 		a.ForfeitAmount += intent.TotalInputAmount()
 		for _, receiver := range intent.Receivers {
