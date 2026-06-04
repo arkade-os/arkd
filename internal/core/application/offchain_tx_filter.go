@@ -25,10 +25,21 @@ import (
 // Anything else (OR, NOT, comparisons against non-literal values, etc.)
 // causes ExtractOffchainTxFilter to return an error so the caller can
 // reject the request with InvalidArgument.
+// MaxFilterExpressionLength caps the size of a CEL expression accepted
+// by GetVirtualTxs to bound CPU spent in cel-go's parser before the AST
+// walker can reject the request.
+const MaxFilterExpressionLength = 4096
+
 func ExtractOffchainTxFilter(expression string) (domain.OffchainTxFilter, error) {
 	out := domain.OffchainTxFilter{}
 	if expression == "" {
 		return out, nil
+	}
+	if len(expression) > MaxFilterExpressionLength {
+		return out, fmt.Errorf(
+			"filter expression too long (%d bytes, max %d)",
+			len(expression), MaxFilterExpressionLength,
+		)
 	}
 
 	parsedAST, issues := txfilter.TxFilterEnv.Compile(expression)

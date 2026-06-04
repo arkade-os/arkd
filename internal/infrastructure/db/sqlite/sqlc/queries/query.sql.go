@@ -704,6 +704,7 @@ WHERE COALESCE(fail_reason, '') = ''
   AND (CAST(?2 AS INTEGER) = 0 OR starting_timestamp >= CAST(?3 AS INTEGER))
   AND (CAST(?4 AS INTEGER) = 0 OR starting_timestamp <= CAST(?5 AS INTEGER))
 ORDER BY starting_timestamp DESC, txid ASC
+LIMIT ?6
 `
 
 type SelectOffchainTxsParams struct {
@@ -712,6 +713,7 @@ type SelectOffchainTxsParams struct {
 	AfterTs       int64
 	WithBefore    int64
 	BeforeTs      int64
+	Lim           int64
 }
 
 type SelectOffchainTxsRow struct {
@@ -725,6 +727,7 @@ func (q *Queries) SelectOffchainTxs(ctx context.Context, arg SelectOffchainTxsPa
 		arg.AfterTs,
 		arg.WithBefore,
 		arg.BeforeTs,
+		arg.Lim,
 	)
 	if err != nil {
 		return nil, err

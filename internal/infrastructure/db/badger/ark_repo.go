@@ -276,6 +276,11 @@ func (r *arkRepository) GetOffchainTxs(
 
 	out := make([]*domain.OffchainTx, 0)
 	for i := range all {
+		// Cap unconstrained queries to bound memory, matching the SQL
+		// backends' SelectOffchainTxs LIMIT.
+		if len(wantTxids) == 0 && len(out) >= domain.OffchainTxsScanLimit {
+			break
+		}
 		off := all[i]
 		if off.Stage.Code == int(domain.OffchainTxUndefinedStage) {
 			continue

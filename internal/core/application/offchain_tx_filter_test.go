@@ -71,6 +71,21 @@ func TestExtractOffchainTxFilter(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("expression over the length cap is rejected", func(t *testing.T) {
+		// "has(tx.extension)" repeated past the cap. The cap is enforced
+		// before CEL parsing, so a syntactically valid-but-huge
+		// expression is still rejected.
+		const lead = "has(tx.extension) && "
+		expr := lead
+		for len(expr) <= application.MaxFilterExpressionLength {
+			expr += lead
+		}
+		expr += "has(tx.extension)"
+		_, err := application.ExtractOffchainTxFilter(expr)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "too long")
+	})
+
 	t.Run("literal on left of equality is accepted", func(t *testing.T) {
 		got, err := application.ExtractOffchainTxFilter(
 			"'cafebabe' == tx.extension[7]",

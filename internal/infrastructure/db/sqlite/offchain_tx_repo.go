@@ -110,6 +110,7 @@ func (v *offchainTxRepository) GetOffchainTxs(
 			AfterTs:       filter.WithAfterDate,
 			WithBefore:    boolToInt64(filter.WithBeforeDate > 0),
 			BeforeTs:      filter.WithBeforeDate,
+			Lim:           int64(domain.OffchainTxsScanLimit),
 		})
 		if err != nil {
 			return nil, err
@@ -191,21 +192,25 @@ const backfillBatchSize = 500
 // cannot be decoded, so they are not revisited on every restart).
 func (v *offchainTxRepository) startBackfill(ctx context.Context) {
 	go func() {
-		if err := v.backfillPackets(ctx); err != nil {
+		if err := BackfillPackets(ctx, v.db); err != nil {
 			log.WithError(err).
 				Error("offchain_tx.packets backfill stopped before completion")
 		}
 	}()
 }
 
-func (v *offchainTxRepository) backfillPackets(ctx context.Context) error {
+// BackfillPackets populates the offchain_tx.packets column for any rows
+// where it is still NULL. It is exposed so tests can drive the
+// migration synchronously; production callers go through startBackfill.
+func BackfillPackets(ctx context.Context, db *sql.DB) error {
+	querier := queries.New(db)
 	cursor := ""
 	totalUpdated := 0
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		rows, err := v.querier.SelectOffchainTxsWithoutPackets(
+		rows, err := querier.SelectOffchainTxsWithoutPackets(
 			ctx, queries.SelectOffchainTxsWithoutPacketsParams{
 				Cursor: cursor,
 				Lim:    int64(backfillBatchSize),
@@ -228,7 +233,7 @@ func (v *offchainTxRepository) backfillPackets(ctx context.Context) error {
 				)
 				col = sql.NullString{String: "", Valid: true}
 			}
-			if err := v.querier.UpdateOffchainTxPackets(
+			if err := querier.UpdateOffchainTxPackets(
 				ctx, queries.UpdateOffchainTxPacketsParams{
 					Txid: row.Txid, Packets: col,
 				},

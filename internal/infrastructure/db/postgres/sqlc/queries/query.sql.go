@@ -639,6 +639,7 @@ WHERE COALESCE(fail_reason, '') = ''
   AND ($2::boolean = false OR starting_timestamp >= $3::bigint)
   AND ($4::boolean = false OR starting_timestamp <= $5::bigint)
 ORDER BY starting_timestamp DESC, txid ASC
+LIMIT $6::int
 `
 
 type SelectOffchainTxsParams struct {
@@ -647,6 +648,7 @@ type SelectOffchainTxsParams struct {
 	AfterTs       int64
 	WithBefore    bool
 	BeforeTs      int64
+	Lim           int32
 }
 
 type SelectOffchainTxsRow struct {
@@ -660,6 +662,7 @@ func (q *Queries) SelectOffchainTxs(ctx context.Context, arg SelectOffchainTxsPa
 		arg.AfterTs,
 		arg.WithBefore,
 		arg.BeforeTs,
+		arg.Lim,
 	)
 	if err != nil {
 		return nil, err

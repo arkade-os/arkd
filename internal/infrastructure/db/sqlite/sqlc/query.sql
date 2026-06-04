@@ -300,7 +300,8 @@ WHERE COALESCE(fail_reason, '') = ''
   AND (CAST(@with_extension AS INTEGER) = 0 OR (packets IS NOT NULL AND packets <> ''))
   AND (CAST(@with_after AS INTEGER) = 0 OR starting_timestamp >= CAST(@after_ts AS INTEGER))
   AND (CAST(@with_before AS INTEGER) = 0 OR starting_timestamp <= CAST(@before_ts AS INTEGER))
-ORDER BY starting_timestamp DESC, txid ASC;
+ORDER BY starting_timestamp DESC, txid ASC
+LIMIT @lim;
 
 -- name: SelectOffchainTxsWithoutPackets :many
 SELECT txid, tx FROM offchain_tx

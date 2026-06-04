@@ -294,7 +294,8 @@ WHERE COALESCE(fail_reason, '') = ''
   AND (sqlc.arg('with_extension')::boolean = false OR (packets IS NOT NULL AND packets <> ''))
   AND (sqlc.arg('with_after')::boolean = false OR starting_timestamp >= sqlc.arg('after_ts')::bigint)
   AND (sqlc.arg('with_before')::boolean = false OR starting_timestamp <= sqlc.arg('before_ts')::bigint)
-ORDER BY starting_timestamp DESC, txid ASC;
+ORDER BY starting_timestamp DESC, txid ASC
+LIMIT sqlc.arg('lim')::int;
 
 -- name: SelectOffchainTxsWithoutPackets :many
 SELECT txid, tx FROM offchain_tx

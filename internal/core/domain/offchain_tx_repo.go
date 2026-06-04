@@ -11,6 +11,13 @@ type OffchainTxRepository interface {
 	Close()
 }
 
+// OffchainTxsScanLimit caps the worst-case rows returned by a single
+// GetOffchainTxs call when the filter does not pin the result set with
+// txids. It is a safety bound to keep an unconstrained query from
+// loading the whole table into memory while pagination is still
+// applied in Go. SQL pushdown of pagination is a separate follow-up.
+const OffchainTxsScanLimit = 10000
+
 // OffchainTxFilter narrows the rows returned by
 // OffchainTxRepository.GetOffchainTxs. A zero-value filter selects all
 // non-failed offchain txs.
