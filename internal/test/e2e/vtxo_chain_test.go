@@ -103,8 +103,27 @@ func TestVtxoChain(t *testing.T) {
 				spendable, _, err = client.ListVtxos(ctx)
 				require.NoError(t, err)
 			}
-			require.Len(t, spendable, 1)
+
+			// Settle into a new batch when within 120s of expiry. Preconfirmed
+			// VTXOs inherit ExpiresAt from the initial commitment, and that
+			// timestamp only advances when the tip is committed in a new batch.
+			// Settling here commits the current tip and resets ExpiresAt to
+			// T_settle + VTXO_TREE_EXPIRY, giving the chain enough runway to
+			// continue.
 			tip := spendable[0]
+			if !tip.ExpiresAt.IsZero() && time.Until(tip.ExpiresAt) < 120*time.Second {
+				t.Logf("settling at hop %d to refresh ExpiresAt (expires in %s)",
+					i, time.Until(tip.ExpiresAt).Round(time.Second))
+				_, err = client.Settle(ctx)
+				require.NoError(t, err)
+				spendable, _, err = client.ListVtxos(ctx)
+				require.NoError(t, err)
+			}
+
+			var sendAmount uint64
+			for _, v := range spendable {
+				sendAmount += v.Amount
+			}
 
 			wg := &sync.WaitGroup{}
 			var notifyErr error
@@ -114,7 +133,7 @@ func TestVtxoChain(t *testing.T) {
 
 			res, err := client.SendOffChain(ctx, []types.Receiver{{
 				To:     offchainAddr.Address,
-				Amount: tip.Amount,
+				Amount: sendAmount,
 			}})
 			require.NoError(t, err)
 
