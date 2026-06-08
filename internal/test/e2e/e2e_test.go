@@ -2785,7 +2785,7 @@ func TestReactToFraud(t *testing.T) {
 			}
 
 			explorer, err := mempoolexplorer.NewExplorer(
-				"http://localhost:3000", arklib.BitcoinRegTest,
+				"http://localhost:3000/api", arklib.BitcoinRegTest,
 				mempoolexplorer.WithTracker(false),
 			)
 			require.NoError(t, err)
@@ -2887,7 +2887,7 @@ func TestReactToFraud(t *testing.T) {
 			}
 
 			explorer, err := mempoolexplorer.NewExplorer(
-				"http://localhost:3000", arklib.BitcoinRegTest,
+				"http://localhost:3000/api", arklib.BitcoinRegTest,
 				mempoolexplorer.WithTracker(false),
 			)
 			require.NoError(t, err)
@@ -3009,7 +3009,7 @@ func TestReactToFraud(t *testing.T) {
 			require.NotEmpty(t, vtxo)
 
 			explorer, err := mempoolexplorer.NewExplorer(
-				"http://localhost:3000", arklib.BitcoinRegTest,
+				"http://localhost:3000/api", arklib.BitcoinRegTest,
 				mempoolexplorer.WithTracker(false),
 			)
 			require.NoError(t, err)
@@ -3220,7 +3220,7 @@ func TestReactToFraud(t *testing.T) {
 			require.NoError(t, err)
 
 			explorer, err := mempoolexplorer.NewExplorer(
-				"http://localhost:3000", arklib.BitcoinRegTest,
+				"http://localhost:3000/api", arklib.BitcoinRegTest,
 				mempoolexplorer.WithTracker(false),
 			)
 			require.NoError(t, err)
@@ -3493,7 +3493,7 @@ func TestSweep(t *testing.T) {
 
 		// unroll the spent VTXO to put checkpoint onchain
 		explorer, err := mempoolexplorer.NewExplorer(
-			"http://localhost:3000", arklib.BitcoinRegTest,
+			"http://localhost:3000/api", arklib.BitcoinRegTest,
 			mempoolexplorer.WithTracker(false))
 		require.NoError(t, err)
 
@@ -4770,7 +4770,7 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 
 		explorer, err := mempoolexplorer.NewExplorer(
-			"http://localhost:3000", arklib.BitcoinRegTest,
+			"http://localhost:3000/api", arklib.BitcoinRegTest,
 			mempoolexplorer.WithPollInterval(time.Second),
 		)
 		require.NoError(t, err)

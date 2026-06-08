@@ -15,11 +15,13 @@ services:
       interval: 2s
       timeout: 2s
       retries: 30
-  nbxplorer:
+  # arkd's own NBXplorer — renamed from `nbxplorer` to avoid colliding with the
+  # arkade-regtest base stack's `nbxplorer` (same name/port) on the shared
+  # network. It indexes the base stack's `bitcoin` node and backs arkd-wallet.
+  # No host port: only arkd-wallet talks to it, in-network.
+  arkd-nbxplorer:
     restart: unless-stopped
-    container_name: nbxplorer
-    ports:
-      - 32838:32838
+    container_name: arkd-nbxplorer
     image: nicolasdorier/nbxplorer:2.6.7
     environment:
       - NBXPLORER_NETWORK=regtest
@@ -49,12 +51,12 @@ services:
       dockerfile: arkdwallet.Dockerfile
     container_name: arkd-wallet
     depends_on:
-      - nbxplorer
+      - arkd-nbxplorer
     ports:
       - "6060:6060"
     environment:
       - ARKD_WALLET_LOG_LEVEL=5
-      - ARKD_WALLET_NBXPLORER_URL=http://nbxplorer:32838
+      - ARKD_WALLET_NBXPLORER_URL=http://arkd-nbxplorer:32838
       - ARKD_WALLET_DATADIR=./data/regtest
       - ARKD_WALLET_NETWORK=regtest
       - ARKD_WALLET_SIGNER_KEY=afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0
@@ -94,7 +96,7 @@ services:
       - ARKD_CHECKPOINT_EXIT_DELAY=10
       - ARKD_DATADIR=./data/regtest
       - ARKD_WALLET_ADDR=arkd-wallet:6060
-      - ARKD_ESPLORA_URL=http://chopsticks:3000
+      - ARKD_ESPLORA_URL=http://mempool_web/api
       - ARKD_ROUND_MIN_PARTICIPANTS_COUNT=${ARKD_ROUND_MIN_PARTICIPANTS_COUNT:-1}
       - ARKD_ROUND_MAX_PARTICIPANTS_COUNT=${ARKD_ROUND_MAX_PARTICIPANTS_COUNT:-128}
       - ARKD_VTXO_MIN_AMOUNT=1
@@ -118,5 +120,8 @@ volumes:
 
 networks:
   default:
-    name: nigiri
+    # Join the network created by the arkade-regtest base stack so arkd reaches
+    # its bitcoin / mempool_web (esplora) / nbxplorer services by name. The
+    # default compose project name is `arkade-regtest`, hence `arkade-regtest_default`.
+    name: arkade-regtest_default
     external: true
