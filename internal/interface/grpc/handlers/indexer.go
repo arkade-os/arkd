@@ -329,6 +329,16 @@ func (e *indexerService) GetVtxoChain(
 	var resp *application.VtxoChainResp
 
 	if request.GetIntent() != nil {
+		// Cursor pagination is continued via the auth_token returned by the
+		// first call, not by re-submitting the intent proof. Reject page_token
+		// here instead of silently ignoring it.
+		if request.GetPageToken() != "" {
+			return nil, status.Error(
+				codes.InvalidArgument,
+				"page_token is not supported with intent; "+
+					"use the returned auth_token to paginate",
+			)
+		}
 		intent, parseErr := parseIndexerIntent(request.GetIntent())
 		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())

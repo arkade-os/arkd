@@ -341,25 +341,37 @@ func (i *indexerService) GetVtxosByOutpoint(
 func (i *indexerService) GetVtxoChain(
 	ctx context.Context, authToken string, outpoint Outpoint, page *Page, pageToken string,
 ) (*VtxoChainResp, error) {
+	var sessionHash string
 	switch i.txExposure {
 	case exposurePublic:
 		// Nothing to do
 	case exposureWithheld:
 		// Auth token is optional, validate it only if provided
 		if authToken != "" {
-			if err := i.validateChainAuth(authToken, outpoint, pageToken != ""); err != nil {
+			hash, err := i.validateChainAuth(authToken, outpoint, pageToken != "")
+			if err != nil {
 				return nil, err
 			}
+			sessionHash = hash
 		}
 	case exposurePrivate:
 		// Auth token is mandatory, always validate it
-		if err := i.validateChainAuth(authToken, outpoint, pageToken != ""); err != nil {
+		hash, err := i.validateChainAuth(authToken, outpoint, pageToken != "")
+		if err != nil {
 			return nil, err
 		}
+		sessionHash = hash
 	}
 	resp, _, err := i.getVtxoChain(ctx, outpoint, page, pageToken)
 	if err != nil {
 		return nil, err
+	}
+	// Extend the pagination session only after a fully successful page fetch
+	// (cursor decoded and chain built). Touching earlier would let a client with
+	// an expired-but-active token keep the session alive forever by spamming
+	// requests with an invalid page_token that never returns data.
+	if sessionHash != "" {
+		i.tokenCache.touch(sessionHash)
 	}
 	return resp, nil
 }
@@ -506,6 +518,10 @@ func (i *indexerService) GetBatchSweepTxs(
 func (i *indexerService) getVtxoChain(
 	ctx context.Context, vtxoKey Outpoint, page *Page, pageToken string,
 ) (*VtxoChainResp, []Outpoint, error) {
+	// NOTE: the full chain is rebuilt on every page request, so paginating an
+	// N-deep chain is O(N^2) DB work overall. This is an accepted interim cost:
+	// the marker-DAG work (arkd#908) replaces this with a frontier-resume walk
+	// that makes pagination O(N) without changing this RPC's external contract.
 	chain, allOutpoints, err := i.buildVtxoChain(ctx, vtxoKey)
 	if err != nil {
 		return nil, nil, err
@@ -1013,38 +1029,39 @@ func (i *indexerService) verifyAuthTokenSignature(authToken string) (string, err
 	return hex.EncodeToString(msg[:32]), nil
 }
 
-// validateChainAuth validates the auth token for GetVtxoChain. On pagination
-// continuations (isPaginating=true), if the signed timestamp has expired but
-// the session is still active in the token cache (kept alive by touch on each
-// page request), the token is accepted based on signature verification alone.
+// validateChainAuth validates the auth token for GetVtxoChain and returns the
+// token's outpoints hash on success. On pagination continuations
+// (isPaginating=true), if the signed timestamp has expired but the session is
+// still active in the token cache (kept alive by the caller touching it after
+// each successful page), the token is accepted based on signature verification
+// alone. The caller is responsible for touching the returned hash once the page
+// has been fetched successfully.
 func (i *indexerService) validateChainAuth(
 	authToken string, vtxoKey Outpoint, isPaginating bool,
-) error {
+) (string, error) {
 	hash, err := i.validateAuthToken(authToken)
 	if err != nil && isPaginating {
 		// Token timestamp expired, but this is a pagination continuation.
 		// Verify signature only and check if the session is still live.
 		hash, err = i.verifyAuthTokenSignature(authToken)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if !i.tokenCache.isActive(hash) {
-			return fmt.Errorf("auth token expired")
+			return "", fmt.Errorf("auth token expired")
 		}
 	} else if err != nil {
-		return err
+		return "", err
 	}
 
 	outpoints, _, ok := i.tokenCache.getOutpoints(hash)
 	if !ok {
-		return fmt.Errorf("auth token not found")
+		return "", fmt.Errorf("auth token not found")
 	}
 	if _, ok := outpoints[vtxoKey.String()]; !ok {
-		return fmt.Errorf("auth token is not for outpoint %s", vtxoKey)
+		return "", fmt.Errorf("auth token is not for outpoint %s", vtxoKey)
 	}
-	// Keep the session alive for pagination continuations.
-	i.tokenCache.touch(hash)
-	return nil
+	return hash, nil
 }
 
 // extractTokenHash decodes an auth token and returns the outpoints hash
@@ -1198,7 +1215,9 @@ func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {
 // page, a PageResp describing the position, and whether more items remain after
 // this page. Unlike paginate it addresses items by offset rather than page
 // number, which lets a cursor resume correctly even if the page size changes
-// between calls.
+// between calls. When the offset is not a multiple of pageSize (i.e. the page
+// size changed mid-pagination), PageResp.Current is approximate; cursor-based
+// callers should rely on NextPageToken rather than the page number.
 func paginateByOffset[T any](items []T, offset, pageSize int) ([]T, PageResp, bool) {
 	if pageSize <= 0 {
 		pageSize = len(items)

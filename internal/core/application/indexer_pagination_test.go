@@ -163,6 +163,49 @@ func TestGetVtxoChainPagination(t *testing.T) {
 	vtxos.AssertExpectations(t)
 }
 
+// TestGetVtxoChainInvalidPageTokenDoesNotExtendSession proves that a request
+// that fails cursor decoding does not extend the auth session: touch happens
+// only after a fully successful page fetch.
+func TestGetVtxoChainInvalidPageTokenDoesNotExtendSession(t *testing.T) {
+	privkey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	_, vtxoTxid, flatTree := buildTestTreeTxs(t)
+	commitmentTxid := differentTxid
+	vtxoOutpoint := Outpoint{Txid: vtxoTxid, VOut: 0}
+	vtxoData := domain.Vtxo{Outpoint: vtxoOutpoint, RootCommitmentTxid: commitmentTxid}
+
+	rounds := &mockedRoundRepo{}
+	vtxos := &mockedVtxoRepo{}
+	vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{vtxoOutpoint}).
+		Return([]domain.Vtxo{vtxoData}, nil)
+	rounds.On("GetRoundVtxoTree", mock.Anything, commitmentTxid).
+		Return(flatTree, nil)
+
+	indexer := newTestIndexer(t, privkey, exposurePrivate, rounds, vtxos, nil)
+
+	_, allOutpoints, err := indexer.buildVtxoChain(t.Context(), vtxoOutpoint)
+	require.NoError(t, err)
+	token, err := indexer.createAuthToken(allOutpoints)
+	require.NoError(t, err)
+
+	hash, err := hashOutpoints(allOutpoints)
+	require.NoError(t, err)
+	hashStr := hex.EncodeToString(hash)
+
+	_, before, ok := indexer.tokenCache.getOutpoints(hashStr)
+	require.True(t, ok)
+
+	// A malformed page_token must fail without extending the session.
+	_, err = indexer.GetVtxoChain(t.Context(), token, vtxoOutpoint, &Page{PageSize: 1}, "garbage!!!")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid page_token")
+
+	_, after, ok := indexer.tokenCache.getOutpoints(hashStr)
+	require.True(t, ok)
+	require.Equal(t, *before, *after, "a failed request must not extend the session")
+}
+
 // TestValidateChainAuthPagination covers the keepalive behaviour: the first page
 // still enforces the signed-timestamp expiry, while a continuation is accepted
 // on signature alone as long as the session is still active in the token cache.
@@ -183,7 +226,7 @@ func TestValidateChainAuthPagination(t *testing.T) {
 		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
 		indexer.tokenCache.add(hashStr, outpoints, time.Now())
 
-		err := indexer.validateChainAuth(expired, op, false)
+		_, err := indexer.validateChainAuth(expired, op, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "expired")
 	})
@@ -192,7 +235,7 @@ func TestValidateChainAuthPagination(t *testing.T) {
 		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
 		indexer.tokenCache.add(hashStr, outpoints, time.Now())
 
-		err := indexer.validateChainAuth(expired, op, true)
+		_, err := indexer.validateChainAuth(expired, op, true)
 		require.NoError(t, err)
 	})
 
@@ -200,7 +243,7 @@ func TestValidateChainAuthPagination(t *testing.T) {
 		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
 		// no cache entry added: the session is not active
 
-		err := indexer.validateChainAuth(expired, op, true)
+		_, err := indexer.validateChainAuth(expired, op, true)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "expired")
 	})

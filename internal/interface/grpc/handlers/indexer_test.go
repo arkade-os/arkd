@@ -74,6 +74,21 @@ func newTestIndexerService() *indexerService {
 	}
 }
 
+// Cursor pagination is continued via the auth_token, not by re-submitting the
+// intent proof, so combining an intent with a page_token must be rejected before
+// the request reaches the application service.
+func TestGetVtxoChainRejectsPageTokenWithIntent(t *testing.T) {
+	svc := newTestIndexerService()
+
+	_, err := svc.GetVtxoChain(context.Background(), &arkv1.GetVtxoChainRequest{
+		Auth:      &arkv1.GetVtxoChainRequest_Intent{Intent: &arkv1.IndexerIntent{}},
+		PageToken: "some-token",
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Contains(t, err.Error(), "page_token is not supported with intent")
+}
+
 // seedTxFilters installs the given CEL expressions on a listener for test
 // fixtures. The handler's applyFilter is the production code path; this
 // helper exists so tests can populate state without going through the full
