@@ -206,6 +206,17 @@ func TestGetVtxoChainInvalidPageTokenDoesNotExtendSession(t *testing.T) {
 	require.Equal(t, *before, *after, "a failed request must not extend the session")
 }
 
+// TestValidateChainAuthNilKey ensures a server with no auth private key returns
+// a clean error instead of panicking on the auth path.
+func TestValidateChainAuthNilKey(t *testing.T) {
+	indexer := newTestIndexer(t, nil, exposurePrivate, nil, nil, nil)
+	op := Outpoint{Txid: testTxids[0], VOut: 0}
+
+	_, err := indexer.validateChainAuth("any-token", op, false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "auth not configured")
+}
+
 // TestValidateChainAuthPagination covers the keepalive behaviour: the first page
 // still enforces the signed-timestamp expiry, while a continuation is accepted
 // on signature alone as long as the session is still active in the token cache.

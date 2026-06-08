@@ -118,6 +118,12 @@ func NewIndexerService(
 	// Derive an HMAC key for pagination cursors from the auth private key. This
 	// keeps page tokens opaque and prevents clients from forging cursors that
 	// point at a different outpoint.
+	//
+	// Without a private key (public-exposure deployments) cursors are left
+	// unsigned: a client can craft an arbitrary offset, which is acceptable
+	// because all chain data is already publicly accessible in that mode. In
+	// withheld/private modes a signing key is required, so the key is always set
+	// wherever cursor integrity actually matters.
 	var cursorKey []byte
 	if privkey != nil {
 		h := sha256.Sum256(append(privkey.Serialize(), []byte("cursor-hmac")...))
@@ -1000,6 +1006,9 @@ func (i *indexerService) validateAuthToken(authToken string) (string, error) {
 // the embedded timestamp. Used for pagination continuations where the session
 // is kept alive via tokenCache.touch instead of the signed timestamp.
 func (i *indexerService) verifyAuthTokenSignature(authToken string) (string, error) {
+	if i.authPrvkey == nil {
+		return "", fmt.Errorf("auth not configured")
+	}
 	if authToken == "" {
 		return "", fmt.Errorf("missing auth")
 	}
@@ -1031,16 +1040,26 @@ func (i *indexerService) verifyAuthTokenSignature(authToken string) (string, err
 
 // validateChainAuth validates the auth token for GetVtxoChain and returns the
 // token's outpoints hash on success. On pagination continuations
-// (isPaginating=true), if the signed timestamp has expired but the session is
+// (isContinuation=true), if the signed timestamp has expired but the session is
 // still active in the token cache (kept alive by the caller touching it after
 // each successful page), the token is accepted based on signature verification
 // alone. The caller is responsible for touching the returned hash once the page
 // has been fetched successfully.
+//
+// The continuation fallback is safe: verifyAuthTokenSignature performs the exact
+// same checks as validateAuthToken except the timestamp expiry, so the only way
+// validateAuthToken fails while verifyAuthTokenSignature succeeds is an expired
+// timestamp. Malformed or bad-signature tokens are still rejected by the
+// signature re-check below.
 func (i *indexerService) validateChainAuth(
-	authToken string, vtxoKey Outpoint, isPaginating bool,
+	authToken string, vtxoKey Outpoint, isContinuation bool,
 ) (string, error) {
+	if i.authPrvkey == nil {
+		return "", fmt.Errorf("auth not configured")
+	}
+
 	hash, err := i.validateAuthToken(authToken)
-	if err != nil && isPaginating {
+	if err != nil && isContinuation {
 		// Token timestamp expired, but this is a pagination continuation.
 		// Verify signature only and check if the session is still live.
 		hash, err = i.verifyAuthTokenSignature(authToken)
