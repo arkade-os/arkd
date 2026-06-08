@@ -781,6 +781,14 @@
             }
           },
           {
+            "name": "pageToken",
+            "in": "query",
+            "description": "Opaque cursor returned as next_page_token by a previous call. When set, the\nresponse resumes from where that page ended.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "page.size",
             "in": "query",
             "schema": {
@@ -1217,6 +1225,10 @@
           "page": {
             "$ref": "#/components/schemas/IndexerPageRequest"
           },
+          "pageToken": {
+            "type": "string",
+            "description": "Opaque cursor returned as next_page_token by a previous call. When set, the\nresponse resumes from where that page ended."
+          },
           "token": {
             "type": "string",
             "description": "Valid auth_token can also be used if the ownership has already been proved.\nA valid token obtained from GetVirtualTxs rpc can be recycled for this request."
@@ -1236,6 +1248,10 @@
             "items": {
               "$ref": "#/components/schemas/IndexerChain"
             }
+          },
+          "nextPageToken": {
+            "type": "string",
+            "description": "Opaque cursor for fetching the next page. Empty when there are no more pages."
           },
           "page": {
             "$ref": "#/components/schemas/IndexerPageResponse"
