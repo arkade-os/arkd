@@ -454,6 +454,74 @@ func invalidDecodeClosureVectors() []decodeClosureFixture {
 				exPubKey2 +
 				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
 		},
+		{
+			// OP_SUCCESS opcodes (here OP_CAT) make a tapscript leaf spendable
+			// by anyone, so they must never be accepted in a closure script.
+			name: "condition multisig closure with OP_SUCCESS opcode",
+			script: fmt.Sprintf("%x", txscript.OP_CAT) +
+				fmt.Sprintf("%x", txscript.OP_VERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "condition csv multisig closure with OP_SUCCESS opcode",
+			script: fmt.Sprintf("%x", txscript.OP_CAT) +
+				fmt.Sprintf("%x", txscript.OP_VERIFY) +
+				sequenceExample +
+				fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+	}
+}
+
+// opSuccessOpcodes returns every byte value that BIP-342 treats as an
+// OP_SUCCESS opcode. In tapscript leaf execution any of these makes the script
+// succeed unconditionally, so DecodeClosure must reject scripts containing them.
+func opSuccessOpcodes() []byte {
+	opcodes := []byte{
+		80, 98,
+		126, 127, 128, 129,
+		131, 132, 133, 134,
+		137, 138,
+		141, 142,
+		149, 150, 151, 152, 153,
+	}
+	for op := 187; op <= 254; op++ {
+		opcodes = append(opcodes, byte(op))
+	}
+	return opcodes
+}
+
+// TestDecodeClosureRejectsOpSuccess ensures that no closure script containing
+// an OP_SUCCESS opcode can ever be decoded into a valid closure. This is a
+// critical safety property: an OP_SUCCESS opcode in a tapscript leaf lets
+// anyone spend the output without satisfying the closure.
+func TestDecodeClosureRejectsOpSuccess(t *testing.T) {
+	priv, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	pub := priv.PubKey()
+
+	for _, op := range opSuccessOpcodes() {
+		t.Run(fmt.Sprintf("op_success_0x%02x_in_condition", op), func(t *testing.T) {
+			closure := &script.ConditionMultisigClosure{
+				MultisigClosure: script.MultisigClosure{
+					PubKeys: []*btcec.PublicKey{pub},
+					Type:    script.MultisigTypeChecksig,
+				},
+				Condition: []byte{op},
+			}
+
+			scriptBytes, err := closure.Script()
+			require.NoError(t, err)
+
+			decoded, err := script.DecodeClosure(scriptBytes)
+			require.Error(t, err, "OP_SUCCESS 0x%02x must be rejected", op)
+			require.Nil(t, decoded)
+		})
 	}
 }
 
@@ -1173,6 +1241,13 @@ func executeBoolScriptFixtures(tb testing.TB) []executeBoolScriptFixture {
 			witness:     wire.TxWitness{rand2},
 			returnValue: false,
 			expectErr:   false,
+		},
+		{
+			name:        "invalid OP_SUCCESS",
+			script:      []byte{txscript.OP_CAT},
+			witness:     wire.TxWitness{},
+			returnValue: false,
+			expectErr:   true,
 		},
 	}
 }
