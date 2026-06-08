@@ -141,9 +141,19 @@ type TeleportAsset struct {
 }
 
 type VtxoChainResp struct {
-	Chain     []ChainTx
-	Page      PageResp
-	AuthToken string
+	Chain         []ChainTx
+	Page          PageResp
+	AuthToken     string
+	NextPageToken string
+}
+
+// vtxoChainCursor is the opaque payload encoded into a GetVtxoChain page token.
+// Offset is the index into the chain at which the next page starts, and Outpoint
+// binds the cursor to the chain it was issued for so it cannot be replayed
+// against a different outpoint.
+type vtxoChainCursor struct {
+	Outpoint string `json:"o"`
+	Offset   int    `json:"n"`
 }
 
 type VOut int
