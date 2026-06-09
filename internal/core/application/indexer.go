@@ -550,7 +550,9 @@ func (i *indexerService) getVtxoChain(
 	if pageToken != "" {
 		decoded, err := i.decodeChainCursor(pageToken, vtxoKey)
 		if err != nil {
-			return nil, nil, fmt.Errorf("invalid page_token: %w", err)
+			// page_token is client-supplied input; surface it as invalid input
+			// so the handler can map it to InvalidArgument rather than Internal.
+			return nil, nil, fmt.Errorf("%w: invalid page_token: %w", ErrInvalidInput, err)
 		}
 		offset = decoded
 	} else if page != nil && page.PageNum > 1 {
@@ -1273,7 +1275,12 @@ func paginateByOffset[T any](items []T, offset, pageSize int) ([]T, PageResp, bo
 // a cursor issued for one outpoint against another.
 func (i *indexerService) encodeChainCursor(offset int, vtxoKey Outpoint) string {
 	cur := vtxoChainCursor{Outpoint: vtxoKey.String(), Offset: offset}
-	payload, _ := json.Marshal(cur)
+	payload, err := json.Marshal(cur)
+	if err != nil {
+		// Unreachable for a fixed {string, int} struct, but avoid emitting a
+		// malformed cursor: returning "" just signals "no next page".
+		return ""
+	}
 
 	if len(i.cursorHMACKey) > 0 {
 		mac := hmac.New(sha256.New, i.cursorHMACKey)

@@ -354,6 +354,9 @@ func (e *indexerService) GetVtxoChain(
 		)
 	}
 	if err != nil {
+		if errors.Is(err, application.ErrInvalidInput) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 

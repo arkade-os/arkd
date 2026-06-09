@@ -200,6 +200,7 @@ func TestGetVtxoChainInvalidPageTokenDoesNotExtendSession(t *testing.T) {
 	_, err = indexer.GetVtxoChain(t.Context(), token, vtxoOutpoint, &Page{PageSize: 1}, "garbage!!!")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid page_token")
+	require.ErrorIs(t, err, ErrInvalidInput)
 
 	_, after, ok := indexer.tokenCache.getOutpoints(hashStr)
 	require.True(t, ok)
@@ -257,5 +258,16 @@ func TestValidateChainAuthPagination(t *testing.T) {
 		_, err := indexer.validateChainAuth(expired, op, true)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "expired")
+	})
+
+	t.Run("continuation rejects malformed token even with active session", func(t *testing.T) {
+		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
+		indexer.tokenCache.add(hashStr, outpoints, time.Now())
+
+		// A malformed token must be rejected on signature, not accepted just
+		// because the session is still active.
+		_, err := indexer.validateChainAuth("not-a-valid-token", op, true)
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "expired")
 	})
 }

@@ -89,6 +89,57 @@ func TestGetVtxoChainRejectsPageTokenWithIntent(t *testing.T) {
 	require.Contains(t, err.Error(), "page_token is not supported with intent")
 }
 
+// mockAppIndexer is a minimal application.IndexerService used to assert the
+// gRPC handler's GetVtxoChain wiring. Only GetVtxoChain is implemented; any
+// other method would panic via the embedded nil interface (none are called).
+type mockAppIndexer struct {
+	application.IndexerService
+	gotPageToken string
+	resp         *application.VtxoChainResp
+	err          error
+}
+
+func (m *mockAppIndexer) GetVtxoChain(
+	_ context.Context, _ string, _ application.Outpoint, _ *application.Page, pageToken string,
+) (*application.VtxoChainResp, error) {
+	m.gotPageToken = pageToken
+	return m.resp, m.err
+}
+
+const testChainTxid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+// page_token must be forwarded to the service and next_page_token propagated back.
+func TestGetVtxoChainForwardsPageToken(t *testing.T) {
+	mockSvc := &mockAppIndexer{resp: &application.VtxoChainResp{NextPageToken: "next-cursor"}}
+	svc := newTestIndexerService()
+	svc.indexerSvc = mockSvc
+
+	resp, err := svc.GetVtxoChain(context.Background(), &arkv1.GetVtxoChainRequest{
+		Outpoint:  &arkv1.IndexerOutpoint{Txid: testChainTxid, Vout: 0},
+		PageToken: "page-cursor",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "page-cursor", mockSvc.gotPageToken)
+	require.Equal(t, "next-cursor", resp.GetNextPageToken())
+}
+
+// An ErrInvalidInput from the service (e.g. a malformed page_token) must map to
+// InvalidArgument, not Internal.
+func TestGetVtxoChainMapsInvalidInputToInvalidArgument(t *testing.T) {
+	mockSvc := &mockAppIndexer{
+		err: fmt.Errorf("%w: invalid page_token", application.ErrInvalidInput),
+	}
+	svc := newTestIndexerService()
+	svc.indexerSvc = mockSvc
+
+	_, err := svc.GetVtxoChain(context.Background(), &arkv1.GetVtxoChainRequest{
+		Outpoint:  &arkv1.IndexerOutpoint{Txid: testChainTxid, Vout: 0},
+		PageToken: "bad",
+	})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
 // seedTxFilters installs the given CEL expressions on a listener for test
 // fixtures. The handler's applyFilter is the production code path; this
 // helper exists so tests can populate state without going through the full
