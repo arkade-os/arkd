@@ -679,28 +679,19 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 					continue
 				}
 
-				var event event
-				if err := json.Unmarshal(message, &event); err != nil {
+				// The matched outputs are carried in the event payload itself, so
+				// the new UTXOs can be built without any additional NBXplorer call.
+				newUtxos, err := utxosFromTransactionEvent(message, n.groupID)
+				if err != nil {
+					log.Errorf("failed to parse transaction event: %s", err)
 					continue
 				}
 
-				if event.Type == "newtransaction" {
-					var newTxEvent newTransactionEvent
-					if eventDataBytes, err := json.Marshal(event.Data); err == nil {
-						if err := json.Unmarshal(eventDataBytes, &newTxEvent); err == nil {
-							newUtxos, err := n.searchNewUTXOs(ctx, newTxEvent.TransactionData.TransactionHash)
-							if err != nil {
-								continue
-							}
-
-							if len(newUtxos) > 0 {
-								select {
-								case notificationsChan <- newUtxos:
-								case <-ctx.Done():
-									return
-								}
-							}
-						}
+				if len(newUtxos) > 0 {
+					select {
+					case notificationsChan <- newUtxos:
+					case <-ctx.Done():
+						return
 					}
 				}
 			}
@@ -809,52 +800,55 @@ func (n *nbxplorer) connectWebSocket(ctx context.Context) error {
 	return nil
 }
 
-// searchNewUTXOs rescans UTXOs for a specific group and returns only UTXOs from the specified transaction hash
-func (n *nbxplorer) searchNewUTXOs(ctx context.Context, txHash string) ([]ports.Utxo, error) {
-	if txHash == "" {
-		return nil, fmt.Errorf("transaction hash is required")
+// groupTrackedSource returns the tracked-source identifier NBXplorer uses for a
+// watch-address group. Addresses added via the group addresses endpoint report
+// matches under this identifier.
+func groupTrackedSource(groupID string) string {
+	return fmt.Sprintf("GROUP:%s", groupID)
+}
+
+// utxosFromTransactionEvent parses a websocket message and, if it is a
+// "newtransaction" event for the watch-address group, returns the UTXOs created
+// by that transaction. The matched outputs are read directly from the event
+// payload, so no additional NBXplorer call is needed. Events for any other
+// tracked source (e.g. the wallet's own derivation schemes) are ignored.
+func utxosFromTransactionEvent(message []byte, groupID string) ([]ports.Utxo, error) {
+	var evt event
+	if err := json.Unmarshal(message, &evt); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal event: %w", err)
 	}
 
-	cryptoCode := btcCryptoCode
-	endpoint := fmt.Sprintf("/v1/cryptos/%s/groups/%s/utxos", cryptoCode, url.PathEscape(n.groupID))
+	if evt.Type != "newtransaction" {
+		return nil, nil
+	}
 
-	data, err := n.makeRequest(ctx, "GET", endpoint, nil)
+	var newTxEvent newTransactionEvent
+	if err := json.Unmarshal(evt.Data, &newTxEvent); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal new transaction event: %w", err)
+	}
+
+	if newTxEvent.TrackedSource != groupTrackedSource(groupID) {
+		return nil, nil
+	}
+
+	hash, err := chainhash.NewHashFromStr(newTxEvent.TransactionData.TransactionHash)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get group UTXOs: %w", err)
+		return nil, fmt.Errorf("failed to parse transaction hash: %w", err)
 	}
 
-	var resp utxosResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal UTXO changes: %w", err)
-	}
-
-	utxos := make([]ports.Utxo, 0)
-
-	for _, u := range resp.Confirmed.UtxOs {
-		if u.TransactionHash != txHash {
-			continue
-		}
-
-		utxo, err := castUtxo(u)
-		if err != nil {
-			log.Errorf("failed to cast UTXO: %s", err)
-			continue
-		}
-
-		utxos = append(utxos, utxo)
-	}
-
-	for _, u := range resp.Unconfirmed.UtxOs {
-		if u.TransactionHash != txHash {
-			continue
-		}
-
-		utxo, err := castUtxo(u)
-		if err != nil {
-			continue
-		}
-
-		utxos = append(utxos, utxo)
+	utxos := make([]ports.Utxo, 0, len(newTxEvent.Outputs))
+	for _, out := range newTxEvent.Outputs {
+		utxos = append(utxos, ports.Utxo{
+			OutPoint: wire.OutPoint{
+				Hash:  *hash,
+				Index: out.Index,
+			},
+			Value:         out.Value,
+			Script:        out.ScriptPubKey,
+			Address:       out.Address,
+			Confirmations: newTxEvent.TransactionData.Confirmations,
+			KeyPath:       out.KeyPath,
+		})
 	}
 
 	return utxos, nil
@@ -903,5 +897,6 @@ func castUtxo(u utxoResponse) (ports.Utxo, error) {
 		Script:        u.ScriptPubKey,
 		Address:       u.Address,
 		Confirmations: u.Confirmations,
+		KeyPath:       u.KeyPath,
 	}, nil
 }
