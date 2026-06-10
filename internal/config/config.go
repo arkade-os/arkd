@@ -149,6 +149,10 @@ type Config struct {
 	MaxConcurrentStreams uint32
 	StreamConnPoolSize   uint32
 
+	NostrEnabled bool
+	NostrRelays  []string
+	NostrKeyFile string
+
 	fee            ports.FeeManager
 	repo           ports.RepoManager
 	svc            application.Service
@@ -255,6 +259,10 @@ var (
 	MaxConcurrentStreams = "MAX_CONCURRENT_STREAMS"
 	StreamConnPoolSize   = "STREAM_CONN_POOL_SIZE"
 
+	NostrEnabled = "NOSTR_ENABLED"
+	NostrRelays  = "NOSTR_RELAYS"
+	NostrKeyFile = "NOSTR_KEY_FILE"
+
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
 	defaultBanDuration         = 10 * defaultSessionDuration
@@ -297,6 +305,7 @@ var (
 	defaultStreamConnPoolSize            = uint32(4)
 	maxStreamConnPoolSize                = uint32(64)
 	defaultMaxOpReturnOuts               = uint32(3)
+	defaultNostrEnabled                  = false
 )
 
 func LoadConfig() (*Config, error) {
@@ -348,6 +357,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
 	viper.SetDefault(StreamConnPoolSize, defaultStreamConnPoolSize)
 	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
+	viper.SetDefault(NostrEnabled, defaultNostrEnabled)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -469,6 +479,9 @@ func LoadConfig() (*Config, error) {
 		),
 		// Default to 1 if set to 0
 		MaxOpReturnOutputs: max(1, viper.GetUint32(MaxOpReturnOutputs)),
+		NostrEnabled:       viper.GetBool(NostrEnabled),
+		NostrRelays:        viper.GetStringSlice(NostrRelays),
+		NostrKeyFile:       viper.GetString(NostrKeyFile),
 	}, nil
 }
 

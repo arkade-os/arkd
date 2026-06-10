@@ -22,6 +22,7 @@ type Config struct {
 	EnablePprof          bool
 	MaxConcurrentStreams uint32
 	StreamConnPoolSize   uint32
+	NostrPubkey          string
 }
 
 func (c Config) Validate() error {

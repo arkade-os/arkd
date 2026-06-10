@@ -24,8 +24,9 @@ type service interface {
 }
 
 type handler struct {
-	version   string
-	heartbeat time.Duration
+	version     string
+	nostrPubkey string
+	heartbeat   time.Duration
 
 	svc application.Service
 
@@ -33,11 +34,14 @@ type handler struct {
 	transactionsListenerHandler *broker[*arkv1.GetTransactionsStreamResponse]
 }
 
-func NewAppServiceHandler(version string, service application.Service, heartbeat int64) service {
+func NewAppServiceHandler(version string, service application.Service, heartbeat int64,
+	nostrPubkey string,
+) service {
 	h := &handler{
 		version:                     version,
 		heartbeat:                   time.Duration(heartbeat) * time.Second,
 		svc:                         service,
+		nostrPubkey:                 nostrPubkey,
 		eventsListenerHandler:       newBroker[*arkv1.GetEventStreamResponse](),
 		transactionsListenerHandler: newBroker[*arkv1.GetTransactionsStreamResponse](),
 	}
@@ -70,6 +74,7 @@ func (h *handler) GetInfo(
 		UtxoMaxAmount:       info.UtxoMaxAmount,
 		VtxoMinAmount:       info.VtxoMinAmount,
 		VtxoMaxAmount:       info.VtxoMaxAmount,
+		NostrPubkey:         h.nostrPubkey,
 		CheckpointTapscript: info.CheckpointTapscript,
 		MaxTxWeight:         info.MaxTxWeight,
 		MaxOpReturnOutputs:  info.MaxOpReturnOutputs,
