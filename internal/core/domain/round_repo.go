@@ -16,9 +16,8 @@ type RoundRepository interface {
 	GetRoundConnectorTree(ctx context.Context, commitmentTxid string) (tree.FlatTxTree, error)
 	GetRoundVtxoTree(ctx context.Context, txid string) (tree.FlatTxTree, error)
 	GetSweepableRounds(ctx context.Context) ([]string, error)
-	// GetExpiredRounds returns the sweepable rounds (not yet swept, ended, not
-	// failed, with a vtxo tree) whose batch outputs expired before the given
-	// timestamp. It surfaces rounds that should have been swept but likely failed.
+	// GetExpiredRounds returns the list of info about batches that expired but haven't been
+	// swept because of uneconomical conditions (amount too low to cover network fees)
 	GetExpiredRounds(ctx context.Context, expiredBefore int64) ([]ExpiredRound, error)
 	GetRoundIds(
 		ctx context.Context,
