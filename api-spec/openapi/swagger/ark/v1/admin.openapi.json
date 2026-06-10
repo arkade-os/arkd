@@ -1032,6 +1032,36 @@
           }
         }
       }
+    },
+    "/v1/admin/wallet/utxos": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetMainAccountUtxos",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetMainAccountUtxosResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1355,6 +1385,22 @@
         "properties": {
           "fees": {
             "$ref": "#/components/schemas/IntentFees"
+          }
+        }
+      },
+      "GetMainAccountUtxosRequest": {
+        "title": "GetMainAccountUtxosRequest",
+        "type": "object"
+      },
+      "GetMainAccountUtxosResponse": {
+        "title": "GetMainAccountUtxosResponse",
+        "type": "object",
+        "properties": {
+          "utxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WalletUtxo"
+            }
           }
         }
       },
@@ -1896,6 +1942,36 @@
       "UpdateScheduledSessionConfigResponse": {
         "title": "UpdateScheduledSessionConfigResponse",
         "type": "object"
+      },
+      "WalletUtxo": {
+        "title": "WalletUtxo",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "confirmations": {
+            "type": "integer",
+            "format": "uint32"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "script": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
       }
     }
   },

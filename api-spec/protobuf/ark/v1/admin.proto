@@ -143,6 +143,11 @@ service AdminService {
       body: "*"
     };
   }
+  rpc GetMainAccountUtxos(GetMainAccountUtxosRequest) returns (GetMainAccountUtxosResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/wallet/utxos"
+    };
+  }
 }
 
 message GetScheduledSweepRequest {}
@@ -384,6 +389,21 @@ message SweepRequest {
 message SweepResponse {
   string txid = 1;
   string hex = 2;
+}
+
+message GetMainAccountUtxosRequest {}
+message GetMainAccountUtxosResponse {
+  repeated WalletUtxo utxos = 1;
+}
+
+message WalletUtxo {
+  string txid = 1;
+  uint32 vout = 2;
+  uint64 value = 3;
+  string script = 4;
+  string address = 5;
+  uint32 confirmations = 6;
+  bool locked = 7;
 }
 
 message ListTokensRequest {
