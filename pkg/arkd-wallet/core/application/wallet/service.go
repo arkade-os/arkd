@@ -380,6 +380,23 @@ func (w *wallet) GetCurrentBlockTime(ctx context.Context) (*application.BlockTim
 }
 
 func (w *wallet) SelectUtxos(ctx context.Context, amount uint64, confirmedOnly bool) ([]application.Utxo, uint64, error) {
+	selectedUtxos, totalValue, err := w.selectCoins(ctx, amount, confirmedOnly, defaultMinChangeAmount)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if err := w.lockUtxos(ctx, selectedUtxos); err != nil {
+		log.Error("failed to lock utxos", err)
+		// ignore error
+	}
+
+	return selectedUtxos, totalValue - amount, nil
+}
+
+// selectCoins picks a subset of the main account UTXOs covering amount
+func (w *wallet) selectCoins(
+	ctx context.Context, amount uint64, confirmedOnly bool, minChangeAmount btcutil.Amount,
+) ([]application.Utxo, uint64, error) {
 	if w.keyMgr == nil {
 		return nil, 0, ErrWalletLocked
 	}
@@ -406,14 +423,13 @@ func (w *wallet) SelectUtxos(ctx context.Context, amount uint64, confirmedOnly b
 		availableUtxos = append(availableUtxos, coin{utxo})
 	}
 
-	coins, err := coinSelector.CoinSelect(btcutil.Amount(amount), availableUtxos)
+	coins, err := newCoinSelector(minChangeAmount).CoinSelect(btcutil.Amount(amount), availableUtxos)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	selected := coins.Coins()
 	selectedUtxos := make([]application.Utxo, 0, len(selected))
-	toLock := make([]wire.OutPoint, 0, len(selected))
 	totalValue := uint64(0)
 
 	for _, coin := range selected {
@@ -424,21 +440,39 @@ func (w *wallet) SelectUtxos(ctx context.Context, amount uint64, confirmedOnly b
 			Script: hex.EncodeToString(coin.PkScript()),
 			Value:  value,
 		})
-		toLock = append(toLock, wire.OutPoint{
-			Hash:  *coin.Hash(),
-			Index: coin.Index(),
-		})
 		totalValue += value
 	}
 
-	if err := w.locker.lock(ctx, toLock...); err != nil {
-		log.Error("failed to lock utxos", err)
-		// ignore error
+	return selectedUtxos, totalValue, nil
+}
+
+// lockUtxos locks the given UTXOs so concurrent operations don't double-spend them.
+func (w *wallet) lockUtxos(ctx context.Context, utxos []application.Utxo) error {
+	toLock := make([]wire.OutPoint, 0, len(utxos))
+	for _, utxo := range utxos {
+		hash, err := chainhash.NewHashFromStr(utxo.Txid)
+		if err != nil {
+			return fmt.Errorf("failed to parse txid: %w", err)
+		}
+		toLock = append(toLock, wire.OutPoint{Hash: *hash, Index: utxo.Index})
 	}
 
-	change := totalValue - amount
+	return w.locker.lock(ctx, toLock...)
+}
 
-	return selectedUtxos, change, nil
+// unlockUtxos releases UTXOs previously locked by lockUtxos, e.g. when the tx
+// they were selected for ends up not being broadcast.
+func (w *wallet) unlockUtxos(ctx context.Context, utxos []application.Utxo) {
+	toUnlock := make([]wire.OutPoint, 0, len(utxos))
+	for _, utxo := range utxos {
+		hash, err := chainhash.NewHashFromStr(utxo.Txid)
+		if err != nil {
+			continue
+		}
+		toUnlock = append(toUnlock, wire.OutPoint{Hash: *hash, Index: utxo.Index})
+	}
+
+	w.locker.unlock(ctx, toUnlock...)
 }
 
 func (w *wallet) GetTransaction(ctx context.Context, txid string) (string, error) {
@@ -710,6 +744,20 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 		}
 	}
 
+	// If signing or broadcasting fails, release the locks held on the inputs so
+	// the funds become spendable again instead of waiting for the lock expiry.
+	// (withdrawAll inputs aren't locked, so this is a no-op for that path.)
+	broadcasted := false
+	defer func() {
+		if !broadcasted {
+			outpoints := make([]wire.OutPoint, 0, len(ptx.UnsignedTx.TxIn))
+			for _, in := range ptx.UnsignedTx.TxIn {
+				outpoints = append(outpoints, in.PreviousOutPoint)
+			}
+			w.locker.unlock(ctx, outpoints...)
+		}
+	}()
+
 	psbtB64, err := ptx.B64Encode()
 	if err != nil {
 		return "", fmt.Errorf("failed to encode PSBT: %w", err)
@@ -721,7 +769,13 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 		return "", fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
-	return w.BroadcastTransaction(ctx, signedTx)
+	txid, err := w.BroadcastTransaction(ctx, signedTx)
+	if err != nil {
+		return "", err
+	}
+
+	broadcasted = true
+	return txid, nil
 }
 
 func (w *wallet) LoadSignerKey(ctx context.Context, prvkey *btcec.PrivateKey) error {
@@ -746,15 +800,31 @@ func (w *wallet) withdrawPartially(ctx context.Context, feeRate chainfee.SatPerK
 	// estimate fees for a typical 2-input withdraw
 	estimatedFee := w.estimateWithdrawFee(feeRate, 2, destPkScript)
 
-	selectedUtxos, _, err := w.SelectUtxos(ctx, amount+estimatedFee, false)
+	// Select with a zero min-change so selection never fails when the wallet
+	// holds just slightly more than amount+fee: any sub-dust change is folded
+	// into the fee below instead of becoming an output.
+	selectedUtxos, totalInputValue, err := w.selectCoins(ctx, amount+estimatedFee, false, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to select UTXOs: %w", err)
 	}
 
-	totalInputValue := uint64(0)
-	inputs := make([]*wire.OutPoint, 0)
+	if err := w.lockUtxos(ctx, selectedUtxos); err != nil {
+		log.Error("failed to lock utxos", err)
+		// ignore error
+	}
+
+	// Release the locked UTXOs if we fail to build the tx, so they don't stay
+	// locked until the lock expiry for nothing.
+	built := false
+	defer func() {
+		if !built {
+			w.unlockUtxos(ctx, selectedUtxos)
+		}
+	}()
+
+	inputs := make([]*wire.OutPoint, 0, len(selectedUtxos))
 	outputs := make([]*wire.TxOut, 0)
-	nSequences := make([]uint32, 0)
+	nSequences := make([]uint32, 0, len(selectedUtxos))
 
 	for _, utxo := range selectedUtxos {
 		hash, err := chainhash.NewHashFromStr(utxo.Txid)
@@ -762,12 +832,16 @@ func (w *wallet) withdrawPartially(ctx context.Context, feeRate chainfee.SatPerK
 			return nil, fmt.Errorf("failed to parse txid: %w", err)
 		}
 		inputs = append(inputs, &wire.OutPoint{Hash: *hash, Index: utxo.Index})
-		totalInputValue += utxo.Value
 		nSequences = append(nSequences, wire.MaxTxInSequenceNum)
 	}
 
 	actualFee := w.estimateWithdrawFee(feeRate, len(selectedUtxos), destPkScript) // 2 outputs: destination + change
-	changeAmount := totalInputValue - amount - actualFee
+
+	surplus := totalInputValue - amount
+	changeAmount := uint64(0)
+	if surplus > actualFee {
+		changeAmount = surplus - actualFee
+	}
 
 	outputs = append(outputs, &wire.TxOut{
 		Value:    int64(amount),
@@ -822,6 +896,7 @@ func (w *wallet) withdrawPartially(ctx context.Context, feeRate chainfee.SatPerK
 		}
 	}
 
+	built = true
 	return ptx, nil
 }
 

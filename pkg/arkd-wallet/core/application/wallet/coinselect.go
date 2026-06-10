@@ -9,9 +9,25 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
 
-var coinSelector = coinset.MinNumberCoinSelector{
-	MaxInputs:       50,
-	MinChangeAmount: 800,
+const (
+	// maxSelectionInputs caps the number of inputs a single selection may use.
+	maxSelectionInputs = 50
+	// defaultMinChangeAmount is the min change a selection must leave to be
+	// accepted (roughly the P2TR/P2WSH dust limit). It avoids producing dust
+	// change outputs for general-purpose selections.
+	defaultMinChangeAmount = 330
+)
+
+// newCoinSelector builds a coin selector that prefers the fewest inputs.
+// minChangeAmount controls the minimum change a selection must leave behind:
+// any selection whose total is in (target, target+minChangeAmount) is rejected.
+// Pass 0 to accept any total >= target (useful when sub-dust change is folded
+// into the fee instead of becoming an output).
+func newCoinSelector(minChangeAmount btcutil.Amount) coinset.MinNumberCoinSelector {
+	return coinset.MinNumberCoinSelector{
+		MaxInputs:       maxSelectionInputs,
+		MinChangeAmount: minChangeAmount,
+	}
 }
 
 // coin implements coinset.Coin interface
