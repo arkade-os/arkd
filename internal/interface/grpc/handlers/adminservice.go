@@ -179,6 +179,26 @@ func (a *adminHandler) GetScheduledSweep(
 	return &arkv1.GetScheduledSweepResponse{Sweeps: sweeps}, nil
 }
 
+func (a *adminHandler) GetExpiredRounds(
+	ctx context.Context, _ *arkv1.GetExpiredRoundsRequest,
+) (*arkv1.GetExpiredRoundsResponse, error) {
+	expiredRounds, err := a.adminService.GetExpiredRounds(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	rounds := make([]*arkv1.ExpiredRound, 0, len(expiredRounds))
+	for _, round := range expiredRounds {
+		rounds = append(rounds, &arkv1.ExpiredRound{
+			RoundId:        round.RoundId,
+			CommitmentTxid: round.CommitmentTxid,
+			ExpiredAt:      round.ExpiredAt,
+		})
+	}
+
+	return &arkv1.GetExpiredRoundsResponse{Rounds: rounds}, nil
+}
+
 func (a *adminHandler) CreateNote(
 	ctx context.Context, req *arkv1.CreateNoteRequest,
 ) (*arkv1.CreateNoteResponse, error) {

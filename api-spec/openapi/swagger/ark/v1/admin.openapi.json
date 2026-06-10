@@ -775,6 +775,37 @@
         }
       }
     },
+    "/v1/admin/rounds/expired": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "description": "GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose\nbatch outputs have expired but have not been swept yet. It is meant to surface\nrounds for which the sweep should have happened but likely failed.",
+        "operationId": "AdminService_GetExpiredRounds",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetExpiredRoundsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/scheduledSession": {
       "get": {
         "tags": [
@@ -1216,6 +1247,23 @@
         "title": "DeleteIntentsResponse",
         "type": "object"
       },
+      "ExpiredRound": {
+        "title": "ExpiredRound",
+        "type": "object",
+        "properties": {
+          "commitmentTxid": {
+            "type": "string"
+          },
+          "expiredAt": {
+            "type": "integer",
+            "description": "Unix timestamp at which the round's batch outputs expired.",
+            "format": "int64"
+          },
+          "roundId": {
+            "type": "string"
+          }
+        }
+      },
       "FeeInfo": {
         "title": "FeeInfo",
         "type": "object",
@@ -1345,6 +1393,22 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Conviction"
+            }
+          }
+        }
+      },
+      "GetExpiredRoundsRequest": {
+        "title": "GetExpiredRoundsRequest",
+        "type": "object"
+      },
+      "GetExpiredRoundsResponse": {
+        "title": "GetExpiredRoundsResponse",
+        "type": "object",
+        "properties": {
+          "rounds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExpiredRound"
             }
           }
         }

@@ -90,6 +90,7 @@ func main() {
 		noteCmd,
 		intentsCmd,
 		scheduledSweepCmd,
+		expiredRoundsCmd,
 		sweepCmd,
 		walletUtxosCmd,
 		roundInfoCmd,

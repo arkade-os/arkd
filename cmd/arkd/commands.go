@@ -119,6 +119,11 @@ var (
 		Usage:  "List all scheduled batches sweepings",
 		Action: scheduledSweepAction,
 	}
+	expiredRoundsCmd = &cli.Command{
+		Name:   "expired-rounds",
+		Usage:  "List all batches that expired but have not been swept (uneconomical conditions)",
+		Action: expiredRoundsAction,
+	}
 	sweepCmd = &cli.Command{
 		Name:   "sweep",
 		Usage:  "Trigger a sweep transaction",
@@ -568,6 +573,28 @@ func scheduledSweepAction(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/sweeps", baseURL)
 
 	resp, err := get[[]map[string]any](url, "sweeps", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func expiredRoundsAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/rounds/expired", baseURL)
+
+	resp, err := get[[]map[string]any](url, "rounds", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
