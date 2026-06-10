@@ -231,6 +231,28 @@ func (h *walletHandler) ListConnectorUtxos(
 	return &arkwalletv1.ListConnectorUtxosResponse{Utxos: respUtxos}, nil
 }
 
+func (h *walletHandler) GetMainAccountUtxos(
+	ctx context.Context, _ *arkwalletv1.GetMainAccountUtxosRequest,
+) (*arkwalletv1.GetMainAccountUtxosResponse, error) {
+	utxos, err := h.wallet.GetMainAccountUtxos(ctx)
+	if err != nil {
+		return nil, err
+	}
+	respUtxos := make([]*arkwalletv1.WalletUtxo, 0, len(utxos))
+	for _, u := range utxos {
+		respUtxos = append(respUtxos, &arkwalletv1.WalletUtxo{
+			Txid:          u.Txid,
+			Vout:          u.Vout,
+			Value:         u.Value,
+			Script:        u.Script,
+			Address:       u.Address,
+			Confirmations: u.Confirmations,
+			Locked:        u.Locked,
+		})
+	}
+	return &arkwalletv1.GetMainAccountUtxosResponse{Utxos: respUtxos}, nil
+}
+
 func (h *walletHandler) MainAccountBalance(
 	ctx context.Context, _ *arkwalletv1.MainAccountBalanceRequest,
 ) (*arkwalletv1.MainAccountBalanceResponse, error) {

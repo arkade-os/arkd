@@ -367,6 +367,40 @@ func (w *wallet) ListConnectorUtxos(ctx context.Context, connectorAddress string
 	return connectorUtxos, nil
 }
 
+// GetMainAccountUtxos lists the whole UTXO set of the main account, including
+// locked and unconfirmed UTXOs, each flagged with its lock status.
+func (w *wallet) GetMainAccountUtxos(ctx context.Context) ([]application.MainAccountUtxo, error) {
+	if w.keyMgr == nil {
+		return nil, ErrWalletLocked
+	}
+
+	mainAccountUtxos, err := w.Nbxplorer.GetUtxos(ctx, w.keyMgr.mainAccountDerivationScheme)
+	if err != nil {
+		return nil, err
+	}
+
+	lockedOutpoints, err := w.locker.get(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	utxos := make([]application.MainAccountUtxo, 0, len(mainAccountUtxos))
+	for _, utxo := range mainAccountUtxos {
+		_, locked := lockedOutpoints[utxo.OutPoint]
+		utxos = append(utxos, application.MainAccountUtxo{
+			Txid:          utxo.OutPoint.Hash.String(),
+			Vout:          utxo.OutPoint.Index,
+			Value:         utxo.Value,
+			Script:        utxo.Script,
+			Address:       utxo.Address,
+			Confirmations: utxo.Confirmations,
+			Locked:        locked,
+		})
+	}
+
+	return utxos, nil
+}
+
 func (w *wallet) GetCurrentBlockTime(ctx context.Context) (*application.BlockTimestamp, error) {
 	status, err := w.Nbxplorer.GetBitcoinStatus(ctx)
 	if err != nil {
@@ -441,6 +475,68 @@ func (w *wallet) selectCoins(
 			Value:  value,
 		})
 		totalValue += value
+	}
+
+	return selectedUtxos, totalValue, nil
+}
+
+// selectCoinsForWithdraw selects main-account UTXOs to fund a withdrawal of
+// `amount` in a tx paying `feeRate`.
+func (w *wallet) selectCoinsForWithdraw(
+	ctx context.Context, amount uint64, feeRate chainfee.SatPerKVByte, destPkScript []byte,
+) ([]application.Utxo, uint64, error) {
+	if w.keyMgr == nil {
+		return nil, 0, ErrWalletLocked
+	}
+
+	mainAccountUtxos, err := w.Nbxplorer.GetUtxos(ctx, w.keyMgr.mainAccountDerivationScheme)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	lockedOutpoints, err := w.locker.get(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// fee(n) = base + perInput*n, derived from the weight estimator.
+	feeOneInput := w.estimateWithdrawFee(feeRate, 1, destPkScript)
+	feeTwoInputs := w.estimateWithdrawFee(feeRate, 2, destPkScript)
+	perInput := feeTwoInputs - feeOneInput
+	base := feeOneInput - perInput
+
+	availableUtxos := make([]coinset.Coin, 0, len(mainAccountUtxos))
+	for _, utxo := range mainAccountUtxos {
+		if _, isLocked := lockedOutpoints[utxo.OutPoint]; isLocked {
+			continue
+		}
+		// skip UTXOs that cost at least as much to spend as they are worth
+		if utxo.Value <= perInput {
+			continue
+		}
+		availableUtxos = append(availableUtxos, effectiveValueCoin{
+			coin:           coin{utxo},
+			effectiveValue: btcutil.Amount(utxo.Value - perInput),
+		})
+	}
+
+	coins, err := newCoinSelector(0).CoinSelect(btcutil.Amount(amount+base), availableUtxos)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	selected := coins.Coins()
+	selectedUtxos := make([]application.Utxo, 0, len(selected))
+	totalValue := uint64(0)
+	for _, c := range selected {
+		utxo := c.(effectiveValueCoin).coin.utxo
+		selectedUtxos = append(selectedUtxos, application.Utxo{
+			Txid:   utxo.OutPoint.Hash.String(),
+			Index:  utxo.OutPoint.Index,
+			Script: utxo.Script,
+			Value:  utxo.Value,
+		})
+		totalValue += utxo.Value
 	}
 
 	return selectedUtxos, totalValue, nil
@@ -797,13 +893,10 @@ func (w *wallet) Close() {
 }
 
 func (w *wallet) withdrawPartially(ctx context.Context, feeRate chainfee.SatPerKVByte, amount uint64, destPkScript []byte) (*psbt.Packet, error) {
-	// estimate fees for a typical 2-input withdraw
-	estimatedFee := w.estimateWithdrawFee(feeRate, 2, destPkScript)
-
-	// Select with a zero min-change so selection never fails when the wallet
-	// holds just slightly more than amount+fee: any sub-dust change is folded
-	// into the fee below instead of becoming an output.
-	selectedUtxos, totalInputValue, err := w.selectCoins(ctx, amount+estimatedFee, false, 0)
+	// Effective-value selection: the chosen UTXOs always cover amount + the fee
+	// for their actual input count, whatever that count is. This makes any
+	// fundable withdraw succeed without a re-selection loop.
+	selectedUtxos, totalInputValue, err := w.selectCoinsForWithdraw(ctx, amount, feeRate, destPkScript)
 	if err != nil {
 		return nil, fmt.Errorf("failed to select UTXOs: %w", err)
 	}

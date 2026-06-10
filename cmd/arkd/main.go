@@ -91,6 +91,7 @@ func main() {
 		intentsCmd,
 		scheduledSweepCmd,
 		sweepCmd,
+		walletUtxosCmd,
 		roundInfoCmd,
 		roundsInTimeRangeCmd,
 		scheduledSessionCmd,

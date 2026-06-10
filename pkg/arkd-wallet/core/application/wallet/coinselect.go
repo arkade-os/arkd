@@ -62,3 +62,17 @@ func (u coin) Index() uint32 {
 func (u coin) NumConfs() int64 {
 	return int64(u.utxo.Confirmations)
 }
+
+// effectiveValueCoin wraps a coin so the selector ranks and accumulates it by
+// its effective value (real value minus the fee to spend it as an input), while
+// still exposing the real outpoint/script/value for tx building. Selecting by
+// effective value against a target of amount+baseFee guarantees the chosen
+// UTXOs cover the amount plus the fee for their actual input count.
+type effectiveValueCoin struct {
+	coin
+	effectiveValue btcutil.Amount
+}
+
+func (c effectiveValueCoin) Value() btcutil.Amount {
+	return c.effectiveValue
+}

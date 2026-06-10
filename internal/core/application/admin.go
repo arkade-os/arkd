@@ -26,6 +26,7 @@ type AdminService interface {
 	) ([]string, error)
 	GetWalletAddress(ctx context.Context) (string, error)
 	GetWalletStatus(ctx context.Context) (*WalletStatus, error)
+	GetMainAccountUtxos(ctx context.Context) ([]ports.WalletUtxo, error)
 	CreateNotes(ctx context.Context, amount uint32, quantity int) ([]string, error)
 	GetScheduledSessionConfig(ctx context.Context) (*domain.ScheduledSession, error)
 	UpdateScheduledSessionConfig(
@@ -89,6 +90,10 @@ func NewAdminService(
 
 func (a *adminService) Wallet() ports.WalletService {
 	return a.walletSvc
+}
+
+func (a *adminService) GetMainAccountUtxos(ctx context.Context) ([]ports.WalletUtxo, error) {
+	return a.walletSvc.GetMainAccountUtxos(ctx)
 }
 
 func (a *adminService) GetRoundDetails(
