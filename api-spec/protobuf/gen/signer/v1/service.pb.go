@@ -139,10 +139,11 @@ func (*GetPubkeyRequest) Descriptor() ([]byte, []int) {
 }
 
 type GetPubkeyResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Pubkey        string                 `protobuf:"bytes,1,opt,name=pubkey,proto3" json:"pubkey,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Pubkey            string                 `protobuf:"bytes,1,opt,name=pubkey,proto3" json:"pubkey,omitempty"`
+	DeprecatedPubkeys []string               `protobuf:"bytes,2,rep,name=deprecated_pubkeys,json=deprecatedPubkeys,proto3" json:"deprecated_pubkeys,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *GetPubkeyResponse) Reset() {
@@ -180,6 +181,13 @@ func (x *GetPubkeyResponse) GetPubkey() string {
 		return x.Pubkey
 	}
 	return ""
+}
+
+func (x *GetPubkeyResponse) GetDeprecatedPubkeys() []string {
+	if x != nil {
+		return x.DeprecatedPubkeys
+	}
+	return nil
 }
 
 type SignTransactionRequest struct {
@@ -382,9 +390,10 @@ const file_signer_v1_service_proto_rawDesc = "" +
 	"\x10GetStatusRequest\")\n" +
 	"\x11GetStatusResponse\x12\x14\n" +
 	"\x05ready\x18\x01 \x01(\bR\x05ready\"\x12\n" +
-	"\x10GetPubkeyRequest\"+\n" +
+	"\x10GetPubkeyRequest\"Z\n" +
 	"\x11GetPubkeyResponse\x12\x16\n" +
-	"\x06pubkey\x18\x01 \x01(\tR\x06pubkey\"]\n" +
+	"\x06pubkey\x18\x01 \x01(\tR\x06pubkey\x12-\n" +
+	"\x12deprecated_pubkeys\x18\x02 \x03(\tR\x11deprecatedPubkeys\"]\n" +
 	"\x16SignTransactionRequest\x12\x1d\n" +
 	"\n" +
 	"partial_tx\x18\x01 \x01(\tR\tpartialTx\x12$\n" +

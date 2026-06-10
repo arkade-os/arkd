@@ -38,6 +38,7 @@ message GetStatusResponse {
 message GetPubkeyRequest {}
 message GetPubkeyResponse {
   string pubkey = 1;
+  repeated string deprecated_pubkeys = 2;
 }
 
 message SignTransactionRequest {

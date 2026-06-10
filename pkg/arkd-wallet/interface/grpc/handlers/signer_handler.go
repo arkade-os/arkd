@@ -32,7 +32,11 @@ func (h *signerHandler) GetPubkey(
 	if err != nil {
 		return nil, err
 	}
-	return &signerv1.GetPubkeyResponse{Pubkey: pubkey}, nil
+	deprecated, err := h.wallet.GetDeprecatedSignerPubkeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &signerv1.GetPubkeyResponse{Pubkey: pubkey, DeprecatedPubkeys: deprecated}, nil
 }
 
 func (h *signerHandler) SignTransaction(
@@ -60,4 +64,3 @@ func (h *signerHandler) SignTransactionTapscript(
 	}
 	return &signerv1.SignTransactionTapscriptResponse{SignedTx: tx}, nil
 }
-

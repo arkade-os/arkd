@@ -6231,3 +6231,75 @@ func TestEventListenerChurn(t *testing.T) {
 		}
 	}
 }
+
+// TestDeprecatedSignerKey makes sure a VTXO locked to a signer key that has
+// been rotated out (moved to DEPRECATED_SIGNER_KEYS) can still be spent. We
+// fund a VTXO with the old signer key, rotate it to deprecated, then verify the
+// old-key VTXO can still be settled and spent in an offchain transaction; in
+// both cases the server co-signs using the deprecated key it was locked to.
+func TestDeprecatedSignerKey(t *testing.T) {
+	const (
+		oldSignerKey = "afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0"
+		newSignerKey = "1111111111111111111111111111111111111111111111111111111111111111"
+		sendAmount   = 10000
+	)
+	ctx := t.Context()
+
+	t.Cleanup(func() {
+		require.NoError(t, recreateArkdWallet(oldSignerKey, ""))
+	})
+
+	alice := setupClientWallet(t)
+	_, aliceOffchainAddr, aliceBoardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	bob := setupClientWallet(t)
+	_, bobOffchainAddr, _, err := bob.Receive(ctx)
+	require.NoError(t, err)
+
+	faucetOnchain(t, aliceBoardingAddr.Address, 0.00021)
+	time.Sleep(6 * time.Second)
+
+	// settle boarding utxo into a VTXO locked to the OLD signer pubkey
+	settleVtxo(t, ctx, alice, aliceOffchainAddr.Address)
+
+	balBefore, err := alice.Balance(ctx)
+	require.NoError(t, err)
+	require.NotZero(t, int(balBefore.OffchainBalance.Total))
+
+	// rotate: new key current, old key deprecated
+	require.NoError(t, recreateArkdWallet(newSignerKey, oldSignerKey))
+
+	t.Run("settle", func(t *testing.T) {
+		// the old-key VTXO must still settle (wallet selects the deprecated key)
+		settleVtxo(t, ctx, alice, aliceOffchainAddr.Address)
+
+		balAfter, err := alice.Balance(ctx)
+		require.NoError(t, err)
+		require.NotZero(t, int(balAfter.OffchainBalance.Total))
+	})
+
+	t.Run("offchain_tx", func(t *testing.T) {
+		// the old-key VTXO must still be spendable in an offchain tx: the server
+		// co-signs the checkpoint tx with the deprecated key it was locked to.
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		var incomingFunds []types.Vtxo
+		var incomingErr error
+		go func() {
+			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
+			wg.Done()
+		}()
+
+		res, err := alice.SendOffChain(ctx, []types.Receiver{{
+			To:     bobOffchainAddr.Address,
+			Amount: sendAmount,
+		}})
+		require.NoError(t, err)
+		require.NotEmpty(t, res.Txid)
+
+		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.NotEmpty(t, incomingFunds)
+	})
+}

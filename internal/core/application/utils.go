@@ -181,8 +181,22 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 	return txid, ins, outs, nil
 }
 
+// validateVtxoScriptForSigners accepts the script if it validates against any of the given signer pubkeys.
+func validateVtxoScriptForSigners(
+	v script.VtxoScript, signers []*btcec.PublicKey,
+	minLocktime arklib.RelativeLocktime, blockTypeAllowed bool,
+) error {
+	var err error
+	for _, signer := range signers {
+		if err = v.Validate(signer, minLocktime, blockTypeAllowed); err == nil {
+			return nil
+		}
+	}
+	return err
+}
+
 func newBoardingInput(
-	tx wire.MsgTx, input ports.Input, signerPubkey *btcec.PublicKey,
+	tx wire.MsgTx, input ports.Input, signerPubkeys []*btcec.PublicKey,
 	boardingExitDelay arklib.RelativeLocktime, blockTypeCSVAllowed bool,
 ) (*ports.BoardingInput, error) {
 	if len(tx.TxOut) <= int(input.VOut) {
@@ -213,8 +227,8 @@ func newBoardingInput(
 		)
 	}
 
-	if err := boardingScript.Validate(
-		signerPubkey, boardingExitDelay, blockTypeCSVAllowed,
+	if err := validateVtxoScriptForSigners(
+		boardingScript, signerPubkeys, boardingExitDelay, blockTypeCSVAllowed,
 	); err != nil {
 		return nil, fmt.Errorf("invalid boarding utxo taproot tree: %w", err)
 	}

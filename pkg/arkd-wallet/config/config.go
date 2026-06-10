@@ -27,6 +27,7 @@ var (
 	Network               = "NETWORK"
 	NbxplorerURL          = "NBXPLORER_URL"
 	SignerKey             = "SIGNER_KEY"
+	DeprecatedSignerKeys  = "DEPRECATED_SIGNER_KEYS"
 	OtelCollectorEndpoint = "OTEL_COLLECTOR_ENDPOINT"
 	OtelPushInterval      = "OTEL_PUSH_INTERVAL"
 	PyroscopeServerURL    = "PYROSCOPE_SERVER_URL"
@@ -69,6 +70,7 @@ func LoadConfig() (*Config, error) {
 		Network:               net,
 		NbxplorerURL:          viper.GetString(NbxplorerURL),
 		SignerKey:             viper.GetString(SignerKey),
+		DeprecatedSignerKeys:  viper.GetString(DeprecatedSignerKeys),
 		OtelCollectorEndpoint: viper.GetString(OtelCollectorEndpoint),
 		OtelPushInterval:      viper.GetInt64(OtelPushInterval),
 		PyroscopeServerURL:    viper.GetString(PyroscopeServerURL),
@@ -88,6 +90,7 @@ type Config struct {
 	Network               arklib.Network
 	NbxplorerURL          string
 	SignerKey             string
+	DeprecatedSignerKeys  string
 	OtelCollectorEndpoint string
 	OtelPushInterval      int64
 	PyroscopeServerURL    string
@@ -116,6 +119,11 @@ func (c *Config) initServices() error {
 		signerKey, _ = btcec.PrivKeyFromBytes(buf)
 	}
 
+	deprecatedSignerKeys, err := parseSignerKeys(c.DeprecatedSignerKeys)
+	if err != nil {
+		return err
+	}
+
 	repository, err := db.NewSeedRepository(c.DbDir, nil)
 	if err != nil {
 		return fmt.Errorf("error while creating seed repository: %s", err)
@@ -134,11 +142,12 @@ func (c *Config) initServices() error {
 	}
 
 	walletSvc := wallet.New(wallet.WalletOptions{
-		SeedRepository: repository,
-		Cypher:         cryptoSvc,
-		Nbxplorer:      nbxplorerSvc,
-		Network:        network.Name,
-		SignerKey:      signerKey,
+		SeedRepository:       repository,
+		Cypher:               cryptoSvc,
+		Nbxplorer:            nbxplorerSvc,
+		Network:              network.Name,
+		SignerKey:            signerKey,
+		DeprecatedSignerKeys: deprecatedSignerKeys,
 	})
 
 	scannerSvc, err := scanner.New(nbxplorerSvc, network.Name)
@@ -180,4 +189,22 @@ func getNetwork() (arklib.Network, error) {
 	default:
 		return arklib.Network{}, fmt.Errorf("unknown network %s", viper.GetString(Network))
 	}
+}
+
+// parseSignerKeys parses a comma-separated list of hex-encoded private keys.
+func parseSignerKeys(raw string) ([]*btcec.PrivateKey, error) {
+	keys := make([]*btcec.PrivateKey, 0)
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		buf, err := hex.DecodeString(entry)
+		if err != nil {
+			return nil, fmt.Errorf("invalid signer key format, must be hex: %s", entry)
+		}
+		key, _ := btcec.PrivKeyFromBytes(buf)
+		keys = append(keys, key)
+	}
+	return keys, nil
 }

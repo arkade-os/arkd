@@ -54,6 +54,7 @@ type service struct {
 	// config
 	network                   arklib.Network
 	signerPubkey              *btcec.PublicKey
+	deprecatedSignerPubkeys   []*btcec.PublicKey
 	forfeitPubkey             *btcec.PublicKey
 	forfeitAddress            string
 	checkpointTapscript       []byte
@@ -135,6 +136,11 @@ func NewService(
 		return nil, fmt.Errorf("failed to fetch signer pubkey: %s", err)
 	}
 
+	deprecatedSignerPubkeys, err := signer.GetDeprecatedPubkeys(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch deprecated signer pubkeys: %s", err)
+	}
+
 	// Try to load scheduled session from DB first
 	scheduledSession, err := repoManager.ScheduledSession().Get(ctx)
 	if err != nil {
@@ -179,6 +185,7 @@ func NewService(
 	svc := &service{
 		network:                   network,
 		signerPubkey:              signerPubkey,
+		deprecatedSignerPubkeys:   deprecatedSignerPubkeys,
 		batchExpiry:               vtxoTreeExpiry,
 		sessionDuration:           time.Duration(sessionDuration) * time.Second,
 		banDuration:               time.Duration(banDuration) * time.Second,
@@ -449,6 +456,21 @@ func (s *service) Stop() {
 	s.repoManager.Close()
 	log.Debug("closed connection to db")
 	close(s.eventsCh)
+}
+
+func (s *service) validateVtxoScript(
+	v script.VtxoScript, minLocktime arklib.RelativeLocktime,
+) error {
+	return validateVtxoScriptForSigners(
+		v,
+		s.acceptedSignerPubkeys(),
+		minLocktime,
+		s.allowCSVBlockType,
+	)
+}
+
+func (s *service) acceptedSignerPubkeys() []*btcec.PublicKey {
+	return append([]*btcec.PublicKey{s.signerPubkey}, s.deprecatedSignerPubkeys...)
 }
 
 func (s *service) SubmitOffchainTx(
@@ -735,9 +757,7 @@ func (s *service) SubmitOffchainTx(
 			minAllowedExitDelay = *smallestExitDelay
 		}
 
-		if err := vtxoScript.Validate(
-			s.signerPubkey, minAllowedExitDelay, s.allowCSVBlockType,
-		); err != nil {
+		if err := s.validateVtxoScript(vtxoScript, minAllowedExitDelay); err != nil {
 			return nil, errors.INVALID_VTXO_SCRIPT.Wrap(err).
 				WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: taptree})
 		}
@@ -1418,7 +1438,7 @@ func (s *service) GetPendingOffchainTxs(
 	if err := intent.Verify(
 		encodedProof,
 		encodedMessage,
-		[]*btcec.PublicKey{s.signerPubkey},
+		s.acceptedSignerPubkeys(),
 	); err != nil {
 		log.
 			WithField("proof", encodedProof).
@@ -1735,7 +1755,7 @@ func (s *service) RegisterIntent(
 	if err := intent.Verify(
 		encodedProof,
 		encodedMessage,
-		[]*btcec.PublicKey{s.signerPubkey},
+		s.acceptedSignerPubkeys(),
 	); err != nil {
 		log.
 			WithField("proof", encodedProof).
@@ -1758,7 +1778,7 @@ func (s *service) RegisterIntent(
 
 	finalizedProofTx, err := intent.Proof{
 		Packet: *signedProofPtx,
-	}.FinalizeAndExtract(s.signerPubkey)
+	}.FinalizeAndExtract(s.acceptedSignerPubkeys()...)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to finalize proof: %w", err).
 			WithMetadata(map[string]any{
@@ -3895,7 +3915,7 @@ func (s *service) processBoardingInputs(
 		}
 
 		boardingInput, err := newBoardingInput(
-			tx, input.Input, s.signerPubkey, exitDelay, s.allowCSVBlockType,
+			tx, input.Input, s.acceptedSignerPubkeys(), exitDelay, s.allowCSVBlockType,
 		)
 		if err != nil {
 			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).WithMetadata(
@@ -3943,10 +3963,10 @@ func (s *service) validateBoardingInput(
 		expectedExitDelay = s.unilateralExitDelay
 	}
 
-	if err := vtxoScript.Validate(s.signerPubkey, arklib.RelativeLocktime{
+	if err := s.validateVtxoScript(vtxoScript, arklib.RelativeLocktime{
 		Type:  expectedExitDelay.Type,
 		Value: expectedExitDelay.Value,
-	}, s.allowCSVBlockType); err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("invalid vtxo script: %s", err)
 	}
 
@@ -4047,9 +4067,7 @@ func (s *service) validateVtxoInput(
 	}
 
 	// validate the vtxo script
-	if err := vtxoScript.Validate(
-		s.signerPubkey, minAllowedExitDelay, s.allowCSVBlockType,
-	); err != nil {
+	if err := s.validateVtxoScript(vtxoScript, minAllowedExitDelay); err != nil {
 		return errors.INVALID_VTXO_SCRIPT.New("invalid vtxo script: %w", err).
 			WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: tapscripts})
 	}
@@ -4334,7 +4352,7 @@ func (s *service) verifyIntentProofAndFindMatches(
 	if err := intent.Verify(
 		encodedProof,
 		encodedMessage,
-		[]*btcec.PublicKey{s.signerPubkey},
+		s.acceptedSignerPubkeys(),
 	); err != nil {
 		log.
 			WithField("proof", encodedProof).

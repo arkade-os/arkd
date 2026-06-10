@@ -71,6 +71,26 @@ func (c *signerClient) GetPubkey(ctx context.Context) (*btcec.PublicKey, error) 
 	return pubkey, nil
 }
 
+func (c *signerClient) GetDeprecatedPubkeys(ctx context.Context) ([]*btcec.PublicKey, error) {
+	resp, err := c.client.GetPubkey(ctx, &signerv1.GetPubkeyRequest{})
+	if err != nil {
+		return nil, err
+	}
+	pubkeys := make([]*btcec.PublicKey, 0, len(resp.GetDeprecatedPubkeys()))
+	for _, p := range resp.GetDeprecatedPubkeys() {
+		buf, err := hex.DecodeString(p)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode deprecated signer pubkey from hex: %s", err)
+		}
+		pubkey, err := btcec.ParsePubKey(buf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse deprecated signer pubkey: %s", err)
+		}
+		pubkeys = append(pubkeys, pubkey)
+	}
+	return pubkeys, nil
+}
+
 func (c *signerClient) SignTransaction(
 	ctx context.Context, partialTx string, extractRawTx bool,
 ) (string, error) {

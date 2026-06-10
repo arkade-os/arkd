@@ -788,8 +788,14 @@ func (c *Config) IndexerService() (application.IndexerService, error) {
 		return nil, fmt.Errorf("failed to get server signing pubkey: %w", err)
 	}
 
+	deprecatedSignerPubkeys, err := c.signer.GetDeprecatedPubkeys(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get deprecated server signing pubkeys: %w", err)
+	}
+
 	return application.NewIndexerService(
-		c.repo, c.wallet, privkey, signerPubkey, c.IndexerExposure, c.IndexerAuthTokenExpiry,
+		c.repo, c.wallet, privkey, signerPubkey, deprecatedSignerPubkeys,
+		c.IndexerExposure, c.IndexerAuthTokenExpiry,
 	)
 }
 

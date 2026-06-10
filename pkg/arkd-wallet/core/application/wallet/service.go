@@ -44,11 +44,12 @@ var (
 const biggestInputSize = 148 + 182 // = 330 vbytes
 
 type WalletOptions struct {
-	SeedRepository ports.SeedRepository
-	Cypher         ports.Cypher
-	Nbxplorer      ports.Nbxplorer
-	Network        string
-	SignerKey      *btcec.PrivateKey
+	SeedRepository       ports.SeedRepository
+	Cypher               ports.Cypher
+	Nbxplorer            ports.Nbxplorer
+	Network              string
+	SignerKey            *btcec.PrivateKey
+	DeprecatedSignerKeys []*btcec.PrivateKey
 }
 
 type wallet struct {
@@ -236,6 +237,14 @@ func (w *wallet) GetSignerPubkey(ctx context.Context) (string, error) {
 
 	pubkey := hex.EncodeToString(w.SignerKey.PubKey().SerializeCompressed())
 	return pubkey, nil
+}
+
+func (w *wallet) GetDeprecatedSignerPubkeys(ctx context.Context) ([]string, error) {
+	pubkeys := make([]string, 0, len(w.DeprecatedSignerKeys))
+	for _, k := range w.DeprecatedSignerKeys {
+		pubkeys = append(pubkeys, hex.EncodeToString(k.PubKey().SerializeCompressed()))
+	}
+	return pubkeys, nil
 }
 
 func (w *wallet) EstimateFees(ctx context.Context, rawTx string) (uint64, error) {
@@ -512,7 +521,7 @@ func (w *wallet) SignTransaction(
 		}
 
 		if len(input.TaprootLeafScript) > 0 {
-			signingKey := w.SignerKey
+			signingKey := w.signerKeyForLeaf(input.TaprootLeafScript[0].Script)
 			if signMode == application.SignModeLiquidityProvider {
 				signingKey = w.keyMgr.forfeitPrvkey
 			}
@@ -629,6 +638,16 @@ func (w *wallet) SignTransaction(
 	return ptx.B64Encode()
 }
 
+// signerKeyForLeaf returns the deprecated signer key referenced by the leaf, or the current SignerKey.
+func (w *wallet) signerKeyForLeaf(leafScript []byte) *btcec.PrivateKey {
+	for _, k := range w.DeprecatedSignerKeys {
+		if bytes.Contains(leafScript, schnorr.SerializePubKey(k.PubKey())) {
+			return k
+		}
+	}
+	return w.SignerKey
+}
+
 // WithdrawAll withdraws all available balance including connectors account funds
 func (w *wallet) WithdrawAll(ctx context.Context, destinationAddress string) (string, error) {
 	destinationAddr, err := btcutil.DecodeAddress(destinationAddress, w.chainParams())
@@ -732,7 +751,6 @@ func (w *wallet) LoadSignerKey(ctx context.Context, prvkey *btcec.PrivateKey) er
 	w.SignerKey = prvkey
 	return nil
 }
-
 
 func (w *wallet) Close() {
 	// nolint:errcheck

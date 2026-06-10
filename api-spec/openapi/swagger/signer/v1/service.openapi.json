@@ -166,6 +166,12 @@
         "title": "GetPubkeyResponse",
         "type": "object",
         "properties": {
+          "deprecatedPubkeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "pubkey": {
             "type": "string"
           }

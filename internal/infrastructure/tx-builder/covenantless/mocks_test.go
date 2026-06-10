@@ -390,6 +390,9 @@ func (s *staticSigner) IsReady(_ context.Context) (bool, error)          { retur
 func (s *staticSigner) GetPubkey(_ context.Context) (*btcec.PublicKey, error) {
 	return s.pubkey, nil
 }
+func (s *staticSigner) GetDeprecatedPubkeys(_ context.Context) ([]*btcec.PublicKey, error) {
+	return nil, nil
+}
 func (s *staticSigner) SignTransaction(_ context.Context, _ string, _ bool) (string, error) {
 	return "", nil
 }

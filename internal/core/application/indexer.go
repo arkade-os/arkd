@@ -87,9 +87,15 @@ type indexerService struct {
 	wallet       ports.WalletService
 	authPrvkey   *btcec.PrivateKey // key used to sign auth tokens
 	signerPubkey *btcec.PublicKey  // server's signing key, used for stripping signatures from txs
-	txExposure   exposure
-	authTokenTTL time.Duration
-	tokenCache   *tokenCache
+	// deprecated signer pubkeys still accepted for old vtxos after a key rotation
+	deprecatedSignerPubkeys []*btcec.PublicKey
+	txExposure              exposure
+	authTokenTTL            time.Duration
+	tokenCache              *tokenCache
+}
+
+func (i *indexerService) acceptedSignerPubkeys() []*btcec.PublicKey {
+	return append([]*btcec.PublicKey{i.signerPubkey}, i.deprecatedSignerPubkeys...)
 }
 
 func NewIndexerService(
@@ -97,6 +103,7 @@ func NewIndexerService(
 	wallet ports.WalletService,
 	privkey *btcec.PrivateKey,
 	signerPubkey *btcec.PublicKey,
+	deprecatedSignerPubkeys []*btcec.PublicKey,
 	txExposure string,
 	authTokenExpirySec int64,
 ) (IndexerService, error) {
@@ -124,6 +131,7 @@ func NewIndexerService(
 	if signerPubkey != nil {
 		svc.signerPubkey = signerPubkey
 	}
+	svc.deprecatedSignerPubkeys = deprecatedSignerPubkeys
 	return svc, nil
 }
 
@@ -682,7 +690,10 @@ func (i *indexerService) getVirtualTxs(
 }
 
 func (i *indexerService) stripSignerSignatures(virtualTxs []string) error {
-	signerPubkey := schnorr.SerializePubKey(i.signerPubkey)
+	signerPubkeys := make([][]byte, 0)
+	for _, pk := range i.acceptedSignerPubkeys() {
+		signerPubkeys = append(signerPubkeys, schnorr.SerializePubKey(pk))
+	}
 
 	for idx := range virtualTxs {
 		ptx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTxs[idx]), true)
@@ -700,7 +711,14 @@ func (i *indexerService) stripSignerSignatures(virtualTxs []string) error {
 
 			newSigs := make([]*psbt.TaprootScriptSpendSig, 0)
 			for _, sig := range ptx.Inputs[j].TaprootScriptSpendSig {
-				if !bytes.Equal(sig.XOnlyPubKey, signerPubkey) {
+				isSignerSig := false
+				for _, pk := range signerPubkeys {
+					if bytes.Equal(sig.XOnlyPubKey, pk) {
+						isSignerSig = true
+						break
+					}
+				}
+				if !isSignerSig {
 					newSigs = append(newSigs, sig)
 				}
 			}
@@ -839,7 +857,7 @@ func (i *indexerService) validateIntent(ctx context.Context, intentToValidate In
 	}
 
 	return intent.Verify(
-		intentToValidate.Proof, intentToValidate.Message, []*btcec.PublicKey{i.signerPubkey},
+		intentToValidate.Proof, intentToValidate.Message, i.acceptedSignerPubkeys(),
 	)
 }
 

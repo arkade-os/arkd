@@ -24,6 +24,7 @@ type WalletService interface {
 	Status(ctx context.Context) WalletStatus
 	GetNetwork(ctx context.Context) string
 	GetSignerPubkey(ctx context.Context) (string, error)
+	GetDeprecatedSignerPubkeys(ctx context.Context) ([]string, error)
 	GetForfeitPubkey(ctx context.Context) (string, error)
 	DeriveConnectorAddress(ctx context.Context) (string, error)
 	DeriveAddresses(ctx context.Context, num int) ([]string, error)

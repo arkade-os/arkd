@@ -69,6 +69,20 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 	}
 	signerPubkeyHex := hex.EncodeToString(schnorr.SerializePubKey(signerPubkey))
 
+	// VTXOs created before a signer-key rotation are locked to a deprecated
+	// signer pubkey. When the signer's signature is not required to be present
+	// yet (mustIncludeSignerSig == false), those keys must be treated the same
+	// as the current signer pubkey, otherwise their forfeit closure would be
+	// reported as missing a signature.
+	deprecatedSignerPubkeys, err := b.signer.GetDeprecatedPubkeys(context.Background())
+	if err != nil {
+		return false, nil, err
+	}
+	signerPubkeysHex := map[string]struct{}{signerPubkeyHex: {}}
+	for _, k := range deprecatedSignerPubkeys {
+		signerPubkeysHex[hex.EncodeToString(schnorr.SerializePubKey(k))] = struct{}{}
+	}
+
 	prevoutFetcher, err := txutils.GetPrevOutputFetcher(ptx)
 	if err != nil {
 		return false, nil, err
@@ -139,7 +153,13 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 			// If any input contain the signer's sig, it will be actually verified, otherwise they
 			// are pretend to be verified so that the function doesn't return a
 			// 'missing signature for <signer> pubkey' error.
-			keys[signerPubkeyHex] = true
+			// Both the current and any deprecated signer pubkey are covered, so
+			// that VTXOs locked to a rotated-out key still verify.
+			for key := range keys {
+				if _, ok := signerPubkeysHex[key]; ok {
+					keys[key] = true
+				}
+			}
 		}
 
 		if len(tapLeaf.ControlBlock) == 0 {
