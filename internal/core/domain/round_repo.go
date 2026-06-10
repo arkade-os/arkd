@@ -16,6 +16,10 @@ type RoundRepository interface {
 	GetRoundConnectorTree(ctx context.Context, commitmentTxid string) (tree.FlatTxTree, error)
 	GetRoundVtxoTree(ctx context.Context, txid string) (tree.FlatTxTree, error)
 	GetSweepableRounds(ctx context.Context) ([]string, error)
+	// GetExpiredRounds returns the sweepable rounds (not yet swept, ended, not
+	// failed, with a vtxo tree) whose batch outputs expired before the given
+	// timestamp. It surfaces rounds that should have been swept but likely failed.
+	GetExpiredRounds(ctx context.Context, expiredBefore int64) ([]ExpiredRound, error)
 	GetRoundIds(
 		ctx context.Context,
 		startedAfter, startedBefore int64,
@@ -31,6 +35,12 @@ type RoundRepository interface {
 	// persistence was introduced (https://github.com/arkade-os/arkd/pull/933).
 	PatchCollectedFees(ctx context.Context, feesByRoundId map[string]uint64) error
 	Close()
+}
+
+type ExpiredRound struct {
+	RoundId        string
+	CommitmentTxid string
+	ExpiredAt      int64
 }
 
 type RoundStats struct {

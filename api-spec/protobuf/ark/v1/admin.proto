@@ -21,6 +21,14 @@ service AdminService {
       get: "/v1/admin/rounds"
     };
   }
+  // GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose
+  // batch outputs have expired but have not been swept yet. It is meant to surface
+  // rounds for which the sweep should have happened but likely failed.
+  rpc GetExpiredRounds(GetExpiredRoundsRequest) returns (GetExpiredRoundsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/rounds/expired"
+    };
+  }
   rpc CreateNote(CreateNoteRequest) returns (CreateNoteResponse) {
     option (meshapi.gateway.http) = {
       post: "/v1/admin/note"
@@ -175,6 +183,17 @@ message GetRoundsRequest {
 }
 message GetRoundsResponse {
   repeated string rounds = 1;
+}
+
+message GetExpiredRoundsRequest {}
+message GetExpiredRoundsResponse {
+  repeated ExpiredRound rounds = 1;
+}
+
+message ExpiredRound {
+  string round_id = 1;
+  string commitment_txid = 2;
+  int64 expired_at = 3; // Unix timestamp at which the round's batch outputs expired.
 }
 
 message CreateNoteRequest {

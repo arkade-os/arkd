@@ -157,10 +157,20 @@ WHERE round.id = (
 );
 
 -- name: SelectSweepableRounds :many
-SELECT txid FROM round_with_commitment_tx_vw r 
+SELECT txid FROM round_with_commitment_tx_vw r
 WHERE r.swept = false AND r.ended = true AND r.failed = false
 AND EXISTS (
-    SELECT 1 FROM tx tree_tx 
+    SELECT 1 FROM tx tree_tx
+    WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
+);
+
+-- name: SelectExpiredRounds :many
+SELECT r.id, r.txid, CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS expired_at
+FROM round_with_commitment_tx_vw r
+WHERE r.swept = false AND r.ended = true AND r.failed = false
+AND (r.ending_timestamp + r.vtxo_tree_expiration) < @now
+AND EXISTS (
+    SELECT 1 FROM tx tree_tx
     WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
 );
 
