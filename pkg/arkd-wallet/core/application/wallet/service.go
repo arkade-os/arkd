@@ -62,7 +62,12 @@ type wallet struct {
 
 // New creates a new WalletService service
 func New(opts WalletOptions) application.WalletService {
-	return &wallet{opts, newOutpointLocker(time.Minute), nil, newKeyPathCache(), make(chan bool)}
+	return &wallet{
+		WalletOptions: opts,
+		locker:        newOutpointLocker(time.Minute),
+		keyPaths:      newKeyPathCache(),
+		readyCh:       make(chan bool),
+	}
 }
 
 func (w *wallet) GetReadyUpdate(ctx context.Context) <-chan bool {

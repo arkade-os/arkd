@@ -51,6 +51,26 @@ func TestKeyPathCache(t *testing.T) {
 	})
 }
 
+func TestKeyPathCache_Bounded(t *testing.T) {
+	c := newKeyPathCache()
+
+	total := keyPathCacheSize + 1000
+	for i := range total {
+		c.set(fmt.Sprintf("script-%d", i), "scheme", fmt.Sprintf("0/%d", i))
+	}
+
+	// the cache never grows past its bound
+	require.Equal(t, keyPathCacheSize, c.cache.Len())
+
+	// the oldest entries are evicted, the most recent are retained
+	_, ok := c.get("script-0")
+	require.False(t, ok)
+
+	entry, ok := c.get(fmt.Sprintf("script-%d", total-1))
+	require.True(t, ok)
+	require.Equal(t, fmt.Sprintf("0/%d", total-1), entry.keyPath)
+}
+
 func TestKeyPathCache_Concurrent(t *testing.T) {
 	c := newKeyPathCache()
 	numberOfRoutines := 100
