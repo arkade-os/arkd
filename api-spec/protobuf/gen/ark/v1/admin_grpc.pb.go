@@ -45,6 +45,7 @@ const (
 	AdminService_GetRecoverableLiquidity_FullMethodName      = "/ark.v1.AdminService/GetRecoverableLiquidity"
 	AdminService_GetCollectedFees_FullMethodName             = "/ark.v1.AdminService/GetCollectedFees"
 	AdminService_Sweep_FullMethodName                        = "/ark.v1.AdminService/Sweep"
+	AdminService_GetMainAccountUtxos_FullMethodName          = "/ark.v1.AdminService/GetMainAccountUtxos"
 )
 
 // AdminServiceClient is the client API for AdminService service.
@@ -80,6 +81,7 @@ type AdminServiceClient interface {
 	GetRecoverableLiquidity(ctx context.Context, in *GetRecoverableLiquidityRequest, opts ...grpc.CallOption) (*GetRecoverableLiquidityResponse, error)
 	GetCollectedFees(ctx context.Context, in *GetCollectedFeesRequest, opts ...grpc.CallOption) (*GetCollectedFeesResponse, error)
 	Sweep(ctx context.Context, in *SweepRequest, opts ...grpc.CallOption) (*SweepResponse, error)
+	GetMainAccountUtxos(ctx context.Context, in *GetMainAccountUtxosRequest, opts ...grpc.CallOption) (*GetMainAccountUtxosResponse, error)
 }
 
 type adminServiceClient struct {
@@ -350,6 +352,16 @@ func (c *adminServiceClient) Sweep(ctx context.Context, in *SweepRequest, opts .
 	return out, nil
 }
 
+func (c *adminServiceClient) GetMainAccountUtxos(ctx context.Context, in *GetMainAccountUtxosRequest, opts ...grpc.CallOption) (*GetMainAccountUtxosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMainAccountUtxosResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetMainAccountUtxos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminServiceServer is the server API for AdminService service.
 // All implementations should embed UnimplementedAdminServiceServer
 // for forward compatibility.
@@ -383,6 +395,7 @@ type AdminServiceServer interface {
 	GetRecoverableLiquidity(context.Context, *GetRecoverableLiquidityRequest) (*GetRecoverableLiquidityResponse, error)
 	GetCollectedFees(context.Context, *GetCollectedFeesRequest) (*GetCollectedFeesResponse, error)
 	Sweep(context.Context, *SweepRequest) (*SweepResponse, error)
+	GetMainAccountUtxos(context.Context, *GetMainAccountUtxosRequest) (*GetMainAccountUtxosResponse, error)
 }
 
 // UnimplementedAdminServiceServer should be embedded to have
@@ -469,6 +482,9 @@ func (UnimplementedAdminServiceServer) GetCollectedFees(context.Context, *GetCol
 }
 func (UnimplementedAdminServiceServer) Sweep(context.Context, *SweepRequest) (*SweepResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Sweep not implemented")
+}
+func (UnimplementedAdminServiceServer) GetMainAccountUtxos(context.Context, *GetMainAccountUtxosRequest) (*GetMainAccountUtxosResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMainAccountUtxos not implemented")
 }
 func (UnimplementedAdminServiceServer) testEmbeddedByValue() {}
 
@@ -958,6 +974,24 @@ func _AdminService_Sweep_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_GetMainAccountUtxos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMainAccountUtxosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetMainAccountUtxos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetMainAccountUtxos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetMainAccountUtxos(ctx, req.(*GetMainAccountUtxosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AdminService_ServiceDesc is the grpc.ServiceDesc for AdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1068,6 +1102,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Sweep",
 			Handler:    _AdminService_Sweep_Handler,
+		},
+		{
+			MethodName: "GetMainAccountUtxos",
+			Handler:    _AdminService_GetMainAccountUtxos_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

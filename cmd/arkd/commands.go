@@ -125,6 +125,11 @@ var (
 		Flags:  []cli.Flag{sweepConnectorsFlag, sweepCommitmentTxidsFlag},
 		Action: sweepAction,
 	}
+	walletUtxosCmd = &cli.Command{
+		Name:   "wallet-utxos",
+		Usage:  "List the UTXO set of the wallet main account",
+		Action: walletUtxosAction,
+	}
 	roundInfoCmd = &cli.Command{
 		Name:   "round-info",
 		Usage:  "Get round info",
@@ -563,6 +568,28 @@ func scheduledSweepAction(ctx *cli.Context) error {
 	url := fmt.Sprintf("%s/v1/admin/sweeps", baseURL)
 
 	resp, err := get[[]map[string]any](url, "sweeps", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func walletUtxosAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/wallet/utxos", baseURL)
+
+	resp, err := get[[]map[string]any](url, "utxos", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}

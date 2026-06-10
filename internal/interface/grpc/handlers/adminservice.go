@@ -518,6 +518,30 @@ func (a *adminHandler) Sweep(
 	}, nil
 }
 
+func (a *adminHandler) GetMainAccountUtxos(
+	ctx context.Context, _ *arkv1.GetMainAccountUtxosRequest,
+) (*arkv1.GetMainAccountUtxosResponse, error) {
+	utxos, err := a.adminService.GetMainAccountUtxos(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	resp := make([]*arkv1.WalletUtxo, 0, len(utxos))
+	for _, u := range utxos {
+		resp = append(resp, &arkv1.WalletUtxo{
+			Txid:          u.Txid,
+			Vout:          u.Vout,
+			Value:         u.Value,
+			Script:        u.Script,
+			Address:       u.Address,
+			Confirmations: u.Confirmations,
+			Locked:        u.Locked,
+		})
+	}
+
+	return &arkv1.GetMainAccountUtxosResponse{Utxos: resp}, nil
+}
+
 func (a *adminHandler) RevokeAuth(
 	ctx context.Context, req *arkv1.RevokeAuthRequest,
 ) (*arkv1.RevokeAuthResponse, error) {
