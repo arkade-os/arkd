@@ -72,6 +72,7 @@ type Service interface {
 
 type ServiceInfo struct {
 	SignerPubKey         string
+	DeprecatedSignerKeys []string
 	ForfeitPubKey        string
 	UnilateralExitDelay  int64
 	BoardingExitDelay    int64

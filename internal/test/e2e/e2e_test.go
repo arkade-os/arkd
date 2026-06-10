@@ -6270,6 +6270,20 @@ func TestDeprecatedSignerKey(t *testing.T) {
 	// rotate: new key current, old key deprecated
 	require.NoError(t, recreateArkdWallet(newSignerKey, oldSignerKey))
 
+	// the public GetInfo endpoint must expose the old key as a deprecated signer
+	oldKeyBytes, err := hex.DecodeString(oldSignerKey)
+	require.NoError(t, err)
+	_, oldPubkey := btcec.PrivKeyFromBytes(oldKeyBytes)
+	expectedDeprecated := hex.EncodeToString(oldPubkey.SerializeCompressed())
+
+	info, err := alice.Client().GetInfo(ctx)
+	require.NoError(t, err)
+	deprecatedPubkeys := make([]string, 0, len(info.DeprecatedSignerPubKeys))
+	for _, s := range info.DeprecatedSignerPubKeys {
+		deprecatedPubkeys = append(deprecatedPubkeys, s.PubKey)
+	}
+	require.Contains(t, deprecatedPubkeys, expectedDeprecated)
+
 	t.Run("settle", func(t *testing.T) {
 		// the old-key VTXO must still settle (wallet selects the deprecated key)
 		settleVtxo(t, ctx, alice, aliceOffchainAddr.Address)

@@ -2173,6 +2173,13 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 	signerPubkey := hex.EncodeToString(s.signerPubkey.SerializeCompressed())
 	forfeitPubkey := hex.EncodeToString(s.forfeitPubkey.SerializeCompressed())
 
+	deprecatedSignerKeys := make([]string, 0, len(s.deprecatedSignerPubkeys))
+	for _, pubkey := range s.deprecatedSignerPubkeys {
+		deprecatedSignerKeys = append(
+			deprecatedSignerKeys, hex.EncodeToString(pubkey.SerializeCompressed()),
+		)
+	}
+
 	var nextScheduledSession *NextScheduledSession
 	if cached.scheduledSession != nil {
 		scheduledSessionNextStart, scheduledSessionNextEnd := calcNextScheduledSession(
@@ -2189,6 +2196,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 
 	return &ServiceInfo{
 		SignerPubKey:         signerPubkey,
+		DeprecatedSignerKeys: deprecatedSignerKeys,
 		ForfeitPubKey:        forfeitPubkey,
 		UnilateralExitDelay:  int64(s.publicUnilateralExitDelay.Value),
 		BoardingExitDelay:    int64(s.boardingExitDelay.Value),
