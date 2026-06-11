@@ -20,7 +20,7 @@ const (
 	// The value of 1 sec/block is used so that number of blocks refers to number of seconds.
 	SECONDS_PER_BLOCK = 1
 
-	// MinAllowedSequence is the discriminat above which all relative locktime value sare
+	// MinAllowedSequence is the discriminat above which all relative locktime values are
 	// considered in seconds, otherwise they are considered in blocks
 	MinAllowedSequence = 512
 
