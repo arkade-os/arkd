@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
@@ -119,7 +120,7 @@ func (c *Config) initServices() error {
 		signerKey, _ = btcec.PrivKeyFromBytes(buf)
 	}
 
-	deprecatedSignerKeys, err := parseSignerKeys(c.DeprecatedSignerKeys)
+	deprecatedSignerKeys, err := parseDeprecatedSignerKeys(c.DeprecatedSignerKeys)
 	if err != nil {
 		return err
 	}
@@ -191,20 +192,35 @@ func getNetwork() (arklib.Network, error) {
 	}
 }
 
-// parseSignerKeys parses a comma-separated list of hex-encoded private keys.
-func parseSignerKeys(raw string) ([]*btcec.PrivateKey, error) {
-	keys := make([]*btcec.PrivateKey, 0)
+// parseDeprecatedSignerKeys parses a comma-separated list of hex-encoded private
+// keys, each optionally followed by a cutoff date: "<hexkey>[:<unix timestamp>]".
+// The cutoff date is the time after which the key is no longer accepted, 0 if unset.
+func parseDeprecatedSignerKeys(raw string) ([]wallet.DeprecatedSignerKey, error) {
+	keys := make([]wallet.DeprecatedSignerKey, 0)
 	for _, entry := range strings.Split(raw, ",") {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
 			continue
 		}
-		buf, err := hex.DecodeString(entry)
+
+		keyPart, cutoffPart, hasCutoff := strings.Cut(entry, ":")
+		var cutoffDate int64
+		if hasCutoff {
+			cutoff, err := strconv.ParseInt(cutoffPart, 10, 64)
+			if err != nil || cutoff < 0 {
+				return nil, fmt.Errorf(
+					"invalid cutoff date, must be a positive unix timestamp: %s", entry,
+				)
+			}
+			cutoffDate = cutoff
+		}
+
+		buf, err := hex.DecodeString(keyPart)
 		if err != nil {
-			return nil, fmt.Errorf("invalid signer key format, must be hex: %s", entry)
+			return nil, fmt.Errorf("invalid signer key format, must be hex: %s", keyPart)
 		}
 		key, _ := btcec.PrivKeyFromBytes(buf)
-		keys = append(keys, key)
+		keys = append(keys, wallet.DeprecatedSignerKey{Key: key, CutoffDate: cutoffDate})
 	}
 	return keys, nil
 }

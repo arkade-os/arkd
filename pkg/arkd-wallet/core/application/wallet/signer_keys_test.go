@@ -28,7 +28,7 @@ func TestSignTransactionUsesDeprecatedKey(t *testing.T) {
 
 	w := &wallet{WalletOptions: WalletOptions{
 		SignerKey:            current,
-		DeprecatedSignerKeys: []*btcec.PrivateKey{old},
+		DeprecatedSignerKeys: []DeprecatedSignerKey{{Key: old}},
 	}}
 
 	leaf := leafScript(t, owner.PubKey(), old.PubKey())

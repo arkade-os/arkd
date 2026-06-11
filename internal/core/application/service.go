@@ -54,7 +54,7 @@ type service struct {
 	// config
 	network                   arklib.Network
 	signerPubkey              *btcec.PublicKey
-	deprecatedSignerPubkeys   []*btcec.PublicKey
+	deprecatedSignerPubkeys   []ports.DeprecatedSignerPubkey
 	forfeitPubkey             *btcec.PublicKey
 	forfeitAddress            string
 	checkpointTapscript       []byte
@@ -469,8 +469,11 @@ func (s *service) validateVtxoScript(
 	)
 }
 
+// acceptedSignerPubkeys returns the signer pubkeys accepted for intent proof
+// verification and vtxo script validation: the current one plus the deprecated
+// ones whose cutoff date has not passed yet.
 func (s *service) acceptedSignerPubkeys() []*btcec.PublicKey {
-	return append([]*btcec.PublicKey{s.signerPubkey}, s.deprecatedSignerPubkeys...)
+	return acceptedSignerPubkeys(s.signerPubkey, s.deprecatedSignerPubkeys, time.Now())
 }
 
 func (s *service) SubmitOffchainTx(
@@ -2173,11 +2176,12 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 	signerPubkey := hex.EncodeToString(s.signerPubkey.SerializeCompressed())
 	forfeitPubkey := hex.EncodeToString(s.forfeitPubkey.SerializeCompressed())
 
-	deprecatedSignerKeys := make([]string, 0, len(s.deprecatedSignerPubkeys))
-	for _, pubkey := range s.deprecatedSignerPubkeys {
-		deprecatedSignerKeys = append(
-			deprecatedSignerKeys, hex.EncodeToString(pubkey.SerializeCompressed()),
-		)
+	deprecatedSignerKeys := make([]DeprecatedSignerKey, 0, len(s.deprecatedSignerPubkeys))
+	for _, deprecated := range s.deprecatedSignerPubkeys {
+		deprecatedSignerKeys = append(deprecatedSignerKeys, DeprecatedSignerKey{
+			PubKey:     hex.EncodeToString(deprecated.PubKey.SerializeCompressed()),
+			CutoffDate: deprecated.CutoffDate,
+		})
 	}
 
 	var nextScheduledSession *NextScheduledSession

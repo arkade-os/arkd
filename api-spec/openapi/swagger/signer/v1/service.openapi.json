@@ -158,6 +158,20 @@
           }
         }
       },
+      "DeprecatedSigner": {
+        "title": "DeprecatedSigner",
+        "type": "object",
+        "properties": {
+          "cutoffDate": {
+            "type": "integer",
+            "description": "unix timestamp after which the key is no longer accepted, 0 if unset",
+            "format": "int64"
+          },
+          "pubkey": {
+            "type": "string"
+          }
+        }
+      },
       "GetPubkeyRequest": {
         "title": "GetPubkeyRequest",
         "type": "object"
@@ -166,10 +180,10 @@
         "title": "GetPubkeyResponse",
         "type": "object",
         "properties": {
-          "deprecatedPubkeys": {
+          "deprecatedSigners": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/DeprecatedSigner"
             }
           },
           "pubkey": {

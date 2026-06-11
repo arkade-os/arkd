@@ -80,7 +80,7 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 	}
 	signerPubkeysHex := map[string]struct{}{signerPubkeyHex: {}}
 	for _, k := range deprecatedSignerPubkeys {
-		signerPubkeysHex[hex.EncodeToString(schnorr.SerializePubKey(k))] = struct{}{}
+		signerPubkeysHex[hex.EncodeToString(schnorr.SerializePubKey(k.PubKey))] = struct{}{}
 	}
 
 	prevoutFetcher, err := txutils.GetPrevOutputFetcher(ptx)

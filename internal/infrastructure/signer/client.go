@@ -71,14 +71,16 @@ func (c *signerClient) GetPubkey(ctx context.Context) (*btcec.PublicKey, error) 
 	return pubkey, nil
 }
 
-func (c *signerClient) GetDeprecatedPubkeys(ctx context.Context) ([]*btcec.PublicKey, error) {
+func (c *signerClient) GetDeprecatedPubkeys(
+	ctx context.Context,
+) ([]ports.DeprecatedSignerPubkey, error) {
 	resp, err := c.client.GetPubkey(ctx, &signerv1.GetPubkeyRequest{})
 	if err != nil {
 		return nil, err
 	}
-	pubkeys := make([]*btcec.PublicKey, 0, len(resp.GetDeprecatedPubkeys()))
-	for _, p := range resp.GetDeprecatedPubkeys() {
-		buf, err := hex.DecodeString(p)
+	pubkeys := make([]ports.DeprecatedSignerPubkey, 0, len(resp.GetDeprecatedSigners()))
+	for _, signer := range resp.GetDeprecatedSigners() {
+		buf, err := hex.DecodeString(signer.GetPubkey())
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode deprecated signer pubkey from hex: %s", err)
 		}
@@ -86,7 +88,10 @@ func (c *signerClient) GetDeprecatedPubkeys(ctx context.Context) ([]*btcec.Publi
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse deprecated signer pubkey: %s", err)
 		}
-		pubkeys = append(pubkeys, pubkey)
+		pubkeys = append(pubkeys, ports.DeprecatedSignerPubkey{
+			PubKey:     pubkey,
+			CutoffDate: signer.GetCutoffDate(),
+		})
 	}
 	return pubkeys, nil
 }

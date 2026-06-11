@@ -38,7 +38,13 @@ message GetStatusResponse {
 message GetPubkeyRequest {}
 message GetPubkeyResponse {
   string pubkey = 1;
-  repeated string deprecated_pubkeys = 2;
+  repeated DeprecatedSigner deprecated_signers = 2;
+}
+
+message DeprecatedSigner {
+  string pubkey = 1;
+  // unix timestamp after which the key is no longer accepted, 0 if unset
+  int64 cutoff_date = 2;
 }
 
 message SignTransactionRequest {

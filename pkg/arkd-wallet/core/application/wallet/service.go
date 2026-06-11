@@ -49,7 +49,13 @@ type WalletOptions struct {
 	Nbxplorer            ports.Nbxplorer
 	Network              string
 	SignerKey            *btcec.PrivateKey
-	DeprecatedSignerKeys []*btcec.PrivateKey
+	DeprecatedSignerKeys []DeprecatedSignerKey
+}
+
+type DeprecatedSignerKey struct {
+	Key *btcec.PrivateKey
+	// unix timestamp after which the key is no longer accepted, 0 if unset
+	CutoffDate int64
 }
 
 type wallet struct {
@@ -239,10 +245,15 @@ func (w *wallet) GetSignerPubkey(ctx context.Context) (string, error) {
 	return pubkey, nil
 }
 
-func (w *wallet) GetDeprecatedSignerPubkeys(ctx context.Context) ([]string, error) {
-	pubkeys := make([]string, 0, len(w.DeprecatedSignerKeys))
+func (w *wallet) GetDeprecatedSignerPubkeys(
+	ctx context.Context,
+) ([]application.DeprecatedSignerPubkey, error) {
+	pubkeys := make([]application.DeprecatedSignerPubkey, 0, len(w.DeprecatedSignerKeys))
 	for _, k := range w.DeprecatedSignerKeys {
-		pubkeys = append(pubkeys, hex.EncodeToString(k.PubKey().SerializeCompressed()))
+		pubkeys = append(pubkeys, application.DeprecatedSignerPubkey{
+			Pubkey:     hex.EncodeToString(k.Key.PubKey().SerializeCompressed()),
+			CutoffDate: k.CutoffDate,
+		})
 	}
 	return pubkeys, nil
 }
@@ -641,8 +652,8 @@ func (w *wallet) SignTransaction(
 // signerKeyForLeaf returns the deprecated signer key referenced by the leaf, or the current SignerKey.
 func (w *wallet) signerKeyForLeaf(leafScript []byte) *btcec.PrivateKey {
 	for _, k := range w.DeprecatedSignerKeys {
-		if bytes.Contains(leafScript, schnorr.SerializePubKey(k.PubKey())) {
-			return k
+		if bytes.Contains(leafScript, schnorr.SerializePubKey(k.Key.PubKey())) {
+			return k.Key
 		}
 	}
 	return w.SignerKey

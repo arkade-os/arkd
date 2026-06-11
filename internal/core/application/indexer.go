@@ -88,14 +88,25 @@ type indexerService struct {
 	authPrvkey   *btcec.PrivateKey // key used to sign auth tokens
 	signerPubkey *btcec.PublicKey  // server's signing key, used for stripping signatures from txs
 	// deprecated signer pubkeys still accepted for old vtxos after a key rotation
-	deprecatedSignerPubkeys []*btcec.PublicKey
+	deprecatedSignerPubkeys []ports.DeprecatedSignerPubkey
 	txExposure              exposure
 	authTokenTTL            time.Duration
 	tokenCache              *tokenCache
 }
 
 func (i *indexerService) acceptedSignerPubkeys() []*btcec.PublicKey {
-	return append([]*btcec.PublicKey{i.signerPubkey}, i.deprecatedSignerPubkeys...)
+	return acceptedSignerPubkeys(i.signerPubkey, i.deprecatedSignerPubkeys, time.Now())
+}
+
+// allSignerPubkeys returns the current signer pubkey plus every deprecated ones
+// we need the whole list whatever the cutoff date so we can strip old-signed signatures in stripSignerSignatures
+func (i *indexerService) allSignerPubkeys() []*btcec.PublicKey {
+	pubkeys := make([]*btcec.PublicKey, 0, len(i.deprecatedSignerPubkeys)+1)
+	pubkeys = append(pubkeys, i.signerPubkey)
+	for _, deprecated := range i.deprecatedSignerPubkeys {
+		pubkeys = append(pubkeys, deprecated.PubKey)
+	}
+	return pubkeys
 }
 
 func NewIndexerService(
@@ -103,7 +114,7 @@ func NewIndexerService(
 	wallet ports.WalletService,
 	privkey *btcec.PrivateKey,
 	signerPubkey *btcec.PublicKey,
-	deprecatedSignerPubkeys []*btcec.PublicKey,
+	deprecatedSignerPubkeys []ports.DeprecatedSignerPubkey,
 	txExposure string,
 	authTokenExpirySec int64,
 ) (IndexerService, error) {
@@ -691,7 +702,7 @@ func (i *indexerService) getVirtualTxs(
 
 func (i *indexerService) stripSignerSignatures(virtualTxs []string) error {
 	signerPubkeys := make([][]byte, 0)
-	for _, pk := range i.acceptedSignerPubkeys() {
+	for _, pk := range i.allSignerPubkeys() {
 		signerPubkeys = append(signerPubkeys, schnorr.SerializePubKey(pk))
 	}
 

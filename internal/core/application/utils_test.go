@@ -3,8 +3,11 @@ package application
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/internal/core/ports"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -164,4 +167,54 @@ func mustEncodePSBTB64(t *testing.T, tx *wire.MsgTx) string {
 	b64, err := p.B64Encode()
 	require.NoError(t, err)
 	return b64
+}
+
+func TestAcceptedSignerPubkeys(t *testing.T) {
+	currentKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	current := currentKey.PubKey()
+
+	deprecatedKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	deprecated := deprecatedKey.PubKey()
+
+	now := time.Now()
+
+	t.Run("no deprecated keys", func(t *testing.T) {
+		pubkeys := acceptedSignerPubkeys(current, nil, now)
+		require.Equal(t, []*btcec.PublicKey{current}, pubkeys)
+	})
+
+	t.Run("no cutoff date", func(t *testing.T) {
+		pubkeys := acceptedSignerPubkeys(current, []ports.DeprecatedSignerPubkey{
+			{PubKey: deprecated},
+		}, now)
+		require.Equal(t, []*btcec.PublicKey{current, deprecated}, pubkeys)
+	})
+
+	t.Run("cutoff date in the future", func(t *testing.T) {
+		pubkeys := acceptedSignerPubkeys(current, []ports.DeprecatedSignerPubkey{
+			{PubKey: deprecated, CutoffDate: now.Add(time.Hour).Unix()},
+		}, now)
+		require.Equal(t, []*btcec.PublicKey{current, deprecated}, pubkeys)
+	})
+
+	t.Run("cutoff date in the past", func(t *testing.T) {
+		pubkeys := acceptedSignerPubkeys(current, []ports.DeprecatedSignerPubkey{
+			{PubKey: deprecated, CutoffDate: now.Add(-time.Hour).Unix()},
+		}, now)
+		require.Equal(t, []*btcec.PublicKey{current}, pubkeys)
+	})
+
+	t.Run("mixed cutoff dates", func(t *testing.T) {
+		otherKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		other := otherKey.PubKey()
+
+		pubkeys := acceptedSignerPubkeys(current, []ports.DeprecatedSignerPubkey{
+			{PubKey: deprecated, CutoffDate: now.Add(-time.Hour).Unix()},
+			{PubKey: other, CutoffDate: now.Add(time.Hour).Unix()},
+		}, now)
+		require.Equal(t, []*btcec.PublicKey{current, other}, pubkeys)
+	})
 }

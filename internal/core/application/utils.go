@@ -181,6 +181,22 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 	return txid, ins, outs, nil
 }
 
+// acceptedSignerPubkeys returns the current signer pubkey plus the deprecated ones
+// whose cutoff date has not passed yet at the given time.
+func acceptedSignerPubkeys(
+	current *btcec.PublicKey, deprecated []ports.DeprecatedSignerPubkey, now time.Time,
+) []*btcec.PublicKey {
+	pubkeys := make([]*btcec.PublicKey, 0, len(deprecated)+1)
+	pubkeys = append(pubkeys, current)
+	for _, key := range deprecated {
+		if key.CutoffDate > 0 && now.Unix() > key.CutoffDate {
+			continue
+		}
+		pubkeys = append(pubkeys, key.PubKey)
+	}
+	return pubkeys
+}
+
 // validateVtxoScriptForSigners accepts the script if it validates against any of the given signer pubkeys.
 func validateVtxoScriptForSigners(
 	v script.VtxoScript, signers []*btcec.PublicKey,

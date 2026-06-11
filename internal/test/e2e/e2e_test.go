@@ -6242,6 +6242,8 @@ func TestDeprecatedSignerKey(t *testing.T) {
 		oldSignerKey = "afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0"
 		newSignerKey = "1111111111111111111111111111111111111111111111111111111111111111"
 		sendAmount   = 10000
+		// unix timestamp after which the deprecated key is no longer accepted
+		cutoffDate = int64(33256915200) // 3023-11-04
 	)
 	ctx := t.Context()
 
@@ -6267,10 +6269,13 @@ func TestDeprecatedSignerKey(t *testing.T) {
 	require.NoError(t, err)
 	require.NotZero(t, int(balBefore.OffchainBalance.Total))
 
-	// rotate: new key current, old key deprecated
-	require.NoError(t, recreateArkdWallet(newSignerKey, oldSignerKey))
+	// rotate: new key current, old key deprecated with a cutoff date
+	require.NoError(t, recreateArkdWallet(
+		newSignerKey, fmt.Sprintf("%s:%d", oldSignerKey, cutoffDate),
+	))
 
 	// the public GetInfo endpoint must expose the old key as a deprecated signer
+	// along with its cutoff date
 	oldKeyBytes, err := hex.DecodeString(oldSignerKey)
 	require.NoError(t, err)
 	_, oldPubkey := btcec.PrivKeyFromBytes(oldKeyBytes)
@@ -6278,11 +6283,12 @@ func TestDeprecatedSignerKey(t *testing.T) {
 
 	info, err := alice.Client().GetInfo(ctx)
 	require.NoError(t, err)
-	deprecatedPubkeys := make([]string, 0, len(info.DeprecatedSignerPubKeys))
+	cutoffDates := make(map[string]int64, len(info.DeprecatedSignerPubKeys))
 	for _, s := range info.DeprecatedSignerPubKeys {
-		deprecatedPubkeys = append(deprecatedPubkeys, s.PubKey)
+		cutoffDates[s.PubKey] = s.CutoffDate
 	}
-	require.Contains(t, deprecatedPubkeys, expectedDeprecated)
+	require.Contains(t, cutoffDates, expectedDeprecated)
+	require.Equal(t, cutoffDate, cutoffDates[expectedDeprecated])
 
 	t.Run("settle", func(t *testing.T) {
 		// the old-key VTXO must still settle (wallet selects the deprecated key)
@@ -6315,5 +6321,26 @@ func TestDeprecatedSignerKey(t *testing.T) {
 		wg.Wait()
 		require.NoError(t, incomingErr)
 		require.NotEmpty(t, incomingFunds)
+	})
+
+	t.Run("expired_cutoff", func(t *testing.T) {
+		// rotate again, this time with a cutoff date in the past: the old key
+		// must no longer be accepted by the server.
+		expiredCutoff := time.Now().Add(-time.Hour).Unix()
+		require.NoError(t, recreateArkdWallet(
+			newSignerKey, fmt.Sprintf("%s:%d", oldSignerKey, expiredCutoff),
+		))
+
+		info, err := bob.Client().GetInfo(ctx)
+		require.NoError(t, err)
+		expiredCutoffs := make(map[string]int64, len(info.DeprecatedSignerPubKeys))
+		for _, s := range info.DeprecatedSignerPubKeys {
+			expiredCutoffs[s.PubKey] = s.CutoffDate
+		}
+		require.Contains(t, expiredCutoffs, expectedDeprecated)
+		require.Equal(t, expiredCutoff, expiredCutoffs[expectedDeprecated])
+
+		_, err = bob.Settle(ctx)
+		require.Error(t, err)
 	})
 }

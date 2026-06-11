@@ -70,9 +70,15 @@ type Service interface {
 	RefreshInfoCache()
 }
 
+type DeprecatedSignerKey struct {
+	PubKey string
+	// unix timestamp after which the key is no longer accepted, 0 if unset
+	CutoffDate int64
+}
+
 type ServiceInfo struct {
 	SignerPubKey         string
-	DeprecatedSignerKeys []string
+	DeprecatedSignerKeys []DeprecatedSignerKey
 	ForfeitPubKey        string
 	UnilateralExitDelay  int64
 	BoardingExitDelay    int64
