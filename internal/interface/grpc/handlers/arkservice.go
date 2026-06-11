@@ -2,9 +2,7 @@ package handlers
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -56,7 +54,7 @@ func (h *handler) GetInfo(
 		return nil, err
 	}
 
-	resp := &arkv1.GetInfoResponse{
+	return &arkv1.GetInfoResponse{
 		SignerPubkey:        info.SignerPubKey,
 		ForfeitPubkey:       info.ForfeitPubKey,
 		UnilateralExitDelay: info.UnilateralExitDelay,
@@ -74,18 +72,9 @@ func (h *handler) GetInfo(
 		MaxTxWeight:         info.MaxTxWeight,
 		MaxOpReturnOutputs:  info.MaxOpReturnOutputs,
 		Fees:                fees(info.Fees).toProto(),
-	}
-	buf, errJSON := json.Marshal(resp)
-	if errJSON != nil {
-		log.WithError(errJSON).Warn("failed to marshal get info response")
-		return resp, nil
-	}
-
-	digest := sha256.Sum256(buf)
-	resp.Digest = hex.EncodeToString(digest[:])
-	resp.ScheduledSession = scheduledSession{info.NextScheduledSession}.toProto()
-
-	return resp, nil
+		ScheduledSession:    scheduledSession{info.NextScheduledSession}.toProto(),
+		Digest:              info.Digest,
+	}, nil
 }
 
 func (h *handler) RegisterIntent(

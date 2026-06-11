@@ -46,7 +46,6 @@ const (
 	AdminService_Sweep_FullMethodName                        = "/ark.v1.AdminService/Sweep"
 	AdminService_GetSettings_FullMethodName                  = "/ark.v1.AdminService/GetSettings"
 	AdminService_UpdateSettings_FullMethodName               = "/ark.v1.AdminService/UpdateSettings"
-	AdminService_ClearSettings_FullMethodName                = "/ark.v1.AdminService/ClearSettings"
 )
 
 // AdminServiceClient is the client API for AdminService service.
@@ -80,7 +79,6 @@ type AdminServiceClient interface {
 	Sweep(ctx context.Context, in *SweepRequest, opts ...grpc.CallOption) (*SweepResponse, error)
 	GetSettings(ctx context.Context, in *GetSettingsRequest, opts ...grpc.CallOption) (*GetSettingsResponse, error)
 	UpdateSettings(ctx context.Context, in *UpdateSettingsRequest, opts ...grpc.CallOption) (*UpdateSettingsResponse, error)
-	ClearSettings(ctx context.Context, in *ClearSettingsRequest, opts ...grpc.CallOption) (*ClearSettingsResponse, error)
 }
 
 type adminServiceClient struct {
@@ -361,16 +359,6 @@ func (c *adminServiceClient) UpdateSettings(ctx context.Context, in *UpdateSetti
 	return out, nil
 }
 
-func (c *adminServiceClient) ClearSettings(ctx context.Context, in *ClearSettingsRequest, opts ...grpc.CallOption) (*ClearSettingsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ClearSettingsResponse)
-	err := c.cc.Invoke(ctx, AdminService_ClearSettings_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // AdminServiceServer is the server API for AdminService service.
 // All implementations should embed UnimplementedAdminServiceServer
 // for forward compatibility.
@@ -402,7 +390,6 @@ type AdminServiceServer interface {
 	Sweep(context.Context, *SweepRequest) (*SweepResponse, error)
 	GetSettings(context.Context, *GetSettingsRequest) (*GetSettingsResponse, error)
 	UpdateSettings(context.Context, *UpdateSettingsRequest) (*UpdateSettingsResponse, error)
-	ClearSettings(context.Context, *ClearSettingsRequest) (*ClearSettingsResponse, error)
 }
 
 // UnimplementedAdminServiceServer should be embedded to have
@@ -492,9 +479,6 @@ func (UnimplementedAdminServiceServer) GetSettings(context.Context, *GetSettings
 }
 func (UnimplementedAdminServiceServer) UpdateSettings(context.Context, *UpdateSettingsRequest) (*UpdateSettingsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateSettings not implemented")
-}
-func (UnimplementedAdminServiceServer) ClearSettings(context.Context, *ClearSettingsRequest) (*ClearSettingsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ClearSettings not implemented")
 }
 func (UnimplementedAdminServiceServer) testEmbeddedByValue() {}
 
@@ -1002,24 +986,6 @@ func _AdminService_UpdateSettings_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _AdminService_ClearSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ClearSettingsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(AdminServiceServer).ClearSettings(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: AdminService_ClearSettings_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AdminServiceServer).ClearSettings(ctx, req.(*ClearSettingsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // AdminService_ServiceDesc is the grpc.ServiceDesc for AdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1134,10 +1100,6 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateSettings",
 			Handler:    _AdminService_UpdateSettings_Handler,
-		},
-		{
-			MethodName: "ClearSettings",
-			Handler:    _AdminService_ClearSettings_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -2860,23 +2860,28 @@ func (x *SweepResponse) GetHex() string {
 
 type Settings struct {
 	state                         protoimpl.MessageState `protogen:"open.v1"`
-	BanThreshold                  int64                  `protobuf:"varint,1,opt,name=ban_threshold,json=banThreshold,proto3" json:"ban_threshold,omitempty"`
-	BanDuration                   int64                  `protobuf:"varint,2,opt,name=ban_duration,json=banDuration,proto3" json:"ban_duration,omitempty"`
-	UnilateralExitDelay           int64                  `protobuf:"varint,3,opt,name=unilateral_exit_delay,json=unilateralExitDelay,proto3" json:"unilateral_exit_delay,omitempty"`
-	PublicUnilateralExitDelay     int64                  `protobuf:"varint,4,opt,name=public_unilateral_exit_delay,json=publicUnilateralExitDelay,proto3" json:"public_unilateral_exit_delay,omitempty"`
-	CheckpointExitDelay           int64                  `protobuf:"varint,5,opt,name=checkpoint_exit_delay,json=checkpointExitDelay,proto3" json:"checkpoint_exit_delay,omitempty"`
-	BoardingExitDelay             int64                  `protobuf:"varint,6,opt,name=boarding_exit_delay,json=boardingExitDelay,proto3" json:"boarding_exit_delay,omitempty"`
-	VtxoTreeExpiry                int64                  `protobuf:"varint,7,opt,name=vtxo_tree_expiry,json=vtxoTreeExpiry,proto3" json:"vtxo_tree_expiry,omitempty"`
-	RoundMinParticipantsCount     int64                  `protobuf:"varint,8,opt,name=round_min_participants_count,json=roundMinParticipantsCount,proto3" json:"round_min_participants_count,omitempty"`
-	RoundMaxParticipantsCount     int64                  `protobuf:"varint,9,opt,name=round_max_participants_count,json=roundMaxParticipantsCount,proto3" json:"round_max_participants_count,omitempty"`
-	VtxoMinAmount                 int64                  `protobuf:"varint,10,opt,name=vtxo_min_amount,json=vtxoMinAmount,proto3" json:"vtxo_min_amount,omitempty"`
-	VtxoMaxAmount                 int64                  `protobuf:"varint,11,opt,name=vtxo_max_amount,json=vtxoMaxAmount,proto3" json:"vtxo_max_amount,omitempty"`
-	UtxoMinAmount                 int64                  `protobuf:"varint,12,opt,name=utxo_min_amount,json=utxoMinAmount,proto3" json:"utxo_min_amount,omitempty"`
-	UtxoMaxAmount                 int64                  `protobuf:"varint,13,opt,name=utxo_max_amount,json=utxoMaxAmount,proto3" json:"utxo_max_amount,omitempty"`
-	SettlementMinExpiryGap        int64                  `protobuf:"varint,14,opt,name=settlement_min_expiry_gap,json=settlementMinExpiryGap,proto3" json:"settlement_min_expiry_gap,omitempty"`
-	VtxoNoCsvValidationCutoffDate int64                  `protobuf:"varint,15,opt,name=vtxo_no_csv_validation_cutoff_date,json=vtxoNoCsvValidationCutoffDate,proto3" json:"vtxo_no_csv_validation_cutoff_date,omitempty"`
-	MaxTxWeight                   int64                  `protobuf:"varint,16,opt,name=max_tx_weight,json=maxTxWeight,proto3" json:"max_tx_weight,omitempty"`
-	UpdatedAt                     int64                  `protobuf:"varint,17,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	SessionDuration               *int64                 `protobuf:"varint,1,opt,name=session_duration,json=sessionDuration,proto3,oneof" json:"session_duration,omitempty"`
+	UnrolledVtxoMinExpiryMargin   *int64                 `protobuf:"varint,2,opt,name=unrolled_vtxo_min_expiry_margin,json=unrolledVtxoMinExpiryMargin,proto3,oneof" json:"unrolled_vtxo_min_expiry_margin,omitempty"`
+	BanThreshold                  *int64                 `protobuf:"varint,3,opt,name=ban_threshold,json=banThreshold,proto3,oneof" json:"ban_threshold,omitempty"`
+	BanDuration                   *int64                 `protobuf:"varint,4,opt,name=ban_duration,json=banDuration,proto3,oneof" json:"ban_duration,omitempty"`
+	UnilateralExitDelay           *int64                 `protobuf:"varint,5,opt,name=unilateral_exit_delay,json=unilateralExitDelay,proto3,oneof" json:"unilateral_exit_delay,omitempty"`
+	PublicUnilateralExitDelay     *int64                 `protobuf:"varint,6,opt,name=public_unilateral_exit_delay,json=publicUnilateralExitDelay,proto3,oneof" json:"public_unilateral_exit_delay,omitempty"`
+	CheckpointExitDelay           *int64                 `protobuf:"varint,7,opt,name=checkpoint_exit_delay,json=checkpointExitDelay,proto3,oneof" json:"checkpoint_exit_delay,omitempty"`
+	BoardingExitDelay             *int64                 `protobuf:"varint,8,opt,name=boarding_exit_delay,json=boardingExitDelay,proto3,oneof" json:"boarding_exit_delay,omitempty"`
+	VtxoTreeExpiry                *int64                 `protobuf:"varint,9,opt,name=vtxo_tree_expiry,json=vtxoTreeExpiry,proto3,oneof" json:"vtxo_tree_expiry,omitempty"`
+	RoundMinParticipantsCount     *int64                 `protobuf:"varint,10,opt,name=round_min_participants_count,json=roundMinParticipantsCount,proto3,oneof" json:"round_min_participants_count,omitempty"`
+	RoundMaxParticipantsCount     *int64                 `protobuf:"varint,11,opt,name=round_max_participants_count,json=roundMaxParticipantsCount,proto3,oneof" json:"round_max_participants_count,omitempty"`
+	VtxoMinAmount                 *int64                 `protobuf:"varint,12,opt,name=vtxo_min_amount,json=vtxoMinAmount,proto3,oneof" json:"vtxo_min_amount,omitempty"`
+	VtxoMaxAmount                 *int64                 `protobuf:"varint,13,opt,name=vtxo_max_amount,json=vtxoMaxAmount,proto3,oneof" json:"vtxo_max_amount,omitempty"`
+	UtxoMinAmount                 *int64                 `protobuf:"varint,14,opt,name=utxo_min_amount,json=utxoMinAmount,proto3,oneof" json:"utxo_min_amount,omitempty"`
+	UtxoMaxAmount                 *int64                 `protobuf:"varint,15,opt,name=utxo_max_amount,json=utxoMaxAmount,proto3,oneof" json:"utxo_max_amount,omitempty"`
+	SettlementMinExpiryGap        *int64                 `protobuf:"varint,16,opt,name=settlement_min_expiry_gap,json=settlementMinExpiryGap,proto3,oneof" json:"settlement_min_expiry_gap,omitempty"`
+	VtxoNoCsvValidationCutoffDate *int64                 `protobuf:"varint,17,opt,name=vtxo_no_csv_validation_cutoff_date,json=vtxoNoCsvValidationCutoffDate,proto3,oneof" json:"vtxo_no_csv_validation_cutoff_date,omitempty"`
+	MaxTxWeight                   *int64                 `protobuf:"varint,18,opt,name=max_tx_weight,json=maxTxWeight,proto3,oneof" json:"max_tx_weight,omitempty"`
+	MaxOpReturnOutputs            *int64                 `protobuf:"varint,19,opt,name=max_op_return_outputs,json=maxOpReturnOutputs,proto3,oneof" json:"max_op_return_outputs,omitempty"`
+	AssetTxMaxWeightRatio         *float32               `protobuf:"fixed32,20,opt,name=asset_tx_max_weight_ratio,json=assetTxMaxWeightRatio,proto3,oneof" json:"asset_tx_max_weight_ratio,omitempty"`
+	NoteUriPrefix                 *string                `protobuf:"bytes,21,opt,name=note_uri_prefix,json=noteUriPrefix,proto3,oneof" json:"note_uri_prefix,omitempty"`
+	UpdatedAt                     *int64                 `protobuf:"varint,22,opt,name=updated_at,json=updatedAt,proto3,oneof" json:"updated_at,omitempty"`
 	unknownFields                 protoimpl.UnknownFields
 	sizeCache                     protoimpl.SizeCache
 }
@@ -2911,121 +2916,156 @@ func (*Settings) Descriptor() ([]byte, []int) {
 	return file_ark_v1_admin_proto_rawDescGZIP(), []int{54}
 }
 
+func (x *Settings) GetSessionDuration() int64 {
+	if x != nil && x.SessionDuration != nil {
+		return *x.SessionDuration
+	}
+	return 0
+}
+
+func (x *Settings) GetUnrolledVtxoMinExpiryMargin() int64 {
+	if x != nil && x.UnrolledVtxoMinExpiryMargin != nil {
+		return *x.UnrolledVtxoMinExpiryMargin
+	}
+	return 0
+}
+
 func (x *Settings) GetBanThreshold() int64 {
-	if x != nil {
-		return x.BanThreshold
+	if x != nil && x.BanThreshold != nil {
+		return *x.BanThreshold
 	}
 	return 0
 }
 
 func (x *Settings) GetBanDuration() int64 {
-	if x != nil {
-		return x.BanDuration
+	if x != nil && x.BanDuration != nil {
+		return *x.BanDuration
 	}
 	return 0
 }
 
 func (x *Settings) GetUnilateralExitDelay() int64 {
-	if x != nil {
-		return x.UnilateralExitDelay
+	if x != nil && x.UnilateralExitDelay != nil {
+		return *x.UnilateralExitDelay
 	}
 	return 0
 }
 
 func (x *Settings) GetPublicUnilateralExitDelay() int64 {
-	if x != nil {
-		return x.PublicUnilateralExitDelay
+	if x != nil && x.PublicUnilateralExitDelay != nil {
+		return *x.PublicUnilateralExitDelay
 	}
 	return 0
 }
 
 func (x *Settings) GetCheckpointExitDelay() int64 {
-	if x != nil {
-		return x.CheckpointExitDelay
+	if x != nil && x.CheckpointExitDelay != nil {
+		return *x.CheckpointExitDelay
 	}
 	return 0
 }
 
 func (x *Settings) GetBoardingExitDelay() int64 {
-	if x != nil {
-		return x.BoardingExitDelay
+	if x != nil && x.BoardingExitDelay != nil {
+		return *x.BoardingExitDelay
 	}
 	return 0
 }
 
 func (x *Settings) GetVtxoTreeExpiry() int64 {
-	if x != nil {
-		return x.VtxoTreeExpiry
+	if x != nil && x.VtxoTreeExpiry != nil {
+		return *x.VtxoTreeExpiry
 	}
 	return 0
 }
 
 func (x *Settings) GetRoundMinParticipantsCount() int64 {
-	if x != nil {
-		return x.RoundMinParticipantsCount
+	if x != nil && x.RoundMinParticipantsCount != nil {
+		return *x.RoundMinParticipantsCount
 	}
 	return 0
 }
 
 func (x *Settings) GetRoundMaxParticipantsCount() int64 {
-	if x != nil {
-		return x.RoundMaxParticipantsCount
+	if x != nil && x.RoundMaxParticipantsCount != nil {
+		return *x.RoundMaxParticipantsCount
 	}
 	return 0
 }
 
 func (x *Settings) GetVtxoMinAmount() int64 {
-	if x != nil {
-		return x.VtxoMinAmount
+	if x != nil && x.VtxoMinAmount != nil {
+		return *x.VtxoMinAmount
 	}
 	return 0
 }
 
 func (x *Settings) GetVtxoMaxAmount() int64 {
-	if x != nil {
-		return x.VtxoMaxAmount
+	if x != nil && x.VtxoMaxAmount != nil {
+		return *x.VtxoMaxAmount
 	}
 	return 0
 }
 
 func (x *Settings) GetUtxoMinAmount() int64 {
-	if x != nil {
-		return x.UtxoMinAmount
+	if x != nil && x.UtxoMinAmount != nil {
+		return *x.UtxoMinAmount
 	}
 	return 0
 }
 
 func (x *Settings) GetUtxoMaxAmount() int64 {
-	if x != nil {
-		return x.UtxoMaxAmount
+	if x != nil && x.UtxoMaxAmount != nil {
+		return *x.UtxoMaxAmount
 	}
 	return 0
 }
 
 func (x *Settings) GetSettlementMinExpiryGap() int64 {
-	if x != nil {
-		return x.SettlementMinExpiryGap
+	if x != nil && x.SettlementMinExpiryGap != nil {
+		return *x.SettlementMinExpiryGap
 	}
 	return 0
 }
 
 func (x *Settings) GetVtxoNoCsvValidationCutoffDate() int64 {
-	if x != nil {
-		return x.VtxoNoCsvValidationCutoffDate
+	if x != nil && x.VtxoNoCsvValidationCutoffDate != nil {
+		return *x.VtxoNoCsvValidationCutoffDate
 	}
 	return 0
 }
 
 func (x *Settings) GetMaxTxWeight() int64 {
-	if x != nil {
-		return x.MaxTxWeight
+	if x != nil && x.MaxTxWeight != nil {
+		return *x.MaxTxWeight
 	}
 	return 0
 }
 
+func (x *Settings) GetMaxOpReturnOutputs() int64 {
+	if x != nil && x.MaxOpReturnOutputs != nil {
+		return *x.MaxOpReturnOutputs
+	}
+	return 0
+}
+
+func (x *Settings) GetAssetTxMaxWeightRatio() float32 {
+	if x != nil && x.AssetTxMaxWeightRatio != nil {
+		return *x.AssetTxMaxWeightRatio
+	}
+	return 0
+}
+
+func (x *Settings) GetNoteUriPrefix() string {
+	if x != nil && x.NoteUriPrefix != nil {
+		return *x.NoteUriPrefix
+	}
+	return ""
+}
+
 func (x *Settings) GetUpdatedAt() int64 {
-	if x != nil {
-		return x.UpdatedAt
+	if x != nil && x.UpdatedAt != nil {
+		return *x.UpdatedAt
 	}
 	return 0
 }
@@ -3111,14 +3151,8 @@ func (x *GetSettingsResponse) GetSettings() *Settings {
 }
 
 type UpdateSettingsRequest struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	Settings *Settings              `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
-	// Specifies which settings fields to update. If non-empty, only the
-	// listed fields are written from the request; all other fields remain
-	// unchanged. If empty, every field in the settings message is written
-	// as-is. Fields not set in the request default to 0, so callers must
-	// populate all fields. Use snake_case field names (e.g. "ban_threshold").
-	UpdateFields  []string `protobuf:"bytes,2,rep,name=update_fields,json=updateFields,proto3" json:"update_fields,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *Settings              `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3160,15 +3194,9 @@ func (x *UpdateSettingsRequest) GetSettings() *Settings {
 	return nil
 }
 
-func (x *UpdateSettingsRequest) GetUpdateFields() []string {
-	if x != nil {
-		return x.UpdateFields
-	}
-	return nil
-}
-
 type UpdateSettingsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	ChangeLog     []string               `protobuf:"bytes,1,rep,name=change_log,json=changeLog,proto3" json:"change_log,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3203,76 +3231,11 @@ func (*UpdateSettingsResponse) Descriptor() ([]byte, []int) {
 	return file_ark_v1_admin_proto_rawDescGZIP(), []int{58}
 }
 
-type ClearSettingsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClearSettingsRequest) Reset() {
-	*x = ClearSettingsRequest{}
-	mi := &file_ark_v1_admin_proto_msgTypes[59]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClearSettingsRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClearSettingsRequest) ProtoMessage() {}
-
-func (x *ClearSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[59]
+func (x *UpdateSettingsResponse) GetChangeLog() []string {
 	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
+		return x.ChangeLog
 	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClearSettingsRequest.ProtoReflect.Descriptor instead.
-func (*ClearSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{59}
-}
-
-type ClearSettingsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ClearSettingsResponse) Reset() {
-	*x = ClearSettingsResponse{}
-	mi := &file_ark_v1_admin_proto_msgTypes[60]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ClearSettingsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ClearSettingsResponse) ProtoMessage() {}
-
-func (x *ClearSettingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[60]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ClearSettingsResponse.ProtoReflect.Descriptor instead.
-func (*ClearSettingsResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{60}
+	return nil
 }
 
 type ListTokensRequest struct {
@@ -3287,7 +3250,7 @@ type ListTokensRequest struct {
 
 func (x *ListTokensRequest) Reset() {
 	*x = ListTokensRequest{}
-	mi := &file_ark_v1_admin_proto_msgTypes[61]
+	mi := &file_ark_v1_admin_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3299,7 +3262,7 @@ func (x *ListTokensRequest) String() string {
 func (*ListTokensRequest) ProtoMessage() {}
 
 func (x *ListTokensRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[61]
+	mi := &file_ark_v1_admin_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3312,7 +3275,7 @@ func (x *ListTokensRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTokensRequest.ProtoReflect.Descriptor instead.
 func (*ListTokensRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{61}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *ListTokensRequest) GetToken() string {
@@ -3352,7 +3315,7 @@ type ListTokensResponse struct {
 
 func (x *ListTokensResponse) Reset() {
 	*x = ListTokensResponse{}
-	mi := &file_ark_v1_admin_proto_msgTypes[62]
+	mi := &file_ark_v1_admin_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3364,7 +3327,7 @@ func (x *ListTokensResponse) String() string {
 func (*ListTokensResponse) ProtoMessage() {}
 
 func (x *ListTokensResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[62]
+	mi := &file_ark_v1_admin_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3377,7 +3340,7 @@ func (x *ListTokensResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTokensResponse.ProtoReflect.Descriptor instead.
 func (*ListTokensResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{62}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *ListTokensResponse) GetTokens() []*TokenInfo {
@@ -3398,7 +3361,7 @@ type TokenInfo struct {
 
 func (x *TokenInfo) Reset() {
 	*x = TokenInfo{}
-	mi := &file_ark_v1_admin_proto_msgTypes[63]
+	mi := &file_ark_v1_admin_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3410,7 +3373,7 @@ func (x *TokenInfo) String() string {
 func (*TokenInfo) ProtoMessage() {}
 
 func (x *TokenInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[63]
+	mi := &file_ark_v1_admin_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3423,7 +3386,7 @@ func (x *TokenInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenInfo.ProtoReflect.Descriptor instead.
 func (*TokenInfo) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{63}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *TokenInfo) GetHash() string {
@@ -3459,7 +3422,7 @@ type RevokeTokensRequest struct {
 
 func (x *RevokeTokensRequest) Reset() {
 	*x = RevokeTokensRequest{}
-	mi := &file_ark_v1_admin_proto_msgTypes[64]
+	mi := &file_ark_v1_admin_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3471,7 +3434,7 @@ func (x *RevokeTokensRequest) String() string {
 func (*RevokeTokensRequest) ProtoMessage() {}
 
 func (x *RevokeTokensRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[64]
+	mi := &file_ark_v1_admin_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3484,7 +3447,7 @@ func (x *RevokeTokensRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeTokensRequest.ProtoReflect.Descriptor instead.
 func (*RevokeTokensRequest) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{64}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *RevokeTokensRequest) GetToken() string {
@@ -3524,7 +3487,7 @@ type RevokeTokensResponse struct {
 
 func (x *RevokeTokensResponse) Reset() {
 	*x = RevokeTokensResponse{}
-	mi := &file_ark_v1_admin_proto_msgTypes[65]
+	mi := &file_ark_v1_admin_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3536,7 +3499,7 @@ func (x *RevokeTokensResponse) String() string {
 func (*RevokeTokensResponse) ProtoMessage() {}
 
 func (x *RevokeTokensResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ark_v1_admin_proto_msgTypes[65]
+	mi := &file_ark_v1_admin_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3549,7 +3512,7 @@ func (x *RevokeTokensResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeTokensResponse.ProtoReflect.Descriptor instead.
 func (*RevokeTokensResponse) Descriptor() ([]byte, []int) {
-	return file_ark_v1_admin_proto_rawDescGZIP(), []int{65}
+	return file_ark_v1_admin_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *RevokeTokensResponse) GetRevokedCount() int32 {
@@ -3728,36 +3691,63 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x10commitment_txids\x18\x02 \x03(\tR\x0fcommitmentTxids\"5\n" +
 	"\rSweepResponse\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x10\n" +
-	"\x03hex\x18\x02 \x01(\tR\x03hex\"\xc0\x06\n" +
-	"\bSettings\x12#\n" +
-	"\rban_threshold\x18\x01 \x01(\x03R\fbanThreshold\x12!\n" +
-	"\fban_duration\x18\x02 \x01(\x03R\vbanDuration\x122\n" +
-	"\x15unilateral_exit_delay\x18\x03 \x01(\x03R\x13unilateralExitDelay\x12?\n" +
-	"\x1cpublic_unilateral_exit_delay\x18\x04 \x01(\x03R\x19publicUnilateralExitDelay\x122\n" +
-	"\x15checkpoint_exit_delay\x18\x05 \x01(\x03R\x13checkpointExitDelay\x12.\n" +
-	"\x13boarding_exit_delay\x18\x06 \x01(\x03R\x11boardingExitDelay\x12(\n" +
-	"\x10vtxo_tree_expiry\x18\a \x01(\x03R\x0evtxoTreeExpiry\x12?\n" +
-	"\x1cround_min_participants_count\x18\b \x01(\x03R\x19roundMinParticipantsCount\x12?\n" +
-	"\x1cround_max_participants_count\x18\t \x01(\x03R\x19roundMaxParticipantsCount\x12&\n" +
-	"\x0fvtxo_min_amount\x18\n" +
-	" \x01(\x03R\rvtxoMinAmount\x12&\n" +
-	"\x0fvtxo_max_amount\x18\v \x01(\x03R\rvtxoMaxAmount\x12&\n" +
-	"\x0futxo_min_amount\x18\f \x01(\x03R\rutxoMinAmount\x12&\n" +
-	"\x0futxo_max_amount\x18\r \x01(\x03R\rutxoMaxAmount\x129\n" +
-	"\x19settlement_min_expiry_gap\x18\x0e \x01(\x03R\x16settlementMinExpiryGap\x12I\n" +
-	"\"vtxo_no_csv_validation_cutoff_date\x18\x0f \x01(\x03R\x1dvtxoNoCsvValidationCutoffDate\x12\"\n" +
-	"\rmax_tx_weight\x18\x10 \x01(\x03R\vmaxTxWeight\x12\x1d\n" +
+	"\x03hex\x18\x02 \x01(\tR\x03hex\"\xd6\r\n" +
+	"\bSettings\x12.\n" +
+	"\x10session_duration\x18\x01 \x01(\x03H\x00R\x0fsessionDuration\x88\x01\x01\x12I\n" +
+	"\x1funrolled_vtxo_min_expiry_margin\x18\x02 \x01(\x03H\x01R\x1bunrolledVtxoMinExpiryMargin\x88\x01\x01\x12(\n" +
+	"\rban_threshold\x18\x03 \x01(\x03H\x02R\fbanThreshold\x88\x01\x01\x12&\n" +
+	"\fban_duration\x18\x04 \x01(\x03H\x03R\vbanDuration\x88\x01\x01\x127\n" +
+	"\x15unilateral_exit_delay\x18\x05 \x01(\x03H\x04R\x13unilateralExitDelay\x88\x01\x01\x12D\n" +
+	"\x1cpublic_unilateral_exit_delay\x18\x06 \x01(\x03H\x05R\x19publicUnilateralExitDelay\x88\x01\x01\x127\n" +
+	"\x15checkpoint_exit_delay\x18\a \x01(\x03H\x06R\x13checkpointExitDelay\x88\x01\x01\x123\n" +
+	"\x13boarding_exit_delay\x18\b \x01(\x03H\aR\x11boardingExitDelay\x88\x01\x01\x12-\n" +
+	"\x10vtxo_tree_expiry\x18\t \x01(\x03H\bR\x0evtxoTreeExpiry\x88\x01\x01\x12D\n" +
+	"\x1cround_min_participants_count\x18\n" +
+	" \x01(\x03H\tR\x19roundMinParticipantsCount\x88\x01\x01\x12D\n" +
+	"\x1cround_max_participants_count\x18\v \x01(\x03H\n" +
+	"R\x19roundMaxParticipantsCount\x88\x01\x01\x12+\n" +
+	"\x0fvtxo_min_amount\x18\f \x01(\x03H\vR\rvtxoMinAmount\x88\x01\x01\x12+\n" +
+	"\x0fvtxo_max_amount\x18\r \x01(\x03H\fR\rvtxoMaxAmount\x88\x01\x01\x12+\n" +
+	"\x0futxo_min_amount\x18\x0e \x01(\x03H\rR\rutxoMinAmount\x88\x01\x01\x12+\n" +
+	"\x0futxo_max_amount\x18\x0f \x01(\x03H\x0eR\rutxoMaxAmount\x88\x01\x01\x12>\n" +
+	"\x19settlement_min_expiry_gap\x18\x10 \x01(\x03H\x0fR\x16settlementMinExpiryGap\x88\x01\x01\x12N\n" +
+	"\"vtxo_no_csv_validation_cutoff_date\x18\x11 \x01(\x03H\x10R\x1dvtxoNoCsvValidationCutoffDate\x88\x01\x01\x12'\n" +
+	"\rmax_tx_weight\x18\x12 \x01(\x03H\x11R\vmaxTxWeight\x88\x01\x01\x126\n" +
+	"\x15max_op_return_outputs\x18\x13 \x01(\x03H\x12R\x12maxOpReturnOutputs\x88\x01\x01\x12=\n" +
+	"\x19asset_tx_max_weight_ratio\x18\x14 \x01(\x02H\x13R\x15assetTxMaxWeightRatio\x88\x01\x01\x12+\n" +
+	"\x0fnote_uri_prefix\x18\x15 \x01(\tH\x14R\rnoteUriPrefix\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"updated_at\x18\x11 \x01(\x03R\tupdatedAt\"\x14\n" +
+	"updated_at\x18\x16 \x01(\x03H\x15R\tupdatedAt\x88\x01\x01B\x13\n" +
+	"\x11_session_durationB\"\n" +
+	" _unrolled_vtxo_min_expiry_marginB\x10\n" +
+	"\x0e_ban_thresholdB\x0f\n" +
+	"\r_ban_durationB\x18\n" +
+	"\x16_unilateral_exit_delayB\x1f\n" +
+	"\x1d_public_unilateral_exit_delayB\x18\n" +
+	"\x16_checkpoint_exit_delayB\x16\n" +
+	"\x14_boarding_exit_delayB\x13\n" +
+	"\x11_vtxo_tree_expiryB\x1f\n" +
+	"\x1d_round_min_participants_countB\x1f\n" +
+	"\x1d_round_max_participants_countB\x12\n" +
+	"\x10_vtxo_min_amountB\x12\n" +
+	"\x10_vtxo_max_amountB\x12\n" +
+	"\x10_utxo_min_amountB\x12\n" +
+	"\x10_utxo_max_amountB\x1c\n" +
+	"\x1a_settlement_min_expiry_gapB%\n" +
+	"#_vtxo_no_csv_validation_cutoff_dateB\x10\n" +
+	"\x0e_max_tx_weightB\x18\n" +
+	"\x16_max_op_return_outputsB\x1c\n" +
+	"\x1a_asset_tx_max_weight_ratioB\x12\n" +
+	"\x10_note_uri_prefixB\r\n" +
+	"\v_updated_at\"\x14\n" +
 	"\x12GetSettingsRequest\"C\n" +
 	"\x13GetSettingsResponse\x12,\n" +
-	"\bsettings\x18\x01 \x01(\v2\x10.ark.v1.SettingsR\bsettings\"j\n" +
+	"\bsettings\x18\x01 \x01(\v2\x10.ark.v1.SettingsR\bsettings\"E\n" +
 	"\x15UpdateSettingsRequest\x12,\n" +
-	"\bsettings\x18\x01 \x01(\v2\x10.ark.v1.SettingsR\bsettings\x12#\n" +
-	"\rupdate_fields\x18\x02 \x03(\tR\fupdateFields\"\x18\n" +
-	"\x16UpdateSettingsResponse\"\x16\n" +
-	"\x14ClearSettingsRequest\"\x17\n" +
-	"\x15ClearSettingsResponse\"m\n" +
+	"\bsettings\x18\x01 \x01(\v2\x10.ark.v1.SettingsR\bsettings\"7\n" +
+	"\x16UpdateSettingsResponse\x12\x1d\n" +
+	"\n" +
+	"change_log\x18\x01 \x03(\tR\tchangeLog\"m\n" +
 	"\x11ListTokensRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x12\n" +
 	"\x04hash\x18\x02 \x01(\tR\x04hash\x12\x1a\n" +
@@ -3788,7 +3778,7 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x15CRIME_TYPE_MANUAL_BAN\x10\a*M\n" +
 	"\x0eConvictionType\x12\x1f\n" +
 	"\x1bCONVICTION_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n" +
-	"\x16CONVICTION_TYPE_SCRIPT\x10\x012\x8f\x1a\n" +
+	"\x16CONVICTION_TYPE_SCRIPT\x10\x012\x9f\x19\n" +
 	"\fAdminService\x12o\n" +
 	"\x11GetScheduledSweep\x12 .ark.v1.GetScheduledSweepRequest\x1a!.ark.v1.GetScheduledSweepResponse\"\x15\xb2J\x12\x12\x10/v1/admin/sweeps\x12s\n" +
 	"\x0fGetRoundDetails\x12\x1e.ark.v1.GetRoundDetailsRequest\x1a\x1f.ark.v1.GetRoundDetailsResponse\"\x1f\xb2J\x1c\x12\x1a/v1/admin/round/{round_id}\x12W\n" +
@@ -3819,8 +3809,7 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x10GetCollectedFees\x12\x1f.ark.v1.GetCollectedFeesRequest\x1a .ark.v1.GetCollectedFeesResponse\"\x1d\xb2J\x1a\x12\x18/v1/admin/fees/collected\x12M\n" +
 	"\x05Sweep\x12\x14.ark.v1.SweepRequest\x1a\x15.ark.v1.SweepResponse\"\x17\xb2J\x14B\x01*\"\x0f/v1/admin/sweep\x12_\n" +
 	"\vGetSettings\x12\x1a.ark.v1.GetSettingsRequest\x1a\x1b.ark.v1.GetSettingsResponse\"\x17\xb2J\x14\x12\x12/v1/admin/settings\x12k\n" +
-	"\x0eUpdateSettings\x12\x1d.ark.v1.UpdateSettingsRequest\x1a\x1e.ark.v1.UpdateSettingsResponse\"\x1a\xb2J\x17B\x01*\"\x12/v1/admin/settings\x12n\n" +
-	"\rClearSettings\x12\x1c.ark.v1.ClearSettingsRequest\x1a\x1d.ark.v1.ClearSettingsResponse\" \xb2J\x1dB\x01*\"\x18/v1/admin/settings/clearBy\n" +
+	"\x0eUpdateSettings\x12\x1d.ark.v1.UpdateSettingsRequest\x1a\x1e.ark.v1.UpdateSettingsResponse\"\x1a\xb2J\x17B\x01*\"\x12/v1/admin/settingsBy\n" +
 	"\n" +
 	"com.ark.v1B\n" +
 	"AdminProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"
@@ -3838,7 +3827,7 @@ func file_ark_v1_admin_proto_rawDescGZIP() []byte {
 }
 
 var file_ark_v1_admin_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_ark_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 66)
+var file_ark_v1_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 64)
 var file_ark_v1_admin_proto_goTypes = []any{
 	(CrimeType)(0),                               // 0: ark.v1.CrimeType
 	(ConvictionType)(0),                          // 1: ark.v1.ConvictionType
@@ -3901,15 +3890,13 @@ var file_ark_v1_admin_proto_goTypes = []any{
 	(*GetSettingsResponse)(nil),                  // 58: ark.v1.GetSettingsResponse
 	(*UpdateSettingsRequest)(nil),                // 59: ark.v1.UpdateSettingsRequest
 	(*UpdateSettingsResponse)(nil),               // 60: ark.v1.UpdateSettingsResponse
-	(*ClearSettingsRequest)(nil),                 // 61: ark.v1.ClearSettingsRequest
-	(*ClearSettingsResponse)(nil),                // 62: ark.v1.ClearSettingsResponse
-	(*ListTokensRequest)(nil),                    // 63: ark.v1.ListTokensRequest
-	(*ListTokensResponse)(nil),                   // 64: ark.v1.ListTokensResponse
-	(*TokenInfo)(nil),                            // 65: ark.v1.TokenInfo
-	(*RevokeTokensRequest)(nil),                  // 66: ark.v1.RevokeTokensRequest
-	(*RevokeTokensResponse)(nil),                 // 67: ark.v1.RevokeTokensResponse
-	(*FeeInfo)(nil),                              // 68: ark.v1.FeeInfo
-	(*Intent)(nil),                               // 69: ark.v1.Intent
+	(*ListTokensRequest)(nil),                    // 61: ark.v1.ListTokensRequest
+	(*ListTokensResponse)(nil),                   // 62: ark.v1.ListTokensResponse
+	(*TokenInfo)(nil),                            // 63: ark.v1.TokenInfo
+	(*RevokeTokensRequest)(nil),                  // 64: ark.v1.RevokeTokensRequest
+	(*RevokeTokensResponse)(nil),                 // 65: ark.v1.RevokeTokensResponse
+	(*FeeInfo)(nil),                              // 66: ark.v1.FeeInfo
+	(*Intent)(nil),                               // 67: ark.v1.Intent
 }
 var file_ark_v1_admin_proto_depIdxs = []int32{
 	41, // 0: ark.v1.GetScheduledSweepResponse.sweeps:type_name -> ark.v1.ScheduledSweep
@@ -3923,16 +3910,16 @@ var file_ark_v1_admin_proto_depIdxs = []int32{
 	47, // 8: ark.v1.GetConvictionsByRoundResponse.convictions:type_name -> ark.v1.Conviction
 	47, // 9: ark.v1.GetActiveScriptConvictionsResponse.convictions:type_name -> ark.v1.Conviction
 	40, // 10: ark.v1.ScheduledSweep.outputs:type_name -> ark.v1.SweepableOutput
-	68, // 11: ark.v1.ScheduledSessionConfig.fees:type_name -> ark.v1.FeeInfo
+	66, // 11: ark.v1.ScheduledSessionConfig.fees:type_name -> ark.v1.FeeInfo
 	46, // 12: ark.v1.IntentInfo.receivers:type_name -> ark.v1.Output
 	43, // 13: ark.v1.IntentInfo.inputs:type_name -> ark.v1.IntentInput
 	43, // 14: ark.v1.IntentInfo.boarding_inputs:type_name -> ark.v1.IntentInput
-	69, // 15: ark.v1.IntentInfo.intent:type_name -> ark.v1.Intent
+	67, // 15: ark.v1.IntentInfo.intent:type_name -> ark.v1.Intent
 	1,  // 16: ark.v1.Conviction.type:type_name -> ark.v1.ConvictionType
 	0,  // 17: ark.v1.Conviction.crime_type:type_name -> ark.v1.CrimeType
 	56, // 18: ark.v1.GetSettingsResponse.settings:type_name -> ark.v1.Settings
 	56, // 19: ark.v1.UpdateSettingsRequest.settings:type_name -> ark.v1.Settings
-	65, // 20: ark.v1.ListTokensResponse.tokens:type_name -> ark.v1.TokenInfo
+	63, // 20: ark.v1.ListTokensResponse.tokens:type_name -> ark.v1.TokenInfo
 	2,  // 21: ark.v1.AdminService.GetScheduledSweep:input_type -> ark.v1.GetScheduledSweepRequest
 	4,  // 22: ark.v1.AdminService.GetRoundDetails:input_type -> ark.v1.GetRoundDetailsRequest
 	6,  // 23: ark.v1.AdminService.GetRounds:input_type -> ark.v1.GetRoundsRequest
@@ -3952,45 +3939,43 @@ var file_ark_v1_admin_proto_depIdxs = []int32{
 	34, // 37: ark.v1.AdminService.PardonConviction:input_type -> ark.v1.PardonConvictionRequest
 	36, // 38: ark.v1.AdminService.BanScript:input_type -> ark.v1.BanScriptRequest
 	38, // 39: ark.v1.AdminService.RevokeAuth:input_type -> ark.v1.RevokeAuthRequest
-	63, // 40: ark.v1.AdminService.ListTokens:input_type -> ark.v1.ListTokensRequest
-	66, // 41: ark.v1.AdminService.RevokeTokens:input_type -> ark.v1.RevokeTokensRequest
+	61, // 40: ark.v1.AdminService.ListTokens:input_type -> ark.v1.ListTokensRequest
+	64, // 41: ark.v1.AdminService.RevokeTokens:input_type -> ark.v1.RevokeTokensRequest
 	48, // 42: ark.v1.AdminService.GetExpiringLiquidity:input_type -> ark.v1.GetExpiringLiquidityRequest
 	50, // 43: ark.v1.AdminService.GetRecoverableLiquidity:input_type -> ark.v1.GetRecoverableLiquidityRequest
 	52, // 44: ark.v1.AdminService.GetCollectedFees:input_type -> ark.v1.GetCollectedFeesRequest
 	54, // 45: ark.v1.AdminService.Sweep:input_type -> ark.v1.SweepRequest
 	57, // 46: ark.v1.AdminService.GetSettings:input_type -> ark.v1.GetSettingsRequest
 	59, // 47: ark.v1.AdminService.UpdateSettings:input_type -> ark.v1.UpdateSettingsRequest
-	61, // 48: ark.v1.AdminService.ClearSettings:input_type -> ark.v1.ClearSettingsRequest
-	3,  // 49: ark.v1.AdminService.GetScheduledSweep:output_type -> ark.v1.GetScheduledSweepResponse
-	5,  // 50: ark.v1.AdminService.GetRoundDetails:output_type -> ark.v1.GetRoundDetailsResponse
-	7,  // 51: ark.v1.AdminService.GetRounds:output_type -> ark.v1.GetRoundsResponse
-	9,  // 52: ark.v1.AdminService.CreateNote:output_type -> ark.v1.CreateNoteResponse
-	11, // 53: ark.v1.AdminService.GetScheduledSessionConfig:output_type -> ark.v1.GetScheduledSessionConfigResponse
-	13, // 54: ark.v1.AdminService.UpdateScheduledSessionConfig:output_type -> ark.v1.UpdateScheduledSessionConfigResponse
-	15, // 55: ark.v1.AdminService.ClearScheduledSessionConfig:output_type -> ark.v1.ClearScheduledSessionConfigResponse
-	17, // 56: ark.v1.AdminService.ListIntents:output_type -> ark.v1.ListIntentsResponse
-	19, // 57: ark.v1.AdminService.DeleteIntents:output_type -> ark.v1.DeleteIntentsResponse
-	21, // 58: ark.v1.AdminService.GetIntentFees:output_type -> ark.v1.GetIntentFeesResponse
-	23, // 59: ark.v1.AdminService.UpdateIntentFees:output_type -> ark.v1.UpdateIntentFeesResponse
-	25, // 60: ark.v1.AdminService.ClearIntentFees:output_type -> ark.v1.ClearIntentFeesResponse
-	27, // 61: ark.v1.AdminService.GetConvictions:output_type -> ark.v1.GetConvictionsResponse
-	29, // 62: ark.v1.AdminService.GetConvictionsInRange:output_type -> ark.v1.GetConvictionsInRangeResponse
-	31, // 63: ark.v1.AdminService.GetConvictionsByRound:output_type -> ark.v1.GetConvictionsByRoundResponse
-	33, // 64: ark.v1.AdminService.GetActiveScriptConvictions:output_type -> ark.v1.GetActiveScriptConvictionsResponse
-	35, // 65: ark.v1.AdminService.PardonConviction:output_type -> ark.v1.PardonConvictionResponse
-	37, // 66: ark.v1.AdminService.BanScript:output_type -> ark.v1.BanScriptResponse
-	39, // 67: ark.v1.AdminService.RevokeAuth:output_type -> ark.v1.RevokeAuthResponse
-	64, // 68: ark.v1.AdminService.ListTokens:output_type -> ark.v1.ListTokensResponse
-	67, // 69: ark.v1.AdminService.RevokeTokens:output_type -> ark.v1.RevokeTokensResponse
-	49, // 70: ark.v1.AdminService.GetExpiringLiquidity:output_type -> ark.v1.GetExpiringLiquidityResponse
-	51, // 71: ark.v1.AdminService.GetRecoverableLiquidity:output_type -> ark.v1.GetRecoverableLiquidityResponse
-	53, // 72: ark.v1.AdminService.GetCollectedFees:output_type -> ark.v1.GetCollectedFeesResponse
-	55, // 73: ark.v1.AdminService.Sweep:output_type -> ark.v1.SweepResponse
-	58, // 74: ark.v1.AdminService.GetSettings:output_type -> ark.v1.GetSettingsResponse
-	60, // 75: ark.v1.AdminService.UpdateSettings:output_type -> ark.v1.UpdateSettingsResponse
-	62, // 76: ark.v1.AdminService.ClearSettings:output_type -> ark.v1.ClearSettingsResponse
-	49, // [49:77] is the sub-list for method output_type
-	21, // [21:49] is the sub-list for method input_type
+	3,  // 48: ark.v1.AdminService.GetScheduledSweep:output_type -> ark.v1.GetScheduledSweepResponse
+	5,  // 49: ark.v1.AdminService.GetRoundDetails:output_type -> ark.v1.GetRoundDetailsResponse
+	7,  // 50: ark.v1.AdminService.GetRounds:output_type -> ark.v1.GetRoundsResponse
+	9,  // 51: ark.v1.AdminService.CreateNote:output_type -> ark.v1.CreateNoteResponse
+	11, // 52: ark.v1.AdminService.GetScheduledSessionConfig:output_type -> ark.v1.GetScheduledSessionConfigResponse
+	13, // 53: ark.v1.AdminService.UpdateScheduledSessionConfig:output_type -> ark.v1.UpdateScheduledSessionConfigResponse
+	15, // 54: ark.v1.AdminService.ClearScheduledSessionConfig:output_type -> ark.v1.ClearScheduledSessionConfigResponse
+	17, // 55: ark.v1.AdminService.ListIntents:output_type -> ark.v1.ListIntentsResponse
+	19, // 56: ark.v1.AdminService.DeleteIntents:output_type -> ark.v1.DeleteIntentsResponse
+	21, // 57: ark.v1.AdminService.GetIntentFees:output_type -> ark.v1.GetIntentFeesResponse
+	23, // 58: ark.v1.AdminService.UpdateIntentFees:output_type -> ark.v1.UpdateIntentFeesResponse
+	25, // 59: ark.v1.AdminService.ClearIntentFees:output_type -> ark.v1.ClearIntentFeesResponse
+	27, // 60: ark.v1.AdminService.GetConvictions:output_type -> ark.v1.GetConvictionsResponse
+	29, // 61: ark.v1.AdminService.GetConvictionsInRange:output_type -> ark.v1.GetConvictionsInRangeResponse
+	31, // 62: ark.v1.AdminService.GetConvictionsByRound:output_type -> ark.v1.GetConvictionsByRoundResponse
+	33, // 63: ark.v1.AdminService.GetActiveScriptConvictions:output_type -> ark.v1.GetActiveScriptConvictionsResponse
+	35, // 64: ark.v1.AdminService.PardonConviction:output_type -> ark.v1.PardonConvictionResponse
+	37, // 65: ark.v1.AdminService.BanScript:output_type -> ark.v1.BanScriptResponse
+	39, // 66: ark.v1.AdminService.RevokeAuth:output_type -> ark.v1.RevokeAuthResponse
+	62, // 67: ark.v1.AdminService.ListTokens:output_type -> ark.v1.ListTokensResponse
+	65, // 68: ark.v1.AdminService.RevokeTokens:output_type -> ark.v1.RevokeTokensResponse
+	49, // 69: ark.v1.AdminService.GetExpiringLiquidity:output_type -> ark.v1.GetExpiringLiquidityResponse
+	51, // 70: ark.v1.AdminService.GetRecoverableLiquidity:output_type -> ark.v1.GetRecoverableLiquidityResponse
+	53, // 71: ark.v1.AdminService.GetCollectedFees:output_type -> ark.v1.GetCollectedFeesResponse
+	55, // 72: ark.v1.AdminService.Sweep:output_type -> ark.v1.SweepResponse
+	58, // 73: ark.v1.AdminService.GetSettings:output_type -> ark.v1.GetSettingsResponse
+	60, // 74: ark.v1.AdminService.UpdateSettings:output_type -> ark.v1.UpdateSettingsResponse
+	48, // [48:75] is the sub-list for method output_type
+	21, // [21:48] is the sub-list for method input_type
 	21, // [21:21] is the sub-list for extension type_name
 	21, // [21:21] is the sub-list for extension extendee
 	0,  // [0:21] is the sub-list for field type_name
@@ -4006,13 +3991,14 @@ func file_ark_v1_admin_proto_init() {
 		(*Output_VtxoScript)(nil),
 		(*Output_OnchainAddress)(nil),
 	}
+	file_ark_v1_admin_proto_msgTypes[54].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ark_v1_admin_proto_rawDesc), len(file_ark_v1_admin_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   66,
+			NumMessages:   64,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

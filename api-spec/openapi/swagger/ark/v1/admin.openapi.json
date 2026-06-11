@@ -951,46 +951,6 @@
         }
       }
     },
-    "/v1/admin/settings/clear": {
-      "post": {
-        "tags": [
-          "AdminService"
-        ],
-        "operationId": "AdminService_ClearSettings",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ClearSettingsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "a successful response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ClearSettingsResponse"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Status"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/admin/sweep": {
       "post": {
         "tags": [
@@ -1189,14 +1149,6 @@
       },
       "ClearScheduledSessionConfigResponse": {
         "title": "ClearScheduledSessionConfigResponse",
-        "type": "object"
-      },
-      "ClearSettingsRequest": {
-        "title": "ClearSettingsRequest",
-        "type": "object"
-      },
-      "ClearSettingsResponse": {
-        "title": "ClearSettingsResponse",
         "type": "object"
       },
       "Conviction": {
@@ -1917,72 +1869,157 @@
         "title": "Settings",
         "type": "object",
         "properties": {
+          "assetTxMaxWeightRatio": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
           "banDuration": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "banThreshold": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "boardingExitDelay": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "checkpointExitDelay": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "maxOpReturnOutputs": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "maxTxWeight": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
+          "noteUriPrefix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "publicUnilateralExitDelay": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "roundMaxParticipantsCount": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "roundMinParticipantsCount": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "sessionDuration": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "settlementMinExpiryGap": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "unilateralExitDelay": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "unrolledVtxoMinExpiryMargin": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "updatedAt": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "utxoMaxAmount": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "utxoMinAmount": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "vtxoMaxAmount": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "vtxoMinAmount": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "vtxoNoCsvValidationCutoffDate": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "vtxoTreeExpiry": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           }
         }
@@ -2106,19 +2143,20 @@
         "properties": {
           "settings": {
             "$ref": "#/components/schemas/Settings"
-          },
-          "updateFields": {
-            "type": "array",
-            "description": "Specifies which settings fields to update. If non-empty, only the\nlisted fields are written from the request; all other fields remain\nunchanged. If empty, every field in the settings message is written\nas-is. Fields not set in the request default to 0, so callers must\npopulate all fields. Use snake_case field names (e.g. \"ban_threshold\").",
-            "items": {
-              "type": "string"
-            }
           }
         }
       },
       "UpdateSettingsResponse": {
         "title": "UpdateSettingsResponse",
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "changeLog": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       }
     }
   },
