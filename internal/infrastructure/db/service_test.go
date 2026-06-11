@@ -18,6 +18,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -159,6 +160,7 @@ func TestService(t *testing.T) {
 				DataStoreType:    "sqlite",
 				EventStoreConfig: []interface{}{"", nil},
 				DataStoreConfig:  []interface{}{dbDir},
+				Settings:         validSettings(),
 			},
 		},
 		{
@@ -168,6 +170,7 @@ func TestService(t *testing.T) {
 				DataStoreType:    "postgres",
 				EventStoreConfig: []interface{}{pgEventDns, false, pgdb.ConnectionConfig{}},
 				DataStoreConfig:  []interface{}{pgDns, false, pgdb.ConnectionConfig{}},
+				Settings:         validSettings(),
 			},
 		},
 	}
@@ -186,9 +189,7 @@ func TestService(t *testing.T) {
 			testOffchainTxRepository(t, svc)
 			testAssetRepository(t, svc)
 			testVtxoRepository(t, svc)
-			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
-			testFeeRepository(t, svc)
 			testSettingsRepository(t, svc)
 
 			svc.Close()
@@ -1484,56 +1485,6 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
-func testScheduledSessionRepository(t *testing.T, svc ports.RepoManager) {
-	t.Run("test_scheduled_session_repository", func(t *testing.T) {
-		ctx := context.Background()
-		repo := svc.ScheduledSession()
-
-		scheduledSession, err := repo.Get(ctx)
-		require.NoError(t, err)
-		require.Nil(t, scheduledSession)
-
-		now := time.Now().Truncate(time.Second)
-		expected := domain.ScheduledSession{
-			StartTime: now,
-			Period:    time.Duration(3) * time.Hour,
-			Duration:  time.Duration(20) * time.Second,
-			UpdatedAt: now,
-		}
-
-		err = repo.Upsert(ctx, expected)
-		require.NoError(t, err)
-
-		got, err := repo.Get(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, got)
-		assertScheduledSessionEqual(t, expected, *got)
-
-		expected.Period = time.Duration(4) * time.Hour
-		expected.Duration = time.Duration(40) * time.Second
-		expected.UpdatedAt = now.Add(100 * time.Second)
-
-		err = repo.Upsert(ctx, expected)
-		require.NoError(t, err)
-
-		got, err = repo.Get(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, got)
-		assertScheduledSessionEqual(t, expected, *got)
-
-		err = repo.Clear(ctx)
-		require.NoError(t, err)
-
-		scheduledSession, err = repo.Get(ctx)
-		require.NoError(t, err)
-		require.Nil(t, scheduledSession)
-
-		// No error if trying to clear already cleared scheduled session
-		err = repo.Clear(ctx)
-		require.NoError(t, err)
-	})
-}
-
 func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_offchain_tx_repository", func(t *testing.T) {
 		ctx := context.Background()
@@ -1870,119 +1821,38 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
-func testFeeRepository(t *testing.T, svc ports.RepoManager) {
-	t.Run("test_fee_repository", func(t *testing.T) {
-		ctx := context.Background()
-		repo := svc.Fees()
-
-		// fees should be initialized to empty strings
-		currentFees, err := repo.GetIntentFees(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, currentFees)
-		require.Equal(t, "", currentFees.OnchainInputFee)
-		require.Equal(t, "", currentFees.OffchainInputFee)
-		require.Equal(t, "", currentFees.OnchainOutputFee)
-		require.Equal(t, "", currentFees.OffchainOutputFee)
-
-		newFees := domain.IntentFees{
-			OnchainInputFee:   "0.25",
-			OffchainInputFee:  "0.30",
-			OnchainOutputFee:  "0.35",
-			OffchainOutputFee: "0.40",
-		}
-
-		// sqlite and postgres use millisecond precision for created_at so we need to
-		// wait to ensure the updated_at is different.
-		// set the new fees
-		time.Sleep(10 * time.Millisecond)
-		err = repo.UpdateIntentFees(ctx, newFees)
-		require.NoError(t, err)
-
-		updatedFees, err := repo.GetIntentFees(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, updatedFees)
-		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
-		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
-		require.Equal(t, newFees.OnchainOutputFee, updatedFees.OnchainOutputFee)
-		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
-		time.Sleep(10 * time.Millisecond)
-		// zero out the fees
-		err = repo.ClearIntentFees(ctx)
-		require.NoError(t, err)
-
-		clearedFees, err := repo.GetIntentFees(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, clearedFees)
-		require.Equal(t, "", clearedFees.OnchainInputFee)
-		require.Equal(t, "", clearedFees.OffchainInputFee)
-		require.Equal(t, "", clearedFees.OnchainOutputFee)
-		require.Equal(t, "", clearedFees.OffchainOutputFee)
-
-		// set the fees back to newFees
-		time.Sleep(10 * time.Millisecond)
-		err = repo.UpdateIntentFees(ctx, newFees)
-		require.NoError(t, err)
-
-		updatedFees, err = repo.GetIntentFees(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, updatedFees)
-		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
-		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
-		require.Equal(t, newFees.OnchainOutputFee, updatedFees.OnchainOutputFee)
-		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
-
-		// only change 2 of the fees, the others should remain the same (testing partial updates)
-		newFees = domain.IntentFees{
-			OnchainInputFee:   "0.25",
-			OffchainOutputFee: "0.40",
-		}
-		time.Sleep(10 * time.Millisecond)
-		err = repo.UpdateIntentFees(ctx, newFees)
-		require.NoError(t, err)
-
-		updatedFees, err = repo.GetIntentFees(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, updatedFees)
-		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
-		require.Equal(t, "0.30", updatedFees.OffchainInputFee)
-		require.Equal(t, "0.35", updatedFees.OnchainOutputFee)
-		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
-
-		// test that updating with no fees yields an error and does not change existing fees
-		newFees = domain.IntentFees{}
-		time.Sleep(10 * time.Millisecond)
-		err = repo.UpdateIntentFees(ctx, newFees)
-		require.Error(t, err)
-
-		updatedFees, err = repo.GetIntentFees(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, updatedFees)
-		require.Equal(t, "0.25", updatedFees.OnchainInputFee)
-		require.Equal(t, "0.30", updatedFees.OffchainInputFee)
-		require.Equal(t, "0.35", updatedFees.OnchainOutputFee)
-		require.Equal(t, "0.40", updatedFees.OffchainOutputFee)
-
-		// zero out the fees
-		err = repo.ClearIntentFees(ctx)
-		require.NoError(t, err)
-
-		// do partial update after clearing to ensure fees are set correctly from zero state
-		newFees = domain.IntentFees{
-			OnchainInputFee:  "0.15",
-			OffchainInputFee: "0.20",
-		}
-		time.Sleep(10 * time.Millisecond)
-		err = repo.UpdateIntentFees(ctx, newFees)
-		require.NoError(t, err)
-
-		updatedFees, err = repo.GetIntentFees(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, updatedFees)
-		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
-		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
-		require.Equal(t, "", updatedFees.OnchainOutputFee)
-		require.Equal(t, "", updatedFees.OffchainOutputFee)
-	})
+// validSettings returns a fully-valid settings value, used both to seed the
+// service config and as the baseline for settings repo round-trips. The exit
+// delays are all seconds-type multiples of MinAllowedSequence so they survive
+// the repo's store/reload (the repo persists the raw value and reconstructs the
+// type via ParseRelativeLocktime).
+func validSettings() domain.Settings {
+	delay := func(v uint32) arklib.RelativeLocktime {
+		lt, _ := arklib.ParseRelativeLocktime(v)
+		return lt
+	}
+	return domain.Settings{
+		SessionDuration:               30 * time.Second,
+		UnrolledVtxoMinExpiryMargin:   30 * time.Second,
+		BanThreshold:                  3,
+		BanDuration:                   3600 * time.Second,
+		UnilateralExitDelay:           delay(512),
+		PublicUnilateralExitDelay:     delay(512),
+		CheckpointExitDelay:           delay(1024),
+		BoardingExitDelay:             delay(1536),
+		VtxoTreeExpiry:                delay(1024),
+		RoundMinParticipantsCount:     2,
+		RoundMaxParticipantsCount:     128,
+		VtxoMinAmount:                 1000,
+		VtxoMaxAmount:                 100000000,
+		UtxoMinAmount:                 5000,
+		UtxoMaxAmount:                 500000000,
+		SettlementMinExpiryGap:        7200 * time.Second,
+		VtxoNoCsvValidationCutoffDate: time.Unix(1700000000, 0),
+		MaxTxWeight:                   400000,
+		AssetTxMaxWeightRatio:         0.5,
+		UpdatedAt:                     time.Unix(1700000000, 0),
+	}
 }
 
 func testSettingsRepository(t *testing.T, svc ports.RepoManager) {
@@ -1990,68 +1860,70 @@ func testSettingsRepository(t *testing.T, svc ports.RepoManager) {
 		ctx := context.Background()
 		repo := svc.Settings()
 
-		// Get returns nil when no settings exist
-		settings, err := repo.Get(ctx)
+		// Settings are seeded from the service config when the service is built.
+		seeded, err := repo.Get(ctx)
 		require.NoError(t, err)
-		require.Nil(t, settings)
+		require.NotNil(t, seeded)
+		assertSettingsEqual(t, validSettings(), *seeded)
 
-		now := time.Now().Truncate(time.Second)
-		expected := domain.Settings{
-			BanThreshold:                  3,
-			BanDuration:                   3600,
-			UnilateralExitDelay:           512,
-			PublicUnilateralExitDelay:     256,
-			CheckpointExitDelay:           128,
-			BoardingExitDelay:             64,
-			VtxoTreeExpiry:                1024,
-			RoundMinParticipantsCount:     2,
-			RoundMaxParticipantsCount:     128,
-			VtxoMinAmount:                 1000,
-			VtxoMaxAmount:                 100000000,
-			UtxoMinAmount:                 5000,
-			UtxoMaxAmount:                 500000000,
-			SettlementMinExpiryGap:        7200,
-			VtxoNoCsvValidationCutoffDate: 1700000000,
-			MaxTxWeight:                   400000,
-			UpdatedAt:                     now,
+		// The repo notifies a registered handler (asynchronously) on every Upsert,
+		// forwarding the changelog it was given.
+		type handlerCall struct {
+			settings  domain.Settings
+			changelog []string
+		}
+		calls := make(chan handlerCall, 1)
+		repo.RegisterUpdatesHandler(func(s domain.Settings, changelog []string) {
+			calls <- handlerCall{settings: s, changelog: changelog}
+		})
+		waitForHandler := func() handlerCall {
+			t.Helper()
+			select {
+			case c := <-calls:
+				return c
+			case <-time.After(2 * time.Second):
+				t.Fatal("update handler was not triggered")
+				return handlerCall{}
+			}
 		}
 
-		// Upsert inserts new settings
-		err = repo.Upsert(ctx, expected)
+		// Upsert overwrites the seeded settings; the handler receives the exact
+		// changelog it was given.
+		expected := validSettings()
+		expected.BanThreshold = 5
+		expected.BanDuration = 7200 * time.Second
+		expected.RoundMaxParticipantsCount = 256
+		expected.VtxoMinAmount = 2000
+		expected.MaxTxWeight = 500000
+		changelog := []string{
+			"ban_threshold", "ban_duration", "round_max_participants_count",
+			"vtxo_min_amount", "max_tx_weight",
+		}
+		err = repo.Upsert(ctx, expected, changelog)
 		require.NoError(t, err)
+
+		call := waitForHandler()
+		require.Equal(t, changelog, call.changelog)
+		assertSettingsEqual(t, expected, call.settings)
 
 		got, err := repo.Get(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, got)
 		assertSettingsEqual(t, expected, *got)
 
-		// Upsert updates existing settings
-		expected.BanThreshold = 5
-		expected.BanDuration = 7200
-		expected.RoundMaxParticipantsCount = 256
-		expected.VtxoMinAmount = 2000
-		expected.MaxTxWeight = 500000
-		expected.UpdatedAt = now.Add(100 * time.Second)
-
-		err = repo.Upsert(ctx, expected)
+		// A further update notifies the handler again with its own changelog.
+		expected.BanThreshold = 9
+		nextChangelog := []string{"ban_threshold"}
+		err = repo.Upsert(ctx, expected, nextChangelog)
 		require.NoError(t, err)
+
+		call = waitForHandler()
+		require.Equal(t, nextChangelog, call.changelog)
 
 		got, err = repo.Get(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, got)
 		assertSettingsEqual(t, expected, *got)
-
-		// Clear removes all settings
-		err = repo.Clear(ctx)
-		require.NoError(t, err)
-
-		settings, err = repo.Get(ctx)
-		require.NoError(t, err)
-		require.Nil(t, settings)
-
-		// No error if trying to clear already cleared settings
-		err = repo.Clear(ctx)
-		require.NoError(t, err)
 	})
 }
 
@@ -2080,7 +1952,6 @@ func assertScheduledSessionEqual(t *testing.T, expected, actual domain.Scheduled
 	assert.True(t, expected.StartTime.Equal(actual.StartTime), "StartTime not equal")
 	assert.Equal(t, expected.Period, actual.Period, "Period not equal")
 	assert.Equal(t, expected.Duration, actual.Duration, "Duration not equal")
-	assert.True(t, expected.UpdatedAt.Equal(actual.UpdatedAt), "UpdatedAt not equal")
 	assert.True(t, expected.EndTime.Equal(actual.EndTime), "EndTime not equal")
 }
 

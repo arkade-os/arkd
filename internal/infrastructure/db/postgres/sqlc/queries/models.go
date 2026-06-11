@@ -6,6 +6,7 @@ package queries
 
 import (
 	"database/sql"
+	"encoding/json"
 
 	"github.com/sqlc-dev/pqtype"
 )
@@ -208,24 +209,46 @@ type ScheduledSession struct {
 }
 
 type Setting struct {
-	ID                            int64
-	BanThreshold                  int64
-	BanDuration                   int64
-	UnilateralExitDelay           int64
-	PublicUnilateralExitDelay     int64
-	CheckpointExitDelay           int64
-	BoardingExitDelay             int64
-	VtxoTreeExpiry                int64
-	RoundMinParticipantsCount     int64
-	RoundMaxParticipantsCount     int64
-	VtxoMinAmount                 int64
-	VtxoMaxAmount                 int64
-	UtxoMinAmount                 int64
-	UtxoMaxAmount                 int64
-	SettlementMinExpiryGap        int64
-	VtxoNoCsvValidationCutoffDate int64
-	MaxTxWeight                   int64
-	UpdatedAt                     int64
+	ID                                        int64
+	SessionDuration                           int64
+	UnrolledVtxoMinExpiryMargin               int64
+	BanThreshold                              int64
+	BanDuration                               int64
+	UnilateralExitDelay                       int64
+	PublicUnilateralExitDelay                 int64
+	CheckpointExitDelay                       int64
+	BoardingExitDelay                         int64
+	VtxoTreeExpiry                            int64
+	RoundMinParticipantsCount                 int64
+	RoundMaxParticipantsCount                 int64
+	VtxoMinAmount                             int64
+	VtxoMaxAmount                             int64
+	UtxoMinAmount                             int64
+	UtxoMaxAmount                             int64
+	SettlementMinExpiryGap                    int64
+	VtxoNoCsvValidationCutoffDate             int64
+	MaxTxWeight                               int64
+	MaxOpReturnOutputs                        int64
+	AssetTxMaxWeightRatio                     float32
+	NoteUriPrefix                             string
+	ScheduledSessionStartTime                 int64
+	ScheduledSessionEndTime                   int64
+	ScheduledSessionPeriod                    int64
+	ScheduledSessionDuration                  int64
+	ScheduledSessionRoundMinParticipantsCount int64
+	ScheduledSessionRoundMaxParticipantsCount int64
+	BatchOnchainInputFee                      string
+	BatchOffchainInputFee                     string
+	BatchOnchainOutputFee                     string
+	BatchOffchainOutputFee                    string
+	UpdatedAt                                 int64
+}
+
+type SettingsHistory struct {
+	ID            int64
+	ChangedAt     int64
+	ChangedFields []string
+	Settings      json.RawMessage
 }
 
 type Tx struct {

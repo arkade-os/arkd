@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -19,6 +20,9 @@ const (
 
 type settingsRepository struct {
 	store *badgerhold.Store
+
+	updateHandlerMu *sync.Mutex
+	updateHandler   func(domain.Settings, []string)
 }
 
 func NewSettingsRepository(config ...interface{}) (domain.SettingsRepository, error) {
@@ -46,7 +50,16 @@ func NewSettingsRepository(config ...interface{}) (domain.SettingsRepository, er
 		return nil, fmt.Errorf("failed to open settings store: %s", err)
 	}
 
-	return &settingsRepository{store}, nil
+	return &settingsRepository{
+		store:           store,
+		updateHandlerMu: &sync.Mutex{},
+	}, nil
+}
+
+func (r *settingsRepository) RegisterUpdatesHandler(handler func(domain.Settings, []string)) {
+	r.updateHandlerMu.Lock()
+	defer r.updateHandlerMu.Unlock()
+	r.updateHandler = handler
 }
 
 func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) {
@@ -62,7 +75,7 @@ func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) 
 }
 
 func (r *settingsRepository) Upsert(
-	ctx context.Context, settings domain.Settings,
+	ctx context.Context, settings domain.Settings, changelog []string,
 ) error {
 	if err := r.store.Upsert(settingsKey, &settings); err != nil {
 		if errors.Is(err, badger.ErrConflict) {
@@ -79,6 +92,9 @@ func (r *settingsRepository) Upsert(
 		}
 		return err
 	}
+
+	go r.dispatch(settings, changelog)
+
 	return nil
 }
 
@@ -96,4 +112,10 @@ func (r *settingsRepository) Clear(ctx context.Context) error {
 func (r *settingsRepository) Close() {
 	// nolint:all
 	r.store.Close()
+}
+
+func (r *settingsRepository) dispatch(settings domain.Settings, changelog []string) {
+	if r.updateHandler != nil {
+		r.updateHandler(settings, changelog)
+	}
 }

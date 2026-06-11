@@ -119,6 +119,18 @@ func (q *Queries) InsertAsset(ctx context.Context, arg InsertAssetParams) error 
 	return err
 }
 
+const insertSettingsHistory = `-- name: InsertSettingsHistory :exec
+INSERT INTO settings_history (changed_at, changed_fields, settings)
+SELECT s.updated_at, $1::text[], to_jsonb(s.*) - 'id'
+FROM settings s
+WHERE s.id = 0
+`
+
+func (q *Queries) InsertSettingsHistory(ctx context.Context, changedFields []string) error {
+	_, err := q.db.ExecContext(ctx, insertSettingsHistory, pq.Array(changedFields))
+	return err
+}
+
 const insertVtxoAssetProjection = `-- name: InsertVtxoAssetProjection :exec
 INSERT INTO asset_projection (asset_id, txid, vout, amount)
 VALUES ($1, $2, $3, $4)
@@ -539,7 +551,7 @@ func (q *Queries) SelectLatestScheduledSession(ctx context.Context) (ScheduledSe
 }
 
 const selectLatestSettings = `-- name: SelectLatestSettings :one
-SELECT id, ban_threshold, ban_duration, unilateral_exit_delay, public_unilateral_exit_delay, checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry, round_min_participants_count, round_max_participants_count, vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount, settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date, max_tx_weight, updated_at FROM settings ORDER BY updated_at DESC LIMIT 1
+SELECT id, session_duration, unrolled_vtxo_min_expiry_margin, ban_threshold, ban_duration, unilateral_exit_delay, public_unilateral_exit_delay, checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry, round_min_participants_count, round_max_participants_count, vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount, settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date, max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio, note_uri_prefix, scheduled_session_start_time, scheduled_session_end_time, scheduled_session_period, scheduled_session_duration, scheduled_session_round_min_participants_count, scheduled_session_round_max_participants_count, batch_onchain_input_fee, batch_offchain_input_fee, batch_onchain_output_fee, batch_offchain_output_fee, updated_at FROM settings ORDER BY updated_at DESC LIMIT 1
 `
 
 func (q *Queries) SelectLatestSettings(ctx context.Context) (Setting, error) {
@@ -547,6 +559,8 @@ func (q *Queries) SelectLatestSettings(ctx context.Context) (Setting, error) {
 	var i Setting
 	err := row.Scan(
 		&i.ID,
+		&i.SessionDuration,
+		&i.UnrolledVtxoMinExpiryMargin,
 		&i.BanThreshold,
 		&i.BanDuration,
 		&i.UnilateralExitDelay,
@@ -563,6 +577,19 @@ func (q *Queries) SelectLatestSettings(ctx context.Context) (Setting, error) {
 		&i.SettlementMinExpiryGap,
 		&i.VtxoNoCsvValidationCutoffDate,
 		&i.MaxTxWeight,
+		&i.MaxOpReturnOutputs,
+		&i.AssetTxMaxWeightRatio,
+		&i.NoteUriPrefix,
+		&i.ScheduledSessionStartTime,
+		&i.ScheduledSessionEndTime,
+		&i.ScheduledSessionPeriod,
+		&i.ScheduledSessionDuration,
+		&i.ScheduledSessionRoundMinParticipantsCount,
+		&i.ScheduledSessionRoundMaxParticipantsCount,
+		&i.BatchOnchainInputFee,
+		&i.BatchOffchainInputFee,
+		&i.BatchOnchainOutputFee,
+		&i.BatchOffchainOutputFee,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -2255,29 +2282,45 @@ func (q *Queries) UpsertScheduledSession(ctx context.Context, arg UpsertSchedule
 
 const upsertSettings = `-- name: UpsertSettings :exec
 INSERT INTO settings (
-    id, ban_threshold, ban_duration,
+    id,
+    session_duration, unrolled_vtxo_min_expiry_margin,
+    ban_threshold, ban_duration,
     unilateral_exit_delay, public_unilateral_exit_delay,
-    checkpoint_exit_delay, boarding_exit_delay,
-    vtxo_tree_expiry,
+    checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry,
     round_min_participants_count, round_max_participants_count,
-    vtxo_min_amount, vtxo_max_amount,
-    utxo_min_amount, utxo_max_amount,
-    settlement_min_expiry_gap,
-    vtxo_no_csv_validation_cutoff_date,
-    max_tx_weight, updated_at
+    vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount,
+    settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date,
+    max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio,
+    note_uri_prefix,
+    scheduled_session_start_time, scheduled_session_end_time,
+    scheduled_session_period, scheduled_session_duration,
+    scheduled_session_round_min_participants_count,
+    scheduled_session_round_max_participants_count,
+    batch_onchain_input_fee, batch_offchain_input_fee,
+    batch_onchain_output_fee, batch_offchain_output_fee,
+    updated_at
 ) VALUES (
-    $1, $2, $3,
+    $1,
+    $2, $3,
     $4, $5,
     $6, $7,
-    $8,
-    $9, $10,
+    $8, $9, $10,
     $11, $12,
-    $13, $14,
-    $15,
-    $16,
-    $17, $18
+    $13, $14, $15, $16,
+    $17, $18,
+    $19, $20, $21,
+    $22,
+    $23, $24,
+    $25, $26,
+    $27,
+    $28,
+    $29, $30,
+    $31, $32,
+    $33
 )
 ON CONFLICT(id) DO UPDATE SET
+    session_duration = EXCLUDED.session_duration,
+    unrolled_vtxo_min_expiry_margin = EXCLUDED.unrolled_vtxo_min_expiry_margin,
     ban_threshold = EXCLUDED.ban_threshold,
     ban_duration = EXCLUDED.ban_duration,
     unilateral_exit_delay = EXCLUDED.unilateral_exit_delay,
@@ -2294,33 +2337,65 @@ ON CONFLICT(id) DO UPDATE SET
     settlement_min_expiry_gap = EXCLUDED.settlement_min_expiry_gap,
     vtxo_no_csv_validation_cutoff_date = EXCLUDED.vtxo_no_csv_validation_cutoff_date,
     max_tx_weight = EXCLUDED.max_tx_weight,
+    max_op_return_outputs = EXCLUDED.max_op_return_outputs,
+    asset_tx_max_weight_ratio = EXCLUDED.asset_tx_max_weight_ratio,
+    note_uri_prefix = EXCLUDED.note_uri_prefix,
+    scheduled_session_start_time = EXCLUDED.scheduled_session_start_time,
+    scheduled_session_end_time = EXCLUDED.scheduled_session_end_time,
+    scheduled_session_period = EXCLUDED.scheduled_session_period,
+    scheduled_session_duration = EXCLUDED.scheduled_session_duration,
+    scheduled_session_round_min_participants_count =
+        EXCLUDED.scheduled_session_round_min_participants_count,
+    scheduled_session_round_max_participants_count =
+        EXCLUDED.scheduled_session_round_max_participants_count,
+    batch_onchain_input_fee = EXCLUDED.batch_onchain_input_fee,
+    batch_offchain_input_fee = EXCLUDED.batch_offchain_input_fee,
+    batch_onchain_output_fee = EXCLUDED.batch_onchain_output_fee,
+    batch_offchain_output_fee = EXCLUDED.batch_offchain_output_fee,
     updated_at = EXCLUDED.updated_at
 `
 
 type UpsertSettingsParams struct {
-	ID                            int64
-	BanThreshold                  int64
-	BanDuration                   int64
-	UnilateralExitDelay           int64
-	PublicUnilateralExitDelay     int64
-	CheckpointExitDelay           int64
-	BoardingExitDelay             int64
-	VtxoTreeExpiry                int64
-	RoundMinParticipantsCount     int64
-	RoundMaxParticipantsCount     int64
-	VtxoMinAmount                 int64
-	VtxoMaxAmount                 int64
-	UtxoMinAmount                 int64
-	UtxoMaxAmount                 int64
-	SettlementMinExpiryGap        int64
-	VtxoNoCsvValidationCutoffDate int64
-	MaxTxWeight                   int64
-	UpdatedAt                     int64
+	ID                                        int64
+	SessionDuration                           int64
+	UnrolledVtxoMinExpiryMargin               int64
+	BanThreshold                              int64
+	BanDuration                               int64
+	UnilateralExitDelay                       int64
+	PublicUnilateralExitDelay                 int64
+	CheckpointExitDelay                       int64
+	BoardingExitDelay                         int64
+	VtxoTreeExpiry                            int64
+	RoundMinParticipantsCount                 int64
+	RoundMaxParticipantsCount                 int64
+	VtxoMinAmount                             int64
+	VtxoMaxAmount                             int64
+	UtxoMinAmount                             int64
+	UtxoMaxAmount                             int64
+	SettlementMinExpiryGap                    int64
+	VtxoNoCsvValidationCutoffDate             int64
+	MaxTxWeight                               int64
+	MaxOpReturnOutputs                        int64
+	AssetTxMaxWeightRatio                     float32
+	NoteUriPrefix                             string
+	ScheduledSessionStartTime                 int64
+	ScheduledSessionEndTime                   int64
+	ScheduledSessionPeriod                    int64
+	ScheduledSessionDuration                  int64
+	ScheduledSessionRoundMinParticipantsCount int64
+	ScheduledSessionRoundMaxParticipantsCount int64
+	BatchOnchainInputFee                      string
+	BatchOffchainInputFee                     string
+	BatchOnchainOutputFee                     string
+	BatchOffchainOutputFee                    string
+	UpdatedAt                                 int64
 }
 
 func (q *Queries) UpsertSettings(ctx context.Context, arg UpsertSettingsParams) error {
 	_, err := q.db.ExecContext(ctx, upsertSettings,
 		arg.ID,
+		arg.SessionDuration,
+		arg.UnrolledVtxoMinExpiryMargin,
 		arg.BanThreshold,
 		arg.BanDuration,
 		arg.UnilateralExitDelay,
@@ -2337,6 +2412,19 @@ func (q *Queries) UpsertSettings(ctx context.Context, arg UpsertSettingsParams) 
 		arg.SettlementMinExpiryGap,
 		arg.VtxoNoCsvValidationCutoffDate,
 		arg.MaxTxWeight,
+		arg.MaxOpReturnOutputs,
+		arg.AssetTxMaxWeightRatio,
+		arg.NoteUriPrefix,
+		arg.ScheduledSessionStartTime,
+		arg.ScheduledSessionEndTime,
+		arg.ScheduledSessionPeriod,
+		arg.ScheduledSessionDuration,
+		arg.ScheduledSessionRoundMinParticipantsCount,
+		arg.ScheduledSessionRoundMaxParticipantsCount,
+		arg.BatchOnchainInputFee,
+		arg.BatchOffchainInputFee,
+		arg.BatchOnchainOutputFee,
+		arg.BatchOffchainOutputFee,
 		arg.UpdatedAt,
 	)
 	return err

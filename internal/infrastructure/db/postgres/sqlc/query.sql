@@ -477,29 +477,45 @@ SELECT 1 FROM asset WHERE id = $1 LIMIT 1;
 
 -- name: UpsertSettings :exec
 INSERT INTO settings (
-    id, ban_threshold, ban_duration,
+    id,
+    session_duration, unrolled_vtxo_min_expiry_margin,
+    ban_threshold, ban_duration,
     unilateral_exit_delay, public_unilateral_exit_delay,
-    checkpoint_exit_delay, boarding_exit_delay,
-    vtxo_tree_expiry,
+    checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry,
     round_min_participants_count, round_max_participants_count,
-    vtxo_min_amount, vtxo_max_amount,
-    utxo_min_amount, utxo_max_amount,
-    settlement_min_expiry_gap,
-    vtxo_no_csv_validation_cutoff_date,
-    max_tx_weight, updated_at
+    vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount,
+    settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date,
+    max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio,
+    note_uri_prefix,
+    scheduled_session_start_time, scheduled_session_end_time,
+    scheduled_session_period, scheduled_session_duration,
+    scheduled_session_round_min_participants_count,
+    scheduled_session_round_max_participants_count,
+    batch_onchain_input_fee, batch_offchain_input_fee,
+    batch_onchain_output_fee, batch_offchain_output_fee,
+    updated_at
 ) VALUES (
-    @id, @ban_threshold, @ban_duration,
+    @id,
+    @session_duration, @unrolled_vtxo_min_expiry_margin,
+    @ban_threshold, @ban_duration,
     @unilateral_exit_delay, @public_unilateral_exit_delay,
-    @checkpoint_exit_delay, @boarding_exit_delay,
-    @vtxo_tree_expiry,
+    @checkpoint_exit_delay, @boarding_exit_delay, @vtxo_tree_expiry,
     @round_min_participants_count, @round_max_participants_count,
-    @vtxo_min_amount, @vtxo_max_amount,
-    @utxo_min_amount, @utxo_max_amount,
-    @settlement_min_expiry_gap,
-    @vtxo_no_csv_validation_cutoff_date,
-    @max_tx_weight, @updated_at
+    @vtxo_min_amount, @vtxo_max_amount, @utxo_min_amount, @utxo_max_amount,
+    @settlement_min_expiry_gap, @vtxo_no_csv_validation_cutoff_date,
+    @max_tx_weight, @max_op_return_outputs, @asset_tx_max_weight_ratio,
+    @note_uri_prefix,
+    @scheduled_session_start_time, @scheduled_session_end_time,
+    @scheduled_session_period, @scheduled_session_duration,
+    @scheduled_session_round_min_participants_count,
+    @scheduled_session_round_max_participants_count,
+    @batch_onchain_input_fee, @batch_offchain_input_fee,
+    @batch_onchain_output_fee, @batch_offchain_output_fee,
+    @updated_at
 )
 ON CONFLICT(id) DO UPDATE SET
+    session_duration = EXCLUDED.session_duration,
+    unrolled_vtxo_min_expiry_margin = EXCLUDED.unrolled_vtxo_min_expiry_margin,
     ban_threshold = EXCLUDED.ban_threshold,
     ban_duration = EXCLUDED.ban_duration,
     unilateral_exit_delay = EXCLUDED.unilateral_exit_delay,
@@ -516,6 +532,21 @@ ON CONFLICT(id) DO UPDATE SET
     settlement_min_expiry_gap = EXCLUDED.settlement_min_expiry_gap,
     vtxo_no_csv_validation_cutoff_date = EXCLUDED.vtxo_no_csv_validation_cutoff_date,
     max_tx_weight = EXCLUDED.max_tx_weight,
+    max_op_return_outputs = EXCLUDED.max_op_return_outputs,
+    asset_tx_max_weight_ratio = EXCLUDED.asset_tx_max_weight_ratio,
+    note_uri_prefix = EXCLUDED.note_uri_prefix,
+    scheduled_session_start_time = EXCLUDED.scheduled_session_start_time,
+    scheduled_session_end_time = EXCLUDED.scheduled_session_end_time,
+    scheduled_session_period = EXCLUDED.scheduled_session_period,
+    scheduled_session_duration = EXCLUDED.scheduled_session_duration,
+    scheduled_session_round_min_participants_count =
+        EXCLUDED.scheduled_session_round_min_participants_count,
+    scheduled_session_round_max_participants_count =
+        EXCLUDED.scheduled_session_round_max_participants_count,
+    batch_onchain_input_fee = EXCLUDED.batch_onchain_input_fee,
+    batch_offchain_input_fee = EXCLUDED.batch_offchain_input_fee,
+    batch_onchain_output_fee = EXCLUDED.batch_onchain_output_fee,
+    batch_offchain_output_fee = EXCLUDED.batch_offchain_output_fee,
     updated_at = EXCLUDED.updated_at;
 
 -- name: SelectLatestSettings :one
@@ -523,3 +554,9 @@ SELECT * FROM settings ORDER BY updated_at DESC LIMIT 1;
 
 -- name: ClearSettings :exec
 DELETE FROM settings;
+
+-- name: InsertSettingsHistory :exec
+INSERT INTO settings_history (changed_at, changed_fields, settings)
+SELECT s.updated_at, @changed_fields::text[], to_jsonb(s.*) - 'id'
+FROM settings s
+WHERE s.id = 0;

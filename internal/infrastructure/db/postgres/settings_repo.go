@@ -5,15 +5,20 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 )
 
 type settingsRepository struct {
 	db      *sql.DB
 	querier *queries.Queries
+
+	updateHandlerMu *sync.Mutex
+	updateHandler   func(domain.Settings, []string)
 }
 
 func NewSettingsRepository(config ...interface{}) (domain.SettingsRepository, error) {
@@ -28,13 +33,20 @@ func NewSettingsRepository(config ...interface{}) (domain.SettingsRepository, er
 	}
 
 	return &settingsRepository{
-		db:      db,
-		querier: queries.New(db),
+		db:              db,
+		querier:         queries.New(db),
+		updateHandlerMu: &sync.Mutex{},
 	}, nil
 }
 
+func (r *settingsRepository) RegisterUpdatesHandler(handler func(domain.Settings, []string)) {
+	r.updateHandlerMu.Lock()
+	defer r.updateHandlerMu.Unlock()
+	r.updateHandler = handler
+}
+
 func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) {
-	settings, err := r.querier.SelectLatestSettings(ctx)
+	row, err := r.querier.SelectLatestSettings(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -42,51 +54,120 @@ func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) 
 		return nil, err
 	}
 
+	scheduledSession := &domain.ScheduledSession{
+		StartTime:                 timeFromUnix(row.ScheduledSessionStartTime),
+		EndTime:                   timeFromUnix(row.ScheduledSessionEndTime),
+		Period:                    time.Duration(row.ScheduledSessionPeriod) * time.Second,
+		Duration:                  time.Duration(row.ScheduledSessionDuration) * time.Second,
+		RoundMinParticipantsCount: row.ScheduledSessionRoundMinParticipantsCount,
+		RoundMaxParticipantsCount: row.ScheduledSessionRoundMaxParticipantsCount,
+	}
+	// No scheduled session is represented as nil in the domain.
+	if scheduledSession.IsEmpty() {
+		scheduledSession = nil
+	}
+
+	unilateral, _ := arklib.ParseRelativeLocktime(uint32(row.UnilateralExitDelay))
+	publicUnilateral, _ := arklib.ParseRelativeLocktime(uint32(row.PublicUnilateralExitDelay))
+	checkpoint, _ := arklib.ParseRelativeLocktime(uint32(row.CheckpointExitDelay))
+	boarding, _ := arklib.ParseRelativeLocktime(uint32(row.BoardingExitDelay))
+	vtxoTreeExpiry, _ := arklib.ParseRelativeLocktime(uint32(row.VtxoTreeExpiry))
+
 	return &domain.Settings{
-		BanThreshold:                  settings.BanThreshold,
-		BanDuration:                   settings.BanDuration,
-		UnilateralExitDelay:           settings.UnilateralExitDelay,
-		PublicUnilateralExitDelay:     settings.PublicUnilateralExitDelay,
-		CheckpointExitDelay:           settings.CheckpointExitDelay,
-		BoardingExitDelay:             settings.BoardingExitDelay,
-		VtxoTreeExpiry:                settings.VtxoTreeExpiry,
-		RoundMinParticipantsCount:     settings.RoundMinParticipantsCount,
-		RoundMaxParticipantsCount:     settings.RoundMaxParticipantsCount,
-		VtxoMinAmount:                 settings.VtxoMinAmount,
-		VtxoMaxAmount:                 settings.VtxoMaxAmount,
-		UtxoMinAmount:                 settings.UtxoMinAmount,
-		UtxoMaxAmount:                 settings.UtxoMaxAmount,
-		SettlementMinExpiryGap:        settings.SettlementMinExpiryGap,
-		VtxoNoCsvValidationCutoffDate: settings.VtxoNoCsvValidationCutoffDate,
-		MaxTxWeight:                   settings.MaxTxWeight,
-		UpdatedAt:                     time.Unix(settings.UpdatedAt, 0),
+		SessionDuration:               time.Duration(row.SessionDuration) * time.Second,
+		UnrolledVtxoMinExpiryMargin:   time.Duration(row.UnrolledVtxoMinExpiryMargin) * time.Second,
+		BanThreshold:                  uint64(row.BanThreshold),
+		BanDuration:                   time.Duration(row.BanDuration) * time.Second,
+		UnilateralExitDelay:           unilateral,
+		PublicUnilateralExitDelay:     publicUnilateral,
+		CheckpointExitDelay:           checkpoint,
+		BoardingExitDelay:             boarding,
+		VtxoTreeExpiry:                vtxoTreeExpiry,
+		RoundMinParticipantsCount:     row.RoundMinParticipantsCount,
+		RoundMaxParticipantsCount:     row.RoundMaxParticipantsCount,
+		VtxoMinAmount:                 row.VtxoMinAmount,
+		VtxoMaxAmount:                 row.VtxoMaxAmount,
+		UtxoMinAmount:                 row.UtxoMinAmount,
+		UtxoMaxAmount:                 row.UtxoMaxAmount,
+		SettlementMinExpiryGap:        time.Duration(row.SettlementMinExpiryGap) * time.Second,
+		VtxoNoCsvValidationCutoffDate: timeFromUnix(row.VtxoNoCsvValidationCutoffDate),
+		MaxTxWeight:                   uint64(row.MaxTxWeight),
+		MaxOpReturnOutputs:            uint64(row.MaxOpReturnOutputs),
+		AssetTxMaxWeightRatio:         row.AssetTxMaxWeightRatio,
+		NoteUriPrefix:                 row.NoteUriPrefix,
+		ScheduledSession:              scheduledSession,
+		BatchFees: domain.BatchFees{
+			OnchainInputFee:   row.BatchOnchainInputFee,
+			OffchainInputFee:  row.BatchOffchainInputFee,
+			OnchainOutputFee:  row.BatchOnchainOutputFee,
+			OffchainOutputFee: row.BatchOffchainOutputFee,
+		},
+		UpdatedAt: timeFromUnix(row.UpdatedAt),
 	}, nil
 }
 
-// Upsert inserts or updates the singleton settings row. The ID field defaults
-// to 0 (Go zero value) which is used as the fixed singleton key via ON CONFLICT(id).
+// Upsert writes the singleton settings row (id defaults to 0) and, in the same
+// transaction, appends a settings_history record whose changed_fields is the
+// changelog and whose snapshot is built from the row via to_jsonb.
 func (r *settingsRepository) Upsert(
-	ctx context.Context, settings domain.Settings,
+	ctx context.Context, settings domain.Settings, changelog []string,
 ) error {
-	return r.querier.UpsertSettings(ctx, queries.UpsertSettingsParams{
-		BanThreshold:                  settings.BanThreshold,
-		BanDuration:                   settings.BanDuration,
-		UnilateralExitDelay:           settings.UnilateralExitDelay,
-		PublicUnilateralExitDelay:     settings.PublicUnilateralExitDelay,
-		CheckpointExitDelay:           settings.CheckpointExitDelay,
-		BoardingExitDelay:             settings.BoardingExitDelay,
-		VtxoTreeExpiry:                settings.VtxoTreeExpiry,
-		RoundMinParticipantsCount:     settings.RoundMinParticipantsCount,
-		RoundMaxParticipantsCount:     settings.RoundMaxParticipantsCount,
+	params := queries.UpsertSettingsParams{
+		SessionDuration:               int64(settings.SessionDuration.Seconds()),
+		UnrolledVtxoMinExpiryMargin:   int64(settings.UnrolledVtxoMinExpiryMargin.Seconds()),
+		BanThreshold:                  int64(settings.BanThreshold),
+		BanDuration:                   int64(settings.BanDuration.Seconds()),
+		UnilateralExitDelay:           int64(settings.UnilateralExitDelay.Value),
+		PublicUnilateralExitDelay:     int64(settings.PublicUnilateralExitDelay.Value),
+		CheckpointExitDelay:           int64(settings.CheckpointExitDelay.Value),
+		BoardingExitDelay:             int64(settings.BoardingExitDelay.Value),
+		VtxoTreeExpiry:                int64(settings.VtxoTreeExpiry.Value),
+		RoundMinParticipantsCount:     int64(settings.RoundMinParticipantsCount),
+		RoundMaxParticipantsCount:     int64(settings.RoundMaxParticipantsCount),
 		VtxoMinAmount:                 settings.VtxoMinAmount,
 		VtxoMaxAmount:                 settings.VtxoMaxAmount,
 		UtxoMinAmount:                 settings.UtxoMinAmount,
 		UtxoMaxAmount:                 settings.UtxoMaxAmount,
-		SettlementMinExpiryGap:        settings.SettlementMinExpiryGap,
-		VtxoNoCsvValidationCutoffDate: settings.VtxoNoCsvValidationCutoffDate,
-		MaxTxWeight:                   settings.MaxTxWeight,
-		UpdatedAt:                     settings.UpdatedAt.Unix(),
-	})
+		SettlementMinExpiryGap:        int64(settings.SettlementMinExpiryGap.Seconds()),
+		VtxoNoCsvValidationCutoffDate: timeToUnix(settings.VtxoNoCsvValidationCutoffDate),
+		MaxTxWeight:                   int64(settings.MaxTxWeight),
+		MaxOpReturnOutputs:            int64(settings.MaxOpReturnOutputs),
+		AssetTxMaxWeightRatio:         settings.AssetTxMaxWeightRatio,
+		NoteUriPrefix:                 settings.NoteUriPrefix,
+		BatchOnchainInputFee:          settings.BatchFees.OnchainInputFee,
+		BatchOffchainInputFee:         settings.BatchFees.OffchainInputFee,
+		BatchOnchainOutputFee:         settings.BatchFees.OnchainOutputFee,
+		BatchOffchainOutputFee:        settings.BatchFees.OffchainOutputFee,
+		UpdatedAt:                     timeToUnix(settings.UpdatedAt),
+	}
+	if ss := settings.ScheduledSession; ss != nil && !ss.IsEmpty() {
+		params.ScheduledSessionStartTime = timeToUnix(ss.StartTime)
+		params.ScheduledSessionEndTime = timeToUnix(ss.EndTime)
+		params.ScheduledSessionPeriod = int64(ss.Period.Seconds())
+		params.ScheduledSessionDuration = int64(ss.Duration.Seconds())
+		params.ScheduledSessionRoundMinParticipantsCount = ss.RoundMinParticipantsCount
+		params.ScheduledSessionRoundMaxParticipantsCount = ss.RoundMaxParticipantsCount
+	}
+
+	txBody := func(q *queries.Queries) error {
+		if err := q.UpsertSettings(ctx, params); err != nil {
+			return fmt.Errorf("failed to upsert settings: %w", err)
+		}
+		// Only record history for actual changes (skips e.g. the first-boot seed).
+		if len(changelog) > 0 {
+			if err := q.InsertSettingsHistory(ctx, changelog); err != nil {
+				return fmt.Errorf("failed to insert settings history: %w", err)
+			}
+		}
+		return nil
+	}
+	if err := execTx(ctx, r.db, txBody); err != nil {
+		return err
+	}
+
+	go r.dispatch(settings, changelog)
+
+	return nil
 }
 
 func (r *settingsRepository) Clear(ctx context.Context) error {
@@ -95,4 +176,28 @@ func (r *settingsRepository) Clear(ctx context.Context) error {
 
 func (r *settingsRepository) Close() {
 	_ = r.db.Close()
+}
+
+func (r *settingsRepository) dispatch(settings domain.Settings, changelog []string) {
+	if r.updateHandler != nil {
+		r.updateHandler(settings, changelog)
+	}
+}
+
+// timeToUnix encodes a time.Time as a unix timestamp, mapping the zero time to 0
+// (rather than the year-1 unix value).
+func timeToUnix(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.Unix()
+}
+
+// timeFromUnix decodes a unix timestamp produced by timeToUnix, mapping 0 back
+// to the zero time (rather than the 1970 epoch).
+func timeFromUnix(v int64) time.Time {
+	if v == 0 {
+		return time.Time{}
+	}
+	return time.Unix(v, 0)
 }

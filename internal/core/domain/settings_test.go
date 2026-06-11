@@ -1,247 +1,428 @@
-package domain
+package domain_test
 
 import (
-	"math"
 	"testing"
+	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/arkade-os/arkd/internal/core/domain"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/stretchr/testify/require"
 )
 
-func validSettings() Settings {
-	return Settings{
-		BanThreshold:              3,
-		BanDuration:               300,
-		VtxoTreeExpiry:            604672,
-		UnilateralExitDelay:       86400,
-		PublicUnilateralExitDelay: 86400,
-		CheckpointExitDelay:       86400,
-		BoardingExitDelay:         7776000,
-		RoundMinParticipantsCount: 1,
-		RoundMaxParticipantsCount: 128,
-		VtxoMinAmount:             -1,
-		VtxoMaxAmount:             -1,
-		UtxoMinAmount:             -1,
-		UtxoMaxAmount:             -1,
-		MaxTxWeight:               40000,
+var (
+	unilateralExitDelay    = arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 1024}
+	pubUnilateralExitDelay = arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 2048}
+	checkpointExitDelay    = arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512}
+	boardingExitDelay      = arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 2048}
+	vtxoTreeExpiry         = arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 4096}
+
+	validSettings = domain.Settings{
+		SessionDuration:             60 * time.Second,
+		UnrolledVtxoMinExpiryMargin: 120 * time.Second,
+		BanThreshold:                3,
+		BanDuration:                 60 * time.Second,
+		UnilateralExitDelay:         unilateralExitDelay,
+		PublicUnilateralExitDelay:   pubUnilateralExitDelay,
+		CheckpointExitDelay:         checkpointExitDelay,
+		BoardingExitDelay:           boardingExitDelay,
+		VtxoTreeExpiry:              vtxoTreeExpiry,
+		RoundMinParticipantsCount:   1,
+		RoundMaxParticipantsCount:   128,
+		VtxoMinAmount:               1000,
+		VtxoMaxAmount:               1_000_000,
+		UtxoMinAmount:               1000,
+		UtxoMaxAmount:               1_000_000,
+		MaxTxWeight:                 100_000,
+		AssetTxMaxWeightRatio:       0.5,
+		UpdatedAt:                   time.Now(),
 	}
+)
+
+func TestSettings(t *testing.T) {
+	testValidateSettings(t)
+
+	testUpdateSettings(t)
+
+	testNewSettings(t)
+
+	testSettingsScheduledSession(t)
+
+	testSettingsBatchFees(t)
 }
 
-func TestSettings_Validate(t *testing.T) {
-	t.Run("valid settings pass", func(t *testing.T) {
-		require.NoError(t, validSettings().Validate())
-	})
+func testValidateSettings(t *testing.T) {
+	t.Run("Validate", func(t *testing.T) {
+		t.Run("valid", func(t *testing.T) {
+			require.NoError(t, validSettings.Validate())
+		})
 
-	t.Run("ban threshold must be at least 1", func(t *testing.T) {
-		s := validSettings()
-		s.BanThreshold = 0
-		err := s.Validate()
-		require.Error(t, err)
-		var validationErr *ErrInvalidSettings
-		require.ErrorAs(t, err, &validationErr)
-		assert.Contains(t, validationErr.Reason, "ban threshold")
-	})
+		t.Run("invalid", func(t *testing.T) {
+			shortSession := validSettings
+			shortSession.SessionDuration = time.Second
 
-	t.Run("checkpoint exit delay must be > 0", func(t *testing.T) {
-		s := validSettings()
-		s.CheckpointExitDelay = 0
-		err := s.Validate()
-		require.Error(t, err)
-		var validationErr *ErrInvalidSettings
-		require.ErrorAs(t, err, &validationErr)
-		assert.Contains(t, validationErr.Reason, "checkpoint exit delay")
-	})
+			negativeMargin := validSettings
+			negativeMargin.UnrolledVtxoMinExpiryMargin = -time.Second
 
-	t.Run("amount lower bound", func(t *testing.T) {
-		tests := []struct {
-			name  string
-			field string
-			set   func(*Settings, int64)
-		}{
-			{"vtxo min", "vtxo min amount", func(s *Settings, v int64) { s.VtxoMinAmount = v }},
-			{"vtxo max", "vtxo max amount", func(s *Settings, v int64) { s.VtxoMaxAmount = v }},
-			{"utxo min", "utxo min amount", func(s *Settings, v int64) { s.UtxoMinAmount = v }},
-			{"utxo max", "utxo max amount", func(s *Settings, v int64) { s.UtxoMaxAmount = v }},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name+" rejects -2", func(t *testing.T) {
-				s := validSettings()
-				tt.set(&s, -2)
-				err := s.Validate()
-				require.Error(t, err)
-				var validationErr *ErrInvalidSettings
-				require.ErrorAs(t, err, &validationErr)
-				assert.Contains(t, validationErr.Reason, tt.field)
+			smallMargin := validSettings
+			smallMargin.UnrolledVtxoMinExpiryMargin = 30 * time.Second
+
+			shortBan := validSettings
+			shortBan.BanDuration = 500 * time.Millisecond
+
+			checkpointTypeMismatch := validSettings
+			checkpointTypeMismatch.CheckpointExitDelay = arklib.RelativeLocktime{
+				Type: arklib.LocktimeTypeBlock, Value: 512,
+			}
+
+			unilateralTypeMismatch := validSettings
+			unilateralTypeMismatch.UnilateralExitDelay = arklib.RelativeLocktime{
+				Type: arklib.LocktimeTypeBlock, Value: 1024,
+			}
+
+			boardingTypeMismatch := validSettings
+			boardingTypeMismatch.BoardingExitDelay = arklib.RelativeLocktime{
+				Type: arklib.LocktimeTypeBlock, Value: 2048,
+			}
+
+			publicTypeMismatch := validSettings
+			publicTypeMismatch.PublicUnilateralExitDelay = arklib.RelativeLocktime{
+				Type: arklib.LocktimeTypeBlock, Value: 2048,
+			}
+
+			zeroExpiry := validSettings
+			zeroExpiry.VtxoTreeExpiry = arklib.RelativeLocktime{
+				Type: arklib.LocktimeTypeSecond, Value: 0,
+			}
+
+			equalExitDelays := validSettings
+			equalExitDelays.BoardingExitDelay = unilateralExitDelay
+
+			publicBelowUnilateral := validSettings
+			publicBelowUnilateral.PublicUnilateralExitDelay = arklib.RelativeLocktime{
+				Type: arklib.LocktimeTypeSecond, Value: 512,
+			}
+
+			zeroVtxoMin := validSettings
+			zeroVtxoMin.VtxoMinAmount = 0
+
+			zeroUtxoMin := validSettings
+			zeroUtxoMin.UtxoMinAmount = 0
+
+			zeroMaxTxWeight := validSettings
+			zeroMaxTxWeight.MaxTxWeight = 0
+
+			hugeMaxTxWeight := validSettings
+			hugeMaxTxWeight.MaxTxWeight = 5_000_000
+
+			zeroRatio := validSettings
+			zeroRatio.AssetTxMaxWeightRatio = 0
+
+			oneRatio := validSettings
+			oneRatio.AssetTxMaxWeightRatio = 1
+
+			zeroRoundMin := validSettings
+			zeroRoundMin.RoundMinParticipantsCount = 0
+
+			roundMaxBelowMin := validSettings
+			roundMaxBelowMin.RoundMaxParticipantsCount = 0
+
+			fixtures := []struct {
+				settings    domain.Settings
+				expectedErr string
+			}{
+				{
+					settings:    shortSession,
+					expectedErr: "invalid session duration (1s), must be at least 2s",
+				},
+				{
+					settings:    negativeMargin,
+					expectedErr: "invalid unrolled vtxo min expiry margin (-1s), must not be negative",
+				},
+				{
+					settings: smallMargin,
+					expectedErr: "invalid unrolled vtxo min expiry margin (30s), " +
+						"must be at least session duration (1m0s)",
+				},
+				{
+					settings:    shortBan,
+					expectedErr: "invalid ban duration (500ms), must be at least 1s",
+				},
+				{
+					settings: checkpointTypeMismatch,
+					expectedErr: "all delays must be above or below value 512 " +
+						"(checkpoint exit delay and vtxo tree expiry type mismatch)",
+				},
+				{
+					settings: unilateralTypeMismatch,
+					expectedErr: "all delays must be above or below value 512 " +
+						"(unilateral exit delay and vtxo tree expiry type mismatch)",
+				},
+				{
+					settings: boardingTypeMismatch,
+					expectedErr: "all delays must be above or below value 512 " +
+						"(boarding exit delay and vtxo tree expiry type mismatch)",
+				},
+				{
+					settings: publicTypeMismatch,
+					expectedErr: "public unilateral exit delay and unilateral exit delay " +
+						"must have the same type",
+				},
+				{
+					settings:    zeroExpiry,
+					expectedErr: "vtxo tree expiry value must be greater than 0",
+				},
+				{
+					settings:    equalExitDelays,
+					expectedErr: "unilateral exit delay and boarding exit delay must be different",
+				},
+				{
+					settings: publicBelowUnilateral,
+					expectedErr: "public unilateral exit delay must be greater than " +
+						"or equal to unilateral exit delay",
+				},
+				{
+					settings:    zeroVtxoMin,
+					expectedErr: "vtxo min amount must be greater than 0",
+				},
+				{
+					settings:    zeroUtxoMin,
+					expectedErr: "utxo min amount must be greater than 0",
+				},
+				{
+					settings:    zeroMaxTxWeight,
+					expectedErr: "max tx weight must be greater than 0",
+				},
+				{
+					settings:    hugeMaxTxWeight,
+					expectedErr: "max tx weight can't exceed bitcoin block weight (4000000)",
+				},
+				{
+					settings:    zeroRatio,
+					expectedErr: "asset tx max weight ratio must be in range (0, 1), got 0.000000",
+				},
+				{
+					settings:    oneRatio,
+					expectedErr: "asset tx max weight ratio must be in range (0, 1), got 1.000000",
+				},
+				{
+					settings:    zeroRoundMin,
+					expectedErr: "batch min participants count must be at least 1",
+				},
+				{
+					settings: roundMaxBelowMin,
+					expectedErr: "batch max participants count must be >= " +
+						"min participants count, got 0 <= 1",
+				},
+			}
+
+			for _, f := range fixtures {
+				require.EqualError(t, f.settings.Validate(), f.expectedErr)
+			}
+		})
+	})
+}
+
+func testUpdateSettings(t *testing.T) {
+	t.Run("Update", func(t *testing.T) {
+		t.Run("valid", func(t *testing.T) {
+			settings := validSettings
+
+			banThreshold := uint64(10)
+			sessionDuration := 90 * time.Second
+			vtxoMaxAmount := int64(2_000_000)
+
+			changelog, err := settings.Update(domain.SettingsUpdate{
+				BanThreshold:    &banThreshold,
+				SessionDuration: &sessionDuration,
+				VtxoMaxAmount:   &vtxoMaxAmount,
 			})
+			require.NoError(t, err)
 
-			t.Run(tt.name+" accepts -1", func(t *testing.T) {
-				s := validSettings()
-				tt.set(&s, -1)
-				require.NoError(t, s.Validate())
+			// the changelog lists the names of the changed fields
+			require.ElementsMatch(
+				t, []string{"session_duration", "ban_threshold", "vtxo_max_amount"}, changelog,
+			)
+
+			// provided fields are updated
+			require.Equal(t, uint64(10), settings.BanThreshold)
+			require.Equal(t, 90*time.Second, settings.SessionDuration)
+			require.Equal(t, int64(2_000_000), settings.VtxoMaxAmount)
+
+			// omitted fields keep their previous values
+			require.Equal(t, validSettings.VtxoMinAmount, settings.VtxoMinAmount)
+			require.Equal(t, validSettings.MaxTxWeight, settings.MaxTxWeight)
+			require.Equal(t, validSettings.UnilateralExitDelay, settings.UnilateralExitDelay)
+		})
+
+		t.Run("empty update is a no-op", func(t *testing.T) {
+			settings := validSettings
+
+			changelog, err := settings.Update(domain.SettingsUpdate{})
+			require.NoError(t, err)
+			require.Empty(t, changelog)
+			require.Equal(t, validSettings, settings)
+		})
+
+		t.Run("invalid update leaves settings untouched", func(t *testing.T) {
+			settings := validSettings
+
+			// a valid field paired with an invalid one: the whole update is rejected
+			// and nothing is committed.
+			banThreshold := uint64(42)
+			zeroVtxoMin := int64(0)
+			changelog, err := settings.Update(domain.SettingsUpdate{
+				BanThreshold:  &banThreshold,
+				VtxoMinAmount: &zeroVtxoMin,
 			})
-		}
+			require.EqualError(t, err, "vtxo min amount must be greater than 0")
+			require.Nil(t, changelog)
+			require.Equal(t, validSettings, settings)
+		})
 	})
+}
 
-	t.Run("amount upper bound", func(t *testing.T) {
-		tests := []struct {
-			name  string
-			field string
-			set   func(*Settings, int64)
-		}{
-			{"vtxo min", "vtxo min amount", func(s *Settings, v int64) { s.VtxoMinAmount = v }},
-			{"vtxo max", "vtxo max amount", func(s *Settings, v int64) { s.VtxoMaxAmount = v }},
-			{"utxo min", "utxo min amount", func(s *Settings, v int64) { s.UtxoMinAmount = v }},
-			{"utxo max", "utxo max amount", func(s *Settings, v int64) { s.UtxoMaxAmount = v }},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name+" rejects above max satoshis", func(t *testing.T) {
-				s := validSettings()
-				tt.set(&s, MaxSatoshis+1)
-				err := s.Validate()
-				require.Error(t, err)
-				var validationErr *ErrInvalidSettings
-				require.ErrorAs(t, err, &validationErr)
-				assert.Contains(t, validationErr.Reason, tt.field)
+func testNewSettings(t *testing.T) {
+	t.Run("NewSettings", func(t *testing.T) {
+		sessionDuration, unrolledVtxoMinExpiryMargin := int64(60), int64(120)
+		banThreshold, banDuration := int64(3), int64(60)
+		settlementMinExpiryGap, vtxoNoCSVCutoffDate := int64(0), int64(0)
+		vtxoMinAmount, vtxoMaxAmount := int64(1000), int64(1_000_000)
+		utxoMinAmount, utxoMaxAmount := int64(1000), int64(1_000_000)
+		batchMinParticipants, batchMaxParticipants := int64(1), int64(128)
+		maxTxWeight, assetTxMaxWeightRatio := uint64(100_000), float32(0.5)
+		maxOpReturnOutputs := uint64(2)
+		noteUriPrefix := "testNote"
+
+		t.Run("valid", func(t *testing.T) {
+
+			settings, err := domain.NewSettings(
+				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
+				batchMinParticipants, batchMaxParticipants,
+				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
+				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
+				boardingExitDelay, vtxoTreeExpiry,
+				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, settings)
+			require.Equal(t, 60*time.Second, settings.SessionDuration)
+			require.Equal(t, uint64(3), settings.BanThreshold)
+			require.Equal(t, vtxoTreeExpiry, settings.VtxoTreeExpiry)
+			require.False(t, settings.UpdatedAt.IsZero())
+		})
+
+		t.Run("invalid", func(t *testing.T) {
+			settings, err := domain.NewSettings(
+				1, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
+				batchMinParticipants, batchMaxParticipants,
+				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
+				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
+				boardingExitDelay, vtxoTreeExpiry,
+				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+			)
+			require.ErrorContains(t, err, "invalid session duration")
+			require.Nil(t, settings)
+		})
+	})
+}
+
+func testSettingsScheduledSession(t *testing.T) {
+	start := time.Now().Add(time.Hour)
+	end := start.Add(time.Hour)
+	period := 2 * time.Hour
+
+	t.Run("UpdateScheduledSession", func(t *testing.T) {
+		t.Run("creates a session when none is set", func(t *testing.T) {
+			settings := validSettings
+			require.Nil(t, settings.ScheduledSession)
+
+			changelog, err := settings.UpdateScheduledSession(domain.ScheduledSessionUpdate{
+				StartTime: &start,
+				EndTime:   &end,
+				Period:    &period,
 			})
+			require.NoError(t, err)
+			require.Equal(t, []string{"scheduled_session"}, changelog)
+			require.NotNil(t, settings.ScheduledSession)
+			require.Equal(t, start, settings.ScheduledSession.StartTime)
+			require.Equal(t, end, settings.ScheduledSession.EndTime)
+			require.Equal(t, period, settings.ScheduledSession.Period)
+		})
 
-			t.Run(tt.name+" accepts max satoshis", func(t *testing.T) {
-				s := validSettings()
-				tt.set(&s, MaxSatoshis)
-				require.NoError(t, s.Validate())
+		t.Run("updates an existing session", func(t *testing.T) {
+			settings := validSettings
+			settings.ScheduledSession = &domain.ScheduledSession{
+				StartTime: start, EndTime: end, Period: period,
+			}
+
+			newPeriod := 3 * time.Hour
+			changelog, err := settings.UpdateScheduledSession(domain.ScheduledSessionUpdate{
+				Period: &newPeriod,
 			})
-		}
-	})
+			require.NoError(t, err)
+			require.Equal(t, []string{"scheduled_session"}, changelog)
+			require.Equal(t, newPeriod, settings.ScheduledSession.Period)
+		})
 
-	t.Run("uint32 overflow", func(t *testing.T) {
-		tests := []struct {
-			name string
-			set  func(*Settings)
-		}{
-			{"unilateral exit delay", func(s *Settings) {
-				s.UnilateralExitDelay = math.MaxUint32 + 1
-				s.PublicUnilateralExitDelay = math.MaxUint32 + 1
-			}},
-			{"boarding exit delay", func(s *Settings) {
-				s.BoardingExitDelay = math.MaxUint32 + 1
-			}},
-			{"vtxo tree expiry", func(s *Settings) {
-				s.VtxoTreeExpiry = math.MaxUint32 + 1
-			}},
-			{"checkpoint exit delay", func(s *Settings) {
-				s.CheckpointExitDelay = math.MaxUint32 + 1
-			}},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				s := validSettings()
-				tt.set(&s)
-				err := s.Validate()
-				require.Error(t, err)
-				var validationErr *ErrInvalidSettings
-				require.ErrorAs(t, err, &validationErr)
-				assert.Contains(t, validationErr.Reason, "exceeds maximum uint32")
+		t.Run("invalid update is rejected and leaves session nil", func(t *testing.T) {
+			settings := validSettings
+
+			// A period without start/end can't pass validation on the new session.
+			shortPeriod := 30 * time.Minute
+			changelog, err := settings.UpdateScheduledSession(domain.ScheduledSessionUpdate{
+				Period: &shortPeriod,
 			})
+			require.EqualError(t, err, "missing start time")
+			require.Empty(t, changelog)
+			require.Nil(t, settings.ScheduledSession)
+		})
+	})
+
+	t.Run("ClearScheduledSession", func(t *testing.T) {
+		settings := validSettings
+		settings.ScheduledSession = &domain.ScheduledSession{
+			StartTime: start, EndTime: end, Period: period,
 		}
+
+		require.Equal(t, []string{"scheduled_session"}, settings.ClearScheduledSession())
+		require.Nil(t, settings.ScheduledSession)
 	})
+}
 
-	t.Run("merge with update_fields updates only listed fields", func(t *testing.T) {
-		current := validSettings()
-		partial := Settings{BanThreshold: 10}
-		merged, err := partial.Merge(current, []string{"ban_threshold"})
-		require.NoError(t, err)
+func testSettingsBatchFees(t *testing.T) {
+	t.Run("UpdateBatchFees", func(t *testing.T) {
+		t.Run("valid", func(t *testing.T) {
+			settings := validSettings
+			fee := "0.0"
 
-		assert.Equal(t, int64(10), merged.BanThreshold)
-		assert.Equal(t, current.BanDuration, merged.BanDuration)
-		assert.Equal(t, current.UnilateralExitDelay, merged.UnilateralExitDelay)
-		assert.Equal(t, current.BoardingExitDelay, merged.BoardingExitDelay)
-		assert.Equal(t, current.VtxoTreeExpiry, merged.VtxoTreeExpiry)
-		assert.Equal(t, current.MaxTxWeight, merged.MaxTxWeight)
-		require.NoError(t, merged.Validate())
-	})
+			changelog, err := settings.UpdateBatchFees(domain.BatchFeesUpdate{
+				OnchainInputFee: &fee,
+			})
+			require.NoError(t, err)
+			require.Equal(t, []string{"batch_fees"}, changelog)
+			require.Equal(t, "0.0", settings.BatchFees.OnchainInputFee)
+		})
 
-	t.Run("merge with update_fields allows setting field to zero", func(t *testing.T) {
-		current := validSettings()
-		current.SettlementMinExpiryGap = 3600
-		update := Settings{SettlementMinExpiryGap: 0}
-		merged, err := update.Merge(current, []string{"settlement_min_expiry_gap"})
-		require.NoError(t, err)
+		t.Run("invalid is rejected and leaves fees untouched", func(t *testing.T) {
+			settings := validSettings
+			badFee := "1 +"
 
-		assert.Equal(t, int64(0), merged.SettlementMinExpiryGap)
-		// Other fields unchanged.
-		assert.Equal(t, current.BanThreshold, merged.BanThreshold)
-	})
-
-	t.Run("merge with empty update_fields replaces all fields", func(t *testing.T) {
-		current := validSettings()
-		full := validSettings()
-		full.BanThreshold = 99
-		merged, err := full.Merge(current, nil)
-		require.NoError(t, err)
-
-		assert.Equal(t, int64(99), merged.BanThreshold)
-		assert.Equal(t, full.BanDuration, merged.BanDuration)
-	})
-
-	t.Run("merge rejects unknown update_fields", func(t *testing.T) {
-		current := validSettings()
-		_, err := current.Merge(current, []string{"ban_threshol"})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), `unknown update field: "ban_threshol"`)
-	})
-
-	t.Run("merge rejects duplicate update_fields", func(t *testing.T) {
-		current := validSettings()
-		_, err := current.Merge(current, []string{"ban_threshold", "ban_threshold"})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), `duplicate update field: "ban_threshold"`)
-	})
-
-	t.Run("validUpdateFields matches Settings struct", func(t *testing.T) {
-		expected := map[string]struct{}{
-			"ban_threshold":                      {},
-			"ban_duration":                       {},
-			"unilateral_exit_delay":              {},
-			"public_unilateral_exit_delay":       {},
-			"checkpoint_exit_delay":              {},
-			"boarding_exit_delay":                {},
-			"vtxo_tree_expiry":                   {},
-			"round_min_participants_count":       {},
-			"round_max_participants_count":       {},
-			"vtxo_min_amount":                    {},
-			"vtxo_max_amount":                    {},
-			"utxo_min_amount":                    {},
-			"utxo_max_amount":                    {},
-			"settlement_min_expiry_gap":          {},
-			"vtxo_no_csv_validation_cutoff_date": {},
-			"max_tx_weight":                      {},
-		}
-		assert.Equal(t, expected, validUpdateFields)
-	})
-
-	t.Run("min exceeds max", func(t *testing.T) {
-		t.Run("vtxo", func(t *testing.T) {
-			s := validSettings()
-			s.VtxoMinAmount = 1000
-			s.VtxoMaxAmount = 500
-			err := s.Validate()
+			changelog, err := settings.UpdateBatchFees(domain.BatchFeesUpdate{
+				OnchainInputFee: &badFee,
+			})
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "vtxo min amount must be <= vtxo max amount")
+			require.Empty(t, changelog)
+			require.Equal(t, domain.BatchFees{}, settings.BatchFees)
 		})
+	})
 
-		t.Run("utxo", func(t *testing.T) {
-			s := validSettings()
-			s.UtxoMinAmount = 1000
-			s.UtxoMaxAmount = 500
-			err := s.Validate()
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "utxo min amount must be <= utxo max amount")
-		})
+	t.Run("ClearBatchFees", func(t *testing.T) {
+		settings := validSettings
+		settings.BatchFees = domain.BatchFees{OnchainInputFee: "0.0"}
 
-		t.Run("skipped when sentinel", func(t *testing.T) {
-			s := validSettings()
-			s.VtxoMinAmount = 1000
-			s.VtxoMaxAmount = -1
-			require.NoError(t, s.Validate())
-		})
+		require.Equal(t, []string{"batch_fees"}, settings.ClearBatchFees())
+		require.Equal(t, domain.BatchFees{}, settings.BatchFees)
 	})
 }

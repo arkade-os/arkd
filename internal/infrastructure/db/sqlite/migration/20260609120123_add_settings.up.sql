@@ -1,5 +1,7 @@
 CREATE TABLE IF NOT EXISTS settings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_duration BIGINT NOT NULL DEFAULT 0,
+    unrolled_vtxo_min_expiry_margin BIGINT NOT NULL DEFAULT 0,
     ban_threshold BIGINT NOT NULL DEFAULT 0,
     ban_duration BIGINT NOT NULL DEFAULT 0,
     unilateral_exit_delay BIGINT NOT NULL DEFAULT 0,
@@ -16,5 +18,18 @@ CREATE TABLE IF NOT EXISTS settings (
     settlement_min_expiry_gap BIGINT NOT NULL DEFAULT 0,
     vtxo_no_csv_validation_cutoff_date BIGINT NOT NULL DEFAULT 0,
     max_tx_weight BIGINT NOT NULL DEFAULT 0,
+    max_op_return_outputs BIGINT NOT NULL DEFAULT 0,
+    asset_tx_max_weight_ratio REAL NOT NULL DEFAULT 0,
+    note_uri_prefix TEXT NOT NULL DEFAULT '',
+    scheduled_session_start_time BIGINT NOT NULL DEFAULT 0,
+    scheduled_session_end_time BIGINT NOT NULL DEFAULT 0,
+    scheduled_session_period BIGINT NOT NULL DEFAULT 0,
+    scheduled_session_duration BIGINT NOT NULL DEFAULT 0,
+    scheduled_session_round_min_participants_count BIGINT NOT NULL DEFAULT 0,
+    scheduled_session_round_max_participants_count BIGINT NOT NULL DEFAULT 0,
+    batch_onchain_input_fee TEXT NOT NULL DEFAULT '',
+    batch_offchain_input_fee TEXT NOT NULL DEFAULT '',
+    batch_onchain_output_fee TEXT NOT NULL DEFAULT '',
+    batch_offchain_output_fee TEXT NOT NULL DEFAULT '',
     updated_at BIGINT NOT NULL
 );

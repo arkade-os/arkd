@@ -31,7 +31,7 @@ func TestUpdateHandlerSet(t *testing.T) {
 
 		for _, f := range fixtures {
 			t.Run(f.name, func(t *testing.T) {
-				h := newUpdateHandler[domain.OffchainTx]()
+				h := newEventHandler[domain.OffchainTx]()
 
 				var active atomic.Int32
 				for i := 0; i < f.numSets; i++ {
@@ -66,7 +66,7 @@ func TestUpdateHandlerDispatch(t *testing.T) {
 
 		for _, f := range fixtures {
 			t.Run(f.name, func(t *testing.T) {
-				h := newUpdateHandler[domain.OffchainTx]()
+				h := newEventHandler[domain.OffchainTx]()
 
 				received := make(chan domain.OffchainTx, 1)
 				h.set(func(data domain.OffchainTx) {
@@ -85,7 +85,7 @@ func TestUpdateHandlerDispatch(t *testing.T) {
 		}
 
 		t.Run("no-op when handler not set", func(t *testing.T) {
-			h := newUpdateHandler[domain.OffchainTx]()
+			h := newEventHandler[domain.OffchainTx]()
 
 			require.NotPanics(t, func() {
 				h.dispatch(domain.OffchainTx{})
