@@ -32,7 +32,7 @@ func TestSeedSettings(t *testing.T) {
 		)
 		err = db.QueryRow(`
 			SELECT session_duration, batch_onchain_input_fee, scheduled_session_start_time
-			FROM settings WHERE id = 0`).
+			FROM settings WHERE id = 1`).
 			Scan(&sessionDuration, &batchOnchainIn, &ssStart)
 		require.NoError(t, err)
 		require.Equal(t, int64(30), sessionDuration)
@@ -81,7 +81,7 @@ func TestSeedSettings(t *testing.T) {
 		SELECT batch_offchain_input_fee, batch_onchain_input_fee,
 		       scheduled_session_start_time, scheduled_session_period,
 		       scheduled_session_round_min_participants_count
-		FROM settings WHERE id = 0`).
+		FROM settings WHERE id = 1`).
 			Scan(&batchOffchainIn, &batchOnchainIn, &ssStart, &ssPeriod, &ssRoundMin)
 		require.NoError(t, err)
 		require.Equal(t, "0.1", batchOffchainIn)
@@ -111,7 +111,7 @@ func TestSeedSettings(t *testing.T) {
 		require.NoError(t, sqlitedb.SeedSettings(ctx, db, defaults))
 
 		// Simulate an admin change after the first seed.
-		_, err = db.Exec(`UPDATE settings SET session_duration = 999 WHERE id = 0`)
+		_, err = db.Exec(`UPDATE settings SET session_duration = 999 WHERE id = 1`)
 		require.NoError(t, err)
 
 		// A late-arriving legacy row must NOT be re-applied on the second run.
@@ -127,7 +127,7 @@ func TestSeedSettings(t *testing.T) {
 		var sessionDuration int64
 		var batchOffchainIn string
 		err = db.QueryRow(`
-		SELECT session_duration, batch_offchain_input_fee FROM settings WHERE id = 0`).
+		SELECT session_duration, batch_offchain_input_fee FROM settings WHERE id = 1`).
 			Scan(&sessionDuration, &batchOffchainIn)
 		require.NoError(t, err)
 		require.Equal(t, int64(999), sessionDuration) // admin change preserved
@@ -176,7 +176,7 @@ func createSettingsTable(t *testing.T, db *sql.DB) {
 	t.Helper()
 	_, err := db.Exec(`
 CREATE TABLE IF NOT EXISTS settings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id INTEGER PRIMARY KEY CHECK (id = 1),
     session_duration BIGINT NOT NULL DEFAULT 0,
     unrolled_vtxo_min_expiry_margin BIGINT NOT NULL DEFAULT 0,
     ban_threshold BIGINT NOT NULL DEFAULT 0,

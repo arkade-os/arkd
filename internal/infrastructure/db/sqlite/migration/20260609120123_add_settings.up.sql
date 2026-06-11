@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS settings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id INTEGER PRIMARY KEY CHECK (id = 1),
     session_duration BIGINT NOT NULL DEFAULT 0,
     unrolled_vtxo_min_expiry_margin BIGINT NOT NULL DEFAULT 0,
     ban_threshold BIGINT NOT NULL DEFAULT 0,

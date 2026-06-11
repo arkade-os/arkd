@@ -123,7 +123,7 @@ const insertSettingsHistory = `-- name: InsertSettingsHistory :exec
 INSERT INTO settings_history (changed_at, changed_fields, settings)
 SELECT s.updated_at, $1::text[], to_jsonb(s.*) - 'id'
 FROM settings s
-WHERE s.id = 0
+WHERE s.id = 1
 `
 
 func (q *Queries) InsertSettingsHistory(ctx context.Context, changedFields []string) error {
@@ -2340,23 +2340,23 @@ INSERT INTO settings (
     batch_onchain_output_fee, batch_offchain_output_fee,
     updated_at
 ) VALUES (
-    $1,
-    $2, $3,
-    $4, $5,
-    $6, $7,
-    $8, $9, $10,
-    $11, $12,
-    $13, $14, $15, $16,
-    $17, $18,
-    $19, $20, $21,
-    $22,
-    $23, $24,
-    $25, $26,
+    1,
+    $1, $2,
+    $3, $4,
+    $5, $6,
+    $7, $8, $9,
+    $10, $11,
+    $12, $13, $14, $15,
+    $16, $17,
+    $18, $19, $20,
+    $21,
+    $22, $23,
+    $24, $25,
+    $26,
     $27,
-    $28,
-    $29, $30,
-    $31, $32,
-    $33
+    $28, $29,
+    $30, $31,
+    $32
 )
 ON CONFLICT(id) DO UPDATE SET
     session_duration = EXCLUDED.session_duration,
@@ -2396,7 +2396,6 @@ ON CONFLICT(id) DO UPDATE SET
 `
 
 type UpsertSettingsParams struct {
-	ID                                        int64
 	SessionDuration                           int64
 	UnrolledVtxoMinExpiryMargin               int64
 	BanThreshold                              int64
@@ -2433,7 +2432,6 @@ type UpsertSettingsParams struct {
 
 func (q *Queries) UpsertSettings(ctx context.Context, arg UpsertSettingsParams) error {
 	_, err := q.db.ExecContext(ctx, upsertSettings,
-		arg.ID,
 		arg.SessionDuration,
 		arg.UnrolledVtxoMinExpiryMargin,
 		arg.BanThreshold,

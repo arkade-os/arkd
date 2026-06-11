@@ -513,7 +513,7 @@ INSERT INTO settings (
     batch_onchain_output_fee, batch_offchain_output_fee,
     updated_at
 ) VALUES (
-    @id,
+    1,
     @session_duration, @unrolled_vtxo_min_expiry_margin,
     @ban_threshold, @ban_duration,
     @unilateral_exit_delay, @public_unilateral_exit_delay,
