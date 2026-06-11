@@ -20,6 +20,7 @@ func validConfig() Config {
 		EventDbType:                   "badger",
 		DbType:                        "sqlite",
 		TxBuilderType:                 "covenantless",
+		IndexerExposure:               "public",
 		MaxConcurrentStreams:          1,
 		SessionDuration:               30,
 		UnrolledVtxoMinExpiryMargin:   30,
@@ -182,6 +183,28 @@ func TestConfigValidateEarlyChecks(t *testing.T) {
 				"unsupported live store type",
 				func(c *Config) { c.LiveStoreType = "memcached" },
 				"live store type not supported",
+			},
+			{
+				"unsupported indexer exposure type",
+				func(c *Config) { c.IndexerExposure = "secret" },
+				"indexer exposure type not supported",
+			},
+			{
+				"non-public exposure without auth token expiry",
+				func(c *Config) {
+					c.IndexerExposure = "private"
+					c.IndexerAuthTokenExpiry = 0
+				},
+				"indexer auth token expiry must be greater than 0",
+			},
+			{
+				"non-public exposure without signing key",
+				func(c *Config) {
+					c.IndexerExposure = "private"
+					c.IndexerAuthTokenExpiry = 3600
+					c.IndexerSigningKey = ""
+				},
+				"indexer signing key is required",
 			},
 			{
 				"invalid settings",

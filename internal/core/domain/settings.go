@@ -214,7 +214,7 @@ func (s Settings) Validate() error {
 }
 
 // SettingsUpdate is a copy of the Settings repo struct, but with optional fields to easily handle
-// changes in Setttings.
+// changes.
 type SettingsUpdate struct {
 	SessionDuration               *time.Duration
 	UnrolledVtxoMinExpiryMargin   *time.Duration
@@ -369,7 +369,7 @@ func (s *Settings) UpdateBatchFees(updates BatchFeesUpdate) ([]string, error) {
 	return []string{"batch_fees"}, nil
 }
 
-// ClearScheduledSession deletes the batch fees from settings and returns the changelog like
+// ClearBatchFees deletes the batch fees from settings and returns the changelog like
 // Update does.
 func (s *Settings) ClearBatchFees() []string {
 	s.BatchFees = BatchFees{}

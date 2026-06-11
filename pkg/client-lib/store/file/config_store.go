@@ -69,10 +69,10 @@ func (s *configStore) AddData(ctx context.Context, data types.Config) error {
 		Fees: feeData{
 			TxFeeRate: fmt.Sprintf("%.1f", data.Fees.TxFeeRate),
 			IntentFees: intentFeeData{
-				OffchainInput:  data.Fees.IntentFees.BatchOffchainInputProgram,
-				OffchainOutput: data.Fees.IntentFees.BatchOffchainOutputProgram,
-				OnchainInput:   data.Fees.IntentFees.BatchOnchainInputProgram,
-				OnchainOutput:  data.Fees.IntentFees.BatchOnchainOutputProgram,
+				OffchainInput:  data.Fees.IntentFees.IntentOffchainInputProgram,
+				OffchainOutput: data.Fees.IntentFees.IntentOffchainOutputProgram,
+				OnchainInput:   data.Fees.IntentFees.IntentOnchainInputProgram,
+				OnchainOutput:  data.Fees.IntentFees.IntentOnchainOutputProgram,
 			},
 		},
 	}

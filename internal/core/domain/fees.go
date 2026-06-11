@@ -34,8 +34,8 @@ func NewBatchFees(
 }
 
 func (f *BatchFees) Update(u BatchFeesUpdate) error {
-	// Apply the update to a copy so that, if validation fails, the receiver is
-	// left untouched. Settings holds only value types, so this is a full clone.
+	// Apply the update to a copy so that, if validation fails, the fees are
+	// left untouched.
 	updated := *f
 
 	if u.OnchainInputFee != nil {
@@ -54,7 +54,7 @@ func (f *BatchFees) Update(u BatchFeesUpdate) error {
 		return err
 	}
 
-	// Validation passed: commit the changes back onto the receiver.
+	// Validation passed: commit the changes.
 	*f = updated
 	return nil
 }

@@ -90,7 +90,9 @@ func (r *settingsRepository) Upsert(
 				attempts++
 			}
 		}
-		return err
+		if err != nil {
+			return err
+		}
 	}
 
 	go r.dispatch(settings, changelog)

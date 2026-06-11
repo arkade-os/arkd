@@ -21,7 +21,8 @@ func NewSettingsStore() ports.SettingsStore {
 func (s *settingsStore) Get(ctx context.Context) (*ports.Settings, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
-	return &s.settings, nil
+	settings := s.settings
+	return &settings, nil
 }
 
 func (s *settingsStore) Upsert(ctx context.Context, settings ports.Settings) error {

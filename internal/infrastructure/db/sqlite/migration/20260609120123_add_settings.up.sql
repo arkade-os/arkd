@@ -31,5 +31,5 @@ CREATE TABLE IF NOT EXISTS settings (
     batch_offchain_input_fee TEXT NOT NULL DEFAULT '',
     batch_onchain_output_fee TEXT NOT NULL DEFAULT '',
     batch_offchain_output_fee TEXT NOT NULL DEFAULT '',
-    updated_at BIGINT NOT NULL
+    updated_at BIGINT NOT NULL DEFAULT 0
 );

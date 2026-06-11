@@ -1929,6 +1929,8 @@ func testSettingsRepository(t *testing.T, svc ports.RepoManager) {
 
 func assertSettingsEqual(t *testing.T, expected, actual domain.Settings) {
 	t.Helper()
+	assert.Equal(t, expected.SessionDuration, actual.SessionDuration, "SessionDuration not equal")
+	assert.Equal(t, expected.UnrolledVtxoMinExpiryMargin, actual.UnrolledVtxoMinExpiryMargin, "UnrolledVtxoMinExpiryMargin not equal")
 	assert.Equal(t, expected.BanThreshold, actual.BanThreshold, "BanThreshold not equal")
 	assert.Equal(t, expected.BanDuration, actual.BanDuration, "BanDuration not equal")
 	assert.Equal(t, expected.UnilateralExitDelay, actual.UnilateralExitDelay, "UnilateralExitDelay not equal")
@@ -1946,6 +1948,9 @@ func assertSettingsEqual(t *testing.T, expected, actual domain.Settings) {
 	assert.Equal(t, expected.VtxoNoCsvValidationCutoffDate, actual.VtxoNoCsvValidationCutoffDate, "VtxoNoCsvValidationCutoffDate not equal")
 	assert.Equal(t, expected.MaxTxWeight, actual.MaxTxWeight, "MaxTxWeight not equal")
 	assert.True(t, expected.UpdatedAt.Equal(actual.UpdatedAt), "UpdatedAt not equal")
+	assert.Equal(t, expected.AssetTxMaxWeightRatio, actual.AssetTxMaxWeightRatio, "AssetTxMaxWeightRatio not equal")
+	assert.Equal(t, expected.MaxOpReturnOutputs, actual.MaxOpReturnOutputs, "MaxOpReturnOutputs not equal")
+	assert.Equal(t, expected.NoteUriPrefix, actual.NoteUriPrefix, "NoteUriPrefix not equal")
 }
 
 func assertScheduledSessionEqual(t *testing.T, expected, actual domain.ScheduledSession) {
