@@ -28,7 +28,6 @@ var (
 		Usage: "Manage the Ark Server wallet",
 		Subcommands: cli.Commands{
 			walletStatusCmd,
-			walletCreateOrRestoreCmd,
 			walletUnlockCmd,
 			walletAddressCmd,
 			walletBalanceCmd,
@@ -57,15 +56,9 @@ var (
 		Usage:  "Get info about the status of the wallet",
 		Action: walletStatusAction,
 	}
-	walletCreateOrRestoreCmd = &cli.Command{
-		Name:   "create",
-		Usage:  "Create or restore the wallet",
-		Action: walletCreateOrRestoreAction,
-		Flags:  []cli.Flag{passwordFlag, mnemonicFlag, gapLimitFlag},
-	}
 	walletUnlockCmd = &cli.Command{
 		Name:   "unlock",
-		Usage:  "Unlock the wallet",
+		Usage:  "Unlock the macaroon (admin auth) service",
 		Action: walletUnlockAction,
 		Flags:  []cli.Flag{passwordFlag},
 	}
@@ -304,49 +297,6 @@ func walletStatusAction(ctx *cli.Context) error {
 	return nil
 }
 
-func walletCreateOrRestoreAction(ctx *cli.Context) error {
-	baseURL := ctx.String(urlFlagName)
-	_, tlsConfig, err := getCredentials(ctx)
-	if err != nil {
-		return err
-	}
-
-	password := ctx.String(passwordFlagName)
-	mnemonic := ctx.String(mnemonicFlagName)
-	gapLimit := ctx.Uint64(gapLimitFlagName)
-
-	if len(mnemonic) > 0 {
-		url := fmt.Sprintf("%s/v1/admin/wallet/restore", baseURL)
-		body := fmt.Sprintf(
-			`{"seed": "%s", "password": "%s", "gap_limit": %d}`,
-			mnemonic, password, gapLimit,
-		)
-		if _, err := post[struct{}](url, body, "", "", tlsConfig); err != nil {
-			return err
-		}
-
-		fmt.Println("wallet restored")
-		return nil
-	}
-
-	url := fmt.Sprintf("%s/v1/admin/wallet/seed", baseURL)
-	seed, err := get[string](url, "seed", "", tlsConfig)
-	if err != nil {
-		return err
-	}
-
-	url = fmt.Sprintf("%s/v1/admin/wallet/create", baseURL)
-	body := fmt.Sprintf(
-		`{"seed": "%s", "password": "%s"}`, seed, password,
-	)
-	if _, err := post[struct{}](url, body, "", "", tlsConfig); err != nil {
-		return err
-	}
-
-	fmt.Println(seed)
-	return nil
-}
-
 func walletUnlockAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	_, tlsConfig, err := getCredentials(ctx)
@@ -362,7 +312,7 @@ func walletUnlockAction(ctx *cli.Context) error {
 		return err
 	}
 
-	fmt.Println("wallet unlocked")
+	fmt.Println("macaroon service unlocked")
 	return nil
 }
 

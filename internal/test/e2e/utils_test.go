@@ -41,6 +41,7 @@ import (
 
 const (
 	adminUrl    = "http://127.0.0.1:7071"
+	walletUrl   = "http://127.0.0.1:6060"
 	serverUrl   = "127.0.0.1:7070"
 	explorerUrl = "http://127.0.0.1:3000"
 )
@@ -561,12 +562,10 @@ func clearIntentFees() error {
 	return nil
 }
 
-// lock the wallet, wait 10s and unlock it
+// restartArkd restarts the arkd container. The wallet stays unlocked across the
+// restart (arkd no longer locks it), so arkd comes back up on its own; we just
+// wait for it to be ready again.
 func restartArkd() error {
-	adminHttpClient := &http.Client{
-		Timeout: 15 * time.Second,
-	}
-
 	// down arkd container
 	if _, err := runCommand("docker", "container", "stop", "arkd"); err != nil {
 		return err
@@ -578,16 +577,9 @@ func restartArkd() error {
 		return err
 	}
 
-	time.Sleep(5 * time.Second)
-
-	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
-	body := fmt.Sprintf(`{"password": "%s"}`, password)
-	if err := post(adminHttpClient, url, body, "unlock"); err != nil {
-		return err
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
 	}
-
-	// wait until the wallet is synced again before returning, otherwise RPCs
-	// racing the restart get "server not ready".
 	return waitUntilReady(adminHttpClient)
 }
 
@@ -618,65 +610,88 @@ func recreateArkdWallet(signerKey, deprecated string) error {
 	return restartArkd()
 }
 
+// unlockArkdWallet unlocks the arkd-wallet directly through its own gateway.
+// arkd no longer unlocks the wallet, so recreating the wallet container leaves
+// it locked until we unlock it here.
 func unlockArkdWallet() error {
-	adminHttpClient := &http.Client{Timeout: 15 * time.Second}
-	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	url := fmt.Sprintf("%s/v1/wallet/unlock", walletUrl)
 	body := fmt.Sprintf(`{"password": "%s"}`, password)
-	return post(adminHttpClient, url, body, "unlock")
+	return post(httpClient, url, body, "unlock wallet")
 }
 
 func setupArkd() error {
-	adminHttpClient := &http.Client{
+	httpClient := &http.Client{
 		Timeout: 15 * time.Second,
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/wallet/status", adminUrl)
-	status, err := get[statusResp](adminHttpClient, url, "status")
-	if err != nil {
+	// arkd no longer initializes or unlocks the wallet: drive the arkd-wallet
+	// directly so it is initialized and unlocked. arkd hard-fails to start while
+	// the wallet is locked, so it may have been crash-looping until now.
+	if err := setupArkdWallet(httpClient); err != nil {
 		return err
 	}
 
-	if status.Initialized && !status.Unlocked {
-		url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
+	// Restart arkd for a prompt clean boot now that the wallet is ready, then
+	// wait for it to come up.
+	if _, err := runCommand("docker", "container", "restart", "arkd"); err != nil {
+		return err
+	}
+
+	if err := waitUntilReady(httpClient); err != nil {
+		return err
+	}
+
+	return refill(httpClient)
+}
+
+// setupArkdWallet initializes and unlocks the arkd-wallet directly through its
+// own gateway, which is what arkd now expects to be done out of band.
+func setupArkdWallet(httpClient *http.Client) error {
+	// The arkd-wallet gateway may still be coming up; retry the first read until
+	// it is reachable.
+	statusURL := fmt.Sprintf("%s/v1/wallet/status", walletUrl)
+	var status *statusResp
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	timeout := time.After(2 * time.Minute)
+	for status == nil {
+		select {
+		case <-timeout:
+			return fmt.Errorf("timed out waiting for arkd-wallet to become reachable")
+		case <-ticker.C:
+			s, err := get[statusResp](httpClient, statusURL, "wallet status")
+			if err != nil {
+				// gateway not up yet; keep waiting.
+				continue
+			}
+			status = s
+		}
+	}
+
+	if !status.Initialized {
+		url := fmt.Sprintf("%s/v1/wallet/seed", walletUrl)
+		seed, err := get[seedResp](httpClient, url, "wallet seed")
+		if err != nil {
+			return err
+		}
+
+		url = fmt.Sprintf("%s/v1/wallet/create", walletUrl)
+		body := fmt.Sprintf(`{"seed": "%s", "password": "%s"}`, seed.Seed, password)
+		if err := post(httpClient, url, body, "create wallet"); err != nil {
+			return err
+		}
+	}
+
+	if !status.Unlocked {
+		url := fmt.Sprintf("%s/v1/wallet/unlock", walletUrl)
 		body := fmt.Sprintf(`{"password": "%s"}`, password)
-		if err := post(adminHttpClient, url, body, "unlock"); err != nil {
+		if err := post(httpClient, url, body, "unlock wallet"); err != nil {
 			return err
 		}
-
-		if err := waitUntilReady(adminHttpClient); err != nil {
-			return err
-		}
-
-		return refill(adminHttpClient)
 	}
 
-	if status.Initialized && status.Unlocked && status.Synced {
-		return refill(adminHttpClient)
-	}
-
-	url = fmt.Sprintf("%s/v1/admin/wallet/seed", adminUrl)
-	seed, err := get[seedResp](adminHttpClient, url, "seed")
-	if err != nil {
-		return err
-	}
-
-	url = fmt.Sprintf("%s/v1/admin/wallet/create", adminUrl)
-	body := fmt.Sprintf(`{"seed": "%s", "password": "%s"}`, seed.Seed, password)
-	if err := post(adminHttpClient, url, body, "create"); err != nil {
-		return err
-	}
-
-	url = fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
-	body = fmt.Sprintf(`{"password": "%s"}`, password)
-	if err := post(adminHttpClient, url, body, "unlock"); err != nil {
-		return err
-	}
-
-	if err := waitUntilReady(adminHttpClient); err != nil {
-		return err
-	}
-
-	return refill(adminHttpClient)
+	return nil
 }
 
 type statusResp struct {
@@ -726,19 +741,24 @@ func post(httpClient *http.Client, url, body, name string) error {
 
 func waitUntilReady(httpClient *http.Client) error {
 	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	timeout := time.After(2 * time.Minute)
 	url := fmt.Sprintf("%s/v1/admin/wallet/status", adminUrl)
-	for range ticker.C {
-		status, err := get[statusResp](httpClient, url, "status")
-		if err != nil {
-			return err
-		}
-
-		if status.Initialized && status.Unlocked && status.Synced {
-			ticker.Stop()
-			break
+	for {
+		select {
+		case <-timeout:
+			return fmt.Errorf("timed out waiting for arkd to become ready")
+		case <-ticker.C:
+			status, err := get[statusResp](httpClient, url, "status")
+			if err != nil {
+				// arkd may still be (re)starting; keep waiting.
+				continue
+			}
+			if status.Initialized && status.Unlocked && status.Synced {
+				return nil
+			}
 		}
 	}
-	return nil
 }
 
 func refill(httpClient *http.Client) error {
