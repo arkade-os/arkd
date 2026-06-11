@@ -13,79 +13,6 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
-const addIntentFees = `-- name: AddIntentFees :exec
-INSERT INTO intent_fees (
-  offchain_input_fee_program,
-  onchain_input_fee_program,
-  offchain_output_fee_program,
-  onchain_output_fee_program
-)
-SELECT
-    -- if all fee programs are empty, set them all to empty, else use provided, but if provided is empty fetch and use latest for that fee program.
-    -- if no rows exist in intent_fees, and a specific fee program is passed in as empty, default to empty string. 
-  CASE 
-    WHEN ($1 = '' AND $2 = '' AND $3 = '' AND $4 = '') THEN ''
-    WHEN $1 <> '' THEN $1
-    ELSE COALESCE((SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
-  END,
-  CASE
-    WHEN ($1 = '' AND $2 = '' AND $3 = '' AND $4 = '') THEN ''
-    WHEN $2 <> '' THEN $2
-    ELSE COALESCE((SELECT onchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
-  END,
-  CASE
-    WHEN ($1 = '' AND $2 = '' AND $3 = '' AND $4 = '') THEN ''
-    WHEN $3 <> '' THEN $3
-    ELSE COALESCE((SELECT offchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
-  END,
-  CASE
-    WHEN ($1 = '' AND $2 = '' AND $3 = '' AND $4 = '') THEN ''
-    WHEN $4 <> '' THEN $4
-    ELSE COALESCE((SELECT onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
-  END
-`
-
-type AddIntentFeesParams struct {
-	OffchainInputFeeProgram  interface{}
-	OnchainInputFeeProgram   interface{}
-	OffchainOutputFeeProgram interface{}
-	OnchainOutputFeeProgram  interface{}
-}
-
-func (q *Queries) AddIntentFees(ctx context.Context, arg AddIntentFeesParams) error {
-	_, err := q.db.ExecContext(ctx, addIntentFees,
-		arg.OffchainInputFeeProgram,
-		arg.OnchainInputFeeProgram,
-		arg.OffchainOutputFeeProgram,
-		arg.OnchainOutputFeeProgram,
-	)
-	return err
-}
-
-const clearIntentFees = `-- name: ClearIntentFees :exec
-INSERT INTO intent_fees (
-  offchain_input_fee_program,
-  onchain_input_fee_program,
-  offchain_output_fee_program,
-  onchain_output_fee_program
-)
-VALUES ('', '', '', '')
-`
-
-func (q *Queries) ClearIntentFees(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, clearIntentFees)
-	return err
-}
-
-const clearScheduledSession = `-- name: ClearScheduledSession :exec
-DELETE FROM scheduled_session
-`
-
-func (q *Queries) ClearScheduledSession(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, clearScheduledSession)
-	return err
-}
-
 const clearSettings = `-- name: ClearSettings :exec
 DELETE FROM settings
 `
@@ -548,44 +475,6 @@ func (q *Queries) SelectIntentByTxid(ctx context.Context, txid sql.NullString) (
 		&i.Txid,
 		&i.Proof,
 		&i.Message,
-	)
-	return i, err
-}
-
-const selectLatestIntentFees = `-- name: SelectLatestIntentFees :one
-SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees ORDER BY id DESC LIMIT 1
-`
-
-func (q *Queries) SelectLatestIntentFees(ctx context.Context) (IntentFee, error) {
-	row := q.db.QueryRowContext(ctx, selectLatestIntentFees)
-	var i IntentFee
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedAt,
-		&i.OffchainInputFeeProgram,
-		&i.OnchainInputFeeProgram,
-		&i.OffchainOutputFeeProgram,
-		&i.OnchainOutputFeeProgram,
-	)
-	return i, err
-}
-
-const selectLatestScheduledSession = `-- name: SelectLatestScheduledSession :one
-SELECT id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at FROM scheduled_session ORDER BY updated_at DESC LIMIT 1
-`
-
-func (q *Queries) SelectLatestScheduledSession(ctx context.Context) (ScheduledSession, error) {
-	row := q.db.QueryRowContext(ctx, selectLatestScheduledSession)
-	var i ScheduledSession
-	err := row.Scan(
-		&i.ID,
-		&i.StartTime,
-		&i.EndTime,
-		&i.Period,
-		&i.Duration,
-		&i.RoundMinParticipants,
-		&i.RoundMaxParticipants,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -2278,44 +2167,6 @@ func (q *Queries) UpsertRound(ctx context.Context, arg UpsertRoundParams) error 
 		arg.Swept,
 		arg.VtxoTreeExpiration,
 		arg.Fees,
-	)
-	return err
-}
-
-const upsertScheduledSession = `-- name: UpsertScheduledSession :exec
-INSERT INTO scheduled_session (id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (id) DO UPDATE SET
-    start_time = EXCLUDED.start_time,
-    end_time = EXCLUDED.end_time,
-    period = EXCLUDED.period,
-    duration = EXCLUDED.duration,
-    round_min_participants = EXCLUDED.round_min_participants,
-    round_max_participants = EXCLUDED.round_max_participants,
-    updated_at = EXCLUDED.updated_at
-`
-
-type UpsertScheduledSessionParams struct {
-	ID                   int32
-	StartTime            int64
-	EndTime              int64
-	Period               int64
-	Duration             int64
-	RoundMinParticipants int64
-	RoundMaxParticipants int64
-	UpdatedAt            int64
-}
-
-func (q *Queries) UpsertScheduledSession(ctx context.Context, arg UpsertScheduledSessionParams) error {
-	_, err := q.db.ExecContext(ctx, upsertScheduledSession,
-		arg.ID,
-		arg.StartTime,
-		arg.EndTime,
-		arg.Period,
-		arg.Duration,
-		arg.RoundMinParticipants,
-		arg.RoundMaxParticipants,
-		arg.UpdatedAt,
 	)
 	return err
 }
