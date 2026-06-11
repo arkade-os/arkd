@@ -135,7 +135,7 @@ type Settings struct {
 	CheckpointTapscript []byte
 }
 
-func (s Settings) Digest() string {
+func (s Settings) Digest() (string, error) {
 	data := digestData{
 		SignerPubKey:        hex.EncodeToString(s.SignerPubkey.SerializeCompressed()),
 		ForfeitPubKey:       hex.EncodeToString(s.ForfeitPubkey.SerializeCompressed()),
@@ -156,13 +156,12 @@ func (s Settings) Digest() string {
 		MaxTxWeight:        int64(s.MaxTxWeight),
 		MaxOpReturnOutputs: int64(s.MaxOpReturnOutputs),
 	}
-	// nolint
-	buf, _ := json.Marshal(data)
-	if len(buf) <= 0 {
-		return ""
+	buf, err := json.Marshal(data)
+	if err != nil {
+		return "", err
 	}
 	digest := sha256.Sum256(buf)
-	return hex.EncodeToString(digest[:])
+	return hex.EncodeToString(digest[:]), nil
 }
 
 type digestData struct {

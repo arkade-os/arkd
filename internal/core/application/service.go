@@ -2133,6 +2133,11 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		return nil, errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
 	}
 
+	digest, err := settings.Digest()
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to compute digest: %w", err)
+	}
+
 	publicUnilateralExitDelay := settings.PublicUnilateralExitDelay
 	boardingExitDelay := settings.BoardingExitDelay
 	sessionDuration := settings.SessionDuration
@@ -2184,7 +2189,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		Fees: FeeInfo{
 			IntentFees: batchFees,
 		},
-		Digest: settings.Digest(),
+		Digest: digest,
 	}, nil
 }
 

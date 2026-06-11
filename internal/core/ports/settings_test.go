@@ -106,7 +106,8 @@ func TestSettingsDigest(t *testing.T) {
 		{"updated at", func(s *ports.Settings) { s.UpdatedAt = time.Unix(1_800_000_000, 0) }, false},
 	}
 
-	baseDigest := baseSettings().Digest()
+	baseDigest, err := baseSettings().Digest()
+	require.NoError(t, err)
 	require.NotEmpty(t, baseDigest)
 
 	for _, tt := range tests {
@@ -114,7 +115,8 @@ func TestSettingsDigest(t *testing.T) {
 			mutated := baseSettings()
 			tt.mutate(&mutated)
 
-			got := mutated.Digest()
+			got, err := mutated.Digest()
+			require.NoError(t, err)
 			require.NotEmpty(t, got)
 
 			if tt.digestChanges {

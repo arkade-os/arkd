@@ -112,7 +112,7 @@ The following settings are persisted in the database and managed via the admin A
 | Endpoint                          | Method | Description                              |
 |-----------------------------------|--------|------------------------------------------|
 | `/v1/admin/settings`              | GET    | Retrieve current settings                |
-| `/v1/admin/settings`              | POST   | Update settings (full replace)           |
+| `/v1/admin/settings`              | POST   | Update settings (partial; only provided fields change)           |
 | `/v1/admin/settings/clear`        | POST   | Reset settings to defaults               |
 
 | Setting                              | Description                                                  | Default                        |
