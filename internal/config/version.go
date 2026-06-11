@@ -20,8 +20,7 @@ func parseVersionGuardLevel(s string) (VersionGuardLevel, error) {
 		return VersionGuardPatch, nil
 	default:
 		return "", fmt.Errorf(
-			"build version guard level not supported, please select one of: %s",
-			supportedBuildVersionGuardLevels,
+			"build version guard level not supported, please select one of: major, minor, patch",
 		)
 	}
 }

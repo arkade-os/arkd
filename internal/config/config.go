@@ -64,11 +64,6 @@ var (
 		"withheld": {},
 		"private":  {},
 	}
-	supportedBuildVersionGuardLevels = supportedType{
-		"major": {},
-		"minor": {},
-		"patch": {},
-	}
 )
 
 type Config struct {
