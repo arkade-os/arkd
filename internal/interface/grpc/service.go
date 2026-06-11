@@ -294,9 +294,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	})
 
 	versionGuard := interceptors.NewVersionGuard(
-		s.version,
-		s.appConfig.BuildVersionRequireHeader,
-		s.appConfig.BuildVersionGuardLevel,
+		s.appConfig.BuildVersionHeader,
+		s.appConfig.BuildVersionHeaderRequired,
 	)
 	grpcConfig := []grpc.ServerOption{
 		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc, versionGuard),

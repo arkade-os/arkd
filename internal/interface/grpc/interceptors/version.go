@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
-	"github.com/arkade-os/arkd/internal/config"
 	errors "github.com/arkade-os/arkd/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -46,7 +45,6 @@ func skipVersionGuard(fullMethod string) bool {
 type VersionGuard struct {
 	ServerVersion string
 	RequireHeader bool
-	Level         config.VersionGuardLevel
 
 	// enabled is false when ServerVersion is unparseable: the guard cannot
 	// compare versions and allows all clients.
@@ -60,12 +58,11 @@ type VersionGuard struct {
 // NewVersionGuard builds a VersionGuard, pre-parsing serverVersion and
 // pre-computing the minimum allowed client version for the given level.
 func NewVersionGuard(
-	serverVersion string, requireHeader bool, level config.VersionGuardLevel,
+	serverVersion string, requireHeader bool,
 ) VersionGuard {
 	guard := VersionGuard{
 		ServerVersion: serverVersion,
 		RequireHeader: requireHeader,
-		Level:         level,
 	}
 	major, minor, patch, err := parseVersion(serverVersion)
 	if err != nil {
@@ -74,14 +71,7 @@ func NewVersionGuard(
 	}
 	guard.enabled = true
 	guard.serverMajor, guard.serverMinor, guard.serverPatch = major, minor, patch
-	switch level {
-	case config.VersionGuardMajor:
-		guard.minAllowedVersion = fmt.Sprintf("%d.0.0", major)
-	case config.VersionGuardPatch:
-		guard.minAllowedVersion = fmt.Sprintf("%d.%d.%d", major, minor, patch)
-	default: // default is minor
-		guard.minAllowedVersion = fmt.Sprintf("%d.%d.0", major, minor)
-	}
+	guard.minAllowedVersion = fmt.Sprintf("%d.%d.%d", major, minor, patch)
 	return guard
 }
 
@@ -126,20 +116,14 @@ func parseLeadingInt(s string) (int64, error) {
 	return strconv.ParseInt(s[:i], 10, 64)
 }
 
-// isBehind reports whether the client version is behind the server version at
-// the configured guard level.
+// isBehind reports whether the client version is strictly lower than the
+// minimum required version, comparing major, then minor, then patch.
 func isBehind(guard VersionGuard, clientMajor, clientMinor, clientPatch int64) bool {
 	if clientMajor != guard.serverMajor {
 		return clientMajor < guard.serverMajor
 	}
-	if guard.Level == config.VersionGuardMajor {
-		return false
-	}
 	if clientMinor != guard.serverMinor {
 		return clientMinor < guard.serverMinor
-	}
-	if guard.Level == config.VersionGuardMinor {
-		return false
 	}
 	return clientPatch < guard.serverPatch
 }
@@ -175,7 +159,7 @@ func checkVersionCompat(ctx context.Context, fullMethod string, guard VersionGua
 	headerVal, present := versionHeaderValue(ctx)
 	if !present || headerVal == "" {
 		if guard.RequireHeader {
-			log.Debug("rejecting request: missing build version header")
+			log.Warn("rejecting request: missing build version header")
 			return buildVersionTooOld("", guard)
 		}
 		return nil
@@ -184,16 +168,15 @@ func checkVersionCompat(ctx context.Context, fullMethod string, guard VersionGua
 	clientMajor, clientMinor, clientPatch, err := parseVersion(headerVal)
 	if err != nil {
 		if guard.RequireHeader {
-			log.Debugf("rejecting request: unparseable build version header %q", headerVal)
+			log.Warnf("rejecting request: invalid build version header %q", headerVal)
 			return buildVersionTooOld(headerVal, guard)
 		}
 		return nil
 	}
 
 	if isBehind(guard, clientMajor, clientMinor, clientPatch) {
-		log.Debugf(
-			"rejecting request: build version %q below server %q at %s level",
-			headerVal, guard.ServerVersion, guard.Level,
+		log.Warnf(
+			"rejecting request: build version %q below server %q", headerVal, guard.ServerVersion,
 		)
 		return buildVersionTooOld(headerVal, guard)
 	}

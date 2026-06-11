@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/arkade-os/arkd/internal/config"
 	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -14,72 +13,51 @@ import (
 
 const testMethod = "/ark.v1.ArkService/TestMethod"
 
-func TestNewVersionGuardMinAllowedVersion(t *testing.T) {
-	testCases := []struct {
-		serverVersion  string
-		level          config.VersionGuardLevel
-		wantMinVersion string
-	}{
-		{"2.3.4", config.VersionGuardMajor, "2.0.0"},
-		{"2.3.4", config.VersionGuardMinor, "2.3.0"},
-		{"2.3.4", config.VersionGuardPatch, "2.3.4"},
-		{"v1.2.3-rc1", config.VersionGuardPatch, "1.2.3"},
-	}
-	for _, tc := range testCases {
-		guard := NewVersionGuard(tc.serverVersion, true, tc.level)
-		require.True(t, guard.enabled)
-		require.Equal(t, tc.wantMinVersion, guard.minAllowedVersion)
-		// The human-readable message must advertise the same threshold as the
-		// min_version metadata field.
-		require.Contains(
-			t, buildVersionTooOld("", guard).Error(), ">= "+tc.wantMinVersion,
-		)
-	}
-
-	for _, bad := range []string{"", "unknown"} {
-		require.False(t, NewVersionGuard(bad, true, config.VersionGuardMinor).enabled)
-	}
-}
-
 func TestParseVersion(t *testing.T) {
-	testCases := []struct {
-		input     string
-		wantMajor int64
-		wantMinor int64
-		wantPatch int64
-	}{
-		{"1.0.0", 1, 0, 0},
-		{"v2.3.4", 2, 3, 4},
-		{"0.9.0", 0, 9, 0},
-		{"10.0.0", 10, 0, 0},
-		{"3", 3, 0, 0},
-		{"2.5", 2, 5, 0},
-		{"1.2.3-rc1", 1, 2, 3},
-		{"v1.2.3+build9", 1, 2, 3},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.input, func(t *testing.T) {
-			gotMajor, gotMinor, gotPatch, err := parseVersion(tc.input)
-			require.NoError(t, err)
-			require.Equal(t, tc.wantMajor, gotMajor)
-			require.Equal(t, tc.wantMinor, gotMinor)
-			require.Equal(t, tc.wantPatch, gotPatch)
-		})
-	}
+	t.Run("valid", func(t *testing.T) {
+		testCases := []struct {
+			input     string
+			wantMajor int64
+			wantMinor int64
+			wantPatch int64
+		}{
+			{"1.0.0", 1, 0, 0},
+			{"v2.3.4", 2, 3, 4},
+			{"0.9.0", 0, 9, 0},
+			{"10.0.0", 10, 0, 0},
+			{"3", 3, 0, 0},
+			{"2.5", 2, 5, 0},
+			{"1.2.3-rc1", 1, 2, 3},
+			{"v1.2.3+build9", 1, 2, 3},
+		}
+		for _, tt := range testCases {
+			t.Run(tt.input, func(t *testing.T) {
+				gotMajor, gotMinor, gotPatch, err := parseVersion(tt.input)
+				require.NoError(t, err)
+				require.Equal(t, tt.wantMajor, gotMajor)
+				require.Equal(t, tt.wantMinor, gotMinor)
+				require.Equal(t, tt.wantPatch, gotPatch)
+			})
+		}
+	})
 
-	for _, bad := range []string{"abc", ""} {
-		_, _, _, err := parseVersion(bad)
-		require.Error(t, err)
-	}
+	t.Run("invalid", func(t *testing.T) {
+		for _, bad := range []string{"abc", ""} {
+			t.Run(bad, func(t *testing.T) {
+				_, _, _, err := parseVersion(bad)
+				require.Error(t, err)
+			})
+		}
+	})
 }
 
 // versionCompatCase describes a single VersionGuard scenario. Each case is run
 // against both the unary and stream interceptors, which must behave identically
 // since they share checkVersionCompat.
 type versionCompatCase struct {
-	description   string
-	serverVersion string
-	level         config.VersionGuardLevel
+	description string
+	// minVersion is the configured minimum build version clients must send.
+	minVersion    string
 	requireHeader bool
 	// ctx is the incoming context. Use ctxWithVersion to set a client header,
 	// or context.Background() to simulate a missing header.
@@ -93,168 +71,157 @@ type versionCompatCase struct {
 
 func TestVersionCompat(t *testing.T) {
 	testCases := []versionCompatCase{
-		// --- Major guard level ---
+		// --- Client below the minimum is rejected ---
 		{
-			description:   "major: client below server major rejected",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMajor,
-			ctx:           ctxWithVersion("1.9.9"),
-			wantReject:    true, wantClientVersion: "1.9.9", wantMinVersion: "2.0.0",
+			description:       "client below min major rejected",
+			minVersion:        "2.3.4",
+			ctx:               ctxWithVersion("1.9.9"),
+			wantReject:        true,
+			wantClientVersion: "1.9.9",
+			wantMinVersion:    "2.3.4",
 		},
 		{
-			description:   "major: lower minor passes (only major guarded)",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMajor,
-			ctx:           ctxWithVersion("2.0.0"),
+			description:       "client below min minor rejected",
+			minVersion:        "2.3.4",
+			ctx:               ctxWithVersion("2.2.9"),
+			wantReject:        true,
+			wantClientVersion: "2.2.9",
+			wantMinVersion:    "2.3.4",
 		},
 		{
-			description:   "major: same major passes",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMajor,
-			ctx:           ctxWithVersion("2.3.4"),
+			description:       "client below min patch rejected",
+			minVersion:        "2.3.4",
+			ctx:               ctxWithVersion("2.3.3"),
+			wantReject:        true,
+			wantClientVersion: "2.3.3",
+			wantMinVersion:    "2.3.4",
 		},
 		{
-			description:   "major: higher major passes",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMajor,
-			ctx:           ctxWithVersion("3.0.0"),
-		},
-
-		// --- Minor guard level ---
-		{
-			description:   "minor: client below server major rejected",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMinor,
-			ctx:           ctxWithVersion("1.9.9"),
-			wantReject:    true, wantClientVersion: "1.9.9", wantMinVersion: "2.3.0",
-		},
-		{
-			description:   "minor: client below server minor rejected",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMinor,
-			ctx:           ctxWithVersion("2.2.9"),
-			wantReject:    true, wantClientVersion: "2.2.9", wantMinVersion: "2.3.0",
-		},
-		{
-			description:   "minor: client below server minor with v prefix rejected",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMinor,
-			ctx:           ctxWithVersion("v2.0.0"),
-			wantReject:    true, wantClientVersion: "v2.0.0", wantMinVersion: "2.3.0",
-		},
-		{
-			description:   "minor: same minor lower patch passes",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMinor,
-			ctx:           ctxWithVersion("2.3.0"),
-		},
-		{
-			description:   "minor: higher minor passes",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMinor,
-			ctx:           ctxWithVersion("2.4.0"),
+			description:       "client below min with v prefix rejected",
+			minVersion:        "2.3.4",
+			ctx:               ctxWithVersion("v2.0.0"),
+			wantReject:        true,
+			wantClientVersion: "v2.0.0",
+			wantMinVersion:    "2.3.4",
 		},
 
-		// --- Patch guard level ---
+		// --- Configured min version is normalized to major.minor.patch ---
 		{
-			description:   "patch: client below server patch rejected",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardPatch,
-			ctx:           ctxWithVersion("2.3.3"),
-			wantReject:    true, wantClientVersion: "2.3.3", wantMinVersion: "2.3.4",
+			description:       "min without patch normalized, client below rejected",
+			minVersion:        "2.3",
+			ctx:               ctxWithVersion("2.2.9"),
+			wantReject:        true,
+			wantClientVersion: "2.2.9",
+			wantMinVersion:    "2.3.0",
 		},
 		{
-			description:   "patch: client below server minor rejected",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardPatch,
-			ctx:           ctxWithVersion("2.2.9"),
-			wantReject:    true, wantClientVersion: "2.2.9", wantMinVersion: "2.3.4",
+			description: "min without patch normalized, client at threshold passes",
+			minVersion:  "2.3",
+			ctx:         ctxWithVersion("2.3.0"),
 		},
 		{
-			description:   "patch: same patch passes",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardPatch,
-			ctx:           ctxWithVersion("2.3.4"),
+			description:       "min with v prefix and pre-release normalized, client below rejected",
+			minVersion:        "v1.2.3-rc1",
+			ctx:               ctxWithVersion("1.2.2"),
+			wantReject:        true,
+			wantClientVersion: "1.2.2",
+			wantMinVersion:    "1.2.3",
 		},
 		{
-			description:   "patch: higher patch passes",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardPatch,
-			ctx:           ctxWithVersion("2.3.5"),
+			description: "min with v prefix and pre-release normalized, client at threshold passes",
+			minVersion:  "v1.2.3-rc1",
+			ctx:         ctxWithVersion("1.2.3"),
+		},
+
+		// --- Client at or above the minimum passes ---
+		{
+			description: "client equal to min passes",
+			minVersion:  "2.3.4",
+			ctx:         ctxWithVersion("2.3.4"),
+		},
+		{
+			description: "client higher patch passes",
+			minVersion:  "2.3.4",
+			ctx:         ctxWithVersion("2.3.5"),
+		},
+		{
+			description: "client higher minor passes despite lower patch",
+			minVersion:  "2.3.4",
+			ctx:         ctxWithVersion("2.4.0"),
+		},
+		{
+			description: "client higher major passes despite lower minor and patch",
+			minVersion:  "2.3.4",
+			ctx:         ctxWithVersion("3.0.0"),
 		},
 
 		// --- RequireHeader behavior ---
 		{
-			description:   "require header: missing header rejected",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMinor,
-			requireHeader: true,
-			ctx:           context.Background(),
-			wantReject:    true, wantClientVersion: "", wantMinVersion: "2.3.0",
+			description:    "require header: missing header rejected",
+			minVersion:     "2.3.4",
+			requireHeader:  true,
+			ctx:            context.Background(),
+			wantReject:     true,
+			wantMinVersion: "2.3.4",
 		},
 		{
-			description:   "require header: empty header value rejected",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMinor,
-			requireHeader: true,
-			ctx:           ctxWithVersion(""),
-			wantReject:    true, wantClientVersion: "", wantMinVersion: "2.3.0",
+			description:    "require header: empty header value rejected",
+			minVersion:     "2.3.4",
+			requireHeader:  true,
+			ctx:            ctxWithVersion(""),
+			wantReject:     true,
+			wantMinVersion: "2.3.4",
 		},
 		{
-			description:   "require header: unparseable header rejected",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardPatch,
-			requireHeader: true,
-			ctx:           ctxWithVersion("not-a-version"),
-			wantReject:    true, wantClientVersion: "not-a-version", wantMinVersion: "2.3.4",
+			description:       "require header: unparseable header rejected",
+			minVersion:        "2.3.4",
+			requireHeader:     true,
+			ctx:               ctxWithVersion("not-a-version"),
+			wantReject:        true,
+			wantClientVersion: "not-a-version",
+			wantMinVersion:    "2.3.4",
 		},
 		{
 			description:   "require header: valid up-to-date header passes",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMinor,
+			minVersion:    "2.3.4",
 			requireHeader: true,
 			ctx:           ctxWithVersion("2.3.4"),
 		},
 
 		// --- Header optional (default) behavior ---
 		{
-			description:   "optional header: missing header passes",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMinor,
-			ctx:           context.Background(),
+			description: "optional header: missing header passes",
+			minVersion:  "2.3.4",
+			ctx:         context.Background(),
 		},
 		{
-			description:   "optional header: empty header value passes",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMinor,
-			ctx:           ctxWithVersion(""),
+			description: "optional header: empty header value passes",
+			minVersion:  "2.3.4",
+			ctx:         ctxWithVersion(""),
 		},
 		{
-			description:   "optional header: unparseable header passes",
-			serverVersion: "2.3.4",
-			level:         config.VersionGuardMinor,
-			ctx:           ctxWithVersion("not-a-version"),
+			description: "optional header: unparseable header passes",
+			minVersion:  "2.3.4",
+			ctx:         ctxWithVersion("not-a-version"),
 		},
 
-		// --- Unparseable server version allows all clients ---
+		// --- Unparseable min version allows all clients ---
 		{
-			description:   "unparseable server version allows all clients",
-			serverVersion: "unknown",
-			level:         config.VersionGuardMinor,
+			description:   "unparseable min version allows all clients",
+			minVersion:    "unknown",
 			requireHeader: true,
 			ctx:           ctxWithVersion("0.1.0"),
 		},
 		{
-			description:   "empty server version allows all clients",
-			serverVersion: "",
-			level:         config.VersionGuardMinor,
+			description:   "empty min version allows all clients",
+			minVersion:    "",
 			requireHeader: true,
 			ctx:           context.Background(),
 		},
 	}
 
 	for _, tc := range testCases {
-		guard := NewVersionGuard(tc.serverVersion, tc.requireHeader, tc.level)
+		guard := NewVersionGuard(tc.minVersion, tc.requireHeader)
 
 		t.Run("unary/"+tc.description, func(t *testing.T) {
 			called, err := runUnaryGuard(guard, tc.ctx, testMethod)
@@ -272,7 +239,7 @@ func TestVersionCompat(t *testing.T) {
 // methods bypass the guard even with an outdated client version and a strict
 // require-header policy, while the public ArkService is still guarded.
 func TestVersionCompatSkipsAdminEndpoints(t *testing.T) {
-	guard := NewVersionGuard("2.3.4", true, config.VersionGuardMinor)
+	guard := NewVersionGuard("2.3.4", true)
 
 	skippedMethods := []string{
 		"/ark.v1.AdminService/Sweep",
@@ -350,6 +317,9 @@ func assertVersionCompat(t *testing.T, tc versionCompatCase, called bool, err er
 	meta := sdkErr.Metadata()
 	require.Equal(t, tc.wantClientVersion, meta["client_version"])
 	require.Equal(t, tc.wantMinVersion, meta["min_version"])
+	// The human-readable message must advertise the same threshold as the
+	// min_version metadata field.
+	require.Contains(t, err.Error(), ">= "+tc.wantMinVersion)
 }
 
 func ctxWithVersion(version string) context.Context {

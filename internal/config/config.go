@@ -77,35 +77,35 @@ type Config struct {
 	TLSExtraIPs     []string
 	TLSExtraDomains []string
 
-	DbType                    string
-	EventDbType               string
-	DbDir                     string
-	DbUrl                     string
-	EventDbUrl                string
-	EventDbDir                string
-	PostgresAutoCreateDB      bool
-	PostgresMaxOpenConn       int
-	PostgresMaxIdleConn       int
-	PostgresConnMaxIdleMins   int64
-	PostgresConnMaxLifeMins   int64
-	SessionDuration           int64
-	BanDuration               int64
-	BanThreshold              int64 // number of crimes to trigger a ban
-	TxBuilderType             string
-	LiveStoreType             string
-	RedisUrl                  string
-	RedisTxNumOfRetries       int
-	WalletAddr                string
-	SignerAddr                string
-	VtxoTreeExpiry            arklib.RelativeLocktime
-	UnilateralExitDelay       arklib.RelativeLocktime
-	PublicUnilateralExitDelay arklib.RelativeLocktime
-	CheckpointExitDelay       arklib.RelativeLocktime
-	BoardingExitDelay         arklib.RelativeLocktime
-	NoteUriPrefix             string
-	HeartbeatInterval         int64
-	BuildVersionRequireHeader bool
-	BuildVersionGuardLevel    VersionGuardLevel
+	DbType                     string
+	EventDbType                string
+	DbDir                      string
+	DbUrl                      string
+	EventDbUrl                 string
+	EventDbDir                 string
+	PostgresAutoCreateDB       bool
+	PostgresMaxOpenConn        int
+	PostgresMaxIdleConn        int
+	PostgresConnMaxIdleMins    int64
+	PostgresConnMaxLifeMins    int64
+	SessionDuration            int64
+	BanDuration                int64
+	BanThreshold               int64 // number of crimes to trigger a ban
+	TxBuilderType              string
+	LiveStoreType              string
+	RedisUrl                   string
+	RedisTxNumOfRetries        int
+	WalletAddr                 string
+	SignerAddr                 string
+	VtxoTreeExpiry             arklib.RelativeLocktime
+	UnilateralExitDelay        arklib.RelativeLocktime
+	PublicUnilateralExitDelay  arklib.RelativeLocktime
+	CheckpointExitDelay        arklib.RelativeLocktime
+	BoardingExitDelay          arklib.RelativeLocktime
+	NoteUriPrefix              string
+	HeartbeatInterval          int64
+	BuildVersionHeaderRequired bool
+	BuildVersionHeader         string
 
 	VtxoNoCsvValidationCutoffDate int64
 
@@ -257,8 +257,12 @@ var (
 	MaxConcurrentStreams = "MAX_CONCURRENT_STREAMS"
 	StreamConnPoolSize   = "STREAM_CONN_POOL_SIZE"
 
-	BuildVersionRequireHeader = "BUILD_VERSION_REQUIRE_HEADER"
-	BuildVersionGuardLevel    = "BUILD_VERSION_GUARD_LEVEL"
+	// MinBuildVersionHeader is used to specify the X-Build-Version header clients should submit
+	// to not have their request eventually rejected
+	MinBuildVersionHeader = "MIN_BUILD_VERSION_HEADER"
+	// MinBuildVersionHeaderRequired is used to determine if a request with invalid or non-existing
+	// X-Build-Version header should be rejected
+	MinBuildVersionHeaderRequired = "MIN_BUILD_VERSION_HEADER_REQUIRED"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -303,7 +307,6 @@ var (
 	maxStreamConnPoolSize                = uint32(64)
 	defaultMaxOpReturnOuts               = uint32(3)
 	defaultBuildVersionRequireHeader     = false
-	defaultBuildVersionGuardLevel        = "minor"
 )
 
 func LoadConfig() (*Config, error) {
@@ -355,8 +358,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
 	viper.SetDefault(StreamConnPoolSize, defaultStreamConnPoolSize)
 	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
-	viper.SetDefault(BuildVersionRequireHeader, defaultBuildVersionRequireHeader)
-	viper.SetDefault(BuildVersionGuardLevel, defaultBuildVersionGuardLevel)
+	viper.SetDefault(MinBuildVersionHeaderRequired, defaultBuildVersionRequireHeader)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -397,11 +399,6 @@ func LoadConfig() (*Config, error) {
 	adminPort := viper.GetUint32(AdminPort)
 	if adminPort == 0 {
 		adminPort = viper.GetUint32(Port)
-	}
-
-	versionGuardLevel, err := parseVersionGuardLevel(viper.GetString(BuildVersionGuardLevel))
-	if err != nil {
-		return nil, err
 	}
 
 	return &Config{
@@ -482,9 +479,9 @@ func LoadConfig() (*Config, error) {
 			maxStreamConnPoolSize, max(1, viper.GetUint32(StreamConnPoolSize)),
 		),
 		// Default to 1 if set to 0
-		MaxOpReturnOutputs:        max(1, viper.GetUint32(MaxOpReturnOutputs)),
-		BuildVersionRequireHeader: viper.GetBool(BuildVersionRequireHeader),
-		BuildVersionGuardLevel:    versionGuardLevel,
+		MaxOpReturnOutputs:         max(1, viper.GetUint32(MaxOpReturnOutputs)),
+		BuildVersionHeaderRequired: viper.GetBool(MinBuildVersionHeaderRequired),
+		BuildVersionHeader:         viper.GetString(MinBuildVersionHeader),
 	}, nil
 }
 
@@ -691,6 +688,10 @@ func (c *Config) Validate() error {
 
 	if c.MaxConcurrentStreams == 0 {
 		return fmt.Errorf("max concurrent streams must be greater than 0")
+	}
+
+	if c.BuildVersionHeaderRequired && len(c.BuildVersionHeader) <= 0 {
+		return fmt.Errorf("build version header is required but min supported version is missing")
 	}
 
 	if err := c.repoManager(); err != nil {
