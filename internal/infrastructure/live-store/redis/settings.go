@@ -1,0 +1,287 @@
+package redislivestore
+
+import (
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/internal/core/ports"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/redis/go-redis/v9"
+)
+
+const (
+	settingsKey = "settings"
+)
+
+type settingsStore struct {
+	rdb          *redis.Client
+	numOfRetries int
+	retryDelay   time.Duration
+}
+
+func NewSettingsStore(rdb *redis.Client, numOfRetries int) ports.SettingsStore {
+	return &settingsStore{
+		rdb:          rdb,
+		numOfRetries: numOfRetries,
+		retryDelay:   10 * time.Millisecond,
+	}
+}
+
+func (s *settingsStore) Upsert(ctx context.Context, settings ports.Settings) error {
+	data := newSettingsDTO(settings)
+	val, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Set(ctx, settingsKey, val, 0)
+				return nil
+			})
+
+			return err
+		}, settingsKey); err == nil {
+			return nil
+		}
+		time.Sleep(s.retryDelay)
+	}
+	return fmt.Errorf("failed to add or update settings after max number of retries: %v", err)
+}
+
+func (s *settingsStore) Get(ctx context.Context) (*ports.Settings, error) {
+	data, err := s.rdb.Get(ctx, settingsKey).Bytes()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get settings: %v", err)
+	}
+
+	var dto settingsDTO
+	if err := json.Unmarshal(data, &dto); err != nil {
+		return nil, fmt.Errorf("malformed settings in storage (out=%s): %s", string(data), err)
+	}
+
+	settings, err := dto.parse()
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse settings from cache: %w", err)
+	}
+	return settings, nil
+}
+
+type scheduledSessionDTO struct {
+	StartTime                 int64
+	EndTime                   int64
+	Period                    int64
+	Duration                  int64
+	RoundMinParticipantsCount int64
+	RoundMaxParticipantsCount int64
+}
+
+func newScheduledSessionDTO(session *domain.ScheduledSession) scheduledSessionDTO {
+	if session == nil {
+		return scheduledSessionDTO{}
+	}
+
+	return scheduledSessionDTO{
+		StartTime:                 session.StartTime.Unix(),
+		EndTime:                   session.EndTime.Unix(),
+		Period:                    int64(session.Period.Seconds()),
+		Duration:                  int64(session.Duration.Seconds()),
+		RoundMinParticipantsCount: session.RoundMinParticipantsCount,
+		RoundMaxParticipantsCount: session.RoundMaxParticipantsCount,
+	}
+}
+
+func (s scheduledSessionDTO) parse() *domain.ScheduledSession {
+	var empty scheduledSessionDTO
+	if s == empty {
+		return nil
+	}
+	return &domain.ScheduledSession{
+		StartTime:                 time.Unix(s.StartTime, 0),
+		EndTime:                   time.Unix(s.EndTime, 0),
+		Period:                    time.Duration(s.Period) * time.Second,
+		Duration:                  time.Duration(s.Duration) * time.Second,
+		RoundMinParticipantsCount: s.RoundMinParticipantsCount,
+		RoundMaxParticipantsCount: s.RoundMaxParticipantsCount,
+	}
+}
+
+type batchFeesDTO = domain.BatchFees
+
+type settingsDTO struct {
+	SessionDuration               int64
+	UnrolledVtxoMinExpiryMargin   int64
+	BanThreshold                  uint64
+	BanDuration                   int64
+	UnilateralExitDelay           int64
+	PublicUnilateralExitDelay     int64
+	CheckpointExitDelay           int64
+	BoardingExitDelay             int64
+	VtxoTreeExpiry                int64
+	RoundMinParticipantsCount     int64
+	RoundMaxParticipantsCount     int64
+	VtxoMinAmount                 int64
+	VtxoMaxAmount                 int64
+	UtxoMinAmount                 int64
+	UtxoMaxAmount                 int64
+	SettlementMinExpiryGap        int64
+	VtxoNoCsvValidationCutoffDate int64
+	MaxTxWeight                   uint64
+	MaxOpReturnOutputs            uint64
+	AssetTxMaxWeightRatio         float32
+	NoteUriPrefix                 string
+	ScheduledSession              scheduledSessionDTO
+	BatchFees                     batchFeesDTO
+	Network                       string
+	DustAmount                    uint64
+	SignerPubkey                  string
+	ForfeitPubkey                 string
+	ForfeitAddress                string
+	CheckpointTapscript           string
+}
+
+func newSettingsDTO(settings ports.Settings) settingsDTO {
+	var vtxoNoCsvValidationCutoffDate int64
+	if !settings.Settings.VtxoNoCsvValidationCutoffDate.IsZero() {
+		vtxoNoCsvValidationCutoffDate = settings.Settings.VtxoNoCsvValidationCutoffDate.Unix()
+	}
+	var signerPubkey string
+	if settings.SignerPubkey != nil {
+		signerPubkey = hex.EncodeToString(settings.SignerPubkey.SerializeCompressed())
+	}
+	var forfeitPubkey string
+	if settings.ForfeitPubkey != nil {
+		forfeitPubkey = hex.EncodeToString(settings.ForfeitPubkey.SerializeCompressed())
+	}
+
+	return settingsDTO{
+		SessionDuration:               int64(settings.Settings.SessionDuration.Seconds()),
+		UnrolledVtxoMinExpiryMargin:   int64(settings.Settings.UnrolledVtxoMinExpiryMargin.Seconds()),
+		BanThreshold:                  settings.Settings.BanThreshold,
+		BanDuration:                   int64(settings.Settings.BanDuration.Seconds()),
+		UnilateralExitDelay:           settings.Settings.UnilateralExitDelay.Seconds(),
+		PublicUnilateralExitDelay:     settings.Settings.PublicUnilateralExitDelay.Seconds(),
+		CheckpointExitDelay:           settings.Settings.CheckpointExitDelay.Seconds(),
+		BoardingExitDelay:             settings.Settings.BoardingExitDelay.Seconds(),
+		VtxoTreeExpiry:                settings.Settings.VtxoTreeExpiry.Seconds(),
+		RoundMinParticipantsCount:     settings.Settings.RoundMinParticipantsCount,
+		RoundMaxParticipantsCount:     settings.Settings.RoundMaxParticipantsCount,
+		VtxoMinAmount:                 settings.Settings.VtxoMinAmount,
+		VtxoMaxAmount:                 settings.Settings.VtxoMaxAmount,
+		UtxoMinAmount:                 settings.Settings.UtxoMinAmount,
+		UtxoMaxAmount:                 settings.Settings.UtxoMaxAmount,
+		SettlementMinExpiryGap:        int64(settings.Settings.SettlementMinExpiryGap.Seconds()),
+		VtxoNoCsvValidationCutoffDate: vtxoNoCsvValidationCutoffDate,
+		MaxTxWeight:                   settings.Settings.MaxTxWeight,
+		MaxOpReturnOutputs:            settings.Settings.MaxOpReturnOutputs,
+		AssetTxMaxWeightRatio:         settings.Settings.AssetTxMaxWeightRatio,
+		NoteUriPrefix:                 settings.Settings.NoteUriPrefix,
+		BatchFees:                     settings.Settings.BatchFees,
+		Network:                       settings.Network.Name,
+		DustAmount:                    settings.DustAmount,
+		SignerPubkey:                  signerPubkey,
+		ForfeitPubkey:                 forfeitPubkey,
+		ForfeitAddress:                settings.ForfeitAddress,
+		CheckpointTapscript:           hex.EncodeToString(settings.CheckpointTapscript),
+		ScheduledSession:              newScheduledSessionDTO(settings.ScheduledSession),
+	}
+}
+
+func (s settingsDTO) parse() (*ports.Settings, error) {
+	signerPubkey, err := parsePubkey(s.SignerPubkey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse signer pubkey: %w", err)
+	}
+	forfeitPubkey, err := parsePubkey(s.ForfeitPubkey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse forfeit pubkey: %w", err)
+	}
+	checkpointTapscript, err := hex.DecodeString(s.CheckpointTapscript)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse checkpoint tapscript: %w", err)
+	}
+	var vtxoNoCsvValidationCutoffDate time.Time
+	if s.VtxoNoCsvValidationCutoffDate > 0 {
+		vtxoNoCsvValidationCutoffDate = time.Unix(s.VtxoNoCsvValidationCutoffDate, 0)
+	}
+	unilateralExitDelay, _ := arklib.ParseRelativeLocktime(uint32(s.UnilateralExitDelay))
+	publicUnilateralExitDelay, _ := arklib.ParseRelativeLocktime(
+		uint32(s.PublicUnilateralExitDelay),
+	)
+	checkpointExitDelay, _ := arklib.ParseRelativeLocktime(uint32(s.CheckpointExitDelay))
+	boardingExitDelay, _ := arklib.ParseRelativeLocktime(uint32(s.BoardingExitDelay))
+	vtxoTreeExpiry, _ := arklib.ParseRelativeLocktime(uint32(s.VtxoTreeExpiry))
+	return &ports.Settings{
+		Settings: domain.Settings{
+			SessionDuration:               time.Duration(s.SessionDuration) * time.Second,
+			UnrolledVtxoMinExpiryMargin:   time.Duration(s.UnrolledVtxoMinExpiryMargin) * time.Second,
+			BanThreshold:                  s.BanThreshold,
+			BanDuration:                   time.Duration(s.BanDuration) * time.Second,
+			UnilateralExitDelay:           unilateralExitDelay,
+			PublicUnilateralExitDelay:     publicUnilateralExitDelay,
+			CheckpointExitDelay:           checkpointExitDelay,
+			BoardingExitDelay:             boardingExitDelay,
+			VtxoTreeExpiry:                vtxoTreeExpiry,
+			RoundMinParticipantsCount:     s.RoundMinParticipantsCount,
+			RoundMaxParticipantsCount:     s.RoundMaxParticipantsCount,
+			VtxoMinAmount:                 s.VtxoMinAmount,
+			VtxoMaxAmount:                 s.VtxoMaxAmount,
+			UtxoMinAmount:                 s.UtxoMinAmount,
+			UtxoMaxAmount:                 s.UtxoMaxAmount,
+			SettlementMinExpiryGap:        time.Duration(s.SettlementMinExpiryGap) * time.Second,
+			VtxoNoCsvValidationCutoffDate: vtxoNoCsvValidationCutoffDate,
+			MaxTxWeight:                   s.MaxTxWeight,
+			MaxOpReturnOutputs:            s.MaxOpReturnOutputs,
+			AssetTxMaxWeightRatio:         s.AssetTxMaxWeightRatio,
+			NoteUriPrefix:                 s.NoteUriPrefix,
+			ScheduledSession:              s.ScheduledSession.parse(),
+			BatchFees:                     s.BatchFees,
+		},
+		Network:             networkFromString(s.Network),
+		DustAmount:          s.DustAmount,
+		SignerPubkey:        signerPubkey,
+		ForfeitPubkey:       forfeitPubkey,
+		ForfeitAddress:      s.ForfeitAddress,
+		CheckpointTapscript: checkpointTapscript,
+	}, nil
+}
+
+func networkFromString(net string) arklib.Network {
+	switch net {
+	case arklib.BitcoinTestNet.Name:
+		return arklib.BitcoinTestNet
+	case arklib.BitcoinTestNet4.Name:
+		return arklib.BitcoinTestNet4
+	case arklib.BitcoinSigNet.Name:
+		return arklib.BitcoinSigNet
+	case arklib.BitcoinMutinyNet.Name:
+		return arklib.BitcoinMutinyNet
+	case arklib.BitcoinRegTest.Name:
+		return arklib.BitcoinRegTest
+	case arklib.Bitcoin.Name:
+		fallthrough
+	default:
+		return arklib.Bitcoin
+	}
+}
+
+func parsePubkey(key string) (*btcec.PublicKey, error) {
+	if len(key) <= 0 {
+		return nil, nil
+	}
+	buf, err := hex.DecodeString(key)
+	if err != nil {
+		return nil, fmt.Errorf("invalid format, expected hex got %s", key)
+	}
+	return btcec.ParsePubKey(buf)
+}

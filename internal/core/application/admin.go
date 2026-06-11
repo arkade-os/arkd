@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -28,17 +27,14 @@ type AdminService interface {
 	GetWalletAddress(ctx context.Context) (string, error)
 	GetWalletStatus(ctx context.Context) (*WalletStatus, error)
 	CreateNotes(ctx context.Context, amount uint32, quantity int) ([]string, error)
-	GetScheduledSessionConfig(ctx context.Context) (*domain.ScheduledSession, error)
-	UpdateScheduledSessionConfig(
-		ctx context.Context, scheduledSessionStartTime, scheduledSessionEndTime time.Time,
-		period, duration time.Duration, roundMinParticipantsCount, roundMaxParticipantsCount int64,
-	) error
-	ClearScheduledSessionConfig(ctx context.Context) error
+	GetScheduledSession(ctx context.Context) (*domain.ScheduledSession, error)
+	UpdateScheduledSession(ctx context.Context, updates domain.ScheduledSessionUpdate) error
+	ClearScheduledSession(ctx context.Context) error
 	ListIntents(ctx context.Context, intentIds ...string) ([]IntentInfo, error)
 	DeleteIntents(ctx context.Context, intentIds ...string) error
-	GetIntentFees(ctx context.Context) (*domain.IntentFees, error)
-	UpdateIntentFees(ctx context.Context, fees domain.IntentFees) error
-	ClearIntentFees(ctx context.Context) error
+	GetBatchFees(ctx context.Context) (*domain.BatchFees, error)
+	UpdateBatchFees(ctx context.Context, updates domain.BatchFeesUpdate) error
+	ClearBatchFees(ctx context.Context) error
 	GetConvictionsByIds(ctx context.Context, ids []string) ([]domain.Conviction, error)
 	GetConvictions(ctx context.Context, from, to time.Time) ([]domain.Conviction, error)
 	GetConvictionsByRound(ctx context.Context, roundID string) ([]domain.Conviction, error)
@@ -53,8 +49,7 @@ type AdminService interface {
 	GetExpiringLiquidity(ctx context.Context, after, before int64) (uint64, error)
 	GetRecoverableLiquidity(ctx context.Context) (uint64, error)
 	GetSettings(ctx context.Context) (*domain.Settings, error)
-	UpdateSettings(ctx context.Context, settings domain.Settings, updateFields []string) error
-	ClearSettings(ctx context.Context) error
+	UpdateSettings(ctx context.Context, settings domain.SettingsUpdate) ([]string, error)
 	GetCollectedFees(ctx context.Context, after, before int64) (uint64, error)
 }
 
@@ -65,36 +60,19 @@ type adminService struct {
 	sweeperTimeUnit ports.TimeUnit
 	liveStore       ports.LiveStore
 	feeManager      ports.FeeManager
-
-	roundMinParticipantsCount int64
-	roundMaxParticipantsCount int64
-
-	settingsMu        sync.Mutex
-	defaultSettings   domain.Settings
-	onSettingsUpdated func(context.Context, domain.Settings) error
-	onInfoChange      func()
 }
 
 func NewAdminService(
 	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
 	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit, feeManager ports.FeeManager,
-	roundMinParticipantsCount, roundMaxParticipantsCount int64,
-	defaultSettings domain.Settings,
-	onSettingsUpdated func(context.Context, domain.Settings) error,
-	onInfoChange func(),
 ) AdminService {
 	return &adminService{
-		walletSvc:                 walletSvc,
-		repoManager:               repoManager,
-		txBuilder:                 txBuilder,
-		sweeperTimeUnit:           timeUnit,
-		liveStore:                 liveStoreSvc,
-		feeManager:                feeManager,
-		roundMinParticipantsCount: roundMinParticipantsCount,
-		roundMaxParticipantsCount: roundMaxParticipantsCount,
-		defaultSettings:           defaultSettings,
-		onSettingsUpdated:         onSettingsUpdated,
-		onInfoChange:              onInfoChange,
+		walletSvc:       walletSvc,
+		repoManager:     repoManager,
+		txBuilder:       txBuilder,
+		sweeperTimeUnit: timeUnit,
+		liveStore:       liveStoreSvc,
+		feeManager:      feeManager,
 	}
 }
 
@@ -244,98 +222,50 @@ func (a *adminService) CreateNotes(
 	return notes, nil
 }
 
-func (s *adminService) GetScheduledSessionConfig(
+func (s *adminService) GetScheduledSession(
 	ctx context.Context,
 ) (*domain.ScheduledSession, error) {
-	return s.repoManager.ScheduledSession().Get(ctx)
+	settings, err := s.repoManager.Settings().Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if settings == nil {
+		return nil, fmt.Errorf("settings not found")
+	}
+	return settings.ScheduledSession, nil
 }
 
-func (s *adminService) UpdateScheduledSessionConfig(
-	ctx context.Context,
-	scheduledSessionStartTime, scheduledSessionEndTime time.Time, period, duration time.Duration,
-	roundMinParticipantsCount, roundMaxParticipantsCount int64,
+func (s *adminService) UpdateScheduledSession(
+	ctx context.Context, updates domain.ScheduledSessionUpdate,
 ) error {
-	startTimeSet := !scheduledSessionStartTime.IsZero()
-	endTimeSet := !scheduledSessionEndTime.IsZero()
-	if startTimeSet != endTimeSet {
-		return fmt.Errorf("scheduled session start time and end time must be set together")
+	settings, err := s.repoManager.Settings().Get(ctx)
+	if err != nil {
+		return err
+	}
+	if settings == nil {
+		return fmt.Errorf("settings not found")
 	}
 
-	scheduledSession, err := s.repoManager.ScheduledSession().Get(ctx)
+	changelog, err := settings.UpdateScheduledSession(updates)
 	if err != nil {
 		return err
 	}
 
-	if scheduledSession == nil {
-		if scheduledSessionStartTime.IsZero() {
-			return fmt.Errorf("missing scheduled session start time")
-		}
-		if scheduledSessionEndTime.IsZero() {
-			return fmt.Errorf("missing scheduled session end time")
-		}
-		if period <= 0 {
-			return fmt.Errorf("missing scheduled session period")
-		}
-		if duration <= 0 {
-			return fmt.Errorf("missing scheduled session duration")
-		}
-		if roundMinParticipantsCount <= 0 {
-			roundMinParticipantsCount = s.roundMinParticipantsCount
-		}
-		if roundMaxParticipantsCount <= 0 {
-			roundMaxParticipantsCount = s.roundMaxParticipantsCount
-		}
-	}
-
-	now := time.Now()
-	if scheduledSessionStartTime.IsZero() {
-		scheduledSessionStartTime = scheduledSession.StartTime
-	} else if !scheduledSessionStartTime.After(now) {
-		return fmt.Errorf("scheduled session start time must be in the future")
-	}
-
-	if scheduledSessionEndTime.IsZero() {
-		scheduledSessionEndTime = scheduledSession.EndTime
-	} else if !scheduledSessionEndTime.After(scheduledSessionStartTime) {
-		return fmt.Errorf("scheduled session end time must be after start time")
-	}
-	if period <= 0 {
-		period = scheduledSession.Period
-	}
-	if duration <= 0 {
-		duration = scheduledSession.Duration
-	}
-	if roundMinParticipantsCount <= 0 {
-		roundMinParticipantsCount = scheduledSession.RoundMinParticipantsCount
-	}
-	if roundMaxParticipantsCount <= 0 {
-		roundMaxParticipantsCount = scheduledSession.RoundMaxParticipantsCount
-	}
-	if roundMaxParticipantsCount < roundMinParticipantsCount {
-		return fmt.Errorf(
-			"got round max participants %d, expected at least %d",
-			roundMaxParticipantsCount, roundMinParticipantsCount,
-		)
-	}
-
-	mh := domain.NewScheduledSession(
-		scheduledSessionStartTime, scheduledSessionEndTime, period, duration,
-		roundMinParticipantsCount, roundMaxParticipantsCount,
-	)
-	if err := s.repoManager.ScheduledSession().Upsert(ctx, *mh); err != nil {
-		return fmt.Errorf("failed to upsert scheduled session: %w", err)
-	}
-
-	s.onInfoChange()
-	return nil
+	return s.repoManager.Settings().Upsert(ctx, *settings, changelog)
 }
 
-func (s *adminService) ClearScheduledSessionConfig(ctx context.Context) error {
-	if err := s.repoManager.ScheduledSession().Clear(ctx); err != nil {
+func (s *adminService) ClearScheduledSession(ctx context.Context) error {
+	settings, err := s.repoManager.Settings().Get(ctx)
+	if err != nil {
 		return err
 	}
-	s.onInfoChange()
-	return nil
+	if settings == nil {
+		return fmt.Errorf("settings not found")
+	}
+
+	changelog := settings.ClearScheduledSession()
+
+	return s.repoManager.Settings().Upsert(ctx, *settings, changelog)
 }
 
 func (s *adminService) ListIntents(
@@ -401,34 +331,47 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 	return s.liveStore.Intents().Delete(ctx, intentIds)
 }
 
-func (s *adminService) GetIntentFees(
-	ctx context.Context,
-) (*domain.IntentFees, error) {
-	return s.repoManager.Fees().GetIntentFees(ctx)
+func (s *adminService) GetBatchFees(ctx context.Context) (*domain.BatchFees, error) {
+	settings, err := s.repoManager.Settings().Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if settings == nil {
+		return nil, fmt.Errorf("settings not found")
+	}
+	return &settings.BatchFees, nil
 }
 
-func (s *adminService) UpdateIntentFees(
-	ctx context.Context,
-	fees domain.IntentFees,
-) error {
-	// validate the programs for set fields
-	if err := s.feeManager.Validate(fees); err != nil {
+func (s *adminService) UpdateBatchFees(ctx context.Context, updates domain.BatchFeesUpdate) error {
+	settings, err := s.repoManager.Settings().Get(ctx)
+	if err != nil {
 		return err
 	}
-	if err := s.repoManager.Fees().UpdateIntentFees(ctx, fees); err != nil {
+	if settings == nil {
+		return fmt.Errorf("settings not found")
+	}
+
+	changelog, err := settings.UpdateBatchFees(updates)
+	if err != nil {
 		return err
 	}
-	s.onInfoChange()
-	return nil
+
+	return s.repoManager.Settings().Upsert(ctx, *settings, changelog)
 }
 
 // Zeroes out fees
-func (s *adminService) ClearIntentFees(ctx context.Context) error {
-	if err := s.repoManager.Fees().ClearIntentFees(ctx); err != nil {
+func (s *adminService) ClearBatchFees(ctx context.Context) error {
+	settings, err := s.repoManager.Settings().Get(ctx)
+	if err != nil {
 		return err
 	}
-	s.onInfoChange()
-	return nil
+	if settings == nil {
+		return fmt.Errorf("settings not found")
+	}
+
+	changelog := settings.ClearBatchFees()
+
+	return s.repoManager.Settings().Upsert(ctx, *settings, changelog)
 }
 
 // Conviction management methods
@@ -625,75 +568,31 @@ func (a *adminService) GetSettings(ctx context.Context) (*domain.Settings, error
 }
 
 func (a *adminService) UpdateSettings(
-	ctx context.Context, settings domain.Settings, updateFields []string,
-) error {
-	a.settingsMu.Lock()
-	defer a.settingsMu.Unlock()
-
+	ctx context.Context, updates domain.SettingsUpdate,
+) ([]string, error) {
 	// Merge the request with stored settings. When updateFields is provided,
 	// only the listed fields are written from the request; the rest stay as
 	// they were. When updateFields is empty, every field from the request is
 	// written as-is. Fields not set in the request default to 0 so callers
 	// must populate all fields.
-	current, err := a.repoManager.Settings().Get(ctx)
+	settings, err := a.repoManager.Settings().Get(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get current settings: %w", err)
+		return nil, fmt.Errorf("failed to get current settings: %w", err)
 	}
-	// nil means no settings exist yet (first boot) so then skip merge
-	// so caller's full settings are used as-is.
-	if current != nil {
-		var mergeErr error
-		settings, mergeErr = settings.Merge(*current, updateFields)
-		if mergeErr != nil {
-			return mergeErr
-		}
+	if settings == nil {
+		return nil, fmt.Errorf("no settings found")
 	}
 
-	if err := settings.Validate(); err != nil {
-		return err
+	changelog, err := settings.Update(updates)
+	if err != nil {
+		return nil, err
 	}
 
-	// Apply to the running service before persisting so that if live-apply
-	// fails we don't leave invalid settings in the DB.
-	if a.onSettingsUpdated != nil {
-		if err := a.onSettingsUpdated(ctx, settings); err != nil {
-			return err
-		}
+	if err := a.repoManager.Settings().Upsert(ctx, *settings, changelog); err != nil {
+		return nil, fmt.Errorf("failed to update settings: %w", err)
 	}
 
-	settings.UpdatedAt = time.Now()
-	if err := a.repoManager.Settings().Upsert(ctx, settings); err != nil {
-		return err
-	}
-
-	a.roundMinParticipantsCount = settings.RoundMinParticipantsCount
-	a.roundMaxParticipantsCount = settings.RoundMaxParticipantsCount
-	a.onInfoChange()
-	return nil
-}
-
-func (a *adminService) ClearSettings(ctx context.Context) error {
-	a.settingsMu.Lock()
-	defer a.settingsMu.Unlock()
-
-	defaults := a.defaultSettings
-
-	// Apply to the running service before persisting so that if live-apply
-	// fails we don't leave inconsistent state in the DB.
-	if a.onSettingsUpdated != nil {
-		if err := a.onSettingsUpdated(ctx, defaults); err != nil {
-			return err
-		}
-	}
-
-	defaults.UpdatedAt = time.Now()
-	if err := a.repoManager.Settings().Upsert(ctx, defaults); err != nil {
-		return err
-	}
-	a.roundMinParticipantsCount = defaults.RoundMinParticipantsCount
-	a.roundMaxParticipantsCount = defaults.RoundMaxParticipantsCount
-	a.onInfoChange()
-	return nil
+	return changelog, nil
 }
 
 func (a *adminService) GetCollectedFees(
