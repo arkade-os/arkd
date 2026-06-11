@@ -304,6 +304,10 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 			Entity: EntityManager,
 			Action: "read",
 		}},
+		fmt.Sprintf("/%s/GetExpiredRounds", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
 		fmt.Sprintf("/%s/GetExpiringLiquidity", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityManager,
 			Action: "read",
@@ -313,6 +317,10 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 			Action: "read",
 		}},
 		fmt.Sprintf("/%s/GetCollectedFees", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetMainAccountUtxos", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityManager,
 			Action: "read",
 		}},

@@ -22,6 +22,7 @@ const (
 	AdminService_GetScheduledSweep_FullMethodName            = "/ark.v1.AdminService/GetScheduledSweep"
 	AdminService_GetRoundDetails_FullMethodName              = "/ark.v1.AdminService/GetRoundDetails"
 	AdminService_GetRounds_FullMethodName                    = "/ark.v1.AdminService/GetRounds"
+	AdminService_GetExpiredRounds_FullMethodName             = "/ark.v1.AdminService/GetExpiredRounds"
 	AdminService_CreateNote_FullMethodName                   = "/ark.v1.AdminService/CreateNote"
 	AdminService_GetScheduledSessionConfig_FullMethodName    = "/ark.v1.AdminService/GetScheduledSessionConfig"
 	AdminService_UpdateScheduledSessionConfig_FullMethodName = "/ark.v1.AdminService/UpdateScheduledSessionConfig"
@@ -46,6 +47,7 @@ const (
 	AdminService_Sweep_FullMethodName                        = "/ark.v1.AdminService/Sweep"
 	AdminService_GetSettings_FullMethodName                  = "/ark.v1.AdminService/GetSettings"
 	AdminService_UpdateSettings_FullMethodName               = "/ark.v1.AdminService/UpdateSettings"
+	AdminService_GetMainAccountUtxos_FullMethodName          = "/ark.v1.AdminService/GetMainAccountUtxos"
 )
 
 // AdminServiceClient is the client API for AdminService service.
@@ -55,6 +57,10 @@ type AdminServiceClient interface {
 	GetScheduledSweep(ctx context.Context, in *GetScheduledSweepRequest, opts ...grpc.CallOption) (*GetScheduledSweepResponse, error)
 	GetRoundDetails(ctx context.Context, in *GetRoundDetailsRequest, opts ...grpc.CallOption) (*GetRoundDetailsResponse, error)
 	GetRounds(ctx context.Context, in *GetRoundsRequest, opts ...grpc.CallOption) (*GetRoundsResponse, error)
+	// GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose
+	// batch outputs have expired but have not been swept yet. It is meant to surface
+	// rounds for which the sweep should have happened but likely failed.
+	GetExpiredRounds(ctx context.Context, in *GetExpiredRoundsRequest, opts ...grpc.CallOption) (*GetExpiredRoundsResponse, error)
 	CreateNote(ctx context.Context, in *CreateNoteRequest, opts ...grpc.CallOption) (*CreateNoteResponse, error)
 	GetScheduledSessionConfig(ctx context.Context, in *GetScheduledSessionConfigRequest, opts ...grpc.CallOption) (*GetScheduledSessionConfigResponse, error)
 	UpdateScheduledSessionConfig(ctx context.Context, in *UpdateScheduledSessionConfigRequest, opts ...grpc.CallOption) (*UpdateScheduledSessionConfigResponse, error)
@@ -79,6 +85,7 @@ type AdminServiceClient interface {
 	Sweep(ctx context.Context, in *SweepRequest, opts ...grpc.CallOption) (*SweepResponse, error)
 	GetSettings(ctx context.Context, in *GetSettingsRequest, opts ...grpc.CallOption) (*GetSettingsResponse, error)
 	UpdateSettings(ctx context.Context, in *UpdateSettingsRequest, opts ...grpc.CallOption) (*UpdateSettingsResponse, error)
+	GetMainAccountUtxos(ctx context.Context, in *GetMainAccountUtxosRequest, opts ...grpc.CallOption) (*GetMainAccountUtxosResponse, error)
 }
 
 type adminServiceClient struct {
@@ -113,6 +120,16 @@ func (c *adminServiceClient) GetRounds(ctx context.Context, in *GetRoundsRequest
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetRoundsResponse)
 	err := c.cc.Invoke(ctx, AdminService_GetRounds_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetExpiredRounds(ctx context.Context, in *GetExpiredRoundsRequest, opts ...grpc.CallOption) (*GetExpiredRoundsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetExpiredRoundsResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetExpiredRounds_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -359,6 +376,16 @@ func (c *adminServiceClient) UpdateSettings(ctx context.Context, in *UpdateSetti
 	return out, nil
 }
 
+func (c *adminServiceClient) GetMainAccountUtxos(ctx context.Context, in *GetMainAccountUtxosRequest, opts ...grpc.CallOption) (*GetMainAccountUtxosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMainAccountUtxosResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetMainAccountUtxos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminServiceServer is the server API for AdminService service.
 // All implementations should embed UnimplementedAdminServiceServer
 // for forward compatibility.
@@ -366,6 +393,10 @@ type AdminServiceServer interface {
 	GetScheduledSweep(context.Context, *GetScheduledSweepRequest) (*GetScheduledSweepResponse, error)
 	GetRoundDetails(context.Context, *GetRoundDetailsRequest) (*GetRoundDetailsResponse, error)
 	GetRounds(context.Context, *GetRoundsRequest) (*GetRoundsResponse, error)
+	// GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose
+	// batch outputs have expired but have not been swept yet. It is meant to surface
+	// rounds for which the sweep should have happened but likely failed.
+	GetExpiredRounds(context.Context, *GetExpiredRoundsRequest) (*GetExpiredRoundsResponse, error)
 	CreateNote(context.Context, *CreateNoteRequest) (*CreateNoteResponse, error)
 	GetScheduledSessionConfig(context.Context, *GetScheduledSessionConfigRequest) (*GetScheduledSessionConfigResponse, error)
 	UpdateScheduledSessionConfig(context.Context, *UpdateScheduledSessionConfigRequest) (*UpdateScheduledSessionConfigResponse, error)
@@ -390,6 +421,7 @@ type AdminServiceServer interface {
 	Sweep(context.Context, *SweepRequest) (*SweepResponse, error)
 	GetSettings(context.Context, *GetSettingsRequest) (*GetSettingsResponse, error)
 	UpdateSettings(context.Context, *UpdateSettingsRequest) (*UpdateSettingsResponse, error)
+	GetMainAccountUtxos(context.Context, *GetMainAccountUtxosRequest) (*GetMainAccountUtxosResponse, error)
 }
 
 // UnimplementedAdminServiceServer should be embedded to have
@@ -407,6 +439,9 @@ func (UnimplementedAdminServiceServer) GetRoundDetails(context.Context, *GetRoun
 }
 func (UnimplementedAdminServiceServer) GetRounds(context.Context, *GetRoundsRequest) (*GetRoundsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRounds not implemented")
+}
+func (UnimplementedAdminServiceServer) GetExpiredRounds(context.Context, *GetExpiredRoundsRequest) (*GetExpiredRoundsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetExpiredRounds not implemented")
 }
 func (UnimplementedAdminServiceServer) CreateNote(context.Context, *CreateNoteRequest) (*CreateNoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateNote not implemented")
@@ -480,6 +515,9 @@ func (UnimplementedAdminServiceServer) GetSettings(context.Context, *GetSettings
 func (UnimplementedAdminServiceServer) UpdateSettings(context.Context, *UpdateSettingsRequest) (*UpdateSettingsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateSettings not implemented")
 }
+func (UnimplementedAdminServiceServer) GetMainAccountUtxos(context.Context, *GetMainAccountUtxosRequest) (*GetMainAccountUtxosResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMainAccountUtxos not implemented")
+}
 func (UnimplementedAdminServiceServer) testEmbeddedByValue() {}
 
 // UnsafeAdminServiceServer may be embedded to opt out of forward compatibility for this service.
@@ -550,6 +588,24 @@ func _AdminService_GetRounds_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServiceServer).GetRounds(ctx, req.(*GetRoundsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetExpiredRounds_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetExpiredRoundsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetExpiredRounds(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetExpiredRounds_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetExpiredRounds(ctx, req.(*GetExpiredRoundsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -986,6 +1042,24 @@ func _AdminService_UpdateSettings_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_GetMainAccountUtxos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMainAccountUtxosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetMainAccountUtxos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetMainAccountUtxos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetMainAccountUtxos(ctx, req.(*GetMainAccountUtxosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AdminService_ServiceDesc is the grpc.ServiceDesc for AdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1004,6 +1078,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetRounds",
 			Handler:    _AdminService_GetRounds_Handler,
+		},
+		{
+			MethodName: "GetExpiredRounds",
+			Handler:    _AdminService_GetExpiredRounds_Handler,
 		},
 		{
 			MethodName: "CreateNote",
@@ -1100,6 +1178,10 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateSettings",
 			Handler:    _AdminService_UpdateSettings_Handler,
+		},
+		{
+			MethodName: "GetMainAccountUtxos",
+			Handler:    _AdminService_GetMainAccountUtxos_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

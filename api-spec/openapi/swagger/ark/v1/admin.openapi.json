@@ -775,6 +775,37 @@
         }
       }
     },
+    "/v1/admin/rounds/expired": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "description": "GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose\nbatch outputs have expired but have not been swept yet. It is meant to surface\nrounds for which the sweep should have happened but likely failed.",
+        "operationId": "AdminService_GetExpiredRounds",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetExpiredRoundsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/scheduledSession": {
       "get": {
         "tags": [
@@ -1100,6 +1131,36 @@
           }
         }
       }
+    },
+    "/v1/admin/wallet/utxos": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetMainAccountUtxos",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetMainAccountUtxosResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1254,6 +1315,23 @@
         "title": "DeleteIntentsResponse",
         "type": "object"
       },
+      "ExpiredRound": {
+        "title": "ExpiredRound",
+        "type": "object",
+        "properties": {
+          "commitmentTxid": {
+            "type": "string"
+          },
+          "expiredAt": {
+            "type": "integer",
+            "description": "Unix timestamp at which the round's batch outputs expired.",
+            "format": "int64"
+          },
+          "roundId": {
+            "type": "string"
+          }
+        }
+      },
       "FeeInfo": {
         "title": "FeeInfo",
         "type": "object",
@@ -1387,6 +1465,22 @@
           }
         }
       },
+      "GetExpiredRoundsRequest": {
+        "title": "GetExpiredRoundsRequest",
+        "type": "object"
+      },
+      "GetExpiredRoundsResponse": {
+        "title": "GetExpiredRoundsResponse",
+        "type": "object",
+        "properties": {
+          "rounds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExpiredRound"
+            }
+          }
+        }
+      },
       "GetExpiringLiquidityRequest": {
         "title": "GetExpiringLiquidityRequest",
         "type": "object",
@@ -1423,6 +1517,22 @@
         "properties": {
           "fees": {
             "$ref": "#/components/schemas/IntentFees"
+          }
+        }
+      },
+      "GetMainAccountUtxosRequest": {
+        "title": "GetMainAccountUtxosRequest",
+        "type": "object"
+      },
+      "GetMainAccountUtxosResponse": {
+        "title": "GetMainAccountUtxosResponse",
+        "type": "object",
+        "properties": {
+          "utxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WalletUtxo"
+            }
           }
         }
       },
@@ -2155,6 +2265,36 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "WalletUtxo": {
+        "title": "WalletUtxo",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "confirmations": {
+            "type": "integer",
+            "format": "uint32"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "script": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
           }
         }
       }

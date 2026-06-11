@@ -21,6 +21,14 @@ service AdminService {
       get: "/v1/admin/rounds"
     };
   }
+  // GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose
+  // batch outputs have expired but have not been swept yet. It is meant to surface
+  // rounds for which the sweep should have happened but likely failed.
+  rpc GetExpiredRounds(GetExpiredRoundsRequest) returns (GetExpiredRoundsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/rounds/expired"
+    };
+  }
   rpc CreateNote(CreateNoteRequest) returns (CreateNoteResponse) {
     option (meshapi.gateway.http) = {
       post: "/v1/admin/note"
@@ -154,6 +162,11 @@ service AdminService {
       body: "*"
     };
   }
+  rpc GetMainAccountUtxos(GetMainAccountUtxosRequest) returns (GetMainAccountUtxosResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/wallet/utxos"
+    };
+  }
 }
 
 message GetScheduledSweepRequest {}
@@ -186,6 +199,17 @@ message GetRoundsRequest {
 }
 message GetRoundsResponse {
   repeated string rounds = 1;
+}
+
+message GetExpiredRoundsRequest {}
+message GetExpiredRoundsResponse {
+  repeated ExpiredRound rounds = 1;
+}
+
+message ExpiredRound {
+  string round_id = 1;
+  string commitment_txid = 2;
+  int64 expired_at = 3; // Unix timestamp at which the round's batch outputs expired.
 }
 
 message CreateNoteRequest {
@@ -432,6 +456,21 @@ message UpdateSettingsRequest {
 }
 message UpdateSettingsResponse {
   repeated string change_log = 1;
+}
+
+message GetMainAccountUtxosRequest {}
+message GetMainAccountUtxosResponse {
+  repeated WalletUtxo utxos = 1;
+}
+
+message WalletUtxo {
+  string txid = 1;
+  uint32 vout = 2;
+  uint64 value = 3;
+  string script = 4;
+  string address = 5;
+  uint32 confirmations = 6;
+  bool locked = 7;
 }
 
 message ListTokensRequest {

@@ -77,6 +77,15 @@ func request_AdminService_GetRounds_0(ctx context.Context, marshaler gateway.Mar
 
 }
 
+func request_AdminService_GetExpiredRounds_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client AdminServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq GetExpiredRoundsRequest
+	var metadata gateway.ServerMetadata
+
+	msg, err := client.GetExpiredRounds(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
 func request_AdminService_CreateNote_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client AdminServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
 	var protoReq CreateNoteRequest
 	var metadata gateway.ServerMetadata
@@ -461,6 +470,15 @@ func request_AdminService_UpdateSettings_0(ctx context.Context, marshaler gatewa
 
 }
 
+func request_AdminService_GetMainAccountUtxos_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client AdminServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq GetMainAccountUtxosRequest
+	var metadata gateway.ServerMetadata
+
+	msg, err := client.GetMainAccountUtxos(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
 // RegisterAdminServiceHandlerFromEndpoint is same as RegisterAdminServiceHandler but
 // automatically dials to "endpoint" and closes the connection when "ctx" gets done.
 func RegisterAdminServiceHandlerFromEndpoint(ctx context.Context, mux *gateway.ServeMux, endpoint string, opts []grpc.DialOption) error {
@@ -557,6 +575,28 @@ func RegisterAdminServiceHandlerClient(ctx context.Context, mux *gateway.ServeMu
 		}
 
 		resp, md, err := request_AdminService_GetRounds_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
+	mux.HandleWithParams("GET", "/v1/admin/rounds/expired", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/GetExpiredRounds", gateway.WithHTTPPathPattern("/v1/admin/rounds/expired"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_AdminService_GetExpiredRounds_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
 		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
@@ -1085,6 +1125,28 @@ func RegisterAdminServiceHandlerClient(ctx context.Context, mux *gateway.ServeMu
 		}
 
 		resp, md, err := request_AdminService_UpdateSettings_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
+	mux.HandleWithParams("GET", "/v1/admin/wallet/utxos", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.AdminService/GetMainAccountUtxos", gateway.WithHTTPPathPattern("/v1/admin/wallet/utxos"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_AdminService_GetMainAccountUtxos_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
 		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)

@@ -24,8 +24,10 @@ type AdminService interface {
 	GetRounds(
 		ctx context.Context, after, before int64, withFailed, withCompleted bool,
 	) ([]string, error)
+	GetExpiredRounds(ctx context.Context) ([]domain.ExpiredRound, error)
 	GetWalletAddress(ctx context.Context) (string, error)
 	GetWalletStatus(ctx context.Context) (*WalletStatus, error)
+	GetMainAccountUtxos(ctx context.Context) ([]ports.WalletUtxo, error)
 	CreateNotes(ctx context.Context, amount uint32, quantity int) ([]string, error)
 	GetScheduledSession(ctx context.Context) (*domain.ScheduledSession, error)
 	UpdateScheduledSession(ctx context.Context, updates domain.ScheduledSessionUpdate) error
@@ -78,6 +80,10 @@ func NewAdminService(
 
 func (a *adminService) Wallet() ports.WalletService {
 	return a.walletSvc
+}
+
+func (a *adminService) GetMainAccountUtxos(ctx context.Context) ([]ports.WalletUtxo, error) {
+	return a.walletSvc.GetMainAccountUtxos(ctx)
 }
 
 func (a *adminService) GetRoundDetails(
@@ -157,6 +163,15 @@ func (a *adminService) GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep
 	}
 
 	return scheduledSweeps, nil
+}
+
+// GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose
+// batch outputs have already expired but have not been swept yet. These are
+// rounds for which the sweep should have happened but likely failed.
+func (a *adminService) GetExpiredRounds(
+	ctx context.Context,
+) ([]domain.ExpiredRound, error) {
+	return a.repoManager.Rounds().GetExpiredRounds(ctx, time.Now().Unix())
 }
 
 func (a *adminService) GetWalletAddress(ctx context.Context) (string, error) {

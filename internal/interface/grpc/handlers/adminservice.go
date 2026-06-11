@@ -180,6 +180,26 @@ func (a *adminHandler) GetScheduledSweep(
 	return &arkv1.GetScheduledSweepResponse{Sweeps: sweeps}, nil
 }
 
+func (a *adminHandler) GetExpiredRounds(
+	ctx context.Context, _ *arkv1.GetExpiredRoundsRequest,
+) (*arkv1.GetExpiredRoundsResponse, error) {
+	expiredRounds, err := a.adminService.GetExpiredRounds(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	rounds := make([]*arkv1.ExpiredRound, 0, len(expiredRounds))
+	for _, round := range expiredRounds {
+		rounds = append(rounds, &arkv1.ExpiredRound{
+			RoundId:        round.RoundId,
+			CommitmentTxid: round.CommitmentTxid,
+			ExpiredAt:      round.ExpiredAt,
+		})
+	}
+
+	return &arkv1.GetExpiredRoundsResponse{Rounds: rounds}, nil
+}
+
 func (a *adminHandler) CreateNote(
 	ctx context.Context, req *arkv1.CreateNoteRequest,
 ) (*arkv1.CreateNoteResponse, error) {
@@ -502,6 +522,30 @@ func (a *adminHandler) Sweep(
 		Txid: txid,
 		Hex:  hex,
 	}, nil
+}
+
+func (a *adminHandler) GetMainAccountUtxos(
+	ctx context.Context, _ *arkv1.GetMainAccountUtxosRequest,
+) (*arkv1.GetMainAccountUtxosResponse, error) {
+	utxos, err := a.adminService.GetMainAccountUtxos(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	resp := make([]*arkv1.WalletUtxo, 0, len(utxos))
+	for _, u := range utxos {
+		resp = append(resp, &arkv1.WalletUtxo{
+			Txid:          u.Txid,
+			Vout:          u.Vout,
+			Value:         u.Value,
+			Script:        u.Script,
+			Address:       u.Address,
+			Confirmations: u.Confirmations,
+			Locked:        u.Locked,
+		})
+	}
+
+	return &arkv1.GetMainAccountUtxosResponse{Utxos: resp}, nil
 }
 
 func (a *adminHandler) RevokeAuth(

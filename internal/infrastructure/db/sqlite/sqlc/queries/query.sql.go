@@ -476,6 +476,46 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 	return items, nil
 }
 
+const selectExpiredRounds = `-- name: SelectExpiredRounds :many
+SELECT r.id, r.txid, CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS expired_at
+FROM round_with_commitment_tx_vw r
+WHERE r.swept = false AND r.ended = true AND r.failed = false
+AND (r.ending_timestamp + r.vtxo_tree_expiration) < ?1
+AND EXISTS (
+    SELECT 1 FROM tx tree_tx
+    WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
+)
+`
+
+type SelectExpiredRoundsRow struct {
+	ID        string
+	Txid      string
+	ExpiredAt int64
+}
+
+func (q *Queries) SelectExpiredRounds(ctx context.Context, now int64) ([]SelectExpiredRoundsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectExpiredRounds, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectExpiredRoundsRow
+	for rows.Next() {
+		var i SelectExpiredRoundsRow
+		if err := rows.Scan(&i.ID, &i.Txid, &i.ExpiredAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectExpiringLiquidityAmount = `-- name: SelectExpiringLiquidityAmount :one
 SELECT COALESCE(SUM(amount), 0) AS amount
 FROM vtxo
@@ -1464,10 +1504,10 @@ func (q *Queries) SelectRoundsWithTxids(ctx context.Context, txids []string) ([]
 }
 
 const selectSweepableRounds = `-- name: SelectSweepableRounds :many
-SELECT txid FROM round_with_commitment_tx_vw r 
+SELECT txid FROM round_with_commitment_tx_vw r
 WHERE r.swept = false AND r.ended = true AND r.failed = false
 AND EXISTS (
-    SELECT 1 FROM tx tree_tx 
+    SELECT 1 FROM tx tree_tx
     WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
 )
 `
