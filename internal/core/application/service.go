@@ -417,17 +417,17 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
 	}
 
-	banThreshold := settings.Settings.BanThreshold
-	minAllowedExitDelay := settings.Settings.UnilateralExitDelay
-	vtxoNoCsvValidationCutoffDate := settings.Settings.VtxoNoCsvValidationCutoffDate
+	banThreshold := settings.BanThreshold
+	minAllowedExitDelay := settings.UnilateralExitDelay
+	vtxoNoCsvValidationCutoffDate := settings.VtxoNoCsvValidationCutoffDate
 	signerPubkey := settings.SignerPubkey
-	vtxoMinAmount := settings.Settings.VtxoMinAmount
-	vtxoMaxAmount := settings.Settings.VtxoMaxAmount
+	vtxoMinAmount := settings.VtxoMinAmount
+	vtxoMaxAmount := settings.VtxoMaxAmount
 	checkpointTapscript := settings.CheckpointTapscript
-	maxOpReturnOutputs := settings.Settings.MaxOpReturnOutputs
-	maxTxWeight := settings.Settings.MaxTxWeight
-	maxAssetsPerVtxo := settings.Settings.MaxAssetsPerVtxo()
-	allowCSVBlockType := settings.Settings.AllowCSVBlockType()
+	maxOpReturnOutputs := settings.MaxOpReturnOutputs
+	maxTxWeight := settings.MaxTxWeight
+	maxAssetsPerVtxo := settings.MaxAssetsPerVtxo()
+	allowCSVBlockType := settings.AllowCSVBlockType()
 
 	offchainTx := domain.NewOffchainTx()
 	var changes []domain.Event
@@ -1495,16 +1495,16 @@ func (s *service) RegisterIntent(
 		return "", errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
 	}
 
-	banThreshold := settings.Settings.BanThreshold
+	banThreshold := settings.BanThreshold
 	signerPubkey := settings.SignerPubkey
-	settlementMinExpiryGap := settings.Settings.SettlementMinExpiryGap
-	maxTxWeight := settings.Settings.MaxTxWeight
-	utxoMinAmount := settings.Settings.UtxoMinAmount
-	utxoMaxAmount := settings.Settings.UtxoMaxAmount
-	vtxoMaxAmount := settings.Settings.VtxoMaxAmount
+	settlementMinExpiryGap := settings.SettlementMinExpiryGap
+	maxTxWeight := settings.MaxTxWeight
+	utxoMinAmount := settings.UtxoMinAmount
+	utxoMaxAmount := settings.UtxoMaxAmount
+	vtxoMaxAmount := settings.VtxoMaxAmount
 	dustAmount := settings.DustAmount
 	network := settings.Network
-	maxAssetsPerVtxo := settings.Settings.MaxAssetsPerVtxo()
+	maxAssetsPerVtxo := settings.MaxAssetsPerVtxo()
 
 	for i, outpoint := range outpoints {
 		if _, seen := seenOutpoints[outpoint]; seen {
@@ -2133,18 +2133,18 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		return nil, errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
 	}
 
-	publicUnilateralExitDelay := settings.Settings.PublicUnilateralExitDelay
-	boardingExitDelay := settings.Settings.BoardingExitDelay
-	sessionDuration := settings.Settings.SessionDuration
-	utxoMinAmount := settings.Settings.UtxoMinAmount
-	utxoMaxAmount := settings.Settings.UtxoMaxAmount
-	vtxoMinAmount := settings.Settings.VtxoMinAmount
-	vtxoMaxAmount := settings.Settings.VtxoMaxAmount
-	batchFees := settings.Settings.BatchFees
+	publicUnilateralExitDelay := settings.PublicUnilateralExitDelay
+	boardingExitDelay := settings.BoardingExitDelay
+	sessionDuration := settings.SessionDuration
+	utxoMinAmount := settings.UtxoMinAmount
+	utxoMaxAmount := settings.UtxoMaxAmount
+	vtxoMinAmount := settings.VtxoMinAmount
+	vtxoMaxAmount := settings.VtxoMaxAmount
+	batchFees := settings.BatchFees
 	dustAmount := settings.DustAmount
 	network := settings.Network.Name
-	maxTxWeight := settings.Settings.MaxTxWeight
-	maxOpReturnOutputs := settings.Settings.MaxOpReturnOutputs
+	maxTxWeight := settings.MaxTxWeight
+	maxOpReturnOutputs := settings.MaxOpReturnOutputs
 	signerPubkey := hex.EncodeToString(settings.SignerPubkey.SerializeCompressed())
 	forfeitPubkey := hex.EncodeToString(settings.ForfeitPubkey.SerializeCompressed())
 	forfeitAddress := settings.ForfeitAddress
@@ -2430,10 +2430,10 @@ func (s *service) startRound() {
 
 	s.roundReportSvc.StageStarted(SelectIntentsStage)
 
-	sessionDuration := settings.Settings.SessionDuration
-	roundMinParticipants := int64(settings.Settings.RoundMinParticipantsCount)
-	roundMaxParticipants := int64(settings.Settings.RoundMaxParticipantsCount)
-	scheduledSession := settings.Settings.ScheduledSession
+	sessionDuration := settings.SessionDuration
+	roundMinParticipants := int64(settings.RoundMinParticipantsCount)
+	roundMaxParticipants := int64(settings.RoundMaxParticipantsCount)
+	scheduledSession := settings.ScheduledSession
 	if scheduledSession != nil {
 		nextStartTime, nextEndTime := calcNextScheduledSession(
 			time.Now(),
@@ -2602,7 +2602,7 @@ func (s *service) startConfirmation(
 
 	s.roundReportSvc.OpStarted(SendConfirmationEventOp)
 
-	s.propagateBatchStartedEvent(ctx, roundId, intents, settings.Settings.VtxoTreeExpiry)
+	s.propagateBatchStartedEvent(ctx, roundId, intents, settings.VtxoTreeExpiry)
 
 	s.roundReportSvc.OpEnded(SendConfirmationEventOp)
 
@@ -2706,10 +2706,10 @@ func (s *service) startFinalization(
 
 	ctx := context.Background()
 	forfeitPubkey := settings.ForfeitPubkey
-	vtxoTreeExpiry := settings.Settings.VtxoTreeExpiry
+	vtxoTreeExpiry := settings.VtxoTreeExpiry
 	var banDuration *time.Duration
-	if settings.Settings.BanDuration > 0 {
-		banDuration = &settings.Settings.BanDuration
+	if settings.BanDuration > 0 {
+		banDuration = &settings.BanDuration
 	}
 
 	round, err := s.cache.CurrentRound().Get(ctx)
@@ -3073,8 +3073,8 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming, setting
 	var stopped bool
 	ctx := context.Background()
 	var banDuration *time.Duration
-	if settings.Settings.BanDuration > 0 {
-		banDuration = &settings.Settings.BanDuration
+	if settings.BanDuration > 0 {
+		banDuration = &settings.BanDuration
 	}
 
 	round, err := s.cache.CurrentRound().Get(ctx)
@@ -3573,7 +3573,7 @@ func (s *service) scheduleSweepBatchOutput(round domain.Round) {
 		log.WithError(err).Warn("failed to get settings")
 		return
 	}
-	vtxoTreeExpiry := settings.Settings.VtxoTreeExpiry
+	vtxoTreeExpiry := settings.VtxoTreeExpiry
 
 	blockTimestamp, err := waitForConfirmation(context.Background(), round.CommitmentTxid, s.wallet)
 	if err != nil {
@@ -3808,10 +3808,10 @@ func (s *service) processBoardingInputs(
 	ctx context.Context,
 	intentTxid string, boardingUtxos []boardingIntentInput, settings ports.Settings,
 ) ([]ports.BoardingInput, errors.Error) {
-	boardingExitDelay := settings.Settings.BoardingExitDelay
-	unilateralExitDelay := settings.Settings.UnilateralExitDelay
+	boardingExitDelay := settings.BoardingExitDelay
+	unilateralExitDelay := settings.UnilateralExitDelay
 	signerPubkey := settings.SignerPubkey
-	allowCSVBlockType := settings.Settings.AllowCSVBlockType()
+	allowCSVBlockType := settings.AllowCSVBlockType()
 
 	scripts := make([]string, 0)
 	outpoints := make([]wire.OutPoint, 0)
@@ -3943,13 +3943,13 @@ func (s *service) processBoardingInputs(
 func (s *service) validateBoardingInput(
 	ctx context.Context, input boardingIntentInput, now time.Time, settings ports.Settings,
 ) (*wire.MsgTx, error) {
-	boardingExitDelay := settings.Settings.BoardingExitDelay
-	unilateralExitDelay := settings.Settings.UnilateralExitDelay
+	boardingExitDelay := settings.BoardingExitDelay
+	unilateralExitDelay := settings.UnilateralExitDelay
 	signerPubkey := settings.SignerPubkey
-	utxoMinAmount := settings.Settings.UtxoMinAmount
-	utxoMaxAmount := settings.Settings.UtxoMaxAmount
-	unrolledVtxoMinExpiryMargin := settings.Settings.UnrolledVtxoMinExpiryMargin
-	allowCSVBlockType := settings.Settings.AllowCSVBlockType()
+	utxoMinAmount := settings.UtxoMinAmount
+	utxoMaxAmount := settings.UtxoMaxAmount
+	unrolledVtxoMinExpiryMargin := settings.UnrolledVtxoMinExpiryMargin
+	allowCSVBlockType := settings.AllowCSVBlockType()
 
 	vtxoScript, err := script.ParseVtxoScript(input.Tapscripts)
 	if err != nil {
@@ -4079,9 +4079,9 @@ func (s *service) validateVtxoInput(
 	}
 
 	minAllowedExitDelay := settings.UnilateralExitDelay
-	vtxoNoCsvValidationCutoffDate := settings.Settings.VtxoNoCsvValidationCutoffDate
+	vtxoNoCsvValidationCutoffDate := settings.VtxoNoCsvValidationCutoffDate
 	signerPubkey := settings.SignerPubkey
-	allowCSVBlockType := settings.Settings.AllowCSVBlockType()
+	allowCSVBlockType := settings.AllowCSVBlockType()
 
 	// if the vtxo was created before the vtxoNoCsvValidationCutoffTime date, we use the smallest
 	// exit delay as the minimum allowed exit delay in validation: making the CSV check always

@@ -152,8 +152,8 @@ type settingsDTO struct {
 
 func newSettingsDTO(settings ports.Settings) settingsDTO {
 	var vtxoNoCsvValidationCutoffDate int64
-	if !settings.Settings.VtxoNoCsvValidationCutoffDate.IsZero() {
-		vtxoNoCsvValidationCutoffDate = settings.Settings.VtxoNoCsvValidationCutoffDate.Unix()
+	if !settings.VtxoNoCsvValidationCutoffDate.IsZero() {
+		vtxoNoCsvValidationCutoffDate = settings.VtxoNoCsvValidationCutoffDate.Unix()
 	}
 	var signerPubkey string
 	if settings.SignerPubkey != nil {
@@ -165,28 +165,28 @@ func newSettingsDTO(settings ports.Settings) settingsDTO {
 	}
 
 	return settingsDTO{
-		SessionDuration:               int64(settings.Settings.SessionDuration.Seconds()),
-		UnrolledVtxoMinExpiryMargin:   int64(settings.Settings.UnrolledVtxoMinExpiryMargin.Seconds()),
-		BanThreshold:                  settings.Settings.BanThreshold,
-		BanDuration:                   int64(settings.Settings.BanDuration.Seconds()),
-		UnilateralExitDelay:           settings.Settings.UnilateralExitDelay.Seconds(),
-		PublicUnilateralExitDelay:     settings.Settings.PublicUnilateralExitDelay.Seconds(),
-		CheckpointExitDelay:           settings.Settings.CheckpointExitDelay.Seconds(),
-		BoardingExitDelay:             settings.Settings.BoardingExitDelay.Seconds(),
-		VtxoTreeExpiry:                settings.Settings.VtxoTreeExpiry.Seconds(),
-		RoundMinParticipantsCount:     settings.Settings.RoundMinParticipantsCount,
-		RoundMaxParticipantsCount:     settings.Settings.RoundMaxParticipantsCount,
-		VtxoMinAmount:                 settings.Settings.VtxoMinAmount,
-		VtxoMaxAmount:                 settings.Settings.VtxoMaxAmount,
-		UtxoMinAmount:                 settings.Settings.UtxoMinAmount,
-		UtxoMaxAmount:                 settings.Settings.UtxoMaxAmount,
-		SettlementMinExpiryGap:        int64(settings.Settings.SettlementMinExpiryGap.Seconds()),
+		SessionDuration:               int64(settings.SessionDuration.Seconds()),
+		UnrolledVtxoMinExpiryMargin:   int64(settings.UnrolledVtxoMinExpiryMargin.Seconds()),
+		BanThreshold:                  settings.BanThreshold,
+		BanDuration:                   int64(settings.BanDuration.Seconds()),
+		UnilateralExitDelay:           settings.UnilateralExitDelay.Seconds(),
+		PublicUnilateralExitDelay:     settings.PublicUnilateralExitDelay.Seconds(),
+		CheckpointExitDelay:           settings.CheckpointExitDelay.Seconds(),
+		BoardingExitDelay:             settings.BoardingExitDelay.Seconds(),
+		VtxoTreeExpiry:                settings.VtxoTreeExpiry.Seconds(),
+		RoundMinParticipantsCount:     settings.RoundMinParticipantsCount,
+		RoundMaxParticipantsCount:     settings.RoundMaxParticipantsCount,
+		VtxoMinAmount:                 settings.VtxoMinAmount,
+		VtxoMaxAmount:                 settings.VtxoMaxAmount,
+		UtxoMinAmount:                 settings.UtxoMinAmount,
+		UtxoMaxAmount:                 settings.UtxoMaxAmount,
+		SettlementMinExpiryGap:        int64(settings.SettlementMinExpiryGap.Seconds()),
 		VtxoNoCsvValidationCutoffDate: vtxoNoCsvValidationCutoffDate,
-		MaxTxWeight:                   settings.Settings.MaxTxWeight,
-		MaxOpReturnOutputs:            settings.Settings.MaxOpReturnOutputs,
-		AssetTxMaxWeightRatio:         settings.Settings.AssetTxMaxWeightRatio,
-		NoteUriPrefix:                 settings.Settings.NoteUriPrefix,
-		BatchFees:                     settings.Settings.BatchFees,
+		MaxTxWeight:                   settings.MaxTxWeight,
+		MaxOpReturnOutputs:            settings.MaxOpReturnOutputs,
+		AssetTxMaxWeightRatio:         settings.AssetTxMaxWeightRatio,
+		NoteUriPrefix:                 settings.NoteUriPrefix,
+		BatchFees:                     settings.BatchFees,
 		Network:                       settings.Network.Name,
 		DustAmount:                    settings.DustAmount,
 		SignerPubkey:                  signerPubkey,
@@ -221,10 +221,11 @@ func (s settingsDTO) parse() (*ports.Settings, error) {
 	checkpointExitDelay, _ := arklib.ParseRelativeLocktime(uint32(s.CheckpointExitDelay))
 	boardingExitDelay, _ := arklib.ParseRelativeLocktime(uint32(s.BoardingExitDelay))
 	vtxoTreeExpiry, _ := arklib.ParseRelativeLocktime(uint32(s.VtxoTreeExpiry))
+	unrolledVtxoMinExpiryMargin := time.Duration(s.UnrolledVtxoMinExpiryMargin) * time.Second
 	return &ports.Settings{
 		Settings: domain.Settings{
 			SessionDuration:               time.Duration(s.SessionDuration) * time.Second,
-			UnrolledVtxoMinExpiryMargin:   time.Duration(s.UnrolledVtxoMinExpiryMargin) * time.Second,
+			UnrolledVtxoMinExpiryMargin:   unrolledVtxoMinExpiryMargin,
 			BanThreshold:                  s.BanThreshold,
 			BanDuration:                   time.Duration(s.BanDuration) * time.Second,
 			UnilateralExitDelay:           unilateralExitDelay,
