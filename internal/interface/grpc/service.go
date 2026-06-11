@@ -51,6 +51,7 @@ type service struct {
 	adminGrpcSrvr     *grpc.Server
 	readinessSvc      *interceptors.ReadinessService
 	appSvcStarted     atomic.Bool
+	walletReady       atomic.Bool
 	macaroonSvc       *macaroons.Service
 	otelShutdown      func(context.Context) error
 	pyroscopeShutdown func() error
@@ -120,8 +121,17 @@ func (s *service) Start() error {
 		log.Infof("started admin listening at %s", s.config.adminAddress())
 	}
 
+	// arkd no longer manages the wallet lifecycle. The primary arkd-wallet must
+	// be initialized and unlocked out of band before arkd starts, otherwise we
+	// refuse to serve. This is what lets a single arkd front several arkd-wallets.
+	if err := s.ensureWalletReady(); err != nil {
+		return err
+	}
+
+	// The unlock phase is retained only to unlock the macaroon (admin auth)
+	// service; it no longer touches the wallet.
 	if s.appConfig.UnlockerService() != nil {
-		return s.autoUnlock()
+		return s.autoUnlockMacaroons()
 	}
 	return nil
 }
@@ -333,7 +343,6 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	// Server grpc.
 	grpcServer := grpc.NewServer(grpcConfig...)
 
-	onInit := s.onInit
 	onUnlock := s.onUnlock
 	onReady := s.onReady
 	onLoadSigner := s.onLoadSigner
@@ -363,7 +372,7 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		s.config.macaroonsDatadir(), s.appConfig.NoteUriPrefix,
 	)
 	walletHandler := handlers.NewWalletHandler(walletSvc)
-	walletInitHandler := handlers.NewWalletInitializerHandler(walletSvc, onInit, onUnlock, onReady)
+	walletInitHandler := handlers.NewWalletInitializerHandler(walletSvc, onUnlock, onReady)
 	signerManagerHandler := handlers.NewSignerManagerHandler(walletSvc, onLoadSigner)
 	healthHandler := handlers.NewHealthHandler()
 
@@ -569,16 +578,20 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	return nil
 }
 
-func (s *service) onUnlock(password string) {
+// onUnlock unlocks the macaroon (admin auth) service with the given password
+// and generates the macaroon files if needed. It never unlocks the wallet. Once
+// the macaroon service is unlocked it tries to start the app services, which
+// only come up once the wallet is also ready.
+func (s *service) onUnlock(password string) error {
 	if s.config.NoMacaroons {
-		return
+		return nil
 	}
 
 	pwd := []byte(password)
 	datadir := s.config.macaroonsDatadir()
 	if err := s.macaroonSvc.CreateUnlock(&pwd); err != nil {
 		if err != macaroons.ErrAlreadyUnlocked {
-			log.WithError(err).Warn("failed to unlock macaroon store")
+			return fmt.Errorf("failed to unlock macaroon store: %s", err)
 		}
 	}
 
@@ -586,43 +599,35 @@ func (s *service) onUnlock(password string) {
 		context.Background(), s.macaroonSvc, datadir,
 	)
 	if err != nil {
-		log.WithError(err).Warn("failed to create macaroons")
+		return fmt.Errorf("failed to create macaroons: %s", err)
 	}
 	if done {
 		log.Debugf("created and stored macaroons at path %s", datadir)
 	}
-}
 
-func (s *service) onInit(password string) {
-	if s.config.NoMacaroons {
-		return
-	}
-
-	pwd := []byte(password)
-	datadir := s.config.macaroonsDatadir()
-	if err := s.macaroonSvc.CreateUnlock(&pwd); err != nil {
-		log.WithError(err).Warn("failed to initialize macaroon store")
-	}
-	if _, err := genMacaroons(
-		context.Background(), s.macaroonSvc, datadir,
-	); err != nil {
-		log.WithError(err).Warn("failed to create macaroons")
-	}
-	log.Debugf("generated macaroons at path %s", datadir)
+	s.tryStartAppServices()
+	return nil
 }
 
 func (s *service) onReady() {
-	if !s.config.NoMacaroons {
-		ctx := context.Background()
-		if s.macaroonSvc.IsLocked(ctx) {
-			if err := s.appConfig.WalletService().Lock(ctx); err != nil {
-				log.WithError(err).Warn("failed to lock wallet and properly setup auth service")
-			} else {
-				return
-			}
-		}
-	}
+	// The wallet signalled it is ready (initialized, unlocked, synced). Record it
+	// and try to start: app services come up once the wallet is ready AND the
+	// macaroon service is unlocked, whichever happens last. We never lock the
+	// wallet here: arkd does not own its lifecycle anymore.
+	s.walletReady.Store(true)
+	s.tryStartAppServices()
+}
 
+// tryStartAppServices starts the app services exactly once, when both the wallet
+// is ready and the macaroon service is unlocked (or macaroons are disabled). It
+// is safe to call repeatedly and from multiple goroutines.
+func (s *service) tryStartAppServices() {
+	if !s.walletReady.Load() {
+		return
+	}
+	if !s.config.NoMacaroons && s.macaroonSvc.IsLocked(context.Background()) {
+		return
+	}
 	if err := s.startAppServices(); err != nil {
 		log.WithError(err).Error("failed to activate app services")
 	}
@@ -634,7 +639,11 @@ func (s *service) onLoadSigner(addr string) error {
 	return err
 }
 
-func (s *service) autoUnlock() error {
+// ensureWalletReady verifies the primary arkd-wallet has been initialized and
+// unlocked out of band. arkd no longer creates or unlocks wallets, so if the
+// wallet is not ready we refuse to start. Sync state is intentionally not
+// enforced here: it is transient and already gated by the readiness layer.
+func (s *service) ensureWalletReady() error {
 	ctx := context.Background()
 	wallet := s.appConfig.WalletService()
 
@@ -643,28 +652,42 @@ func (s *service) autoUnlock() error {
 		return fmt.Errorf("failed to get wallet status: %s", err)
 	}
 	if !status.IsInitialized() {
-		log.Debug("wallet not initialized, skipping auto unlock")
+		return fmt.Errorf(
+			"wallet is not initialized: initialize the arkd-wallet out of band before starting arkd",
+		)
+	}
+	if !status.IsUnlocked() {
+		return fmt.Errorf(
+			"wallet is locked: unlock the arkd-wallet out of band before starting arkd",
+		)
+	}
+
+	confirmed, unconfirmed, err := wallet.MainAccountBalance(ctx)
+	if err != nil {
+		log.WithError(err).Warn("failed to read wallet balance at startup")
+	} else if confirmed+unconfirmed == 0 {
+		log.Warn("wallet main account balance is zero: arkd may be unable to source liquidity")
+	}
+
+	return nil
+}
+
+// autoUnlockMacaroons unlocks the macaroon (admin auth) service using the
+// configured unlocker. It never touches the wallet.
+func (s *service) autoUnlockMacaroons() error {
+	if s.config.NoMacaroons {
 		return nil
 	}
 
-	// If the wallet is already unlocked, force the lock to make the very next call to Unlock
-	// to take effect and run the onUnlock callback
-	if status.IsUnlocked() {
-		// nolint
-		wallet.Lock(ctx)
-	}
-
-	password, err := s.appConfig.UnlockerService().GetPassword(ctx)
+	password, err := s.appConfig.UnlockerService().GetPassword(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to get password: %s", err)
 	}
-	if err := wallet.Unlock(ctx, password); err != nil {
-		return fmt.Errorf("failed to auto unlock: %s", err)
+	if err := s.onUnlock(password); err != nil {
+		return err
 	}
 
-	go s.onUnlock(password)
-
-	log.Debug("service auto unlocked")
+	log.Debug("macaroon service auto unlocked")
 	return nil
 }
 

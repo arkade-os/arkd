@@ -12,97 +12,57 @@ import (
 
 type walletInitHandler struct {
 	walletService ports.WalletService
-	onInit        func(password string)
-	onUnlock      func(password string)
+	onUnlock      func(password string) error
 	onReady       func()
 }
 
 func NewWalletInitializerHandler(
-	walletService ports.WalletService, onInit, onUnlock func(string), onReady func(),
+	walletService ports.WalletService, onUnlock func(string) error, onReady func(),
 ) arkv1.WalletInitializerServiceServer {
-	svc := walletInitHandler{walletService, onInit, onUnlock, onReady}
-	if onInit != nil && onUnlock != nil && onReady != nil {
+	svc := walletInitHandler{walletService, onUnlock, onReady}
+	if onReady != nil {
 		go svc.listenWhenReady()
 	}
 	return &svc
 }
 
-func (a *walletInitHandler) GenSeed(
-	ctx context.Context, _ *arkv1.GenSeedRequest,
-) (*arkv1.GenSeedResponse, error) {
-	seed, err := a.walletService.GenSeed(ctx)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
+// errWalletManagedExternally is returned by the wallet lifecycle RPCs that arkd
+// no longer handles: each arkd-wallet must be initialized out of band.
+const errWalletManagedExternally = "arkd no longer manages the wallet: " +
+	"initialize the arkd-wallet directly"
 
-	return &arkv1.GenSeedResponse{Seed: seed}, nil
+func (a *walletInitHandler) GenSeed(
+	_ context.Context, _ *arkv1.GenSeedRequest,
+) (*arkv1.GenSeedResponse, error) {
+	return nil, status.Error(codes.Unimplemented, errWalletManagedExternally)
 }
 
 func (a *walletInitHandler) Create(
-	ctx context.Context, req *arkv1.CreateRequest,
+	_ context.Context, _ *arkv1.CreateRequest,
 ) (*arkv1.CreateResponse, error) {
-	if len(req.GetSeed()) <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing wallet seed")
-	}
-	if len(req.GetPassword()) <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing wallet password")
-	}
-
-	if err := a.walletService.Create(ctx, req.GetSeed(), req.GetPassword()); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	if a.onInit != nil {
-		go a.onInit(req.GetPassword())
-	}
-
-	return &arkv1.CreateResponse{}, nil
+	return nil, status.Error(codes.Unimplemented, errWalletManagedExternally)
 }
 
 func (a *walletInitHandler) Restore(
-	ctx context.Context, req *arkv1.RestoreRequest,
+	_ context.Context, _ *arkv1.RestoreRequest,
 ) (*arkv1.RestoreResponse, error) {
-	if len(req.GetSeed()) <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing wallet seed")
-	}
-	if len(req.GetPassword()) <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing wallet password")
-	}
-
-	if err := a.walletService.Restore(ctx, req.GetSeed(), req.GetPassword()); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	if a.onInit != nil {
-		go a.onInit(req.GetPassword())
-	}
-
-	return &arkv1.RestoreResponse{}, nil
+	return nil, status.Error(codes.Unimplemented, errWalletManagedExternally)
 }
 
+// Unlock no longer unlocks the wallet (which must already be unlocked out of
+// band); it only unlocks the macaroon (admin auth) service with the given
+// password.
 func (a *walletInitHandler) Unlock(
-	ctx context.Context, req *arkv1.UnlockRequest,
+	_ context.Context, req *arkv1.UnlockRequest,
 ) (*arkv1.UnlockResponse, error) {
 	if len(req.GetPassword()) <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing wallet password")
-	}
-	walletStatus, err := a.walletService.Status(ctx)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	if !walletStatus.IsInitialized() {
-		return nil, status.Error(codes.InvalidArgument, "wallet not initialized, cannot unlock")
-	}
-	if walletStatus.IsUnlocked() {
-		return &arkv1.UnlockResponse{}, nil
-	}
-
-	if err := a.walletService.Unlock(ctx, req.GetPassword()); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(codes.InvalidArgument, "missing password")
 	}
 
 	if a.onUnlock != nil {
-		go a.onUnlock(req.GetPassword())
+		if err := a.onUnlock(req.GetPassword()); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
 	}
 
 	return &arkv1.UnlockResponse{}, nil

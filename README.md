@@ -84,9 +84,9 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_SIGNER_ADDR`                  | The signer address to connect to in the form `host:port`                        | value of `ARKD_WALLET_ADDR`    |
 | `ARKD_NO_MACAROONS`                 | Disable macaroon authentication                                                 | `false`                        |
 | `ARKD_NO_TLS`                       | Disable TLS                                                                     | `true`                         |
-| `ARKD_UNLOCKER_TYPE`                | Wallet unlocker type (env, file) to enable auto-unlock                          | -                              |
+| `ARKD_UNLOCKER_TYPE`                | Macaroon (admin auth) unlocker type (env, file) to enable auto-unlock           | -                              |
 | `ARKD_UNLOCKER_FILE_PATH`           | Path to unlocker file                                                           | -                              |
-| `ARKD_UNLOCKER_PASSWORD`            | Wallet unlocker password                                                        | -                              |
+| `ARKD_UNLOCKER_PASSWORD`            | Macaroon (admin auth) unlocker password                                         | -                              |
 | `ARKD_SCHEDULER_TYPE`              | Scheduler type (gocron, block)                                                 | `gocron`                       |
 | `ARKD_TLS_EXTRA_IP`                | Extra IP addresses for TLS (comma-separated)                                   | -                              |
 | `ARKD_TLS_EXTRA_DOMAIN`            | Extra domains for TLS (comma-separated)                                         | -                              |
@@ -195,26 +195,35 @@ export ARKD_SIGNER_ADDR=localhost:7071
 
 ### Setup arkd
 
+`arkd` does not manage the wallet lifecycle. Each `arkd-wallet` must be initialized and unlocked out of band before `arkd` is started: if the wallet is not initialized and unlocked, `arkd` refuses to start. This is what lets a single `arkd` be backed by more than one `arkd-wallet`.
+
 1. Start the wallet:
    ```sh
    arkd-wallet
    ```
 
-2. Start arkd:
+2. Initialize and unlock the wallet through its own API (reachable at `ARKD_WALLET_ADDR`). For example, against its REST gateway:
+   ```sh
+   # Generate a seed
+   curl -s http://localhost:6060/v1/wallet/seed
+   # Create the wallet from the returned seed
+   curl -s -X POST http://localhost:6060/v1/wallet/create \
+     -d '{"seed": "<seed>", "password": "<password>"}'
+   # Or restore an existing wallet from its mnemonic
+   curl -s -X POST http://localhost:6060/v1/wallet/restore \
+     -d '{"seed": "<mnemonic>", "password": "<password>", "gap_limit": 100}'
+   # Unlock the wallet
+   curl -s -X POST http://localhost:6060/v1/wallet/unlock \
+     -d '{"password": "<password>"}'
+   ```
+   This wallet password is independent of the macaroon-service password used in step 5.
+
+3. Start arkd:
    ```sh
    arkd
    ```
 
-3. Create a new wallet:
-   ```sh
-   arkd wallet create --password <password>
-   ```
-
-   Or restore from mnemonic:
-   ```sh
-   arkd wallet create --mnemonic "your twelve word mnemonic phrase here" --password <password>
-   ```
-4. Only if you didn't configure either the wallet as signer, or a custom signer, you must load the signer before unlocking the wallet, or `arkd` will fail to start:
+4. Only if you didn't configure either the wallet as signer, or a custom signer, you must load the signer, or `arkd` will be unable to start the ark service:
    ```sh
    # If you configured a custom signer
    arkd signer load --signer-url localhost:7071
@@ -223,7 +232,7 @@ export ARKD_SIGNER_ADDR=localhost:7071
    ```
    Remember, if you use this command, you must use it at every restart unless you export the required environment variable(s).
 
-5. Unlock the wallet:
+5. If macaroon authentication is enabled and you did not configure an auto-unlocker, unlock the macaroon (admin auth) service so `arkd` can serve authenticated admin requests:
    ```sh
    arkd wallet unlock --password <password>
    ```
