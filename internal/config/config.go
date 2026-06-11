@@ -64,6 +64,11 @@ var (
 		"withheld": {},
 		"private":  {},
 	}
+	supportedBuildVersionGuardLevels = supportedType{
+		"major": {},
+		"minor": {},
+		"patch": {},
+	}
 )
 
 type Config struct {
@@ -104,6 +109,8 @@ type Config struct {
 	BoardingExitDelay         arklib.RelativeLocktime
 	NoteUriPrefix             string
 	HeartbeatInterval         int64
+	BuildVersionRequireHeader bool
+	BuildVersionGuardLevel    VersionGuardLevel
 
 	VtxoNoCsvValidationCutoffDate int64
 
@@ -255,6 +262,9 @@ var (
 	MaxConcurrentStreams = "MAX_CONCURRENT_STREAMS"
 	StreamConnPoolSize   = "STREAM_CONN_POOL_SIZE"
 
+	BuildVersionRequireHeader = "BUILD_VERSION_REQUIRE_HEADER"
+	BuildVersionGuardLevel    = "BUILD_VERSION_GUARD_LEVEL"
+
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
 	defaultBanDuration         = 10 * defaultSessionDuration
@@ -297,6 +307,8 @@ var (
 	defaultStreamConnPoolSize            = uint32(4)
 	maxStreamConnPoolSize                = uint32(64)
 	defaultMaxOpReturnOuts               = uint32(3)
+	defaultBuildVersionRequireHeader     = false
+	defaultBuildVersionGuardLevel        = "minor"
 )
 
 func LoadConfig() (*Config, error) {
@@ -348,6 +360,8 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
 	viper.SetDefault(StreamConnPoolSize, defaultStreamConnPoolSize)
 	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
+	viper.SetDefault(BuildVersionRequireHeader, defaultBuildVersionRequireHeader)
+	viper.SetDefault(BuildVersionGuardLevel, defaultBuildVersionGuardLevel)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -388,6 +402,11 @@ func LoadConfig() (*Config, error) {
 	adminPort := viper.GetUint32(AdminPort)
 	if adminPort == 0 {
 		adminPort = viper.GetUint32(Port)
+	}
+
+	versionGuardLevel, err := parseVersionGuardLevel(viper.GetString(BuildVersionGuardLevel))
+	if err != nil {
+		return nil, err
 	}
 
 	return &Config{
@@ -468,7 +487,9 @@ func LoadConfig() (*Config, error) {
 			maxStreamConnPoolSize, max(1, viper.GetUint32(StreamConnPoolSize)),
 		),
 		// Default to 1 if set to 0
-		MaxOpReturnOutputs: max(1, viper.GetUint32(MaxOpReturnOutputs)),
+		MaxOpReturnOutputs:        max(1, viper.GetUint32(MaxOpReturnOutputs)),
+		BuildVersionRequireHeader: viper.GetBool(BuildVersionRequireHeader),
+		BuildVersionGuardLevel:    versionGuardLevel,
 	}, nil
 }
 

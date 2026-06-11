@@ -12,13 +12,12 @@ import (
 func UnaryInterceptor(
 	svc *macaroons.Service,
 	readiness *ReadinessService,
-	serverVersion string,
+	guard VersionGuard,
 ) grpc.ServerOption {
-	major, minor, _ := parseVersion(serverVersion)
 	return grpc.UnaryInterceptor(middleware.ChainUnaryServer(
 		unaryPanicRecoveryInterceptor(),
 		unaryLogger,
-		unaryVersionCompatHandler(major, minor, serverVersion),
+		unaryVersionCompatHandler(guard),
 		unaryMacaroonAuthHandler(svc),
 		unaryReadinessHandler(readiness),
 		errorConverter,
@@ -31,13 +30,12 @@ func UnaryInterceptor(
 func StreamInterceptor(
 	svc *macaroons.Service,
 	readiness *ReadinessService,
-	serverVersion string,
+	guard VersionGuard,
 ) grpc.ServerOption {
-	major, minor, _ := parseVersion(serverVersion)
 	return grpc.StreamInterceptor(middleware.ChainStreamServer(
 		streamPanicRecoveryInterceptor(),
 		streamLogger,
-		streamVersionCompatHandler(major, minor, serverVersion),
+		streamVersionCompatHandler(guard),
 		streamMacaroonAuthHandler(svc),
 		streamReadinessHandler(readiness),
 	))
