@@ -1,451 +1,140 @@
-package wallet
+package clientlib
 
 import (
-	"context"
-	"encoding/hex"
-	"fmt"
-	"sync"
+	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
-	"github.com/arkade-os/arkd/pkg/client-lib/client"
-	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client/grpc"
-	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	mempoolexplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer/mempool"
-	"github.com/arkade-os/arkd/pkg/client-lib/identity"
-	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
-	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
-	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
-	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	log "github.com/sirupsen/logrus"
 )
 
-const (
-	// identity
-	SingleKeyIdentity = identity.SingleKeyIdentity
-	// store
-	FileStore     = types.FileStore
-	InMemoryStore = types.InMemoryStore
-)
+// Explorer provides methods to interact with blockchain explorers (e.g., mempool.space, esplora).
+// It supports both HTTP REST API calls and WebSocket connections for real-time address tracking.
+// The implementation uses a connection pool architecture with multiple concurrent WebSocket connections
+// to handle high-volume address subscriptions without overwhelming individual connections.
+type Explorer interface {
+	// Start must be used when using the explorer with tracking enabled.
+	Start()
 
-var (
-	ErrAlreadyInitialized = fmt.Errorf("wallet already initialized")
-	ErrNotInitialized     = fmt.Errorf("wallet not initialized")
-	ErrIsLocked           = fmt.Errorf("wallet is locked")
+	// GetTxHex retrieves the raw transaction hex for a given transaction ID.
+	GetTxHex(txid string) (string, error)
 
-	supportedIdentities = utils.SupportedType[struct{}]{
-		SingleKeyIdentity: struct{}{},
-	}
-)
+	// Broadcast broadcasts one or more raw transactions to the network.
+	// Returns the transaction ID of the first transaction on success.
+	Broadcast(txs ...string) (string, error)
 
-type service struct {
-	*types.Config
-	identity identity.Identity
-	store    types.Store
-	explorer explorer.Explorer
-	client   client.Client
-	indexer  indexer.Indexer
+	// GetTxs retrieves all transactions associated with a given address.
+	GetTxs(addr string) ([]Tx, error)
 
-	txLock                 *sync.RWMutex
-	verbose                bool
-	withFinalizePendingTxs bool
+	// GetTxOutspends returns the spent status of all outputs for a given transaction.
+	GetTxOutspends(tx string) ([]SpentStatus, error)
+
+	// GetUtxos retrieves all unspent transaction outputs (UTXOs) for the given addresses.
+	GetUtxos(addresses []string) ([]ExplorerUtxo, error)
+
+	// GetRedeemedVtxosBalance calculates the redeemed virtual UTXO balance for an address
+	// considering the unilateral exit delay.
+	GetRedeemedVtxosBalance(
+		addr string, unilateralExitDelay arklib.RelativeLocktime,
+	) (uint64, map[int64]uint64, error)
+
+	// GetTxBlockTime returns whether a transaction is confirmed and its block time.
+	GetTxBlockTime(txid string) (confirmed bool, blocktime int64, err error)
+
+	// BaseUrl returns the base URL of the explorer service.
+	BaseUrl() string
+
+	// GetFeeRate retrieves the current recommended fee rate in sat/vB.
+	GetFeeRate() (float64, error)
+
+	// GetConnectionCount returns the number of active WebSocket connections.
+	GetConnectionCount() int
+
+	// GetSubscribedAddresses returns a list of all currently subscribed addresses.
+	GetSubscribedAddresses() []string
+
+	// IsAddressSubscribed checks if a specific address is currently subscribed.
+	IsAddressSubscribed(address string) bool
+
+	// GetAddressesEvents returns a channel that receives onchain address events
+	// (new UTXOs, spent UTXOs, confirmed UTXOs) for all subscribed addresses.
+	GetAddressesEvents() <-chan OnchainAddressEvent
+
+	// SubscribeForAddresses subscribes to address updates via WebSocket connections.
+	// Addresses are automatically distributed across multiple connections using hash-based routing.
+	// Subscriptions are batched to prevent overwhelming individual connections.
+	// Duplicate subscriptions are automatically prevented via instance-scoped deduplication.
+	SubscribeForAddresses(addresses []string) error
+
+	// UnsubscribeForAddresses removes address subscriptions and updates the WebSocket connections.
+	UnsubscribeForAddresses(addresses []string) error
+
+	// Stop gracefully shuts down the explorer, closing all WebSocket connections and channels.
+	Stop()
 }
 
-func NewWallet(storeSvc types.Store, opts ...ServiceOption) (Wallet, error) {
-	if storeSvc == nil {
-		return nil, fmt.Errorf("missing store")
-	}
-
-	cfgData, err := storeSvc.ConfigStore().GetData(context.Background())
-	if err != nil {
-		return nil, err
-	}
-
-	if cfgData != nil {
-		return nil, ErrAlreadyInitialized
-	}
-
-	client := &service{
-		store:                  storeSvc,
-		txLock:                 &sync.RWMutex{},
-		withFinalizePendingTxs: true,
-	}
-	for _, opt := range opts {
-		opt(client)
-	}
-
-	if client.identity == nil {
-		storeType := storeSvc.ConfigStore().GetType()
-		datadir := storeSvc.ConfigStore().GetDatadir()
-		identitySvc, err := getSingleKeyIdentity(datadir, storeType)
-		if err != nil {
-			return nil, fmt.Errorf("failed to setup identity: %s", err)
-		}
-		client.identity = identitySvc
-	}
-
-	return client, nil
+type SpentStatus struct {
+	Spent   bool
+	SpentBy string
 }
 
-func LoadWallet(storeSvc types.Store, opts ...ServiceOption) (Wallet, error) {
-	if storeSvc == nil {
-		return nil, fmt.Errorf("missing sdk repository")
-	}
-
-	cfgData, err := storeSvc.ConfigStore().GetData(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	if cfgData == nil {
-		return nil, ErrNotInitialized
-	}
-
-	client := &service{
-		Config:                 cfgData,
-		store:                  storeSvc,
-		txLock:                 &sync.RWMutex{},
-		withFinalizePendingTxs: true,
-	}
-	for _, opt := range opts {
-		opt(client)
-	}
-
-	if client.identity == nil {
-		storeType := storeSvc.ConfigStore().GetType()
-		datadir := storeSvc.ConfigStore().GetDatadir()
-		identitySvc, err := getSingleKeyIdentity(datadir, storeType)
-		if err != nil {
-			return nil, fmt.Errorf("failed to setup identity: %s", err)
-		}
-		client.identity = identitySvc
-	}
-
-	if client.explorer == nil {
-		explorerOpts := []mempoolexplorer.Option{mempoolexplorer.WithTracker(false)}
-		explorerSvc, err := mempoolexplorer.NewExplorer(
-			cfgData.ExplorerURL, cfgData.Network, explorerOpts...,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to setup explorer: %s", err)
-		}
-		client.explorer = explorerSvc
-	}
-
-	clientSvc, err := grpcclient.NewClient(cfgData.ServerUrl)
-	if err != nil {
-		return nil, fmt.Errorf("failed to setup transport client: %s", err)
-	}
-	indexerSvc, err := grpcindexer.NewClient(cfgData.ServerUrl)
-	if err != nil {
-		return nil, fmt.Errorf("failed to setup indexer: %s", err)
-	}
-
-	client.client = clientSvc
-	client.indexer = indexerSvc
-
-	return client, nil
+type Output struct {
+	Script  string
+	Address string
+	Amount  uint64
 }
 
-func (a *service) Identity() identity.Identity {
-	return a.identity
+type Input struct {
+	Output
+	Txid string
+	Vout uint32
 }
 
-func (a *service) Client() client.Client {
-	return a.client
+type Tx struct {
+	Txid   string
+	Vin    []Input
+	Vout   []Output
+	Status ConfirmedStatus
 }
 
-func (a *service) Indexer() indexer.Indexer {
-	return a.indexer
+type ConfirmedStatus struct {
+	Confirmed bool
+	BlockTime int64
 }
 
-func (a *service) Explorer() explorer.Explorer {
-	return a.explorer
+// ExplorerUtxo represents an unspent transaction output from the blockchain explorer.
+type ExplorerUtxo struct {
+	Txid   string
+	Vout   uint32
+	Amount uint64
+	Script string
+	Status ConfirmedStatus
 }
 
-func (a *service) GetVersion() string {
-	return Version
-}
-
-func (a *service) GetConfigData(_ context.Context) (*types.Config, error) {
-	if a.Config == nil {
-		return nil, fmt.Errorf("client sdk not initialized")
-	}
-	return a.Config, nil
-}
-
-func (a *service) Unlock(ctx context.Context, password string) error {
-	if _, err := a.identity.Unlock(ctx, password); err != nil {
-		return err
+// ToUtxo converts the explorer Utxo type to the client-lib Utxo one with the specified
+// relative locktime delay (mandatory), tapscripts, and signing closure (optional).
+func (u ExplorerUtxo) ToUtxo(
+	delay arklib.RelativeLocktime, tapscripts []string, signingClosure script.Closure,
+) Utxo {
+	var (
+		createdAt    time.Time
+		redeemableAt time.Time
+	)
+	if u.Status.BlockTime > 0 {
+		createdAt = time.Unix(u.Status.BlockTime, 0)
+		redeemableAt = createdAt.Add(time.Duration(delay.Seconds()) * time.Second)
 	}
 
-	log.SetLevel(log.DebugLevel)
-	if !a.verbose {
-		log.SetLevel(log.WarnLevel)
+	return Utxo{
+		Outpoint: Outpoint{
+			Txid: u.Txid,
+			VOut: u.Vout,
+		},
+		Amount:         u.Amount,
+		Script:         u.Script,
+		Delay:          delay,
+		RedeemableAt:   redeemableAt,
+		CreatedAt:      createdAt,
+		Tapscripts:     tapscripts,
+		SigningClosure: signingClosure,
 	}
-
-	if a.withFinalizePendingTxs {
-		// TODO: @sekulicd shall we move this to go-sdk? Otherwise we would have to pass an extra
-		// option to Unlock to pass basically the keys ids for the whole vtxo set and that would
-		// look awkward.
-		txids, err := a.finalizePendingTxs(ctx, nil, nil, nil)
-		if err != nil {
-			return err
-		}
-		switch len(txids) {
-		case 0:
-			log.Debug("no pending txs to finalize")
-		case 1:
-			log.Debug("finalized 1 pending tx")
-		default:
-			log.Debugf("finalized %d pending txs", len(txids))
-		}
-	}
-
-	return nil
-}
-
-func (a *service) Lock(ctx context.Context) error {
-	if a.identity == nil {
-		return ErrNotInitialized
-	}
-	return a.identity.Lock(ctx)
-}
-
-func (a *service) IsLocked(ctx context.Context) bool {
-	if a.identity == nil {
-		return true
-	}
-	return a.identity.IsLocked()
-}
-
-func (a *service) Dump(ctx context.Context) (string, error) {
-	if err := a.safeCheck(); err != nil {
-		return "", err
-	}
-	return a.identity.Dump(ctx)
-}
-
-func (a *service) Reset(ctx context.Context) {
-	a.client.Close()
-	a.indexer.Close()
-
-	if a.store != nil {
-		a.store.Clean(ctx)
-	}
-}
-
-func (a *service) Stop() {
-	a.client.Close()
-	a.indexer.Close()
-
-	if a.store != nil {
-		a.store.Close()
-	}
-}
-
-func (a *service) SignTransaction(
-	ctx context.Context, tx string, opts ...SignOption,
-) (string, error) {
-	if err := a.safeCheck(); err != nil {
-		return "", err
-	}
-	o := newDefaultSendOptions()
-	for _, opt := range opts {
-		if err := opt.applySend(o); err != nil {
-			return "", err
-		}
-	}
-
-	return a.identity.SignTransaction(ctx, tx, o.signingKeys)
-}
-
-func (a *service) safeCheck() error {
-	if a.identity == nil {
-		return ErrNotInitialized
-	}
-	if a.identity.IsLocked() {
-		return ErrIsLocked
-	}
-	return nil
-}
-
-func (a *service) getVtxos(
-	ctx context.Context, extraOpts ...indexer.GetVtxosOption,
-) (spendableVtxos, spentVtxos []types.Vtxo, err error) {
-	if a.identity == nil {
-		return nil, nil, ErrNotInitialized
-	}
-
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
-	if err != nil {
-		return
-	}
-
-	scripts := make([]string, 0, len(offchainAddrs))
-	for _, addr := range offchainAddrs {
-		decoded, err := arklib.DecodeAddressV0(addr.Address)
-		if err != nil {
-			return nil, nil, err
-		}
-		vtxoScript, err := script.P2TRScript(decoded.VtxoTapKey)
-		if err != nil {
-			return nil, nil, err
-		}
-		scripts = append(scripts, hex.EncodeToString(vtxoScript))
-	}
-	opts := append([]indexer.GetVtxosOption{indexer.WithScripts(scripts)}, extraOpts...)
-	resp, err := a.indexer.GetVtxos(ctx, opts...)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	for _, vtxo := range resp.Vtxos {
-		if vtxo.Spent || vtxo.Unrolled {
-			spentVtxos = append(spentVtxos, vtxo)
-			continue
-		}
-
-		if vtxo.IsRecoverable() {
-			spendableVtxos = append(spendableVtxos, vtxo)
-			continue
-		}
-
-		spendableVtxos = append(spendableVtxos, vtxo)
-	}
-	return
-}
-
-func (a *service) getSpendableVtxos(
-	ctx context.Context, opts *getVtxosFilter,
-) ([]types.Vtxo, error) {
-	spendable, _, err := a.getVtxos(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if opts != nil && len(opts.outpoints) > 0 {
-		spendable = filterByOutpoints(spendable, opts.outpoints)
-	}
-
-	recoverableVtxos := make([]types.Vtxo, 0)
-	spendableVtxos := make([]types.Vtxo, 0, len(spendable))
-	if opts != nil && opts.withRecoverableVtxos {
-		for _, vtxo := range spendable {
-			if vtxo.IsRecoverable() {
-				recoverableVtxos = append(recoverableVtxos, vtxo)
-				continue
-			}
-			spendableVtxos = append(spendableVtxos, vtxo)
-		}
-	} else {
-		spendableVtxos = make([]types.Vtxo, len(spendable))
-		copy(spendableVtxos, spendable)
-	}
-
-	allVtxos := append(recoverableVtxos, spendableVtxos...)
-
-	if opts != nil && opts.recomputeExpiry {
-		// if sorting by expiry is required, we need to get the expiration date of each vtxo
-		redeemBranches, err := a.getRedeemBranches(ctx, spendableVtxos)
-		if err != nil {
-			return nil, err
-		}
-
-		for vtxoTxid, branch := range redeemBranches {
-			expiration, err := branch.ExpiresAt()
-			if err != nil {
-				return nil, err
-			}
-
-			for i, vtxo := range allVtxos {
-				if vtxo.Txid == vtxoTxid {
-					allVtxos[i].ExpiresAt = *expiration
-					break
-				}
-			}
-		}
-	}
-
-	if opts == nil || !opts.withoutExpirySorting {
-		allVtxos = utils.SortVtxosByExpiry(allVtxos)
-	}
-
-	if opts != nil && opts.excludeAssetVtxos {
-		filteredVtxos := make([]types.Vtxo, 0, len(allVtxos))
-		for _, vtxo := range allVtxos {
-			if len(vtxo.Assets) == 0 {
-				filteredVtxos = append(filteredVtxos, vtxo)
-			}
-		}
-		allVtxos = filteredVtxos
-	}
-
-	return allVtxos, nil
-}
-
-func (a *service) fetchPendingSpentVtxos(ctx context.Context) ([]types.Vtxo, error) {
-	if a.identity == nil {
-		return nil, ErrNotInitialized
-	}
-
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	scripts := make([]string, 0, len(offchainAddrs))
-	for _, addr := range offchainAddrs {
-		decoded, err := arklib.DecodeAddressV0(addr.Address)
-		if err != nil {
-			return nil, err
-		}
-		vtxoScript, err := script.P2TRScript(decoded.VtxoTapKey)
-		if err != nil {
-			return nil, err
-		}
-		scripts = append(scripts, hex.EncodeToString(vtxoScript))
-	}
-	resp, err := a.indexer.GetVtxos(ctx, indexer.WithPendingOnly(), indexer.WithScripts(scripts))
-	if err != nil {
-		return nil, err
-	}
-	return resp.Vtxos, nil
-}
-
-func (a *service) populateVtxosWithTapscripts(
-	ctx context.Context, vtxos []types.Vtxo,
-) ([]types.VtxoWithTapTree, error) {
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if len(offchainAddrs) <= 0 {
-		return nil, fmt.Errorf("no offchain addresses found")
-	}
-
-	vtxosWithTapscripts := make([]types.VtxoWithTapTree, 0)
-
-	for _, v := range vtxos {
-		found := false
-		for _, offchainAddr := range offchainAddrs {
-			vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
-			if err != nil {
-				return nil, err
-			}
-
-			if vtxoAddr == offchainAddr.Address {
-				vtxosWithTapscripts = append(vtxosWithTapscripts, types.VtxoWithTapTree{
-					Vtxo:       v,
-					Tapscripts: offchainAddr.Tapscripts,
-				})
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, fmt.Errorf("no offchain address found for vtxo %s", v.Txid)
-		}
-	}
-
-	return vtxosWithTapscripts, nil
 }

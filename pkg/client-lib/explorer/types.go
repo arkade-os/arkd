@@ -1,0 +1,213 @@
+package explorer
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+
+	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+)
+
+type spentStatus struct {
+	Spent   bool   `json:"spent"`
+	SpentBy string `json:"txid,omitempty"`
+}
+
+type tx struct {
+	Txid string `json:"txid"`
+	Vin  []struct {
+		Txid    string `json:"txid"`
+		Vout    uint32 `json:"vout"`
+		Prevout struct {
+			Script  string `json:"scriptpubkey"`
+			Address string `json:"scriptpubkey_address"`
+			Amount  uint64 `json:"value"`
+		} `json:"prevout"`
+	} `json:"vin"`
+	Vout []struct {
+		Script  string `json:"scriptpubkey"`
+		Address string `json:"scriptpubkey_address"`
+		Amount  uint64 `json:"value"`
+	} `json:"vout"`
+	Status struct {
+		Confirmed bool  `json:"confirmed"`
+		Blocktime int64 `json:"block_time"`
+	} `json:"status"`
+}
+
+type txs []tx
+
+func (t txs) toList() []clientlib.Tx {
+	txs := make([]clientlib.Tx, 0)
+	for _, tx := range t {
+		ins := make([]clientlib.Input, 0, len(tx.Vin))
+		for _, in := range tx.Vin {
+			ins = append(ins, clientlib.Input{
+				Txid: in.Txid,
+				Vout: in.Vout,
+				Output: clientlib.Output{
+					Script:  in.Prevout.Script,
+					Address: in.Prevout.Address,
+					Amount:  in.Prevout.Amount,
+				},
+			})
+		}
+		outs := make([]clientlib.Output, 0, len(tx.Vout))
+		for _, out := range tx.Vout {
+			outs = append(outs, clientlib.Output{
+				Script:  out.Script,
+				Address: out.Address,
+				Amount:  out.Amount,
+			})
+		}
+		txs = append(txs, clientlib.Tx{
+			Txid: tx.Txid,
+			Vin:  ins,
+			Vout: outs,
+			Status: clientlib.ConfirmedStatus{
+				Confirmed: tx.Status.Confirmed,
+				BlockTime: tx.Status.Blocktime,
+			},
+		})
+	}
+	return txs
+}
+
+type addressNotification struct {
+	MultiAddrTx map[string]txNotificationSet `json:"multi-address-transactions"`
+	Error       string                       `json:"track-addresses-error"`
+}
+
+type txNotificationSet struct {
+	Mempool   []txNotification `json:"mempool"`
+	Confirmed []txNotification `json:"confirmed"`
+	Removed   []txNotification `json:"removed"`
+}
+
+type txNotification struct {
+	Txid    string                  `json:"txid"`
+	Version uint32                  `json:"version"`
+	Inputs  []txNotificationInput   `json:"vin"`
+	Outputs []txNotificationPrevout `json:"vout"`
+	Status  struct {
+		Confirmed bool  `json:"confirmed"`
+		BlockTime int64 `json:"block_time"`
+	} `json:"status"`
+}
+
+type txNotificationInput struct {
+	Prevout txNotificationPrevout `json:"prevout"`
+	Txid    string                `json:"txid"`
+	Vout    int                   `json:"vout"`
+}
+
+type txNotificationPrevout struct {
+	Script  string `json:"scriptpubkey"`
+	Address string `json:"scriptpubkey_address"`
+	Amount  uint64 `json:"value"`
+}
+
+type RbfTxId struct {
+	TxId string `json:"txid"`
+}
+
+type RBFTxn struct {
+	TxId       string
+	ReplacedBy string
+}
+
+// addressData stores cached UTXO data for an address to detect changes during polling.
+type addressData struct {
+	hash   []byte
+	utxos  []utxo
+	script string
+}
+
+type utxo struct {
+	Txid   string `json:"txid"`
+	Vout   uint32 `json:"vout"`
+	Amount uint64 `json:"value"`
+	Script string `json:"scriptpubkey"`
+	Status struct {
+		Confirmed bool  `json:"confirmed"`
+		BlockTime int64 `json:"block_time"`
+	} `json:"status"`
+}
+
+func (u utxo) hash() []byte {
+	buf := bytes.Buffer{}
+	buf.WriteString(u.Txid)
+	buf.WriteString(strconv.Itoa(int(u.Vout)))
+	buf.WriteString(strconv.FormatUint(u.Amount, 10))
+	buf.WriteString(u.Script)
+	buf.WriteString(strconv.FormatBool(u.Status.Confirmed))
+	buf.WriteString(strconv.FormatInt(u.Status.BlockTime, 10))
+	hash := sha256.Sum256(buf.Bytes())
+	return hash[:]
+}
+
+type utxos []utxo
+
+func (u utxos) toUtxoList() []clientlib.ExplorerUtxo {
+	utxos := make([]clientlib.ExplorerUtxo, 0)
+	for _, utxo := range u {
+		utxos = append(utxos, clientlib.ExplorerUtxo{
+			Txid:   utxo.Txid,
+			Vout:   utxo.Vout,
+			Amount: utxo.Amount,
+			Status: clientlib.ConfirmedStatus{
+				Confirmed: utxo.Status.Confirmed,
+				BlockTime: utxo.Status.BlockTime,
+			},
+			Script: utxo.Script,
+		})
+	}
+	return utxos
+}
+
+func (u utxos) hash() []byte {
+	// order the utxos by txid and vout
+	sort.SliceStable(u, func(i, j int) bool {
+		txidCmp := strings.Compare(u[i].Txid, u[j].Txid)
+		if txidCmp == 0 {
+			return u[i].Vout < u[j].Vout
+		}
+		return txidCmp < 0
+	})
+	buf := bytes.Buffer{}
+	for _, utxo := range u {
+		buf.Write(utxo.hash())
+	}
+	hash := sha256.Sum256(buf.Bytes())
+	return hash[:]
+}
+
+type cache[V any] struct {
+	mapping map[string]V
+	lock    *sync.RWMutex
+}
+
+func newCache[V any]() *cache[V] {
+	return &cache[V]{
+		mapping: make(map[string]V),
+		lock:    &sync.RWMutex{},
+	}
+}
+
+func (c *cache[V]) set(key string, value V) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.mapping[key] = value
+}
+
+func (c *cache[V]) get(key string) (V, bool) {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	val, ok := c.mapping[key]
+	return val, ok
+}
