@@ -534,6 +534,22 @@ func (c *Config) Validate() error {
 			supportedLiveStores,
 		)
 	}
+	if !supportedIndexerExposures.supports(c.IndexerExposure) {
+		return fmt.Errorf(
+			"indexer exposure type not supported, please select one of: %s",
+			supportedIndexerExposures,
+		)
+	}
+
+	if c.IndexerExposure != "public" && c.IndexerAuthTokenExpiry <= 0 {
+		return fmt.Errorf("indexer auth token expiry must be greater than 0")
+	}
+
+	if c.IndexerExposure != "public" && c.IndexerSigningKey == "" {
+		return fmt.Errorf(
+			"indexer signing key is required when exposure is %q", c.IndexerExposure,
+		)
+	}
 
 	if _, err := c.getSettings(); err != nil {
 		return err

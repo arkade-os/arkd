@@ -100,8 +100,8 @@ type service struct {
 	assetStore             domain.AssetRepository
 	settingsStore          domain.SettingsRepository
 	txDecoder              ports.TxDecoder
-	batchEventHandler      *eventHandler[domain.Round]
-	offchainTxEventHandler *eventHandler[domain.OffchainTx]
+	batchEventHandler      *updateHandler[domain.Round]
+	offchainTxEventHandler *updateHandler[domain.OffchainTx]
 }
 
 func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoManager, error) {
@@ -384,8 +384,8 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		convictionStore:        convictionStore,
 		assetStore:             assetStore,
 		settingsStore:          settingsStore,
-		batchEventHandler:      newEventHandler[domain.Round](),
-		offchainTxEventHandler: newEventHandler[domain.OffchainTx](),
+		batchEventHandler:      newUpdateHandler[domain.Round](),
+		offchainTxEventHandler: newUpdateHandler[domain.OffchainTx](),
 	}
 
 	// Register handlers that take care of keeping the projection store up-to-date.
