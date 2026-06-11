@@ -94,12 +94,10 @@ type indexerService struct {
 	tokenCache              *tokenCache
 }
 
-func (i *indexerService) acceptedSignerPubkeys() []*btcec.PublicKey {
-	return acceptedSignerPubkeys(i.signerPubkey, i.deprecatedSignerPubkeys, time.Now())
-}
-
 // allSignerPubkeys returns the current signer pubkey plus every deprecated ones
-// we need the whole list whatever the cutoff date so we can strip old-signed signatures in stripSignerSignatures
+// we need the whole list whatever the cutoff date so we can strip old-signed
+// signatures in stripSignerSignatures and verify ownership proofs of vtxos
+// locked to a past-cutoff key in validateIntent
 func (i *indexerService) allSignerPubkeys() []*btcec.PublicKey {
 	pubkeys := make([]*btcec.PublicKey, 0, len(i.deprecatedSignerPubkeys)+1)
 	pubkeys = append(pubkeys, i.signerPubkey)
@@ -868,7 +866,7 @@ func (i *indexerService) validateIntent(ctx context.Context, intentToValidate In
 	}
 
 	return intent.Verify(
-		intentToValidate.Proof, intentToValidate.Message, i.acceptedSignerPubkeys(),
+		intentToValidate.Proof, intentToValidate.Message, i.allSignerPubkeys(),
 	)
 }
 

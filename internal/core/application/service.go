@@ -469,11 +469,21 @@ func (s *service) validateVtxoScript(
 	)
 }
 
-// acceptedSignerPubkeys returns the signer pubkeys accepted for intent proof
-// verification and vtxo script validation: the current one plus the deprecated
-// ones whose cutoff date has not passed yet.
+// acceptedSignerPubkeys returns the signer pubkeys accepted for vtxo script
+// validation: the current one plus the deprecated ones whose cutoff date has
+// not passed yet.
 func (s *service) acceptedSignerPubkeys() []*btcec.PublicKey {
 	return acceptedSignerPubkeys(s.signerPubkey, s.deprecatedSignerPubkeys, time.Now())
+}
+
+// allSignerPubkeys returns the current signer pubkey plus every deprecated one regardless of cutoff date. 
+func (s *service) allSignerPubkeys() []*btcec.PublicKey {
+	pubkeys := make([]*btcec.PublicKey, 0, len(s.deprecatedSignerPubkeys)+1)
+	pubkeys = append(pubkeys, s.signerPubkey)
+	for _, deprecated := range s.deprecatedSignerPubkeys {
+		pubkeys = append(pubkeys, deprecated.PubKey)
+	}
+	return pubkeys
 }
 
 func (s *service) SubmitOffchainTx(
@@ -1441,7 +1451,7 @@ func (s *service) GetPendingOffchainTxs(
 	if err := intent.Verify(
 		encodedProof,
 		encodedMessage,
-		s.acceptedSignerPubkeys(),
+		s.allSignerPubkeys(),
 	); err != nil {
 		log.
 			WithField("proof", encodedProof).
@@ -1758,7 +1768,7 @@ func (s *service) RegisterIntent(
 	if err := intent.Verify(
 		encodedProof,
 		encodedMessage,
-		s.acceptedSignerPubkeys(),
+		s.allSignerPubkeys(),
 	); err != nil {
 		log.
 			WithField("proof", encodedProof).
@@ -1781,7 +1791,7 @@ func (s *service) RegisterIntent(
 
 	finalizedProofTx, err := intent.Proof{
 		Packet: *signedProofPtx,
-	}.FinalizeAndExtract(s.acceptedSignerPubkeys()...)
+	}.FinalizeAndExtract(s.allSignerPubkeys()...)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to finalize proof: %w", err).
 			WithMetadata(map[string]any{
@@ -4364,7 +4374,7 @@ func (s *service) verifyIntentProofAndFindMatches(
 	if err := intent.Verify(
 		encodedProof,
 		encodedMessage,
-		s.acceptedSignerPubkeys(),
+		s.allSignerPubkeys(),
 	); err != nil {
 		log.
 			WithField("proof", encodedProof).
