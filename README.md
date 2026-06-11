@@ -202,21 +202,17 @@ export ARKD_SIGNER_ADDR=localhost:7071
    arkd-wallet
    ```
 
-2. Initialize and unlock the wallet through its own API (reachable at `ARKD_WALLET_ADDR`). For example, against its REST gateway:
+2. Initialize and unlock the wallet. `arkd` does not manage the wallet lifecycle, so this is done out of band against the `arkd-wallet`:
    ```sh
-   # Generate a seed
-   curl -s http://localhost:6060/v1/wallet/seed
-   # Create the wallet from the returned seed
-   curl -s -X POST http://localhost:6060/v1/wallet/create \
-     -d '{"seed": "<seed>", "password": "<password>"}'
-   # Or restore an existing wallet from its mnemonic
-   curl -s -X POST http://localhost:6060/v1/wallet/restore \
-     -d '{"seed": "<mnemonic>", "password": "<password>", "gap_limit": 100}'
-   # Unlock the wallet
-   curl -s -X POST http://localhost:6060/v1/wallet/unlock \
-     -d '{"password": "<password>"}'
+   # Create a new wallet and unlock it (prints the seed, back it up)
+   arkd-wallet create --password <password>
    ```
-   This wallet password is independent of the macaroon-service password used in step 5.
+
+   Or restore from mnemonic:
+   ```sh
+   arkd-wallet create --mnemonic "your twelve word mnemonic phrase here" --password <password>
+   ```
+   By default these target `http://localhost:6060`; use `--url` to reach a wallet on another host. This wallet password is independent of the macaroon-service password used in step 5. After a wallet restart, unlock it again with `arkd-wallet unlock --password <password>`.
 
 3. Start arkd:
    ```sh
