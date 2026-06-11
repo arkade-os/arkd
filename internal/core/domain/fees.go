@@ -61,10 +61,10 @@ func (f *BatchFees) Update(u BatchFeesUpdate) error {
 
 func (f *BatchFees) Validate() error {
 	_, err := arkfee.New(arkfee.Config{
-		BatchOffchainInputProgram:  f.OffchainInputFee,
-		BatchOnchainInputProgram:   f.OnchainInputFee,
-		BatchOffchainOutputProgram: f.OffchainOutputFee,
-		BatchOnchainOutputProgram:  f.OnchainOutputFee,
+		IntentOffchainInputProgram:  f.OffchainInputFee,
+		IntentOnchainInputProgram:   f.OnchainInputFee,
+		IntentOffchainOutputProgram: f.OffchainOutputFee,
+		IntentOnchainOutputProgram:  f.OnchainOutputFee,
 	})
 	return err
 }
