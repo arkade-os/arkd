@@ -6,21 +6,83 @@ import (
 	"strconv"
 	"strings"
 
+	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/config"
 	errors "github.com/arkade-os/arkd/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 )
 
 const buildVersionHeader = "x-build-version"
 
+// versionGuardSkippedServices lists the admin-plane services (plus health
+// checks) that are exempt from the build-version compatibility check: they are
+// driven by operators and infrastructure, not by versioned SDK clients.
+var versionGuardSkippedServices = map[string]struct{}{
+	arkv1.AdminService_ServiceDesc.ServiceName:             {},
+	arkv1.WalletService_ServiceDesc.ServiceName:            {},
+	arkv1.WalletInitializerService_ServiceDesc.ServiceName: {},
+	arkv1.SignerManagerService_ServiceDesc.ServiceName:     {},
+	grpchealth.Health_ServiceDesc.ServiceName:              {},
+}
+
+// skipVersionGuard reports whether fullMethod ("/package.Service/Method")
+// belongs to a service exempt from the version guard.
+func skipVersionGuard(fullMethod string) bool {
+	svc := strings.TrimPrefix(fullMethod, "/")
+	if i := strings.Index(svc, "/"); i >= 0 {
+		svc = svc[:i]
+	}
+	_, ok := versionGuardSkippedServices[svc]
+	return ok
+}
+
 // VersionGuard holds the configuration for the build-version compatibility
-// check. The threshold is always the server's own build version.
+// check. The threshold is always the server's own build version. Use
+// NewVersionGuard to construct it: the server version is parsed once there
+// instead of on every request.
 type VersionGuard struct {
 	ServerVersion string
 	RequireHeader bool
 	Level         config.VersionGuardLevel
+
+	// enabled is false when ServerVersion is unparseable: the guard cannot
+	// compare versions and allows all clients.
+	enabled                               bool
+	serverMajor, serverMinor, serverPatch int64
+	// minAllowedVersion is the lowest client version accepted at the
+	// configured guard level, e.g. "2.3.0" for server 2.3.4 at minor level.
+	minAllowedVersion string
+}
+
+// NewVersionGuard builds a VersionGuard, pre-parsing serverVersion and
+// pre-computing the minimum allowed client version for the given level.
+func NewVersionGuard(
+	serverVersion string, requireHeader bool, level config.VersionGuardLevel,
+) VersionGuard {
+	guard := VersionGuard{
+		ServerVersion: serverVersion,
+		RequireHeader: requireHeader,
+		Level:         level,
+	}
+	major, minor, patch, err := parseVersion(serverVersion)
+	if err != nil {
+		// Server version unknown: cannot guard, allow all clients.
+		return guard
+	}
+	guard.enabled = true
+	guard.serverMajor, guard.serverMinor, guard.serverPatch = major, minor, patch
+	switch level {
+	case config.VersionGuardMajor:
+		guard.minAllowedVersion = fmt.Sprintf("%d.0.0", major)
+	case config.VersionGuardPatch:
+		guard.minAllowedVersion = fmt.Sprintf("%d.%d.%d", major, minor, patch)
+	default: // default is minor
+		guard.minAllowedVersion = fmt.Sprintf("%d.%d.0", major, minor)
+	}
+	return guard
 }
 
 // parseVersion extracts major, minor and patch from a semver-ish string.
@@ -66,24 +128,20 @@ func parseLeadingInt(s string) (int64, error) {
 
 // isBehind reports whether the client version is behind the server version at
 // the configured guard level.
-func isBehind(
-	level config.VersionGuardLevel,
-	serverMajor, serverMinor, serverPatch int64,
-	clientMajor, clientMinor, clientPatch int64,
-) bool {
-	if clientMajor != serverMajor {
-		return clientMajor < serverMajor
+func isBehind(guard VersionGuard, clientMajor, clientMinor, clientPatch int64) bool {
+	if clientMajor != guard.serverMajor {
+		return clientMajor < guard.serverMajor
 	}
-	if level == config.VersionGuardMajor {
+	if guard.Level == config.VersionGuardMajor {
 		return false
 	}
-	if clientMinor != serverMinor {
-		return clientMinor < serverMinor
+	if clientMinor != guard.serverMinor {
+		return clientMinor < guard.serverMinor
 	}
-	if level == config.VersionGuardMinor {
+	if guard.Level == config.VersionGuardMinor {
 		return false
 	}
-	return clientPatch < serverPatch
+	return clientPatch < guard.serverPatch
 }
 
 // versionHeaderValue returns the first x-build-version header value and whether
@@ -100,33 +158,17 @@ func versionHeaderValue(ctx context.Context) (string, bool) {
 	return vals[0], true
 }
 
-func buildVersionTooOld(
-	clientVersion string,
-	level config.VersionGuardLevel,
-	serverMajor, serverMinor, serverPatch int64,
-	serverVersion string,
-) error {
-	var minAllowedVersion string
-	switch level {
-	case config.VersionGuardMajor:
-		minAllowedVersion = fmt.Sprintf("%d.0.0", serverMajor)
-	case config.VersionGuardPatch:
-		minAllowedVersion = fmt.Sprintf("%d.%d.%d", serverMajor, serverMinor, serverPatch)
-	default: // default is minor
-		minAllowedVersion = fmt.Sprintf("%d.%d.0", serverMajor, serverMinor)
-	}
+func buildVersionTooOld(clientVersion string, guard VersionGuard) error {
 	return errors.BUILD_VERSION_TOO_OLD.
-		New("server requires build version header >= %s", serverVersion).
+		New("server requires build version header >= %s", guard.minAllowedVersion).
 		WithMetadata(errors.BuildVersionMetadata{
 			ClientVersion: clientVersion,
-			MinVersion:    minAllowedVersion,
+			MinVersion:    guard.minAllowedVersion,
 		})
 }
 
-func checkVersionCompat(ctx context.Context, guard VersionGuard) error {
-	serverMajor, serverMinor, serverPatch, err := parseVersion(guard.ServerVersion)
-	if err != nil {
-		// Server version unknown: cannot guard, allow all clients.
+func checkVersionCompat(ctx context.Context, fullMethod string, guard VersionGuard) error {
+	if !guard.enabled || skipVersionGuard(fullMethod) {
 		return nil
 	}
 
@@ -134,9 +176,7 @@ func checkVersionCompat(ctx context.Context, guard VersionGuard) error {
 	if !present || headerVal == "" {
 		if guard.RequireHeader {
 			log.Debug("rejecting request: missing build version header")
-			return buildVersionTooOld(
-				"", guard.Level, serverMajor, serverMinor, serverPatch, guard.ServerVersion,
-			)
+			return buildVersionTooOld("", guard)
 		}
 		return nil
 	}
@@ -145,25 +185,17 @@ func checkVersionCompat(ctx context.Context, guard VersionGuard) error {
 	if err != nil {
 		if guard.RequireHeader {
 			log.Debugf("rejecting request: unparseable build version header %q", headerVal)
-			return buildVersionTooOld(
-				headerVal, guard.Level, serverMajor, serverMinor, serverPatch, guard.ServerVersion,
-			)
+			return buildVersionTooOld(headerVal, guard)
 		}
 		return nil
 	}
 
-	if isBehind(
-		guard.Level,
-		serverMajor, serverMinor, serverPatch,
-		clientMajor, clientMinor, clientPatch,
-	) {
+	if isBehind(guard, clientMajor, clientMinor, clientPatch) {
 		log.Debugf(
 			"rejecting request: build version %q below server %q at %s level",
 			headerVal, guard.ServerVersion, guard.Level,
 		)
-		return buildVersionTooOld(
-			headerVal, guard.Level, serverMajor, serverMinor, serverPatch, guard.ServerVersion,
-		)
+		return buildVersionTooOld(headerVal, guard)
 	}
 
 	return nil
@@ -174,7 +206,7 @@ func unaryVersionCompatHandler(guard VersionGuard) grpc.UnaryServerInterceptor {
 		ctx context.Context, req interface{},
 		info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 	) (interface{}, error) {
-		if err := checkVersionCompat(ctx, guard); err != nil {
+		if err := checkVersionCompat(ctx, info.FullMethod, guard); err != nil {
 			return nil, err
 		}
 		return handler(ctx, req)
@@ -186,7 +218,7 @@ func streamVersionCompatHandler(guard VersionGuard) grpc.StreamServerInterceptor
 		srv interface{}, ss grpc.ServerStream,
 		info *grpc.StreamServerInfo, handler grpc.StreamHandler,
 	) error {
-		if err := checkVersionCompat(ss.Context(), guard); err != nil {
+		if err := checkVersionCompat(ss.Context(), info.FullMethod, guard); err != nil {
 			return err
 		}
 		return handler(srv, ss)

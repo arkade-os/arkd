@@ -14,6 +14,33 @@ import (
 
 const testMethod = "/ark.v1.ArkService/TestMethod"
 
+func TestNewVersionGuardMinAllowedVersion(t *testing.T) {
+	testCases := []struct {
+		serverVersion  string
+		level          config.VersionGuardLevel
+		wantMinVersion string
+	}{
+		{"2.3.4", config.VersionGuardMajor, "2.0.0"},
+		{"2.3.4", config.VersionGuardMinor, "2.3.0"},
+		{"2.3.4", config.VersionGuardPatch, "2.3.4"},
+		{"v1.2.3-rc1", config.VersionGuardPatch, "1.2.3"},
+	}
+	for _, tc := range testCases {
+		guard := NewVersionGuard(tc.serverVersion, true, tc.level)
+		require.True(t, guard.enabled)
+		require.Equal(t, tc.wantMinVersion, guard.minAllowedVersion)
+		// The human-readable message must advertise the same threshold as the
+		// min_version metadata field.
+		require.Contains(
+			t, buildVersionTooOld("", guard).Error(), ">= "+tc.wantMinVersion,
+		)
+	}
+
+	for _, bad := range []string{"", "unknown"} {
+		require.False(t, NewVersionGuard(bad, true, config.VersionGuardMinor).enabled)
+	}
+}
+
 func TestParseVersion(t *testing.T) {
 	testCases := []struct {
 		input     string
@@ -227,32 +254,61 @@ func TestVersionCompat(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		guard := VersionGuard{
-			ServerVersion: tc.serverVersion,
-			RequireHeader: tc.requireHeader,
-			Level:         tc.level,
-		}
+		guard := NewVersionGuard(tc.serverVersion, tc.requireHeader, tc.level)
 
 		t.Run("unary/"+tc.description, func(t *testing.T) {
-			called, err := runUnaryGuard(guard, tc.ctx)
+			called, err := runUnaryGuard(guard, tc.ctx, testMethod)
 			assertVersionCompat(t, tc, called, err)
 		})
 
 		t.Run("stream/"+tc.description, func(t *testing.T) {
-			called, err := runStreamGuard(guard, tc.ctx)
+			called, err := runStreamGuard(guard, tc.ctx, testMethod)
 			assertVersionCompat(t, tc, called, err)
 		})
 	}
 }
 
+// TestVersionCompatSkipsAdminEndpoints checks that admin-plane and health
+// methods bypass the guard even with an outdated client version and a strict
+// require-header policy, while the public ArkService is still guarded.
+func TestVersionCompatSkipsAdminEndpoints(t *testing.T) {
+	guard := NewVersionGuard("2.3.4", true, config.VersionGuardMinor)
+
+	skippedMethods := []string{
+		"/ark.v1.AdminService/Sweep",
+		"/ark.v1.WalletService/GetBalance",
+		"/ark.v1.WalletInitializerService/Unlock",
+		"/ark.v1.SignerManagerService/LoadSigner",
+		"/grpc.health.v1.Health/Check",
+	}
+	for _, method := range skippedMethods {
+		for _, ctx := range []context.Context{
+			context.Background(), ctxWithVersion("0.0.1"),
+		} {
+			called, err := runUnaryGuard(guard, ctx, method)
+			require.NoError(t, err, method)
+			require.True(t, called, method)
+
+			called, err = runStreamGuard(guard, ctx, method)
+			require.NoError(t, err, method)
+			require.True(t, called, method)
+		}
+	}
+
+	// Sanity check: the same outdated client is rejected on a public service.
+	called, err := runUnaryGuard(guard, ctxWithVersion("0.0.1"), testMethod)
+	require.Error(t, err)
+	require.False(t, called)
+}
+
 // runUnaryGuard runs the unary interceptor for guard with ctx and reports
 // whether the wrapped handler was invoked.
-func runUnaryGuard(guard VersionGuard, ctx context.Context) (bool, error) {
+func runUnaryGuard(guard VersionGuard, ctx context.Context, method string) (bool, error) {
 	called := false
 	_, err := unaryVersionCompatHandler(guard)(
 		ctx,
 		nil,
-		&grpc.UnaryServerInfo{FullMethod: testMethod},
+		&grpc.UnaryServerInfo{FullMethod: method},
 		func(ctx context.Context, req any) (any, error) {
 			called = true
 			return "ok", nil
@@ -263,12 +319,12 @@ func runUnaryGuard(guard VersionGuard, ctx context.Context) (bool, error) {
 
 // runStreamGuard runs the stream interceptor for guard with ctx and reports
 // whether the wrapped handler was invoked.
-func runStreamGuard(guard VersionGuard, ctx context.Context) (bool, error) {
+func runStreamGuard(guard VersionGuard, ctx context.Context, method string) (bool, error) {
 	called := false
 	err := streamVersionCompatHandler(guard)(
 		nil,
 		&testServerStream{ctx: ctx},
-		&grpc.StreamServerInfo{FullMethod: testMethod},
+		&grpc.StreamServerInfo{FullMethod: method},
 		func(srv any, ss grpc.ServerStream) error {
 			called = true
 			return nil

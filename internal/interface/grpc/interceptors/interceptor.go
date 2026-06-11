@@ -7,8 +7,6 @@ import (
 )
 
 // UnaryInterceptor returns the unary interceptor.
-// serverVersion is the arkd build version (e.g. "v1.2.3"); only its major
-// component is used for SDK compatibility checks.
 func UnaryInterceptor(
 	svc *macaroons.Service,
 	readiness *ReadinessService,
@@ -25,8 +23,6 @@ func UnaryInterceptor(
 }
 
 // StreamInterceptor returns the stream interceptor with a logrus log.
-// serverVersion is the arkd build version (e.g. "v1.2.3"); only its major
-// component is used for SDK compatibility checks.
 func StreamInterceptor(
 	svc *macaroons.Service,
 	readiness *ReadinessService,
