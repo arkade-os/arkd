@@ -608,10 +608,10 @@ func parseFees(fees *arkv1.FeeInfo) (types.FeeInfo, error) {
 	var intentFees arkfee.Config
 	if f := fees.GetIntentFee(); f != nil {
 		intentFees = arkfee.Config{
-			IntentOffchainInputProgram:  f.GetOffchainInput(),
-			IntentOffchainOutputProgram: f.GetOffchainOutput(),
-			IntentOnchainInputProgram:   f.GetOnchainInput(),
-			IntentOnchainOutputProgram:  f.GetOnchainOutput(),
+			BatchOffchainInputProgram:  f.GetOffchainInput(),
+			BatchOffchainOutputProgram: f.GetOffchainOutput(),
+			BatchOnchainInputProgram:   f.GetOnchainInput(),
+			BatchOnchainOutputProgram:  f.GetOnchainOutput(),
 		}
 	}
 

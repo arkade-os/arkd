@@ -81,10 +81,10 @@ func (d storeData) decode() types.Config {
 	fees := types.FeeInfo{
 		TxFeeRate: txFeeRate,
 		IntentFees: arkfee.Config{
-			IntentOffchainInputProgram:  d.Fees.IntentFees.OffchainInput,
-			IntentOffchainOutputProgram: d.Fees.IntentFees.OffchainOutput,
-			IntentOnchainInputProgram:   d.Fees.IntentFees.OnchainInput,
-			IntentOnchainOutputProgram:  d.Fees.IntentFees.OnchainOutput,
+			BatchOffchainInputProgram:  d.Fees.IntentFees.OffchainInput,
+			BatchOffchainOutputProgram: d.Fees.IntentFees.OffchainOutput,
+			BatchOnchainInputProgram:   d.Fees.IntentFees.OnchainInput,
+			BatchOnchainOutputProgram:  d.Fees.IntentFees.OnchainOutput,
 		},
 	}
 
