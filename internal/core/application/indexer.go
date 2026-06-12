@@ -94,8 +94,6 @@ type indexerService struct {
 	tokenCache              *tokenCache
 }
 
-
-
 func NewIndexerService(
 	repoManager ports.RepoManager,
 	wallet ports.WalletService,

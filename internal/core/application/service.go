@@ -406,21 +406,6 @@ func (s *service) Stop() {
 	close(s.eventsCh)
 }
 
-func (s *service) validateVtxoScript(
-	v script.VtxoScript, settings *ports.Settings, minLocktime arklib.RelativeLocktime,
-) error {
-	return validateVtxoScriptForSigners(
-		v,
-		settings.SignerPubkey,
-		settings.DeprecatedSignerPubkeys,
-		time.Now(),
-		minLocktime,
-		settings.AllowCSVBlockType(),
-	)
-}
-
-
-
 func (s *service) SubmitOffchainTx(
 	ctx context.Context, unsignedCheckpointTxs []string, signedArkTx string,
 ) (acceptedTx *AcceptedOffchainTx, structErr errors.Error) {
@@ -718,8 +703,9 @@ func (s *service) SubmitOffchainTx(
 			minAllowedExitDelay = *smallestExitDelay
 		}
 
-		if err := s.validateVtxoScript(
-			vtxoScript, settings, minAllowedExitDelay,
+		if err := validateVtxoScriptForSigners(
+			vtxoScript, settings.SignerPubkey, settings.DeprecatedSignerPubkeys,
+			time.Now(), minAllowedExitDelay, settings.AllowCSVBlockType(),
 		); err != nil {
 			return nil, errors.INVALID_VTXO_SCRIPT.Wrap(err).
 				WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: taptree})
@@ -4022,10 +4008,15 @@ func (s *service) validateBoardingInput(
 		expectedExitDelay = unilateralExitDelay
 	}
 
-	if err := s.validateVtxoScript(vtxoScript, &settings, arklib.RelativeLocktime{
+	minAllowedCSV := arklib.RelativeLocktime{
 		Type:  expectedExitDelay.Type,
 		Value: expectedExitDelay.Value,
-	}); err != nil {
+	}
+
+	if err := validateVtxoScriptForSigners(
+		vtxoScript, settings.SignerPubkey, settings.DeprecatedSignerPubkeys,
+		time.Now(), minAllowedCSV, settings.AllowCSVBlockType(),
+	); err != nil {
 		return nil, fmt.Errorf("invalid vtxo script: %s", err)
 	}
 
@@ -4129,9 +4120,9 @@ func (s *service) validateVtxoInput(
 		minAllowedExitDelay = *smallestExitDelay
 	}
 
-	// validate the vtxo script
-	if err := s.validateVtxoScript(
-		vtxoScript, &settings, minAllowedExitDelay,
+	if err := validateVtxoScriptForSigners(
+		vtxoScript, settings.SignerPubkey, settings.DeprecatedSignerPubkeys,
+		time.Now(), minAllowedExitDelay, settings.AllowCSVBlockType(),
 	); err != nil {
 		return errors.INVALID_VTXO_SCRIPT.New("invalid vtxo script: %w", err).
 			WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: tapscripts})
