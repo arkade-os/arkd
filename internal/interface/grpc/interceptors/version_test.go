@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-const testMethod = "/ark.v1.ArkService/TestMethod"
+const testMethod = "/ark.v1.ArkService/GetInfo"
 
 func TestParseVersion(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
@@ -272,6 +272,7 @@ func TestVersionCompatSkipsAdminEndpoints(t *testing.T) {
 		"/ark.v1.WalletService/GetBalance",
 		"/ark.v1.WalletInitializerService/Unlock",
 		"/ark.v1.SignerManagerService/LoadSigner",
+		"/ark.v1.IndexerService/GetVirtualTxs",
 		"/grpc.health.v1.Health/Check",
 	}
 	for _, method := range skippedMethods {

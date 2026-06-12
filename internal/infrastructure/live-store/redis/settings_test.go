@@ -41,6 +41,7 @@ func TestSettingsDTORoundTrip(t *testing.T) {
 			NoteUriPrefix:              "ark",
 			BuildVersionHeader:         "0.9.7",
 			BuildVersionHeaderRequired: true,
+			DigestHeaderRequired:       true,
 		},
 		Network:        arklib.Bitcoin,
 		DustAmount:     354,
@@ -62,6 +63,7 @@ func TestSettingsDTORoundTrip(t *testing.T) {
 	// cache round-trip so the version guard can read it.
 	require.Equal(t, "0.9.7", out.BuildVersionHeader)
 	require.True(t, out.BuildVersionHeaderRequired)
+	require.True(t, out.DigestHeaderRequired)
 
 	// Spot-check a few other fields to ensure the round-trip is otherwise intact.
 	require.Equal(t, in.SessionDuration, out.SessionDuration)

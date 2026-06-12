@@ -1854,6 +1854,7 @@ func validSettings() domain.Settings {
 		AssetTxMaxWeightRatio:         0.5,
 		BuildVersionHeader:            "v1.0.0",
 		BuildVersionHeaderRequired:    true,
+		DigestHeaderRequired:          true,
 		UpdatedAt:                     time.Unix(1700000000, 0),
 	}
 }
@@ -1900,10 +1901,12 @@ func testSettingsRepository(t *testing.T, svc ports.RepoManager) {
 		expected.MaxTxWeight = 500000
 		expected.BuildVersionHeader = "v2.0.0"
 		expected.BuildVersionHeaderRequired = false
+		expected.DigestHeaderRequired = false
 		changelog := []string{
 			"ban_threshold", "ban_duration", "round_max_participants_count",
 			"vtxo_min_amount", "max_tx_weight",
 			"build_version_header", "build_version_header_required",
+			"digest_header_required",
 		}
 		err = repo.Upsert(ctx, expected, changelog)
 		require.NoError(t, err)
@@ -1963,6 +1966,7 @@ func assertSettingsEqual(t *testing.T, expected, actual domain.Settings) {
 	assert.Equal(t, expected.NoteUriPrefix, actual.NoteUriPrefix, "NoteUriPrefix not equal")
 	assert.Equal(t, expected.BuildVersionHeader, actual.BuildVersionHeader, "BuildVersionHeader not equal")
 	assert.Equal(t, expected.BuildVersionHeaderRequired, actual.BuildVersionHeaderRequired, "BuildVersionHeaderRequired not equal")
+	assert.Equal(t, expected.DigestHeaderRequired, actual.DigestHeaderRequired, "DigestHeaderRequired not equal")
 }
 
 func assertScheduledSessionEqual(t *testing.T, expected, actual domain.ScheduledSession) {
