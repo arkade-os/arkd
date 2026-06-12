@@ -229,7 +229,11 @@ func (s settingsDTO) parse() (*ports.Settings, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse forfeit pubkey: %w", err)
 	}
-	deprecatedSignerPubkeys := make([]ports.DeprecatedSignerPubkey, 0, len(s.DeprecatedSignerPubkeys))
+	deprecatedSignerPubkeys := make(
+		[]ports.DeprecatedSignerPubkey,
+		0,
+		len(s.DeprecatedSignerPubkeys),
+	)
 	for _, deprecated := range s.DeprecatedSignerPubkeys {
 		pubkey, err := parsePubkey(deprecated.PubKey)
 		if err != nil {
