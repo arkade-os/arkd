@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 )
@@ -9,7 +10,7 @@ import (
 type DeprecatedSignerPubkey struct {
 	PubKey *btcec.PublicKey
 	// unix timestamp after which the key is no longer accepted, 0 if unset
-	CutoffDate int64
+	CutoffDate time.Time
 }
 
 type SignerService interface {

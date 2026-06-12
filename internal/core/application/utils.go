@@ -169,7 +169,7 @@ func acceptedSignerPubkeys(
 	pubkeys := make([]*btcec.PublicKey, 0, len(deprecated)+1)
 	pubkeys = append(pubkeys, current)
 	for _, key := range deprecated {
-		if key.CutoffDate > 0 && now.Unix() > key.CutoffDate {
+		if now.After(key.CutoffDate) {
 			continue
 		}
 		pubkeys = append(pubkeys, key.PubKey)

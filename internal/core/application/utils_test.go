@@ -193,14 +193,14 @@ func TestAcceptedSignerPubkeys(t *testing.T) {
 
 	t.Run("cutoff date in the future", func(t *testing.T) {
 		pubkeys := acceptedSignerPubkeys(current, []ports.DeprecatedSignerPubkey{
-			{PubKey: deprecated, CutoffDate: now.Add(time.Hour).Unix()},
+			{PubKey: deprecated, CutoffDate: now.Add(time.Hour)},
 		}, now)
 		require.Equal(t, []*btcec.PublicKey{current, deprecated}, pubkeys)
 	})
 
 	t.Run("cutoff date in the past", func(t *testing.T) {
 		pubkeys := acceptedSignerPubkeys(current, []ports.DeprecatedSignerPubkey{
-			{PubKey: deprecated, CutoffDate: now.Add(-time.Hour).Unix()},
+			{PubKey: deprecated, CutoffDate: now.Add(-time.Hour)},
 		}, now)
 		require.Equal(t, []*btcec.PublicKey{current}, pubkeys)
 	})
@@ -211,8 +211,8 @@ func TestAcceptedSignerPubkeys(t *testing.T) {
 		other := otherKey.PubKey()
 
 		pubkeys := acceptedSignerPubkeys(current, []ports.DeprecatedSignerPubkey{
-			{PubKey: deprecated, CutoffDate: now.Add(-time.Hour).Unix()},
-			{PubKey: other, CutoffDate: now.Add(time.Hour).Unix()},
+			{PubKey: deprecated, CutoffDate: now.Add(-time.Hour)},
+			{PubKey: other, CutoffDate: now.Add(time.Hour)},
 		}, now)
 		require.Equal(t, []*btcec.PublicKey{current, other}, pubkeys)
 	})

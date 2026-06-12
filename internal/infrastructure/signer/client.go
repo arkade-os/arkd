@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 
@@ -90,7 +91,7 @@ func (c *signerClient) GetDeprecatedPubkeys(
 		}
 		pubkeys = append(pubkeys, ports.DeprecatedSignerPubkey{
 			PubKey:     pubkey,
-			CutoffDate: signer.GetCutoffDate(),
+			CutoffDate: time.Unix(signer.GetCutoffDate(), 0),
 		})
 	}
 	return pubkeys, nil

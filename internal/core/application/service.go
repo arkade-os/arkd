@@ -2185,7 +2185,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 	for _, deprecated := range settings.DeprecatedSignerPubkeys {
 		deprecatedSignerKeys = append(deprecatedSignerKeys, DeprecatedSignerKey{
 			PubKey:     hex.EncodeToString(deprecated.PubKey.SerializeCompressed()),
-			CutoffDate: deprecated.CutoffDate,
+			CutoffDate: deprecated.CutoffDate.Unix(),
 		})
 	}
 
@@ -3964,9 +3964,15 @@ func (s *service) processBoardingInputs(
 		}
 
 		boardingInput, err := newBoardingInput(
-			tx, input.Input,
-			acceptedSignerPubkeys(settings.SignerPubkey, settings.DeprecatedSignerPubkeys, time.Now()),
-			exitDelay, settings.AllowCSVBlockType(),
+			tx,
+			input.Input,
+			acceptedSignerPubkeys(
+				settings.SignerPubkey,
+				settings.DeprecatedSignerPubkeys,
+				time.Now(),
+			),
+			exitDelay,
+			settings.AllowCSVBlockType(),
 		)
 		if err != nil {
 			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).WithMetadata(

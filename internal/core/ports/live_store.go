@@ -141,7 +141,7 @@ func (s Settings) Digest() (string, error) {
 	for _, deprecated := range s.DeprecatedSignerPubkeys {
 		deprecatedSigners = append(deprecatedSigners, deprecatedSignerDigestData{
 			PubKey:     hex.EncodeToString(deprecated.PubKey.SerializeCompressed()),
-			CutoffDate: deprecated.CutoffDate,
+			CutoffDate: deprecated.CutoffDate.Unix(),
 		})
 	}
 
