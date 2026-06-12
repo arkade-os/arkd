@@ -21,9 +21,8 @@ const (
 // version is captured once in the closure at dial time, so there is no
 // per-call lookup cost beyond the metadata append.
 //
-// AppendToOutgoingContext (not NewOutgoingContext) is used so that any metadata
-// already set by a caller above this interceptor (e.g. auth tokens) is
-// preserved rather than overwritten.
+// AppendToOutgoingContext (not NewOutgoingContext) is used so that any metadata already set by a
+// caller above this interceptor (e.g. auth tokens) is preserved rather than overwritten.
 func unaryVersionInterceptor() grpc.UnaryClientInterceptor {
 	return func(
 		ctx context.Context, method string, req, reply interface{},
@@ -37,13 +36,13 @@ func unaryVersionInterceptor() grpc.UnaryClientInterceptor {
 	}
 }
 
-// streamVersionInterceptor returns a gRPC stream client interceptor that
-// appends BuildVersionHeader=version to the outgoing metadata of every
-// streaming RPC, including reconnecting streams dispatched through the same
-// connection. version is captured once in the closure at dial time.
+// streamVersionInterceptor returns a gRPC stream client interceptor that appends
+// buildVersionHeader=version to the outgoing metadata of every streaming RPC, including
+// reconnecting streams dispatched through the same connection. version is captured once in the
+// closure at dial time.
 //
-// As with the unary interceptor, AppendToOutgoingContext preserves any
-// caller-provided outgoing metadata.
+// As with the unary interceptor, AppendToOutgoingContext preserves any caller-provided outgoing
+// metadata.
 func streamVersionInterceptor() grpc.StreamClientInterceptor {
 	return func(
 		ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn,
