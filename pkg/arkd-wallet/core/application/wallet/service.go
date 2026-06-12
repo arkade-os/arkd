@@ -662,9 +662,9 @@ func (w *wallet) SignTransaction(
 		}
 
 		if len(input.TaprootLeafScript) > 0 {
-			signingKey := w.signerKeyForLeaf(input.TaprootLeafScript[0].Script)
-			if signMode == application.SignModeLiquidityProvider {
-				signingKey = w.keyMgr.forfeitPrvkey
+			signingKey := w.keyMgr.forfeitPrvkey
+			if signMode == application.SignModeSigner {
+				signingKey  = w.signerKeyForLeaf(input.TaprootLeafScript[0].Script)
 			}
 
 			tapLeaf := txscript.NewBaseTapLeaf(input.TaprootLeafScript[0].Script)
