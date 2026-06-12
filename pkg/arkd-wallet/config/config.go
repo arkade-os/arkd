@@ -204,6 +204,9 @@ func parseDeprecatedSignerKeys(raw string) ([]wallet.DeprecatedSignerKey, error)
 		}
 
 		keyPart, cutoffPart, hasCutoff := strings.Cut(entry, ":")
+		if strings.TrimSpace(keyPart) == "" {
+			return nil, fmt.Errorf("invalid signer key entry, missing hex key: %s", entry)
+		}
 		var cutoffDate int64
 		if hasCutoff {
 			cutoff, err := strconv.ParseInt(cutoffPart, 10, 64)
