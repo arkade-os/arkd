@@ -10,8 +10,6 @@ import (
 )
 
 const (
-	// MaxSatoshis is the maximum number of satoshis that can ever exist (21M BTC).
-	MaxSatoshis        = 21_000_000 * 1e8
 	bitcoinBlockWeight = 4_000_000
 	minSessionDuration = 2 * time.Second
 	minBanDuration     = 1 * time.Second

@@ -157,17 +157,16 @@ func (r *settingsRepository) Upsert(
 	return nil
 }
 
-func (r *settingsRepository) Clear(ctx context.Context) error {
-	return r.querier.ClearSettings(ctx)
-}
-
 func (r *settingsRepository) Close() {
 	_ = r.db.Close()
 }
 
 func (r *settingsRepository) dispatch(settings domain.Settings, changelog []string) {
-	if r.updateHandler != nil {
-		r.updateHandler(settings, changelog)
+	r.updateHandlerMu.Lock()
+	handler := r.updateHandler
+	r.updateHandlerMu.Unlock()
+	if handler != nil {
+		handler(settings, changelog)
 	}
 }
 

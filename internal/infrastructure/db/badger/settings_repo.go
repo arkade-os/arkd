@@ -100,24 +100,16 @@ func (r *settingsRepository) Upsert(
 	return nil
 }
 
-func (r *settingsRepository) Clear(ctx context.Context) error {
-	var settings domain.Settings
-	if err := r.store.Delete(settingsKey, &settings); err != nil {
-		if errors.Is(err, badgerhold.ErrNotFound) {
-			return nil
-		}
-		return err
-	}
-	return nil
-}
-
 func (r *settingsRepository) Close() {
 	// nolint:all
 	r.store.Close()
 }
 
 func (r *settingsRepository) dispatch(settings domain.Settings, changelog []string) {
-	if r.updateHandler != nil {
-		r.updateHandler(settings, changelog)
+	r.updateHandlerMu.Lock()
+	handler := r.updateHandler
+	r.updateHandlerMu.Unlock()
+	if handler != nil {
+		handler(settings, changelog)
 	}
 }

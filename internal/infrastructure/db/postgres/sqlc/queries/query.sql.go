@@ -13,15 +13,6 @@ import (
 	"github.com/sqlc-dev/pqtype"
 )
 
-const clearSettings = `-- name: ClearSettings :exec
-DELETE FROM settings
-`
-
-func (q *Queries) ClearSettings(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, clearSettings)
-	return err
-}
-
 const insertAsset = `-- name: InsertAsset :exec
 INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
 VALUES ($1, $2, $3, $4, $5)

@@ -500,9 +500,6 @@ ON CONFLICT(id) DO UPDATE SET
 -- name: SelectLatestSettings :one
 SELECT * FROM settings ORDER BY updated_at DESC LIMIT 1;
 
--- name: ClearSettings :exec
-DELETE FROM settings;
-
 -- name: InsertSettingsHistory :exec
 INSERT INTO settings_history (changed_at, changed_fields, settings)
 SELECT s.updated_at, @changed_fields::text[], to_jsonb(s.*) - 'id'

@@ -585,11 +585,9 @@ func (a *adminService) GetSettings(ctx context.Context) (*domain.Settings, error
 func (a *adminService) UpdateSettings(
 	ctx context.Context, updates domain.SettingsUpdate,
 ) ([]string, error) {
-	// Merge the request with stored settings. When updateFields is provided,
-	// only the listed fields are written from the request; the rest stay as
-	// they were. When updateFields is empty, every field from the request is
-	// written as-is. Fields not set in the request default to 0 so callers
-	// must populate all fields.
+	// Partial update: only the fields set on the request (non-nil pointers) are
+	// applied to the stored settings; omitted fields are left unchanged. The
+	// returned changelog lists exactly the fields that were updated.
 	settings, err := a.repoManager.Settings().Get(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current settings: %w", err)

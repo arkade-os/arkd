@@ -508,6 +508,3 @@ ON CONFLICT(id) DO UPDATE SET
 
 -- name: SelectLatestSettings :one
 SELECT * FROM settings ORDER BY updated_at DESC LIMIT 1;
-
--- name: ClearSettings :exec
-DELETE FROM settings;
