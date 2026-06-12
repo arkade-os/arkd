@@ -441,6 +441,7 @@ INSERT INTO settings (
     scheduled_session_round_max_participants_count,
     batch_onchain_input_fee, batch_offchain_input_fee,
     batch_onchain_output_fee, batch_offchain_output_fee,
+    build_version_header, build_version_header_required,
     updated_at
 ) VALUES (
     1,
@@ -459,6 +460,7 @@ INSERT INTO settings (
     @scheduled_session_round_max_participants_count,
     @batch_onchain_input_fee, @batch_offchain_input_fee,
     @batch_onchain_output_fee, @batch_offchain_output_fee,
+    @build_version_header, @build_version_header_required,
     @updated_at
 )
 ON CONFLICT(id) DO UPDATE SET
@@ -495,10 +497,12 @@ ON CONFLICT(id) DO UPDATE SET
     batch_offchain_input_fee = EXCLUDED.batch_offchain_input_fee,
     batch_onchain_output_fee = EXCLUDED.batch_onchain_output_fee,
     batch_offchain_output_fee = EXCLUDED.batch_offchain_output_fee,
+    build_version_header = EXCLUDED.build_version_header,
+    build_version_header_required = EXCLUDED.build_version_header_required,
     updated_at = EXCLUDED.updated_at;
 
--- name: SelectLatestSettings :one
-SELECT * FROM settings ORDER BY updated_at DESC LIMIT 1;
+-- name: SelectSettings :one
+SELECT * FROM settings WHERE id = 1;
 
 -- name: InsertSettingsHistory :exec
 INSERT INTO settings_history (changed_at, changed_fields, settings)

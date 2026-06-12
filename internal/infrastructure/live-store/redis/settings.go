@@ -146,6 +146,8 @@ type settingsDTO struct {
 	MaxOpReturnOutputs            uint64
 	AssetTxMaxWeightRatio         float32
 	NoteUriPrefix                 string
+	BuildVersionHeader            string
+	BuildVersionHeaderRequired    bool
 	ScheduledSession              scheduledSessionDTO
 	BatchFees                     batchFeesDTO
 	Network                       string
@@ -208,6 +210,8 @@ func newSettingsDTO(settings ports.Settings) settingsDTO {
 		MaxOpReturnOutputs:            settings.MaxOpReturnOutputs,
 		AssetTxMaxWeightRatio:         settings.AssetTxMaxWeightRatio,
 		NoteUriPrefix:                 settings.NoteUriPrefix,
+		BuildVersionHeader:            settings.BuildVersionHeader,
+		BuildVersionHeaderRequired:    settings.BuildVersionHeaderRequired,
 		BatchFees:                     settings.BatchFees,
 		Network:                       settings.Network.Name,
 		DustAmount:                    settings.DustAmount,
@@ -287,6 +291,8 @@ func (s settingsDTO) parse() (*ports.Settings, error) {
 			MaxOpReturnOutputs:            s.MaxOpReturnOutputs,
 			AssetTxMaxWeightRatio:         s.AssetTxMaxWeightRatio,
 			NoteUriPrefix:                 s.NoteUriPrefix,
+			BuildVersionHeader:            s.BuildVersionHeader,
+			BuildVersionHeaderRequired:    s.BuildVersionHeaderRequired,
 			ScheduledSession:              s.ScheduledSession.parse(),
 			BatchFees:                     s.BatchFees,
 		},

@@ -1933,8 +1933,7 @@
             "format": "int64"
           },
           "endTime": {
-            "type": "integer",
-            "format": "int64"
+            "type": "string"
           },
           "fees": {
             "$ref": "#/components/schemas/FeeInfo"
@@ -1952,8 +1951,7 @@
             "format": "int64"
           },
           "startTime": {
-            "type": "integer",
-            "format": "int64"
+            "type": "string"
           }
         }
       },
@@ -2006,6 +2004,18 @@
               "null"
             ],
             "format": "int64"
+          },
+          "buildVersionHeader": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "buildVersionHeaderRequired": {
+            "type": [
+              "boolean",
+              "null"
+            ]
           },
           "checkpointExitDelay": {
             "type": [
@@ -2085,10 +2095,9 @@
           },
           "updatedAt": {
             "type": [
-              "integer",
+              "string",
               "null"
-            ],
-            "format": "int64"
+            ]
           },
           "utxoMaxAmount": {
             "type": [
@@ -2120,10 +2129,9 @@
           },
           "vtxoNoCsvValidationCutoffDate": {
             "type": [
-              "integer",
+              "string",
               "null"
-            ],
-            "format": "int64"
+            ]
           },
           "vtxoTreeExpiry": {
             "type": [

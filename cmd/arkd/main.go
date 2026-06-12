@@ -102,6 +102,7 @@ func main() {
 		liquidityRecoverableCmd,
 		liquidityReportCmd,
 		feesCmd,
+		settingsCmd,
 	)
 
 	app.DefaultCommand = startCmd.Name

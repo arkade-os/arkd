@@ -46,7 +46,7 @@ func (r *settingsRepository) RegisterUpdatesHandler(handler func(domain.Settings
 }
 
 func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) {
-	row, err := r.querier.SelectLatestSettings(ctx)
+	row, err := r.querier.SelectSettings(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -95,6 +95,8 @@ func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) 
 		MaxOpReturnOutputs:            uint64(row.MaxOpReturnOutputs),
 		AssetTxMaxWeightRatio:         float32(row.AssetTxMaxWeightRatio),
 		NoteUriPrefix:                 row.NoteUriPrefix,
+		BuildVersionHeader:            row.BuildVersionHeader,
+		BuildVersionHeaderRequired:    row.BuildVersionHeaderRequired,
 		ScheduledSession:              scheduledSession,
 		BatchFees: domain.BatchFees{
 			OnchainInputFee:   row.BatchOnchainInputFee,
@@ -133,6 +135,8 @@ func (r *settingsRepository) Upsert(
 		MaxOpReturnOutputs:            int64(settings.MaxOpReturnOutputs),
 		AssetTxMaxWeightRatio:         float64(settings.AssetTxMaxWeightRatio),
 		NoteUriPrefix:                 settings.NoteUriPrefix,
+		BuildVersionHeader:            settings.BuildVersionHeader,
+		BuildVersionHeaderRequired:    settings.BuildVersionHeaderRequired,
 		BatchOnchainInputFee:          settings.BatchFees.OnchainInputFee,
 		BatchOffchainInputFee:         settings.BatchFees.OffchainInputFee,
 		BatchOnchainOutputFee:         settings.BatchFees.OnchainOutputFee,
