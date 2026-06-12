@@ -225,6 +225,13 @@ func parseDeprecatedSignerKeys(raw string) ([]wallet.DeprecatedSignerKey, error)
 		if err != nil {
 			return nil, fmt.Errorf("invalid signer key format, must be hex: %s", keyPart)
 		}
+		// btcec.PrivKeyFromBytes silently reduces any byte length mod N, so a truncated or
+		// padded key would yield the wrong private key and strand every coin locked to it.
+		if len(buf) != 32 {
+			return nil, fmt.Errorf(
+				"invalid signer key, must be 32 bytes, got %d: %s", len(buf), keyPart,
+			)
+		}
 		key, _ := btcec.PrivKeyFromBytes(buf)
 
 		var cutoffDate int64
