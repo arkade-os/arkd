@@ -11,6 +11,10 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+// guardedMethod is an ArkService method that is NOT digest-exempt, used to
+// exercise the digest check itself. (testMethod is GetInfo, which is exempt.)
+const guardedMethod = "/ark.v1.ArkService/SubmitTx"
+
 // digestCompatCase describes a single digest-guard scenario. Each case is run
 // against both the unary and stream interceptors, which must behave identically
 // since they share the same logic. All cases target an ArkService method (the
@@ -101,12 +105,12 @@ func TestDigestCompat(t *testing.T) {
 		getDigest := staticDigest(tc.expectedDigest, tc.guardEnabled)
 
 		t.Run("unary/"+tc.description, func(t *testing.T) {
-			called, err := runUnaryDigest(getDigest, tc.ctx, testMethod)
+			called, err := runUnaryDigest(getDigest, tc.ctx, guardedMethod)
 			assertDigestCompat(t, tc, called, err)
 		})
 
 		t.Run("stream/"+tc.description, func(t *testing.T) {
-			called, err := runStreamDigest(getDigest, tc.ctx, testMethod)
+			called, err := runStreamDigest(getDigest, tc.ctx, guardedMethod)
 			assertDigestCompat(t, tc, called, err)
 		})
 	}
@@ -140,7 +144,7 @@ func TestDigestSkipsNonArkService(t *testing.T) {
 	}
 
 	// Sanity check: the same strict guard rejects a wrong digest on ArkService.
-	called, err := runUnaryDigest(strict, ctxWithDigest("wrong-digest"), testMethod)
+	called, err := runUnaryDigest(strict, ctxWithDigest("wrong-digest"), guardedMethod)
 	require.Error(t, err)
 	require.False(t, called)
 }
@@ -155,13 +159,13 @@ func TestDigestProviderError(t *testing.T) {
 	}
 
 	t.Run("unary guarded request rejected", func(t *testing.T) {
-		called, err := runUnaryDigest(failing, ctxWithDigest("whatever"), testMethod)
+		called, err := runUnaryDigest(failing, ctxWithDigest("whatever"), guardedMethod)
 		require.Error(t, err)
 		require.False(t, called)
 	})
 
 	t.Run("stream guarded request rejected", func(t *testing.T) {
-		called, err := runStreamDigest(failing, ctxWithDigest("whatever"), testMethod)
+		called, err := runStreamDigest(failing, ctxWithDigest("whatever"), guardedMethod)
 		require.Error(t, err)
 		require.False(t, called)
 	})
@@ -171,6 +175,46 @@ func TestDigestProviderError(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, called)
 	})
+}
+
+// TestDigestExemptsGetInfo proves GetInfo stays reachable even with the digest
+// guard enabled and a stale/empty/absent client digest. GetInfo is the only way a
+// client learns the current server digest, so guarding it would lock fresh clients
+// (and any client after a server config change) out permanently. The exemption
+// also short-circuits before the provider, so GetInfo works even if the cache is
+// down.
+func TestDigestExemptsGetInfo(t *testing.T) {
+	const getInfoMethod = "/ark.v1.ArkService/GetInfo"
+
+	// Guard enabled with a server digest the client can't have yet.
+	strict := staticDigest("server-digest", true)
+	// Provider that errors, to prove GetInfo doesn't even consult it.
+	failing := func() (string, bool, error) {
+		return "", false, errors.New("settings cache unavailable")
+	}
+
+	cases := []struct {
+		name      string
+		getDigest func() (string, bool, error)
+		ctx       context.Context
+	}{
+		{"guard on, no digest", strict, context.Background()},
+		{"guard on, stale digest", strict, ctxWithDigest("stale")},
+		{"guard on, empty digest", strict, ctxWithDigest("")},
+		{"provider error", failing, context.Background()},
+	}
+	for _, c := range cases {
+		t.Run("unary/"+c.name, func(t *testing.T) {
+			called, err := runUnaryDigest(c.getDigest, c.ctx, getInfoMethod)
+			require.NoError(t, err)
+			require.True(t, called)
+		})
+		t.Run("stream/"+c.name, func(t *testing.T) {
+			called, err := runStreamDigest(c.getDigest, c.ctx, getInfoMethod)
+			require.NoError(t, err)
+			require.True(t, called)
+		})
+	}
 }
 
 func assertDigestCompat(t *testing.T, tc digestCompatCase, called bool, err error) {
