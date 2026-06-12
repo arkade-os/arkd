@@ -6250,6 +6250,7 @@ func TestDeprecatedSignerKey(t *testing.T) {
 	)
 	ctx := t.Context()
 
+	// Restore the old signer key without deprecated keys for other integration tests
 	t.Cleanup(func() {
 		require.NoError(t, recreateArkdWallet(oldSignerKey, ""))
 	})
@@ -6387,6 +6388,16 @@ func TestDeprecatedSignerKey(t *testing.T) {
 			Tapscripts: bobOffchainAddr.Tapscripts,
 		}}))
 		require.ErrorContains(t, err, "is a deprecated key since")
+
+		// wait for the funds to be recoverable
+		require.NoError(t, generateBlocks(41))
+		time.Sleep(20 * time.Second)
+
+		_, err = bob.Settle(ctx, wallet.WithFunds(nil, []types.VtxoWithTapTree{{
+			Vtxo:       bobVtxos[0],
+			Tapscripts: bobOffchainAddr.Tapscripts,
+		}}))
+		require.NoError(t, err)
 
 		// boarding input path: dave's boarding utxo is locked to the old key
 		faucetOnchain(t, daveBoardingAddr.Address, 0.00021)

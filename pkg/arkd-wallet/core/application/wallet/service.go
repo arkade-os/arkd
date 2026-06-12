@@ -799,7 +799,7 @@ func (w *wallet) signerKeyForLeaf(leafScript []byte) *btcec.PrivateKey {
 	case *script.ConditionMultisigClosure:
 		leafKeys = c.PubKeys
 	default:
-		return nil
+		return w.SignerKey
 	}
 	
 	for _, k := range w.DeprecatedSignerKeys {
