@@ -43,16 +43,13 @@ func skipVersionGuard(fullMethod string) bool {
 // NewVersionGuard to construct it: the server version is parsed once there
 // instead of on every request.
 type VersionGuard struct {
-	ServerVersion string
+	BuilldVersion string
 	RequireHeader bool
 
-	// enabled is false when ServerVersion is unparseable: the guard cannot
-	// compare versions and allows all clients.
-	enabled                               bool
 	serverMajor, serverMinor, serverPatch int64
-	// minAllowedVersion is the lowest client version accepted at the
-	// configured guard level, e.g. "2.3.0" for server 2.3.4 at minor level.
-	minAllowedVersion string
+	// // minAllowedVersion is the lowest client version accepted at the
+	// // configured guard level, e.g. "2.3.0" for server 2.3.4 at minor level.
+	// minAllowedVersion string
 }
 
 // NewVersionGuard builds a VersionGuard, pre-parsing serverVersion and
@@ -61,7 +58,7 @@ func NewVersionGuard(
 	serverVersion string, requireHeader bool,
 ) VersionGuard {
 	guard := VersionGuard{
-		ServerVersion: serverVersion,
+		BuilldVersion: serverVersion,
 		RequireHeader: requireHeader,
 	}
 	major, minor, patch, err := parseVersion(serverVersion)
@@ -69,9 +66,7 @@ func NewVersionGuard(
 		// Server version unknown: cannot guard, allow all clients.
 		return guard
 	}
-	guard.enabled = true
 	guard.serverMajor, guard.serverMinor, guard.serverPatch = major, minor, patch
-	guard.minAllowedVersion = fmt.Sprintf("%d.%d.%d", major, minor, patch)
 	return guard
 }
 
@@ -144,15 +139,15 @@ func versionHeaderValue(ctx context.Context) (string, bool) {
 
 func buildVersionTooOld(clientVersion string, guard VersionGuard) error {
 	return errors.BUILD_VERSION_TOO_OLD.
-		New("server requires build version header >= %s", guard.minAllowedVersion).
+		New("server requires build version header >= %s", guard.BuilldVersion).
 		WithMetadata(errors.BuildVersionMetadata{
 			ClientVersion: clientVersion,
-			MinVersion:    guard.minAllowedVersion,
+			MinVersion:    guard.BuilldVersion,
 		})
 }
 
 func checkVersionCompat(ctx context.Context, fullMethod string, guard VersionGuard) error {
-	if !guard.enabled || skipVersionGuard(fullMethod) {
+	if !guard.RequireHeader || skipVersionGuard(fullMethod) {
 		return nil
 	}
 
@@ -167,16 +162,13 @@ func checkVersionCompat(ctx context.Context, fullMethod string, guard VersionGua
 
 	clientMajor, clientMinor, clientPatch, err := parseVersion(headerVal)
 	if err != nil {
-		if guard.RequireHeader {
-			log.Warnf("rejecting request: invalid build version header %q", headerVal)
-			return buildVersionTooOld(headerVal, guard)
-		}
-		return nil
+		log.Warnf("rejecting request: invalid build version header %q", headerVal)
+		return buildVersionTooOld(headerVal, guard)
 	}
 
 	if isBehind(guard, clientMajor, clientMinor, clientPatch) {
 		log.Warnf(
-			"rejecting request: build version %q below server %q", headerVal, guard.ServerVersion,
+			"rejecting request: build version %q below server %q", headerVal, guard.BuilldVersion,
 		)
 		return buildVersionTooOld(headerVal, guard)
 	}
@@ -184,24 +176,36 @@ func checkVersionCompat(ctx context.Context, fullMethod string, guard VersionGua
 	return nil
 }
 
-func unaryVersionCompatHandler(guard VersionGuard) grpc.UnaryServerInterceptor {
+func unaryVersionCompatHandler(
+	getVersionGuard func() (*VersionGuard, error),
+) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context, req interface{},
 		info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 	) (interface{}, error) {
-		if err := checkVersionCompat(ctx, info.FullMethod, guard); err != nil {
+		guard, err := getVersionGuard()
+		if err != nil {
+			return nil, errors.INTERNAL_ERROR.New("failed to verify version header, retry later")
+		}
+		if err := checkVersionCompat(ctx, info.FullMethod, *guard); err != nil {
 			return nil, err
 		}
 		return handler(ctx, req)
 	}
 }
 
-func streamVersionCompatHandler(guard VersionGuard) grpc.StreamServerInterceptor {
+func streamVersionCompatHandler(
+	getVersionGuard func() (*VersionGuard, error),
+) grpc.StreamServerInterceptor {
 	return func(
 		srv interface{}, ss grpc.ServerStream,
 		info *grpc.StreamServerInfo, handler grpc.StreamHandler,
 	) error {
-		if err := checkVersionCompat(ss.Context(), info.FullMethod, guard); err != nil {
+		guard, err := getVersionGuard()
+		if err != nil {
+			return errors.INTERNAL_ERROR.New("failed to verify version header, retry later")
+		}
+		if err := checkVersionCompat(ss.Context(), info.FullMethod, *guard); err != nil {
 			return err
 		}
 		return handler(srv, ss)

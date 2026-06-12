@@ -699,6 +699,10 @@ func (c *Config) SignerService() (ports.SignerService, error) {
 	return c.signer, nil
 }
 
+func (c *Config) CacheService() ports.LiveStore {
+	return c.liveStore
+}
+
 func (c *Config) RoundReportService() (application.RoundReportService, error) {
 	if c.roundReportSvc == nil {
 		if err := c.roundReportService(); err != nil {
@@ -978,6 +982,7 @@ func (c *Config) getSettings() (*domain.Settings, error) {
 		c.UnilateralExitDelay, c.PublicUnilateralExitDelay, c.CheckpointExitDelay,
 		c.BoardingExitDelay, c.VtxoTreeExpiry,
 		c.MaxTxWeight, c.MaxOpReturnOutputs, c.AssetTxMaxWeightRatio, c.NoteUriPrefix,
+		c.BuildVersionHeader, c.BuildVersionHeaderRequired,
 	)
 	if err != nil {
 		return nil, err
