@@ -8,7 +8,6 @@ import (
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	errors "github.com/arkade-os/arkd/pkg/errors"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
@@ -154,7 +153,6 @@ func checkVersionCompat(ctx context.Context, fullMethod string, guard VersionGua
 	headerVal, present := versionHeaderValue(ctx)
 	if !present || headerVal == "" {
 		if guard.RequireHeader {
-			log.Warn("rejecting request: missing build version header")
 			return buildVersionTooOld("", guard)
 		}
 		return nil
@@ -162,14 +160,10 @@ func checkVersionCompat(ctx context.Context, fullMethod string, guard VersionGua
 
 	clientMajor, clientMinor, clientPatch, err := parseVersion(headerVal)
 	if err != nil {
-		log.Warnf("rejecting request: invalid build version header %q", headerVal)
 		return buildVersionTooOld(headerVal, guard)
 	}
 
 	if isBehind(guard, clientMajor, clientMinor, clientPatch) {
-		log.Warnf(
-			"rejecting request: build version %q below server %q", headerVal, guard.BuilldVersion,
-		)
 		return buildVersionTooOld(headerVal, guard)
 	}
 
