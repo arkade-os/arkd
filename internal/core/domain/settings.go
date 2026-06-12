@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
@@ -245,7 +246,39 @@ func (s Settings) Validate() error {
 	if s.BuildVersionHeaderRequired && len(s.BuildVersionHeader) <= 0 {
 		return fmt.Errorf("build version header is required but no version is set")
 	}
+
+	// Fallback addrs are persisted comma-separated by the SQL backends, so a comma
+	// in an address would corrupt the column on the next read.
+	if strings.Contains(s.WalletAddr, ",") {
+		return fmt.Errorf("wallet addr must not contain a comma")
+	}
+	for _, addr := range s.WalletFallbackAddrs {
+		if strings.Contains(addr, ",") {
+			return fmt.Errorf("wallet fallback addr %q must not contain a comma", addr)
+		}
+	}
 	return nil
+}
+
+// EncodeFallbackAddrs and DecodeFallbackAddrs convert WalletFallbackAddrs to and
+// from the comma-separated form the SQL backends persist it in. Decoding trims
+// whitespace and drops empty entries; an empty result is returned as nil.
+func EncodeFallbackAddrs(addrs []string) string {
+	return strings.Join(addrs, ",")
+}
+
+func DecodeFallbackAddrs(s string) []string {
+	parts := strings.Split(s, ",")
+	addrs := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			addrs = append(addrs, p)
+		}
+	}
+	if len(addrs) == 0 {
+		return nil
+	}
+	return addrs
 }
 
 // SettingsUpdate is a copy of the Settings repo struct, but with optional fields to easily handle

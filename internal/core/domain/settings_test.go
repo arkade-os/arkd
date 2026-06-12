@@ -145,6 +145,12 @@ func testValidateSettings(t *testing.T) {
 			requiredVersionWithoutHeader.BuildVersionHeaderRequired = true
 			requiredVersionWithoutHeader.BuildVersionHeader = ""
 
+			commaWalletAddr := validSettings
+			commaWalletAddr.WalletAddr = "host:6060,evil"
+
+			commaFallbackAddr := validSettings
+			commaFallbackAddr.WalletFallbackAddrs = []string{"host:6060,evil"}
+
 			fixtures := []struct {
 				settings    domain.Settings
 				expectedErr string
@@ -249,6 +255,15 @@ func testValidateSettings(t *testing.T) {
 				{
 					settings:    requiredVersionWithoutHeader,
 					expectedErr: "build version header is required but no version is set",
+				},
+				{
+					settings:    commaWalletAddr,
+					expectedErr: "wallet addr must not contain a comma",
+				},
+				{
+					settings: commaFallbackAddr,
+					expectedErr: `wallet fallback addr "host:6060,evil" ` +
+						"must not contain a comma",
 				},
 			}
 

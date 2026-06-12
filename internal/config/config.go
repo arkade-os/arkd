@@ -809,6 +809,10 @@ func (c *Config) walletService() error {
 	// The wallet addresses are sourced from the persisted settings (seeded from
 	// env on first boot), so admin changes take effect on the next restart. Fall
 	// back to env if settings aren't available yet (e.g. the repo isn't wired).
+	//
+	// Trust boundary: the wallet gRPC target controls signing, address derivation
+	// and sweeps, so persisting it via the admin Settings API is equivalent to full
+	// operator (admin macaroon) trust — the same trust needed to change the env var.
 	arkWallet := c.WalletAddr
 	fallbackAddrs := c.WalletFallbackAddrs
 	if c.repo != nil {
@@ -840,6 +844,10 @@ func (c *Config) walletService() error {
 
 	c.wallet = walletSvc
 	c.network = network
+
+	// Surface the effective wallet target so operators can audit which arkd-wallet
+	// this node dialed (it may come from the DB, not the env var).
+	log.Infof("dialed primary arkd-wallet at %q on network %s", arkWallet, network.Name)
 
 	fallbacks, err := c.dialFallbackWallets(fallbackAddrs)
 	if err != nil {
