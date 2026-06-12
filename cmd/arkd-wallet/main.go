@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -116,7 +117,11 @@ func startAction(_ *cli.Context) error {
 	}
 	log.Infof("arkd wallet listens on: %v", cfg.Port)
 
-	log.RegisterExitHandler(svc.Stop)
+	// Stop the service at most once, whether triggered by the signal handler
+	// below or by log.Exit/Fatal firing the registered exit handler.
+	var stopOnce sync.Once
+	stop := func() { stopOnce.Do(svc.Stop) }
+	log.RegisterExitHandler(stop)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(
@@ -125,7 +130,7 @@ func startAction(_ *cli.Context) error {
 	<-sigChan
 
 	log.Info("shutting down service...")
-	svc.Stop()
+	stop()
 	return nil
 }
 
