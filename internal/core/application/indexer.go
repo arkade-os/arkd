@@ -1044,6 +1044,15 @@ func (i *indexerService) RevokeTokens(
 	return i.tokenCache.revoke(h, op, txid), nil
 }
 
+func (i *indexerService) allSignerPubkeys() []*btcec.PublicKey {
+	pubkeys := make([]*btcec.PublicKey, 0, len(i.deprecatedSignerPubkeys)+1)
+	pubkeys = append(pubkeys, i.signerPubkey)
+	for _, deprecated := range i.deprecatedSignerPubkeys {
+		pubkeys = append(pubkeys, deprecated.PubKey)
+	}
+	return pubkeys
+}
+
 // hashOutpoints clones the given outpoints, sorts them lexicographically by txid and vout,
 // and returns the sha256 hash of the concatenation of their txid and vout.
 func hashOutpoints(outpoints []Outpoint) ([]byte, error) {
@@ -1115,13 +1124,4 @@ func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {
 	}
 
 	return items[startIndex:endIndex], resp
-}
-
-func (i *indexerService) allSignerPubkeys() []*btcec.PublicKey {
-	pubkeys := make([]*btcec.PublicKey, 0, len(i.deprecatedSignerPubkeys)+1)
-	pubkeys = append(pubkeys, i.signerPubkey)
-	for _, deprecated := range i.deprecatedSignerPubkeys {
-		pubkeys = append(pubkeys, deprecated.PubKey)
-	}
-	return pubkeys
 }
