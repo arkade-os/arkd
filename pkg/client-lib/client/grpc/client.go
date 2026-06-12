@@ -12,7 +12,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
-	internalgrpc "github.com/arkade-os/arkd/pkg/client-lib/internal/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/btcsuite/btcd/wire"
@@ -66,10 +65,10 @@ func NewClient(serverUrl string) (client.Client, error) {
 			MinConnectTimeout: 3 * time.Second,
 		}),
 		grpc.WithChainUnaryInterceptor(
-			internalgrpc.BuildVersionUnaryInterceptor(internalgrpc.ClientBuildVersion),
+			unaryVersionInterceptor(),
 		),
 		grpc.WithChainStreamInterceptor(
-			internalgrpc.BuildVersionStreamInterceptor(internalgrpc.ClientBuildVersion),
+			streamVersionInterceptor(),
 		),
 	}
 	options = append(options, testDialOptions...)

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
-	internalgrpc "github.com/arkade-os/arkd/pkg/client-lib/internal/grpc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -41,7 +40,7 @@ func TestBuildVersionHeaderInjected_Unary(t *testing.T) {
 
 	value, seen := capture.get()
 	require.True(t, seen, "server did not receive x-build-version header on unary call")
-	require.Equal(t, internalgrpc.ClientBuildVersion, value)
+	require.Equal(t, buildVersion, value)
 }
 
 // TestBuildVersionHeaderInjected_Stream verifies that a streaming RPC issued
@@ -80,7 +79,7 @@ func TestBuildVersionHeaderInjected_Stream(t *testing.T) {
 		"server did not receive x-build-version header on streaming call")
 
 	value, _ := capture.get()
-	require.Equal(t, internalgrpc.ClientBuildVersion, value)
+	require.Equal(t, buildVersion, value)
 }
 
 // headerCapture records the x-build-version metadata value seen by the server.
@@ -94,7 +93,7 @@ func (h *headerCapture) record(ctx context.Context) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if vals := md.Get(internalgrpc.BuildVersionHeader); len(vals) > 0 {
+		if vals := md.Get(buildVersionHeader); len(vals) > 0 {
 			h.value = vals[0]
 			h.seen = true
 		}
