@@ -12,6 +12,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
+	internalgrpc "github.com/arkade-os/arkd/pkg/client-lib/internal/grpc"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/btcsuite/btcd/wire"
@@ -20,6 +21,12 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+// testDialOptions is a test-only seam appended to the dial options in
+// NewClient. It is nil in production builds (zero effect) and is set by tests
+// to inject a bufconn dialer so the real NewClient path — including the
+// build-version interceptors registered above — can be exercised in-process.
+var testDialOptions []grpc.DialOption
 
 type grpcClient struct {
 	conn       *grpc.ClientConn
@@ -58,7 +65,14 @@ func NewClient(serverUrl string) (client.Client, error) {
 			},
 			MinConnectTimeout: 3 * time.Second,
 		}),
+		grpc.WithChainUnaryInterceptor(
+			internalgrpc.BuildVersionUnaryInterceptor(internalgrpc.ClientBuildVersion),
+		),
+		grpc.WithChainStreamInterceptor(
+			internalgrpc.BuildVersionStreamInterceptor(internalgrpc.ClientBuildVersion),
+		),
 	}
+	options = append(options, testDialOptions...)
 
 	conn, err := grpc.NewClient(serverUrl, options...)
 	if err != nil {
