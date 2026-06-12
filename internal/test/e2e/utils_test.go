@@ -39,6 +39,7 @@ import (
 const (
 	adminUrl    = "http://127.0.0.1:7071"
 	walletUrl   = "http://127.0.0.1:6060"
+	walletUrl2  = "http://127.0.0.1:6061"
 	serverUrl   = "127.0.0.1:7070"
 	explorerUrl = "http://127.0.0.1:3000"
 )
@@ -556,10 +557,14 @@ func setupArkd() error {
 		Timeout: 15 * time.Second,
 	}
 
-	// arkd no longer initializes or unlocks the wallet: drive the arkd-wallet
-	// directly so it is initialized and unlocked. arkd hard-fails to start while
-	// the wallet is locked, so it may have been crash-looping until now.
-	if err := setupArkdWallet(httpClient); err != nil {
+	// arkd no longer initializes or unlocks the wallets: drive each arkd-wallet
+	// (the primary and every fallback LP wallet) directly so they are all
+	// initialized and unlocked. arkd hard-fails to start while any of them is
+	// locked, so it may have been crash-looping until now.
+	if err := setupArkdWalletAt(httpClient, walletUrl); err != nil {
+		return err
+	}
+	if err := setupArkdWalletAt(httpClient, walletUrl2); err != nil {
 		return err
 	}
 
@@ -576,12 +581,13 @@ func setupArkd() error {
 	return refill(httpClient)
 }
 
-// setupArkdWallet initializes and unlocks the arkd-wallet directly through its
-// own gateway, which is what arkd now expects to be done out of band.
-func setupArkdWallet(httpClient *http.Client) error {
+// setupArkdWalletAt initializes and unlocks the arkd-wallet reachable at baseURL
+// directly through its own gateway, which is what arkd now expects to be done
+// out of band for the primary and every fallback wallet.
+func setupArkdWalletAt(httpClient *http.Client, baseURL string) error {
 	// The arkd-wallet gateway may still be coming up; retry the first read until
 	// it is reachable.
-	statusURL := fmt.Sprintf("%s/v1/wallet/status", walletUrl)
+	statusURL := fmt.Sprintf("%s/v1/wallet/status", baseURL)
 	var status *statusResp
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -589,7 +595,7 @@ func setupArkdWallet(httpClient *http.Client) error {
 	for status == nil {
 		select {
 		case <-timeout:
-			return fmt.Errorf("timed out waiting for arkd-wallet to become reachable")
+			return fmt.Errorf("timed out waiting for arkd-wallet at %s to become reachable", baseURL)
 		case <-ticker.C:
 			s, err := get[statusResp](httpClient, statusURL, "wallet status")
 			if err != nil {
@@ -601,13 +607,13 @@ func setupArkdWallet(httpClient *http.Client) error {
 	}
 
 	if !status.Initialized {
-		url := fmt.Sprintf("%s/v1/wallet/seed", walletUrl)
+		url := fmt.Sprintf("%s/v1/wallet/seed", baseURL)
 		seed, err := get[seedResp](httpClient, url, "wallet seed")
 		if err != nil {
 			return err
 		}
 
-		url = fmt.Sprintf("%s/v1/wallet/create", walletUrl)
+		url = fmt.Sprintf("%s/v1/wallet/create", baseURL)
 		body, err := json.Marshal(map[string]string{"seed": seed.Seed, "password": password})
 		if err != nil {
 			return fmt.Errorf("failed to encode create wallet body: %s", err)
@@ -618,7 +624,7 @@ func setupArkdWallet(httpClient *http.Client) error {
 	}
 
 	if !status.Unlocked {
-		url := fmt.Sprintf("%s/v1/wallet/unlock", walletUrl)
+		url := fmt.Sprintf("%s/v1/wallet/unlock", baseURL)
 		body, err := json.Marshal(map[string]string{"password": password})
 		if err != nil {
 			return fmt.Errorf("failed to encode unlock wallet body: %s", err)
