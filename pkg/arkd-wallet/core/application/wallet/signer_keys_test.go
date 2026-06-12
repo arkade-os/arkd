@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
@@ -17,8 +18,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSignTransactionUsesDeprecatedKey makes sure SignTransaction API supports old deprecated key
-func TestSignTransactionUsesDeprecatedKey(t *testing.T) {
+// TestSignTransaction makes sure SignTransaction signs taproot script-path inputs
+// with the key referenced by the leaf, including deprecated signer keys. From the
+// wallet's point of view the cutoff date is purely informational: it always signs
+// with the deprecated key whether or not the cutoff has passed.
+func TestSignTransaction(t *testing.T) {
 	owner, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 	current, err := btcec.NewPrivateKey()
@@ -26,12 +30,64 @@ func TestSignTransactionUsesDeprecatedKey(t *testing.T) {
 	old, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	w := &wallet{WalletOptions: WalletOptions{
-		SignerKey:            current,
-		DeprecatedSignerKeys: []DeprecatedSignerKey{{Key: old}},
-	}}
+	now := time.Now().Unix()
 
-	leaf := leafScript(t, owner.PubKey(), old.PubKey())
+	tests := []struct {
+		name       string
+		w          *wallet
+		leafSigner *btcec.PublicKey
+		wantSigner *btcec.PublicKey
+	}{
+		{
+			name:       "sign with current key",
+			w:          &wallet{WalletOptions: WalletOptions{SignerKey: current}},
+			leafSigner: current.PubKey(),
+			wantSigner: current.PubKey(),
+		},
+		{
+			name: "sign with deprecated key where cutoff date > now",
+			w: &wallet{WalletOptions: WalletOptions{
+				SignerKey:            current,
+				DeprecatedSignerKeys: []DeprecatedSignerKey{{Key: old, CutoffDate: now + 3600}},
+			}},
+			leafSigner: old.PubKey(),
+			wantSigner: old.PubKey(),
+		},
+		{
+			name: "sign with deprecated key where cutoff passed",
+			w: &wallet{WalletOptions: WalletOptions{
+				SignerKey:            current,
+				DeprecatedSignerKeys: []DeprecatedSignerKey{{Key: old, CutoffDate: now - 3600}},
+			}},
+			leafSigner: old.PubKey(),
+			wantSigner: old.PubKey(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b64 := signablePacket(t, owner, tt.leafSigner)
+
+			signed, err := tt.w.SignTransaction(
+				context.Background(), application.SignModeSigner, b64, false, nil)
+			require.NoError(t, err)
+
+			out, err := psbt.NewFromRawBytes(strings.NewReader(signed), true)
+			require.NoError(t, err)
+			require.Len(t, out.Inputs[0].TaprootScriptSpendSig, 1)
+			require.Equal(t,
+				hex.EncodeToString(schnorr.SerializePubKey(tt.wantSigner)),
+				hex.EncodeToString(out.Inputs[0].TaprootScriptSpendSig[0].XOnlyPubKey),
+			)
+		})
+	}
+}
+
+// signablePacket builds a single-input PSBT spending a taproot output via a
+// multisig leaf that embeds signer's x-only pubkey, returning the base64 PSBT.
+func signablePacket(t *testing.T, owner *btcec.PrivateKey, signer *btcec.PublicKey) string {
+	t.Helper()
+	leaf := leafScript(t, owner.PubKey(), signer)
 	tapLeaf := txscript.NewBaseTapLeaf(leaf)
 	tapTree := txscript.AssembleTaprootScriptTree(tapLeaf)
 	rootHash := tapTree.RootNode.TapHash()
@@ -62,18 +118,7 @@ func TestSignTransactionUsesDeprecatedKey(t *testing.T) {
 	}}
 	b64, err := packet.B64Encode()
 	require.NoError(t, err)
-
-	signed, err := w.SignTransaction(
-		context.Background(), application.SignModeSigner, b64, false, nil)
-	require.NoError(t, err)
-
-	out, err := psbt.NewFromRawBytes(strings.NewReader(signed), true)
-	require.NoError(t, err)
-	require.Len(t, out.Inputs[0].TaprootScriptSpendSig, 1)
-	require.Equal(t,
-		hex.EncodeToString(schnorr.SerializePubKey(old.PubKey())),
-		hex.EncodeToString(out.Inputs[0].TaprootScriptSpendSig[0].XOnlyPubKey),
-	)
+	return b64
 }
 
 // leafScript builds a multisig leaf embedding the signer's x-only pubkey.
