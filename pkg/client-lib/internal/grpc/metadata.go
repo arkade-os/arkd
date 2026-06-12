@@ -53,7 +53,10 @@ func BuildVersionUnaryInterceptor(version string) grpc.UnaryClientInterceptor {
 		invoker grpc.UnaryInvoker,
 		opts ...grpc.CallOption,
 	) error {
-		ctx = metadata.AppendToOutgoingContext(ctx, BuildVersionHeader, version)
+		md, _ := metadata.FromOutgoingContext(ctx)
+		md = md.Copy()
+		md.Set(BuildVersionHeader, version)
+		ctx = metadata.NewOutgoingContext(ctx, md)
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
 }
@@ -74,7 +77,10 @@ func BuildVersionStreamInterceptor(version string) grpc.StreamClientInterceptor 
 		streamer grpc.Streamer,
 		opts ...grpc.CallOption,
 	) (grpc.ClientStream, error) {
-		ctx = metadata.AppendToOutgoingContext(ctx, BuildVersionHeader, version)
+		md, _ := metadata.FromOutgoingContext(ctx)
+		md = md.Copy()
+		md.Set(BuildVersionHeader, version)
+		ctx = metadata.NewOutgoingContext(ctx, md)
 		return streamer(ctx, desc, cc, method, opts...)
 	}
 }
