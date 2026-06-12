@@ -207,6 +207,13 @@ func parseDeprecatedSignerKeys(raw string) ([]wallet.DeprecatedSignerKey, error)
 		if strings.TrimSpace(keyPart) == "" {
 			return nil, fmt.Errorf("invalid signer key entry, missing hex key: %s", entry)
 		}
+
+		buf, err := hex.DecodeString(keyPart)
+		if err != nil {
+			return nil, fmt.Errorf("invalid signer key format, must be hex: %s", keyPart)
+		}
+		key, _ := btcec.PrivKeyFromBytes(buf)
+
 		var cutoffDate int64
 		if hasCutoff {
 			cutoff, err := strconv.ParseInt(cutoffPart, 10, 64)
@@ -217,12 +224,7 @@ func parseDeprecatedSignerKeys(raw string) ([]wallet.DeprecatedSignerKey, error)
 			}
 			cutoffDate = cutoff
 		}
-
-		buf, err := hex.DecodeString(keyPart)
-		if err != nil {
-			return nil, fmt.Errorf("invalid signer key format, must be hex: %s", keyPart)
-		}
-		key, _ := btcec.PrivKeyFromBytes(buf)
+		
 		keys = append(keys, wallet.DeprecatedSignerKey{Key: key, CutoffDate: cutoffDate})
 	}
 	return keys, nil
