@@ -118,6 +118,12 @@ func (s scheduledSessionDTO) parse() *domain.ScheduledSession {
 
 type batchFeesDTO = domain.BatchFees
 
+type deprecatedSignerDTO struct {
+	PubKey string
+	// unix timestamp after which the key is no longer accepted, 0 if unset
+	CutoffDate int64
+}
+
 type settingsDTO struct {
 	SessionDuration               int64
 	UnrolledVtxoMinExpiryMargin   int64
@@ -145,6 +151,7 @@ type settingsDTO struct {
 	Network                       string
 	DustAmount                    uint64
 	SignerPubkey                  string
+	DeprecatedSignerPubkeys       []deprecatedSignerDTO
 	ForfeitPubkey                 string
 	ForfeitAddress                string
 	CheckpointTapscript           string
@@ -162,6 +169,21 @@ func newSettingsDTO(settings ports.Settings) settingsDTO {
 	var forfeitPubkey string
 	if settings.ForfeitPubkey != nil {
 		forfeitPubkey = hex.EncodeToString(settings.ForfeitPubkey.SerializeCompressed())
+	}
+
+	deprecatedSignerPubkeys := make([]deprecatedSignerDTO, 0, len(settings.DeprecatedSignerPubkeys))
+	for _, deprecated := range settings.DeprecatedSignerPubkeys {
+		if deprecated.PubKey == nil {
+			continue
+		}
+		var cutoffDate int64
+		if !deprecated.CutoffDate.IsZero() {
+			cutoffDate = deprecated.CutoffDate.Unix()
+		}
+		deprecatedSignerPubkeys = append(deprecatedSignerPubkeys, deprecatedSignerDTO{
+			PubKey:     hex.EncodeToString(deprecated.PubKey.SerializeCompressed()),
+			CutoffDate: cutoffDate,
+		})
 	}
 
 	return settingsDTO{
@@ -190,6 +212,7 @@ func newSettingsDTO(settings ports.Settings) settingsDTO {
 		Network:                       settings.Network.Name,
 		DustAmount:                    settings.DustAmount,
 		SignerPubkey:                  signerPubkey,
+		DeprecatedSignerPubkeys:       deprecatedSignerPubkeys,
 		ForfeitPubkey:                 forfeitPubkey,
 		ForfeitAddress:                settings.ForfeitAddress,
 		CheckpointTapscript:           hex.EncodeToString(settings.CheckpointTapscript),
@@ -205,6 +228,21 @@ func (s settingsDTO) parse() (*ports.Settings, error) {
 	forfeitPubkey, err := parsePubkey(s.ForfeitPubkey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse forfeit pubkey: %w", err)
+	}
+	deprecatedSignerPubkeys := make([]ports.DeprecatedSignerPubkey, 0, len(s.DeprecatedSignerPubkeys))
+	for _, deprecated := range s.DeprecatedSignerPubkeys {
+		pubkey, err := parsePubkey(deprecated.PubKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse deprecated signer pubkey: %w", err)
+		}
+		var cutoffDate time.Time
+		if deprecated.CutoffDate > 0 {
+			cutoffDate = time.Unix(deprecated.CutoffDate, 0)
+		}
+		deprecatedSignerPubkeys = append(deprecatedSignerPubkeys, ports.DeprecatedSignerPubkey{
+			PubKey:     pubkey,
+			CutoffDate: cutoffDate,
+		})
 	}
 	checkpointTapscript, err := hex.DecodeString(s.CheckpointTapscript)
 	if err != nil {
@@ -248,12 +286,13 @@ func (s settingsDTO) parse() (*ports.Settings, error) {
 			ScheduledSession:              s.ScheduledSession.parse(),
 			BatchFees:                     s.BatchFees,
 		},
-		Network:             networkFromString(s.Network),
-		DustAmount:          s.DustAmount,
-		SignerPubkey:        signerPubkey,
-		ForfeitPubkey:       forfeitPubkey,
-		ForfeitAddress:      s.ForfeitAddress,
-		CheckpointTapscript: checkpointTapscript,
+		Network:                 networkFromString(s.Network),
+		DustAmount:              s.DustAmount,
+		SignerPubkey:            signerPubkey,
+		DeprecatedSignerPubkeys: deprecatedSignerPubkeys,
+		ForfeitPubkey:           forfeitPubkey,
+		ForfeitAddress:          s.ForfeitAddress,
+		CheckpointTapscript:     checkpointTapscript,
 	}, nil
 }
 
