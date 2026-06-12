@@ -3,6 +3,7 @@ package application_test
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -38,6 +39,7 @@ func validSettings() domain.Settings {
 		UtxoMinAmount:               1000,
 		UtxoMaxAmount:               -1,
 		MaxTxWeight:                 400000,
+		MaxOpReturnOutputs:          3,
 		AssetTxMaxWeightRatio:       0.5,
 		UpdatedAt:                   time.Now(),
 	}
@@ -225,3 +227,82 @@ func (m *mockSettingsRepository) Clear(_ context.Context) error {
 }
 
 func (m *mockSettingsRepository) Close() {}
+
+// TestAdminService_SettingsSerialization verifies that concurrent settings
+// writes are serialized: each read-modify-write cycle must run to completion
+// before the next one starts, otherwise concurrent updates can lose each other.
+func TestAdminService_SettingsSerialization(t *testing.T) {
+	ctx := context.Background()
+
+	seed := validSettings()
+	probe := &serializeProbeRepo{settings: &seed, delay: 10 * time.Millisecond}
+	svc := application.NewAdminService(
+		nil, &mockRepoManager{settingsRepo: probe}, nil, nil, ports.UnixTime, nil,
+	)
+
+	const workers = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	for i := 0; i < workers; i++ {
+		threshold := uint64(i + 1)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := svc.UpdateSettings(ctx, domain.SettingsUpdate{BanThreshold: &threshold})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	require.Equal(t, int32(1), atomic.LoadInt32(&probe.maxActive),
+		"settings read-modify-write cycles must not overlap")
+}
+
+// serializeProbeRepo records the maximum number of goroutines that are inside a
+// read-modify-write cycle (between Get and Upsert) at the same time. The delay in
+// Get widens that window so that, absent serialization, concurrent callers would
+// overlap and push maxActive above 1.
+type serializeProbeRepo struct {
+	mu        sync.Mutex
+	settings  *domain.Settings
+	active    int32
+	maxActive int32
+	delay     time.Duration
+}
+
+func (r *serializeProbeRepo) Get(_ context.Context) (*domain.Settings, error) {
+	n := atomic.AddInt32(&r.active, 1)
+	for {
+		m := atomic.LoadInt32(&r.maxActive)
+		if n <= m || atomic.CompareAndSwapInt32(&r.maxActive, m, n) {
+			break
+		}
+	}
+	time.Sleep(r.delay)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.settings == nil {
+		return nil, nil
+	}
+	cp := *r.settings
+	return &cp, nil
+}
+
+func (r *serializeProbeRepo) Upsert(
+	_ context.Context, settings domain.Settings, _ []string,
+) error {
+	r.mu.Lock()
+	r.settings = &settings
+	r.mu.Unlock()
+	atomic.AddInt32(&r.active, -1)
+	return nil
+}
+
+func (r *serializeProbeRepo) RegisterUpdatesHandler(_ func(domain.Settings, []string)) {}
+
+func (r *serializeProbeRepo) Close() {}

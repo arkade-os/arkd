@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -62,6 +63,10 @@ type adminService struct {
 	sweeperTimeUnit ports.TimeUnit
 	liveStore       ports.LiveStore
 	feeManager      ports.FeeManager
+	// settingsMu serializes the read-modify-write cycles against the singleton
+	// settings row (UpdateSettings and the scheduled-session/batch-fees mutators)
+	// so concurrent admin calls can't lose each other's updates.
+	settingsMu sync.Mutex
 }
 
 func NewAdminService(
@@ -253,6 +258,9 @@ func (s *adminService) GetScheduledSession(
 func (s *adminService) UpdateScheduledSession(
 	ctx context.Context, updates domain.ScheduledSessionUpdate,
 ) error {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+
 	settings, err := s.repoManager.Settings().Get(ctx)
 	if err != nil {
 		return err
@@ -270,6 +278,9 @@ func (s *adminService) UpdateScheduledSession(
 }
 
 func (s *adminService) ClearScheduledSession(ctx context.Context) error {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+
 	settings, err := s.repoManager.Settings().Get(ctx)
 	if err != nil {
 		return err
@@ -358,6 +369,9 @@ func (s *adminService) GetBatchFees(ctx context.Context) (*domain.BatchFees, err
 }
 
 func (s *adminService) UpdateBatchFees(ctx context.Context, updates domain.BatchFeesUpdate) error {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+
 	settings, err := s.repoManager.Settings().Get(ctx)
 	if err != nil {
 		return err
@@ -376,6 +390,9 @@ func (s *adminService) UpdateBatchFees(ctx context.Context, updates domain.Batch
 
 // Zeroes out fees
 func (s *adminService) ClearBatchFees(ctx context.Context) error {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+
 	settings, err := s.repoManager.Settings().Get(ctx)
 	if err != nil {
 		return err
@@ -585,6 +602,9 @@ func (a *adminService) GetSettings(ctx context.Context) (*domain.Settings, error
 func (a *adminService) UpdateSettings(
 	ctx context.Context, updates domain.SettingsUpdate,
 ) ([]string, error) {
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
+
 	// Partial update: only the fields set on the request (non-nil pointers) are
 	// applied to the stored settings; omitted fields are left unchanged. The
 	// returned changelog lists exactly the fields that were updated.

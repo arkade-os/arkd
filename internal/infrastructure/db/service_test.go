@@ -1850,6 +1850,7 @@ func validSettings() domain.Settings {
 		SettlementMinExpiryGap:        7200 * time.Second,
 		VtxoNoCsvValidationCutoffDate: time.Unix(1700000000, 0),
 		MaxTxWeight:                   400000,
+		MaxOpReturnOutputs:            3,
 		AssetTxMaxWeightRatio:         0.5,
 		UpdatedAt:                     time.Unix(1700000000, 0),
 	}
@@ -1866,7 +1867,7 @@ func testSettingsRepository(t *testing.T, svc ports.RepoManager) {
 		require.NotNil(t, seeded)
 		assertSettingsEqual(t, validSettings(), *seeded)
 
-		// The repo notifies a registered handler (asynchronously) on every Upsert,
+		// The repo notifies a registered handler synchronously on every Upsert,
 		// forwarding the changelog it was given.
 		type handlerCall struct {
 			settings  domain.Settings
@@ -1901,6 +1902,10 @@ func testSettingsRepository(t *testing.T, svc ports.RepoManager) {
 		}
 		err = repo.Upsert(ctx, expected, changelog)
 		require.NoError(t, err)
+
+		// Dispatch is synchronous: the handler has already run by the time Upsert
+		// returns, so the buffered call is observable without waiting for it.
+		require.Len(t, calls, 1, "settings update handler must be dispatched synchronously")
 
 		call := waitForHandler()
 		require.Equal(t, changelog, call.changelog)

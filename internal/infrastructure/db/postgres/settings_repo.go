@@ -165,7 +165,9 @@ func (r *settingsRepository) Upsert(
 		return err
 	}
 
-	go r.dispatch(settings, changelog)
+	// Dispatch synchronously so the cache refresh is ordered with the committed
+	// write: the caller serializes updates, so the cache can't end up behind the DB.
+	r.dispatch(settings, changelog)
 
 	return nil
 }

@@ -33,6 +33,7 @@ var (
 		UtxoMinAmount:               1000,
 		UtxoMaxAmount:               1_000_000,
 		MaxTxWeight:                 100_000,
+		MaxOpReturnOutputs:          3,
 		AssetTxMaxWeightRatio:       0.5,
 		UpdatedAt:                   time.Now(),
 	}
@@ -126,6 +127,17 @@ func testValidateSettings(t *testing.T) {
 			roundMaxBelowMin := validSettings
 			roundMaxBelowMin.RoundMaxParticipantsCount = 0
 
+			vtxoMaxBelowMin := validSettings
+			vtxoMaxBelowMin.VtxoMinAmount = 100
+			vtxoMaxBelowMin.VtxoMaxAmount = 5
+
+			utxoMaxBelowMin := validSettings
+			utxoMaxBelowMin.UtxoMinAmount = 100
+			utxoMaxBelowMin.UtxoMaxAmount = 5
+
+			zeroMaxOpReturn := validSettings
+			zeroMaxOpReturn.MaxOpReturnOutputs = 0
+
 			fixtures := []struct {
 				settings    domain.Settings
 				expectedErr string
@@ -212,6 +224,20 @@ func testValidateSettings(t *testing.T) {
 					settings: roundMaxBelowMin,
 					expectedErr: "batch max participants count must be >= " +
 						"min participants count, got 0 <= 1",
+				},
+				{
+					settings: vtxoMaxBelowMin,
+					expectedErr: "vtxo max amount must be greater than or equal to " +
+						"min amount, got 5 < 100",
+				},
+				{
+					settings: utxoMaxBelowMin,
+					expectedErr: "utxo max amount must be greater than or equal to " +
+						"min amount, got 5 < 100",
+				},
+				{
+					settings:    zeroMaxOpReturn,
+					expectedErr: "max op return outputs must be greater than 0",
 				},
 			}
 

@@ -40,7 +40,7 @@ func validConfig() Config {
 		BoardingExitDelay:             delay(1536),
 		VtxoTreeExpiry:                delay(1024),
 		MaxTxWeight:                   400000,
-		MaxOpReturnOutputs:            0,
+		MaxOpReturnOutputs:            3,
 		AssetTxMaxWeightRatio:         0.5,
 		NoteUriPrefix:                 "",
 	}

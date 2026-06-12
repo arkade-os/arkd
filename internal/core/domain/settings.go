@@ -183,6 +183,21 @@ func (s Settings) Validate() error {
 		return fmt.Errorf("utxo min amount must be greater than 0")
 	}
 
+	// Max amounts of -1 (no limit) or 0 (special sentinel, e.g. boarding disabled)
+	// are not concrete upper bounds, so only enforce ordering when both ends are set.
+	if s.VtxoMaxAmount > 0 && s.VtxoMinAmount > 0 && s.VtxoMaxAmount < s.VtxoMinAmount {
+		return fmt.Errorf(
+			"vtxo max amount must be greater than or equal to min amount, got %d < %d",
+			s.VtxoMaxAmount, s.VtxoMinAmount,
+		)
+	}
+	if s.UtxoMaxAmount > 0 && s.UtxoMinAmount > 0 && s.UtxoMaxAmount < s.UtxoMinAmount {
+		return fmt.Errorf(
+			"utxo max amount must be greater than or equal to min amount, got %d < %d",
+			s.UtxoMaxAmount, s.UtxoMinAmount,
+		)
+	}
+
 	if s.MaxTxWeight == 0 {
 		return fmt.Errorf("max tx weight must be greater than 0")
 	}
@@ -190,6 +205,10 @@ func (s Settings) Validate() error {
 		return fmt.Errorf(
 			"max tx weight can't exceed bitcoin block weight (%d)", bitcoinBlockWeight,
 		)
+	}
+
+	if s.MaxOpReturnOutputs == 0 {
+		return fmt.Errorf("max op return outputs must be greater than 0")
 	}
 
 	if s.AssetTxMaxWeightRatio <= 0 || s.AssetTxMaxWeightRatio >= 1 {

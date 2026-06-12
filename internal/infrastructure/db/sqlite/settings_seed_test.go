@@ -165,6 +165,7 @@ func validSeedDefaults(t *testing.T) domain.Settings {
 		UtxoMinAmount:               1,
 		UtxoMaxAmount:               -1,
 		MaxTxWeight:                 400_000,
+		MaxOpReturnOutputs:          3,
 		AssetTxMaxWeightRatio:       0.5,
 		UpdatedAt:                   time.Unix(1_700_000_000, 0),
 	}
