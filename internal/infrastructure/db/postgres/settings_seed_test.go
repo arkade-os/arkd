@@ -44,6 +44,7 @@ func seedDefaults(t *testing.T) domain.Settings {
 		AssetTxMaxWeightRatio:       0.5,
 		BuildVersionHeader:          "v1.0.0",
 		BuildVersionHeaderRequired:  true,
+		DigestHeaderRequired:        true,
 		UpdatedAt:                   time.Unix(1_700_000_000, 0),
 	}
 }
@@ -89,6 +90,7 @@ CREATE TABLE settings (
     batch_offchain_output_fee TEXT NOT NULL DEFAULT '',
     build_version_header TEXT NOT NULL DEFAULT '',
     build_version_header_required BOOLEAN NOT NULL DEFAULT FALSE,
+    digest_header_required BOOLEAN NOT NULL DEFAULT FALSE,
     updated_at BIGINT NOT NULL
 );
 CREATE TABLE intent_fees (
@@ -155,19 +157,21 @@ func TestPgSeedSettings_BackfillsLegacy(t *testing.T) {
 		ssRoundMin      int64
 		buildVersion    string
 		buildVersionReq bool
+		digestReq       bool
 	)
 	err = db.QueryRow(`
 		SELECT batch_offchain_input_fee, scheduled_session_start_time,
 		       scheduled_session_round_min_participants_count,
-		       build_version_header, build_version_header_required
+		       build_version_header, build_version_header_required, digest_header_required
 		FROM settings WHERE id = 1`).
-		Scan(&batchOffchainIn, &ssStart, &ssRoundMin, &buildVersion, &buildVersionReq)
+		Scan(&batchOffchainIn, &ssStart, &ssRoundMin, &buildVersion, &buildVersionReq, &digestReq)
 	require.NoError(t, err)
 	require.Equal(t, "0.1", batchOffchainIn)
 	require.Equal(t, int64(1600000000), ssStart)
 	require.Equal(t, int64(2), ssRoundMin)
 	require.Equal(t, "v1.0.0", buildVersion)
 	require.True(t, buildVersionReq)
+	require.True(t, digestReq)
 
 	var feeCount, ssCount int
 	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM intent_fees`).Scan(&feeCount))

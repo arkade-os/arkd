@@ -70,6 +70,7 @@ const (
 	notePrefixFlagName                    = "note-uri-prefix"
 	buildVersionHeaderFlagName            = "build-version-header"
 	buildVersionHeaderRequiredFlagName    = "build-version-header-required"
+	digestHeaderRequiredFlagName          = "digest-header-required"
 
 	dateFormat         = time.DateOnly
 	dateWithTimeFormat = time.DateTime
@@ -367,6 +368,11 @@ var (
 	buildVersionHeaderRequiredFlag = &cli.StringFlag{
 		Name: buildVersionHeaderRequiredFlagName,
 		Usage: "whether clients are required to send a valid build version header " +
+			"(true or false); omit to leave unchanged",
+	}
+	digestHeaderRequiredFlag = &cli.StringFlag{
+		Name: digestHeaderRequiredFlagName,
+		Usage: "whether clients are required to send a valid digest header " +
 			"(true or false); omit to leave unchanged",
 	}
 )

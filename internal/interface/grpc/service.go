@@ -304,9 +304,24 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		)
 		return &guard, nil
 	}
+	getDigestGuard := func() (string, bool, error) {
+		settings, err := s.appConfig.CacheService().Settings().Get(context.Background())
+		if err != nil {
+			return "", false, err
+		}
+		digest, err := settings.Digest()
+		if err != nil {
+			return "", false, err
+		}
+		return digest, settings.DigestHeaderRequired, nil
+	}
 	grpcConfig := []grpc.ServerOption{
-		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc, getVersionGuard),
-		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc, getVersionGuard),
+		interceptors.UnaryInterceptor(
+			s.macaroonSvc, s.readinessSvc, getVersionGuard, getDigestGuard,
+		),
+		interceptors.StreamInterceptor(
+			s.macaroonSvc, s.readinessSvc, getVersionGuard, getDigestGuard,
+		),
 		grpc.StatsHandler(otelHandler),
 	}
 	creds := insecure.NewCredentials()
@@ -428,6 +443,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 			return "macaroon", true
 		case "X-Build-Version":
 			return "x-build-version", true
+		case "X-Digest":
+			return "x-digest", true
 		default:
 			return key, false
 		}
