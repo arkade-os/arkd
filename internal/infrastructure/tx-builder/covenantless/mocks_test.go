@@ -274,6 +274,17 @@ func (m *mockedWallet) ListConnectorUtxos(
 	return res, args.Error(1)
 }
 
+func (m *mockedWallet) GetMainAccountUtxos(ctx context.Context) ([]ports.WalletUtxo, error) {
+	args := m.Called(ctx)
+
+	var res []ports.WalletUtxo
+	if a := args.Get(0); a != nil {
+		res = a.([]ports.WalletUtxo)
+	}
+
+	return res, args.Error(1)
+}
+
 func (m *mockedWallet) LockConnectorUtxos(ctx context.Context, utxos []domain.Outpoint) error {
 	args := m.Called(ctx, utxos)
 	return args.Error(0)

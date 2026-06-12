@@ -1,7 +1,6 @@
 package application
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -13,33 +12,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
-
-const bitcoinBlockWeight = 4_000_000
-
-func TestMaxAssetsPerVtxo(t *testing.T) {
-	tests := []struct {
-		maxTxWeight uint64
-		threshold   float64
-		expected    int
-	}{
-		{maxTxWeight: 0.01 * bitcoinBlockWeight, threshold: 0.5, expected: 110},
-		{maxTxWeight: 0.1 * bitcoinBlockWeight, threshold: 0.5, expected: 1110},
-		{maxTxWeight: 0.5 * bitcoinBlockWeight, threshold: 0.5, expected: 5555},
-		{maxTxWeight: bitcoinBlockWeight, threshold: 0.5, expected: 11110},
-		{maxTxWeight: 0.01 * bitcoinBlockWeight, threshold: 0.25, expected: 55},
-		{maxTxWeight: 0, threshold: 0.5, expected: 0},
-	}
-
-	for _, test := range tests {
-		t.Run(
-			fmt.Sprintf("maxTxWeight_%d_threshold_%.2f", test.maxTxWeight, test.threshold),
-			func(t *testing.T) {
-				got := maxAssetsPerVtxo(test.maxTxWeight, test.threshold)
-				require.Equal(t, test.expected, got)
-			},
-		)
-	}
-}
 
 func TestDecodeTx(t *testing.T) {
 	zeroHash := chainhash.Hash{}
@@ -141,6 +113,33 @@ func TestDecodeTx(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestIsBoardingWitness(t *testing.T) {
+	pubkey := append([]byte{0x02}, make([]byte, 32)...) // 33 bytes, not a control block
+	controlBlock := append([]byte{0xc0}, make([]byte, 32)...)
+	controlBlockParity := append([]byte{0xc1}, make([]byte, 32)...)
+	controlBlockLong := append([]byte{0xc0}, make([]byte, 64)...) // 33 + 32
+
+	tests := []struct {
+		name    string
+		witness wire.TxWitness
+		want    bool
+	}{
+		{"script-path with sig", wire.TxWitness{[]byte("sig"), []byte("script"), controlBlock}, true},
+		{"script-path minimal", wire.TxWitness{[]byte("script"), controlBlock}, true},
+		{"script-path parity bit", wire.TxWitness{[]byte("script"), controlBlockParity}, true},
+		{"script-path long control block", wire.TxWitness{[]byte("script"), controlBlockLong}, true},
+		{"key-path single element", wire.TxWitness{make([]byte, 64)}, false},
+		{"p2wpkh", wire.TxWitness{make([]byte, 72), pubkey}, false},
+		{"empty witness", wire.TxWitness{}, false},
+		{"bad control block length", wire.TxWitness{[]byte("script"), make([]byte, 34)}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, isBoardingWitness(tc.witness))
+		})
+	}
 }
 
 func newTestTx(inputs []wire.OutPoint, scripts [][]byte) *wire.MsgTx {

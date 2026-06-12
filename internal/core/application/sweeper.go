@@ -36,8 +36,6 @@ type sweeper struct {
 	builder     ports.TxBuilder
 	scheduler   ports.SchedulerService
 
-	noteUriPrefix string
-
 	// cache of scheduled tasks, avoid scheduling the same sweep event multiple times
 	locker *sync.Mutex
 	// TODO move the scheduled task map to LiveStore port
@@ -47,11 +45,10 @@ type sweeper struct {
 
 func newSweeper(
 	wallet ports.WalletService, repoManager ports.RepoManager, builder ports.TxBuilder,
-	scheduler ports.SchedulerService, noteUriPrefix string,
+	scheduler ports.SchedulerService,
 ) *sweeper {
 	return &sweeper{
-		wallet, repoManager, builder, scheduler,
-		noteUriPrefix, &sync.Mutex{}, make(map[string]struct{}), nil,
+		wallet, repoManager, builder, scheduler, &sync.Mutex{}, make(map[string]struct{}), nil,
 	}
 }
 

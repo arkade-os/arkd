@@ -438,6 +438,26 @@ func (w *walletDaemonClient) ListConnectorUtxos(
 	return inputs, nil
 }
 
+func (w *walletDaemonClient) GetMainAccountUtxos(ctx context.Context) ([]ports.WalletUtxo, error) {
+	resp, err := w.client.GetMainAccountUtxos(ctx, &arkwalletv1.GetMainAccountUtxosRequest{})
+	if err != nil {
+		return nil, err
+	}
+	utxos := make([]ports.WalletUtxo, len(resp.GetUtxos()))
+	for i, utxo := range resp.GetUtxos() {
+		utxos[i] = ports.WalletUtxo{
+			Txid:          utxo.GetTxid(),
+			Vout:          utxo.GetVout(),
+			Value:         utxo.GetValue(),
+			Script:        utxo.GetScript(),
+			Address:       utxo.GetAddress(),
+			Confirmations: utxo.GetConfirmations(),
+			Locked:        utxo.GetLocked(),
+		}
+	}
+	return utxos, nil
+}
+
 func (w *walletDaemonClient) MainAccountBalance(ctx context.Context) (uint64, uint64, error) {
 	resp, err := w.client.MainAccountBalance(ctx, &arkwalletv1.MainAccountBalanceRequest{})
 	if err != nil {

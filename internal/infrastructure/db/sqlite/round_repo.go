@@ -376,6 +376,25 @@ func (r *roundRepository) GetSweepableRounds(ctx context.Context) ([]string, err
 	return r.querier.SelectSweepableRounds(ctx)
 }
 
+func (r *roundRepository) GetExpiredRounds(
+	ctx context.Context, expiredBefore int64,
+) ([]domain.ExpiredRound, error) {
+	rows, err := r.querier.SelectExpiredRounds(ctx, expiredBefore)
+	if err != nil {
+		return nil, err
+	}
+
+	expiredRounds := make([]domain.ExpiredRound, 0, len(rows))
+	for _, row := range rows {
+		expiredRounds = append(expiredRounds, domain.ExpiredRound{
+			RoundId:        row.ID,
+			CommitmentTxid: row.Txid,
+			ExpiredAt:      row.ExpiredAt,
+		})
+	}
+	return expiredRounds, nil
+}
+
 func (r *roundRepository) GetRoundForfeitTxs(
 	ctx context.Context, commitmentTxid string,
 ) ([]domain.ForfeitTx, error) {
