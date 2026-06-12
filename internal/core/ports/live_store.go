@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"sort"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -144,6 +145,14 @@ func (s Settings) Digest() (string, error) {
 			CutoffDate: deprecated.CutoffDate.Unix(),
 		})
 	}
+
+	// sort to make the digest deterministic regardless of input order
+	sort.Slice(deprecatedSigners, func(i, j int) bool {
+		if deprecatedSigners[i].PubKey != deprecatedSigners[j].PubKey {
+			return deprecatedSigners[i].PubKey < deprecatedSigners[j].PubKey
+		}
+		return deprecatedSigners[i].CutoffDate < deprecatedSigners[j].CutoffDate
+	})
 
 	data := digestData{
 		SignerPubKey:        hex.EncodeToString(s.SignerPubkey.SerializeCompressed()),
