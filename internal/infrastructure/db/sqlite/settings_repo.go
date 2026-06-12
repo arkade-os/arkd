@@ -15,12 +15,20 @@ import (
 )
 
 // splitFallbackAddrs decodes the comma-separated wallet_fallback_addrs column
-// back into a slice (empty string -> nil).
+// back into a slice, trimming whitespace and dropping empty entries (so it
+// normalizes the same way the env parser does); an empty result is returned as nil.
 func splitFallbackAddrs(s string) []string {
-	if s == "" {
+	parts := strings.Split(s, ",")
+	addrs := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			addrs = append(addrs, p)
+		}
+	}
+	if len(addrs) == 0 {
 		return nil
 	}
-	return strings.Split(s, ",")
+	return addrs
 }
 
 type settingsRepository struct {

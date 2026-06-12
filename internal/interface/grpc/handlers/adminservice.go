@@ -928,6 +928,10 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		t := settings.GetWalletAddr()
 		walletAddr = &t
 	}
+	// wallet_fallback_addrs is a repeated field with no presence, so an empty list
+	// is indistinguishable from "not provided" and is treated as no-change. The
+	// fallback list can be replaced but not cleared via the API; clear it by
+	// reconfiguring env and re-seeding.
 	var walletFallbackAddrs *[]string
 	if len(settings.WalletFallbackAddrs) > 0 {
 		t := settings.GetWalletFallbackAddrs()

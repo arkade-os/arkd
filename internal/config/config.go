@@ -813,11 +813,19 @@ func (c *Config) walletService() error {
 	fallbackAddrs := c.WalletFallbackAddrs
 	if c.repo != nil {
 		settings, err := c.repo.Settings().Get(context.Background())
-		if err == nil && settings != nil {
+		switch {
+		case err != nil:
+			log.Warnf("failed to read settings for wallet addresses, using env: %v", err)
+		case settings != nil:
+			// Only override env when the settings actually carry a value, so an
+			// upgrade (whose migrated row defaults these to empty) keeps the
+			// env-configured addresses until they're set through the admin API.
 			if settings.WalletAddr != "" {
 				arkWallet = settings.WalletAddr
 			}
-			fallbackAddrs = settings.WalletFallbackAddrs
+			if len(settings.WalletFallbackAddrs) > 0 {
+				fallbackAddrs = settings.WalletFallbackAddrs
+			}
 		}
 	}
 
