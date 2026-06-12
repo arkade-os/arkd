@@ -419,15 +419,7 @@ func (s *service) validateVtxoScript(
 	)
 }
 
-// allSignerPubkeys returns the current signer pubkey plus every deprecated one regardless of cutoff date.
-func allSignerPubkeys(settings *ports.Settings) []*btcec.PublicKey {
-	pubkeys := make([]*btcec.PublicKey, 0, len(settings.DeprecatedSignerPubkeys)+1)
-	pubkeys = append(pubkeys, settings.SignerPubkey)
-	for _, deprecated := range settings.DeprecatedSignerPubkeys {
-		pubkeys = append(pubkeys, deprecated.PubKey)
-	}
-	return pubkeys
-}
+
 
 func (s *service) SubmitOffchainTx(
 	ctx context.Context, unsignedCheckpointTxs []string, signedArkTx string,
@@ -4462,6 +4454,16 @@ func (s *service) verifyIntentProofAndFindMatches(
 	}
 
 	return matches, nil
+}
+
+// allSignerPubkeys returns the current signer pubkey plus every deprecated one regardless of cutoff date.
+func allSignerPubkeys(settings *ports.Settings) []*btcec.PublicKey {
+	pubkeys := make([]*btcec.PublicKey, 0, len(settings.DeprecatedSignerPubkeys)+1)
+	pubkeys = append(pubkeys, settings.SignerPubkey)
+	for _, deprecated := range settings.DeprecatedSignerPubkeys {
+		pubkeys = append(pubkeys, deprecated.PubKey)
+	}
+	return pubkeys
 }
 
 func validateOffchainTxOutputs(
