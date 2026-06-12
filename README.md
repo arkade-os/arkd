@@ -189,7 +189,7 @@ export ARKD_WALLET_ADDR=localhost:6060
 export ARKD_WALLET_FALLBACK_ADDRS=localhost:6061,localhost:6062
 ```
 
-Every wallet, primary and fallback, must be initialized and unlocked out of band (see [Setup arkd](#setup-arkd)) and must be on the same network as the primary; `arkd` validates this at startup and refuses to start otherwise. The primary wallet remains the sole source of the forfeit address, connector address, scanning and signing. The additional wallets are used only as sweep fallbacks; that wiring lands in a later change.
+Every wallet, primary and fallback, must be initialized and unlocked out of band (see [Setup arkd](#setup-arkd)) and must be on the same network as the primary; `arkd` validates this at startup and refuses to start otherwise. The primary wallet remains the sole source of the forfeit address, connector address, scanning and signing. The additional wallets are used only as sweep fallbacks: when a batch cannot be signed by the primary wallet (for example a batch created before this wallet became the primary), `arkd` tries each fallback wallet in turn until one can sign it. The swept funds always go to the primary wallet's address, whichever wallet signs.
 
 ### Connect to signer
 
