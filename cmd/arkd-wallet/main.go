@@ -125,8 +125,7 @@ func startAction(_ *cli.Context) error {
 	<-sigChan
 
 	log.Info("shutting down service...")
-	log.Exit(0)
-
+	svc.Stop()
 	return nil
 }
 
@@ -139,10 +138,14 @@ func createAction(ctx *cli.Context) error {
 	mnemonic := ctx.String("mnemonic")
 
 	if len(mnemonic) > 0 {
-		body := fmt.Sprintf(
-			`{"seed": "%s", "password": "%s", "gap_limit": %d}`,
-			mnemonic, password, ctx.Uint64("addr-gap-limit"),
-		)
+		body, err := jsonBody(map[string]any{
+			"seed":      mnemonic,
+			"password":  password,
+			"gap_limit": ctx.Uint64("addr-gap-limit"),
+		})
+		if err != nil {
+			return err
+		}
 		if err := walletPost(baseURL, "/v1/wallet/restore", body, nil); err != nil {
 			return err
 		}
@@ -154,14 +157,20 @@ func createAction(ctx *cli.Context) error {
 		if err := walletGet(baseURL, "/v1/wallet/seed", &seed); err != nil {
 			return err
 		}
-		body := fmt.Sprintf(`{"seed": "%s", "password": "%s"}`, seed.Seed, password)
+		body, err := jsonBody(map[string]any{"seed": seed.Seed, "password": password})
+		if err != nil {
+			return err
+		}
 		if err := walletPost(baseURL, "/v1/wallet/create", body, nil); err != nil {
 			return err
 		}
 		fmt.Println(seed.Seed)
 	}
 
-	body := fmt.Sprintf(`{"password": "%s"}`, password)
+	body, err := jsonBody(map[string]any{"password": password})
+	if err != nil {
+		return err
+	}
 	if err := walletPost(baseURL, "/v1/wallet/unlock", body, nil); err != nil {
 		return err
 	}
@@ -171,12 +180,26 @@ func createAction(ctx *cli.Context) error {
 
 func unlockAction(ctx *cli.Context) error {
 	baseURL := ctx.String("url")
-	body := fmt.Sprintf(`{"password": "%s"}`, ctx.String("password"))
+	body, err := jsonBody(map[string]any{"password": ctx.String("password")})
+	if err != nil {
+		return err
+	}
 	if err := walletPost(baseURL, "/v1/wallet/unlock", body, nil); err != nil {
 		return err
 	}
 	fmt.Println("wallet unlocked")
 	return nil
+}
+
+// jsonBody marshals a request body to JSON, escaping the values so a password or
+// mnemonic containing quotes or backslashes can't corrupt the payload or inject
+// extra fields.
+func jsonBody(v any) (string, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode request body: %w", err)
+	}
+	return string(b), nil
 }
 
 func statusAction(ctx *cli.Context) error {

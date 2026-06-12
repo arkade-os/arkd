@@ -107,13 +107,12 @@ func NewWalletHandler(walletService ports.WalletService) arkv1.WalletServiceServ
 }
 
 func (a *walletHandler) Lock(
-	ctx context.Context, _ *arkv1.LockRequest,
+	_ context.Context, _ *arkv1.LockRequest,
 ) (*arkv1.LockResponse, error) {
-	if err := a.walletService.Lock(ctx); err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	return &arkv1.LockResponse{}, nil
+	// arkd no longer manages the wallet lifecycle; locking the (possibly shared)
+	// wallet via arkd would break every other consumer, so the RPC is disabled
+	// — lock the wallet out of band through arkd-wallet directly.
+	return nil, status.Error(codes.Unimplemented, errWalletManagedExternally)
 }
 
 func (a *walletHandler) DeriveAddress(
