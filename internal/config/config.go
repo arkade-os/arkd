@@ -987,7 +987,7 @@ func (c *Config) appService() error {
 	}
 
 	svc, err := application.NewService(
-		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
+		c.wallet, c.FallbackWalletServices(), c.signer, c.repo, c.txBuilder, c.scanner,
 		c.scheduler, c.liveStore, roundReportSvc, c.alerts, c.fee,
 	)
 	if err != nil {
@@ -1005,7 +1005,7 @@ func (c *Config) adminService() error {
 	}
 
 	c.adminSvc = application.NewAdminService(
-		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
+		c.wallet, c.FallbackWalletServices(), c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 	)
 	return nil
 }
