@@ -125,7 +125,7 @@ func request_IndexerService_GetConnectors_0(ctx context.Context, marshaler gatew
 
 var (
 	query_params_IndexerService_GetVtxoTree_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("batch_outpoint.txid", "batch_outpoint.vout", "txid", "vout"),
+		Filter: trie.New("vout", "batch_outpoint.txid", "batch_outpoint.vout", "txid"),
 	}
 )
 
@@ -415,7 +415,7 @@ func request_IndexerService_UnsubscribeForScripts_0(ctx context.Context, marshal
 
 var (
 	query_params_IndexerService_GetSubscription_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("subscription_id", "subscriptionId"),
+		Filter: trie.New("subscriptionId", "subscription_id"),
 	}
 )
 

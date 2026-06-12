@@ -9,33 +9,10 @@ import (
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	errors "github.com/arkade-os/arkd/pkg/errors"
 	"google.golang.org/grpc"
-	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 )
 
 const buildVersionHeader = "x-build-version"
-
-// versionGuardSkippedServices lists the admin-plane services (plus health
-// checks) that are exempt from the build-version compatibility check: they are
-// driven by operators and infrastructure, not by versioned SDK clients.
-var versionGuardSkippedServices = map[string]struct{}{
-	arkv1.AdminService_ServiceDesc.ServiceName:             {},
-	arkv1.WalletService_ServiceDesc.ServiceName:            {},
-	arkv1.WalletInitializerService_ServiceDesc.ServiceName: {},
-	arkv1.SignerManagerService_ServiceDesc.ServiceName:     {},
-	grpchealth.Health_ServiceDesc.ServiceName:              {},
-}
-
-// skipVersionGuard reports whether fullMethod ("/package.Service/Method")
-// belongs to a service exempt from the version guard.
-func skipVersionGuard(fullMethod string) bool {
-	svc := strings.TrimPrefix(fullMethod, "/")
-	if i := strings.Index(svc, "/"); i >= 0 {
-		svc = svc[:i]
-	}
-	_, ok := versionGuardSkippedServices[svc]
-	return ok
-}
 
 // VersionGuard holds the configuration for the build-version compatibility
 // check. The threshold is always the server's own build version. Use
@@ -146,7 +123,9 @@ func buildVersionTooOld(clientVersion string, guard VersionGuard) error {
 }
 
 func checkVersionCompat(ctx context.Context, fullMethod string, guard VersionGuard) error {
-	if !guard.RequireHeader || skipVersionGuard(fullMethod) {
+	if !guard.RequireHeader || !strings.Contains(
+		fullMethod, arkv1.ArkService_ServiceDesc.ServiceName,
+	) {
 		return nil
 	}
 

@@ -445,7 +445,8 @@ message Settings {
   optional string note_uri_prefix = 21;
   optional string build_version_header = 22;
   optional bool build_version_header_required = 23;
-  optional string updated_at = 24;
+  optional bool digest_header_required = 24;
+  optional string updated_at = 25;
 }
 
 message GetSettingsRequest {}
