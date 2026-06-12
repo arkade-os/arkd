@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -13,23 +12,6 @@ import (
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 )
-
-// splitFallbackAddrs decodes the comma-separated wallet_fallback_addrs column
-// back into a slice, trimming whitespace and dropping empty entries (so it
-// normalizes the same way the env parser does); an empty result is returned as nil.
-func splitFallbackAddrs(s string) []string {
-	parts := strings.Split(s, ",")
-	addrs := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p = strings.TrimSpace(p); p != "" {
-			addrs = append(addrs, p)
-		}
-	}
-	if len(addrs) == 0 {
-		return nil
-	}
-	return addrs
-}
 
 type settingsRepository struct {
 	db SQLiteDB
@@ -122,7 +104,7 @@ func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) 
 		BuildVersionHeaderRequired:    row.BuildVersionHeaderRequired,
 		DigestHeaderRequired:          row.DigestHeaderRequired,
 		WalletAddr:                    row.WalletAddr,
-		WalletFallbackAddrs:           splitFallbackAddrs(row.WalletFallbackAddrs),
+		WalletFallbackAddrs:           domain.DecodeFallbackAddrs(row.WalletFallbackAddrs),
 		ScheduledSession:              scheduledSession,
 		BatchFees: domain.BatchFees{
 			OnchainInputFee:   row.BatchOnchainInputFee,
@@ -165,7 +147,7 @@ func (r *settingsRepository) Upsert(
 		BuildVersionHeaderRequired:    settings.BuildVersionHeaderRequired,
 		DigestHeaderRequired:          settings.DigestHeaderRequired,
 		WalletAddr:                    settings.WalletAddr,
-		WalletFallbackAddrs:           strings.Join(settings.WalletFallbackAddrs, ","),
+		WalletFallbackAddrs:           domain.EncodeFallbackAddrs(settings.WalletFallbackAddrs),
 		BatchOnchainInputFee:          settings.BatchFees.OnchainInputFee,
 		BatchOffchainInputFee:         settings.BatchFees.OffchainInputFee,
 		BatchOnchainOutputFee:         settings.BatchFees.OnchainOutputFee,
