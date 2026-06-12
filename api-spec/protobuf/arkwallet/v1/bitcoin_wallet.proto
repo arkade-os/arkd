@@ -344,7 +344,7 @@ message FeeRateResponse {
 }
 
 message ListConnectorUtxosRequest {
-  string connector_address = 1;
+  repeated string connector_addresses = 1;
 }
 message ListConnectorUtxosResponse {
   repeated TxInput utxos = 1;

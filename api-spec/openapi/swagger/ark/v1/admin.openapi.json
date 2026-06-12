@@ -2186,11 +2186,17 @@
         "title": "SweepResponse",
         "type": "object",
         "properties": {
-          "hex": {
-            "type": "string"
+          "hexes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
-          "txid": {
-            "type": "string"
+          "txids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

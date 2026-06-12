@@ -48,7 +48,7 @@ type AdminService interface {
 	BanScript(ctx context.Context, script, reason string, banDuration *time.Duration) error
 	Sweep(
 		ctx context.Context, withConnectors bool, commitmentTxids []string,
-	) (string, string, error)
+	) (txids []string, txhexs []string, err error)
 	GetExpiringLiquidity(ctx context.Context, after, before int64) (uint64, error)
 	GetRecoverableLiquidity(ctx context.Context) (uint64, error)
 	GetSettings(ctx context.Context) (*domain.Settings, error)
@@ -462,23 +462,19 @@ func (s *adminService) BanScript(
 
 func (a *adminService) Sweep(
 	ctx context.Context, withConnectors bool, commitmentTxids []string,
-) (txid string, txhex string, err error) {
+) (txids []string, txhexs []string, err error) {
 	inputs := make([]ports.TxInput, 0)
 	connectorsToLock := make([]domain.Outpoint, 0)
 
 	if withConnectors {
 		connectorAddresses, err := a.repoManager.Rounds().GetSweptRoundsConnectorAddress(ctx)
 		if err != nil {
-			return "", "", err
+			return nil, nil, err
 		}
 
-		connectorUtxos := make([]ports.TxInput, 0)
-		for _, connectorAddress := range connectorAddresses {
-			utxos, err := a.walletSvc.ListConnectorUtxos(ctx, connectorAddress)
-			if err != nil {
-				return "", "", err
-			}
-			connectorUtxos = append(connectorUtxos, utxos...)
+		connectorUtxos, err := a.walletSvc.ListConnectorUtxos(ctx, connectorAddresses)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		for _, utxo := range connectorUtxos {
@@ -504,7 +500,7 @@ func (a *adminService) Sweep(
 		// Get the round first (contains VtxoTree)
 		round, err := a.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
 		if err != nil {
-			return "", "", fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"failed to get round for commitment txid %s: %w",
 				commitmentTxid,
 				err,
@@ -512,12 +508,12 @@ func (a *adminService) Sweep(
 		}
 
 		if round.Swept {
-			return "", "", fmt.Errorf("commitment txid %s already swept", commitmentTxid)
+			return nil, nil, fmt.Errorf("commitment txid %s already swept", commitmentTxid)
 		}
 
 		vtxoTree, err := tree.NewTxTree(round.VtxoTree)
 		if err != nil {
-			return "", "", fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"failed to create vtxo tree for commitment txid %s: %w",
 				commitmentTxid,
 				err,
@@ -531,7 +527,7 @@ func (a *adminService) Sweep(
 			ctx, a.walletSvc, a.txBuilder, a.sweeperTimeUnit, vtxoTree,
 		)
 		if err != nil {
-			return "", "", fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"failed to find sweepable outputs for commitment txid %s: %w",
 				commitmentTxid,
 				err,
@@ -554,35 +550,67 @@ func (a *adminService) Sweep(
 	}
 
 	if len(inputs) == 0 {
-		return "", "", fmt.Errorf("no funds to sweep")
+		return nil, nil, fmt.Errorf("no funds to sweep")
 	}
 
-	txid, txhex, err = a.txBuilder.BuildSweepTx(inputs)
+	// the inputs may not fit in a single transaction without exceeding the
+	// standardness weight limit, so split them into chunks each producing its
+	// own sweep transaction.
+	chunks, err := chunkSweepInputs(inputs, sweepTxWeightBudget)
 	if err != nil {
-		return
+		return nil, nil, err
 	}
 
 	if len(connectorsToLock) > 0 {
 		if err := a.walletSvc.LockConnectorUtxos(ctx, connectorsToLock); err != nil {
-			return "", "", err
+			return nil, nil, err
 		}
 	}
 
-	// broadcast the sweep transaction
-	txid, err = a.walletSvc.BroadcastTransaction(ctx, txhex)
-	if err != nil {
-		return
-	}
+	txids = make([]string, 0, len(chunks))
+	txhexs = make([]string, 0, len(chunks))
+	// maps each swept outpoint to the txid of the sweep tx that included it, and
+	// each sweep txid to its raw tx, so batch swept events can be attributed to
+	// the right transaction.
+	outpointToSweepTxid := make(map[domain.Outpoint]string)
+	sweepTxHexByTxid := make(map[string]string)
 
-	log.Infof("sweep transaction %s broadcasted", txid)
+	broadcastCtx := context.Background()
+
+	for _, chunk := range chunks {
+		txid, txhex, err := a.txBuilder.BuildSweepTx(chunk)
+		if err != nil {
+			// some sweep txs may already be broadcasted, surface them with the error
+			return txids, txhexs, fmt.Errorf("failed to build sweep tx: %w", err)
+		}
+
+		go a.broadcastSweepTx(broadcastCtx, txhex)
+
+		txids = append(txids, txid)
+		txhexs = append(txhexs, txhex)
+		sweepTxHexByTxid[txid] = txhex
+		for _, in := range chunk {
+			outpointToSweepTxid[domain.Outpoint{Txid: in.Txid, VOut: in.Index}] = txid
+		}
+	}
 
 	if len(batchInputs) > 0 {
 		go a.saveBatchSweptEvents(
-			context.WithoutCancel(ctx), batchInputs, batchRounds, batchVtxoTrees, txid, txhex,
+			context.WithoutCancel(ctx), batchInputs, batchRounds, batchVtxoTrees,
+			outpointToSweepTxid, sweepTxHexByTxid,
 		)
 	}
 
-	return
+	return txids, txhexs, nil
+}
+
+func (a *adminService) broadcastSweepTx(ctx context.Context, tx string) {
+	txid, err := a.walletSvc.BroadcastTransaction(ctx, tx)
+	if err != nil {
+		log.Warnf("failed to broadcast sweep tx: %s", tx)
+	}
+
+	log.Infof("admin sweep transaction %s broadcasted", txid)
 }
 
 func (a *adminService) GetExpiringLiquidity(
@@ -786,12 +814,12 @@ func (a *adminService) saveBatchSweptEvents(
 	inputsByCommitmentTxid map[string][]ports.TxInput,
 	batchesByCommitmentTxid map[string]*domain.Round,
 	treesByCommitmentTxid map[string]*tree.TxTree,
-	txid, txhex string,
+	outpointToSweepTxid map[domain.Outpoint]string,
+	sweepTxHexByTxid map[string]string,
 ) {
 	for commitmentTxid, batchInputsList := range inputsByCommitmentTxid {
 		round := batchesByCommitmentTxid[commitmentTxid]
 
-		leafVtxos := make([]domain.Outpoint, 0)
 		vtxoRepo := a.repoManager.Vtxos()
 
 		commitmentRootSwept := false
@@ -802,8 +830,23 @@ func (a *adminService) saveBatchSweptEvents(
 			}
 		}
 
-		// find leaf vtxos for each input
+		// group the leaf vtxos by the sweep tx that swept the originating input,
+		// so a batch split across several sweep txs raises one event per tx with
+		// its own disjoint subset of leaves.
+		leafVtxosBySweepTxid := make(map[string][]domain.Outpoint)
+		allLeafVtxos := make([]domain.Outpoint, 0)
+
 		for _, input := range batchInputsList {
+			sweepTxid, ok := outpointToSweepTxid[domain.Outpoint{
+				Txid: input.Txid,
+				VOut: input.Index,
+			}]
+			if !ok {
+				// the input was not swept (e.g. already spent), skip it
+				continue
+			}
+
+			inputLeafVtxos := make([]domain.Outpoint, 0)
 			vtxos, _ := vtxoRepo.GetVtxos(
 				ctx,
 				[]domain.Outpoint{
@@ -815,7 +858,7 @@ func (a *adminService) saveBatchSweptEvents(
 			)
 			if len(vtxos) > 0 {
 				if !vtxos[0].Swept && !vtxos[0].Unrolled {
-					leafVtxos = append(leafVtxos, vtxos[0].Outpoint)
+					inputLeafVtxos = append(inputLeafVtxos, vtxos[0].Outpoint)
 				}
 			} else {
 				vtxoTree, ok := treesByCommitmentTxid[commitmentTxid]
@@ -833,16 +876,20 @@ func (a *adminService) saveBatchSweptEvents(
 				}
 
 				for _, leaf := range vtxosLeaves {
-					vtxo := domain.Outpoint{
+					inputLeafVtxos = append(inputLeafVtxos, domain.Outpoint{
 						Txid: leaf.UnsignedTx.TxID(),
 						VOut: 0,
-					}
-					leafVtxos = append(leafVtxos, vtxo)
+					})
 				}
 			}
+
+			leafVtxosBySweepTxid[sweepTxid] = append(
+				leafVtxosBySweepTxid[sweepTxid], inputLeafVtxos...,
+			)
+			allLeafVtxos = append(allLeafVtxos, inputLeafVtxos...)
 		}
 
-		// get preconfirmed vtxos
+		// get preconfirmed vtxos from the full set of swept leaves
 		preconfirmedVtxos := make([]domain.Outpoint, 0)
 		if commitmentRootSwept {
 			var err error
@@ -856,7 +903,7 @@ func (a *adminService) saveBatchSweptEvents(
 			}
 		} else {
 			seen := make(map[string]struct{})
-			for _, leafVtxo := range leafVtxos {
+			for _, leafVtxo := range allLeafVtxos {
 				children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
 				if err != nil {
 					log.WithError(err).Error("error while getting children vtxos")
@@ -871,19 +918,33 @@ func (a *adminService) saveBatchSweptEvents(
 			}
 		}
 
-		events, err := round.Sweep(leafVtxos, preconfirmedVtxos, txid, txhex)
-		if err != nil {
-			log.WithError(err).Errorf("failed to sweep batch %s", commitmentTxid)
-			continue
-		}
+		// raise one batch swept event per sweep tx. preconfirmed vtxos do not
+		// affect the fully-swept computation, so attach them to a single event
+		// to avoid duplicate projections.
+		eventRepo := a.repoManager.Events()
+		preconfirmedAttached := false
+		for sweepTxid, leafVtxos := range leafVtxosBySweepTxid {
+			preconfirmed := make([]domain.Outpoint, 0)
+			if !preconfirmedAttached {
+				preconfirmed = preconfirmedVtxos
+				preconfirmedAttached = true
+			}
 
-		if len(events) > 0 {
-			eventRepo := a.repoManager.Events()
-			if err := eventRepo.Save(ctx, domain.RoundTopic, round.Id, events); err != nil {
-				log.WithError(err).Errorf(
-					"failed to save sweep events for batch %s", commitmentTxid,
-				)
+			events, err := round.Sweep(
+				leafVtxos, preconfirmed, sweepTxid, sweepTxHexByTxid[sweepTxid],
+			)
+			if err != nil {
+				log.WithError(err).Errorf("failed to sweep batch %s", commitmentTxid)
 				continue
+			}
+
+			if len(events) > 0 {
+				if err := eventRepo.Save(ctx, domain.RoundTopic, round.Id, events); err != nil {
+					log.WithError(err).Errorf(
+						"failed to save sweep events for batch %s", commitmentTxid,
+					)
+					continue
+				}
 			}
 		}
 	}

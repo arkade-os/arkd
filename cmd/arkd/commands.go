@@ -1078,8 +1078,8 @@ func sweepAction(ctx *cli.Context) error {
 	)
 
 	type sweepResponse struct {
-		Txid string `json:"txid"`
-		Hex  string `json:"hex"`
+		Txids []string `json:"txids"`
+		Hexes []string `json:"hexes"`
 	}
 
 	sweepTxHex, err := post[sweepResponse](url, body, "", macaroon, tlsConfig)

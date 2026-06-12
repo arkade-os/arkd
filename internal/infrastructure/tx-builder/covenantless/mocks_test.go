@@ -262,9 +262,9 @@ func (m *mockedWallet) GetNotificationChannel(
 }
 
 func (m *mockedWallet) ListConnectorUtxos(
-	ctx context.Context, addr string,
+	ctx context.Context, addrs []string,
 ) ([]ports.TxInput, error) {
-	args := m.Called(ctx, addr)
+	args := m.Called(ctx, addrs)
 
 	var res []ports.TxInput
 	if a := args.Get(0); a != nil {

@@ -2948,8 +2948,8 @@ func (x *SweepRequest) GetCommitmentTxids() []string {
 
 type SweepResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Txid          string                 `protobuf:"bytes,1,opt,name=txid,proto3" json:"txid,omitempty"`
-	Hex           string                 `protobuf:"bytes,2,opt,name=hex,proto3" json:"hex,omitempty"`
+	Txids         []string               `protobuf:"bytes,1,rep,name=txids,proto3" json:"txids,omitempty"`
+	Hexes         []string               `protobuf:"bytes,2,rep,name=hexes,proto3" json:"hexes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2984,18 +2984,18 @@ func (*SweepResponse) Descriptor() ([]byte, []int) {
 	return file_ark_v1_admin_proto_rawDescGZIP(), []int{56}
 }
 
-func (x *SweepResponse) GetTxid() string {
+func (x *SweepResponse) GetTxids() []string {
 	if x != nil {
-		return x.Txid
+		return x.Txids
 	}
-	return ""
+	return nil
 }
 
-func (x *SweepResponse) GetHex() string {
+func (x *SweepResponse) GetHexes() []string {
 	if x != nil {
-		return x.Hex
+		return x.Hexes
 	}
-	return ""
+	return nil
 }
 
 type Settings struct {
@@ -4032,10 +4032,10 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\n" +
 	"connectors\x18\x01 \x01(\bR\n" +
 	"connectors\x12)\n" +
-	"\x10commitment_txids\x18\x02 \x03(\tR\x0fcommitmentTxids\"5\n" +
-	"\rSweepResponse\x12\x12\n" +
-	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x10\n" +
-	"\x03hex\x18\x02 \x01(\tR\x03hex\"\xe6\x0f\n" +
+	"\x10commitment_txids\x18\x02 \x03(\tR\x0fcommitmentTxids\";\n" +
+	"\rSweepResponse\x12\x14\n" +
+	"\x05txids\x18\x01 \x03(\tR\x05txids\x12\x14\n" +
+	"\x05hexes\x18\x02 \x03(\tR\x05hexes\"\xe6\x0f\n" +
 	"\bSettings\x12.\n" +
 	"\x10session_duration\x18\x01 \x01(\x03H\x00R\x0fsessionDuration\x88\x01\x01\x12I\n" +
 	"\x1funrolled_vtxo_min_expiry_margin\x18\x02 \x01(\x03H\x01R\x1bunrolledVtxoMinExpiryMargin\x88\x01\x01\x12(\n" +
