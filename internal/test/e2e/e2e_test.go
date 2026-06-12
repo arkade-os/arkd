@@ -6395,4 +6395,32 @@ func TestDeprecatedSignerKey(t *testing.T) {
 		_, err = dave.Settle(ctx)
 		require.ErrorContains(t, err, "is a deprecated key since")
 	})
+
+	t.Run("recover_after_cutoff", func(t *testing.T) {
+		// the other half of the design: once an old-key VTXO has expired and been swept it
+		// must still be recoverable even though its signer key is past the cutoff, because a
+		// swept VTXO no longer requires a forfeit and so skips the signer-key validation. The
+		// past-cutoff rotation from the previous subtest is still in effect here.
+		bobVtxos, _, err := bob.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, bobVtxos)
+
+		// expire the batch and wait for the server to sweep bob's old-key VTXO
+		require.NoError(t, generateBlocks(50))
+		require.Eventually(t, func() bool {
+			vtxos, _, err := bob.ListVtxos(ctx)
+			if err != nil || len(vtxos) == 0 {
+				return false
+			}
+			return vtxos[0].Swept
+		}, 60*time.Second, 2*time.Second)
+
+		// recovery must succeed despite the past cutoff
+		_, err = bob.Settle(ctx, wallet.WithRecoverableVtxos())
+		require.NoError(t, err)
+
+		_, spent, err := bob.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, spent)
+	})
 }
