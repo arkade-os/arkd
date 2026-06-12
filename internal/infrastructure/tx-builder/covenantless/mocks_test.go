@@ -397,7 +397,7 @@ type staticSigner struct {
 	pubkey *btcec.PublicKey
 }
 
-func (s *staticSigner) IsReady(_ context.Context) (bool, error)          { return true, nil }
+func (s *staticSigner) IsReady(_ context.Context) (bool, error) { return true, nil }
 func (s *staticSigner) GetPubkey(_ context.Context) (*btcec.PublicKey, error) {
 	return s.pubkey, nil
 }

@@ -411,7 +411,9 @@ func (s *service) validateVtxoScript(
 ) error {
 	return validateVtxoScriptForSigners(
 		v,
-		acceptedSignerPubkeys(settings.SignerPubkey, settings.DeprecatedSignerPubkeys, time.Now()),
+		settings.SignerPubkey,
+		settings.DeprecatedSignerPubkeys,
+		time.Now(),
 		minLocktime,
 		settings.AllowCSVBlockType(),
 	)
@@ -3966,11 +3968,9 @@ func (s *service) processBoardingInputs(
 		boardingInput, err := newBoardingInput(
 			tx,
 			input.Input,
-			acceptedSignerPubkeys(
-				settings.SignerPubkey,
-				settings.DeprecatedSignerPubkeys,
-				time.Now(),
-			),
+			settings.SignerPubkey,
+			settings.DeprecatedSignerPubkeys,
+			time.Now(),
 			exitDelay,
 			settings.AllowCSVBlockType(),
 		)

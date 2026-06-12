@@ -169,7 +169,7 @@ func acceptedSignerPubkeys(
 	pubkeys := make([]*btcec.PublicKey, 0, len(deprecated)+1)
 	pubkeys = append(pubkeys, current)
 	for _, key := range deprecated {
-		if now.After(key.CutoffDate) {
+		if isPastCutoff(key, now) {
 			continue
 		}
 		pubkeys = append(pubkeys, key.PubKey)
@@ -177,22 +177,39 @@ func acceptedSignerPubkeys(
 	return pubkeys
 }
 
-// validateVtxoScriptForSigners accepts the script if it validates against any of the given signer pubkeys.
+func isPastCutoff(key ports.DeprecatedSignerPubkey, now time.Time) bool {
+	return !key.CutoffDate.IsZero() && now.After(key.CutoffDate)
+}
+
+// validateVtxoScriptForSigners accepts the script if it validates against the current
+// signer pubkey or any deprecated one whose cutoff date has not passed yet.
 func validateVtxoScriptForSigners(
-	v script.VtxoScript, signers []*btcec.PublicKey,
-	minLocktime arklib.RelativeLocktime, blockTypeAllowed bool,
+	v script.VtxoScript, current *btcec.PublicKey, deprecated []ports.DeprecatedSignerPubkey,
+	now time.Time, minLocktime arklib.RelativeLocktime, blockTypeAllowed bool,
 ) error {
 	var err error
-	for _, signer := range signers {
+	for _, signer := range acceptedSignerPubkeys(current, deprecated, now) {
 		if err = v.Validate(signer, minLocktime, blockTypeAllowed); err == nil {
 			return nil
+		}
+	}
+	for _, key := range deprecated {
+		if !isPastCutoff(key, now) {
+			continue
+		}
+		if v.Validate(key.PubKey, minLocktime, blockTypeAllowed) == nil {
+			return fmt.Errorf(
+				"%x is a deprecated key since %s",
+				key.PubKey.SerializeCompressed(), key.CutoffDate.Format(time.RFC3339),
+			)
 		}
 	}
 	return err
 }
 
 func newBoardingInput(
-	tx wire.MsgTx, input ports.Input, signerPubkeys []*btcec.PublicKey,
+	tx wire.MsgTx, input ports.Input, signerPubkey *btcec.PublicKey,
+	deprecatedSigners []ports.DeprecatedSignerPubkey, now time.Time,
 	boardingExitDelay arklib.RelativeLocktime, blockTypeCSVAllowed bool,
 ) (*ports.BoardingInput, error) {
 	if len(tx.TxOut) <= int(input.VOut) {
@@ -224,7 +241,8 @@ func newBoardingInput(
 	}
 
 	if err := validateVtxoScriptForSigners(
-		boardingScript, signerPubkeys, boardingExitDelay, blockTypeCSVAllowed,
+		boardingScript, signerPubkey, deprecatedSigners, now,
+		boardingExitDelay, blockTypeCSVAllowed,
 	); err != nil {
 		return nil, fmt.Errorf("invalid boarding utxo taproot tree: %w", err)
 	}

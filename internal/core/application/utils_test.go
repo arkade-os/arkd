@@ -1,11 +1,14 @@
 package application
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -215,5 +218,52 @@ func TestAcceptedSignerPubkeys(t *testing.T) {
 			{PubKey: other, CutoffDate: now.Add(time.Hour)},
 		}, now)
 		require.Equal(t, []*btcec.PublicKey{current, other}, pubkeys)
+	})
+}
+
+func TestValidateVtxoScriptForSigners(t *testing.T) {
+	currentKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	current := currentKey.PubKey()
+
+	deprecatedKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	deprecated := deprecatedKey.PubKey()
+
+	ownerKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	owner := ownerKey.PubKey()
+
+	now := time.Now()
+	exitDelay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512}
+	deprecatedKeyScript := script.NewDefaultVtxoScript(owner, deprecated, exitDelay)
+
+	t.Run("deprecated key within cutoff", func(t *testing.T) {
+		err := validateVtxoScriptForSigners(
+			deprecatedKeyScript, current, []ports.DeprecatedSignerPubkey{
+				{PubKey: deprecated, CutoffDate: now.Add(time.Hour)},
+			}, now, exitDelay, false,
+		)
+		require.NoError(t, err)
+	})
+
+	t.Run("deprecated key past cutoff", func(t *testing.T) {
+		cutoff := now.Add(-time.Hour)
+		err := validateVtxoScriptForSigners(
+			deprecatedKeyScript, current, []ports.DeprecatedSignerPubkey{
+				{PubKey: deprecated, CutoffDate: cutoff},
+			}, now, exitDelay, false,
+		)
+		require.EqualError(t, err, fmt.Sprintf(
+			"%x is a deprecated key since %s",
+			deprecated.SerializeCompressed(), cutoff.Format(time.RFC3339),
+		))
+	})
+
+	t.Run("unknown signer key", func(t *testing.T) {
+		err := validateVtxoScriptForSigners(
+			deprecatedKeyScript, current, nil, now, exitDelay, false,
+		)
+		require.ErrorContains(t, err, "signer pubkey not found")
 	})
 }

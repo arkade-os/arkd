@@ -1081,10 +1081,20 @@ func (b *txBuilder) VerifyBoardingTapscriptSigs(
 		return nil, err
 	}
 
+	deprecatedSignerPubkeys, err := b.signer.GetDeprecatedPubkeys(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	skipPubkeys := make([]*btcec.PublicKey, 0, len(deprecatedSignerPubkeys)+1)
+	skipPubkeys = append(skipPubkeys, signerPubkey)
+	for _, key := range deprecatedSignerPubkeys {
+		skipPubkeys = append(skipPubkeys, key.PubKey)
+	}
+
 	ins, err := script.VerifyTapscriptSigs(
 		ptx,
 		prevoutFetcher,
-		script.WithSkipPublicKeys(signerPubkey),
+		script.WithSkipPublicKeys(skipPubkeys...),
 		script.WithSkipUnsignedInputs(),
 	)
 	if err != nil {

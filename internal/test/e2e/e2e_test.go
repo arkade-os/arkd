@@ -6232,11 +6232,14 @@ func TestEventListenerChurn(t *testing.T) {
 	}
 }
 
-// TestDeprecatedSignerKey makes sure a VTXO locked to a signer key that has
+// TestDeprecatedSignerKey makes sure coins locked to a signer key that has
 // been rotated out (moved to DEPRECATED_SIGNER_KEYS) can still be spent. We
-// fund a VTXO with the old signer key, rotate it to deprecated, then verify the
-// old-key VTXO can still be settled and spent in an offchain transaction; in
-// both cases the server co-signs using the deprecated key it was locked to.
+// fund a VTXO and boarding utxos with the old signer key, rotate it to
+// deprecated, then verify the old-key VTXO can still be settled and spent in an
+// offchain transaction, and the old-key boarding utxo can still be settled; in
+// all cases the server co-signs using the deprecated key the coin was locked
+// to. Once the cutoff date has passed, both vtxo and boarding inputs locked to
+// the old key must be rejected.
 func TestDeprecatedSignerKey(t *testing.T) {
 	const (
 		oldSignerKey = "afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0"
@@ -6257,6 +6260,18 @@ func TestDeprecatedSignerKey(t *testing.T) {
 
 	bob := setupClientWallet(t)
 	_, bobOffchainAddr, _, err := bob.Receive(ctx)
+	require.NoError(t, err)
+
+	// carol and dave are initialized before the rotation so their boarding
+	// addresses embed the OLD signer key. Their boarding utxos are funded right
+	// before being settled (in regtest the boarding exit path becomes available
+	// within seconds, making older utxos not claimable anymore).
+	carol := setupClientWallet(t)
+	_, carolOffchainAddr, carolBoardingAddr, err := carol.Receive(ctx)
+	require.NoError(t, err)
+
+	dave := setupClientWallet(t)
+	_, _, daveBoardingAddr, err := dave.Receive(ctx)
 	require.NoError(t, err)
 
 	faucetOnchain(t, aliceBoardingAddr.Address, 0.00021)
@@ -6281,8 +6296,14 @@ func TestDeprecatedSignerKey(t *testing.T) {
 	_, oldPubkey := btcec.PrivKeyFromBytes(oldKeyBytes)
 	expectedDeprecated := hex.EncodeToString(oldPubkey.SerializeCompressed())
 
+	newKeyBytes, err := hex.DecodeString(newSignerKey)
+	require.NoError(t, err)
+	_, newPubkey := btcec.PrivKeyFromBytes(newKeyBytes)
+	expectedSigner := hex.EncodeToString(newPubkey.SerializeCompressed())
+
 	info, err := alice.Client().GetInfo(ctx)
 	require.NoError(t, err)
+	require.Equal(t, expectedSigner, info.SignerPubKey)
 	cutoffDates := make(map[string]int64, len(info.DeprecatedSignerPubKeys))
 	for _, s := range info.DeprecatedSignerPubKeys {
 		cutoffDates[s.PubKey] = s.CutoffDate
@@ -6295,6 +6316,20 @@ func TestDeprecatedSignerKey(t *testing.T) {
 		settleVtxo(t, ctx, alice, aliceOffchainAddr.Address)
 
 		balAfter, err := alice.Balance(ctx)
+		require.NoError(t, err)
+		require.NotZero(t, int(balAfter.OffchainBalance.Total))
+	})
+
+	t.Run("boarding", func(t *testing.T) {
+		// a boarding utxo locked to the old signer key must still be settled: the
+		// server validates the boarding script against the deprecated key and
+		// co-signs the commitment tx input with it.
+		faucetOnchain(t, carolBoardingAddr.Address, 0.00021)
+		time.Sleep(6 * time.Second)
+
+		settleVtxo(t, ctx, carol, carolOffchainAddr.Address)
+
+		balAfter, err := carol.Balance(ctx)
 		require.NoError(t, err)
 		require.NotZero(t, int(balAfter.OffchainBalance.Total))
 	})
@@ -6340,7 +6375,24 @@ func TestDeprecatedSignerKey(t *testing.T) {
 		require.Contains(t, expiredCutoffs, expectedDeprecated)
 		require.Equal(t, expiredCutoff, expiredCutoffs[expectedDeprecated])
 
-		_, err = bob.Settle(ctx)
-		require.Error(t, err)
+		// vtxo input path: bob holds a VTXO locked to the old key. Pass it
+		// explicitly so the failure can only come from the server rejecting the
+		// expired key at intent registration.
+		bobVtxos, _, err := bob.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, bobVtxos)
+
+		_, err = bob.Settle(ctx, wallet.WithFunds(nil, []types.VtxoWithTapTree{{
+			Vtxo:       bobVtxos[0],
+			Tapscripts: bobOffchainAddr.Tapscripts,
+		}}))
+		require.ErrorContains(t, err, "is a deprecated key since")
+
+		// boarding input path: dave's boarding utxo is locked to the old key
+		faucetOnchain(t, daveBoardingAddr.Address, 0.00021)
+		time.Sleep(6 * time.Second)
+
+		_, err = dave.Settle(ctx)
+		require.ErrorContains(t, err, "is a deprecated key since")
 	})
 }

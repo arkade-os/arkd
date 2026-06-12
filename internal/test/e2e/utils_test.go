@@ -611,7 +611,7 @@ func recreateArkdWallet(signerKey, deprecated string) error {
 	if err := unlockArkdWallet(); err != nil {
 		return err
 	}
-	
+
 	time.Sleep(5 * time.Second)
 
 	return restartArkd()
