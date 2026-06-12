@@ -49,7 +49,7 @@ func streamDigestHandler(
 		if strings.Contains(info.FullMethod, arkv1.ArkService_ServiceDesc.ServiceName) {
 			expectedDigest, guardEnabled, err := getDigest()
 			if err != nil {
-				return errors.INTERNAL_ERROR.New("failed to verify version header, retry later")
+				return errors.INTERNAL_ERROR.New("failed to verify digest header, retry later")
 			}
 			if guardEnabled {
 				digest := digestHeaderValue(ss.Context())
