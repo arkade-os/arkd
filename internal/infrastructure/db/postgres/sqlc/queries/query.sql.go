@@ -470,51 +470,6 @@ func (q *Queries) SelectIntentByTxid(ctx context.Context, txid sql.NullString) (
 	return i, err
 }
 
-const selectLatestSettings = `-- name: SelectLatestSettings :one
-SELECT id, session_duration, unrolled_vtxo_min_expiry_margin, ban_threshold, ban_duration, unilateral_exit_delay, public_unilateral_exit_delay, checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry, round_min_participants_count, round_max_participants_count, vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount, settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date, max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio, note_uri_prefix, scheduled_session_start_time, scheduled_session_end_time, scheduled_session_period, scheduled_session_duration, scheduled_session_round_min_participants_count, scheduled_session_round_max_participants_count, batch_onchain_input_fee, batch_offchain_input_fee, batch_onchain_output_fee, batch_offchain_output_fee, updated_at FROM settings ORDER BY updated_at DESC LIMIT 1
-`
-
-func (q *Queries) SelectLatestSettings(ctx context.Context) (Setting, error) {
-	row := q.db.QueryRowContext(ctx, selectLatestSettings)
-	var i Setting
-	err := row.Scan(
-		&i.ID,
-		&i.SessionDuration,
-		&i.UnrolledVtxoMinExpiryMargin,
-		&i.BanThreshold,
-		&i.BanDuration,
-		&i.UnilateralExitDelay,
-		&i.PublicUnilateralExitDelay,
-		&i.CheckpointExitDelay,
-		&i.BoardingExitDelay,
-		&i.VtxoTreeExpiry,
-		&i.RoundMinParticipantsCount,
-		&i.RoundMaxParticipantsCount,
-		&i.VtxoMinAmount,
-		&i.VtxoMaxAmount,
-		&i.UtxoMinAmount,
-		&i.UtxoMaxAmount,
-		&i.SettlementMinExpiryGap,
-		&i.VtxoNoCsvValidationCutoffDate,
-		&i.MaxTxWeight,
-		&i.MaxOpReturnOutputs,
-		&i.AssetTxMaxWeightRatio,
-		&i.NoteUriPrefix,
-		&i.ScheduledSessionStartTime,
-		&i.ScheduledSessionEndTime,
-		&i.ScheduledSessionPeriod,
-		&i.ScheduledSessionDuration,
-		&i.ScheduledSessionRoundMinParticipantsCount,
-		&i.ScheduledSessionRoundMaxParticipantsCount,
-		&i.BatchOnchainInputFee,
-		&i.BatchOffchainInputFee,
-		&i.BatchOnchainOutputFee,
-		&i.BatchOffchainOutputFee,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const selectNotUnrolledVtxos = `-- name: SelectNotUnrolledVtxos :many
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.swept, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.commitments, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE unrolled = false
 `
@@ -1381,6 +1336,53 @@ func (q *Queries) SelectRoundsWithTxids(ctx context.Context, dollar_1 []string) 
 	return items, nil
 }
 
+const selectSettings = `-- name: SelectSettings :one
+SELECT id, session_duration, unrolled_vtxo_min_expiry_margin, ban_threshold, ban_duration, unilateral_exit_delay, public_unilateral_exit_delay, checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry, round_min_participants_count, round_max_participants_count, vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount, settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date, max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio, note_uri_prefix, scheduled_session_start_time, scheduled_session_end_time, scheduled_session_period, scheduled_session_duration, scheduled_session_round_min_participants_count, scheduled_session_round_max_participants_count, batch_onchain_input_fee, batch_offchain_input_fee, batch_onchain_output_fee, batch_offchain_output_fee, build_version_header, build_version_header_required, updated_at FROM settings WHERE id = 1
+`
+
+func (q *Queries) SelectSettings(ctx context.Context) (Setting, error) {
+	row := q.db.QueryRowContext(ctx, selectSettings)
+	var i Setting
+	err := row.Scan(
+		&i.ID,
+		&i.SessionDuration,
+		&i.UnrolledVtxoMinExpiryMargin,
+		&i.BanThreshold,
+		&i.BanDuration,
+		&i.UnilateralExitDelay,
+		&i.PublicUnilateralExitDelay,
+		&i.CheckpointExitDelay,
+		&i.BoardingExitDelay,
+		&i.VtxoTreeExpiry,
+		&i.RoundMinParticipantsCount,
+		&i.RoundMaxParticipantsCount,
+		&i.VtxoMinAmount,
+		&i.VtxoMaxAmount,
+		&i.UtxoMinAmount,
+		&i.UtxoMaxAmount,
+		&i.SettlementMinExpiryGap,
+		&i.VtxoNoCsvValidationCutoffDate,
+		&i.MaxTxWeight,
+		&i.MaxOpReturnOutputs,
+		&i.AssetTxMaxWeightRatio,
+		&i.NoteUriPrefix,
+		&i.ScheduledSessionStartTime,
+		&i.ScheduledSessionEndTime,
+		&i.ScheduledSessionPeriod,
+		&i.ScheduledSessionDuration,
+		&i.ScheduledSessionRoundMinParticipantsCount,
+		&i.ScheduledSessionRoundMaxParticipantsCount,
+		&i.BatchOnchainInputFee,
+		&i.BatchOffchainInputFee,
+		&i.BatchOnchainOutputFee,
+		&i.BatchOffchainOutputFee,
+		&i.BuildVersionHeader,
+		&i.BuildVersionHeaderRequired,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const selectSweepableRounds = `-- name: SelectSweepableRounds :many
 SELECT txid FROM round_with_commitment_tx_vw r
 WHERE r.swept = false AND r.ended = true AND r.failed = false
@@ -2180,6 +2182,7 @@ INSERT INTO settings (
     scheduled_session_round_max_participants_count,
     batch_onchain_input_fee, batch_offchain_input_fee,
     batch_onchain_output_fee, batch_offchain_output_fee,
+    build_version_header, build_version_header_required,
     updated_at
 ) VALUES (
     1,
@@ -2198,7 +2201,8 @@ INSERT INTO settings (
     $27,
     $28, $29,
     $30, $31,
-    $32
+    $32, $33,
+    $34
 )
 ON CONFLICT(id) DO UPDATE SET
     session_duration = EXCLUDED.session_duration,
@@ -2234,6 +2238,8 @@ ON CONFLICT(id) DO UPDATE SET
     batch_offchain_input_fee = EXCLUDED.batch_offchain_input_fee,
     batch_onchain_output_fee = EXCLUDED.batch_onchain_output_fee,
     batch_offchain_output_fee = EXCLUDED.batch_offchain_output_fee,
+    build_version_header = EXCLUDED.build_version_header,
+    build_version_header_required = EXCLUDED.build_version_header_required,
     updated_at = EXCLUDED.updated_at
 `
 
@@ -2269,6 +2275,8 @@ type UpsertSettingsParams struct {
 	BatchOffchainInputFee                     string
 	BatchOnchainOutputFee                     string
 	BatchOffchainOutputFee                    string
+	BuildVersionHeader                        string
+	BuildVersionHeaderRequired                bool
 	UpdatedAt                                 int64
 }
 
@@ -2305,6 +2313,8 @@ func (q *Queries) UpsertSettings(ctx context.Context, arg UpsertSettingsParams) 
 		arg.BatchOffchainInputFee,
 		arg.BatchOnchainOutputFee,
 		arg.BatchOffchainOutputFee,
+		arg.BuildVersionHeader,
+		arg.BuildVersionHeaderRequired,
 		arg.UpdatedAt,
 	)
 	return err

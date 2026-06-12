@@ -80,18 +80,27 @@ func TestAdminService_Settings(t *testing.T) {
 
 			banThreshold := uint64(99)
 			vtxoMin := int64(2000)
+			buildVersion := "v2.0.0"
+			buildVersionRequired := true
 			changelog, err := svc.UpdateSettings(ctx, domain.SettingsUpdate{
-				BanThreshold:  &banThreshold,
-				VtxoMinAmount: &vtxoMin,
+				BanThreshold:               &banThreshold,
+				VtxoMinAmount:              &vtxoMin,
+				BuildVersionHeader:         &buildVersion,
+				BuildVersionHeaderRequired: &buildVersionRequired,
 			})
 			require.NoError(t, err)
-			require.ElementsMatch(t, []string{"ban_threshold", "vtxo_min_amount"}, changelog)
+			require.ElementsMatch(t, []string{
+				"ban_threshold", "vtxo_min_amount",
+				"build_version_header", "build_version_header_required",
+			}, changelog)
 
 			got, err := svc.GetSettings(ctx)
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			require.Equal(t, uint64(99), got.BanThreshold)
 			require.Equal(t, int64(2000), got.VtxoMinAmount)
+			require.Equal(t, "v2.0.0", got.BuildVersionHeader)
+			require.True(t, got.BuildVersionHeaderRequired)
 			// Fields not in the update keep their seeded values.
 			require.Equal(t, seed.RoundMaxParticipantsCount, got.RoundMaxParticipantsCount)
 			require.Equal(t, seed.VtxoTreeExpiry, got.VtxoTreeExpiry)

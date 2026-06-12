@@ -141,6 +141,8 @@ func seedParams(settings domain.Settings) queries.UpsertSettingsParams {
 		MaxOpReturnOutputs:            int64(settings.MaxOpReturnOutputs),
 		AssetTxMaxWeightRatio:         float64(settings.AssetTxMaxWeightRatio),
 		NoteUriPrefix:                 settings.NoteUriPrefix,
+		BuildVersionHeader:            settings.BuildVersionHeader,
+		BuildVersionHeaderRequired:    settings.BuildVersionHeaderRequired,
 		BatchOnchainInputFee:          settings.BatchFees.OnchainInputFee,
 		BatchOffchainInputFee:         settings.BatchFees.OffchainInputFee,
 		BatchOnchainOutputFee:         settings.BatchFees.OnchainOutputFee,
