@@ -2114,8 +2114,8 @@ func (x *ScheduledSweep) GetConfirmed() bool {
 
 type ScheduledSessionConfig struct {
 	state                     protoimpl.MessageState `protogen:"open.v1"`
-	StartTime                 int64                  `protobuf:"varint,1,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
-	EndTime                   int64                  `protobuf:"varint,2,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
+	StartTime                 string                 `protobuf:"bytes,1,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
+	EndTime                   string                 `protobuf:"bytes,2,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
 	Period                    int64                  `protobuf:"varint,3,opt,name=period,proto3" json:"period,omitempty"`
 	Duration                  int64                  `protobuf:"varint,4,opt,name=duration,proto3" json:"duration,omitempty"`
 	RoundMinParticipantsCount int64                  `protobuf:"varint,5,opt,name=round_min_participants_count,json=roundMinParticipantsCount,proto3" json:"round_min_participants_count,omitempty"`
@@ -2155,18 +2155,18 @@ func (*ScheduledSessionConfig) Descriptor() ([]byte, []int) {
 	return file_ark_v1_admin_proto_rawDescGZIP(), []int{43}
 }
 
-func (x *ScheduledSessionConfig) GetStartTime() int64 {
+func (x *ScheduledSessionConfig) GetStartTime() string {
 	if x != nil {
 		return x.StartTime
 	}
-	return 0
+	return ""
 }
 
-func (x *ScheduledSessionConfig) GetEndTime() int64 {
+func (x *ScheduledSessionConfig) GetEndTime() string {
 	if x != nil {
 		return x.EndTime
 	}
-	return 0
+	return ""
 }
 
 func (x *ScheduledSessionConfig) GetPeriod() int64 {
@@ -3016,12 +3016,14 @@ type Settings struct {
 	UtxoMinAmount                 *int64                 `protobuf:"varint,14,opt,name=utxo_min_amount,json=utxoMinAmount,proto3,oneof" json:"utxo_min_amount,omitempty"`
 	UtxoMaxAmount                 *int64                 `protobuf:"varint,15,opt,name=utxo_max_amount,json=utxoMaxAmount,proto3,oneof" json:"utxo_max_amount,omitempty"`
 	SettlementMinExpiryGap        *int64                 `protobuf:"varint,16,opt,name=settlement_min_expiry_gap,json=settlementMinExpiryGap,proto3,oneof" json:"settlement_min_expiry_gap,omitempty"`
-	VtxoNoCsvValidationCutoffDate *int64                 `protobuf:"varint,17,opt,name=vtxo_no_csv_validation_cutoff_date,json=vtxoNoCsvValidationCutoffDate,proto3,oneof" json:"vtxo_no_csv_validation_cutoff_date,omitempty"`
+	VtxoNoCsvValidationCutoffDate *string                `protobuf:"bytes,17,opt,name=vtxo_no_csv_validation_cutoff_date,json=vtxoNoCsvValidationCutoffDate,proto3,oneof" json:"vtxo_no_csv_validation_cutoff_date,omitempty"`
 	MaxTxWeight                   *int64                 `protobuf:"varint,18,opt,name=max_tx_weight,json=maxTxWeight,proto3,oneof" json:"max_tx_weight,omitempty"`
 	MaxOpReturnOutputs            *int64                 `protobuf:"varint,19,opt,name=max_op_return_outputs,json=maxOpReturnOutputs,proto3,oneof" json:"max_op_return_outputs,omitempty"`
 	AssetTxMaxWeightRatio         *float32               `protobuf:"fixed32,20,opt,name=asset_tx_max_weight_ratio,json=assetTxMaxWeightRatio,proto3,oneof" json:"asset_tx_max_weight_ratio,omitempty"`
 	NoteUriPrefix                 *string                `protobuf:"bytes,21,opt,name=note_uri_prefix,json=noteUriPrefix,proto3,oneof" json:"note_uri_prefix,omitempty"`
-	UpdatedAt                     *int64                 `protobuf:"varint,22,opt,name=updated_at,json=updatedAt,proto3,oneof" json:"updated_at,omitempty"`
+	BuildVersionHeader            *string                `protobuf:"bytes,22,opt,name=build_version_header,json=buildVersionHeader,proto3,oneof" json:"build_version_header,omitempty"`
+	BuildVersionHeaderRequired    *bool                  `protobuf:"varint,23,opt,name=build_version_header_required,json=buildVersionHeaderRequired,proto3,oneof" json:"build_version_header_required,omitempty"`
+	UpdatedAt                     *string                `protobuf:"bytes,24,opt,name=updated_at,json=updatedAt,proto3,oneof" json:"updated_at,omitempty"`
 	unknownFields                 protoimpl.UnknownFields
 	sizeCache                     protoimpl.SizeCache
 }
@@ -3168,11 +3170,11 @@ func (x *Settings) GetSettlementMinExpiryGap() int64 {
 	return 0
 }
 
-func (x *Settings) GetVtxoNoCsvValidationCutoffDate() int64 {
+func (x *Settings) GetVtxoNoCsvValidationCutoffDate() string {
 	if x != nil && x.VtxoNoCsvValidationCutoffDate != nil {
 		return *x.VtxoNoCsvValidationCutoffDate
 	}
-	return 0
+	return ""
 }
 
 func (x *Settings) GetMaxTxWeight() int64 {
@@ -3203,11 +3205,25 @@ func (x *Settings) GetNoteUriPrefix() string {
 	return ""
 }
 
-func (x *Settings) GetUpdatedAt() int64 {
+func (x *Settings) GetBuildVersionHeader() string {
+	if x != nil && x.BuildVersionHeader != nil {
+		return *x.BuildVersionHeader
+	}
+	return ""
+}
+
+func (x *Settings) GetBuildVersionHeaderRequired() bool {
+	if x != nil && x.BuildVersionHeaderRequired != nil {
+		return *x.BuildVersionHeaderRequired
+	}
+	return false
+}
+
+func (x *Settings) GetUpdatedAt() string {
 	if x != nil && x.UpdatedAt != nil {
 		return *x.UpdatedAt
 	}
-	return 0
+	return ""
 }
 
 type GetSettingsRequest struct {
@@ -3944,8 +3960,8 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\tconfirmed\x18\x03 \x01(\bR\tconfirmed\"\xad\x02\n" +
 	"\x16ScheduledSessionConfig\x12\x1d\n" +
 	"\n" +
-	"start_time\x18\x01 \x01(\x03R\tstartTime\x12\x19\n" +
-	"\bend_time\x18\x02 \x01(\x03R\aendTime\x12\x16\n" +
+	"start_time\x18\x01 \x01(\tR\tstartTime\x12\x19\n" +
+	"\bend_time\x18\x02 \x01(\tR\aendTime\x12\x16\n" +
 	"\x06period\x18\x03 \x01(\x03R\x06period\x12\x1a\n" +
 	"\bduration\x18\x04 \x01(\x03R\bduration\x12?\n" +
 	"\x1cround_min_participants_count\x18\x05 \x01(\x03R\x19roundMinParticipantsCount\x12?\n" +
@@ -4011,7 +4027,7 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x10commitment_txids\x18\x02 \x03(\tR\x0fcommitmentTxids\"5\n" +
 	"\rSweepResponse\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x10\n" +
-	"\x03hex\x18\x02 \x01(\tR\x03hex\"\xd6\r\n" +
+	"\x03hex\x18\x02 \x01(\tR\x03hex\"\x90\x0f\n" +
 	"\bSettings\x12.\n" +
 	"\x10session_duration\x18\x01 \x01(\x03H\x00R\x0fsessionDuration\x88\x01\x01\x12I\n" +
 	"\x1funrolled_vtxo_min_expiry_margin\x18\x02 \x01(\x03H\x01R\x1bunrolledVtxoMinExpiryMargin\x88\x01\x01\x12(\n" +
@@ -4031,13 +4047,15 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x0futxo_min_amount\x18\x0e \x01(\x03H\rR\rutxoMinAmount\x88\x01\x01\x12+\n" +
 	"\x0futxo_max_amount\x18\x0f \x01(\x03H\x0eR\rutxoMaxAmount\x88\x01\x01\x12>\n" +
 	"\x19settlement_min_expiry_gap\x18\x10 \x01(\x03H\x0fR\x16settlementMinExpiryGap\x88\x01\x01\x12N\n" +
-	"\"vtxo_no_csv_validation_cutoff_date\x18\x11 \x01(\x03H\x10R\x1dvtxoNoCsvValidationCutoffDate\x88\x01\x01\x12'\n" +
+	"\"vtxo_no_csv_validation_cutoff_date\x18\x11 \x01(\tH\x10R\x1dvtxoNoCsvValidationCutoffDate\x88\x01\x01\x12'\n" +
 	"\rmax_tx_weight\x18\x12 \x01(\x03H\x11R\vmaxTxWeight\x88\x01\x01\x126\n" +
 	"\x15max_op_return_outputs\x18\x13 \x01(\x03H\x12R\x12maxOpReturnOutputs\x88\x01\x01\x12=\n" +
 	"\x19asset_tx_max_weight_ratio\x18\x14 \x01(\x02H\x13R\x15assetTxMaxWeightRatio\x88\x01\x01\x12+\n" +
-	"\x0fnote_uri_prefix\x18\x15 \x01(\tH\x14R\rnoteUriPrefix\x88\x01\x01\x12\"\n" +
+	"\x0fnote_uri_prefix\x18\x15 \x01(\tH\x14R\rnoteUriPrefix\x88\x01\x01\x125\n" +
+	"\x14build_version_header\x18\x16 \x01(\tH\x15R\x12buildVersionHeader\x88\x01\x01\x12F\n" +
+	"\x1dbuild_version_header_required\x18\x17 \x01(\bH\x16R\x1abuildVersionHeaderRequired\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"updated_at\x18\x16 \x01(\x03H\x15R\tupdatedAt\x88\x01\x01B\x13\n" +
+	"updated_at\x18\x18 \x01(\tH\x17R\tupdatedAt\x88\x01\x01B\x13\n" +
 	"\x11_session_durationB\"\n" +
 	" _unrolled_vtxo_min_expiry_marginB\x10\n" +
 	"\x0e_ban_thresholdB\x0f\n" +
@@ -4058,7 +4076,9 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x0e_max_tx_weightB\x18\n" +
 	"\x16_max_op_return_outputsB\x1c\n" +
 	"\x1a_asset_tx_max_weight_ratioB\x12\n" +
-	"\x10_note_uri_prefixB\r\n" +
+	"\x10_note_uri_prefixB\x17\n" +
+	"\x15_build_version_headerB \n" +
+	"\x1e_build_version_header_requiredB\r\n" +
 	"\v_updated_at\"\x14\n" +
 	"\x12GetSettingsRequest\"C\n" +
 	"\x13GetSettingsResponse\x12,\n" +

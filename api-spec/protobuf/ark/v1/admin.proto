@@ -323,8 +323,8 @@ message ScheduledSweep {
 }
 
 message ScheduledSessionConfig {
-  int64 start_time = 1;
-  int64 end_time = 2;
+  string start_time = 1;
+  string end_time = 2;
   int64 period = 3;
   int64 duration = 4;
   int64 round_min_participants_count = 5;
@@ -438,12 +438,14 @@ message Settings {
   optional int64 utxo_min_amount = 14;
   optional int64 utxo_max_amount = 15;
   optional int64 settlement_min_expiry_gap = 16;
-  optional int64 vtxo_no_csv_validation_cutoff_date = 17;
+  optional string vtxo_no_csv_validation_cutoff_date = 17;
   optional int64 max_tx_weight = 18;
   optional int64 max_op_return_outputs = 19;
   optional float asset_tx_max_weight_ratio = 20;
   optional string note_uri_prefix = 21;
-  optional int64 updated_at = 22;
+  optional string build_version_header = 22;
+  optional bool build_version_header_required = 23;
+  optional string updated_at = 24;
 }
 
 message GetSettingsRequest {}
