@@ -54,6 +54,8 @@ func TestSettingsDigest(t *testing.T) {
 				VtxoNoCsvValidationCutoffDate: time.Unix(1_700_000_000, 0),
 				AssetTxMaxWeightRatio:         0.5,
 				NoteUriPrefix:                 "ark",
+				BuildVersionHeader:            "v1.0.0",
+				BuildVersionHeaderRequired:    true,
 				UpdatedAt:                     time.Unix(1_700_000_000, 0),
 			},
 			Network:             arklib.Bitcoin,
@@ -107,6 +109,8 @@ func TestSettingsDigest(t *testing.T) {
 		{"note uri prefix", func(s *ports.Settings) { s.NoteUriPrefix = "other" }, false},
 		{"scheduled session", func(s *ports.Settings) { s.ScheduledSession = &domain.ScheduledSession{Period: time.Hour} }, false},
 		{"updated at", func(s *ports.Settings) { s.UpdatedAt = time.Unix(1_800_000_000, 0) }, false},
+		{"build version header", func(s *ports.Settings) { s.BuildVersionHeader = "v2.0.0" }, false},
+		{"build version header required", func(s *ports.Settings) { s.BuildVersionHeaderRequired = false }, false},
 	}
 
 	baseDigest, err := baseSettings().Digest()

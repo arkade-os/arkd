@@ -241,6 +241,8 @@ type Setting struct {
 	BatchOffchainInputFee                     string
 	BatchOnchainOutputFee                     string
 	BatchOffchainOutputFee                    string
+	BuildVersionHeader                        string
+	BuildVersionHeaderRequired                bool
 	UpdatedAt                                 int64
 }
 

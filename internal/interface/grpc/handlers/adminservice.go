@@ -240,8 +240,8 @@ func (a *adminHandler) GetScheduledSessionConfig(
 	var config *arkv1.ScheduledSessionConfig
 	if scheduledSession != nil {
 		config = &arkv1.ScheduledSessionConfig{
-			StartTime:                 scheduledSession.StartTime.Unix(),
-			EndTime:                   scheduledSession.EndTime.Unix(),
+			StartTime:                 *formatTime(scheduledSession.StartTime),
+			EndTime:                   *formatTime(scheduledSession.EndTime),
 			Period:                    int64(scheduledSession.Period.Minutes()),
 			Duration:                  int64(scheduledSession.Duration.Seconds()),
 			RoundMinParticipantsCount: scheduledSession.RoundMinParticipantsCount,
@@ -259,8 +259,14 @@ func (a *adminHandler) UpdateScheduledSessionConfig(
 	if cfg == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing scheduled session config")
 	}
-	startTime := parseTime(cfg.GetStartTime())
-	endTime := parseTime(cfg.GetEndTime())
+	startTime, err := parseTime(cfg.GetStartTime())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid start time: %s", err)
+	}
+	endTime, err := parseTime(cfg.GetEndTime())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid end time: %s", err)
+	}
 	period := time.Duration(cfg.GetPeriod()) * time.Minute
 	duration := time.Duration(cfg.GetDuration()) * time.Second
 	roundMinParticipantsCount := cfg.GetRoundMinParticipantsCount()
@@ -716,6 +722,8 @@ func (a *adminHandler) GetSettings(
 			MaxOpReturnOutputs:            formatUint64(settings.MaxOpReturnOutputs),
 			AssetTxMaxWeightRatio:         &settings.AssetTxMaxWeightRatio,
 			NoteUriPrefix:                 &settings.NoteUriPrefix,
+			BuildVersionHeader:            &settings.BuildVersionHeader,
+			BuildVersionHeaderRequired:    &settings.BuildVersionHeaderRequired,
 			UpdatedAt:                     formatTime(settings.UpdatedAt),
 		}
 	}
@@ -768,12 +776,15 @@ func convertConvictionToProto(conviction domain.Conviction) (*arkv1.Conviction, 
 	return protoConviction, nil
 }
 
-func parseTime(t int64) *time.Time {
-	if t <= 0 {
-		return nil
+func parseTime(t string) (*time.Time, error) {
+	if len(t) <= 0 {
+		return nil, nil
 	}
-	tm := time.Unix(t, 0)
-	return &tm
+	tm, err := time.Parse(time.RFC3339, t)
+	if err != nil {
+		return nil, err
+	}
+	return &tm, nil
 }
 
 func parseMacaroon(mac string) (string, []byte, []bakery.Op, error) {
@@ -839,12 +850,19 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		return nil, fmt.Errorf("missing settings")
 	}
 
+	vtxoNoCsvValidationCutoffDate, err := parseTime(settings.GetVtxoNoCsvValidationCutoffDate())
+	if err != nil {
+		return nil, fmt.Errorf("failed to ")
+	}
+
 	var (
 		banThreshold, maxTxWeight, maxOpReturnOutputs *uint64
 		batchMinParticipants, batchMaxParticipants,
 		vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount *int64
-		assetTxMaxWeightRatio *float32
-		noteUriPrefix         *string
+		assetTxMaxWeightRatio      *float32
+		noteUriPrefix              *string
+		buildVersionHeader         *string
+		buildVersionHeaderRequired *bool
 	)
 	if settings.BanThreshold != nil {
 		t := uint64(settings.GetBanThreshold())
@@ -890,6 +908,14 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		t := settings.GetNoteUriPrefix()
 		noteUriPrefix = &t
 	}
+	if settings.BuildVersionHeader != nil {
+		t := settings.GetBuildVersionHeader()
+		buildVersionHeader = &t
+	}
+	if settings.BuildVersionHeaderRequired != nil {
+		t := settings.GetBuildVersionHeaderRequired()
+		buildVersionHeaderRequired = &t
+	}
 
 	return &domain.SettingsUpdate{
 		SessionDuration:               parseDuration(settings.SessionDuration),
@@ -908,11 +934,13 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		UtxoMinAmount:                 utxoMinAmount,
 		UtxoMaxAmount:                 utxoMaxAmount,
 		SettlementMinExpiryGap:        parseDuration(settings.SettlementMinExpiryGap),
-		VtxoNoCsvValidationCutoffDate: parseTime(settings.GetVtxoNoCsvValidationCutoffDate()),
+		VtxoNoCsvValidationCutoffDate: vtxoNoCsvValidationCutoffDate,
 		MaxTxWeight:                   maxTxWeight,
 		MaxOpReturnOutputs:            maxOpReturnOutputs,
 		AssetTxMaxWeightRatio:         assetTxMaxWeightRatio,
 		NoteUriPrefix:                 noteUriPrefix,
+		BuildVersionHeader:            buildVersionHeader,
+		BuildVersionHeaderRequired:    buildVersionHeaderRequired,
 	}, nil
 }
 
@@ -947,10 +975,10 @@ func formatUint64(val uint64) *int64 {
 	return &t
 }
 
-func formatTime(tm time.Time) *int64 {
+func formatTime(tm time.Time) *string {
 	if tm.IsZero() {
 		return nil
 	}
-	t := tm.Unix()
+	t := tm.Format(time.RFC3339)
 	return &t
 }

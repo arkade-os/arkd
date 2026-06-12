@@ -31,5 +31,7 @@ CREATE TABLE IF NOT EXISTS settings (
     batch_offchain_input_fee TEXT NOT NULL DEFAULT '',
     batch_onchain_output_fee TEXT NOT NULL DEFAULT '',
     batch_offchain_output_fee TEXT NOT NULL DEFAULT '',
+    build_version_header TEXT NOT NULL DEFAULT '',
+    build_version_header_required BOOLEAN NOT NULL DEFAULT FALSE,
     updated_at BIGINT NOT NULL DEFAULT 0
 );
