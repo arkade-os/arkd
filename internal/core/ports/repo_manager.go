@@ -6,12 +6,12 @@ type RepoManager interface {
 	Events() domain.EventRepository
 	Rounds() domain.RoundRepository
 	Vtxos() domain.VtxoRepository
-	ScheduledSession() domain.ScheduledSessionRepo
 	OffchainTxs() domain.OffchainTxRepository
 	Convictions() domain.ConvictionRepository
 	Assets() domain.AssetRepository
-	Fees() domain.FeeRepository
+	Settings() domain.SettingsRepository
 	RegisterBatchUpdateHandler(handler func(data domain.Round))
 	RegisterOffchainTxUpdateHandler(handler func(data domain.OffchainTx))
+	RegisterSettingsUpdateHandler(handler func(data domain.Settings, changelog []string))
 	Close()
 }

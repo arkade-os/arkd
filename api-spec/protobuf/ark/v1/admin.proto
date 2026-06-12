@@ -151,6 +151,17 @@ service AdminService {
       body: "*"
     };
   }
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/settings"
+    };
+  }
+  rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/settings"
+      body: "*"
+    };
+  }
   rpc GetMainAccountUtxos(GetMainAccountUtxosRequest) returns (GetMainAccountUtxosResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/admin/wallet/utxos"
@@ -408,6 +419,43 @@ message SweepRequest {
 message SweepResponse {
   string txid = 1;
   string hex = 2;
+}
+
+message Settings {
+  optional int64 session_duration = 1;
+  optional int64 unrolled_vtxo_min_expiry_margin = 2;
+  optional int64 ban_threshold = 3;
+  optional int64 ban_duration = 4;
+  optional int64 unilateral_exit_delay = 5;
+  optional int64 public_unilateral_exit_delay = 6;
+  optional int64 checkpoint_exit_delay = 7;
+  optional int64 boarding_exit_delay = 8;
+  optional int64 vtxo_tree_expiry = 9;
+  optional int64 round_min_participants_count = 10;
+  optional int64 round_max_participants_count = 11;
+  optional int64 vtxo_min_amount = 12;
+  optional int64 vtxo_max_amount = 13;
+  optional int64 utxo_min_amount = 14;
+  optional int64 utxo_max_amount = 15;
+  optional int64 settlement_min_expiry_gap = 16;
+  optional int64 vtxo_no_csv_validation_cutoff_date = 17;
+  optional int64 max_tx_weight = 18;
+  optional int64 max_op_return_outputs = 19;
+  optional float asset_tx_max_weight_ratio = 20;
+  optional string note_uri_prefix = 21;
+  optional int64 updated_at = 22;
+}
+
+message GetSettingsRequest {}
+message GetSettingsResponse {
+  Settings settings = 1;
+}
+
+message UpdateSettingsRequest {
+  Settings settings = 1;
+}
+message UpdateSettingsResponse {
+  repeated string change_log = 1;
 }
 
 message GetMainAccountUtxosRequest {}

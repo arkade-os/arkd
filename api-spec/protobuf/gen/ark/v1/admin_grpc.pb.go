@@ -45,6 +45,8 @@ const (
 	AdminService_GetRecoverableLiquidity_FullMethodName      = "/ark.v1.AdminService/GetRecoverableLiquidity"
 	AdminService_GetCollectedFees_FullMethodName             = "/ark.v1.AdminService/GetCollectedFees"
 	AdminService_Sweep_FullMethodName                        = "/ark.v1.AdminService/Sweep"
+	AdminService_GetSettings_FullMethodName                  = "/ark.v1.AdminService/GetSettings"
+	AdminService_UpdateSettings_FullMethodName               = "/ark.v1.AdminService/UpdateSettings"
 	AdminService_GetMainAccountUtxos_FullMethodName          = "/ark.v1.AdminService/GetMainAccountUtxos"
 )
 
@@ -81,6 +83,8 @@ type AdminServiceClient interface {
 	GetRecoverableLiquidity(ctx context.Context, in *GetRecoverableLiquidityRequest, opts ...grpc.CallOption) (*GetRecoverableLiquidityResponse, error)
 	GetCollectedFees(ctx context.Context, in *GetCollectedFeesRequest, opts ...grpc.CallOption) (*GetCollectedFeesResponse, error)
 	Sweep(ctx context.Context, in *SweepRequest, opts ...grpc.CallOption) (*SweepResponse, error)
+	GetSettings(ctx context.Context, in *GetSettingsRequest, opts ...grpc.CallOption) (*GetSettingsResponse, error)
+	UpdateSettings(ctx context.Context, in *UpdateSettingsRequest, opts ...grpc.CallOption) (*UpdateSettingsResponse, error)
 	GetMainAccountUtxos(ctx context.Context, in *GetMainAccountUtxosRequest, opts ...grpc.CallOption) (*GetMainAccountUtxosResponse, error)
 }
 
@@ -352,6 +356,26 @@ func (c *adminServiceClient) Sweep(ctx context.Context, in *SweepRequest, opts .
 	return out, nil
 }
 
+func (c *adminServiceClient) GetSettings(ctx context.Context, in *GetSettingsRequest, opts ...grpc.CallOption) (*GetSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSettingsResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) UpdateSettings(ctx context.Context, in *UpdateSettingsRequest, opts ...grpc.CallOption) (*UpdateSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateSettingsResponse)
+	err := c.cc.Invoke(ctx, AdminService_UpdateSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) GetMainAccountUtxos(ctx context.Context, in *GetMainAccountUtxosRequest, opts ...grpc.CallOption) (*GetMainAccountUtxosResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetMainAccountUtxosResponse)
@@ -395,6 +419,8 @@ type AdminServiceServer interface {
 	GetRecoverableLiquidity(context.Context, *GetRecoverableLiquidityRequest) (*GetRecoverableLiquidityResponse, error)
 	GetCollectedFees(context.Context, *GetCollectedFeesRequest) (*GetCollectedFeesResponse, error)
 	Sweep(context.Context, *SweepRequest) (*SweepResponse, error)
+	GetSettings(context.Context, *GetSettingsRequest) (*GetSettingsResponse, error)
+	UpdateSettings(context.Context, *UpdateSettingsRequest) (*UpdateSettingsResponse, error)
 	GetMainAccountUtxos(context.Context, *GetMainAccountUtxosRequest) (*GetMainAccountUtxosResponse, error)
 }
 
@@ -482,6 +508,12 @@ func (UnimplementedAdminServiceServer) GetCollectedFees(context.Context, *GetCol
 }
 func (UnimplementedAdminServiceServer) Sweep(context.Context, *SweepRequest) (*SweepResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Sweep not implemented")
+}
+func (UnimplementedAdminServiceServer) GetSettings(context.Context, *GetSettingsRequest) (*GetSettingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSettings not implemented")
+}
+func (UnimplementedAdminServiceServer) UpdateSettings(context.Context, *UpdateSettingsRequest) (*UpdateSettingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateSettings not implemented")
 }
 func (UnimplementedAdminServiceServer) GetMainAccountUtxos(context.Context, *GetMainAccountUtxosRequest) (*GetMainAccountUtxosResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetMainAccountUtxos not implemented")
@@ -974,6 +1006,42 @@ func _AdminService_Sweep_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_GetSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetSettings(ctx, req.(*GetSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_UpdateSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).UpdateSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_UpdateSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).UpdateSettings(ctx, req.(*UpdateSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_GetMainAccountUtxos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetMainAccountUtxosRequest)
 	if err := dec(in); err != nil {
@@ -1102,6 +1170,14 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Sweep",
 			Handler:    _AdminService_Sweep_Handler,
+		},
+		{
+			MethodName: "GetSettings",
+			Handler:    _AdminService_GetSettings_Handler,
+		},
+		{
+			MethodName: "UpdateSettings",
+			Handler:    _AdminService_UpdateSettings_Handler,
 		},
 		{
 			MethodName: "GetMainAccountUtxos",
