@@ -476,7 +476,7 @@ func (s *service) acceptedSignerPubkeys() []*btcec.PublicKey {
 	return acceptedSignerPubkeys(s.signerPubkey, s.deprecatedSignerPubkeys, time.Now())
 }
 
-// allSignerPubkeys returns the current signer pubkey plus every deprecated one regardless of cutoff date. 
+// allSignerPubkeys returns the current signer pubkey plus every deprecated one regardless of cutoff date.
 func (s *service) allSignerPubkeys() []*btcec.PublicKey {
 	pubkeys := make([]*btcec.PublicKey, 0, len(s.deprecatedSignerPubkeys)+1)
 	pubkeys = append(pubkeys, s.signerPubkey)
