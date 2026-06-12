@@ -61,6 +61,26 @@ services:
       - ARKD_WALLET_DEPRECATED_SIGNER_KEYS=${ARKD_WALLET_DEPRECATED_SIGNER_KEYS:-}
     volumes:
       - arkd-wallet-volume:/app/data
+  # A second arkd-wallet acting as an additional LP wallet, wired into arkd as a
+  # sweep fallback via ARKD_WALLET_FALLBACK_ADDRS.
+  arkd-wallet-2:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: arkdwallet.Dockerfile
+    container_name: arkd-wallet-2
+    depends_on:
+      - nbxplorer
+    ports:
+      - "6061:6060"
+    environment:
+      - ARKD_WALLET_LOG_LEVEL=5
+      - ARKD_WALLET_NBXPLORER_URL=http://nbxplorer:32838
+      - ARKD_WALLET_DATADIR=./data/regtest-2
+      - ARKD_WALLET_NETWORK=regtest
+      - ARKD_WALLET_SIGNER_KEY=19422b10efd05403820ff6a3365422be2fc5f07f34a6d1603f7298328f0f80f6
+    volumes:
+      - arkd-wallet-2-volume:/app/data
   redis:
     restart: unless-stopped
     image: redis:7-alpine
@@ -83,6 +103,7 @@ services:
     restart: unless-stopped
     depends_on:
       - arkd-wallet
+      - arkd-wallet-2
       - pg
       - redis
     ports:
@@ -107,6 +128,7 @@ services:
       - ARKD_BAN_THRESHOLD=1
       - ARKD_DATADIR=./data/regtest
       - ARKD_WALLET_ADDR=arkd-wallet:6060
+      - ARKD_WALLET_FALLBACK_ADDRS=arkd-wallet-2:6060
       - ARKD_ESPLORA_URL=http://chopsticks:3000
       - ARKD_DB_TYPE=${ARKD_DB_TYPE:-sqlite}
       - ARKD_PG_DB_URL=${ARKD_PG_DB_URL:-}
@@ -123,6 +145,8 @@ services:
 volumes:
   arkd-wallet-volume:
     name: arkd-wallet-volume
+  arkd-wallet-2-volume:
+    name: arkd-wallet-2-volume
   arkd-volume:
     name: arkd-volume
 

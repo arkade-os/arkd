@@ -1,9 +1,11 @@
 package config
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/stretchr/testify/require"
 )
@@ -269,4 +271,99 @@ func TestConfigStringRedactsSecrets(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseWalletFallbackAddrs(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want []string
+	}{
+		{"empty", "", nil},
+		{"single", "localhost:6061", []string{"localhost:6061"}},
+		{"multiple", "a:6060,b:6060,c:6060", []string{"a:6060", "b:6060", "c:6060"}},
+		{"trims whitespace", "a:6060, b:6060 ,c:6060", []string{"a:6060", "b:6060", "c:6060"}},
+		{"drops empty entries", "a:6060,,b:6060,", []string{"a:6060", "b:6060"}},
+		{"only separators", " , , ", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, parseWalletFallbackAddrs(tt.raw))
+		})
+	}
+}
+
+// fakeFallbackWallet is a ports.WalletService that only implements Close; via
+// the embedded nil interface every other method is unused by these tests.
+type fakeFallbackWallet struct {
+	ports.WalletService
+	closed *int
+}
+
+func (f *fakeFallbackWallet) Close() { *f.closed++ }
+
+func TestDialFallbackWallets(t *testing.T) {
+	orig := newWalletClient
+	t.Cleanup(func() { newWalletClient = orig })
+
+	regtest := &arklib.Network{Name: "regtest"}
+	testnet := &arklib.Network{Name: "testnet"}
+
+	t.Run("all on the same network", func(t *testing.T) {
+		var closes int
+		newWalletClient = func(_, _ string) (ports.WalletService, *arklib.Network, error) {
+			return &fakeFallbackWallet{closed: &closes}, regtest, nil
+		}
+
+		c := &Config{network: regtest, WalletFallbackAddrs: []string{"a:6060", "b:6060"}}
+		fbs, err := c.dialFallbackWallets()
+
+		require.NoError(t, err)
+		require.Len(t, fbs, 2)
+		require.Zero(t, closes)
+	})
+
+	t.Run("network mismatch hard-fails and closes dialed", func(t *testing.T) {
+		var closes, calls int
+		newWalletClient = func(_, _ string) (ports.WalletService, *arklib.Network, error) {
+			calls++
+			net := regtest
+			if calls == 2 {
+				net = testnet
+			}
+			return &fakeFallbackWallet{closed: &closes}, net, nil
+		}
+
+		c := &Config{network: regtest, WalletFallbackAddrs: []string{"a:6060", "b:6060"}}
+		fbs, err := c.dialFallbackWallets()
+
+		require.Error(t, err)
+		require.Nil(t, fbs)
+		require.Contains(t, err.Error(), "b:6060")
+		require.Contains(t, err.Error(), "testnet")
+		require.Contains(t, err.Error(), "regtest")
+		// The mismatched wallet and the previously dialed one are both closed.
+		require.Equal(t, 2, closes)
+	})
+
+	t.Run("dial error hard-fails and closes dialed", func(t *testing.T) {
+		var closes, calls int
+		newWalletClient = func(_, _ string) (ports.WalletService, *arklib.Network, error) {
+			calls++
+			if calls == 2 {
+				return nil, nil, fmt.Errorf("connection refused")
+			}
+			return &fakeFallbackWallet{closed: &closes}, regtest, nil
+		}
+
+		c := &Config{network: regtest, WalletFallbackAddrs: []string{"a:6060", "b:6060"}}
+		fbs, err := c.dialFallbackWallets()
+
+		require.Error(t, err)
+		require.Nil(t, fbs)
+		require.Contains(t, err.Error(), "b:6060")
+		// The first, successfully dialed fallback is closed.
+		require.Equal(t, 1, closes)
+	})
 }

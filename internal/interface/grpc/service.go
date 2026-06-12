@@ -232,6 +232,12 @@ func (s *service) stop() {
 			log.Warn("failed to close admin transport connection")
 		}
 	}
+
+	// Close the fallback wallet connections (the primary is closed by the app
+	// service). arkd owns these dialed connections, nothing else does.
+	for _, fb := range s.appConfig.FallbackWalletServices() {
+		fb.Close()
+	}
 }
 
 func (s *service) startAppServices() error {
@@ -681,6 +687,30 @@ func (s *service) ensureWalletReady() error {
 			"main account balance of wallet %s is zero: arkd may be unable to source liquidity",
 			s.appConfig.WalletAddr,
 		)
+	}
+
+	// Fallback wallets must also be initialized and unlocked out of band: they
+	// are needed to sign sweeps when the primary cannot. Balance is not checked
+	// (they are not liquidity sources).
+	for i, fb := range s.appConfig.FallbackWalletServices() {
+		fbStatus, err := fb.Status(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get fallback wallet %d status: %s", i, err)
+		}
+		if !fbStatus.IsInitialized() {
+			return fmt.Errorf(
+				"fallback wallet %d is not initialized: "+
+					"initialize the arkd-wallet out of band before starting arkd",
+				i,
+			)
+		}
+		if !fbStatus.IsUnlocked() {
+			return fmt.Errorf(
+				"fallback wallet %d is locked: "+
+					"unlock the arkd-wallet out of band before starting arkd",
+				i,
+			)
+		}
 	}
 
 	return nil
