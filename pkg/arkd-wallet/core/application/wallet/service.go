@@ -662,9 +662,14 @@ func (w *wallet) SignTransaction(
 		}
 
 		if len(input.TaprootLeafScript) > 0 {
-			signingKey := w.signerKeyForLeaf(input.TaprootLeafScript[0].Script)
+			var signingKey *btcec.PrivateKey
 			if signMode == application.SignModeLiquidityProvider {
 				signingKey = w.keyMgr.forfeitPrvkey
+			} else {
+				signingKey, err = w.signerKeyForLeaf(input.TaprootLeafScript[0].Script)
+				if err != nil {
+					return "", err
+				}
 			}
 
 			tapLeaf := txscript.NewBaseTapLeaf(input.TaprootLeafScript[0].Script)
@@ -779,38 +784,59 @@ func (w *wallet) SignTransaction(
 	return ptx.B64Encode()
 }
 
-// signerKeyForLeaf returns the deprecated signer key referenced by the leaf, or the current SignerKey.
-func (w *wallet) signerKeyForLeaf(leafScript []byte) *btcec.PrivateKey {
+// signerKeyForLeaf returns the signer key the leaf commits to: a deprecated key when the leaf
+// references one, otherwise the current SignerKey. It refuses to sign (returns an error) when
+// the leaf commits to a deprecated key whose cutoff date has already passed, as a last-resort
+// guard on top of the validation arkd performs at intent registration.
+func (w *wallet) signerKeyForLeaf(leafScript []byte) (*btcec.PrivateKey, error) {
 	if len(w.DeprecatedSignerKeys) == 0 {
-		return w.SignerKey
+		return w.SignerKey, nil
 	}
 
 	closure, err := script.DecodeClosure(leafScript)
 	if err != nil {
-		return w.SignerKey
+		return w.SignerKey, nil
 	}
 
-	leafKeys := make([]*btcec.PublicKey, 0)
+	// every closure type embeds MultisigClosure, so they all expose the leaf pubkeys.
+	var leafKeys []*btcec.PublicKey
 	switch c := closure.(type) {
 	case *script.MultisigClosure:
+		leafKeys = c.PubKeys
+	case *script.CSVMultisigClosure:
 		leafKeys = c.PubKeys
 	case *script.CLTVMultisigClosure:
 		leafKeys = c.PubKeys
 	case *script.ConditionMultisigClosure:
 		leafKeys = c.PubKeys
+	case *script.ConditionCSVMultisigClosure:
+		leafKeys = c.PubKeys
 	default:
-		return nil
+		return w.SignerKey, nil
 	}
-	
+
 	for _, k := range w.DeprecatedSignerKeys {
 		want := schnorr.SerializePubKey(k.Key.PubKey())
 		for _, pubkey := range leafKeys {
-			if bytes.Equal(schnorr.SerializePubKey(pubkey), want) {
-				return k.Key
+			if !bytes.Equal(schnorr.SerializePubKey(pubkey), want) {
+				continue
 			}
+			if k.isPastCutoff(time.Now()) {
+				return nil, fmt.Errorf(
+					"refusing to sign with deprecated signer key %x: cutoff date %s has passed",
+					k.Key.PubKey().SerializeCompressed(),
+					time.Unix(k.CutoffDate, 0).UTC().Format(time.RFC3339),
+				)
+			}
+			return k.Key, nil
 		}
 	}
-	return w.SignerKey
+	return w.SignerKey, nil
+}
+
+// isPastCutoff reports whether the deprecated key's cutoff date is set and has passed.
+func (k DeprecatedSignerKey) isPastCutoff(now time.Time) bool {
+	return k.CutoffDate > 0 && now.After(time.Unix(k.CutoffDate, 0))
 }
 
 // WithdrawAll withdraws all available balance including connectors account funds
