@@ -781,9 +781,33 @@ func (w *wallet) SignTransaction(
 
 // signerKeyForLeaf returns the deprecated signer key referenced by the leaf, or the current SignerKey.
 func (w *wallet) signerKeyForLeaf(leafScript []byte) *btcec.PrivateKey {
+	if len(w.DeprecatedSignerKeys) == 0 {
+		return w.SignerKey
+	}
+
+	closure, err := script.DecodeClosure(leafScript)
+	if err != nil {
+		return w.SignerKey
+	}
+
+	leafKeys := make([]*btcec.PublicKey, 0)
+	switch c := closure.(type) {
+	case *script.MultisigClosure:
+		leafKeys = c.PubKeys
+	case *script.CLTVMultisigClosure:
+		leafKeys = c.PubKeys
+	case *script.ConditionMultisigClosure:
+		leafKeys = c.PubKeys
+	default:
+		return nil
+	}
+	
 	for _, k := range w.DeprecatedSignerKeys {
-		if bytes.Contains(leafScript, schnorr.SerializePubKey(k.Key.PubKey())) {
-			return k.Key
+		want := schnorr.SerializePubKey(k.Key.PubKey())
+		for _, pubkey := range leafKeys {
+			if bytes.Equal(schnorr.SerializePubKey(pubkey), want) {
+				return k.Key
+			}
 		}
 	}
 	return w.SignerKey
