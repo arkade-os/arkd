@@ -89,9 +89,13 @@ func (c *signerClient) GetDeprecatedPubkeys(
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse deprecated signer pubkey: %s", err)
 		}
+		var cutoffDate time.Time
+		if c := signer.GetCutoffDate(); c > 0 {
+			cutoffDate = time.Unix(c, 0)
+		}
 		pubkeys = append(pubkeys, ports.DeprecatedSignerPubkey{
 			PubKey:     pubkey,
-			CutoffDate: time.Unix(signer.GetCutoffDate(), 0),
+			CutoffDate: cutoffDate,
 		})
 	}
 	return pubkeys, nil

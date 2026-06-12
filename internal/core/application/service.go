@@ -2185,9 +2185,13 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 
 	deprecatedSignerKeys := make([]DeprecatedSignerKey, 0, len(settings.DeprecatedSignerPubkeys))
 	for _, deprecated := range settings.DeprecatedSignerPubkeys {
+		var cutoffDate int64
+		if !deprecated.CutoffDate.IsZero() {
+			cutoffDate = deprecated.CutoffDate.Unix()
+		}
 		deprecatedSignerKeys = append(deprecatedSignerKeys, DeprecatedSignerKey{
 			PubKey:     hex.EncodeToString(deprecated.PubKey.SerializeCompressed()),
-			CutoffDate: deprecated.CutoffDate.Unix(),
+			CutoffDate: cutoffDate,
 		})
 	}
 
