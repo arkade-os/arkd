@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -123,6 +124,18 @@ func (c *Config) initServices() error {
 	deprecatedSignerKeys, err := parseDeprecatedSignerKeys(c.DeprecatedSignerKeys)
 	if err != nil {
 		return err
+	}
+
+	if signerKey != nil {
+		currentPubkey := signerKey.PubKey().SerializeCompressed()
+		for _, k := range deprecatedSignerKeys {
+			if bytes.Equal(k.Key.PubKey().SerializeCompressed(), currentPubkey) {
+				return fmt.Errorf(
+					"deprecated signer key %x matches the current signer key",
+					currentPubkey,
+				)
+			}
+		}
 	}
 
 	repository, err := db.NewSeedRepository(c.DbDir, nil)
