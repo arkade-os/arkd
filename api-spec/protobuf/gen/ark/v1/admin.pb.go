@@ -3023,8 +3023,8 @@ type Settings struct {
 	NoteUriPrefix                 *string                `protobuf:"bytes,21,opt,name=note_uri_prefix,json=noteUriPrefix,proto3,oneof" json:"note_uri_prefix,omitempty"`
 	BuildVersionHeader            *string                `protobuf:"bytes,22,opt,name=build_version_header,json=buildVersionHeader,proto3,oneof" json:"build_version_header,omitempty"`
 	BuildVersionHeaderRequired    *bool                  `protobuf:"varint,23,opt,name=build_version_header_required,json=buildVersionHeaderRequired,proto3,oneof" json:"build_version_header_required,omitempty"`
-	DigestHeaderRequired          *bool                  `protobuf:"varint,24,opt,name=digest_header_required,json=digestHeaderRequired,proto3,oneof" json:"digest_header_required,omitempty"`
-	UpdatedAt                     *string                `protobuf:"bytes,25,opt,name=updated_at,json=updatedAt,proto3,oneof" json:"updated_at,omitempty"`
+	UpdatedAt                     *string                `protobuf:"bytes,24,opt,name=updated_at,json=updatedAt,proto3,oneof" json:"updated_at,omitempty"`
+	DigestHeaderRequired          *bool                  `protobuf:"varint,25,opt,name=digest_header_required,json=digestHeaderRequired,proto3,oneof" json:"digest_header_required,omitempty"`
 	unknownFields                 protoimpl.UnknownFields
 	sizeCache                     protoimpl.SizeCache
 }
@@ -3220,18 +3220,18 @@ func (x *Settings) GetBuildVersionHeaderRequired() bool {
 	return false
 }
 
-func (x *Settings) GetDigestHeaderRequired() bool {
-	if x != nil && x.DigestHeaderRequired != nil {
-		return *x.DigestHeaderRequired
-	}
-	return false
-}
-
 func (x *Settings) GetUpdatedAt() string {
 	if x != nil && x.UpdatedAt != nil {
 		return *x.UpdatedAt
 	}
 	return ""
+}
+
+func (x *Settings) GetDigestHeaderRequired() bool {
+	if x != nil && x.DigestHeaderRequired != nil {
+		return *x.DigestHeaderRequired
+	}
+	return false
 }
 
 type GetSettingsRequest struct {
@@ -4061,10 +4061,10 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x19asset_tx_max_weight_ratio\x18\x14 \x01(\x02H\x13R\x15assetTxMaxWeightRatio\x88\x01\x01\x12+\n" +
 	"\x0fnote_uri_prefix\x18\x15 \x01(\tH\x14R\rnoteUriPrefix\x88\x01\x01\x125\n" +
 	"\x14build_version_header\x18\x16 \x01(\tH\x15R\x12buildVersionHeader\x88\x01\x01\x12F\n" +
-	"\x1dbuild_version_header_required\x18\x17 \x01(\bH\x16R\x1abuildVersionHeaderRequired\x88\x01\x01\x129\n" +
-	"\x16digest_header_required\x18\x18 \x01(\bH\x17R\x14digestHeaderRequired\x88\x01\x01\x12\"\n" +
+	"\x1dbuild_version_header_required\x18\x17 \x01(\bH\x16R\x1abuildVersionHeaderRequired\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"updated_at\x18\x19 \x01(\tH\x18R\tupdatedAt\x88\x01\x01B\x13\n" +
+	"updated_at\x18\x18 \x01(\tH\x17R\tupdatedAt\x88\x01\x01\x129\n" +
+	"\x16digest_header_required\x18\x19 \x01(\bH\x18R\x14digestHeaderRequired\x88\x01\x01B\x13\n" +
 	"\x11_session_durationB\"\n" +
 	" _unrolled_vtxo_min_expiry_marginB\x10\n" +
 	"\x0e_ban_thresholdB\x0f\n" +
@@ -4087,9 +4087,9 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x1a_asset_tx_max_weight_ratioB\x12\n" +
 	"\x10_note_uri_prefixB\x17\n" +
 	"\x15_build_version_headerB \n" +
-	"\x1e_build_version_header_requiredB\x19\n" +
-	"\x17_digest_header_requiredB\r\n" +
-	"\v_updated_at\"\x14\n" +
+	"\x1e_build_version_header_requiredB\r\n" +
+	"\v_updated_atB\x19\n" +
+	"\x17_digest_header_required\"\x14\n" +
 	"\x12GetSettingsRequest\"C\n" +
 	"\x13GetSettingsResponse\x12,\n" +
 	"\bsettings\x18\x01 \x01(\v2\x10.ark.v1.SettingsR\bsettings\"E\n" +
