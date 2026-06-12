@@ -225,6 +225,9 @@ func parseDeprecatedSignerKeys(raw string) ([]wallet.DeprecatedSignerKey, error)
 		if err != nil {
 			return nil, fmt.Errorf("invalid signer key format, must be hex: %s", keyPart)
 		}
+		if len(buf) != 32 {
+			return nil, fmt.Errorf("invalid signer key format") 
+		}
 		key, _ := btcec.PrivKeyFromBytes(buf)
 
 		var cutoffDate int64
