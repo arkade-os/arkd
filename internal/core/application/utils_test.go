@@ -145,6 +145,171 @@ func TestIsBoardingWitness(t *testing.T) {
 	}
 }
 
+func TestAcceptedSignerPubkeys(t *testing.T) {
+	currentKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	current := currentKey.PubKey()
+
+	deprecatedKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	deprecated := deprecatedKey.PubKey()
+
+	otherKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	other := otherKey.PubKey()
+
+	now := time.Now()
+
+	t.Run("valid", func(t *testing.T) {
+		validFixtures := []struct {
+			name           string
+			deprecatedKeys []ports.DeprecatedSignerPubkey
+			expected       []*btcec.PublicKey
+		}{
+			{
+				name:           "no deprecated keys",
+				deprecatedKeys: nil,
+				expected:       []*btcec.PublicKey{current},
+			},
+			{
+				name: "no cutoff date",
+				deprecatedKeys: []ports.DeprecatedSignerPubkey{
+					{PubKey: deprecated},
+				},
+				expected: []*btcec.PublicKey{current, deprecated},
+			},
+			{
+				name: "cutoff date in the future",
+				deprecatedKeys: []ports.DeprecatedSignerPubkey{
+					{PubKey: deprecated, CutoffDate: now.Add(time.Hour)},
+				},
+				expected: []*btcec.PublicKey{current, deprecated},
+			},
+		}
+
+		for _, fixture := range validFixtures {
+			t.Run(fixture.name, func(t *testing.T) {
+				pubkeys := acceptedSignerPubkeys(current, fixture.deprecatedKeys, now)
+				require.Equal(t, fixture.expected, pubkeys)
+			})
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		invalidFixtures := []struct {
+			name           string
+			deprecatedKeys []ports.DeprecatedSignerPubkey
+			expected       []*btcec.PublicKey
+		}{
+			{
+				name: "cutoff date in the past",
+				deprecatedKeys: []ports.DeprecatedSignerPubkey{
+					{PubKey: deprecated, CutoffDate: now.Add(-time.Hour)},
+				},
+				expected: []*btcec.PublicKey{current},
+			},
+			{
+				name: "mixed cutoff dates",
+				deprecatedKeys: []ports.DeprecatedSignerPubkey{
+					{PubKey: deprecated, CutoffDate: now.Add(-time.Hour)},
+					{PubKey: other, CutoffDate: now.Add(time.Hour)},
+				},
+				expected: []*btcec.PublicKey{current, other},
+			},
+		}
+
+		for _, fixture := range invalidFixtures {
+			t.Run(fixture.name, func(t *testing.T) {
+				pubkeys := acceptedSignerPubkeys(current, fixture.deprecatedKeys, now)
+				require.Equal(t, fixture.expected, pubkeys)
+			})
+		}
+	})
+}
+
+func TestValidateVtxoScriptForSigners(t *testing.T) {
+	currentKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	current := currentKey.PubKey()
+
+	deprecatedKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	deprecated := deprecatedKey.PubKey()
+
+	ownerKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	owner := ownerKey.PubKey()
+
+	now := time.Now()
+	exitDelay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512}
+	currentKeyScript := script.NewDefaultVtxoScript(owner, current, exitDelay)
+	deprecatedKeyScript := script.NewDefaultVtxoScript(owner, deprecated, exitDelay)
+
+	t.Run("valid", func(t *testing.T) {
+		validFixtures := []struct {
+			name           string
+			vtxoScript     *script.TapscriptsVtxoScript
+			deprecatedKeys []ports.DeprecatedSignerPubkey
+		}{
+			{
+				name:       "current key",
+				vtxoScript: currentKeyScript,
+			},
+			{
+				name:       "deprecated key within cutoff",
+				vtxoScript: deprecatedKeyScript,
+				deprecatedKeys: []ports.DeprecatedSignerPubkey{
+					{PubKey: deprecated, CutoffDate: now.Add(time.Hour)},
+				},
+			},
+		}
+
+		for _, fixture := range validFixtures {
+			t.Run(fixture.name, func(t *testing.T) {
+				err := validateVtxoScriptForSigners(
+					fixture.vtxoScript, current, fixture.deprecatedKeys, now, exitDelay, false,
+				)
+				require.NoError(t, err)
+			})
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		pastCutoff := now.Add(-time.Hour)
+		invalidFixtures := []struct {
+			name           string
+			deprecatedKeys []ports.DeprecatedSignerPubkey
+			errorSubstr    string
+		}{
+			{
+				name: "deprecated key past cutoff",
+				deprecatedKeys: []ports.DeprecatedSignerPubkey{
+					{PubKey: deprecated, CutoffDate: pastCutoff},
+				},
+				errorSubstr: fmt.Sprintf(
+					"%x is a deprecated key since %s",
+					deprecated.SerializeCompressed(), pastCutoff.Format(time.RFC3339),
+				),
+			},
+			{
+				name:           "unknown signer key",
+				deprecatedKeys: nil,
+				errorSubstr:    "signer pubkey not found",
+			},
+		}
+
+		for _, fixture := range invalidFixtures {
+			t.Run(fixture.name, func(t *testing.T) {
+				err := validateVtxoScriptForSigners(
+					deprecatedKeyScript, current, fixture.deprecatedKeys, now, exitDelay, false,
+				)
+				require.Error(t, err)
+				require.Contains(t, err.Error(), fixture.errorSubstr)
+			})
+		}
+	})
+}
+
 func newTestTx(inputs []wire.OutPoint, scripts [][]byte) *wire.MsgTx {
 	tx := wire.NewMsgTx(2)
 	for _, in := range inputs {
@@ -171,99 +336,3 @@ func mustEncodePSBTB64(t *testing.T, tx *wire.MsgTx) string {
 	return b64
 }
 
-func TestAcceptedSignerPubkeys(t *testing.T) {
-	currentKey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-	current := currentKey.PubKey()
-
-	deprecatedKey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-	deprecated := deprecatedKey.PubKey()
-
-	now := time.Now()
-
-	t.Run("no deprecated keys", func(t *testing.T) {
-		pubkeys := acceptedSignerPubkeys(current, nil, now)
-		require.Equal(t, []*btcec.PublicKey{current}, pubkeys)
-	})
-
-	t.Run("no cutoff date", func(t *testing.T) {
-		pubkeys := acceptedSignerPubkeys(current, []ports.DeprecatedSignerPubkey{
-			{PubKey: deprecated},
-		}, now)
-		require.Equal(t, []*btcec.PublicKey{current, deprecated}, pubkeys)
-	})
-
-	t.Run("cutoff date in the future", func(t *testing.T) {
-		pubkeys := acceptedSignerPubkeys(current, []ports.DeprecatedSignerPubkey{
-			{PubKey: deprecated, CutoffDate: now.Add(time.Hour)},
-		}, now)
-		require.Equal(t, []*btcec.PublicKey{current, deprecated}, pubkeys)
-	})
-
-	t.Run("cutoff date in the past", func(t *testing.T) {
-		pubkeys := acceptedSignerPubkeys(current, []ports.DeprecatedSignerPubkey{
-			{PubKey: deprecated, CutoffDate: now.Add(-time.Hour)},
-		}, now)
-		require.Equal(t, []*btcec.PublicKey{current}, pubkeys)
-	})
-
-	t.Run("mixed cutoff dates", func(t *testing.T) {
-		otherKey, err := btcec.NewPrivateKey()
-		require.NoError(t, err)
-		other := otherKey.PubKey()
-
-		pubkeys := acceptedSignerPubkeys(current, []ports.DeprecatedSignerPubkey{
-			{PubKey: deprecated, CutoffDate: now.Add(-time.Hour)},
-			{PubKey: other, CutoffDate: now.Add(time.Hour)},
-		}, now)
-		require.Equal(t, []*btcec.PublicKey{current, other}, pubkeys)
-	})
-}
-
-func TestValidateVtxoScriptForSigners(t *testing.T) {
-	currentKey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-	current := currentKey.PubKey()
-
-	deprecatedKey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-	deprecated := deprecatedKey.PubKey()
-
-	ownerKey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-	owner := ownerKey.PubKey()
-
-	now := time.Now()
-	exitDelay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512}
-	deprecatedKeyScript := script.NewDefaultVtxoScript(owner, deprecated, exitDelay)
-
-	t.Run("deprecated key within cutoff", func(t *testing.T) {
-		err := validateVtxoScriptForSigners(
-			deprecatedKeyScript, current, []ports.DeprecatedSignerPubkey{
-				{PubKey: deprecated, CutoffDate: now.Add(time.Hour)},
-			}, now, exitDelay, false,
-		)
-		require.NoError(t, err)
-	})
-
-	t.Run("deprecated key past cutoff", func(t *testing.T) {
-		cutoff := now.Add(-time.Hour)
-		err := validateVtxoScriptForSigners(
-			deprecatedKeyScript, current, []ports.DeprecatedSignerPubkey{
-				{PubKey: deprecated, CutoffDate: cutoff},
-			}, now, exitDelay, false,
-		)
-		require.EqualError(t, err, fmt.Sprintf(
-			"%x is a deprecated key since %s",
-			deprecated.SerializeCompressed(), cutoff.Format(time.RFC3339),
-		))
-	})
-
-	t.Run("unknown signer key", func(t *testing.T) {
-		err := validateVtxoScriptForSigners(
-			deprecatedKeyScript, current, nil, now, exitDelay, false,
-		)
-		require.ErrorContains(t, err, "signer pubkey not found")
-	})
-}
