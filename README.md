@@ -107,13 +107,14 @@ The `arkd` server can be configured using environment variables and the admin se
 
 #### Admin Settings
 
-The following settings are persisted in the database and managed via the admin API. Default values are seeded on first startup.
+The following settings are persisted in the database and managed via the admin API.
+
+> Default values are seeded from `ARKD_*` environment variables on the **first startup only**. After that, those environment variables are ignored and settings are managed exclusively via the admin API. See [Settings: first-boot seeding and runtime management](docs/settings.md) for the full list of seed variables, units, defaults, and how to change settings at runtime.
 
 | Endpoint                          | Method | Description                              |
 |-----------------------------------|--------|------------------------------------------|
 | `/v1/admin/settings`              | GET    | Retrieve current settings                |
 | `/v1/admin/settings`              | POST   | Update settings (partial; only provided fields change)           |
-| `/v1/admin/settings/clear`        | POST   | Reset settings to defaults               |
 
 | Setting                              | Description                                                  | Default                        |
 |--------------------------------------|--------------------------------------------------------------|--------------------------------|
