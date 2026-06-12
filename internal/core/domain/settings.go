@@ -61,6 +61,7 @@ type Settings struct {
 	BatchFees                     BatchFees
 	BuildVersionHeader            string
 	BuildVersionHeaderRequired    bool
+	DigestHeaderRequired          bool
 	UpdatedAt                     time.Time
 }
 
@@ -73,7 +74,7 @@ func NewSettings(
 	boardingExitDelay, vtxoTreeExpiry arklib.RelativeLocktime,
 	maxTxWeight, maxOpReturnOutputs uint64,
 	assetTxMaxWeightRatio float32, noteUriPrefix, minVersionAccepted string,
-	minVersionRequired bool,
+	minVersionRequired, digestHeaderRequired bool,
 ) (*Settings, error) {
 	settings := &Settings{
 		SessionDuration:               time.Duration(sessionDuration) * time.Second,
@@ -99,6 +100,7 @@ func NewSettings(
 		NoteUriPrefix:                 noteUriPrefix,
 		BuildVersionHeader:            minVersionAccepted,
 		BuildVersionHeaderRequired:    minVersionRequired,
+		DigestHeaderRequired:          digestHeaderRequired,
 		UpdatedAt:                     time.Now(),
 	}
 	if err := settings.Validate(); err != nil {
@@ -264,6 +266,7 @@ type SettingsUpdate struct {
 	NoteUriPrefix                 *string
 	BuildVersionHeader            *string
 	BuildVersionHeaderRequired    *bool
+	DigestHeaderRequired          *bool
 }
 
 // Update updates any field of Settings but ScheduledSession and BatchFees and returns a changelog
@@ -364,6 +367,10 @@ func (s *Settings) Update(u SettingsUpdate) ([]string, error) {
 	if u.BuildVersionHeaderRequired != nil {
 		updated.BuildVersionHeaderRequired = *u.BuildVersionHeaderRequired
 		changelog = append(changelog, "build_version_header_required")
+	}
+	if u.DigestHeaderRequired != nil {
+		updated.DigestHeaderRequired = *u.DigestHeaderRequired
+		changelog = append(changelog, "digest_header_required")
 	}
 
 	if err := updated.Validate(); err != nil {
