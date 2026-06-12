@@ -62,7 +62,12 @@ type Settings struct {
 	BuildVersionHeader            string
 	BuildVersionHeaderRequired    bool
 	DigestHeaderRequired          bool
-	UpdatedAt                     time.Time
+	// WalletAddr / WalletFallbackAddrs hold the primary and fallback arkd-wallet
+	// connection addresses. Seeded from env on first boot, then sourced from here;
+	// changing them via the admin API is applied on the next restart.
+	WalletAddr          string
+	WalletFallbackAddrs []string
+	UpdatedAt           time.Time
 }
 
 func NewSettings(
@@ -75,6 +80,7 @@ func NewSettings(
 	maxTxWeight, maxOpReturnOutputs uint64,
 	assetTxMaxWeightRatio float32, noteUriPrefix, minVersionAccepted string,
 	minVersionRequired, digestHeaderRequired bool,
+	walletAddr string, walletFallbackAddrs []string,
 ) (*Settings, error) {
 	settings := &Settings{
 		SessionDuration:               time.Duration(sessionDuration) * time.Second,
@@ -101,6 +107,8 @@ func NewSettings(
 		BuildVersionHeader:            minVersionAccepted,
 		BuildVersionHeaderRequired:    minVersionRequired,
 		DigestHeaderRequired:          digestHeaderRequired,
+		WalletAddr:                    walletAddr,
+		WalletFallbackAddrs:           walletFallbackAddrs,
 		UpdatedAt:                     time.Now(),
 	}
 	if err := settings.Validate(); err != nil {
@@ -267,6 +275,8 @@ type SettingsUpdate struct {
 	BuildVersionHeader            *string
 	BuildVersionHeaderRequired    *bool
 	DigestHeaderRequired          *bool
+	WalletAddr                    *string
+	WalletFallbackAddrs           *[]string
 }
 
 // Update updates any field of Settings but ScheduledSession and BatchFees and returns a changelog
@@ -371,6 +381,14 @@ func (s *Settings) Update(u SettingsUpdate) ([]string, error) {
 	if u.DigestHeaderRequired != nil {
 		updated.DigestHeaderRequired = *u.DigestHeaderRequired
 		changelog = append(changelog, "digest_header_required")
+	}
+	if u.WalletAddr != nil {
+		updated.WalletAddr = *u.WalletAddr
+		changelog = append(changelog, "wallet_addr")
+	}
+	if u.WalletFallbackAddrs != nil {
+		updated.WalletFallbackAddrs = *u.WalletFallbackAddrs
+		changelog = append(changelog, "wallet_fallback_addrs")
 	}
 
 	if err := updated.Validate(); err != nil {

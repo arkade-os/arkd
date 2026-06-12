@@ -1855,6 +1855,8 @@ func validSettings() domain.Settings {
 		BuildVersionHeader:            "v1.0.0",
 		BuildVersionHeaderRequired:    true,
 		DigestHeaderRequired:          true,
+		WalletAddr:                    "wallet:6060",
+		WalletFallbackAddrs:           []string{"wallet-2:6060", "wallet-3:6060"},
 		UpdatedAt:                     time.Unix(1700000000, 0),
 	}
 }
@@ -1962,6 +1964,8 @@ func assertSettingsEqual(t *testing.T, expected, actual domain.Settings) {
 	assert.Equal(t, expected.MaxTxWeight, actual.MaxTxWeight, "MaxTxWeight not equal")
 	assert.True(t, expected.UpdatedAt.Equal(actual.UpdatedAt), "UpdatedAt not equal")
 	assert.Equal(t, expected.AssetTxMaxWeightRatio, actual.AssetTxMaxWeightRatio, "AssetTxMaxWeightRatio not equal")
+	assert.Equal(t, expected.WalletAddr, actual.WalletAddr, "WalletAddr not equal")
+	assert.Equal(t, expected.WalletFallbackAddrs, actual.WalletFallbackAddrs, "WalletFallbackAddrs not equal")
 	assert.Equal(t, expected.MaxOpReturnOutputs, actual.MaxOpReturnOutputs, "MaxOpReturnOutputs not equal")
 	assert.Equal(t, expected.NoteUriPrefix, actual.NoteUriPrefix, "NoteUriPrefix not equal")
 	assert.Equal(t, expected.BuildVersionHeader, actual.BuildVersionHeader, "BuildVersionHeader not equal")

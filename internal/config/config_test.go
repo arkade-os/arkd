@@ -317,7 +317,7 @@ func TestDialFallbackWallets(t *testing.T) {
 		}
 
 		c := &Config{network: regtest, WalletFallbackAddrs: []string{"a:6060", "b:6060"}}
-		fbs, err := c.dialFallbackWallets()
+		fbs, err := c.dialFallbackWallets(c.WalletFallbackAddrs)
 
 		require.NoError(t, err)
 		require.Len(t, fbs, 2)
@@ -336,7 +336,7 @@ func TestDialFallbackWallets(t *testing.T) {
 		}
 
 		c := &Config{network: regtest, WalletFallbackAddrs: []string{"a:6060", "b:6060"}}
-		fbs, err := c.dialFallbackWallets()
+		fbs, err := c.dialFallbackWallets(c.WalletFallbackAddrs)
 
 		require.Error(t, err)
 		require.Nil(t, fbs)
@@ -358,7 +358,7 @@ func TestDialFallbackWallets(t *testing.T) {
 		}
 
 		c := &Config{network: regtest, WalletFallbackAddrs: []string{"a:6060", "b:6060"}}
-		fbs, err := c.dialFallbackWallets()
+		fbs, err := c.dialFallbackWallets(c.WalletFallbackAddrs)
 
 		require.Error(t, err)
 		require.Nil(t, fbs)

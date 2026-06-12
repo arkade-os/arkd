@@ -2145,6 +2145,19 @@
               "null"
             ],
             "format": "int64"
+          },
+          "walletAddr": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Primary and fallback arkd-wallet connection addresses. Seeded from env on\nfirst boot; changes take effect on the next restart."
+          },
+          "walletFallbackAddrs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

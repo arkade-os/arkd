@@ -245,6 +245,8 @@ type Setting struct {
 	BuildVersionHeaderRequired                bool
 	DigestHeaderRequired                      bool
 	UpdatedAt                                 int64
+	WalletAddr                                string
+	WalletFallbackAddrs                       string
 }
 
 type SettingsHistory struct {

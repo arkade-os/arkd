@@ -725,6 +725,8 @@ func (a *adminHandler) GetSettings(
 			BuildVersionHeader:            &settings.BuildVersionHeader,
 			BuildVersionHeaderRequired:    &settings.BuildVersionHeaderRequired,
 			DigestHeaderRequired:          &settings.DigestHeaderRequired,
+			WalletAddr:                    &settings.WalletAddr,
+			WalletFallbackAddrs:           settings.WalletFallbackAddrs,
 			UpdatedAt:                     formatTime(settings.UpdatedAt),
 		}
 	}
@@ -921,6 +923,16 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		t := settings.GetDigestHeaderRequired()
 		digestHeaderRequired = &t
 	}
+	var walletAddr *string
+	if settings.WalletAddr != nil {
+		t := settings.GetWalletAddr()
+		walletAddr = &t
+	}
+	var walletFallbackAddrs *[]string
+	if len(settings.WalletFallbackAddrs) > 0 {
+		t := settings.GetWalletFallbackAddrs()
+		walletFallbackAddrs = &t
+	}
 
 	return &domain.SettingsUpdate{
 		SessionDuration:               parseDuration(settings.SessionDuration),
@@ -947,6 +959,8 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		BuildVersionHeader:            buildVersionHeader,
 		BuildVersionHeaderRequired:    buildVersionHeaderRequired,
 		DigestHeaderRequired:          digestHeaderRequired,
+		WalletAddr:                    walletAddr,
+		WalletFallbackAddrs:           walletFallbackAddrs,
 	}, nil
 }
 

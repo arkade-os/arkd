@@ -78,6 +78,8 @@ CREATE TABLE settings (
     max_op_return_outputs BIGINT NOT NULL DEFAULT 0,
     asset_tx_max_weight_ratio REAL NOT NULL DEFAULT 0,
     note_uri_prefix TEXT NOT NULL DEFAULT '',
+    wallet_addr TEXT NOT NULL DEFAULT '',
+    wallet_fallback_addrs TEXT NOT NULL DEFAULT '',
     scheduled_session_start_time BIGINT NOT NULL DEFAULT 0,
     scheduled_session_end_time BIGINT NOT NULL DEFAULT 0,
     scheduled_session_period BIGINT NOT NULL DEFAULT 0,

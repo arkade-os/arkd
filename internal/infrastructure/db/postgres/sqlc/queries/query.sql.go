@@ -1337,7 +1337,7 @@ func (q *Queries) SelectRoundsWithTxids(ctx context.Context, dollar_1 []string) 
 }
 
 const selectSettings = `-- name: SelectSettings :one
-SELECT id, session_duration, unrolled_vtxo_min_expiry_margin, ban_threshold, ban_duration, unilateral_exit_delay, public_unilateral_exit_delay, checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry, round_min_participants_count, round_max_participants_count, vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount, settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date, max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio, note_uri_prefix, scheduled_session_start_time, scheduled_session_end_time, scheduled_session_period, scheduled_session_duration, scheduled_session_round_min_participants_count, scheduled_session_round_max_participants_count, batch_onchain_input_fee, batch_offchain_input_fee, batch_onchain_output_fee, batch_offchain_output_fee, build_version_header, build_version_header_required, digest_header_required, updated_at FROM settings WHERE id = 1
+SELECT id, session_duration, unrolled_vtxo_min_expiry_margin, ban_threshold, ban_duration, unilateral_exit_delay, public_unilateral_exit_delay, checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry, round_min_participants_count, round_max_participants_count, vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount, settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date, max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio, note_uri_prefix, scheduled_session_start_time, scheduled_session_end_time, scheduled_session_period, scheduled_session_duration, scheduled_session_round_min_participants_count, scheduled_session_round_max_participants_count, batch_onchain_input_fee, batch_offchain_input_fee, batch_onchain_output_fee, batch_offchain_output_fee, build_version_header, build_version_header_required, digest_header_required, updated_at, wallet_addr, wallet_fallback_addrs FROM settings WHERE id = 1
 `
 
 func (q *Queries) SelectSettings(ctx context.Context) (Setting, error) {
@@ -1380,6 +1380,8 @@ func (q *Queries) SelectSettings(ctx context.Context) (Setting, error) {
 		&i.BuildVersionHeaderRequired,
 		&i.DigestHeaderRequired,
 		&i.UpdatedAt,
+		&i.WalletAddr,
+		&i.WalletFallbackAddrs,
 	)
 	return i, err
 }
@@ -2177,6 +2179,7 @@ INSERT INTO settings (
     settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date,
     max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio,
     note_uri_prefix,
+    wallet_addr, wallet_fallback_addrs,
     scheduled_session_start_time, scheduled_session_end_time,
     scheduled_session_period, scheduled_session_duration,
     scheduled_session_round_min_participants_count,
@@ -2198,12 +2201,13 @@ INSERT INTO settings (
     $21,
     $22, $23,
     $24, $25,
-    $26,
-    $27,
-    $28, $29,
+    $26, $27,
+    $28,
+    $29,
     $30, $31,
-    $32, $33, $34,
-    $35
+    $32, $33,
+    $34, $35, $36,
+    $37
 )
 ON CONFLICT(id) DO UPDATE SET
     session_duration = EXCLUDED.session_duration,
@@ -2227,6 +2231,8 @@ ON CONFLICT(id) DO UPDATE SET
     max_op_return_outputs = EXCLUDED.max_op_return_outputs,
     asset_tx_max_weight_ratio = EXCLUDED.asset_tx_max_weight_ratio,
     note_uri_prefix = EXCLUDED.note_uri_prefix,
+    wallet_addr = EXCLUDED.wallet_addr,
+    wallet_fallback_addrs = EXCLUDED.wallet_fallback_addrs,
     scheduled_session_start_time = EXCLUDED.scheduled_session_start_time,
     scheduled_session_end_time = EXCLUDED.scheduled_session_end_time,
     scheduled_session_period = EXCLUDED.scheduled_session_period,
@@ -2267,6 +2273,8 @@ type UpsertSettingsParams struct {
 	MaxOpReturnOutputs                        int64
 	AssetTxMaxWeightRatio                     float32
 	NoteUriPrefix                             string
+	WalletAddr                                string
+	WalletFallbackAddrs                       string
 	ScheduledSessionStartTime                 int64
 	ScheduledSessionEndTime                   int64
 	ScheduledSessionPeriod                    int64
@@ -2306,6 +2314,8 @@ func (q *Queries) UpsertSettings(ctx context.Context, arg UpsertSettingsParams) 
 		arg.MaxOpReturnOutputs,
 		arg.AssetTxMaxWeightRatio,
 		arg.NoteUriPrefix,
+		arg.WalletAddr,
+		arg.WalletFallbackAddrs,
 		arg.ScheduledSessionStartTime,
 		arg.ScheduledSessionEndTime,
 		arg.ScheduledSessionPeriod,
