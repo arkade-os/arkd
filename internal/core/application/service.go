@@ -100,19 +100,18 @@ func NewService(
 		return nil, fmt.Errorf("failed to get network: %w", err)
 	}
 
+	// The dust-resolved min amounts are runtime-derived (they depend on the
+	// wallet's dust limit), so they live only in the cache, never in the stored
+	// settings row.
 	vtxoMinAmount, utxoMinAmount := resolveMinAmounts(
 		settings.VtxoMinAmount, settings.UtxoMinAmount, int64(dustAmount),
 	)
 
-	changelog, err := settings.Update(domain.SettingsUpdate{
+	if _, err := settings.Update(domain.SettingsUpdate{
 		VtxoMinAmount: &vtxoMinAmount,
 		UtxoMinAmount: &utxoMinAmount,
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("failed to resolve min amounts: %w", err)
-	}
-	if err := repoManager.Settings().Upsert(ctx, *settings, changelog); err != nil {
-		return nil, fmt.Errorf("failed to update settings: %w", err)
 	}
 
 	extendedSettings := ports.Settings{
