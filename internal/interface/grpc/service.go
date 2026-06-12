@@ -293,13 +293,20 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		return ch
 	})
 
-	versionGuard := interceptors.NewVersionGuard(
-		s.appConfig.BuildVersionHeader,
-		s.appConfig.BuildVersionHeaderRequired,
-	)
+	getVersionGuard := func() (*interceptors.VersionGuard, error) {
+		settings, err := s.appConfig.CacheService().Settings().Get(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		guard := interceptors.NewVersionGuard(
+			settings.BuildVersionHeader,
+			settings.BuildVersionHeaderRequired,
+		)
+		return &guard, nil
+	}
 	grpcConfig := []grpc.ServerOption{
-		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc, versionGuard),
-		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc, versionGuard),
+		interceptors.UnaryInterceptor(s.macaroonSvc, s.readinessSvc, getVersionGuard),
+		interceptors.StreamInterceptor(s.macaroonSvc, s.readinessSvc, getVersionGuard),
 		grpc.StatsHandler(otelHandler),
 	}
 	creds := insecure.NewCredentials()
