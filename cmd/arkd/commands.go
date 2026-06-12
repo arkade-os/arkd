@@ -279,7 +279,7 @@ var (
 			vtxoMaxAmountFlag, utxoMinAmountFlag, utxoMaxAmountFlag, settlementMinExpiryGapFlag,
 			vtxoNoCsvValidationCutoffDateFlag, maxTxWeightFlag, maxOpReturnOutsFlag,
 			assetTxMaxWeightRatioFlag, notePrefixFlag, buildVersionHeaderFlag,
-			buildVersionHeaderRequiredFlag,
+			buildVersionHeaderRequiredFlag, digestHeaderRequiredFlag,
 		},
 		Action: updateSettingsAction,
 	}
@@ -1422,6 +1422,17 @@ func updateSettingsAction(ctx *cli.Context) error {
 			)
 		}
 		settings["buildVersionHeaderRequired"] = required
+	}
+	if ctx.IsSet(digestHeaderRequiredFlagName) {
+		raw := ctx.String(digestHeaderRequiredFlagName)
+		required, err := strconv.ParseBool(raw)
+		if err != nil {
+			return fmt.Errorf(
+				"invalid --%s value %q, must be true or false",
+				digestHeaderRequiredFlagName, raw,
+			)
+		}
+		settings["digestHeaderRequired"] = required
 	}
 
 	if len(settings) <= 0 {

@@ -724,6 +724,7 @@ func (a *adminHandler) GetSettings(
 			NoteUriPrefix:                 &settings.NoteUriPrefix,
 			BuildVersionHeader:            &settings.BuildVersionHeader,
 			BuildVersionHeaderRequired:    &settings.BuildVersionHeaderRequired,
+			DigestHeaderRequired:          &settings.DigestHeaderRequired,
 			UpdatedAt:                     formatTime(settings.UpdatedAt),
 		}
 	}
@@ -859,10 +860,10 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		banThreshold, maxTxWeight, maxOpReturnOutputs *uint64
 		batchMinParticipants, batchMaxParticipants,
 		vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount *int64
-		assetTxMaxWeightRatio      *float32
-		noteUriPrefix              *string
-		buildVersionHeader         *string
-		buildVersionHeaderRequired *bool
+		assetTxMaxWeightRatio                            *float32
+		noteUriPrefix                                    *string
+		buildVersionHeader                               *string
+		buildVersionHeaderRequired, digestHeaderRequired *bool
 	)
 	if settings.BanThreshold != nil {
 		t := uint64(settings.GetBanThreshold())
@@ -916,6 +917,10 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		t := settings.GetBuildVersionHeaderRequired()
 		buildVersionHeaderRequired = &t
 	}
+	if settings.DigestHeaderRequired != nil {
+		t := settings.GetDigestHeaderRequired()
+		digestHeaderRequired = &t
+	}
 
 	return &domain.SettingsUpdate{
 		SessionDuration:               parseDuration(settings.SessionDuration),
@@ -941,6 +946,7 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		NoteUriPrefix:                 noteUriPrefix,
 		BuildVersionHeader:            buildVersionHeader,
 		BuildVersionHeaderRequired:    buildVersionHeaderRequired,
+		DigestHeaderRequired:          digestHeaderRequired,
 	}, nil
 }
 
