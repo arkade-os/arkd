@@ -662,6 +662,17 @@ func (a *adminService) UpdateSettings(
 		return nil, fmt.Errorf("failed to update settings: %w", err)
 	}
 
+	// Wallet addresses are read at startup to dial the arkd-wallet(s); a change to
+	// them is persisted now but only takes effect on the next restart.
+	for _, field := range changelog {
+		if field == "wallet_addr" || field == "wallet_fallback_addrs" {
+			log.Warnf(
+				"settings field %q updated; wallet address changes take effect on restart",
+				field,
+			)
+		}
+	}
+
 	return changelog, nil
 }
 

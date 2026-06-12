@@ -149,6 +149,8 @@ type settingsDTO struct {
 	BuildVersionHeader            string
 	BuildVersionHeaderRequired    bool
 	DigestHeaderRequired          bool
+	WalletAddr                    string
+	WalletFallbackAddrs           []string
 	ScheduledSession              scheduledSessionDTO
 	BatchFees                     batchFeesDTO
 	Network                       string
@@ -214,6 +216,8 @@ func newSettingsDTO(settings ports.Settings) settingsDTO {
 		BuildVersionHeader:            settings.BuildVersionHeader,
 		BuildVersionHeaderRequired:    settings.BuildVersionHeaderRequired,
 		DigestHeaderRequired:          settings.DigestHeaderRequired,
+		WalletAddr:                    settings.WalletAddr,
+		WalletFallbackAddrs:           settings.WalletFallbackAddrs,
 		BatchFees:                     settings.BatchFees,
 		Network:                       settings.Network.Name,
 		DustAmount:                    settings.DustAmount,
@@ -296,6 +300,8 @@ func (s settingsDTO) parse() (*ports.Settings, error) {
 			BuildVersionHeader:            s.BuildVersionHeader,
 			BuildVersionHeaderRequired:    s.BuildVersionHeaderRequired,
 			DigestHeaderRequired:          s.DigestHeaderRequired,
+			WalletAddr:                    s.WalletAddr,
+			WalletFallbackAddrs:           s.WalletFallbackAddrs,
 			ScheduledSession:              s.ScheduledSession.parse(),
 			BatchFees:                     s.BatchFees,
 		},

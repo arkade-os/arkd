@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -144,6 +145,8 @@ func seedParams(settings domain.Settings) queries.UpsertSettingsParams {
 		BuildVersionHeader:            settings.BuildVersionHeader,
 		BuildVersionHeaderRequired:    settings.BuildVersionHeaderRequired,
 		DigestHeaderRequired:          settings.DigestHeaderRequired,
+		WalletAddr:                    settings.WalletAddr,
+		WalletFallbackAddrs:           strings.Join(settings.WalletFallbackAddrs, ","),
 		BatchOnchainInputFee:          settings.BatchFees.OnchainInputFee,
 		BatchOffchainInputFee:         settings.BatchFees.OffchainInputFee,
 		BatchOnchainOutputFee:         settings.BatchFees.OnchainOutputFee,
