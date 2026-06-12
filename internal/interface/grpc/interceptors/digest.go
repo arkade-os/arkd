@@ -7,22 +7,10 @@ import (
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/pkg/errors"
 	"google.golang.org/grpc"
-	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 )
 
 const digestHeader = "x-digest"
-
-// digestGuardSkippedServices lists the admin-plane services (plus health
-// checks) that are exempt from the digest compatibility check: they are
-// driven by operators and infrastructure, not by versioned SDK clients.
-var digestGuardSkippedServices = map[string]struct{}{
-	arkv1.AdminService_ServiceDesc.ServiceName:             {},
-	arkv1.WalletService_ServiceDesc.ServiceName:            {},
-	arkv1.WalletInitializerService_ServiceDesc.ServiceName: {},
-	arkv1.SignerManagerService_ServiceDesc.ServiceName:     {},
-	grpchealth.Health_ServiceDesc.ServiceName:              {},
-}
 
 func unaryDigestHandler(getDigest func() (string, bool, error)) grpc.UnaryServerInterceptor {
 	return func(
