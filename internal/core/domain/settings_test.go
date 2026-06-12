@@ -35,6 +35,8 @@ var (
 		MaxTxWeight:                 100_000,
 		MaxOpReturnOutputs:          3,
 		AssetTxMaxWeightRatio:       0.5,
+		BuildVersionHeader:          "v1.0.0",
+		BuildVersionHeaderRequired:  true,
 		UpdatedAt:                   time.Now(),
 	}
 )
@@ -138,6 +140,10 @@ func testValidateSettings(t *testing.T) {
 			zeroMaxOpReturn := validSettings
 			zeroMaxOpReturn.MaxOpReturnOutputs = 0
 
+			requiredVersionWithoutHeader := validSettings
+			requiredVersionWithoutHeader.BuildVersionHeaderRequired = true
+			requiredVersionWithoutHeader.BuildVersionHeader = ""
+
 			fixtures := []struct {
 				settings    domain.Settings
 				expectedErr string
@@ -239,6 +245,10 @@ func testValidateSettings(t *testing.T) {
 					settings:    zeroMaxOpReturn,
 					expectedErr: "max op return outputs must be greater than 0",
 				},
+				{
+					settings:    requiredVersionWithoutHeader,
+					expectedErr: "build version header is required but no version is set",
+				},
 			}
 
 			for _, f := range fixtures {
@@ -256,23 +266,32 @@ func testUpdateSettings(t *testing.T) {
 			banThreshold := uint64(10)
 			sessionDuration := 90 * time.Second
 			vtxoMaxAmount := int64(2_000_000)
+			buildVersionHeader := "v2.0.0"
+			buildVersionHeaderRequired := false
 
 			changelog, err := settings.Update(domain.SettingsUpdate{
-				BanThreshold:    &banThreshold,
-				SessionDuration: &sessionDuration,
-				VtxoMaxAmount:   &vtxoMaxAmount,
+				BanThreshold:               &banThreshold,
+				SessionDuration:            &sessionDuration,
+				VtxoMaxAmount:              &vtxoMaxAmount,
+				BuildVersionHeader:         &buildVersionHeader,
+				BuildVersionHeaderRequired: &buildVersionHeaderRequired,
 			})
 			require.NoError(t, err)
 
 			// the changelog lists the names of the changed fields
 			require.ElementsMatch(
-				t, []string{"session_duration", "ban_threshold", "vtxo_max_amount"}, changelog,
+				t, []string{
+					"session_duration", "ban_threshold", "vtxo_max_amount",
+					"build_version_header", "build_version_header_required",
+				}, changelog,
 			)
 
 			// provided fields are updated
 			require.Equal(t, uint64(10), settings.BanThreshold)
 			require.Equal(t, 90*time.Second, settings.SessionDuration)
 			require.Equal(t, int64(2_000_000), settings.VtxoMaxAmount)
+			require.Equal(t, "v2.0.0", settings.BuildVersionHeader)
+			require.False(t, settings.BuildVersionHeaderRequired)
 
 			// omitted fields keep their previous values
 			require.Equal(t, validSettings.VtxoMinAmount, settings.VtxoMinAmount)
@@ -304,6 +323,25 @@ func testUpdateSettings(t *testing.T) {
 			require.Nil(t, changelog)
 			require.Equal(t, validSettings, settings)
 		})
+
+		t.Run("requiring build version without a header is rejected", func(t *testing.T) {
+			settings := validSettings
+			settings.BuildVersionHeader = "v1.0.0"
+			settings.BuildVersionHeaderRequired = false
+
+			// Flip the required flag on while clearing the header in the same update:
+			// validation must reject it and leave the settings untouched.
+			required := true
+			empty := ""
+			changelog, err := settings.Update(domain.SettingsUpdate{
+				BuildVersionHeaderRequired: &required,
+				BuildVersionHeader:         &empty,
+			})
+			require.EqualError(t, err, "build version header is required but no version is set")
+			require.Nil(t, changelog)
+			require.Equal(t, "v1.0.0", settings.BuildVersionHeader)
+			require.False(t, settings.BuildVersionHeaderRequired)
+		})
 	})
 }
 
@@ -318,6 +356,7 @@ func testNewSettings(t *testing.T) {
 		maxTxWeight, assetTxMaxWeightRatio := uint64(100_000), float32(0.5)
 		maxOpReturnOutputs := uint64(2)
 		noteUriPrefix := "testNote"
+		buildVersionHeader, buildVersionHeaderRequired := "v1.0.0", true
 
 		t.Run("valid", func(t *testing.T) {
 
@@ -329,12 +368,15 @@ func testNewSettings(t *testing.T) {
 				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
 				boardingExitDelay, vtxoTreeExpiry,
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+				buildVersionHeader, buildVersionHeaderRequired,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, settings)
 			require.Equal(t, 60*time.Second, settings.SessionDuration)
 			require.Equal(t, uint64(3), settings.BanThreshold)
 			require.Equal(t, vtxoTreeExpiry, settings.VtxoTreeExpiry)
+			require.Equal(t, buildVersionHeader, settings.BuildVersionHeader)
+			require.Equal(t, buildVersionHeaderRequired, settings.BuildVersionHeaderRequired)
 			require.False(t, settings.UpdatedAt.IsZero())
 		})
 
@@ -347,8 +389,24 @@ func testNewSettings(t *testing.T) {
 				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
 				boardingExitDelay, vtxoTreeExpiry,
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+				buildVersionHeader, buildVersionHeaderRequired,
 			)
 			require.ErrorContains(t, err, "invalid session duration")
+			require.Nil(t, settings)
+		})
+
+		t.Run("required version without header", func(t *testing.T) {
+			settings, err := domain.NewSettings(
+				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
+				batchMinParticipants, batchMaxParticipants,
+				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
+				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
+				boardingExitDelay, vtxoTreeExpiry,
+				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+				"", true,
+			)
+			require.ErrorContains(t, err, "build version header is required but no version is set")
 			require.Nil(t, settings)
 		})
 	})

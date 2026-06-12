@@ -29,15 +29,20 @@ func TestSeedSettings(t *testing.T) {
 			sessionDuration int64
 			batchOnchainIn  string
 			ssStart         int64
+			buildVersion    string
+			buildVersionReq bool
 		)
 		err = db.QueryRow(`
-			SELECT session_duration, batch_onchain_input_fee, scheduled_session_start_time
+			SELECT session_duration, batch_onchain_input_fee, scheduled_session_start_time,
+			       build_version_header, build_version_header_required
 			FROM settings WHERE id = 1`).
-			Scan(&sessionDuration, &batchOnchainIn, &ssStart)
+			Scan(&sessionDuration, &batchOnchainIn, &ssStart, &buildVersion, &buildVersionReq)
 		require.NoError(t, err)
 		require.Equal(t, int64(30), sessionDuration)
 		require.Equal(t, "", batchOnchainIn)
 		require.Equal(t, int64(0), ssStart)
+		require.Equal(t, "v1.0.0", buildVersion)
+		require.True(t, buildVersionReq)
 	})
 
 	t.Run("backfill legacy", func(t *testing.T) {
@@ -167,6 +172,8 @@ func validSeedDefaults(t *testing.T) domain.Settings {
 		MaxTxWeight:                 400_000,
 		MaxOpReturnOutputs:          3,
 		AssetTxMaxWeightRatio:       0.5,
+		BuildVersionHeader:          "v1.0.0",
+		BuildVersionHeaderRequired:  true,
 		UpdatedAt:                   time.Unix(1_700_000_000, 0),
 	}
 }
@@ -209,6 +216,8 @@ CREATE TABLE IF NOT EXISTS settings (
     batch_offchain_input_fee TEXT NOT NULL DEFAULT '',
     batch_onchain_output_fee TEXT NOT NULL DEFAULT '',
     batch_offchain_output_fee TEXT NOT NULL DEFAULT '',
+    build_version_header TEXT NOT NULL DEFAULT '',
+    build_version_header_required BOOLEAN NOT NULL DEFAULT FALSE,
     updated_at BIGINT NOT NULL
 );`)
 	require.NoError(t, err)

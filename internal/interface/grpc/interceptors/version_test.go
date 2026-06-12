@@ -14,284 +14,375 @@ import (
 const testMethod = "/ark.v1.ArkService/TestMethod"
 
 func TestParseVersion(t *testing.T) {
-	testCases := []struct {
-		input     string
-		wantMajor int64
-		wantMinor int64
-	}{
-		{"1.0.0", 1, 0},
-		{"v2.3.4", 2, 3},
-		{"0.9.0", 0, 9},
-		{"10.0.0", 10, 0},
-		{"3", 3, 0},
+	t.Run("valid", func(t *testing.T) {
+		testCases := []struct {
+			input     string
+			wantMajor int64
+			wantMinor int64
+			wantPatch int64
+		}{
+			{"1.0.0", 1, 0, 0},
+			{"v2.3.4", 2, 3, 4},
+			{"0.9.0", 0, 9, 0},
+			{"10.0.0", 10, 0, 0},
+			{"3", 3, 0, 0},
+			{"2.5", 2, 5, 0},
+			{"1.2.3-rc1", 1, 2, 3},
+			{"v1.2.3+build9", 1, 2, 3},
+		}
+		for _, tt := range testCases {
+			t.Run(tt.input, func(t *testing.T) {
+				gotMajor, gotMinor, gotPatch, err := parseVersion(tt.input)
+				require.NoError(t, err)
+				require.Equal(t, tt.wantMajor, gotMajor)
+				require.Equal(t, tt.wantMinor, gotMinor)
+				require.Equal(t, tt.wantPatch, gotPatch)
+			})
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		for _, bad := range []string{"abc", ""} {
+			t.Run(bad, func(t *testing.T) {
+				_, _, _, err := parseVersion(bad)
+				require.Error(t, err)
+			})
+		}
+	})
+}
+
+// versionCompatCase describes a single VersionGuard scenario. Each case is run
+// against both the unary and stream interceptors, which must behave identically
+// since they share checkVersionCompat.
+type versionCompatCase struct {
+	description string
+	// minVersion is the configured minimum build version clients must send.
+	minVersion    string
+	requireHeader bool
+	// ctx is the incoming context. Use ctxWithVersion to set a client header,
+	// or context.Background() to simulate a missing header.
+	ctx context.Context
+
+	wantReject bool
+	// The following are only asserted when wantReject is true.
+	wantClientVersion string
+	wantMinVersion    string
+}
+
+func TestVersionCompat(t *testing.T) {
+	testCases := []versionCompatCase{
+		// The guard enforces the version policy only when requireHeader is true.
+		// When it is false the guard is bypassed entirely (see the
+		// "header not required" group below), so every version-comparison case
+		// here sets requireHeader: true.
+
+		// --- Client below the minimum is rejected ---
+		{
+			description:       "client below min major rejected",
+			minVersion:        "2.3.4",
+			requireHeader:     true,
+			ctx:               ctxWithVersion("1.9.9"),
+			wantReject:        true,
+			wantClientVersion: "1.9.9",
+			wantMinVersion:    "2.3.4",
+		},
+		{
+			description:       "client below min minor rejected",
+			minVersion:        "2.3.4",
+			requireHeader:     true,
+			ctx:               ctxWithVersion("2.2.9"),
+			wantReject:        true,
+			wantClientVersion: "2.2.9",
+			wantMinVersion:    "2.3.4",
+		},
+		{
+			description:       "client below min patch rejected",
+			minVersion:        "2.3.4",
+			requireHeader:     true,
+			ctx:               ctxWithVersion("2.3.3"),
+			wantReject:        true,
+			wantClientVersion: "2.3.3",
+			wantMinVersion:    "2.3.4",
+		},
+		{
+			description:       "client below min with v prefix rejected",
+			minVersion:        "2.3.4",
+			requireHeader:     true,
+			ctx:               ctxWithVersion("v2.0.0"),
+			wantReject:        true,
+			wantClientVersion: "v2.0.0",
+			wantMinVersion:    "2.3.4",
+		},
+
+		// --- Comparison tolerates a missing patch / v-prefix / pre-release suffix
+		// in the configured min version; the error reports it verbatim ---
+		{
+			description:       "min without patch, client below rejected",
+			minVersion:        "2.3",
+			requireHeader:     true,
+			ctx:               ctxWithVersion("2.2.9"),
+			wantReject:        true,
+			wantClientVersion: "2.2.9",
+			wantMinVersion:    "2.3",
+		},
+		{
+			description:   "min without patch, client at threshold passes",
+			minVersion:    "2.3",
+			requireHeader: true,
+			ctx:           ctxWithVersion("2.3.0"),
+		},
+		{
+			description:       "min with v prefix and pre-release, client below rejected",
+			minVersion:        "v1.2.3-rc1",
+			requireHeader:     true,
+			ctx:               ctxWithVersion("1.2.2"),
+			wantReject:        true,
+			wantClientVersion: "1.2.2",
+			wantMinVersion:    "v1.2.3-rc1",
+		},
+		{
+			description:   "min with v prefix and pre-release, client at threshold passes",
+			minVersion:    "v1.2.3-rc1",
+			requireHeader: true,
+			ctx:           ctxWithVersion("1.2.3"),
+		},
+
+		// --- Client at or above the minimum passes ---
+		{
+			description:   "client equal to min passes",
+			minVersion:    "2.3.4",
+			requireHeader: true,
+			ctx:           ctxWithVersion("2.3.4"),
+		},
+		{
+			description:   "client higher patch passes",
+			minVersion:    "2.3.4",
+			requireHeader: true,
+			ctx:           ctxWithVersion("2.3.5"),
+		},
+		{
+			description:   "client higher minor passes despite lower patch",
+			minVersion:    "2.3.4",
+			requireHeader: true,
+			ctx:           ctxWithVersion("2.4.0"),
+		},
+		{
+			description:   "client higher major passes despite lower minor and patch",
+			minVersion:    "2.3.4",
+			requireHeader: true,
+			ctx:           ctxWithVersion("3.0.0"),
+		},
+
+		// --- RequireHeader behavior ---
+		{
+			description:    "require header: missing header rejected",
+			minVersion:     "2.3.4",
+			requireHeader:  true,
+			ctx:            context.Background(),
+			wantReject:     true,
+			wantMinVersion: "2.3.4",
+		},
+		{
+			description:    "require header: empty header value rejected",
+			minVersion:     "2.3.4",
+			requireHeader:  true,
+			ctx:            ctxWithVersion(""),
+			wantReject:     true,
+			wantMinVersion: "2.3.4",
+		},
+		{
+			description:       "require header: unparseable header rejected",
+			minVersion:        "2.3.4",
+			requireHeader:     true,
+			ctx:               ctxWithVersion("not-a-version"),
+			wantReject:        true,
+			wantClientVersion: "not-a-version",
+			wantMinVersion:    "2.3.4",
+		},
+		{
+			description:   "require header: valid up-to-date header passes",
+			minVersion:    "2.3.4",
+			requireHeader: true,
+			ctx:           ctxWithVersion("2.3.4"),
+		},
+
+		// --- Header not required (requireHeader=false): the guard is bypassed,
+		// so even a missing/invalid/below-min header passes ---
+		{
+			description: "not required: missing header passes",
+			minVersion:  "2.3.4",
+			ctx:         context.Background(),
+		},
+		{
+			description: "not required: empty header value passes",
+			minVersion:  "2.3.4",
+			ctx:         ctxWithVersion(""),
+		},
+		{
+			description: "not required: unparseable header passes",
+			minVersion:  "2.3.4",
+			ctx:         ctxWithVersion("not-a-version"),
+		},
+		{
+			description: "not required: below-min client passes (no enforcement)",
+			minVersion:  "2.3.4",
+			ctx:         ctxWithVersion("1.0.0"),
+		},
+
+		// --- Configured min version unparseable/empty: the header is still
+		// required, but the comparison degrades to 0.0.0 so any client that
+		// sends a parseable version passes ---
+		{
+			description:   "unparseable min version, client with header passes",
+			minVersion:    "unknown",
+			requireHeader: true,
+			ctx:           ctxWithVersion("0.1.0"),
+		},
+		{
+			description:   "empty min version, client with header passes",
+			minVersion:    "",
+			requireHeader: true,
+			ctx:           ctxWithVersion("0.1.0"),
+		},
 	}
+
 	for _, tc := range testCases {
-		t.Run(tc.input, func(t *testing.T) {
-			gotMajor, gotMinor, err := parseVersion(tc.input)
-			require.NoError(t, err)
-			require.Equal(t, tc.wantMajor, gotMajor)
-			require.Equal(t, tc.wantMinor, gotMinor)
+		guard := NewVersionGuard(tc.minVersion, tc.requireHeader)
+
+		t.Run("unary/"+tc.description, func(t *testing.T) {
+			called, err := runUnaryGuard(guard, tc.ctx, testMethod)
+			assertVersionCompat(t, tc, called, err)
+		})
+
+		t.Run("stream/"+tc.description, func(t *testing.T) {
+			called, err := runStreamGuard(guard, tc.ctx, testMethod)
+			assertVersionCompat(t, tc, called, err)
 		})
 	}
+}
 
-	for _, bad := range []string{"abc", ""} {
-		_, _, err := parseVersion(bad)
-		require.Error(t, err)
+// TestVersionCompatSkipsAdminEndpoints checks that admin-plane and health
+// methods bypass the guard even with an outdated client version and a strict
+// require-header policy, while the public ArkService is still guarded.
+func TestVersionCompatSkipsAdminEndpoints(t *testing.T) {
+	guard := NewVersionGuard("2.3.4", true)
+
+	skippedMethods := []string{
+		"/ark.v1.AdminService/Sweep",
+		"/ark.v1.WalletService/GetBalance",
+		"/ark.v1.WalletInitializerService/Unlock",
+		"/ark.v1.SignerManagerService/LoadSigner",
+		"/grpc.health.v1.Health/Check",
 	}
+	for _, method := range skippedMethods {
+		for _, ctx := range []context.Context{
+			context.Background(), ctxWithVersion("0.0.1"),
+		} {
+			called, err := runUnaryGuard(guard, ctx, method)
+			require.NoError(t, err, method)
+			require.True(t, called, method)
+
+			called, err = runStreamGuard(guard, ctx, method)
+			require.NoError(t, err, method)
+			require.True(t, called, method)
+		}
+	}
+
+	// Sanity check: the same outdated client is rejected on a public service.
+	called, err := runUnaryGuard(guard, ctxWithVersion("0.0.1"), testMethod)
+	require.Error(t, err)
+	require.False(t, called)
 }
 
-func TestUnaryVersionCompat(t *testing.T) {
-	t.Run("valid", func(t *testing.T) {
-		testCases := []struct {
-			description   string
-			serverVersion string
-			ctx           context.Context
-		}{
-			{
-				description:   "no header passes through",
-				serverVersion: "2.0.0",
-				ctx:           context.Background(),
-			},
-			{
-				description:   "same major version",
-				serverVersion: "2.0.0",
-				ctx:           ctxWithVersion("2.0.0"),
-			},
-			{
-				description:   "higher client major version",
-				serverVersion: "2.0.0",
-				ctx:           ctxWithVersion("3.1.0"),
-			},
-			{
-				description:   "same minor version",
-				serverVersion: "2.1.0",
-				ctx:           ctxWithVersion("2.1.0"),
-			},
-			{
-				description:   "higher client minor version",
-				serverVersion: "2.0.0",
-				ctx:           ctxWithVersion("2.1.0"),
-			},
-			{
-				description:   "higher patch version",
-				serverVersion: "2.5.0",
-				ctx:           ctxWithVersion("2.5.1"),
-			},
-			{
-				description:   "lower patch version",
-				serverVersion: "2.5.1",
-				ctx:           ctxWithVersion("2.5.0"),
-			},
-			{
-				description:   "malformed client version passes through",
-				serverVersion: "2.0.0",
-				ctx:           ctxWithVersion("not-a-version"),
-			},
-			{
-				description:   "empty header value passes through",
-				serverVersion: "2.0.0",
-				ctx:           ctxWithVersion(""),
-			},
-			{
-				description:   "unparsable server version allows all clients",
-				serverVersion: "unknown",
-				ctx:           ctxWithVersion("0.1.0"),
-			},
-			{
-				description:   "empty server version allows all clients",
-				serverVersion: "",
-				ctx:           ctxWithVersion("0.1.0"),
-			},
-		}
+// TestVersionGuardProviderError checks that when the guard provider fails (e.g.
+// the settings cache is unreachable), guarded requests are rejected with an
+// internal error and the wrapped handler is never invoked.
+func TestVersionGuardProviderError(t *testing.T) {
+	failing := func() (*VersionGuard, error) {
+		return nil, errors.New("settings cache unavailable")
+	}
 
-		for _, tc := range testCases {
-			t.Run(tc.description, func(t *testing.T) {
-				major, minor, _ := parseVersion(tc.serverVersion)
-
-				interceptor := unaryVersionCompatHandler(major, minor, tc.serverVersion)
-				called := false
-				_, err := interceptor(
-					tc.ctx,
-					nil,
-					&grpc.UnaryServerInfo{FullMethod: testMethod},
-					func(ctx context.Context, req any) (any, error) {
-						called = true
-						return "ok", nil
-					},
-				)
-				require.NoError(t, err)
-				require.True(t, called)
-			})
-		}
+	t.Run("unary guarded request rejected", func(t *testing.T) {
+		called := false
+		_, err := unaryVersionCompatHandler(failing)(
+			ctxWithVersion("9.9.9"), nil,
+			&grpc.UnaryServerInfo{FullMethod: testMethod},
+			func(ctx context.Context, req any) (any, error) { called = true; return "ok", nil },
+		)
+		require.Error(t, err)
+		require.False(t, called)
 	})
 
-	t.Run("invalid", func(t *testing.T) {
-		serverVersion := "2.1.0"
-		major, minor, err := parseVersion(serverVersion)
+	t.Run("stream guarded request rejected", func(t *testing.T) {
+		called := false
+		err := streamVersionCompatHandler(failing)(
+			nil, &testServerStream{ctx: ctxWithVersion("9.9.9")},
+			&grpc.StreamServerInfo{FullMethod: testMethod},
+			func(srv any, ss grpc.ServerStream) error { called = true; return nil },
+		)
+		require.Error(t, err)
+		require.False(t, called)
+	})
+}
+
+// runUnaryGuard runs the unary interceptor for guard with ctx and reports
+// whether the wrapped handler was invoked.
+func runUnaryGuard(guard VersionGuard, ctx context.Context, method string) (bool, error) {
+	called := false
+	_, err := unaryVersionCompatHandler(staticGuard(guard))(
+		ctx,
+		nil,
+		&grpc.UnaryServerInfo{FullMethod: method},
+		func(ctx context.Context, req any) (any, error) {
+			called = true
+			return "ok", nil
+		},
+	)
+	return called, err
+}
+
+// runStreamGuard runs the stream interceptor for guard with ctx and reports
+// whether the wrapped handler was invoked.
+func runStreamGuard(guard VersionGuard, ctx context.Context, method string) (bool, error) {
+	called := false
+	err := streamVersionCompatHandler(staticGuard(guard))(
+		nil,
+		&testServerStream{ctx: ctx},
+		&grpc.StreamServerInfo{FullMethod: method},
+		func(srv any, ss grpc.ServerStream) error {
+			called = true
+			return nil
+		},
+	)
+	return called, err
+}
+
+// staticGuard adapts a fixed VersionGuard to the getVersionGuard provider the
+// interceptors expect.
+func staticGuard(guard VersionGuard) func() (*VersionGuard, error) {
+	return func() (*VersionGuard, error) { return &guard, nil }
+}
+
+func assertVersionCompat(t *testing.T, tc versionCompatCase, called bool, err error) {
+	t.Helper()
+	if !tc.wantReject {
 		require.NoError(t, err)
-		require.Equal(t, int64(2), major)
-		require.Equal(t, int64(1), minor)
+		require.True(t, called)
+		return
+	}
 
-		testCases := []struct {
-			description   string
-			clientVersion string
-		}{
-			{
-				description:   "client major below server major",
-				clientVersion: "1.9.9",
-			},
-			{
-				description:   "client major below server major with v prefix",
-				clientVersion: "v1.8.0",
-			},
-			{
-				description:   "client minor below server minor",
-				clientVersion: "2.0.0",
-			},
-			{
-				description:   "client minor below server minor with v prefix",
-				clientVersion: "v2.0.0",
-			},
-		}
+	require.Error(t, err)
+	require.False(t, called)
 
-		for _, tc := range testCases {
-			t.Run(tc.description, func(t *testing.T) {
-				require.NoError(t, err)
-				interceptor := unaryVersionCompatHandler(major, minor, serverVersion)
-				called := false
-				_, err := interceptor(
-					ctxWithVersion(tc.clientVersion),
-					nil,
-					&grpc.UnaryServerInfo{FullMethod: testMethod},
-					func(ctx context.Context, req any) (any, error) {
-						called = true
-						return "ok", nil
-					},
-				)
-				require.Error(t, err)
-				require.False(t, called)
-
-				var sdkErr arkerrors.Error
-				require.True(t, errors.As(err, &sdkErr))
-				require.Equal(t, arkerrors.BUILD_VERSION_TOO_OLD.Code, sdkErr.Code())
-				meta := sdkErr.Metadata()
-				require.Equal(t, tc.clientVersion, meta["client_version"])
-				require.Equal(t, serverVersion, meta["min_version"])
-			})
-		}
-	})
-}
-
-func TestStreamVersionCompat(t *testing.T) {
-	serverVersion := "2.1.1"
-	expectedVersion := "2.1.0"
-	major, minor, err := parseVersion(serverVersion)
-	require.NoError(t, err)
-	require.Equal(t, int64(2), major)
-	require.Equal(t, int64(1), minor)
-
-	t.Run("valid", func(t *testing.T) {
-		testCases := []struct {
-			description string
-			ctx         context.Context
-		}{
-			{
-				description: "no header passes through",
-				ctx:         context.Background(),
-			},
-			{
-				description: "same major version passes through",
-				ctx:         ctxWithVersion("2.1.1"),
-			},
-			{
-				description: "higher client major version",
-				ctx:         ctxWithVersion("3.0.0"),
-			},
-			{
-				description: "same minor version passes through",
-				ctx:         ctxWithVersion("2.1.1"),
-			},
-			{
-				description: "higher patch version",
-				ctx:         ctxWithVersion("2.1.5"),
-			},
-			{
-				description: "lower patch version",
-				ctx:         ctxWithVersion("2.1.0"),
-			},
-			{
-				description: "malformed client version passes through",
-				ctx:         ctxWithVersion("not-a-version"),
-			},
-		}
-
-		for _, tc := range testCases {
-			t.Run(tc.description, func(t *testing.T) {
-				interceptor := streamVersionCompatHandler(major, minor, serverVersion)
-				called := false
-				err := interceptor(
-					nil,
-					&testServerStream{ctx: tc.ctx},
-					&grpc.StreamServerInfo{FullMethod: testMethod},
-					func(srv any, ss grpc.ServerStream) error {
-						called = true
-						return nil
-					},
-				)
-				require.NoError(t, err)
-				require.True(t, called)
-			})
-		}
-	})
-
-	t.Run("invalid", func(t *testing.T) {
-		testCases := []struct {
-			description   string
-			clientVersion string
-		}{
-			{
-				description:   "client major below server major",
-				clientVersion: "1.7.0",
-			},
-			{
-				description:   "client major below server major with v prefix",
-				clientVersion: "v1.8.0",
-			},
-			{
-				description:   "client minor below server minor",
-				clientVersion: "2.0.0",
-			},
-			{
-				description:   "client minor below server minor with v prefix",
-				clientVersion: "v2.0.0",
-			},
-		}
-
-		for _, tc := range testCases {
-			t.Run(tc.description, func(t *testing.T) {
-				interceptor := streamVersionCompatHandler(major, minor, serverVersion)
-				called := false
-				err := interceptor(
-					nil,
-					&testServerStream{ctx: ctxWithVersion(tc.clientVersion)},
-					&grpc.StreamServerInfo{FullMethod: testMethod},
-					func(srv any, ss grpc.ServerStream) error {
-						called = true
-						return nil
-					},
-				)
-				require.Error(t, err)
-				require.False(t, called)
-
-				var sdkErr arkerrors.Error
-				require.True(t, errors.As(err, &sdkErr))
-				require.Equal(t, arkerrors.BUILD_VERSION_TOO_OLD.Code, sdkErr.Code())
-				meta := sdkErr.Metadata()
-				require.Equal(t, tc.clientVersion, meta["client_version"])
-				require.Equal(t, expectedVersion, meta["min_version"])
-			})
-		}
-	})
+	var sdkErr arkerrors.Error
+	require.True(t, errors.As(err, &sdkErr))
+	require.Equal(t, arkerrors.BUILD_VERSION_TOO_OLD.Code, sdkErr.Code())
+	meta := sdkErr.Metadata()
+	require.Equal(t, tc.wantClientVersion, meta["client_version"])
+	require.Equal(t, tc.wantMinVersion, meta["min_version"])
+	// The human-readable message must advertise the same threshold as the
+	// min_version metadata field.
+	require.Contains(t, err.Error(), ">= "+tc.wantMinVersion)
 }
 
 func ctxWithVersion(version string) context.Context {

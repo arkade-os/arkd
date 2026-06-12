@@ -59,6 +59,8 @@ type Settings struct {
 	NoteUriPrefix                 string
 	ScheduledSession              *ScheduledSession
 	BatchFees                     BatchFees
+	BuildVersionHeader            string
+	BuildVersionHeaderRequired    bool
 	UpdatedAt                     time.Time
 }
 
@@ -70,7 +72,8 @@ func NewSettings(
 	unilateralExitDelay, publicUnilateralExitDelay, checkpointExitDelay,
 	boardingExitDelay, vtxoTreeExpiry arklib.RelativeLocktime,
 	maxTxWeight, maxOpReturnOutputs uint64,
-	assetTxMaxWeightRatio float32, noteUriPrefix string,
+	assetTxMaxWeightRatio float32, noteUriPrefix, minVersionAccepted string,
+	minVersionRequired bool,
 ) (*Settings, error) {
 	settings := &Settings{
 		SessionDuration:               time.Duration(sessionDuration) * time.Second,
@@ -94,6 +97,8 @@ func NewSettings(
 		MaxOpReturnOutputs:            maxOpReturnOutputs,
 		AssetTxMaxWeightRatio:         assetTxMaxWeightRatio,
 		NoteUriPrefix:                 noteUriPrefix,
+		BuildVersionHeader:            minVersionAccepted,
+		BuildVersionHeaderRequired:    minVersionRequired,
 		UpdatedAt:                     time.Now(),
 	}
 	if err := settings.Validate(); err != nil {
@@ -227,6 +232,9 @@ func (s Settings) Validate() error {
 			s.RoundMaxParticipantsCount, s.RoundMinParticipantsCount,
 		)
 	}
+	if s.BuildVersionHeaderRequired && len(s.BuildVersionHeader) <= 0 {
+		return fmt.Errorf("build version header is required but no version is set")
+	}
 	return nil
 }
 
@@ -254,6 +262,8 @@ type SettingsUpdate struct {
 	MaxOpReturnOutputs            *uint64
 	AssetTxMaxWeightRatio         *float32
 	NoteUriPrefix                 *string
+	BuildVersionHeader            *string
+	BuildVersionHeaderRequired    *bool
 }
 
 // Update updates any field of Settings but ScheduledSession and BatchFees and returns a changelog
@@ -346,6 +356,14 @@ func (s *Settings) Update(u SettingsUpdate) ([]string, error) {
 	if u.NoteUriPrefix != nil {
 		updated.NoteUriPrefix = *u.NoteUriPrefix
 		changelog = append(changelog, "note_uri_prefix")
+	}
+	if u.BuildVersionHeader != nil {
+		updated.BuildVersionHeader = *u.BuildVersionHeader
+		changelog = append(changelog, "build_version_header")
+	}
+	if u.BuildVersionHeaderRequired != nil {
+		updated.BuildVersionHeaderRequired = *u.BuildVersionHeaderRequired
+		changelog = append(changelog, "build_version_header_required")
 	}
 
 	if err := updated.Validate(); err != nil {
