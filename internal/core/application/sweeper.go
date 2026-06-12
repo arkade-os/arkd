@@ -52,15 +52,28 @@ func newSweeper(
 	scheduler ports.SchedulerService,
 ) *sweeper {
 	return &sweeper{
-		wallet, walletFallbacks, repoManager, builder, scheduler,
-		&sync.Mutex{}, make(map[string]struct{}), nil,
+		wallet:          wallet,
+		walletFallbacks: walletFallbacks,
+		repoManager:     repoManager,
+		builder:         builder,
+		scheduler:       scheduler,
+		locker:          &sync.Mutex{},
+		scheduledTasks:  make(map[string]struct{}),
 	}
 }
 
 // signingWallets returns the wallets to try when signing a sweep, in order: the
 // primary wallet first, then any configured fallbacks.
 func (s *sweeper) signingWallets() []ports.WalletService {
-	return append([]ports.WalletService{s.wallet}, s.walletFallbacks...)
+	return primaryThenFallbacks(s.wallet, s.walletFallbacks)
+}
+
+// primaryThenFallbacks returns the primary wallet followed by the fallbacks — the
+// order in which sweep signing is attempted.
+func primaryThenFallbacks(
+	primary ports.WalletService, fallbacks []ports.WalletService,
+) []ports.WalletService {
+	return append([]ports.WalletService{primary}, fallbacks...)
 }
 
 // buildAndSignSweepTx builds the sweep transaction once (its destination and fees
