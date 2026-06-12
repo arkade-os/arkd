@@ -13,5 +13,5 @@ type FeeManager interface {
 		boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,
 		onchainOutputs, offchainOutputs []wire.TxOut,
 	) (int64, error)
-	Validate(fees domain.IntentFees) error
+	Validate(fees domain.BatchFees) error
 }

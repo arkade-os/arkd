@@ -8,9 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/arkade-os/arkd/internal/core/application"
+	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	alertsmanager "github.com/arkade-os/arkd/internal/infrastructure/alertsmanager"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
@@ -34,7 +34,6 @@ import (
 )
 
 const (
-	minAllowedSequence = 512
 	bitcoinBlockWeight = 4_000_000
 )
 
@@ -109,16 +108,10 @@ type Config struct {
 
 	VtxoNoCsvValidationCutoffDate int64
 
-	ScheduledSessionStartTime                 int64
-	ScheduledSessionEndTime                   int64
-	ScheduledSessionPeriod                    int64
-	ScheduledSessionDuration                  int64
-	ScheduledSessionMinRoundParticipantsCount int64
-	ScheduledSessionMaxRoundParticipantsCount int64
-	OtelCollectorEndpoint                     string
-	OtelPushInterval                          int64
-	PyroscopeServerURL                        string
-	RoundReportServiceEnabled                 bool
+	OtelCollectorEndpoint     string
+	OtelPushInterval          int64
+	PyroscopeServerURL        string
+	RoundReportServiceEnabled bool
 
 	EsploraURL        string
 	AlertManagerURL   string
@@ -128,8 +121,8 @@ type Config struct {
 	UnlockerFilePath string // file unlocker
 	UnlockerPassword string // env unlocker
 
-	RoundMinParticipantsCount   int64
-	RoundMaxParticipantsCount   int64
+	RoundMinParticipantsCount   uint64
+	RoundMaxParticipantsCount   uint64
 	UtxoMaxAmount               int64
 	UtxoMinAmount               int64
 	VtxoMaxAmount               int64
@@ -137,8 +130,8 @@ type Config struct {
 	SettlementMinExpiryGap      int64
 	UnrolledVtxoMinExpiryMargin int64
 	MaxTxWeight                 uint64
-	AssetTxMaxWeightRatio       float64
-	MaxOpReturnOutputs          uint32
+	AssetTxMaxWeightRatio       float32
+	MaxOpReturnOutputs          uint64
 
 	EnablePprof            bool
 	IndexerExposure        string
@@ -165,6 +158,7 @@ type Config struct {
 	network        *arklib.Network
 	roundReportSvc application.RoundReportService
 	alerts         ports.Alerts
+	settings       *domain.Settings
 }
 
 func (c *Config) String() string {
@@ -183,62 +177,56 @@ func (c *Config) String() string {
 }
 
 var (
-	Datadir                              = "DATADIR"
-	WalletAddr                           = "WALLET_ADDR"
-	SignerAddr                           = "SIGNER_ADDR"
-	SessionDuration                      = "SESSION_DURATION"
-	BanDuration                          = "BAN_DURATION"
-	BanThreshold                         = "BAN_THRESHOLD"
-	Port                                 = "PORT"
-	AdminPort                            = "ADMIN_PORT"
-	EventDbType                          = "EVENT_DB_TYPE"
-	DbType                               = "DB_TYPE"
-	DbUrl                                = "PG_DB_URL"
-	PostgresAutoCreateDB                 = "PG_DB_AUTOCREATE"
-	PostgresMaxOpenConn                  = "PG_DB_MAX_OPEN_CONN"
-	PostgresMaxIdleConn                  = "PG_DB_MAX_IDLE_CONN"
-	PostgresConnMaxIdleMins              = "PG_DB_CONN_MAX_IDLE_MINS"
-	PostgresConnMaxLifeMins              = "PG_DB_CONN_MAX_LIFE_MINS"
-	EventDbUrl                           = "PG_EVENT_DB_URL"
-	TxBuilderType                        = "TX_BUILDER_TYPE"
-	LiveStoreType                        = "LIVE_STORE_TYPE"
-	RedisUrl                             = "REDIS_URL"
-	RedisTxNumOfRetries                  = "REDIS_NUM_OF_RETRIES"
-	LogLevel                             = "LOG_LEVEL"
-	VtxoTreeExpiry                       = "VTXO_TREE_EXPIRY"
-	UnilateralExitDelay                  = "UNILATERAL_EXIT_DELAY"
-	PublicUnilateralExitDelay            = "PUBLIC_UNILATERAL_EXIT_DELAY"
-	CheckpointExitDelay                  = "CHECKPOINT_EXIT_DELAY"
-	BoardingExitDelay                    = "BOARDING_EXIT_DELAY"
-	EsploraURL                           = "ESPLORA_URL"
-	AlertManagerURL                      = "ALERT_MANAGER_URL"
-	ArkadeExplorerURL                    = "ARKADE_EXPLORER_URL"
-	NoMacaroons                          = "NO_MACAROONS"
-	NoTLS                                = "NO_TLS"
-	TLSExtraIP                           = "TLS_EXTRA_IP"
-	TLSExtraDomain                       = "TLS_EXTRA_DOMAIN"
-	UnlockerType                         = "UNLOCKER_TYPE"
-	UnlockerFilePath                     = "UNLOCKER_FILE_PATH"
-	UnlockerPassword                     = "UNLOCKER_PASSWORD"
-	NoteUriPrefix                        = "NOTE_URI_PREFIX"
-	ScheduledSessionStartTime            = "SCHEDULED_SESSION_START_TIME"
-	ScheduledSessionEndTime              = "SCHEDULED_SESSION_END_TIME"
-	ScheduledSessionPeriod               = "SCHEDULED_SESSION_PERIOD"
-	ScheduledSessionDuration             = "SCHEDULED_SESSION_DURATION"
-	ScheduledSessionMinRoundParticipants = "SCHEDULED_SESSION_MIN_ROUND_PARTICIPANTS_COUNT"
-	ScheduledSessionMaxRoundParticipants = "SCHEDULED_SESSION_MAX_ROUND_PARTICIPANTS_COUNT"
-	OtelCollectorEndpoint                = "OTEL_COLLECTOR_ENDPOINT"
-	OtelPushInterval                     = "OTEL_PUSH_INTERVAL"
-	PyroscopeServerURL                   = "PYROSCOPE_SERVER_URL"
-	RoundMaxParticipantsCount            = "ROUND_MAX_PARTICIPANTS_COUNT"
-	RoundMinParticipantsCount            = "ROUND_MIN_PARTICIPANTS_COUNT"
-	UtxoMaxAmount                        = "UTXO_MAX_AMOUNT"
-	VtxoMaxAmount                        = "VTXO_MAX_AMOUNT"
-	UtxoMinAmount                        = "UTXO_MIN_AMOUNT"
-	VtxoMinAmount                        = "VTXO_MIN_AMOUNT"
-	HeartbeatInterval                    = "HEARTBEAT_INTERVAL"
-	RoundReportServiceEnabled            = "ROUND_REPORT_ENABLED"
-	SettlementMinExpiryGap               = "SETTLEMENT_MIN_EXPIRY_GAP"
+	Datadir                   = "DATADIR"
+	WalletAddr                = "WALLET_ADDR"
+	SignerAddr                = "SIGNER_ADDR"
+	SessionDuration           = "SESSION_DURATION"
+	BanDuration               = "BAN_DURATION"
+	BanThreshold              = "BAN_THRESHOLD"
+	Port                      = "PORT"
+	AdminPort                 = "ADMIN_PORT"
+	EventDbType               = "EVENT_DB_TYPE"
+	DbType                    = "DB_TYPE"
+	DbUrl                     = "PG_DB_URL"
+	PostgresAutoCreateDB      = "PG_DB_AUTOCREATE"
+	PostgresMaxOpenConn       = "PG_DB_MAX_OPEN_CONN"
+	PostgresMaxIdleConn       = "PG_DB_MAX_IDLE_CONN"
+	PostgresConnMaxIdleMins   = "PG_DB_CONN_MAX_IDLE_MINS"
+	PostgresConnMaxLifeMins   = "PG_DB_CONN_MAX_LIFE_MINS"
+	EventDbUrl                = "PG_EVENT_DB_URL"
+	TxBuilderType             = "TX_BUILDER_TYPE"
+	LiveStoreType             = "LIVE_STORE_TYPE"
+	RedisUrl                  = "REDIS_URL"
+	RedisTxNumOfRetries       = "REDIS_NUM_OF_RETRIES"
+	LogLevel                  = "LOG_LEVEL"
+	VtxoTreeExpiry            = "VTXO_TREE_EXPIRY"
+	UnilateralExitDelay       = "UNILATERAL_EXIT_DELAY"
+	PublicUnilateralExitDelay = "PUBLIC_UNILATERAL_EXIT_DELAY"
+	CheckpointExitDelay       = "CHECKPOINT_EXIT_DELAY"
+	BoardingExitDelay         = "BOARDING_EXIT_DELAY"
+	EsploraURL                = "ESPLORA_URL"
+	AlertManagerURL           = "ALERT_MANAGER_URL"
+	ArkadeExplorerURL         = "ARKADE_EXPLORER_URL"
+	NoMacaroons               = "NO_MACAROONS"
+	NoTLS                     = "NO_TLS"
+	TLSExtraIP                = "TLS_EXTRA_IP"
+	TLSExtraDomain            = "TLS_EXTRA_DOMAIN"
+	UnlockerType              = "UNLOCKER_TYPE"
+	UnlockerFilePath          = "UNLOCKER_FILE_PATH"
+	UnlockerPassword          = "UNLOCKER_PASSWORD"
+	NoteUriPrefix             = "NOTE_URI_PREFIX"
+	OtelCollectorEndpoint     = "OTEL_COLLECTOR_ENDPOINT"
+	OtelPushInterval          = "OTEL_PUSH_INTERVAL"
+	PyroscopeServerURL        = "PYROSCOPE_SERVER_URL"
+	RoundMaxParticipantsCount = "ROUND_MAX_PARTICIPANTS_COUNT"
+	RoundMinParticipantsCount = "ROUND_MIN_PARTICIPANTS_COUNT"
+	UtxoMaxAmount             = "UTXO_MAX_AMOUNT"
+	VtxoMaxAmount             = "VTXO_MAX_AMOUNT"
+	UtxoMinAmount             = "UTXO_MIN_AMOUNT"
+	VtxoMinAmount             = "VTXO_MIN_AMOUNT"
+	HeartbeatInterval         = "HEARTBEAT_INTERVAL"
+	RoundReportServiceEnabled = "ROUND_REPORT_ENABLED"
+	SettlementMinExpiryGap    = "SETTLEMENT_MIN_EXPIRY_GAP"
 	// Minimum remaining CSV time (in seconds) for an unrolled VTXO to be accepted into a batch.
 	// 0 means fallback to session duration.
 	UnrolledVtxoMinExpiryMargin = "UNROLLED_VTXO_MIN_EXPIRY_MARGIN"
@@ -401,6 +389,50 @@ func LoadConfig() (*Config, error) {
 		adminPort = viper.GetUint32(Port)
 	}
 
+	vtxoTreeExpiry, rounded := arklib.ParseRelativeLocktime(viper.GetUint32(VtxoTreeExpiry))
+	if rounded {
+		log.Debugf(
+			"vtxo tree expiry must be a multiple of %d, rounded to %d",
+			arklib.MinAllowedSequence, vtxoTreeExpiry,
+		)
+	}
+	unilateralExitDelay, rounded := arklib.ParseRelativeLocktime(
+		viper.GetUint32(UnilateralExitDelay),
+	)
+	if rounded {
+		log.Debugf(
+			"unilateral exit delay must be a multiple of %d, rounded to %d",
+			arklib.MinAllowedSequence, unilateralExitDelay,
+		)
+	}
+	publicUnilateralExitDelay, rounded := arklib.ParseRelativeLocktime(
+		viper.GetUint32(PublicUnilateralExitDelay),
+	)
+	if rounded {
+		log.Debugf(
+			"public unilateral exit delay must be a multiple of %d, rounded to %d",
+			arklib.MinAllowedSequence, publicUnilateralExitDelay,
+		)
+	}
+	checkpointExitDelay, rounded := arklib.ParseRelativeLocktime(
+		viper.GetUint32(CheckpointExitDelay),
+	)
+	if rounded {
+		log.Debugf(
+			"checkpoint exit delay must be a multiple of %d, rounded to %d",
+			arklib.MinAllowedSequence, checkpointExitDelay,
+		)
+	}
+	boardingExitDelay, rounded := arklib.ParseRelativeLocktime(
+		viper.GetUint32(BoardingExitDelay),
+	)
+	if rounded {
+		log.Debugf(
+			"boarding exit delay must be a multiple of %d, rounded to %d",
+			arklib.MinAllowedSequence, boardingExitDelay,
+		)
+	}
+
 	return &Config{
 		Datadir:                   viper.GetString(Datadir),
 		WalletAddr:                viper.GetString(WalletAddr),
@@ -427,11 +459,11 @@ func LoadConfig() (*Config, error) {
 		PostgresConnMaxIdleMins:   viper.GetInt64(PostgresConnMaxIdleMins),
 		PostgresConnMaxLifeMins:   viper.GetInt64(PostgresConnMaxLifeMins),
 		LogLevel:                  viper.GetInt(LogLevel),
-		VtxoTreeExpiry:            determineLocktimeType(viper.GetInt64(VtxoTreeExpiry)),
-		UnilateralExitDelay:       determineLocktimeType(viper.GetInt64(UnilateralExitDelay)),
-		PublicUnilateralExitDelay: determineLocktimeType(viper.GetInt64(PublicUnilateralExitDelay)),
-		CheckpointExitDelay:       determineLocktimeType(viper.GetInt64(CheckpointExitDelay)),
-		BoardingExitDelay:         determineLocktimeType(viper.GetInt64(BoardingExitDelay)),
+		VtxoTreeExpiry:            vtxoTreeExpiry,
+		UnilateralExitDelay:       unilateralExitDelay,
+		PublicUnilateralExitDelay: publicUnilateralExitDelay,
+		CheckpointExitDelay:       checkpointExitDelay,
+		BoardingExitDelay:         boardingExitDelay,
 		EsploraURL:                viper.GetString(EsploraURL),
 		AlertManagerURL:           viper.GetString(AlertManagerURL),
 		ArkadeExplorerURL:         viper.GetString(ArkadeExplorerURL),
@@ -442,23 +474,13 @@ func LoadConfig() (*Config, error) {
 		UnlockerFilePath:          viper.GetString(UnlockerFilePath),
 		UnlockerPassword:          viper.GetString(UnlockerPassword),
 		NoteUriPrefix:             viper.GetString(NoteUriPrefix),
-		ScheduledSessionStartTime: viper.GetInt64(ScheduledSessionStartTime),
-		ScheduledSessionEndTime:   viper.GetInt64(ScheduledSessionEndTime),
-		ScheduledSessionPeriod:    viper.GetInt64(ScheduledSessionPeriod),
-		ScheduledSessionDuration:  viper.GetInt64(ScheduledSessionDuration),
-		ScheduledSessionMinRoundParticipantsCount: viper.GetInt64(
-			ScheduledSessionMinRoundParticipants,
-		),
-		ScheduledSessionMaxRoundParticipantsCount: viper.GetInt64(
-			ScheduledSessionMaxRoundParticipants,
-		),
-		OtelCollectorEndpoint: viper.GetString(OtelCollectorEndpoint),
-		OtelPushInterval:      viper.GetInt64(OtelPushInterval),
-		PyroscopeServerURL:    viper.GetString(PyroscopeServerURL),
-		HeartbeatInterval:     viper.GetInt64(HeartbeatInterval),
+		OtelCollectorEndpoint:     viper.GetString(OtelCollectorEndpoint),
+		OtelPushInterval:          viper.GetInt64(OtelPushInterval),
+		PyroscopeServerURL:        viper.GetString(PyroscopeServerURL),
+		HeartbeatInterval:         viper.GetInt64(HeartbeatInterval),
 
-		RoundMaxParticipantsCount:     viper.GetInt64(RoundMaxParticipantsCount),
-		RoundMinParticipantsCount:     viper.GetInt64(RoundMinParticipantsCount),
+		RoundMaxParticipantsCount:     viper.GetUint64(RoundMaxParticipantsCount),
+		RoundMinParticipantsCount:     viper.GetUint64(RoundMinParticipantsCount),
 		UtxoMaxAmount:                 viper.GetInt64(UtxoMaxAmount),
 		UtxoMinAmount:                 viper.GetInt64(UtxoMinAmount),
 		VtxoMaxAmount:                 viper.GetInt64(VtxoMaxAmount),
@@ -467,7 +489,7 @@ func LoadConfig() (*Config, error) {
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		UnrolledVtxoMinExpiryMargin:   viper.GetInt64(UnrolledVtxoMinExpiryMargin),
 		MaxTxWeight:                   viper.GetUint64(MaxTxWeight),
-		AssetTxMaxWeightRatio:         viper.GetFloat64(AssetTxMaxWeightRatio),
+		AssetTxMaxWeightRatio:         float32(viper.GetFloat64(AssetTxMaxWeightRatio)),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
 		IndexerExposure:               viper.GetString(IndexerExposure),
@@ -479,7 +501,7 @@ func LoadConfig() (*Config, error) {
 			maxStreamConnPoolSize, max(1, viper.GetUint32(StreamConnPoolSize)),
 		),
 		// Default to 1 if set to 0
-		MaxOpReturnOutputs:         max(1, viper.GetUint32(MaxOpReturnOutputs)),
+		MaxOpReturnOutputs:         max(1, viper.GetUint64(MaxOpReturnOutputs)),
 		BuildVersionHeaderRequired: viper.GetBool(MinBuildVersionHeaderRequired),
 		BuildVersionHeader:         viper.GetString(MinBuildVersionHeader),
 	}, nil
@@ -495,14 +517,6 @@ func makeDirectoryIfNotExists(path string) error {
 		return os.MkdirAll(path, os.ModeDir|0755)
 	}
 	return nil
-}
-
-func determineLocktimeType(locktime int64) arklib.RelativeLocktime {
-	if locktime >= minAllowedSequence {
-		return arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: uint32(locktime)}
-	}
-
-	return arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: uint32(locktime)}
 }
 
 func (c *Config) Validate() error {
@@ -533,128 +547,6 @@ func (c *Config) Validate() error {
 			supportedLiveStores,
 		)
 	}
-	if c.SessionDuration < 2 {
-		return fmt.Errorf("invalid session duration, must be at least 2 seconds")
-	}
-	if c.UnrolledVtxoMinExpiryMargin <= 0 {
-		return fmt.Errorf(
-			"invalid unrolled vtxo min expiry margin, must be greater than 0 seconds",
-		)
-	}
-	if c.UnrolledVtxoMinExpiryMargin < c.SessionDuration {
-		return fmt.Errorf(
-			"invalid unrolled vtxo min expiry margin (%d), "+
-				"must be at least session duration (%d) so the batch has "+
-				"enough time to finalize before the CSV expires",
-			c.UnrolledVtxoMinExpiryMargin, c.SessionDuration,
-		)
-	}
-	if c.BanDuration < 1 {
-		return fmt.Errorf("invalid ban duration, must be at least 1 second")
-	}
-	if c.BanThreshold < 1 {
-		log.Debugf("autoban is disabled")
-	}
-
-	// Ensure vtxo tree expiry and checkpoint exit delay are of the same type
-	if c.CheckpointExitDelay.Type != c.VtxoTreeExpiry.Type {
-		return fmt.Errorf(
-			"all delays must be above or below value 512 " +
-				"(checkpoint exit delay and vtxo tree expiry type mismatch)",
-		)
-	}
-
-	if c.UnilateralExitDelay.Type != c.VtxoTreeExpiry.Type {
-		return fmt.Errorf(
-			"all delays must be above or below value 512 " +
-				"(unilateral exit delay and vtxo tree expiry type mismatch)",
-		)
-	}
-	if c.BoardingExitDelay.Type != c.VtxoTreeExpiry.Type {
-		return fmt.Errorf(
-			"all delays must be above or below value 512 " +
-				"(boarding exit delay and vtxo tree expiry type mismatch)",
-		)
-	}
-
-	// Make sure the public unilateral exit delay type matches the internal one
-	if c.PublicUnilateralExitDelay.Type != c.UnilateralExitDelay.Type {
-		return fmt.Errorf(
-			"public unilateral exit delay and unilateral exit delay must have the same type",
-		)
-	}
-
-	// Round seconds-based delays to multiples of minAllowedSequence (BIP68 requirement).
-	// Block-based delays don't need rounding.
-	if c.VtxoTreeExpiry.Type == arklib.LocktimeTypeSecond {
-		// vtxo tree expiry must be a multiple of 512 if expressed in seconds
-		if c.VtxoTreeExpiry.Value%minAllowedSequence != 0 {
-			c.VtxoTreeExpiry.Value -= c.VtxoTreeExpiry.Value % minAllowedSequence
-			log.Infof(
-				"vtxo tree expiry must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.VtxoTreeExpiry,
-			)
-		}
-	}
-
-	if c.CheckpointExitDelay.Type == arklib.LocktimeTypeSecond {
-		if c.CheckpointExitDelay.Value%minAllowedSequence != 0 {
-			c.CheckpointExitDelay.Value -= c.CheckpointExitDelay.Value % minAllowedSequence
-			log.Infof(
-				"checkpoint exit delay must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.CheckpointExitDelay,
-			)
-		}
-	}
-
-	if c.UnilateralExitDelay.Type == arklib.LocktimeTypeSecond {
-		if c.UnilateralExitDelay.Value%minAllowedSequence != 0 {
-			c.UnilateralExitDelay.Value -= c.UnilateralExitDelay.Value % minAllowedSequence
-			log.Infof(
-				"unilateral exit delay must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.UnilateralExitDelay,
-			)
-		}
-	}
-
-	if c.PublicUnilateralExitDelay.Type == arklib.LocktimeTypeSecond {
-		if c.PublicUnilateralExitDelay.Value%minAllowedSequence != 0 {
-			c.PublicUnilateralExitDelay.Value -= c.PublicUnilateralExitDelay.Value % minAllowedSequence
-			log.Infof(
-				"public unilateral exit delay must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.PublicUnilateralExitDelay.Value,
-			)
-		}
-	}
-
-	if c.BoardingExitDelay.Type == arklib.LocktimeTypeSecond {
-		if c.BoardingExitDelay.Value%minAllowedSequence != 0 {
-			c.BoardingExitDelay.Value -= c.BoardingExitDelay.Value % minAllowedSequence
-			log.Infof(
-				"boarding exit delay must be a multiple of %d, rounded to %d",
-				minAllowedSequence, c.BoardingExitDelay,
-			)
-		}
-	}
-
-	if c.UnilateralExitDelay == c.BoardingExitDelay {
-		return fmt.Errorf("unilateral exit delay and boarding exit delay must be different")
-	}
-
-	if c.PublicUnilateralExitDelay.Value < c.UnilateralExitDelay.Value {
-		return fmt.Errorf(
-			"public unilateral exit delay must be greater than or equal to unilateral exit delay",
-		)
-	}
-
-	if c.VtxoMinAmount == 0 {
-		return fmt.Errorf("vtxo min amount must be greater than 0")
-	}
-
-	if c.UtxoMinAmount == 0 {
-		return fmt.Errorf("utxo min amount must be greater than 0")
-	}
-
 	if !supportedIndexerExposures.supports(c.IndexerExposure) {
 		return fmt.Errorf(
 			"indexer exposure type not supported, please select one of: %s",
@@ -672,18 +564,8 @@ func (c *Config) Validate() error {
 		)
 	}
 
-	if c.MaxTxWeight > bitcoinBlockWeight {
-		return fmt.Errorf(
-			"max tx weight can't exceed bitcoin block weight (%d)",
-			bitcoinBlockWeight,
-		)
-	}
-
-	if c.AssetTxMaxWeightRatio <= 0 || c.AssetTxMaxWeightRatio >= 1 {
-		return fmt.Errorf(
-			"asset tx max weight ratio must be between 0 and 1 (exclusive), got %f",
-			c.AssetTxMaxWeightRatio,
-		)
+	if _, err := c.getSettings(); err != nil {
+		return err
 	}
 
 	if c.MaxConcurrentStreams == 0 {
@@ -827,7 +709,7 @@ func (c *Config) RoundReportService() (application.RoundReportService, error) {
 }
 
 func (c *Config) feeManager() (err error) {
-	c.fee, err = feemanager.NewArkFeeManager(c.repo.Fees())
+	c.fee, err = feemanager.NewArkFeeManager(c.repo.Settings())
 	if err != nil {
 		return fmt.Errorf("failed to create fee manager: %w", err)
 	}
@@ -880,11 +762,17 @@ func (c *Config) repoManager() error {
 
 	txDecoder := bitcointxdecoder.NewService()
 
+	settings, err := c.getSettings()
+	if err != nil {
+		return err
+	}
+
 	svc, err = db.NewService(db.ServiceConfig{
 		EventStoreType:   c.EventDbType,
 		DataStoreType:    c.DbType,
 		EventStoreConfig: eventStoreConfig,
 		DataStoreConfig:  dataStoreConfig,
+		Settings:         *settings,
 	}, txDecoder)
 	if err != nil {
 		return err
@@ -998,19 +886,6 @@ func (c *Config) schedulerService() error {
 }
 
 func (c *Config) appService() error {
-	var ssStartTime, ssEndTime time.Time
-	var ssPeriod, ssDuration time.Duration
-
-	if c.ScheduledSessionStartTime > 0 {
-		ssStartTime = time.Unix(c.ScheduledSessionStartTime, 0)
-		ssEndTime = time.Unix(c.ScheduledSessionEndTime, 0)
-	}
-	if c.ScheduledSessionPeriod > 0 {
-		ssPeriod = time.Duration(c.ScheduledSessionPeriod) * time.Minute
-	}
-	if c.ScheduledSessionDuration > 0 {
-		ssDuration = time.Duration(c.ScheduledSessionDuration) * time.Second
-	}
 	if err := c.signerService(); err != nil {
 		return err
 	}
@@ -1025,17 +900,6 @@ func (c *Config) appService() error {
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
 		c.scheduler, c.liveStore, roundReportSvc, c.alerts, c.fee,
-		c.VtxoTreeExpiry, c.UnilateralExitDelay, c.PublicUnilateralExitDelay,
-		c.BoardingExitDelay, c.CheckpointExitDelay,
-		c.SessionDuration, c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
-		c.UtxoMaxAmount, c.UtxoMinAmount, c.VtxoMaxAmount, c.VtxoMinAmount,
-		c.BanDuration, c.BanThreshold, c.MaxTxWeight, c.AssetTxMaxWeightRatio,
-		*c.network, c.NoteUriPrefix,
-		ssStartTime, ssEndTime, ssPeriod, ssDuration,
-		c.ScheduledSessionMinRoundParticipantsCount, c.ScheduledSessionMaxRoundParticipantsCount,
-		c.SettlementMinExpiryGap,
-		c.UnrolledVtxoMinExpiryMargin,
-		time.Unix(c.VtxoNoCsvValidationCutoffDate, 0), c.MaxOpReturnOutputs,
 	)
 	if err != nil {
 		return err
@@ -1047,21 +911,12 @@ func (c *Config) appService() error {
 
 func (c *Config) adminService() error {
 	unit := ports.UnixTime
-	if c.VtxoTreeExpiry.Value < minAllowedSequence {
+	if c.VtxoTreeExpiry.Value < arklib.MinAllowedSequence {
 		unit = ports.BlockHeight
-	}
-
-	onInfoChange := func() {
-		if c.svc == nil {
-			return
-		}
-		c.svc.RefreshInfoCache()
 	}
 
 	c.adminSvc = application.NewAdminService(
 		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
-		c.RoundMinParticipantsCount, c.RoundMaxParticipantsCount,
-		onInfoChange,
 	)
 	return nil
 }
@@ -1108,6 +963,27 @@ func (c *Config) alertsService() error {
 	}
 	c.alerts = alerts
 	return nil
+}
+
+func (c *Config) getSettings() (*domain.Settings, error) {
+	if c.settings != nil {
+		return c.settings, nil
+	}
+
+	settings, err := domain.NewSettings(
+		c.SessionDuration, c.UnrolledVtxoMinExpiryMargin, c.BanThreshold, c.BanDuration,
+		c.SettlementMinExpiryGap, c.VtxoNoCsvValidationCutoffDate,
+		int64(c.RoundMinParticipantsCount), int64(c.RoundMaxParticipantsCount),
+		c.VtxoMinAmount, c.VtxoMaxAmount, c.UtxoMinAmount, c.UtxoMaxAmount,
+		c.UnilateralExitDelay, c.PublicUnilateralExitDelay, c.CheckpointExitDelay,
+		c.BoardingExitDelay, c.VtxoTreeExpiry,
+		c.MaxTxWeight, c.MaxOpReturnOutputs, c.AssetTxMaxWeightRatio, c.NoteUriPrefix,
+	)
+	if err != nil {
+		return nil, err
+	}
+	c.settings = settings
+	return settings, nil
 }
 
 type supportedType map[string]struct{}

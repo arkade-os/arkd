@@ -73,11 +73,11 @@ func TestResolveMinAmounts(t *testing.T) {
 	const dust int64 = 330
 
 	testCases := []struct {
-		description       string
-		vtxoMinAmount     int64
-		utxoMinAmount     int64
-		expectedVtxoMin   int64
-		expectedUtxoMin   int64
+		description     string
+		vtxoMinAmount   int64
+		utxoMinAmount   int64
+		expectedVtxoMin int64
+		expectedUtxoMin int64
 	}{
 		{
 			description:     "sub-dust vtxo min is preserved for offchain",
@@ -167,9 +167,7 @@ func TestCheckUnrolledVtxoExpiry(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.description, func(t *testing.T) {
-			svc := &service{unrolledVtxoMinExpiryMargin: margin}
-
-			err := svc.checkUnrolledVtxoExpiry(tc.csvExpiresAt, now)
+			err := checkUnrolledVtxoExpiry(tc.csvExpiresAt, now, margin)
 			if tc.expectErr {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), "unrolled vtxo CSV expires too soon")
@@ -556,7 +554,7 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 		},
 		// Empty txOuts → missing anchor
 		{
-			description: "reject: empty outputs",
+			description:             "reject: empty outputs",
 			txOuts:                  []*wire.TxOut{},
 			dust:                    testDust,
 			vtxoMaxAmount:           -1,
