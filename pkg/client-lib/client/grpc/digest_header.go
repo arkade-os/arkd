@@ -2,7 +2,9 @@ package grpcclient
 
 import (
 	"context"
+	"strings"
 
+	"github.com/arkade-os/arkd/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -43,4 +45,32 @@ func streamDigestInterceptor(getDigest func() string) grpc.StreamClientIntercept
 		ctx = metadata.NewOutgoingContext(ctx, md)
 		return streamer(ctx, desc, cc, method, opts...)
 	}
+}
+
+// isDigestMismatch reports whether err is the server's DIGEST_MISMATCH error.
+//
+// TODO: decode the gRPC status details (arkv1.ErrorDetails) instead of matching
+// the error message, once that path works end to end. Until then this matches the
+// structured error's name in the message.
+func isDigestMismatch(err error) bool {
+	return err != nil && strings.Contains(err.Error(), errors.DIGEST_MISMATCH.Name)
+}
+
+// withDigestRefresh runs call and, if it fails with the server's DIGEST_MISMATCH
+// error (the client's cached digest is stale because the server's config
+// changed), refreshes the digest via GetInfo — which is exempt from the digest
+// guard — and retries once. A persisting mismatch, or a GetInfo failure, returns
+// the original error. At worst the call runs twice with a GetInfo in between.
+func withDigestRefresh[T any](
+	a *grpcClient, ctx context.Context, call func() (T, error),
+) (T, error) {
+	res, err := call()
+	if !isDigestMismatch(err) {
+		return res, err
+	}
+	if _, infoErr := a.GetInfo(ctx); infoErr != nil {
+		var zero T
+		return zero, err
+	}
+	return call()
 }

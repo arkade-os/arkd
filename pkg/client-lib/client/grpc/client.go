@@ -14,7 +14,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
-	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/wire"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -171,19 +170,13 @@ func (a *grpcClient) RegisterIntent(ctx context.Context, proof, message string) 
 		},
 	}
 
-	for {
-		resp, err := a.svc.RegisterIntent(ctx, req)
-		if err != nil {
-			if strings.Contains(err.Error(), errors.DIGEST_MISMATCH.Name) {
-				if _, infoErr := a.GetInfo(ctx); infoErr != nil {
-					return "", err
-				}
-				continue
-			}
-			return "", err
-		}
-		return resp.GetIntentId(), nil
+	resp, err := withDigestRefresh(a, ctx, func() (*arkv1.RegisterIntentResponse, error) {
+		return a.svc.RegisterIntent(ctx, req)
+	})
+	if err != nil {
+		return "", err
 	}
+	return resp.GetIntentId(), nil
 }
 
 func (a *grpcClient) DeleteIntent(ctx context.Context, proof, message string) error {
@@ -193,19 +186,10 @@ func (a *grpcClient) DeleteIntent(ctx context.Context, proof, message string) er
 			Proof:   proof,
 		},
 	}
-	for {
-		_, err := a.svc.DeleteIntent(ctx, req)
-		if err != nil {
-			if strings.Contains(err.Error(), errors.DIGEST_MISMATCH.Name) {
-				if _, infoErr := a.GetInfo(ctx); infoErr != nil {
-					return err
-				}
-				continue
-			}
-			return err
-		}
-		return nil
-	}
+	_, err := withDigestRefresh(a, ctx, func() (*arkv1.DeleteIntentResponse, error) {
+		return a.svc.DeleteIntent(ctx, req)
+	})
+	return err
 }
 
 func (a *grpcClient) EstimateIntentFee(ctx context.Context, proof, message string) (int64, error) {
@@ -215,19 +199,13 @@ func (a *grpcClient) EstimateIntentFee(ctx context.Context, proof, message strin
 			Proof:   proof,
 		},
 	}
-	for {
-		resp, err := a.svc.EstimateIntentFee(ctx, req)
-		if err != nil {
-			if strings.Contains(err.Error(), errors.DIGEST_MISMATCH.Name) {
-				if _, infoErr := a.GetInfo(ctx); infoErr != nil {
-					return -1, err
-				}
-				continue
-			}
-			return -1, err
-		}
-		return resp.GetFee(), nil
+	resp, err := withDigestRefresh(a, ctx, func() (*arkv1.EstimateIntentFeeResponse, error) {
+		return a.svc.EstimateIntentFee(ctx, req)
+	})
+	if err != nil {
+		return -1, err
 	}
+	return resp.GetFee(), nil
 }
 
 func (a *grpcClient) ConfirmRegistration(ctx context.Context, intentID string) error {
@@ -304,7 +282,9 @@ func (a *grpcClient) GetEventStream(
 		client.BatchEventChannel,
 	]{
 		Connect: func(ctx context.Context) (arkv1.ArkService_GetEventStreamClient, error) {
-			return a.svc.GetEventStream(ctx, req)
+			return withDigestRefresh(a, ctx, func() (arkv1.ArkService_GetEventStreamClient, error) {
+				return a.svc.GetEventStream(ctx, req)
+			})
 		},
 		Reconnect: func(ctx context.Context) (string, arkv1.ArkService_GetEventStreamClient, error) {
 			stream, err := a.svc.GetEventStream(ctx, req)
@@ -368,20 +348,13 @@ func (a *grpcClient) SubmitTx(
 		CheckpointTxs: checkpointTxs,
 	}
 
-	for {
-		resp, err := a.svc.SubmitTx(ctx, req)
-		if err != nil {
-			if strings.Contains(err.Error(), errors.DIGEST_MISMATCH.Name) {
-				if _, infoErr := a.GetInfo(ctx); infoErr != nil {
-					return "", "", nil, err
-				}
-				continue
-			}
-			return "", "", nil, err
-		}
-
-		return resp.GetArkTxid(), resp.GetFinalArkTx(), resp.GetSignedCheckpointTxs(), nil
+	resp, err := withDigestRefresh(a, ctx, func() (*arkv1.SubmitTxResponse, error) {
+		return a.svc.SubmitTx(ctx, req)
+	})
+	if err != nil {
+		return "", "", nil, err
 	}
+	return resp.GetArkTxid(), resp.GetFinalArkTx(), resp.GetSignedCheckpointTxs(), nil
 }
 
 func (a *grpcClient) FinalizeTx(
@@ -392,19 +365,10 @@ func (a *grpcClient) FinalizeTx(
 		FinalCheckpointTxs: finalCheckpointTxs,
 	}
 
-	for {
-		_, err := a.svc.FinalizeTx(ctx, req)
-		if err != nil {
-			if strings.Contains(err.Error(), errors.DIGEST_MISMATCH.Name) {
-				if _, infoErr := a.GetInfo(ctx); infoErr != nil {
-					return err
-				}
-				continue
-			}
-			return err
-		}
-		return nil
-	}
+	_, err := withDigestRefresh(a, ctx, func() (*arkv1.FinalizeTxResponse, error) {
+		return a.svc.FinalizeTx(ctx, req)
+	})
+	return err
 }
 
 func (a *grpcClient) GetPendingTx(
@@ -420,28 +384,22 @@ func (a *grpcClient) GetPendingTx(
 		},
 	}
 
-	for {
-		resp, err := a.svc.GetPendingTx(ctx, req)
-		if err != nil {
-			if strings.Contains(err.Error(), errors.DIGEST_MISMATCH.Name) {
-				if _, infoErr := a.GetInfo(ctx); infoErr != nil {
-					return nil, err
-				}
-				continue
-			}
-			return nil, err
-		}
-
-		pendingTxs := make([]client.AcceptedOffchainTx, 0, len(resp.GetPendingTxs()))
-		for _, tx := range resp.GetPendingTxs() {
-			pendingTxs = append(pendingTxs, client.AcceptedOffchainTx{
-				Txid:                tx.GetArkTxid(),
-				FinalArkTx:          tx.GetFinalArkTx(),
-				SignedCheckpointTxs: tx.GetSignedCheckpointTxs(),
-			})
-		}
-		return pendingTxs, nil
+	resp, err := withDigestRefresh(a, ctx, func() (*arkv1.GetPendingTxResponse, error) {
+		return a.svc.GetPendingTx(ctx, req)
+	})
+	if err != nil {
+		return nil, err
 	}
+
+	pendingTxs := make([]client.AcceptedOffchainTx, 0, len(resp.GetPendingTxs()))
+	for _, tx := range resp.GetPendingTxs() {
+		pendingTxs = append(pendingTxs, client.AcceptedOffchainTx{
+			Txid:                tx.GetArkTxid(),
+			FinalArkTx:          tx.GetFinalArkTx(),
+			SignedCheckpointTxs: tx.GetSignedCheckpointTxs(),
+		})
+	}
+	return pendingTxs, nil
 }
 
 func (c *grpcClient) GetTransactionsStream(
@@ -455,19 +413,9 @@ func (c *grpcClient) GetTransactionsStream(
 		client.TransactionEvent,
 	]{
 		Connect: func(ctx context.Context) (arkv1.ArkService_GetTransactionsStreamClient, error) {
-			for {
-				stream, err := c.svc.GetTransactionsStream(ctx, req)
-				if err != nil {
-					if strings.Contains(err.Error(), errors.DIGEST_MISMATCH.Name) {
-						if _, infoErr := c.GetInfo(ctx); infoErr != nil {
-							return nil, err
-						}
-						continue
-					}
-					return nil, err
-				}
-				return stream, nil
-			}
+			return withDigestRefresh(c, ctx, func() (arkv1.ArkService_GetTransactionsStreamClient, error) {
+				return c.svc.GetTransactionsStream(ctx, req)
+			})
 		},
 		Reconnect: func(
 			ctx context.Context,
