@@ -42,3 +42,33 @@ func TestDigestMismatchReachesClient(t *testing.T) {
 	require.Equal(t, "server-digest", errDetails.GetMetadata()["expected_digest"])
 	require.Equal(t, "stale-digest", errDetails.GetMetadata()["got_digest"])
 }
+
+// TestStreamDigestMismatchReachesClient is the stream counterpart: the stream chain has no converter by default, so streamErrorConverter must be wired in. Chain mirrors StreamInterceptor and must stay in sync.
+func TestStreamDigestMismatchReachesClient(t *testing.T) {
+	chain := middleware.ChainStreamServer(
+		streamPanicRecoveryInterceptor(),
+		streamErrorConverter,
+		streamLogger,
+		streamDigestHandler(staticDigest("server-digest", true)),
+	)
+
+	err := chain(
+		nil,
+		&testServerStream{ctx: ctxWithDigest("stale-digest")},
+		&grpc.StreamServerInfo{FullMethod: guardedMethod},
+		func(srv any, ss grpc.ServerStream) error { return nil },
+	)
+	require.Error(t, err)
+
+	st := status.Convert(err)
+	require.Equal(t, codes.FailedPrecondition, st.Code())
+
+	details := st.Details()
+	require.NotEmpty(t, details, "client should receive structured error details")
+
+	errDetails, ok := details[0].(*arkv1.ErrorDetails)
+	require.True(t, ok)
+	require.Equal(t, arkerrors.DIGEST_MISMATCH.Name, errDetails.GetName())
+	require.Equal(t, "server-digest", errDetails.GetMetadata()["expected_digest"])
+	require.Equal(t, "stale-digest", errDetails.GetMetadata()["got_digest"])
+}

@@ -29,6 +29,7 @@ func StreamInterceptor(
 ) grpc.ServerOption {
 	return grpc.StreamInterceptor(middleware.ChainStreamServer(
 		streamPanicRecoveryInterceptor(),
+		streamErrorConverter,
 		streamLogger,
 		streamVersionCompatHandler(getVersionGuard),
 		streamDigestHandler(getDigest),
