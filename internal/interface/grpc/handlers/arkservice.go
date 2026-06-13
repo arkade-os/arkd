@@ -54,8 +54,17 @@ func (h *handler) GetInfo(
 		return nil, err
 	}
 
+	deprecatedSigners := make([]*arkv1.DeprecatedSigner, 0, len(info.DeprecatedSignerKeys))
+	for _, key := range info.DeprecatedSignerKeys {
+		deprecatedSigners = append(deprecatedSigners, &arkv1.DeprecatedSigner{
+			Pubkey:     key.PubKey,
+			CutoffDate: key.CutoffDate,
+		})
+	}
+
 	return &arkv1.GetInfoResponse{
 		SignerPubkey:        info.SignerPubKey,
+		DeprecatedSigners:   deprecatedSigners,
 		ForfeitPubkey:       info.ForfeitPubKey,
 		UnilateralExitDelay: info.UnilateralExitDelay,
 		BoardingExitDelay:   info.BoardingExitDelay,

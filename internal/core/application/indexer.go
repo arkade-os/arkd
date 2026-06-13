@@ -87,9 +87,11 @@ type indexerService struct {
 	wallet       ports.WalletService
 	authPrvkey   *btcec.PrivateKey // key used to sign auth tokens
 	signerPubkey *btcec.PublicKey  // server's signing key, used for stripping signatures from txs
-	txExposure   exposure
-	authTokenTTL time.Duration
-	tokenCache   *tokenCache
+	// deprecated signer pubkeys still accepted for old vtxos after a key rotation
+	deprecatedSignerPubkeys []ports.DeprecatedSignerPubkey
+	txExposure              exposure
+	authTokenTTL            time.Duration
+	tokenCache              *tokenCache
 }
 
 func NewIndexerService(
@@ -97,6 +99,7 @@ func NewIndexerService(
 	wallet ports.WalletService,
 	privkey *btcec.PrivateKey,
 	signerPubkey *btcec.PublicKey,
+	deprecatedSignerPubkeys []ports.DeprecatedSignerPubkey,
 	txExposure string,
 	authTokenExpirySec int64,
 ) (IndexerService, error) {
@@ -124,6 +127,7 @@ func NewIndexerService(
 	if signerPubkey != nil {
 		svc.signerPubkey = signerPubkey
 	}
+	svc.deprecatedSignerPubkeys = deprecatedSignerPubkeys
 	return svc, nil
 }
 
@@ -682,7 +686,10 @@ func (i *indexerService) getVirtualTxs(
 }
 
 func (i *indexerService) stripSignerSignatures(virtualTxs []string) error {
-	signerPubkey := schnorr.SerializePubKey(i.signerPubkey)
+	signerPubkeys := make([][]byte, 0)
+	for _, pk := range i.allSignerPubkeys() {
+		signerPubkeys = append(signerPubkeys, schnorr.SerializePubKey(pk))
+	}
 
 	for idx := range virtualTxs {
 		ptx, err := psbt.NewFromRawBytes(strings.NewReader(virtualTxs[idx]), true)
@@ -700,7 +707,14 @@ func (i *indexerService) stripSignerSignatures(virtualTxs []string) error {
 
 			newSigs := make([]*psbt.TaprootScriptSpendSig, 0)
 			for _, sig := range ptx.Inputs[j].TaprootScriptSpendSig {
-				if !bytes.Equal(sig.XOnlyPubKey, signerPubkey) {
+				isSignerSig := false
+				for _, pk := range signerPubkeys {
+					if bytes.Equal(sig.XOnlyPubKey, pk) {
+						isSignerSig = true
+						break
+					}
+				}
+				if !isSignerSig {
 					newSigs = append(newSigs, sig)
 				}
 			}
@@ -839,7 +853,7 @@ func (i *indexerService) validateIntent(ctx context.Context, intentToValidate In
 	}
 
 	return intent.Verify(
-		intentToValidate.Proof, intentToValidate.Message, []*btcec.PublicKey{i.signerPubkey},
+		intentToValidate.Proof, intentToValidate.Message, i.allSignerPubkeys(),
 	)
 }
 
@@ -1026,6 +1040,15 @@ func (i *indexerService) RevokeTokens(
 		return 0, fmt.Errorf("%w: at least one filter is required", ErrInvalidInput)
 	}
 	return i.tokenCache.revoke(h, op, txid), nil
+}
+
+func (i *indexerService) allSignerPubkeys() []*btcec.PublicKey {
+	pubkeys := make([]*btcec.PublicKey, 0, len(i.deprecatedSignerPubkeys)+1)
+	pubkeys = append(pubkeys, i.signerPubkey)
+	for _, deprecated := range i.deprecatedSignerPubkeys {
+		pubkeys = append(pubkeys, deprecated.PubKey)
+	}
+	return pubkeys
 }
 
 // hashOutpoints clones the given outpoints, sorts them lexicographically by txid and vout,
