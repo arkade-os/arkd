@@ -1,0 +1,116 @@
+package pgdb_test
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/base64"
+	"encoding/hex"
+	"testing"
+
+	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
+	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/stretchr/testify/require"
+)
+
+// rawTxTwoPackets matches the SQLite-side fixture: a tx carrying an
+// ARK extension with packet types 0 and 255.
+const rawTxTwoPackets = "01000000000100000000000000001b6a1941524b000e01020200000001010000c0de810aff04deadbeef00000000"
+
+// rawTxNoExtension is a tx with one non-extension output.
+const rawTxNoExtension = "010000000001e803000000000000225120000000000000000000000000000000000000000000000000000000000000000000000000"
+
+func TestBackfillPackets(t *testing.T) {
+	ctx := context.Background()
+	dsn := "postgres://root:secret@localhost:5432/event?sslmode=disable"
+	db, err := sql.Open("postgres", dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	setupOffchainTxTableForBackfill(t, db)
+	t.Cleanup(func() { _, _ = db.Exec(`DROP TABLE IF EXISTS offchain_tx;`) })
+
+	// Three pre-existing rows, all with packets = NULL (the
+	// pre-migration state). The backfill should:
+	//   * carrier        -> packets = "0,255"
+	//   * no-extension   -> packets = ""   (Valid, distinguishes from NULL)
+	//   * malformed psbt -> packets = ""   (Valid, marked to avoid retry)
+	carrierTxid := "carrier-txid"
+	noExtTxid := "no-ext-txid"
+	malformedTxid := "malformed-txid"
+	insertBackfillRow(t, db, carrierTxid, psbtBase64FromTxHex(t, rawTxTwoPackets))
+	insertBackfillRow(t, db, noExtTxid, psbtBase64FromTxHex(t, rawTxNoExtension))
+	insertBackfillRow(t, db, malformedTxid, "not-a-psbt")
+
+	require.NoError(t, pgdb.BackfillPackets(ctx, db))
+
+	require.Equal(t, "0,255", readPackets(t, db, carrierTxid))
+	require.Equal(t, "", readPackets(t, db, noExtTxid))
+	require.Equal(t, "", readPackets(t, db, malformedTxid))
+
+	// Re-running is a no-op: non-NULL rows are not revisited.
+	require.NoError(t, pgdb.BackfillPackets(ctx, db))
+
+	var nullCount int
+	require.NoError(
+		t,
+		db.QueryRow(`SELECT COUNT(*) FROM offchain_tx WHERE packets IS NULL`).
+			Scan(&nullCount),
+	)
+	require.Zero(t, nullCount)
+}
+
+func setupOffchainTxTableForBackfill(t *testing.T, db *sql.DB) {
+	t.Helper()
+	_, err := db.Exec(`DROP TABLE IF EXISTS offchain_tx;`)
+	require.NoError(t, err)
+	_, err = db.Exec(`
+        CREATE TABLE offchain_tx (
+            txid TEXT PRIMARY KEY,
+            tx TEXT NOT NULL,
+            starting_timestamp BIGINT NOT NULL,
+            ending_timestamp BIGINT NOT NULL,
+            expiry_timestamp BIGINT NOT NULL,
+            fail_reason TEXT,
+            stage_code INTEGER NOT NULL,
+            packets TEXT
+        );
+    `)
+	require.NoError(t, err, "failed to create offchain_tx table")
+}
+
+func insertBackfillRow(t *testing.T, db *sql.DB, txid, txBlob string) {
+	t.Helper()
+	_, err := db.Exec(`
+        INSERT INTO offchain_tx
+            (txid, tx, starting_timestamp, ending_timestamp, expiry_timestamp,
+             fail_reason, stage_code, packets)
+        VALUES ($1, $2, 0, 0, 0, NULL, 2, NULL);
+    `, txid, txBlob)
+	require.NoError(t, err)
+}
+
+func readPackets(t *testing.T, db *sql.DB, txid string) string {
+	t.Helper()
+	var col sql.NullString
+	require.NoError(
+		t,
+		db.QueryRow(`SELECT packets FROM offchain_tx WHERE txid = $1`, txid).Scan(&col),
+	)
+	require.True(t, col.Valid, "packets must be non-NULL after backfill")
+	return col.String
+}
+
+func psbtBase64FromTxHex(t *testing.T, txHex string) string {
+	t.Helper()
+	raw, err := hex.DecodeString(txHex)
+	require.NoError(t, err)
+	tx := wire.NewMsgTx(wire.TxVersion)
+	require.NoError(t, tx.DeserializeNoWitness(bytes.NewReader(raw)))
+	p, err := psbt.NewFromUnsignedTx(tx)
+	require.NoError(t, err)
+	var buf bytes.Buffer
+	require.NoError(t, p.Serialize(&buf))
+	return base64.StdEncoding.EncodeToString(buf.Bytes())
+}

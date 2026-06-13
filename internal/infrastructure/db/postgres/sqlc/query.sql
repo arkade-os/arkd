@@ -74,15 +74,16 @@ INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
 VALUES (@vtxo_txid, @vtxo_vout, @commitment_txid);
 
 -- name: UpsertOffchainTx :exec
-INSERT INTO offchain_tx (txid, tx, starting_timestamp, ending_timestamp, expiry_timestamp, fail_reason, stage_code)
-VALUES (@txid, @tx, @starting_timestamp, @ending_timestamp, @expiry_timestamp, @fail_reason, @stage_code)
+INSERT INTO offchain_tx (txid, tx, starting_timestamp, ending_timestamp, expiry_timestamp, fail_reason, stage_code, packets)
+VALUES (@txid, @tx, @starting_timestamp, @ending_timestamp, @expiry_timestamp, @fail_reason, @stage_code, @packets)
 ON CONFLICT(txid) DO UPDATE SET
     tx = EXCLUDED.tx,
     starting_timestamp = EXCLUDED.starting_timestamp,
     ending_timestamp = EXCLUDED.ending_timestamp,
     expiry_timestamp = EXCLUDED.expiry_timestamp,
     fail_reason = EXCLUDED.fail_reason,
-    stage_code = EXCLUDED.stage_code;
+    stage_code = EXCLUDED.stage_code,
+    packets = EXCLUDED.packets;
 
 -- name: UpsertCheckpointTx :exec
 INSERT INTO checkpoint_tx (txid, tx, commitment_txid, is_root_commitment_txid, offchain_txid)
@@ -271,8 +272,44 @@ FROM vtxo
 WHERE swept = true
   AND spent = false;
 
--- name: SelectOffchainTx :many
-SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid AND COALESCE(fail_reason, '') = '';
+-- name: SelectOffchainTxsByTxids :many
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw
+WHERE COALESCE(fail_reason, '') = ''
+  AND stage_code <> 0
+  AND txid = ANY(sqlc.arg('txids')::varchar[])
+  AND (sqlc.arg('with_extension')::boolean = false OR (packets IS NOT NULL AND packets <> ''))
+  AND (sqlc.arg('with_after')::boolean = false OR starting_timestamp >= sqlc.arg('after_ts')::bigint)
+  AND (sqlc.arg('with_before')::boolean = false OR starting_timestamp <= sqlc.arg('before_ts')::bigint)
+ORDER BY starting_timestamp DESC, txid ASC;
+
+-- name: SelectOffchainTxs :many
+-- The cap is enforced over a deduplicated set of base txids in the CTE,
+-- then expanded back through the LEFT JOIN view so a tx with N
+-- checkpoint rows still contributes one txid to the cap.
+WITH limited_txids AS (
+    SELECT txid
+    FROM offchain_tx
+    WHERE COALESCE(fail_reason, '') = ''
+      AND stage_code <> 0
+      AND (sqlc.arg('with_extension')::boolean = false OR (packets IS NOT NULL AND packets <> ''))
+      AND (sqlc.arg('with_after')::boolean = false OR starting_timestamp >= sqlc.arg('after_ts')::bigint)
+      AND (sqlc.arg('with_before')::boolean = false OR starting_timestamp <= sqlc.arg('before_ts')::bigint)
+    ORDER BY starting_timestamp DESC, txid ASC
+    LIMIT sqlc.arg('lim')::int
+)
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw
+JOIN limited_txids USING (txid)
+ORDER BY offchain_tx_vw.starting_timestamp DESC, offchain_tx_vw.txid ASC;
+
+-- name: SelectOffchainTxsWithoutPackets :many
+SELECT txid, tx FROM offchain_tx
+WHERE packets IS NULL
+  AND txid > sqlc.arg('cursor')::varchar
+ORDER BY txid ASC
+LIMIT sqlc.arg('lim')::int;
+
+-- name: UpdateOffchainTxPackets :exec
+UPDATE offchain_tx SET packets = @packets WHERE txid = @txid;
 
 -- name: SelectVtxoPubKeysByCommitmentTxid :many
 SELECT DISTINCT v.pubkey

@@ -382,19 +382,25 @@ func (e *indexerService) GetVirtualTxs(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	filter, err := parseVirtualTxsFilter(request)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
 	var resp *application.VirtualTxsResp
 	if request.GetIntent() != nil {
 		intent, parseErr := parseIndexerIntent(request.GetIntent())
 		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
-		resp, err = e.indexerSvc.GetVirtualTxsByIntent(ctx, *intent, page)
+		resp, err = e.indexerSvc.GetVirtualTxsByIntent(ctx, *intent, filter, page)
 	} else {
 		txids, parseErr := parseTxids(request.GetTxids())
 		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
-		resp, err = e.indexerSvc.GetVirtualTxs(ctx, request.GetToken(), txids, page)
+		filter.WithTxids = txids
+		resp, err = e.indexerSvc.GetVirtualTxs(ctx, request.GetToken(), filter, page)
 	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -404,6 +410,55 @@ func (e *indexerService) GetVirtualTxs(
 		Txs:  resp.Txs,
 		Page: protoPage(resp.Page),
 	}, nil
+}
+
+// parseVirtualTxsFilter projects the request's CEL expression + time
+// range into a structured OffchainTxFilter. The WithTxids field is left
+// unset and populated by the caller based on the request's auth mode.
+func parseVirtualTxsFilter(
+	request *arkv1.GetVirtualTxsRequest,
+) (domain.OffchainTxFilter, error) {
+	filter := domain.OffchainTxFilter{}
+
+	if f := request.GetFilter(); f != nil {
+		if s := f.GetScripts(); s != nil &&
+			(len(s.GetAdd()) > 0 || len(s.GetRemove()) > 0) {
+			return filter, fmt.Errorf(
+				"filter.scripts is not supported by GetVirtualTxs; leave empty",
+			)
+		}
+		exprs := f.GetExpressions()
+		switch len(exprs) {
+		case 0:
+		case 1:
+			extracted, err := application.ExtractOffchainTxFilter(exprs[0])
+			if err != nil {
+				return filter, fmt.Errorf("invalid filter expression: %w", err)
+			}
+			filter.WithExtension = extracted.WithExtension
+			filter.WithPacket = extracted.WithPacket
+		default:
+			return filter, fmt.Errorf(
+				"GetVirtualTxs accepts at most one filter expression; got %d",
+				len(exprs),
+			)
+		}
+	}
+
+	switch tr := request.GetTimeRange().(type) {
+	case *arkv1.GetVirtualTxsRequest_After:
+		filter.WithAfterDate = tr.After.GetTimestamp()
+	case *arkv1.GetVirtualTxsRequest_Before:
+		filter.WithBeforeDate = tr.Before.GetTimestamp()
+	case *arkv1.GetVirtualTxsRequest_Within:
+		filter.WithAfterDate = tr.Within.GetStartTimestamp()
+		filter.WithBeforeDate = tr.Within.GetEndTimestamp()
+	}
+
+	if err := filter.Validate(); err != nil {
+		return filter, err
+	}
+	return filter, nil
 }
 
 func (e *indexerService) GetBatchSweepTransactions(
