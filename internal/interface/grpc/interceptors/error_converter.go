@@ -49,3 +49,16 @@ func errorConverter(
 	}
 	return resp, err
 }
+
+func streamErrorConverter(
+	srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler,
+) error {
+	err := handler(srv, ss)
+	if err != nil {
+		var structuredErr arkerrors.Error
+		if errors.As(err, &structuredErr) {
+			return gRPCError{structuredErr}
+		}
+	}
+	return err
+}
