@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// TestDigestMismatchReachesClient checks the client receives a proper status with details, not a bare Unknown. Chain mirrors UnaryInterceptor and must stay in sync.
+// TestDigestMismatchReachesClient checks the client receives a proper status with details
 func TestDigestMismatchReachesClient(t *testing.T) {
 	chain := middleware.ChainUnaryServer(
 		unaryPanicRecoveryInterceptor(),
@@ -43,7 +43,7 @@ func TestDigestMismatchReachesClient(t *testing.T) {
 	require.Equal(t, "stale-digest", errDetails.GetMetadata()["got_digest"])
 }
 
-// TestStreamDigestMismatchReachesClient is the stream counterpart: the stream chain has no converter by default, so streamErrorConverter must be wired in. Chain mirrors StreamInterceptor and must stay in sync.
+// TestStreamDigestMismatchReachesClient is the stream counterpart
 func TestStreamDigestMismatchReachesClient(t *testing.T) {
 	chain := middleware.ChainStreamServer(
 		streamPanicRecoveryInterceptor(),
