@@ -76,6 +76,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: arkd
+    # arkd no longer initializes or unlocks the wallet: the arkd-wallet must be
+    # initialized and unlocked out of band first, otherwise arkd fails to start
+    # and is restarted by this policy until the wallet is ready.
     restart: unless-stopped
     depends_on:
       - arkd-wallet
