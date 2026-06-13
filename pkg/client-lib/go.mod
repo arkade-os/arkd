@@ -13,6 +13,7 @@ replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v
 require (
 	github.com/arkade-os/arkd/api-spec v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/ark-lib v0.0.0-00010101000000-000000000000
+	github.com/arkade-os/arkd/pkg/errors v0.0.0-00010101000000-000000000000
 	github.com/btcsuite/btcd v0.24.3-0.20240921052913-67b8efd3ba53
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
 	github.com/btcsuite/btcd/btcutil v1.1.5
@@ -33,7 +34,6 @@ require (
 	dario.cat/mergo v1.0.1 // indirect
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
-	github.com/arkade-os/arkd/pkg/errors v0.0.0-00010101000000-000000000000 // indirect
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
 	github.com/btcsuite/btcwallet/wallet/txauthor v1.3.4 // indirect
 	github.com/btcsuite/btcwallet/wallet/txrules v1.2.1 // indirect
