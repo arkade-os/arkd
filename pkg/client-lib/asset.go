@@ -161,14 +161,13 @@ func (a *service) IssueAsset(
 		return nil, err
 	}
 
+	signers := cfgData.AllSigners()
 	// validate and verify transactions returned by the server
-	if err := verifySignedArk(arkTx, signedArkTx, cfgData.SignerPubKey); err != nil {
+	if err := verifySignedArk(arkTx, signedArkTx, signers); err != nil {
 		return nil, err
 	}
 
-	if err := verifySignedCheckpoints(
-		checkpointTxs, signedCheckpointTxs, cfgData.SignerPubKey,
-	); err != nil {
+	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, signers); err != nil {
 		return nil, err
 	}
 
@@ -373,14 +372,13 @@ func (a *service) ReissueAsset(
 		return nil, err
 	}
 
+	signers := cfgData.AllSigners()
 	// validate and verify transactions returned by the server
-	if err := verifySignedArk(arkTx, signedArkTx, cfgData.SignerPubKey); err != nil {
+	if err := verifySignedArk(arkTx, signedArkTx, signers); err != nil {
 		return nil, err
 	}
 
-	if err := verifySignedCheckpoints(
-		checkpointTxs, signedCheckpointTxs, cfgData.SignerPubKey,
-	); err != nil {
+	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, signers); err != nil {
 		return nil, err
 	}
 
@@ -514,14 +512,13 @@ func (a *service) BurnAsset(
 		return nil, err
 	}
 
+	signers := cfgData.AllSigners()
 	// validate and verify transactions returned by the server
-	if err := verifySignedArk(arkTx, signedArkTx, cfgData.SignerPubKey); err != nil {
+	if err := verifySignedArk(arkTx, signedArkTx, signers); err != nil {
 		return nil, err
 	}
 
-	if err := verifySignedCheckpoints(
-		checkpointTxs, signedCheckpointTxs, cfgData.SignerPubKey,
-	); err != nil {
+	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, signers); err != nil {
 		return nil, err
 	}
 

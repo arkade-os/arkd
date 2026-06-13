@@ -50,6 +50,16 @@ func (c Config) CheckpointExitPath() []byte {
 	return buf
 }
 
+func (c Config) AllSigners() map[string]*btcec.PublicKey {
+	m := map[string]*btcec.PublicKey{
+		hex.EncodeToString(schnorr.SerializePubKey(c.SignerPubKey)): c.SignerPubKey,
+	}
+	for _, signer := range c.DeprecatedSigners {
+		m[hex.EncodeToString(schnorr.SerializePubKey(signer.PubKey))] = signer.PubKey
+	}
+	return m
+}
+
 type StreamConnectionState string
 
 const (
