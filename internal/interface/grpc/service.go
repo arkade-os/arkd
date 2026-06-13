@@ -664,9 +664,13 @@ func (s *service) ensureWalletReady() error {
 
 	confirmed, unconfirmed, err := wallet.MainAccountBalance(ctx)
 	if err != nil {
-		log.WithError(err).Warn("failed to read wallet balance at startup")
+		log.WithError(err).
+			Warnf("failed to read balance of wallet %s at startup", s.appConfig.WalletAddr)
 	} else if confirmed+unconfirmed == 0 {
-		log.Warn("wallet main account balance is zero: arkd may be unable to source liquidity")
+		log.Warnf(
+			"main account balance of wallet %s is zero: arkd may be unable to source liquidity",
+			s.appConfig.WalletAddr,
+		)
 	}
 
 	return nil

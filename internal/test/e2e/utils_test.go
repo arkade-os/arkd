@@ -608,16 +608,22 @@ func setupArkdWallet(httpClient *http.Client) error {
 		}
 
 		url = fmt.Sprintf("%s/v1/wallet/create", walletUrl)
-		body := fmt.Sprintf(`{"seed": "%s", "password": "%s"}`, seed.Seed, password)
-		if err := post(httpClient, url, body, "create wallet"); err != nil {
+		body, err := json.Marshal(map[string]string{"seed": seed.Seed, "password": password})
+		if err != nil {
+			return fmt.Errorf("failed to encode create wallet body: %s", err)
+		}
+		if err := post(httpClient, url, string(body), "create wallet"); err != nil {
 			return err
 		}
 	}
 
 	if !status.Unlocked {
 		url := fmt.Sprintf("%s/v1/wallet/unlock", walletUrl)
-		body := fmt.Sprintf(`{"password": "%s"}`, password)
-		if err := post(httpClient, url, body, "unlock wallet"); err != nil {
+		body, err := json.Marshal(map[string]string{"password": password})
+		if err != nil {
+			return fmt.Errorf("failed to encode unlock wallet body: %s", err)
+		}
+		if err := post(httpClient, url, string(body), "unlock wallet"); err != nil {
 			return err
 		}
 	}
@@ -651,6 +657,13 @@ func get[T any](httpClient *http.Client, url, name string) (*T, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get %s: %s", name, err)
 	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf(
+			"failed to get %s: unexpected status %d: %s", name, resp.StatusCode, string(data),
+		)
+	}
 	var data T
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, fmt.Errorf("failed to parse %s response: %s", name, err)
@@ -664,8 +677,16 @@ func post(httpClient *http.Client, url, body, name string) error {
 		return fmt.Errorf("failed to prepare %s request: %s", name, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if _, err := httpClient.Do(req); err != nil {
-		return fmt.Errorf("failed to %s wallet: %s", name, err)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to %s: %s", name, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf(
+			"failed to %s: unexpected status %d: %s", name, resp.StatusCode, string(data),
+		)
 	}
 	return nil
 }
