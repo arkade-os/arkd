@@ -806,7 +806,33 @@ func (c *Config) repoManager() error {
 var newWalletClient = walletclient.New
 
 func (c *Config) walletService() error {
+	// The wallet addresses are sourced from the persisted settings (seeded from
+	// env on first boot), so admin changes take effect on the next restart. Fall
+	// back to env if settings aren't available yet (e.g. the repo isn't wired).
+	//
+	// Trust boundary: the wallet gRPC target controls signing, address derivation
+	// and sweeps, so persisting it via the admin Settings API is equivalent to full
+	// operator (admin macaroon) trust — the same trust needed to change the env var.
 	arkWallet := c.WalletAddr
+	fallbackAddrs := c.WalletFallbackAddrs
+	if c.repo != nil {
+		settings, err := c.repo.Settings().Get(context.Background())
+		switch {
+		case err != nil:
+			log.Warnf("failed to read settings for wallet addresses, using env: %v", err)
+		case settings != nil:
+			// Only override env when the settings actually carry a value, so an
+			// upgrade (whose migrated row defaults these to empty) keeps the
+			// env-configured addresses until they're set through the admin API.
+			if settings.WalletAddr != "" {
+				arkWallet = settings.WalletAddr
+			}
+			if len(settings.WalletFallbackAddrs) > 0 {
+				fallbackAddrs = settings.WalletFallbackAddrs
+			}
+		}
+	}
+
 	if arkWallet == "" {
 		return fmt.Errorf("missing ark wallet address")
 	}
@@ -819,7 +845,11 @@ func (c *Config) walletService() error {
 	c.wallet = walletSvc
 	c.network = network
 
-	fallbacks, err := c.dialFallbackWallets()
+	// Surface the effective wallet target so operators can audit which arkd-wallet
+	// this node dialed (it may come from the DB, not the env var).
+	log.Infof("dialed primary arkd-wallet at %q on network %s", arkWallet, network.Name)
+
+	fallbacks, err := c.dialFallbackWallets(fallbackAddrs)
 	if err != nil {
 		return err
 	}
@@ -834,9 +864,9 @@ func (c *Config) walletService() error {
 // fallbacks; the primary remains the sole source of the forfeit pubkey,
 // addresses and signing. Any failure is fatal so a misconfigured wallet is
 // surfaced at startup rather than at sweep time.
-func (c *Config) dialFallbackWallets() ([]ports.WalletService, error) {
-	fallbacks := make([]ports.WalletService, 0, len(c.WalletFallbackAddrs))
-	for _, addr := range c.WalletFallbackAddrs {
+func (c *Config) dialFallbackWallets(fallbackAddrs []string) ([]ports.WalletService, error) {
+	fallbacks := make([]ports.WalletService, 0, len(fallbackAddrs))
+	for _, addr := range fallbackAddrs {
 		if addr == "" {
 			continue
 		}
@@ -1062,6 +1092,7 @@ func (c *Config) getSettings() (*domain.Settings, error) {
 		c.BoardingExitDelay, c.VtxoTreeExpiry,
 		c.MaxTxWeight, c.MaxOpReturnOutputs, c.AssetTxMaxWeightRatio, c.NoteUriPrefix,
 		c.BuildVersionHeader, c.BuildVersionHeaderRequired, c.DigestHeaderRequired,
+		c.WalletAddr, c.WalletFallbackAddrs,
 	)
 	if err != nil {
 		return nil, err

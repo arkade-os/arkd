@@ -3025,8 +3025,12 @@ type Settings struct {
 	BuildVersionHeaderRequired    *bool                  `protobuf:"varint,23,opt,name=build_version_header_required,json=buildVersionHeaderRequired,proto3,oneof" json:"build_version_header_required,omitempty"`
 	UpdatedAt                     *string                `protobuf:"bytes,24,opt,name=updated_at,json=updatedAt,proto3,oneof" json:"updated_at,omitempty"`
 	DigestHeaderRequired          *bool                  `protobuf:"varint,25,opt,name=digest_header_required,json=digestHeaderRequired,proto3,oneof" json:"digest_header_required,omitempty"`
-	unknownFields                 protoimpl.UnknownFields
-	sizeCache                     protoimpl.SizeCache
+	// Primary and fallback arkd-wallet connection addresses. Seeded from env on
+	// first boot; changes take effect on the next restart.
+	WalletAddr          *string  `protobuf:"bytes,26,opt,name=wallet_addr,json=walletAddr,proto3,oneof" json:"wallet_addr,omitempty"`
+	WalletFallbackAddrs []string `protobuf:"bytes,27,rep,name=wallet_fallback_addrs,json=walletFallbackAddrs,proto3" json:"wallet_fallback_addrs,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Settings) Reset() {
@@ -3232,6 +3236,20 @@ func (x *Settings) GetDigestHeaderRequired() bool {
 		return *x.DigestHeaderRequired
 	}
 	return false
+}
+
+func (x *Settings) GetWalletAddr() string {
+	if x != nil && x.WalletAddr != nil {
+		return *x.WalletAddr
+	}
+	return ""
+}
+
+func (x *Settings) GetWalletFallbackAddrs() []string {
+	if x != nil {
+		return x.WalletFallbackAddrs
+	}
+	return nil
 }
 
 type GetSettingsRequest struct {
@@ -4035,7 +4053,7 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x10commitment_txids\x18\x02 \x03(\tR\x0fcommitmentTxids\"5\n" +
 	"\rSweepResponse\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x10\n" +
-	"\x03hex\x18\x02 \x01(\tR\x03hex\"\xe6\x0f\n" +
+	"\x03hex\x18\x02 \x01(\tR\x03hex\"\xd0\x10\n" +
 	"\bSettings\x12.\n" +
 	"\x10session_duration\x18\x01 \x01(\x03H\x00R\x0fsessionDuration\x88\x01\x01\x12I\n" +
 	"\x1funrolled_vtxo_min_expiry_margin\x18\x02 \x01(\x03H\x01R\x1bunrolledVtxoMinExpiryMargin\x88\x01\x01\x12(\n" +
@@ -4064,7 +4082,10 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x1dbuild_version_header_required\x18\x17 \x01(\bH\x16R\x1abuildVersionHeaderRequired\x88\x01\x01\x12\"\n" +
 	"\n" +
 	"updated_at\x18\x18 \x01(\tH\x17R\tupdatedAt\x88\x01\x01\x129\n" +
-	"\x16digest_header_required\x18\x19 \x01(\bH\x18R\x14digestHeaderRequired\x88\x01\x01B\x13\n" +
+	"\x16digest_header_required\x18\x19 \x01(\bH\x18R\x14digestHeaderRequired\x88\x01\x01\x12$\n" +
+	"\vwallet_addr\x18\x1a \x01(\tH\x19R\n" +
+	"walletAddr\x88\x01\x01\x122\n" +
+	"\x15wallet_fallback_addrs\x18\x1b \x03(\tR\x13walletFallbackAddrsB\x13\n" +
 	"\x11_session_durationB\"\n" +
 	" _unrolled_vtxo_min_expiry_marginB\x10\n" +
 	"\x0e_ban_thresholdB\x0f\n" +
@@ -4089,7 +4110,8 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x15_build_version_headerB \n" +
 	"\x1e_build_version_header_requiredB\r\n" +
 	"\v_updated_atB\x19\n" +
-	"\x17_digest_header_required\"\x14\n" +
+	"\x17_digest_header_requiredB\x0e\n" +
+	"\f_wallet_addr\"\x14\n" +
 	"\x12GetSettingsRequest\"C\n" +
 	"\x13GetSettingsResponse\x12,\n" +
 	"\bsettings\x18\x01 \x01(\v2\x10.ark.v1.SettingsR\bsettings\"E\n" +

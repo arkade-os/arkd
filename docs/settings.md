@@ -39,8 +39,10 @@ The seed runs exactly once, gated on the settings table being empty.
 It never re-runs and never overwrites a value an admin changed later.
 
 > **Note:** only the *settings* environment variables below follow this first-boot-only rule.
-> Infrastructure variables (database, wallet/signer addresses, ports, TLS, unlocker, …) are read 
-> on **every** boot as usual.
+> Infrastructure variables (database, signer address, ports, TLS, unlocker, …) are read on
+> **every** boot as usual. The wallet addresses are an exception: like the other settings they
+> are seeded on first boot and then sourced from the stored row (env is only a fallback when the
+> stored value is empty).
 
 ## Seed environment variables
 
@@ -73,6 +75,12 @@ is unset on first boot.
 | `ARKD_MIN_BUILD_VERSION_HEADER`          | `build_version_header`           | min accepted client build version, semver (e.g. `v2.3.4`); empty = no minimum | `""`        |
 | `ARKD_MIN_BUILD_VERSION_HEADER_REQUIRED` | `build_version_header_required`  | bool; if `true`, clients must send a valid `X-Build-Version` header (requires `build_version_header`) | `false`     |
 | `ARKD_DIGEST_HEADER_REQUIRED`            | `digest_header_required`         | bool; if `true`, clients must send a matching `X-Digest` header     | `false`     |
+| `ARKD_WALLET_ADDR`                       | `wallet_addr`                    | primary arkd-wallet `host:port`                                     | -           |
+| `ARKD_WALLET_FALLBACK_ADDRS`             | `wallet_fallback_addrs`          | fallback arkd-wallet addresses, comma-separated `host:port`         | -           |
+
+The wallet addresses follow the same first-boot-only rule as the other settings:
+they are read from these env vars on first boot, then the stored values win and
+are changed via the admin Settings API (taking effect on the next restart).
 
 ### Notes on specific values
 

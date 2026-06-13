@@ -145,6 +145,12 @@ func testValidateSettings(t *testing.T) {
 			requiredVersionWithoutHeader.BuildVersionHeaderRequired = true
 			requiredVersionWithoutHeader.BuildVersionHeader = ""
 
+			commaWalletAddr := validSettings
+			commaWalletAddr.WalletAddr = "host:6060,evil"
+
+			commaFallbackAddr := validSettings
+			commaFallbackAddr.WalletFallbackAddrs = []string{"host:6060,evil"}
+
 			fixtures := []struct {
 				settings    domain.Settings
 				expectedErr string
@@ -250,6 +256,15 @@ func testValidateSettings(t *testing.T) {
 					settings:    requiredVersionWithoutHeader,
 					expectedErr: "build version header is required but no version is set",
 				},
+				{
+					settings:    commaWalletAddr,
+					expectedErr: "wallet addr must not contain a comma",
+				},
+				{
+					settings: commaFallbackAddr,
+					expectedErr: `wallet fallback addr "host:6060,evil" ` +
+						"must not contain a comma",
+				},
 			}
 
 			for _, f := range fixtures {
@@ -313,6 +328,24 @@ func testUpdateSettings(t *testing.T) {
 			require.Equal(t, validSettings, settings)
 		})
 
+		t.Run("updates wallet addresses", func(t *testing.T) {
+			settings := validSettings
+
+			walletAddr := "wallet:7070"
+			fallbacks := []string{"wallet-2:7070", "wallet-3:7070"}
+
+			changelog, err := settings.Update(domain.SettingsUpdate{
+				WalletAddr:          &walletAddr,
+				WalletFallbackAddrs: &fallbacks,
+			})
+			require.NoError(t, err)
+			require.ElementsMatch(
+				t, []string{"wallet_addr", "wallet_fallback_addrs"}, changelog,
+			)
+			require.Equal(t, "wallet:7070", settings.WalletAddr)
+			require.Equal(t, fallbacks, settings.WalletFallbackAddrs)
+		})
+
 		t.Run("invalid update leaves settings untouched", func(t *testing.T) {
 			settings := validSettings
 
@@ -374,6 +407,7 @@ func testNewSettings(t *testing.T) {
 				boardingExitDelay, vtxoTreeExpiry,
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				"localhost:6060", nil,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, settings)
@@ -396,6 +430,7 @@ func testNewSettings(t *testing.T) {
 				boardingExitDelay, vtxoTreeExpiry,
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				"localhost:6060", nil,
 			)
 			require.ErrorContains(t, err, "invalid session duration")
 			require.Nil(t, settings)
@@ -411,6 +446,7 @@ func testNewSettings(t *testing.T) {
 				boardingExitDelay, vtxoTreeExpiry,
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				"", true, true,
+				"localhost:6060", nil,
 			)
 			require.ErrorContains(t, err, "build version header is required but no version is set")
 			require.Nil(t, settings)
