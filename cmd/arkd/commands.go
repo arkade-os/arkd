@@ -306,9 +306,12 @@ func walletUnlockAction(ctx *cli.Context) error {
 
 	password := ctx.String(passwordFlagName)
 	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", baseURL)
-	body := fmt.Sprintf(`{"password": "%s"}`, password)
+	body, err := json.Marshal(map[string]string{"password": password})
+	if err != nil {
+		return fmt.Errorf("failed to encode request body: %w", err)
+	}
 
-	if _, err := post[struct{}](url, body, "", "", tlsConfig); err != nil {
+	if _, err := post[struct{}](url, string(body), "", "", tlsConfig); err != nil {
 		return err
 	}
 

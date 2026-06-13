@@ -31,6 +31,11 @@ func NewWalletInitializerHandler(
 const errWalletManagedExternally = "arkd no longer manages the wallet: " +
 	"initialize the arkd-wallet directly"
 
+// errWalletLockManagedExternally is returned by the Lock RPC: arkd no longer
+// locks the (possibly shared) wallet; lock it out of band instead.
+const errWalletLockManagedExternally = "arkd no longer manages the wallet: " +
+	"lock the arkd-wallet directly"
+
 func (a *walletInitHandler) GenSeed(
 	_ context.Context, _ *arkv1.GenSeedRequest,
 ) (*arkv1.GenSeedResponse, error) {
@@ -112,7 +117,7 @@ func (a *walletHandler) Lock(
 	// arkd no longer manages the wallet lifecycle; locking the (possibly shared)
 	// wallet via arkd would break every other consumer, so the RPC is disabled
 	// — lock the wallet out of band through arkd-wallet directly.
-	return nil, status.Error(codes.Unimplemented, errWalletManagedExternally)
+	return nil, status.Error(codes.Unimplemented, errWalletLockManagedExternally)
 }
 
 func (a *walletHandler) DeriveAddress(
