@@ -40,6 +40,11 @@ func (a *service) Settle(ctx context.Context, opts ...BatchSessionOption) (*Sett
 		options.expiryThreshold = defaultExpiryThreshold
 	}
 
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
@@ -55,7 +60,7 @@ func (a *service) Settle(ctx context.Context, opts ...BatchSessionOption) (*Sett
 
 	// coinselect all available boarding utxos and vtxos
 	boardingUtxos, vtxos, outputs, err := a.getFundsToSettle(
-		ctx, nil, feeEstimator, getVtxosFilter{
+		ctx, cfgData, nil, feeEstimator, getVtxosFilter{
 			withRecoverableVtxos: options.withRecoverableVtxos,
 			expiryThreshold:      options.expiryThreshold,
 			vtxos:                options.vtxos,
@@ -66,7 +71,7 @@ func (a *service) Settle(ctx context.Context, opts ...BatchSessionOption) (*Sett
 		return nil, err
 	}
 
-	return a.joinBatchWithRetry(ctx, nil, outputs, *options, vtxos, boardingUtxos)
+	return a.joinBatchWithRetry(ctx, cfgData, nil, outputs, *options, vtxos, boardingUtxos)
 }
 
 func (a *service) RedeemNotes(
@@ -85,6 +90,11 @@ func (a *service) RedeemNotes(
 		}
 	}
 
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, vStr := range notes {
 		v, err := note.NewNoteFromString(vStr)
 		if err != nil {
@@ -93,7 +103,7 @@ func (a *service) RedeemNotes(
 		amount += uint64(v.Value)
 	}
 
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +111,7 @@ func (a *service) RedeemNotes(
 		return nil, fmt.Errorf("no funds detected")
 	}
 
-	_, changeAddr, _, err := a.newAddress(ctx)
+	_, changeAddr, _, err := a.newAddress(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +121,7 @@ func (a *service) RedeemNotes(
 		Amount: amount,
 	}}
 
-	return a.joinBatchWithRetry(ctx, notes, receiversOutput, *options, nil, nil)
+	return a.joinBatchWithRetry(ctx, cfgData, notes, receiversOutput, *options, nil, nil)
 }
 
 func (a *service) CollaborativeExit(
@@ -121,7 +131,12 @@ func (a *service) CollaborativeExit(
 		return nil, err
 	}
 
-	if a.UtxoMaxAmount == 0 {
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if cfgData.UtxoMaxAmount == 0 {
 		return nil, fmt.Errorf("operation not allowed by the server")
 	}
 
@@ -135,7 +150,7 @@ func (a *service) CollaborativeExit(
 		options.expiryThreshold = defaultExpiryThreshold
 	}
 
-	netParams := utils.ToBitcoinNetwork(a.Network)
+	netParams := utils.ToBitcoinNetwork(a.network)
 	if _, err := btcutil.DecodeAddress(addr, &netParams); err != nil {
 		return nil, fmt.Errorf("invalid onchain address")
 	}
@@ -147,7 +162,7 @@ func (a *service) CollaborativeExit(
 		withRecoverableVtxos: options.withRecoverableVtxos,
 		excludeAssetVtxos:    true,
 	}
-	spendableVtxos, err := a.getSpendableVtxos(ctx, getVtxosOpts)
+	spendableVtxos, err := a.getSpendableVtxos(ctx, cfgData, getVtxosOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +186,7 @@ func (a *service) CollaborativeExit(
 
 	receivers := []types.Receiver{{To: addr, Amount: amount}}
 	boardingUtxos, vtxos, outputs, err := a.getFundsToSettle(
-		ctx, receivers, feeEstimator, getVtxosFilter{
+		ctx, cfgData, receivers, feeEstimator, getVtxosFilter{
 			withRecoverableVtxos: options.withRecoverableVtxos,
 			expiryThreshold:      options.expiryThreshold,
 			vtxos:                options.vtxos,
@@ -183,7 +198,7 @@ func (a *service) CollaborativeExit(
 		return nil, err
 	}
 
-	return a.joinBatchWithRetry(ctx, nil, outputs, *options, vtxos, boardingUtxos)
+	return a.joinBatchWithRetry(ctx, cfgData, nil, outputs, *options, vtxos, boardingUtxos)
 }
 
 func (a *service) RegisterIntent(
@@ -201,7 +216,12 @@ func (a *service) RegisterIntent(
 		}
 	}
 
-	vtxosWithTapscripts, err := a.populateVtxosWithTapscripts(ctx, vtxos)
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	vtxosWithTapscripts, err := a.populateVtxosWithTapscripts(ctx, cfgData, vtxos)
 	if err != nil {
 		return "", err
 	}
@@ -239,7 +259,12 @@ func (a *service) DeleteIntent(
 		}
 	}
 
-	vtxosWithTapscripts, err := a.populateVtxosWithTapscripts(ctx, vtxos)
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return err
+	}
+
+	vtxosWithTapscripts, err := a.populateVtxosWithTapscripts(ctx, cfgData, vtxos)
 	if err != nil {
 		return err
 	}
@@ -260,10 +285,10 @@ func (a *service) DeleteIntent(
 }
 
 func (a *service) getFundsToSettle(
-	ctx context.Context,
+	ctx context.Context, cfgData *types.Config,
 	outputs []types.Receiver, feeEstimator *arkfee.Estimator, opts getVtxosFilter,
 ) ([]types.Utxo, []types.VtxoWithTapTree, []types.Receiver, error) {
-	_, offchainAddrs, boardingAddrs, _, err := a.getAddresses(ctx)
+	_, offchainAddrs, boardingAddrs, _, err := a.getAddresses(ctx, cfgData)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -273,14 +298,14 @@ func (a *service) getFundsToSettle(
 
 	vtxos := opts.vtxos
 	if len(opts.vtxos) <= 0 && len(opts.utxos) <= 0 {
-		spendableVtxos, err := a.getSpendableVtxos(ctx, &opts)
+		spendableVtxos, err := a.getSpendableVtxos(ctx, cfgData, &opts)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
 		for _, offchainAddr := range offchainAddrs {
 			for _, v := range spendableVtxos {
-				vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
+				vtxoAddr, err := v.Address(cfgData.SignerPubKey, a.network)
 				if err != nil {
 					return nil, nil, nil, err
 				}
@@ -324,7 +349,7 @@ func (a *service) getFundsToSettle(
 			})
 		}
 
-		_, changeAddr, _, err := a.newAddress(ctx)
+		_, changeAddr, _, err := a.newAddress(ctx, cfgData)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -363,14 +388,14 @@ func (a *service) getFundsToSettle(
 	}
 
 	selectedBoardingUtxos, selectedVtxos, changeAmount, err := utils.CoinSelect(
-		boardingUtxos, vtxos, outputs, a.Dust, opts.withoutExpirySorting, feeEstimator,
+		boardingUtxos, vtxos, outputs, a.dust, opts.withoutExpirySorting, feeEstimator,
 	)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	if changeAmount > 0 {
-		_, changeAddr, _, err := a.newAddress(ctx)
+		_, changeAddr, _, err := a.newAddress(ctx, cfgData)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -437,7 +462,8 @@ func (a *service) getClaimableBoardingUtxos(
 }
 
 func (a *service) joinBatchWithRetry(
-	ctx context.Context, notes []string, outputs []types.Receiver, options batchSessionOptions,
+	ctx context.Context, cfgData *types.Config,
+	notes []string, outputs []types.Receiver, options batchSessionOptions,
 	selectedCoins []types.VtxoWithTapTree, selectedBoardingCoins []types.Utxo,
 ) (*BatchTxRes, error) {
 	inputs, exitLeaves, arkFields, assetInputs, err := toIntentInputs(
@@ -491,8 +517,8 @@ func (a *service) joinBatchWithRetry(
 		log.Debugf("registered inputs and outputs with request id: %s", intentID)
 
 		commitmentTxid, commitmentTx, batchExpiry, forfeitTxs, vtxoTree, err := a.handleBatchEvents(
-			ctx, intentID, selectedCoins, notes, selectedBoardingCoins, outputs, signerSessions,
-			options.eventsCh, options.cancelCh, options.keyIdsByScript,
+			ctx, cfgData, intentID, selectedCoins, notes, selectedBoardingCoins, outputs,
+			signerSessions, options.eventsCh, options.cancelCh, options.keyIdsByScript,
 		)
 		if err != nil {
 			if retryCount < maxRetry-1 {
@@ -617,7 +643,7 @@ func (a *service) handleOptions(
 }
 
 func (a *service) handleBatchEvents(
-	ctx context.Context,
+	ctx context.Context, cfgData *types.Config,
 	intentId string, vtxos []types.VtxoWithTapTree, notes []string, boardingUtxos []types.Utxo,
 	receivers []types.Receiver, signerSessions []tree.SignerSession,
 	replayEventsCh chan<- any, cancelCh <-chan struct{}, keysByScript map[string]string,
@@ -675,7 +701,7 @@ func (a *service) handleBatchEvents(
 	defer close()
 
 	batchEventsHandler := newBatchEventsHandler(
-		a, intentId, vtxos, boardingUtxos, receivers, signerSessions, keysByScript,
+		a, cfgData, intentId, vtxos, boardingUtxos, receivers, signerSessions, keysByScript,
 	)
 
 	return JoinBatchSession(ctx, eventsCh, batchEventsHandler, options...)

@@ -41,10 +41,14 @@ func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	vtxos := options.vtxos
-	var err error
 	if len(vtxos) <= 0 {
-		vtxos, err = a.getSpendableVtxos(ctx, nil)
+		vtxos, err = a.getSpendableVtxos(ctx, cfgData, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +110,7 @@ func (a *service) Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes
 			return nil, err
 		}
 
-		childTxid, child, err := a.bumpAnchorTx(ctx, &parentTx, options.signingKeys)
+		childTxid, child, err := a.bumpAnchorTx(ctx, cfgData, &parentTx, options.signingKeys)
 		if err != nil {
 			return nil, err
 		}
@@ -143,8 +147,13 @@ func (a *service) CompleteUnroll(
 		}
 	}
 
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	if len(to) == 0 {
-		newAddr, _, _, err := a.newAddress(ctx)
+		newAddr, _, _, err := a.newAddress(ctx, cfgData)
 		if err != nil {
 			return "", err
 		}
@@ -154,7 +163,7 @@ func (a *service) CompleteUnroll(
 		return "", fmt.Errorf("invalid receiver address '%s': must be onchain", to)
 	}
 
-	return a.completeUnroll(ctx, to, options)
+	return a.completeUnroll(ctx, cfgData, to, options)
 }
 
 func (a *service) WithdrawFromAllExpiredBoardings(
@@ -171,11 +180,16 @@ func (a *service) WithdrawFromAllExpiredBoardings(
 		}
 	}
 
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return "", err
+	}
+
 	if _, err := btcutil.DecodeAddress(to, nil); err != nil {
 		return "", fmt.Errorf("invalid receiver address '%s': must be onchain", to)
 	}
 
-	return a.sendExpiredBoardingUtxos(ctx, to, options)
+	return a.sendExpiredBoardingUtxos(ctx, cfgData, to, options)
 }
 
 func (a *service) OnboardAgainAllExpiredBoardings(
@@ -185,7 +199,12 @@ func (a *service) OnboardAgainAllExpiredBoardings(
 		return "", err
 	}
 
-	if a.UtxoMaxAmount == 0 {
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	if cfgData.UtxoMaxAmount == 0 {
 		return "", fmt.Errorf("operation not allowed by the server")
 	}
 
@@ -196,18 +215,18 @@ func (a *service) OnboardAgainAllExpiredBoardings(
 		}
 	}
 
-	_, _, boardingAddr, err := a.newAddress(ctx)
+	_, _, boardingAddr, err := a.newAddress(ctx, cfgData)
 	if err != nil {
 		return "", err
 	}
 
-	return a.sendExpiredBoardingUtxos(ctx, boardingAddr.Address, options)
+	return a.sendExpiredBoardingUtxos(ctx, cfgData, boardingAddr.Address, options)
 }
 
 // bumpAnchorTx builds and signs a transaction bumping the fees for a given tx with P2A output.
 // Makes use of the onchain P2TR account to select UTXOs to pay fees for parent.
 func (a *service) bumpAnchorTx(
-	ctx context.Context, parent *wire.MsgTx, keys map[string]string,
+	ctx context.Context, cfgData *types.Config, parent *wire.MsgTx, keys map[string]string,
 ) (string, string, error) {
 	anchor, err := txutils.FindAnchorOutpoint(parent)
 	if err != nil {
@@ -235,7 +254,7 @@ func (a *service) bumpAnchorTx(
 
 	fees := uint64(math.Ceil(float64(packageSize) * feeRate))
 
-	addresses, _, _, _, err := a.getAddresses(ctx)
+	addresses, _, _, _, err := a.getAddresses(ctx, cfgData)
 	if err != nil {
 		return "", "", err
 	}
@@ -265,12 +284,12 @@ func (a *service) bumpAnchorTx(
 
 	changeAmount := selectedAmount - fees
 
-	newAddr, _, _, err := a.newAddress(ctx)
+	newAddr, _, _, err := a.newAddress(ctx, cfgData)
 	if err != nil {
 		return "", "", err
 	}
 
-	pkScript, err := toOutputScript(newAddr, a.Network)
+	pkScript, err := toOutputScript(newAddr, a.network)
 	if err != nil {
 		return "", "", err
 	}
@@ -365,16 +384,16 @@ func (a *service) bumpAnchorTx(
 }
 
 func (a *service) completeUnroll(
-	ctx context.Context, to string, opts *unrollOptions,
+	ctx context.Context, cfgData *types.Config, to string, opts *unrollOptions,
 ) (string, error) {
-	pkscript, err := toOutputScript(to, a.Network)
+	pkscript, err := toOutputScript(to, a.network)
 	if err != nil {
 		return "", err
 	}
 
 	utxos := opts.utxos
 	if len(utxos) <= 0 {
-		utxos, err = a.getMatureUtxos(ctx)
+		utxos, err = a.getMatureUtxos(ctx, cfgData)
 		if err != nil {
 			return "", err
 		}
@@ -417,7 +436,7 @@ func (a *service) completeUnroll(
 
 	feeAmount := uint64(math.Ceil(float64(vbytes)*feeRate) + 100)
 
-	if targetAmount-feeAmount <= a.Dust {
+	if targetAmount-feeAmount <= a.dust {
 		return "", fmt.Errorf("not enough funds to cover network fees")
 	}
 
@@ -456,9 +475,9 @@ func (a *service) completeUnroll(
 }
 
 func (a *service) sendExpiredBoardingUtxos(
-	ctx context.Context, to string, opts *unrollOptions,
+	ctx context.Context, cfgData *types.Config, to string, opts *unrollOptions,
 ) (string, error) {
-	pkscript, err := toOutputScript(to, a.Network)
+	pkscript, err := toOutputScript(to, a.network)
 	if err != nil {
 		return "", err
 	}
@@ -466,7 +485,7 @@ func (a *service) sendExpiredBoardingUtxos(
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
-	utxos, err := a.getExpiredBoardingUtxos(ctx, nil)
+	utxos, err := a.getExpiredBoardingUtxos(ctx, cfgData, nil)
 	if err != nil {
 		return "", err
 	}
@@ -507,7 +526,7 @@ func (a *service) sendExpiredBoardingUtxos(
 	}
 	feeAmount := uint64(math.Ceil(float64(vbytes)*feeRate) + 50)
 
-	if targetAmount-feeAmount <= a.Dust {
+	if targetAmount-feeAmount <= a.dust {
 		return "", fmt.Errorf("not enough funds to cover network fees")
 	}
 
@@ -535,9 +554,9 @@ func (a *service) sendExpiredBoardingUtxos(
 }
 
 func (a *service) getExpiredBoardingUtxos(
-	ctx context.Context, opts *getVtxosFilter,
+	ctx context.Context, cfgData *types.Config, opts *getVtxosFilter,
 ) ([]types.Utxo, error) {
-	_, _, boardingAddrs, _, err := a.getAddresses(ctx)
+	_, _, boardingAddrs, _, err := a.getAddresses(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -663,8 +682,8 @@ func (a *service) addInputs(
 	return nil
 }
 
-func (a *service) getMatureUtxos(ctx context.Context) ([]types.Utxo, error) {
-	_, _, _, redemptionAddrs, err := a.getAddresses(ctx)
+func (a *service) getMatureUtxos(ctx context.Context, cfgData *types.Config) ([]types.Utxo, error) {
+	_, _, _, redemptionAddrs, err := a.getAddresses(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -679,7 +698,7 @@ func (a *service) getMatureUtxos(ctx context.Context) ([]types.Utxo, error) {
 		}
 
 		for _, utxo := range fetchedUtxos {
-			u := utxo.ToUtxo(a.UnilateralExitDelay, addr.Tapscripts)
+			u := utxo.ToUtxo(cfgData.UnilateralExitDelay, addr.Tapscripts)
 			if u.SpendableAt.Before(now) {
 				utxos = append(utxos, u)
 			}

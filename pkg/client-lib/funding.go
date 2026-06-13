@@ -27,12 +27,17 @@ func (a *service) Receive(ctx context.Context) (
 		return "", nil, nil, fmt.Errorf("wallet not initialized")
 	}
 
-	onchainAddr, offchainAddr, boardingAddr, err = a.newAddress(ctx)
+	cfgData, err := a.GetConfigData(ctx)
 	if err != nil {
 		return "", nil, nil, err
 	}
 
-	if a.UtxoMaxAmount == 0 {
+	onchainAddr, offchainAddr, boardingAddr, err = a.newAddress(ctx, cfgData)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	if cfgData.UtxoMaxAmount == 0 {
 		boardingAddr = nil
 	}
 
@@ -46,7 +51,12 @@ func (a *service) GetAddresses(
 		return nil, nil, nil, nil, err
 	}
 
-	return a.getAddresses(ctx)
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	return a.getAddresses(ctx, cfgData)
 }
 
 func (a *service) ListVtxos(
@@ -57,12 +67,17 @@ func (a *service) ListVtxos(
 		return nil, nil, err
 	}
 
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	var indexerOpts []indexer.GetVtxosOption
 	if o.Before > 0 || o.After > 0 {
 		indexerOpts = append(indexerOpts, indexer.WithTimeRange(o.Before, o.After))
 	}
 
-	return a.getVtxos(ctx, indexerOpts...)
+	return a.getVtxos(ctx, cfgData, indexerOpts...)
 }
 
 func (a *service) Balance(ctx context.Context) (*Balance, error) {
@@ -70,13 +85,18 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 		return nil, fmt.Errorf("wallet not initialized")
 	}
 
-	onchainAddrs, offchainAddrs, boardingAddrs, redeemAddrs, err := a.getAddresses(ctx)
+	cfgData, err := a.GetConfigData(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if a.UtxoMaxAmount == 0 {
-		balance, amountByExpiration, assetBalances, err := a.getOffchainBalance(ctx)
+	onchainAddrs, offchainAddrs, boardingAddrs, redeemAddrs, err := a.getAddresses(ctx, cfgData)
+	if err != nil {
+		return nil, err
+	}
+
+	if cfgData.UtxoMaxAmount == 0 {
+		balance, amountByExpiration, assetBalances, err := a.getOffchainBalance(ctx, cfgData)
 		if err != nil {
 			return nil, err
 		}
@@ -104,7 +124,7 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 
 		go func() {
 			defer wg.Done()
-			balance, amountByExpiration, assetBalances, err := a.getOffchainBalance(ctx)
+			balance, amountByExpiration, assetBalances, err := a.getOffchainBalance(ctx, cfgData)
 			if err != nil {
 				chRes <- balanceRes{err: err}
 				return
@@ -121,7 +141,7 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 			defer wg.Done()
 
 			spendableBalance, lockedBalance, err := a.explorer.GetRedeemedVtxosBalance(
-				addr, a.UnilateralExitDelay,
+				addr, cfgData.UnilateralExitDelay,
 			)
 			if err != nil {
 				chRes <- balanceRes{err: err}
@@ -224,12 +244,17 @@ func (a *service) Balance(ctx context.Context) (*Balance, error) {
 }
 
 func (a *service) GetTransactionHistory(ctx context.Context) ([]types.Transaction, error) {
-	spendable, spent, err := a.getVtxos(ctx)
+	cfgData, err := a.GetConfigData(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	onchainHistory, err := a.getBoardingTxs(ctx)
+	spendable, spent, err := a.getVtxos(ctx, cfgData)
+	if err != nil {
+		return nil, err
+	}
+
+	onchainHistory, err := a.getBoardingTxs(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -291,18 +316,18 @@ func (a *service) NotifyIncomingFunds(ctx context.Context, addr string) ([]types
 }
 
 func (a *service) newAddress(
-	ctx context.Context,
+	ctx context.Context, cfgData *types.Config,
 ) (onchainAddr string, offchainAddr, boardingAddr *types.Address, err error) {
 	key, err := a.wallet.NewKey(ctx)
 	if err != nil {
 		return "", nil, nil, err
 	}
 
-	onchainAddr, offchainAddr, boardingAddr, _, err = a.deriveDefaultAddresses(*key)
+	onchainAddr, offchainAddr, boardingAddr, _, err = a.deriveDefaultAddresses(*key, cfgData)
 	return onchainAddr, offchainAddr, boardingAddr, err
 }
 
-func (a *service) getAddresses(ctx context.Context) (
+func (a *service) getAddresses(ctx context.Context, cfgData *types.Config) (
 	onchainAddrs []string,
 	offchainAddrs, boardingAddrs, redemptionAddrs []types.Address,
 	err error,
@@ -324,7 +349,9 @@ func (a *service) getAddresses(ctx context.Context) (
 	}
 
 	for _, key := range keys {
-		onchainAddr, offchainAddr, boardingAddr, redemptionAddr, err := a.deriveDefaultAddresses(key)
+		onchainAddr, offchainAddr, boardingAddr, redemptionAddr, err := a.deriveDefaultAddresses(
+			key, cfgData,
+		)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -339,12 +366,12 @@ func (a *service) getAddresses(ctx context.Context) (
 }
 
 func (a *service) deriveDefaultAddresses(
-	key wallet.KeyRef,
+	key wallet.KeyRef, cfgData *types.Config,
 ) (onchainAddr string, offchainAddr, boardingAddr, redemptionAddr *types.Address, err error) {
-	netParams := utils.ToBitcoinNetwork(a.Network)
+	netParams := utils.ToBitcoinNetwork(a.network)
 
 	defaultVtxoScript := script.NewDefaultVtxoScript(
-		key.PubKey, a.SignerPubKey, a.UnilateralExitDelay,
+		key.PubKey, cfgData.SignerPubKey, cfgData.UnilateralExitDelay,
 	)
 	vtxoTapKey, _, err := defaultVtxoScript.TapTree()
 	if err != nil {
@@ -352,8 +379,8 @@ func (a *service) deriveDefaultAddresses(
 	}
 
 	offchainAddress := &arklib.Address{
-		HRP:        a.Network.Addr,
-		Signer:     a.SignerPubKey,
+		HRP:        cfgData.Network.Addr,
+		Signer:     cfgData.SignerPubKey,
 		VtxoTapKey: vtxoTapKey,
 	}
 	encodedOffchainAddr, err := offchainAddress.EncodeV0()
@@ -367,7 +394,7 @@ func (a *service) deriveDefaultAddresses(
 	}
 
 	boardingVtxoScript := script.NewDefaultVtxoScript(
-		key.PubKey, a.SignerPubKey, a.BoardingExitDelay,
+		key.PubKey, cfgData.SignerPubKey, cfgData.BoardingExitDelay,
 	)
 	boardingTapKey, _, err := boardingVtxoScript.TapTree()
 	if err != nil {
@@ -421,13 +448,13 @@ func (a *service) deriveDefaultAddresses(
 	return
 }
 
-func (a *service) getOffchainBalance(ctx context.Context) (
+func (a *service) getOffchainBalance(ctx context.Context, cfgData *types.Config) (
 	uint64, map[int64]uint64, map[string]uint64, error,
 ) {
 	amountByExpiration := make(map[int64]uint64, 0)
 	assetBalances := make(map[string]uint64, 0)
 	opts := &getVtxosFilter{withRecoverableVtxos: true}
-	vtxos, err := a.getSpendableVtxos(ctx, opts)
+	vtxos, err := a.getSpendableVtxos(ctx, cfgData, opts)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -457,8 +484,10 @@ func (a *service) getOffchainBalance(ctx context.Context) (
 	return balance, amountByExpiration, assetBalances, nil
 }
 
-func (a *service) getBoardingTxs(ctx context.Context) ([]types.Transaction, error) {
-	allUtxos, err := a.getAllBoardingUtxos(ctx)
+func (a *service) getBoardingTxs(
+	ctx context.Context, cfgData *types.Config,
+) ([]types.Transaction, error) {
+	allUtxos, err := a.getAllBoardingUtxos(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -488,8 +517,10 @@ func (a *service) getBoardingTxs(ctx context.Context) ([]types.Transaction, erro
 	return txs, nil
 }
 
-func (a *service) getAllBoardingUtxos(ctx context.Context) ([]types.Utxo, error) {
-	_, _, boardingAddrs, _, err := a.getAddresses(ctx)
+func (a *service) getAllBoardingUtxos(
+	ctx context.Context, cfgData *types.Config,
+) ([]types.Utxo, error) {
+	_, _, boardingAddrs, _, err := a.getAddresses(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -534,9 +565,9 @@ func (a *service) getAllBoardingUtxos(ctx context.Context) ([]types.Utxo, error)
 						},
 						Amount: vout.Amount,
 						Script: vout.Script,
-						Delay:  a.BoardingExitDelay,
+						Delay:  cfgData.BoardingExitDelay,
 						SpendableAt: utxoTime.Add(
-							time.Duration(a.BoardingExitDelay.Seconds()) * time.Second,
+							time.Duration(cfgData.BoardingExitDelay.Seconds()) * time.Second,
 						),
 						CreatedAt:  createdAt,
 						Tapscripts: addr.Tapscripts,

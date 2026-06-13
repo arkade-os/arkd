@@ -113,13 +113,13 @@ func (a *service) init(
 	if err := a.store.ConfigStore().AddData(ctx, cfgData); err != nil {
 		return err
 	}
-
-	a.Config = &cfgData
 	a.client = clientSvc
 	a.indexer = indexerSvc
 	if a.explorer == nil {
 		a.explorer = explorerSvc
 	}
+	a.network = network
+	a.dust = info.Dust
 
 	return nil
 }

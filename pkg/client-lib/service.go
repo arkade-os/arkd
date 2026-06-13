@@ -40,12 +40,13 @@ var (
 )
 
 type service struct {
-	*types.Config
 	wallet   wallet.WalletService
 	store    types.Store
 	explorer explorer.Explorer
 	client   client.TransportClient
 	indexer  indexer.Indexer
+	network  arklib.Network
+	dust     uint64
 
 	txLock                 *sync.RWMutex
 	verbose                bool
@@ -98,7 +99,6 @@ func LoadArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, erro
 	}
 
 	client := &service{
-		Config:                 cfgData,
 		store:                  storeSvc,
 		txLock:                 &sync.RWMutex{},
 		withFinalizePendingTxs: true,
@@ -139,6 +139,8 @@ func LoadArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, erro
 
 	client.client = clientSvc
 	client.indexer = indexerSvc
+	client.dust = cfgData.Dust
+	client.network = cfgData.Network
 
 	return client, nil
 }
@@ -163,14 +165,26 @@ func (a *service) GetVersion() string {
 	return Version
 }
 
-func (a *service) GetConfigData(_ context.Context) (*types.Config, error) {
-	if a.Config == nil {
-		return nil, fmt.Errorf("client sdk not initialized")
+func (a *service) GetConfigData(ctx context.Context) (*types.Config, error) {
+	if a.store == nil {
+		return nil, ErrNotInitialized
 	}
-	return a.Config, nil
+	cfgData, err := a.store.ConfigStore().GetData(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	if cfgData == nil {
+		return nil, ErrNotInitialized
+	}
+	return cfgData, nil
 }
 
 func (a *service) Unlock(ctx context.Context, password string) error {
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return err
+	}
+
 	if _, err := a.wallet.Unlock(ctx, password); err != nil {
 		return err
 	}
@@ -184,7 +198,7 @@ func (a *service) Unlock(ctx context.Context, password string) error {
 		// TODO: @sekulicd shall we move this to go-sdk? Otherwise we would have to pass an extra
 		// option to Unlock to pass basically the keys ids for the whole vtxo set and that would
 		// look awkward.
-		txids, err := a.finalizePendingTxs(ctx, nil, nil)
+		txids, err := a.finalizePendingTxs(ctx, cfgData, nil, nil)
 		if err != nil {
 			return err
 		}
@@ -267,13 +281,13 @@ func (a *service) safeCheck() error {
 }
 
 func (a *service) getVtxos(
-	ctx context.Context, extraOpts ...indexer.GetVtxosOption,
+	ctx context.Context, cfgData *types.Config, extraOpts ...indexer.GetVtxosOption,
 ) (spendableVtxos, spentVtxos []types.Vtxo, err error) {
 	if a.wallet == nil {
 		return nil, nil, ErrNotInitialized
 	}
 
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx, cfgData)
 	if err != nil {
 		return
 	}
@@ -313,9 +327,9 @@ func (a *service) getVtxos(
 }
 
 func (a *service) getSpendableVtxos(
-	ctx context.Context, opts *getVtxosFilter,
+	ctx context.Context, cfgData *types.Config, opts *getVtxosFilter,
 ) ([]types.Vtxo, error) {
-	spendable, _, err := a.getVtxos(ctx)
+	spendable, _, err := a.getVtxos(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -380,12 +394,14 @@ func (a *service) getSpendableVtxos(
 	return allVtxos, nil
 }
 
-func (a *service) fetchPendingSpentVtxos(ctx context.Context) ([]types.Vtxo, error) {
+func (a *service) fetchPendingSpentVtxos(
+	ctx context.Context, cfgData *types.Config,
+) ([]types.Vtxo, error) {
 	if a.wallet == nil {
 		return nil, ErrNotInitialized
 	}
 
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -410,9 +426,9 @@ func (a *service) fetchPendingSpentVtxos(ctx context.Context) ([]types.Vtxo, err
 }
 
 func (a *service) populateVtxosWithTapscripts(
-	ctx context.Context, vtxos []types.Vtxo,
+	ctx context.Context, cfgData *types.Config, vtxos []types.Vtxo,
 ) ([]types.VtxoWithTapTree, error) {
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -425,7 +441,7 @@ func (a *service) populateVtxosWithTapscripts(
 	for _, v := range vtxos {
 		found := false
 		for _, offchainAddr := range offchainAddrs {
-			vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
+			vtxoAddr, err := v.Address(cfgData.SignerPubKey, a.network)
 			if err != nil {
 				return nil, err
 			}

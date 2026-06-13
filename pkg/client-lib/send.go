@@ -38,8 +38,13 @@ func (a *service) SendOffChain(
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	baseArkTx, checkpointTxs, selectedCoins, changeReceiver, err := a.createOffchainTx(
-		ctx, receivers, o,
+		ctx, cfgData, receivers, o,
 	)
 	if err != nil {
 		return nil, err
@@ -79,11 +84,11 @@ func (a *service) SendOffChain(
 	}
 
 	// validate and verify transactions returned by the server
-	if err := verifySignedArk(arkTx, signedArkTx, a.SignerPubKey); err != nil {
+	if err := verifySignedArk(arkTx, signedArkTx, cfgData.SignerPubKey); err != nil {
 		return nil, err
 	}
 
-	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, a.SignerPubKey); err != nil {
+	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, cfgData.SignerPubKey); err != nil {
 		return nil, err
 	}
 
@@ -135,17 +140,22 @@ func (a *service) FinalizePendingTxs(
 		}
 	}
 
-	return a.finalizePendingTxs(ctx, createdAfter, o.signingKeys)
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return a.finalizePendingTxs(ctx, cfgData, createdAfter, o.signingKeys)
 }
 
 func (a *service) createOffchainTx(
-	ctx context.Context, receivers []types.Receiver, opts *sendOptions,
+	ctx context.Context, cfgData *types.Config, receivers []types.Receiver, opts *sendOptions,
 ) (string, []string, []types.VtxoWithTapTree, *types.Receiver, error) {
 	if len(receivers) <= 0 {
 		return "", nil, nil, nil, fmt.Errorf("missing receivers")
 	}
 
-	_, offchainAddrs, _, _, err := a.getAddresses(ctx)
+	_, offchainAddrs, _, _, err := a.getAddresses(ctx, cfgData)
 	if err != nil {
 		return "", nil, nil, nil, err
 	}
@@ -153,7 +163,7 @@ func (a *service) createOffchainTx(
 		return "", nil, nil, nil, fmt.Errorf("no offchain addresses")
 	}
 
-	expectedSignerPubkey := schnorr.SerializePubKey(a.SignerPubKey)
+	expectedSignerPubkey := schnorr.SerializePubKey(cfgData.SignerPubKey)
 
 	for _, receiver := range receivers {
 		if receiver.IsOnchain() {
@@ -180,7 +190,7 @@ func (a *service) createOffchainTx(
 	if len(opts.vtxos) > 0 {
 		vtxos = slices.Clone(opts.vtxos)
 	} else {
-		spendableVtxos, err := a.getSpendableVtxos(ctx, &getVtxosFilter{
+		spendableVtxos, err := a.getSpendableVtxos(ctx, cfgData, &getVtxosFilter{
 			withoutExpirySorting: opts.withoutExpirySorting,
 		})
 		if err != nil {
@@ -193,7 +203,7 @@ func (a *service) createOffchainTx(
 					continue
 				}
 
-				vtxoAddr, err := v.Address(a.SignerPubKey, a.Network)
+				vtxoAddr, err := v.Address(cfgData.SignerPubKey, a.network)
 				if err != nil {
 					return "", nil, nil, nil, err
 				}
@@ -291,7 +301,7 @@ func (a *service) createOffchainTx(
 			changeAmount = 0
 		} else {
 			if isZero {
-				btcAmountToSelect = int64(a.Dust)
+				btcAmountToSelect = int64(a.dust)
 			}
 
 			_, selectedBtcCoins, changeBtcAmount, err := utils.CoinSelect(
@@ -299,7 +309,7 @@ func (a *service) createOffchainTx(
 				// use a "fake" receiver to select only the remaining btc amount
 				// it works for offchain tx because feeEstimator is nil (no offchain fee)
 				[]types.Receiver{{Amount: uint64(btcAmountToSelect)}},
-				a.Dust, opts.withoutExpirySorting, nil,
+				a.dust, opts.withoutExpirySorting, nil,
 			)
 			if err != nil {
 				return "", nil, nil, nil, err
@@ -317,7 +327,7 @@ func (a *service) createOffchainTx(
 			selectedCoins = append(selectedCoins, selectedBtcCoins...)
 			changeAmount = changeBtcAmount
 			if isZero {
-				changeAmount = changeBtcAmount + a.Dust
+				changeAmount = changeBtcAmount + a.dust
 			}
 		}
 	} else {
@@ -347,8 +357,8 @@ func (a *service) createOffchainTx(
 		}
 
 		_, selectedBtcCoins, changeBtcAmount, err := utils.CoinSelect(
-			nil, availableVtxos, []types.Receiver{{Amount: a.Dust}},
-			a.Dust, opts.withoutExpirySorting, nil,
+			nil, availableVtxos, []types.Receiver{{Amount: a.dust}},
+			a.dust, opts.withoutExpirySorting, nil,
 		)
 		if err != nil {
 			return "", nil, nil, nil, fmt.Errorf(
@@ -358,11 +368,11 @@ func (a *service) createOffchainTx(
 		}
 
 		selectedCoins = append(selectedCoins, selectedBtcCoins...)
-		changeAmount = changeBtcAmount + a.Dust
+		changeAmount = changeBtcAmount + a.dust
 	}
 
 	if changeAmount > 0 {
-		_, changeAddr, _, err := a.newAddress(ctx)
+		_, changeAddr, _, err := a.newAddress(ctx, cfgData)
 		if err != nil {
 			return "", nil, nil, nil, err
 		}
@@ -408,7 +418,9 @@ func (a *service) createOffchainTx(
 		inputs = append(inputs, arkTxInput{coin, forfeitLeafHash})
 	}
 
-	arkTx, checkpointTxs, err := buildOffchainTx(inputs, receivers, a.CheckpointExitPath(), a.Dust)
+	arkTx, checkpointTxs, err := buildOffchainTx(
+		inputs, receivers, cfgData.CheckpointExitPath(), a.dust,
+	)
 	if err != nil {
 		return "", nil, nil, nil, err
 	}
@@ -417,9 +429,10 @@ func (a *service) createOffchainTx(
 }
 
 func (a *service) finalizePendingTxs(
-	ctx context.Context, createdAfter *time.Time, keysByScript map[string]string,
+	ctx context.Context,
+	cfgData *types.Config, createdAfter *time.Time, keysByScript map[string]string,
 ) ([]string, error) {
-	vtxos, err := a.fetchPendingSpentVtxos(ctx)
+	vtxos, err := a.fetchPendingSpentVtxos(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +451,7 @@ func (a *service) finalizePendingTxs(
 		return nil, nil
 	}
 
-	vtxosWithTapscripts, err := a.populateVtxosWithTapscripts(ctx, filtered)
+	vtxosWithTapscripts, err := a.populateVtxosWithTapscripts(ctx, cfgData, filtered)
 	if err != nil {
 		return nil, err
 	}

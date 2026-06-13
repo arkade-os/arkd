@@ -350,6 +350,7 @@ func newOptions() *options {
 type defaultBatchEventsHandler struct {
 	*service
 
+	cfgData        *types.Config
 	intentId       string
 	vtxos          []types.VtxoWithTapTree
 	boardingUtxos  []types.Utxo
@@ -365,6 +366,7 @@ type defaultBatchEventsHandler struct {
 
 func newBatchEventsHandler(
 	arkClient *service,
+	cfgData *types.Config,
 	intentId string,
 	vtxos []types.VtxoWithTapTree,
 	boardingUtxos []types.Utxo,
@@ -383,6 +385,7 @@ func newBatchEventsHandler(
 
 	return &defaultBatchEventsHandler{
 		service:          arkClient,
+		cfgData:          cfgData,
 		intentId:         intentId,
 		vtxos:            vtxosToSign,
 		boardingUtxos:    boardingUtxos,
@@ -473,8 +476,10 @@ func (h *defaultBatchEventsHandler) OnTreeSigningStarted(
 	}
 
 	sweepClosure := script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{h.ForfeitPubKey}},
-		Locktime:        h.batchExpiry,
+		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{
+			h.cfgData.ForfeitPubKey,
+		}},
+		Locktime: h.batchExpiry,
 	}
 
 	script, err := sweepClosure.Script()
@@ -738,7 +743,7 @@ func (h *defaultBatchEventsHandler) validateVtxoTree(
 	// validate the vtxo tree is well formed
 	if !utils.IsOnchainOnly(h.receivers) {
 		if err := tree.ValidateVtxoTree(
-			vtxoTree, commitmentPtx, h.ForfeitPubKey, h.batchExpiry,
+			vtxoTree, commitmentPtx, h.cfgData.ForfeitPubKey, h.batchExpiry,
 		); err != nil {
 			return err
 		}
@@ -764,7 +769,7 @@ func (h *defaultBatchEventsHandler) validateVtxoTree(
 	}
 
 	// validate it contains our outputs
-	if err := validateReceivers(h.Network, commitmentPtx, h.receivers, vtxoTree); err != nil {
+	if err := validateReceivers(h.network, commitmentPtx, h.receivers, vtxoTree); err != nil {
 		return err
 	}
 
@@ -795,7 +800,7 @@ func (h *defaultBatchEventsHandler) validateVtxoTree(
 func (h *defaultBatchEventsHandler) createAndSignForfeits(
 	ctx context.Context, vtxosToSign []types.VtxoWithTapTree, connectorsLeaves []*psbt.Packet,
 ) ([]string, error) {
-	parsedForfeitAddr, err := btcutil.DecodeAddress(h.ForfeitAddress, nil)
+	parsedForfeitAddr, err := btcutil.DecodeAddress(h.cfgData.ForfeitAddress, nil)
 	if err != nil {
 		return nil, err
 	}

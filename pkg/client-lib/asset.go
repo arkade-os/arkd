@@ -27,7 +27,12 @@ func (a *service) IssueAsset(
 		}
 	}
 
-	_, changeAddr, _, err := a.newAddress(ctx)
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	_, changeAddr, _, err := a.newAddress(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -50,14 +55,14 @@ func (a *service) IssueAsset(
 	}
 
 	receiver := types.Receiver{
-		To: changeAddr.Address, Amount: a.Dust,
+		To: changeAddr.Address, Amount: a.dust,
 		Assets: receiverAsset,
 	}
 
 	// create an ark tx sending small amount of btc to wallet's address
 	// we'll attach new asset outputs to this vout
 	baseArkTx, checkpointTxs, selectedCoins, changeReceiver, err := a.createOffchainTx(
-		ctx, []types.Receiver{receiver}, o,
+		ctx, cfgData, []types.Receiver{receiver}, o,
 	)
 	if err != nil {
 		return nil, err
@@ -157,11 +162,13 @@ func (a *service) IssueAsset(
 	}
 
 	// validate and verify transactions returned by the server
-	if err := verifySignedArk(arkTx, signedArkTx, a.SignerPubKey); err != nil {
+	if err := verifySignedArk(arkTx, signedArkTx, cfgData.SignerPubKey); err != nil {
 		return nil, err
 	}
 
-	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, a.SignerPubKey); err != nil {
+	if err := verifySignedCheckpoints(
+		checkpointTxs, signedCheckpointTxs, cfgData.SignerPubKey,
+	); err != nil {
 		return nil, err
 	}
 
@@ -244,7 +251,12 @@ func (a *service) ReissueAsset(
 		}
 	}
 
-	_, changeAddr, _, err := a.newAddress(ctx)
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	_, changeAddr, _, err := a.newAddress(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +278,7 @@ func (a *service) ReissueAsset(
 	defer a.txLock.Unlock()
 
 	receiver := types.Receiver{
-		To: changeAddr.Address, Amount: a.Dust,
+		To: changeAddr.Address, Amount: a.dust,
 		Assets: []types.Asset{{
 			AssetId: controlAssetId,
 			Amount:  1, // TODO: should send all denominated amount of the asset vtxo
@@ -278,7 +290,7 @@ func (a *service) ReissueAsset(
 	// create an ark tx sending small amount of btc to wallet's address
 	// we'll attach new asset outputs to this vout
 	baseArkTx, checkpointTxs, selectedCoins, changeReceiver, err := a.createOffchainTx(
-		ctx, receivers, o,
+		ctx, cfgData, receivers, o,
 	)
 	if err != nil {
 		return nil, err
@@ -362,11 +374,13 @@ func (a *service) ReissueAsset(
 	}
 
 	// validate and verify transactions returned by the server
-	if err := verifySignedArk(arkTx, signedArkTx, a.SignerPubKey); err != nil {
+	if err := verifySignedArk(arkTx, signedArkTx, cfgData.SignerPubKey); err != nil {
 		return nil, err
 	}
 
-	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, a.SignerPubKey); err != nil {
+	if err := verifySignedCheckpoints(
+		checkpointTxs, signedCheckpointTxs, cfgData.SignerPubKey,
+	); err != nil {
 		return nil, err
 	}
 
@@ -425,7 +439,12 @@ func (a *service) BurnAsset(
 		}
 	}
 
-	_, changeAddr, _, err := a.newAddress(ctx)
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	_, changeAddr, _, err := a.newAddress(ctx, cfgData)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +457,7 @@ func (a *service) BurnAsset(
 
 	burnReceiver := types.Receiver{
 		To:     changeAddr.Address,
-		Amount: a.Dust,
+		Amount: a.dust,
 		Assets: []types.Asset{{
 			AssetId: assetId,
 			Amount:  amount,
@@ -447,7 +466,7 @@ func (a *service) BurnAsset(
 
 	receivers := []types.Receiver{burnReceiver}
 	baseArkTx, checkpointTxs, selectedCoins, changeReceiver, err := a.createOffchainTx(
-		ctx, receivers, o,
+		ctx, cfgData, receivers, o,
 	)
 	if err != nil {
 		return nil, err
@@ -496,11 +515,13 @@ func (a *service) BurnAsset(
 	}
 
 	// validate and verify transactions returned by the server
-	if err := verifySignedArk(arkTx, signedArkTx, a.SignerPubKey); err != nil {
+	if err := verifySignedArk(arkTx, signedArkTx, cfgData.SignerPubKey); err != nil {
 		return nil, err
 	}
 
-	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, a.SignerPubKey); err != nil {
+	if err := verifySignedCheckpoints(
+		checkpointTxs, signedCheckpointTxs, cfgData.SignerPubKey,
+	); err != nil {
 		return nil, err
 	}
 
