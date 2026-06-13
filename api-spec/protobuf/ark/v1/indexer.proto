@@ -237,12 +237,17 @@ message GetVtxoChainRequest {
     // A valid token obtained from GetVirtualTxs rpc can be recycled for this request.
     string token = 4;
   }
+  // Opaque cursor returned as next_page_token by a previous call. When set, the
+  // response resumes from where that page ended.
+  string page_token = 5;
 }
 message GetVtxoChainResponse {
   repeated IndexerChain chain = 1;
   IndexerPageResponse page = 2;
   // Auth token can be used for other rpcs related to this vtxo/tx that require proof of ownership.
   string auth_token = 3;
+  // Opaque cursor for fetching the next page. Empty when there are no more pages.
+  string next_page_token = 4;
 }
 
 message GetVirtualTxsRequest {
