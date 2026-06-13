@@ -720,12 +720,23 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			log.Debugf("sweeper: batch %s swept by: %s", commitmentTxid, txid)
 		} else {
 			// if all outputs are spent, it means we missed to mark the batch as swept,
-			// build a sweep transaction without broadcasting it. we'll use it rebuild sweepEvent.
+			// build a sweep transaction without broadcasting it. we'll use it to rebuild
+			// sweepEvent. The outputs are already spent on-chain, so this tx is never
+			// broadcast and a signing failure (e.g. the wallet that swept them is no
+			// longer primary or fallback) must not block reconciliation: fall back to the
+			// unsigned tx, which still carries the txid the event needs.
 			sweepTxId, sweepTx, err = buildAndSignSweepTx(
 				s.builder, s.signingWallets(), outputsToSweep,
 			)
 			if err != nil {
-				return err
+				log.WithError(err).Warnf(
+					"sweeper: could not sign sweep tx for already-spent batch %s, "+
+						"reconciling with unsigned tx", commitmentTxid,
+				)
+				sweepTx, sweepTxId, err = s.builder.BuildSweepTx(outputsToSweep)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
