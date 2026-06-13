@@ -13,12 +13,12 @@ func UnaryInterceptor(
 ) grpc.ServerOption {
 	return grpc.UnaryInterceptor(middleware.ChainUnaryServer(
 		unaryPanicRecoveryInterceptor(),
+		errorConverter,
 		unaryLogger,
 		unaryVersionCompatHandler(getVersionGuard),
 		unaryDigestHandler(getDigest),
 		unaryMacaroonAuthHandler(svc),
 		unaryReadinessHandler(readiness),
-		errorConverter,
 	))
 }
 
