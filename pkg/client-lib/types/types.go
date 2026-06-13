@@ -41,6 +41,7 @@ type Config struct {
 	VtxoMaxAmount       int64
 	CheckpointTapscript string
 	Fees                FeeInfo
+	DeprecatedSigners   []DeprecatedSigner
 }
 
 func (c Config) CheckpointExitPath() []byte {
