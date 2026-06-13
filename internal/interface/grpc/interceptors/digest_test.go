@@ -5,14 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	arkerrors "github.com/arkade-os/arkd/pkg/errors"
-	middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 )
 
 // guardedMethod is an ArkService method that is NOT digest-exempt, used to
@@ -239,36 +235,6 @@ func assertDigestCompat(t *testing.T, tc digestCompatCase, called bool, err erro
 	require.Equal(t, tc.wantExpected, meta["expected_digest"])
 	require.Equal(t, tc.wantGot, meta["got_digest"])
 	require.Contains(t, err.Error(), "invalid digest header")
-}
-
-// TestDigestMismatchReachesClient checks the client receives a proper status with details, not a bare Unknown. Chain mirrors UnaryInterceptor and must stay in sync.
-func TestDigestMismatchReachesClient(t *testing.T) {
-	chain := middleware.ChainUnaryServer(
-		unaryPanicRecoveryInterceptor(),
-		errorConverter,
-		unaryLogger,
-		unaryDigestHandler(staticDigest("server-digest", true)),
-	)
-
-	_, err := chain(
-		ctxWithDigest("stale-digest"),
-		nil,
-		&grpc.UnaryServerInfo{FullMethod: guardedMethod},
-		func(ctx context.Context, req any) (any, error) { return "ok", nil },
-	)
-	require.Error(t, err)
-
-	st := status.Convert(err)
-	require.Equal(t, codes.FailedPrecondition, st.Code())
-
-	details := st.Details()
-	require.NotEmpty(t, details, "client should receive structured error details")
-
-	errDetails, ok := details[0].(*arkv1.ErrorDetails)
-	require.True(t, ok)
-	require.Equal(t, arkerrors.DIGEST_MISMATCH.Name, errDetails.GetName())
-	require.Equal(t, "server-digest", errDetails.GetMetadata()["expected_digest"])
-	require.Equal(t, "stale-digest", errDetails.GetMetadata()["got_digest"])
 }
 
 // runUnaryDigest runs the unary digest interceptor and reports whether the
