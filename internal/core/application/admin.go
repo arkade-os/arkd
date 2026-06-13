@@ -57,7 +57,10 @@ type AdminService interface {
 }
 
 type adminService struct {
-	walletSvc       ports.WalletService
+	walletSvc ports.WalletService
+	// walletFallbacks are additional arkd-wallets whose batches admin.Sweep may also
+	// sign; signing is attempted with the primary wallet first, then each fallback.
+	walletFallbacks []ports.WalletService
 	repoManager     ports.RepoManager
 	txBuilder       ports.TxBuilder
 	sweeperTimeUnit ports.TimeUnit
@@ -70,17 +73,25 @@ type adminService struct {
 }
 
 func NewAdminService(
-	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
+	walletSvc ports.WalletService, walletFallbacks []ports.WalletService,
+	repoManager ports.RepoManager, txBuilder ports.TxBuilder,
 	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit, feeManager ports.FeeManager,
 ) AdminService {
 	return &adminService{
 		walletSvc:       walletSvc,
+		walletFallbacks: walletFallbacks,
 		repoManager:     repoManager,
 		txBuilder:       txBuilder,
 		sweeperTimeUnit: timeUnit,
 		liveStore:       liveStoreSvc,
 		feeManager:      feeManager,
 	}
+}
+
+// signingWallets returns the wallets to try when signing a sweep, in order: the
+// primary wallet first, then any configured fallbacks.
+func (a *adminService) signingWallets() []ports.WalletService {
+	return primaryThenFallbacks(a.walletSvc, a.walletFallbacks)
 }
 
 func (a *adminService) Wallet() ports.WalletService {
@@ -557,7 +568,7 @@ func (a *adminService) Sweep(
 		return "", "", fmt.Errorf("no funds to sweep")
 	}
 
-	txid, txhex, err = a.txBuilder.BuildSweepTx(inputs)
+	txid, txhex, err = buildAndSignSweepTx(a.txBuilder, a.signingWallets(), inputs)
 	if err != nil {
 		return
 	}

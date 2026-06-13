@@ -31,10 +31,13 @@ type sweeperTask struct {
 // it is responsible for sweeping batch outputs that reached the expiration date.
 // it also handles delaying the sweep events in case some parts of the tree are broadcasted
 type sweeper struct {
-	wallet      ports.WalletService
-	repoManager ports.RepoManager
-	builder     ports.TxBuilder
-	scheduler   ports.SchedulerService
+	wallet ports.WalletService
+	// walletFallbacks are additional arkd-wallets whose batches this arkd may also
+	// sweep; signing is attempted with the primary wallet first, then each fallback.
+	walletFallbacks []ports.WalletService
+	repoManager     ports.RepoManager
+	builder         ports.TxBuilder
+	scheduler       ports.SchedulerService
 
 	// cache of scheduled tasks, avoid scheduling the same sweep event multiple times
 	locker *sync.Mutex
@@ -44,12 +47,65 @@ type sweeper struct {
 }
 
 func newSweeper(
-	wallet ports.WalletService, repoManager ports.RepoManager, builder ports.TxBuilder,
+	wallet ports.WalletService, walletFallbacks []ports.WalletService,
+	repoManager ports.RepoManager, builder ports.TxBuilder,
 	scheduler ports.SchedulerService,
 ) *sweeper {
 	return &sweeper{
-		wallet, repoManager, builder, scheduler, &sync.Mutex{}, make(map[string]struct{}), nil,
+		wallet:          wallet,
+		walletFallbacks: walletFallbacks,
+		repoManager:     repoManager,
+		builder:         builder,
+		scheduler:       scheduler,
+		locker:          &sync.Mutex{},
+		scheduledTasks:  make(map[string]struct{}),
 	}
+}
+
+// signingWallets returns the wallets to try when signing a sweep, in order: the
+// primary wallet first, then any configured fallbacks.
+func (s *sweeper) signingWallets() []ports.WalletService {
+	return primaryThenFallbacks(s.wallet, s.walletFallbacks)
+}
+
+// primaryThenFallbacks returns the primary wallet followed by the fallbacks — the
+// order in which sweep signing is attempted.
+func primaryThenFallbacks(
+	primary ports.WalletService, fallbacks []ports.WalletService,
+) []ports.WalletService {
+	return append([]ports.WalletService{primary}, fallbacks...)
+}
+
+// buildAndSignSweepTx builds the sweep transaction once (its destination and fees
+// come from the primary wallet) and then attempts to sign it with each wallet in
+// order, returning as soon as one succeeds. This lets a single arkd sweep batches
+// signed by any of its primary/fallback arkd-wallets. Broadcasting is left to the
+// caller.
+func buildAndSignSweepTx(
+	builder ports.TxBuilder, wallets []ports.WalletService, inputs []ports.TxInput,
+) (string, string, error) {
+	unsignedTx, txid, err := builder.BuildSweepTx(inputs)
+	if err != nil {
+		return "", "", err
+	}
+
+	if len(wallets) == 0 {
+		return "", "", fmt.Errorf("no signing wallets configured for sweep tx %s", txid)
+	}
+
+	signErrs := make([]error, 0, len(wallets))
+	for i, wallet := range wallets {
+		signed, signErr := builder.SignSweepTx(wallet, unsignedTx)
+		if signErr == nil {
+			return txid, signed, nil
+		}
+		// name the failing wallet so a multi-wallet operator can tell which rejected it
+		signErrs = append(signErrs, fmt.Errorf("wallet[%d]: %w", i, signErr))
+	}
+
+	return "", "", fmt.Errorf(
+		"no wallet could sign sweep tx %s: %w", txid, errors.Join(signErrs...),
+	)
 }
 
 func (s *sweeper) start(ctx context.Context) error {
@@ -627,7 +683,9 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			)
 
 			// build the sweep transaction with all the expired non-swept batch outputs
-			sweepTxId, sweepTx, err = s.builder.BuildSweepTx(unspentOutputsToSweep)
+			sweepTxId, sweepTx, err = buildAndSignSweepTx(
+				s.builder, s.signingWallets(), unspentOutputsToSweep,
+			)
 			if err != nil {
 				return err
 			}
@@ -662,10 +720,23 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			log.Debugf("sweeper: batch %s swept by: %s", commitmentTxid, txid)
 		} else {
 			// if all outputs are spent, it means we missed to mark the batch as swept,
-			// build a sweep transaction without broadcasting it. we'll use it rebuild sweepEvent.
-			sweepTxId, sweepTx, err = s.builder.BuildSweepTx(outputsToSweep)
+			// build a sweep transaction without broadcasting it. we'll use it to rebuild
+			// sweepEvent. The outputs are already spent on-chain, so this tx is never
+			// broadcast and a signing failure (e.g. the wallet that swept them is no
+			// longer primary or fallback) must not block reconciliation: fall back to the
+			// unsigned tx, which still carries the txid the event needs.
+			sweepTxId, sweepTx, err = buildAndSignSweepTx(
+				s.builder, s.signingWallets(), outputsToSweep,
+			)
 			if err != nil {
-				return err
+				log.WithError(err).Warnf(
+					"sweeper: could not sign sweep tx for already-spent batch %s, "+
+						"reconciling with unsigned tx", commitmentTxid,
+				)
+				sweepTx, sweepTxId, err = s.builder.BuildSweepTx(outputsToSweep)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
@@ -749,7 +820,9 @@ func (s *sweeper) createCheckpointSweepTask(
 		checkpointTxid := toSweep.Txid
 		log.Debugf("sweeper: start sweeping checkpoint %s", checkpointTxid)
 
-		_, sweepTx, err := s.builder.BuildSweepTx([]ports.TxInput{toSweep})
+		_, sweepTx, err := buildAndSignSweepTx(
+			s.builder, s.signingWallets(), []ports.TxInput{toSweep},
+		)
 		if err != nil {
 			return err
 		}
