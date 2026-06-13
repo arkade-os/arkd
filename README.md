@@ -81,6 +81,7 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_REDIS_NUM_OF_RETRIES`         | Maximum number of retries for Redis write operations in case of conflicts       | -                              |
 | `ARKD_ESPLORA_URL`                  | Esplora API URL                                                                 | `https://blockstream.info/api` |
 | `ARKD_WALLET_ADDR`                  | The arkd wallet address to connect to in the form `host:port`                   | -                              |
+| `ARKD_WALLET_FALLBACK_ADDRS`        | Additional arkd-wallet addresses (other LPs), comma-separated `host:port` list   | -                              |
 | `ARKD_SIGNER_ADDR`                  | The signer address to connect to in the form `host:port`                        | value of `ARKD_WALLET_ADDR`    |
 | `ARKD_NO_MACAROONS`                 | Disable macaroon authentication                                                 | `false`                        |
 | `ARKD_NO_TLS`                       | Disable TLS                                                                     | `true`                         |
@@ -179,6 +180,16 @@ To connect `arkd` to `arkd-wallet` use this environment variable:
 # Make sure to use the right URL in the form host:port, this is just an example.
 export ARKD_WALLET_ADDR=localhost:6060
 ```
+
+### Configuring multiple LP wallets
+
+`arkd` can be backed by a primary `arkd-wallet` plus additional wallets belonging to other liquidity providers. List the additional wallets with `ARKD_WALLET_FALLBACK_ADDRS`, a comma-separated list of `host:port` addresses:
+
+```sh
+export ARKD_WALLET_FALLBACK_ADDRS=localhost:6061,localhost:6062
+```
+
+Every wallet, primary and fallback, must be initialized and unlocked out of band (see [Setup arkd](#setup-arkd)) and must be on the same network as the primary; `arkd` validates this at startup and refuses to start otherwise. The primary wallet remains the sole source of the forfeit address, connector address, scanning and signing. The additional wallets are used only as sweep fallbacks; that wiring lands in a later change.
 
 ### Connect to signer
 
