@@ -21,6 +21,12 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// testDialOptions is a test-only seam appended to the dial options in
+// NewClient. It is nil in production builds (zero effect) and is set by tests
+// to inject a bufconn dialer so the real NewClient path — including the
+// build-version interceptors registered above — can be exercised in-process.
+var testDialOptions []grpc.DialOption
+
 type grpcClient struct {
 	conn       *grpc.ClientConn
 	connMu     *sync.RWMutex
@@ -58,7 +64,14 @@ func NewClient(serverUrl string) (client.Client, error) {
 			},
 			MinConnectTimeout: 3 * time.Second,
 		}),
+		grpc.WithChainUnaryInterceptor(
+			unaryVersionInterceptor(),
+		),
+		grpc.WithChainStreamInterceptor(
+			streamVersionInterceptor(),
+		),
 	}
+	options = append(options, testDialOptions...)
 
 	conn, err := grpc.NewClient(serverUrl, options...)
 	if err != nil {

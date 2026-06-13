@@ -70,6 +70,9 @@ is unset on first boot.
 | `ARKD_MAX_OP_RETURN_OUTS`                | `max_op_return_outputs`          | count (floored to a minimum of `1`)                                 | `3`         |
 | `ARKD_ASSET_TX_MAX_WEIGHT_RATIO`         | `asset_tx_max_weight_ratio`      | ratio in the open interval `(0, 1)`                                 | `0.5`       |
 | `ARKD_NOTE_URI_PREFIX`                   | `note_uri_prefix`                | string                                                              | `""`        |
+| `ARKD_MIN_BUILD_VERSION_HEADER`          | `build_version_header`           | min accepted client build version, semver (e.g. `v2.3.4`); empty = no minimum | `""`        |
+| `ARKD_MIN_BUILD_VERSION_HEADER_REQUIRED` | `build_version_header_required`  | bool; if `true`, clients must send a valid `X-Build-Version` header (requires `build_version_header`) | `false`     |
+| `ARKD_DIGEST_HEADER_REQUIRED`            | `digest_header_required`         | bool; if `true`, clients must send a matching `X-Digest` header     | `false`     |
 
 ### Notes on specific values
 
@@ -83,6 +86,27 @@ written back to the stored settings row, so the persisted value stays as configu
 (`-1` by default).
 - **`utxo_max_amount = 0`** disables boarding / collaborative exit entirely 
 (a `-1` means "no limit").
+
+### Client compatibility headers
+
+Three settings gate which clients the public `ArkService` accepts. They are enforced by gRPC
+interceptors on every `ArkService` call:
+
+- **`build_version_header`** is the minimum server build version clients must advertise
+(semver, e.g. `v2.3.4`). A client advertises the build version via the `X-Build-Version` header;
+if it is *below* this minimum the request is rejected. Leave empty to not enforce a minimum.
+- **`build_version_header_required`** controls what happens when a client sends **no** (or an
+unparseable) `X-Build-Version` header: when `true` such requests are rejected; when `false` a 
+missing header is allowed (a header that *is* present is always validated against the minimum). 
+When this is `true`, `build_version_header` must be set — otherwise settings validation fails.
+- **`digest_header_required`**: when `true`, clients must send an `X-Digest` header matching the
+server's configuration digest (which `GetInfo` advertises). The digest changes whenever any config
+parameter change, so a stale client is rejected and must refresh. `GetInfo` is **exempt** from this
+check, so a client can always (re)learn the current digest.
+
+All three can be changed at runtime via the admin API like any other setting; the matching `arkd`
+CLI flags are `--build-version-header`, `--build-version-header-required` and 
+`--digest-header-required`.
 
 ## Changing settings after first boot
 

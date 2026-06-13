@@ -143,6 +143,7 @@ func seedParams(settings domain.Settings) queries.UpsertSettingsParams {
 		NoteUriPrefix:                 settings.NoteUriPrefix,
 		BuildVersionHeader:            settings.BuildVersionHeader,
 		BuildVersionHeaderRequired:    settings.BuildVersionHeaderRequired,
+		DigestHeaderRequired:          settings.DigestHeaderRequired,
 		BatchOnchainInputFee:          settings.BatchFees.OnchainInputFee,
 		BatchOffchainInputFee:         settings.BatchFees.OffchainInputFee,
 		BatchOnchainOutputFee:         settings.BatchFees.OnchainOutputFee,

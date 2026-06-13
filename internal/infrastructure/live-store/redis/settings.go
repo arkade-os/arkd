@@ -148,6 +148,7 @@ type settingsDTO struct {
 	NoteUriPrefix                 string
 	BuildVersionHeader            string
 	BuildVersionHeaderRequired    bool
+	DigestHeaderRequired          bool
 	ScheduledSession              scheduledSessionDTO
 	BatchFees                     batchFeesDTO
 	Network                       string
@@ -212,6 +213,7 @@ func newSettingsDTO(settings ports.Settings) settingsDTO {
 		NoteUriPrefix:                 settings.NoteUriPrefix,
 		BuildVersionHeader:            settings.BuildVersionHeader,
 		BuildVersionHeaderRequired:    settings.BuildVersionHeaderRequired,
+		DigestHeaderRequired:          settings.DigestHeaderRequired,
 		BatchFees:                     settings.BatchFees,
 		Network:                       settings.Network.Name,
 		DustAmount:                    settings.DustAmount,
@@ -293,6 +295,7 @@ func (s settingsDTO) parse() (*ports.Settings, error) {
 			NoteUriPrefix:                 s.NoteUriPrefix,
 			BuildVersionHeader:            s.BuildVersionHeader,
 			BuildVersionHeaderRequired:    s.BuildVersionHeaderRequired,
+			DigestHeaderRequired:          s.DigestHeaderRequired,
 			ScheduledSession:              s.ScheduledSession.parse(),
 			BatchFees:                     s.BatchFees,
 		},

@@ -105,6 +105,7 @@ type Config struct {
 	HeartbeatInterval          int64
 	BuildVersionHeaderRequired bool
 	BuildVersionHeader         string
+	DigestHeaderRequired       bool
 
 	VtxoNoCsvValidationCutoffDate int64
 
@@ -251,6 +252,9 @@ var (
 	// MinBuildVersionHeaderRequired is used to determine if a request with invalid or non-existing
 	// X-Build-Version header should be rejected
 	MinBuildVersionHeaderRequired = "MIN_BUILD_VERSION_HEADER_REQUIRED"
+	// DigestHeaderRequired is used to determine if a request with invalid or non-existing
+	// X-Digest header should be rejected
+	DigestHeaderRequired = "DIGEST_HEADER_REQUIRED"
 
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
@@ -294,7 +298,8 @@ var (
 	defaultStreamConnPoolSize            = uint32(4)
 	maxStreamConnPoolSize                = uint32(64)
 	defaultMaxOpReturnOuts               = uint32(3)
-	defaultBuildVersionRequireHeader     = false
+	defaultBuildVersionHeaderRequired    = false
+	defaultDigestHeaderRequired          = false
 )
 
 func LoadConfig() (*Config, error) {
@@ -346,7 +351,8 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
 	viper.SetDefault(StreamConnPoolSize, defaultStreamConnPoolSize)
 	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
-	viper.SetDefault(MinBuildVersionHeaderRequired, defaultBuildVersionRequireHeader)
+	viper.SetDefault(MinBuildVersionHeaderRequired, defaultBuildVersionHeaderRequired)
+	viper.SetDefault(DigestHeaderRequired, defaultDigestHeaderRequired)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -504,6 +510,7 @@ func LoadConfig() (*Config, error) {
 		MaxOpReturnOutputs:         max(1, viper.GetUint64(MaxOpReturnOutputs)),
 		BuildVersionHeaderRequired: viper.GetBool(MinBuildVersionHeaderRequired),
 		BuildVersionHeader:         viper.GetString(MinBuildVersionHeader),
+		DigestHeaderRequired:       viper.GetBool(DigestHeaderRequired),
 	}, nil
 }
 
@@ -988,7 +995,7 @@ func (c *Config) getSettings() (*domain.Settings, error) {
 		c.UnilateralExitDelay, c.PublicUnilateralExitDelay, c.CheckpointExitDelay,
 		c.BoardingExitDelay, c.VtxoTreeExpiry,
 		c.MaxTxWeight, c.MaxOpReturnOutputs, c.AssetTxMaxWeightRatio, c.NoteUriPrefix,
-		c.BuildVersionHeader, c.BuildVersionHeaderRequired,
+		c.BuildVersionHeader, c.BuildVersionHeaderRequired, c.DigestHeaderRequired,
 	)
 	if err != nil {
 		return nil, err

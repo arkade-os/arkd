@@ -9,12 +9,13 @@ import (
 // UnaryInterceptor returns the unary interceptor.
 func UnaryInterceptor(
 	svc *macaroons.Service, readiness *ReadinessService,
-	getVersionGuard func() (*VersionGuard, error),
+	getVersionGuard func() (*VersionGuard, error), getDigest func() (string, bool, error),
 ) grpc.ServerOption {
 	return grpc.UnaryInterceptor(middleware.ChainUnaryServer(
 		unaryPanicRecoveryInterceptor(),
 		unaryLogger,
 		unaryVersionCompatHandler(getVersionGuard),
+		unaryDigestHandler(getDigest),
 		unaryMacaroonAuthHandler(svc),
 		unaryReadinessHandler(readiness),
 		errorConverter,
@@ -24,12 +25,13 @@ func UnaryInterceptor(
 // StreamInterceptor returns the stream interceptor with a logrus log.
 func StreamInterceptor(
 	svc *macaroons.Service, readiness *ReadinessService,
-	getVersionGuard func() (*VersionGuard, error),
+	getVersionGuard func() (*VersionGuard, error), getDigest func() (string, bool, error),
 ) grpc.ServerOption {
 	return grpc.StreamInterceptor(middleware.ChainStreamServer(
 		streamPanicRecoveryInterceptor(),
 		streamLogger,
 		streamVersionCompatHandler(getVersionGuard),
+		streamDigestHandler(getDigest),
 		streamMacaroonAuthHandler(svc),
 		streamReadinessHandler(readiness),
 	))

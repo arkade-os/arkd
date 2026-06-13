@@ -2024,6 +2024,12 @@
             ],
             "format": "int64"
           },
+          "digestHeaderRequired": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "maxOpReturnOutputs": {
             "type": [
               "integer",
