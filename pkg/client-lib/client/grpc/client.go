@@ -29,9 +29,12 @@ var testDialOptions []grpc.DialOption
 
 type grpcClient struct {
 	conn       *grpc.ClientConn
-	connMu     *sync.RWMutex
+	connMu     *sync.Mutex
+	svc        arkv1.ArkServiceClient
 	listenerMu *sync.RWMutex
 	listenerId string
+	infoMu     *sync.RWMutex
+	digest     string
 }
 
 func NewClient(serverUrl string) (client.TransportClient, error) {
@@ -51,6 +54,12 @@ func NewClient(serverUrl string) (client.TransportClient, error) {
 		serverUrl = fmt.Sprintf("%s:%d", serverUrl, port)
 	}
 
+	client := &grpcClient{
+		connMu:     &sync.Mutex{},
+		listenerMu: &sync.RWMutex{},
+		infoMu:     &sync.RWMutex{},
+	}
+
 	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
 		grpc.WithDisableServiceConfig(),
@@ -65,10 +74,10 @@ func NewClient(serverUrl string) (client.TransportClient, error) {
 			MinConnectTimeout: 3 * time.Second,
 		}),
 		grpc.WithChainUnaryInterceptor(
-			unaryVersionInterceptor(),
+			unaryVersionInterceptor(), unaryDigestInterceptor(client.getDigest),
 		),
 		grpc.WithChainStreamInterceptor(
-			streamVersionInterceptor(),
+			streamVersionInterceptor(), streamDigestInterceptor(client.getDigest),
 		),
 	}
 	options = append(options, testDialOptions...)
@@ -77,20 +86,15 @@ func NewClient(serverUrl string) (client.TransportClient, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	client := &grpcClient{
-		conn:       conn,
-		connMu:     &sync.RWMutex{},
-		listenerMu: &sync.RWMutex{},
-		listenerId: "",
-	}
+	client.conn = conn
+	client.svc = arkv1.NewArkServiceClient(conn)
 
 	return client, nil
 }
 
 func (a *grpcClient) GetInfo(ctx context.Context) (*client.Info, error) {
 	req := &arkv1.GetInfoRequest{}
-	resp, err := a.svc().GetInfo(ctx, req)
+	resp, err := a.svc.GetInfo(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -122,6 +126,13 @@ func (a *grpcClient) GetInfo(ctx context.Context) (*client.Info, error) {
 			CutoffDate: s.GetCutoffDate(),
 		})
 	}
+	// Cache the latest digest under the lock. This must NOT wrap the RPC above:
+	// the digest interceptor reads a.digest under the same mutex, so holding it
+	// across the call would self-deadlock the RWMutex.
+	a.infoMu.Lock()
+	a.digest = resp.GetDigest()
+	a.infoMu.Unlock()
+
 	return &client.Info{
 		SignerPubKey:              resp.GetSignerPubkey(),
 		ForfeitPubKey:             resp.GetForfeitPubkey(),
@@ -151,10 +162,7 @@ func (a *grpcClient) GetInfo(ctx context.Context) (*client.Info, error) {
 	}, nil
 }
 
-func (a *grpcClient) RegisterIntent(
-	ctx context.Context,
-	proof, message string,
-) (string, error) {
+func (a *grpcClient) RegisterIntent(ctx context.Context, proof, message string) (string, error) {
 	req := &arkv1.RegisterIntentRequest{
 		Intent: &arkv1.Intent{
 			Message: message,
@@ -162,7 +170,9 @@ func (a *grpcClient) RegisterIntent(
 		},
 	}
 
-	resp, err := a.svc().RegisterIntent(ctx, req)
+	resp, err := withDigestRefresh(a, ctx, func() (*arkv1.RegisterIntentResponse, error) {
+		return a.svc.RegisterIntent(ctx, req)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -176,11 +186,10 @@ func (a *grpcClient) DeleteIntent(ctx context.Context, proof, message string) er
 			Proof:   proof,
 		},
 	}
-	_, err := a.svc().DeleteIntent(ctx, req)
-	if err != nil {
-		return err
-	}
-	return nil
+	_, err := withDigestRefresh(a, ctx, func() (*arkv1.DeleteIntentResponse, error) {
+		return a.svc.DeleteIntent(ctx, req)
+	})
+	return err
 }
 
 func (a *grpcClient) EstimateIntentFee(ctx context.Context, proof, message string) (int64, error) {
@@ -190,7 +199,9 @@ func (a *grpcClient) EstimateIntentFee(ctx context.Context, proof, message strin
 			Proof:   proof,
 		},
 	}
-	resp, err := a.svc().EstimateIntentFee(ctx, req)
+	resp, err := withDigestRefresh(a, ctx, func() (*arkv1.EstimateIntentFeeResponse, error) {
+		return a.svc.EstimateIntentFee(ctx, req)
+	})
 	if err != nil {
 		return -1, err
 	}
@@ -201,7 +212,7 @@ func (a *grpcClient) ConfirmRegistration(ctx context.Context, intentID string) e
 	req := &arkv1.ConfirmRegistrationRequest{
 		IntentId: intentID,
 	}
-	_, err := a.svc().ConfirmRegistration(ctx, req)
+	_, err := a.svc.ConfirmRegistration(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -217,7 +228,7 @@ func (a *grpcClient) SubmitTreeNonces(
 		TreeNonces: nonces.ToMap(),
 	}
 
-	if _, err := a.svc().SubmitTreeNonces(ctx, req); err != nil {
+	if _, err := a.svc.SubmitTreeNonces(ctx, req); err != nil {
 		return err
 	}
 
@@ -238,7 +249,7 @@ func (a *grpcClient) SubmitTreeSignatures(
 		TreeSignatures: sigs,
 	}
 
-	if _, err := a.svc().SubmitTreeSignatures(ctx, req); err != nil {
+	if _, err := a.svc.SubmitTreeSignatures(ctx, req); err != nil {
 		return err
 	}
 
@@ -253,7 +264,7 @@ func (a *grpcClient) SubmitSignedForfeitTxs(
 		SignedCommitmentTx: signedCommitmentTx,
 	}
 
-	_, err := a.svc().SubmitSignedForfeitTxs(ctx, req)
+	_, err := a.svc.SubmitSignedForfeitTxs(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -271,10 +282,12 @@ func (a *grpcClient) GetEventStream(
 		client.BatchEventChannel,
 	]{
 		Connect: func(ctx context.Context) (arkv1.ArkService_GetEventStreamClient, error) {
-			return a.svc().GetEventStream(ctx, req)
+			return withDigestRefresh(a, ctx, func() (arkv1.ArkService_GetEventStreamClient, error) {
+				return a.svc.GetEventStream(ctx, req)
+			})
 		},
 		Reconnect: func(ctx context.Context) (string, arkv1.ArkService_GetEventStreamClient, error) {
-			stream, err := a.svc().GetEventStream(ctx, req)
+			stream, err := a.svc.GetEventStream(ctx, req)
 			return "", stream, err
 		},
 		Recv: func(stream arkv1.ArkService_GetEventStreamClient) (**arkv1.GetEventStreamResponse, error) {
@@ -335,11 +348,12 @@ func (a *grpcClient) SubmitTx(
 		CheckpointTxs: checkpointTxs,
 	}
 
-	resp, err := a.svc().SubmitTx(ctx, req)
+	resp, err := withDigestRefresh(a, ctx, func() (*arkv1.SubmitTxResponse, error) {
+		return a.svc.SubmitTx(ctx, req)
+	})
 	if err != nil {
 		return "", "", nil, err
 	}
-
 	return resp.GetArkTxid(), resp.GetFinalArkTx(), resp.GetSignedCheckpointTxs(), nil
 }
 
@@ -351,11 +365,10 @@ func (a *grpcClient) FinalizeTx(
 		FinalCheckpointTxs: finalCheckpointTxs,
 	}
 
-	_, err := a.svc().FinalizeTx(ctx, req)
-	if err != nil {
-		return err
-	}
-	return nil
+	_, err := withDigestRefresh(a, ctx, func() (*arkv1.FinalizeTxResponse, error) {
+		return a.svc.FinalizeTx(ctx, req)
+	})
+	return err
 }
 
 func (a *grpcClient) GetPendingTx(
@@ -371,7 +384,9 @@ func (a *grpcClient) GetPendingTx(
 		},
 	}
 
-	resp, err := a.svc().GetPendingTx(ctx, req)
+	resp, err := withDigestRefresh(a, ctx, func() (*arkv1.GetPendingTxResponse, error) {
+		return a.svc.GetPendingTx(ctx, req)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -398,12 +413,14 @@ func (c *grpcClient) GetTransactionsStream(
 		client.TransactionEvent,
 	]{
 		Connect: func(ctx context.Context) (arkv1.ArkService_GetTransactionsStreamClient, error) {
-			return c.svc().GetTransactionsStream(ctx, req)
+			return withDigestRefresh(c, ctx, func() (arkv1.ArkService_GetTransactionsStreamClient, error) {
+				return c.svc.GetTransactionsStream(ctx, req)
+			})
 		},
 		Reconnect: func(
 			ctx context.Context,
 		) (string, arkv1.ArkService_GetTransactionsStreamClient, error) {
-			stream, err := c.svc().GetTransactionsStream(ctx, req)
+			stream, err := c.svc.GetTransactionsStream(ctx, req)
 			return "", stream, err
 		},
 		Recv: func(
@@ -529,7 +546,7 @@ func (c *grpcClient) ModifyStreamTopics(
 			},
 		},
 	}
-	updateRes, err := c.svc().UpdateStreamTopics(ctx, req)
+	updateRes, err := c.svc.UpdateStreamTopics(ctx, req)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -553,7 +570,7 @@ func (c *grpcClient) OverwriteStreamTopics(
 			},
 		},
 	}
-	updateRes, err := c.svc().UpdateStreamTopics(ctx, req)
+	updateRes, err := c.svc.UpdateStreamTopics(ctx, req)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -568,13 +585,6 @@ func (c *grpcClient) Close() {
 	c.conn.Close()
 }
 
-func (a *grpcClient) svc() arkv1.ArkServiceClient {
-	a.connMu.RLock()
-	defer a.connMu.RUnlock()
-
-	return arkv1.NewArkServiceClient(a.conn)
-}
-
 func (a *grpcClient) getListenerID() string {
 	a.listenerMu.RLock()
 	defer a.listenerMu.RUnlock()
@@ -587,6 +597,12 @@ func (a *grpcClient) setListenerID(id string) {
 	defer a.listenerMu.Unlock()
 
 	a.listenerId = id
+}
+
+func (a *grpcClient) getDigest() string {
+	a.infoMu.RLock()
+	defer a.infoMu.RUnlock()
+	return a.digest
 }
 
 func toClientStreamConnectionState(
