@@ -11,15 +11,14 @@ import (
 )
 
 type convictionRepository struct {
-	db      *sql.DB
-	querier *queries.Queries
+	db SQLiteDB
 }
 
 func NewConvictionRepository(config ...interface{}) (domain.ConvictionRepository, error) {
 	if len(config) != 1 {
 		return nil, fmt.Errorf("invalid config")
 	}
-	db, ok := config[0].(*sql.DB)
+	db, ok := config[0].(SQLiteDB)
 	if !ok {
 		return nil, fmt.Errorf(
 			"cannot open conviction repository: invalid config, expected db at 0",
@@ -27,8 +26,7 @@ func NewConvictionRepository(config ...interface{}) (domain.ConvictionRepository
 	}
 
 	return &convictionRepository{
-		db:      db,
-		querier: queries.New(db),
+		db: db,
 	}, nil
 }
 
@@ -38,8 +36,12 @@ func (r *convictionRepository) Close() {
 }
 
 func (r *convictionRepository) Get(ctx context.Context, id string) (domain.Conviction, error) {
-	conviction, err := r.querier.SelectConviction(ctx, id)
-	if err != nil {
+	var conviction queries.Conviction
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		conviction, err = q.SelectConviction(ctx, id)
+		return err
+	}); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("conviction with id %s not found", id)
 		}
@@ -55,19 +57,24 @@ func (r *convictionRepository) GetActiveScriptConvictions(
 ) ([]domain.ScriptConviction, error) {
 	currentTime := time.Now().Unix()
 
-	convictions, err := r.querier.SelectActiveScriptConvictions(
-		ctx,
-		queries.SelectActiveScriptConvictionsParams{
-			Script: sql.NullString{
-				String: script,
-				Valid:  true,
+	var convictions []queries.Conviction
+	err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		convictions, err = q.SelectActiveScriptConvictions(
+			ctx,
+			queries.SelectActiveScriptConvictionsParams{
+				Script: sql.NullString{
+					String: script,
+					Valid:  true,
+				},
+				ExpiresAt: sql.NullInt64{
+					Int64: currentTime,
+					Valid: true,
+				},
 			},
-			ExpiresAt: sql.NullInt64{
-				Int64: currentTime,
-				Valid: true,
-			},
-		},
-	)
+		)
+		return err
+	})
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -95,7 +102,9 @@ func (r *convictionRepository) Add(ctx context.Context, convictions ...domain.Co
 			return fmt.Errorf("failed to convert conviction to db params: %w", err)
 		}
 
-		if err := r.querier.UpsertConviction(ctx, params); err != nil {
+		if err := withWriteQuerier(ctx, r.db, func(q *queries.Queries) error {
+			return q.UpsertConviction(ctx, params)
+		}); err != nil {
 			return fmt.Errorf("failed to upsert conviction: %w", err)
 		}
 	}
@@ -108,14 +117,18 @@ func (r *convictionRepository) GetAll(
 	from, to time.Time,
 ) ([]domain.Conviction, error) {
 
-	convictions, err := r.querier.SelectConvictionsInTimeRange(
-		ctx,
-		queries.SelectConvictionsInTimeRangeParams{
-			FromTime: from.Unix(),
-			ToTime:   to.Unix(),
-		},
-	)
-	if err != nil {
+	var convictions []queries.Conviction
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		convictions, err = q.SelectConvictionsInTimeRange(
+			ctx,
+			queries.SelectConvictionsInTimeRangeParams{
+				FromTime: from.Unix(),
+				ToTime:   to.Unix(),
+			},
+		)
+		return err
+	}); err != nil {
 		return nil, fmt.Errorf("failed to get convictions in time range: %w", err)
 	}
 
@@ -136,8 +149,12 @@ func (r *convictionRepository) GetByRoundID(
 	roundID string,
 ) ([]domain.Conviction, error) {
 
-	convictions, err := r.querier.SelectConvictionsByRoundID(ctx, roundID)
-	if err != nil {
+	var convictions []queries.Conviction
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		convictions, err = q.SelectConvictionsByRoundID(ctx, roundID)
+		return err
+	}); err != nil {
 		return nil, fmt.Errorf("failed to get convictions by round ID: %w", err)
 	}
 
@@ -155,7 +172,9 @@ func (r *convictionRepository) GetByRoundID(
 
 func (r *convictionRepository) Pardon(ctx context.Context, id string) error {
 
-	if err := r.querier.UpdateConvictionPardoned(ctx, id); err != nil {
+	if err := withWriteQuerier(ctx, r.db, func(q *queries.Queries) error {
+		return q.UpdateConvictionPardoned(ctx, id)
+	}); err != nil {
 		return fmt.Errorf("failed to pardon conviction: %w", err)
 	}
 

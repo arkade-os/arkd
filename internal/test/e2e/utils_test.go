@@ -23,6 +23,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/identity"
 	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
 	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
+	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
 	"github.com/arkade-os/arkd/pkg/client-lib/store"
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -831,4 +832,36 @@ func isRetryableChurnError(err error) bool {
 	}
 
 	return false
+}
+
+func waitForVTXOs(
+	ch <-chan indexer.ScriptEvent,
+	atLeastN int,
+	timeout time.Duration,
+) ([]types.Vtxo, error) {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(timeout))
+	defer cancel()
+	vtxos := make([]types.Vtxo, 0)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("timed out - %d/%d received", len(vtxos), atLeastN)
+		case evt, ok := <-ch:
+			if !ok {
+				return nil, fmt.Errorf("vtxo event channel closed")
+			}
+			if evt.Connection != nil {
+				continue
+			}
+
+			if evt.Err != nil {
+				return nil, evt.Err
+			}
+			vtxos = append(vtxos, evt.Data.NewVtxos...)
+		}
+
+		if len(vtxos) >= atLeastN {
+			return vtxos, nil
+		}
+	}
 }

@@ -10,22 +10,20 @@ import (
 )
 
 type offchainTxRepository struct {
-	db      *sql.DB
-	querier *queries.Queries
+	db SQLiteDB
 }
 
 func NewOffchainTxRepository(config ...interface{}) (domain.OffchainTxRepository, error) {
 	if len(config) != 1 {
 		return nil, fmt.Errorf("invalid config")
 	}
-	db, ok := config[0].(*sql.DB)
+	db, ok := config[0].(SQLiteDB)
 	if !ok {
 		return nil, fmt.Errorf("cannot open offchain tx repository: invalid config")
 	}
 
 	return &offchainTxRepository{
-		db:      db,
-		querier: queries.New(db),
+		db: db,
 	}, nil
 }
 
@@ -66,14 +64,18 @@ func (v *offchainTxRepository) AddOrUpdateOffchainTx(
 		}
 		return nil
 	}
-	return execTx(ctx, v.db, txBody)
+	return execTx(ctx, v.db.Write(), txBody)
 }
 
 func (v *offchainTxRepository) GetOffchainTx(
 	ctx context.Context, txid string,
 ) (*domain.OffchainTx, error) {
-	rows, err := v.querier.SelectOffchainTx(ctx, txid)
-	if err != nil {
+	var rows []queries.SelectOffchainTxRow
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectOffchainTx(ctx, txid)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	if len(rows) == 0 {

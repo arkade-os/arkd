@@ -17,12 +17,13 @@ func TestSeedSettings(t *testing.T) {
 		db, err := sqlitedb.OpenDb(":memory:")
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = db.Close() })
+		sqlDB := db.Write()
 
-		createSettingsTable(t, db)
-		createLegacyTables(t, db)
+		createSettingsTable(t, sqlDB)
+		createLegacyTables(t, sqlDB)
 
 		defaults := validSeedDefaults(t)
-		require.NoError(t, sqlitedb.SeedSettings(ctx, db, defaults))
+		require.NoError(t, sqlitedb.SeedSettings(ctx, sqlDB, defaults))
 
 		// settings row written with config defaults; no legacy data to overlay.
 		var (
@@ -33,7 +34,7 @@ func TestSeedSettings(t *testing.T) {
 			buildVersionReq bool
 			digestReq       bool
 		)
-		err = db.QueryRow(`
+		err = sqlDB.QueryRow(`
 			SELECT session_duration, batch_onchain_input_fee, scheduled_session_start_time,
 			       build_version_header, build_version_header_required, digest_header_required
 			FROM settings WHERE id = 1`).
@@ -52,12 +53,13 @@ func TestSeedSettings(t *testing.T) {
 		db, err := sqlitedb.OpenDb(":memory:")
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = db.Close() })
+		sqlDB := db.Write()
 
-		createSettingsTable(t, db)
-		createLegacyTables(t, db)
+		createSettingsTable(t, sqlDB)
+		createLegacyTables(t, sqlDB)
 
 		// Insert a legacy fee row and a past-dated (recurring) scheduled session.
-		_, err = db.Exec(`
+		_, err = sqlDB.Exec(`
 		INSERT INTO intent_fees
 			(created_at, offchain_input_fee_program, onchain_input_fee_program,
 			 offchain_output_fee_program, onchain_output_fee_program)
@@ -66,7 +68,7 @@ func TestSeedSettings(t *testing.T) {
 
 		// start_time deliberately in the past (1_600_000_000 = 2020) to prove the
 		// future-start validation no longer blocks the seed.
-		_, err = db.Exec(`
+		_, err = sqlDB.Exec(`
 		INSERT INTO scheduled_session
 			(start_time, end_time, period, duration, round_min_participants,
 			 round_max_participants, updated_at)
@@ -74,7 +76,7 @@ func TestSeedSettings(t *testing.T) {
 		require.NoError(t, err)
 
 		defaults := validSeedDefaults(t)
-		require.NoError(t, sqlitedb.SeedSettings(ctx, db, defaults))
+		require.NoError(t, sqlitedb.SeedSettings(ctx, sqlDB, defaults))
 
 		// Legacy fees + session carried into the settings row.
 		var (
@@ -84,7 +86,7 @@ func TestSeedSettings(t *testing.T) {
 			ssPeriod        int64
 			ssRoundMin      int64
 		)
-		err = db.QueryRow(`
+		err = sqlDB.QueryRow(`
 		SELECT batch_offchain_input_fee, batch_onchain_input_fee,
 		       scheduled_session_start_time, scheduled_session_period,
 		       scheduled_session_round_min_participants_count
@@ -99,8 +101,8 @@ func TestSeedSettings(t *testing.T) {
 
 		// Legacy tables consumed (emptied).
 		var feeCount, ssCount int
-		require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM intent_fees`).Scan(&feeCount))
-		require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM scheduled_session`).Scan(&ssCount))
+		require.NoError(t, sqlDB.QueryRow(`SELECT COUNT(*) FROM intent_fees`).Scan(&feeCount))
+		require.NoError(t, sqlDB.QueryRow(`SELECT COUNT(*) FROM scheduled_session`).Scan(&ssCount))
 		require.Equal(t, 0, feeCount)
 		require.Equal(t, 0, ssCount)
 	})
@@ -110,30 +112,31 @@ func TestSeedSettings(t *testing.T) {
 		db, err := sqlitedb.OpenDb(":memory:")
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = db.Close() })
+		sqlDB := db.Write()
 
-		createSettingsTable(t, db)
-		createLegacyTables(t, db)
+		createSettingsTable(t, sqlDB)
+		createLegacyTables(t, sqlDB)
 
 		defaults := validSeedDefaults(t)
-		require.NoError(t, sqlitedb.SeedSettings(ctx, db, defaults))
+		require.NoError(t, sqlitedb.SeedSettings(ctx, sqlDB, defaults))
 
 		// Simulate an admin change after the first seed.
-		_, err = db.Exec(`UPDATE settings SET session_duration = 999 WHERE id = 1`)
+		_, err = sqlDB.Exec(`UPDATE settings SET session_duration = 999 WHERE id = 1`)
 		require.NoError(t, err)
 
 		// A late-arriving legacy row must NOT be re-applied on the second run.
-		_, err = db.Exec(`
+		_, err = sqlDB.Exec(`
 		INSERT INTO intent_fees
 			(created_at, offchain_input_fee_program, onchain_input_fee_program,
 			 offchain_output_fee_program, onchain_output_fee_program)
 		VALUES (200, '9', '9', '9', '9');`)
 		require.NoError(t, err)
 
-		require.NoError(t, sqlitedb.SeedSettings(ctx, db, defaults))
+		require.NoError(t, sqlitedb.SeedSettings(ctx, sqlDB, defaults))
 
 		var sessionDuration int64
 		var batchOffchainIn string
-		err = db.QueryRow(`
+		err = sqlDB.QueryRow(`
 		SELECT session_duration, batch_offchain_input_fee FROM settings WHERE id = 1`).
 			Scan(&sessionDuration, &batchOffchainIn)
 		require.NoError(t, err)
@@ -142,7 +145,7 @@ func TestSeedSettings(t *testing.T) {
 
 		// The gate short-circuits before the delete, so the late legacy row is left intact.
 		var feeCount int
-		require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM intent_fees`).Scan(&feeCount))
+		require.NoError(t, sqlDB.QueryRow(`SELECT COUNT(*) FROM intent_fees`).Scan(&feeCount))
 		require.Equal(t, 1, feeCount)
 	})
 }

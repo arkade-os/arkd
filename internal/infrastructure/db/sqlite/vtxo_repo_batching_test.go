@@ -17,14 +17,14 @@ import (
 // missed dedup across batch boundaries.
 func TestGetVtxoPubKeysByCommitmentTxidsBatched(t *testing.T) {
 	ctx := context.Background()
-	db, err := sqlitedb.OpenDb(":memory:")
+	db, err := sqlitedb.OpenDb("file::memory:", sqlitedb.WithSharedCache())
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		//nolint:errcheck
 		db.Close()
 	})
 
-	setupVtxoTables(t, db)
+	setupVtxoTables(t, db.Write())
 
 	// Seed seven commitment txids; each fans out to two vtxos. A handful
 	// of pubkeys appear under more than one commitment txid so the dedup
@@ -39,14 +39,14 @@ func TestGetVtxoPubKeysByCommitmentTxidsBatched(t *testing.T) {
 		for v := 0; v < vtxosPerRound; v++ {
 			pubkey := fmt.Sprintf("pubkey-%02d-%d", r, v)
 			vtxoTxid := fmt.Sprintf("vtxo-%02d-%d", r, v)
-			insertVtxoRow(t, db, vtxoTxid, v, pubkey, 1000, commitmentTxid)
+			insertVtxoRow(t, db.Write(), vtxoTxid, v, pubkey, 1000, commitmentTxid)
 			// Cross-link every third vtxo to the previous round's
 			// commitment via the join table, so multiple batches can
 			// each return the same pubkey and the dedup logic has
 			// real work to do.
 			if r > 0 && v == 0 {
 				insertVtxoCommitmentTxidRow(
-					t, db, vtxoTxid, v, commitmentTxids[r-1],
+					t, db.Write(), vtxoTxid, v, commitmentTxids[r-1],
 				)
 			}
 			expected[pubkey] = struct{}{}
@@ -80,25 +80,25 @@ func TestGetVtxoPubKeysByCommitmentTxidsBatched(t *testing.T) {
 // withMinimumAmount predicate survives the per-batch query and merge.
 func TestGetVtxoPubKeysByCommitmentTxidsBatched_MinAmount(t *testing.T) {
 	ctx := context.Background()
-	db, err := sqlitedb.OpenDb(":memory:")
+	db, err := sqlitedb.OpenDb("file::memory:", sqlitedb.WithSharedCache())
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		//nolint:errcheck
 		db.Close()
 	})
 
-	setupVtxoTables(t, db)
+	setupVtxoTables(t, db.Write())
 
 	// Two commitment txids, each with a below-threshold and an
 	// above-threshold vtxo. commitment-A also gets a vtxo whose amount
 	// equals min_amount to lock the inclusive >= predicate (the badger
 	// backend was previously > and is fixed in this PR for parity).
 	commitmentTxids := []string{"commitment-A", "commitment-B"}
-	insertVtxoRow(t, db, "vtxo-a-low", 0, "pubkey-a-low", 100, commitmentTxids[0])
-	insertVtxoRow(t, db, "vtxo-a-eq", 0, "pubkey-a-eq", 1000, commitmentTxids[0])
-	insertVtxoRow(t, db, "vtxo-a-high", 0, "pubkey-a-high", 5000, commitmentTxids[0])
-	insertVtxoRow(t, db, "vtxo-b-low", 0, "pubkey-b-low", 200, commitmentTxids[1])
-	insertVtxoRow(t, db, "vtxo-b-high", 0, "pubkey-b-high", 7500, commitmentTxids[1])
+	insertVtxoRow(t, db.Write(), "vtxo-a-low", 0, "pubkey-a-low", 100, commitmentTxids[0])
+	insertVtxoRow(t, db.Write(), "vtxo-a-eq", 0, "pubkey-a-eq", 1000, commitmentTxids[0])
+	insertVtxoRow(t, db.Write(), "vtxo-a-high", 0, "pubkey-a-high", 5000, commitmentTxids[0])
+	insertVtxoRow(t, db.Write(), "vtxo-b-low", 0, "pubkey-b-low", 200, commitmentTxids[1])
+	insertVtxoRow(t, db.Write(), "vtxo-b-high", 0, "pubkey-b-high", 7500, commitmentTxids[1])
 
 	repo, err := sqlitedb.NewVtxoRepository(db)
 	require.NoError(t, err)
