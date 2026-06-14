@@ -11,6 +11,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -164,9 +165,21 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 		return fmt.Errorf("failed to encode forfeit tx: %s", err)
 	}
 
-	signedForfeitTx, err := s.signer.SignTransactionTapscript(ctx, forfeitTxB64, nil)
+	// Forfeit txs are signed by the operator at collection time, so the stored tx
+	// is usually already broadcast-ready. Re-signing would append a duplicate
+	// operator signature and produce an invalid PSBT (duplicate key), so we only
+	// sign here when the operator signature is still missing (e.g. forfeit txs
+	// collected before collection-time signing was introduced).
+	signedForfeitTx := forfeitTxB64
+	signerPubkey, err := s.signer.GetPubkey(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to sign forfeit tx: %s", err)
+		return fmt.Errorf("failed to get signer pubkey: %s", err)
+	}
+	if !forfeitTxOperatorSigned(forfeitTx, schnorr.SerializePubKey(signerPubkey)) {
+		signedForfeitTx, err = s.signer.SignTransactionTapscript(ctx, forfeitTxB64, nil)
+		if err != nil {
+			return fmt.Errorf("failed to sign forfeit tx: %s", err)
+		}
 	}
 
 	forfeitTxHex, err := s.builder.FinalizeAndExtract(signedForfeitTx)
@@ -415,6 +428,20 @@ func findForfeitTx(
 	}
 
 	return nil, domain.Outpoint{}, fmt.Errorf("forfeit tx not found")
+}
+
+// forfeitTxOperatorSigned reports whether the forfeit tx already carries a
+// tapscript signature from the operator (its signer key), i.e. it was signed at
+// collection time and must not be signed again.
+func forfeitTxOperatorSigned(ptx *psbt.Packet, operatorXOnly []byte) bool {
+	for _, in := range ptx.Inputs {
+		for _, sig := range in.TaprootScriptSpendSig {
+			if bytes.Equal(sig.XOnlyPubKey, operatorXOnly) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // computeVSize calculates the virtual size (vsize) of a Bitcoin transaction

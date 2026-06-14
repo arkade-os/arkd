@@ -96,3 +96,36 @@ func TestSignForfeitTxs(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestForfeitTxOperatorSigned(t *testing.T) {
+	operatorXOnly := make([]byte, 32)
+	operatorXOnly[0] = 0x07
+
+	build := func(withOperatorSig bool) *psbt.Packet {
+		var hash chainhash.Hash
+		hash[0] = 0xaa
+		tx := wire.NewMsgTx(2)
+		tx.AddTxIn(wire.NewTxIn(&wire.OutPoint{Hash: hash, Index: 0}, nil, nil))
+		tx.AddTxOut(wire.NewTxOut(1000, []byte{txscriptOpTrue}))
+		p, err := psbt.NewFromUnsignedTx(tx)
+		require.NoError(t, err)
+		if withOperatorSig {
+			p.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{{
+				XOnlyPubKey: operatorXOnly,
+				LeafHash:    make([]byte, 32),
+				Signature:   make([]byte, 64),
+			}}
+		}
+		return p
+	}
+
+	require.True(t, forfeitTxOperatorSigned(build(true), operatorXOnly),
+		"must detect the operator signature")
+	require.False(t, forfeitTxOperatorSigned(build(false), operatorXOnly),
+		"must report unsigned when the operator sig is absent")
+
+	otherXOnly := make([]byte, 32)
+	otherXOnly[0] = 0x09
+	require.False(t, forfeitTxOperatorSigned(build(true), otherXOnly),
+		"must not match a different pubkey")
+}
