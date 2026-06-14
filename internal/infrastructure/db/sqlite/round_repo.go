@@ -405,18 +405,24 @@ func (r *roundRepository) GetSweepableRounds(ctx context.Context) ([]string, err
 func (r *roundRepository) GetExpiredRounds(
 	ctx context.Context, expiredBefore int64,
 ) ([]domain.ExpiredRound, error) {
-	rows, err := r.querier.SelectExpiredRounds(ctx, expiredBefore)
+	var expiredRounds []domain.ExpiredRound
+	err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		rows, err := q.SelectExpiredRounds(ctx, expiredBefore)
+		if err != nil {
+			return err
+		}
+
+		for _, row := range rows {
+			expiredRounds = append(expiredRounds, domain.ExpiredRound{
+				RoundId:        row.ID,
+				CommitmentTxid: row.Txid,
+				ExpiredAt:      row.ExpiredAt,
+			})
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	expiredRounds := make([]domain.ExpiredRound, 0, len(rows))
-	for _, row := range rows {
-		expiredRounds = append(expiredRounds, domain.ExpiredRound{
-			RoundId:        row.ID,
-			CommitmentTxid: row.Txid,
-			ExpiredAt:      row.ExpiredAt,
-		})
 	}
 	return expiredRounds, nil
 }
@@ -617,7 +623,7 @@ func (r *roundRepository) PatchCollectedFees(
 		}
 		return nil
 	}
-	return execTx(ctx, r.db, txBody)
+	return execTx(ctx, r.db.Write(), txBody)
 }
 
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {

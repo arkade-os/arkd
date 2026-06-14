@@ -14,8 +14,9 @@ import (
 func TestSeedSettings(t *testing.T) {
 	t.Run("fresh install", func(t *testing.T) {
 		ctx := t.Context()
-		db, err := sqlitedb.OpenDb(":memory:")
+		dbSvc, err := sqlitedb.OpenDb(":memory:")
 		require.NoError(t, err)
+		db := dbSvc.Write()
 		t.Cleanup(func() { _ = db.Close() })
 
 		createSettingsTable(t, db)
@@ -49,8 +50,9 @@ func TestSeedSettings(t *testing.T) {
 
 	t.Run("backfill legacy", func(t *testing.T) {
 		ctx := t.Context()
-		db, err := sqlitedb.OpenDb(":memory:")
+		dbSvc, err := sqlitedb.OpenDb(":memory:")
 		require.NoError(t, err)
+		db := dbSvc.Write()
 		t.Cleanup(func() { _ = db.Close() })
 
 		createSettingsTable(t, db)
@@ -107,8 +109,9 @@ func TestSeedSettings(t *testing.T) {
 
 	t.Run("idempotent", func(t *testing.T) {
 		ctx := t.Context()
-		db, err := sqlitedb.OpenDb(":memory:")
+		dbSvc, err := sqlitedb.OpenDb(":memory:")
 		require.NoError(t, err)
+		db := dbSvc.Write()
 		t.Cleanup(func() { _ = db.Close() })
 
 		createSettingsTable(t, db)

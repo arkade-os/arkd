@@ -590,13 +590,21 @@ func (v *vtxoRepository) getVtxoPubKeysByCommitmentTxidsBatched(
 		batch := commitmentTxids[start:end]
 		// Same slice in both fields by construction; see public method
 		// doc for the sqlc dual-placeholder explanation.
-		keys, err := v.querier.SelectVtxoPubKeysByCommitmentTxids(ctx,
-			queries.SelectVtxoPubKeysByCommitmentTxidsParams{
-				MinAmount:          int64(withMinimumAmount),
-				CommitmentTxids:    batch,
-				CommitmentTxidsAlt: batch,
-			})
-		if err != nil {
+		var keys []string
+		if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+			res, err := q.SelectVtxoPubKeysByCommitmentTxids(
+				ctx, queries.SelectVtxoPubKeysByCommitmentTxidsParams{
+					MinAmount:          int64(withMinimumAmount),
+					CommitmentTxids:    batch,
+					CommitmentTxidsAlt: batch,
+				},
+			)
+			if err != nil {
+				return err
+			}
+			keys = res
+			return nil
+		}); err != nil {
 			return nil, err
 		}
 		for _, k := range keys {
