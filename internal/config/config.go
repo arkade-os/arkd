@@ -706,6 +706,15 @@ func (c *Config) SignerService() (ports.SignerService, error) {
 	return c.signer, nil
 }
 
+func (c *Config) RepoManager() (ports.RepoManager, error) {
+	if c.repo == nil {
+		if err := c.repoManager(); err != nil {
+			return nil, err
+		}
+	}
+	return c.repo, nil
+}
+
 func (c *Config) CacheService() ports.LiveStore {
 	return c.liveStore
 }
