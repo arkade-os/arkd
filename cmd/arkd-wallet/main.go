@@ -35,6 +35,7 @@ func main() {
 		app.Commands,
 		startCmd,
 		createCmd,
+		restoreCmd,
 		unlockCmd,
 		statusCmd,
 	)
@@ -57,8 +58,9 @@ var (
 		Required: true,
 	}
 	walletMnemonicFlag = &cli.StringFlag{
-		Name:  "mnemonic",
-		Usage: "mnemonic from which to restore the wallet (omit to create a new one)",
+		Name:     "mnemonic",
+		Usage:    "mnemonic from which to restore the wallet",
+		Required: true,
 	}
 	walletGapLimitFlag = &cli.Uint64Flag{
 		Name:  "addr-gap-limit",
@@ -73,8 +75,14 @@ var (
 	}
 	createCmd = &cli.Command{
 		Name:   "create",
-		Usage:  "Create (or restore) the wallet and unlock it",
+		Usage:  "Create a new wallet and unlock it",
 		Action: createAction,
+		Flags:  []cli.Flag{walletUrlFlag, walletPasswordFlag},
+	}
+	restoreCmd = &cli.Command{
+		Name:   "restore",
+		Usage:  "Restore the wallet from a mnemonic and unlock it",
+		Action: restoreAction,
 		Flags: []cli.Flag{
 			walletUrlFlag, walletPasswordFlag, walletMnemonicFlag, walletGapLimitFlag,
 		},
@@ -134,58 +142,62 @@ func startAction(_ *cli.Context) error {
 	return nil
 }
 
-// createAction creates a brand new wallet (or restores one from a mnemonic) and
-// unlocks it, talking directly to the arkd-wallet gateway. arkd does not manage
-// the wallet lifecycle: each arkd-wallet must be set up this way out of band.
+// createAction generates a brand new wallet and unlocks it, talking directly to
+// the arkd-wallet gateway. arkd does not manage the wallet lifecycle: each
+// arkd-wallet must be set up this way out of band.
 func createAction(ctx *cli.Context) error {
 	baseURL := ctx.String("url")
 	password := ctx.String("password")
-	mnemonic := ctx.String("mnemonic")
 
-	if len(mnemonic) > 0 {
-		body, err := jsonBody(map[string]any{
-			"seed":      mnemonic,
-			"password":  password,
-			"gap_limit": ctx.Uint64("addr-gap-limit"),
-		})
-		if err != nil {
-			return err
-		}
-		if err := walletPost(baseURL, "/v1/wallet/restore", body, nil); err != nil {
-			return err
-		}
-		fmt.Println("wallet restored")
-	} else {
-		var seed struct {
-			Seed string `json:"seed"`
-		}
-		if err := walletGet(baseURL, "/v1/wallet/seed", &seed); err != nil {
-			return err
-		}
-		body, err := jsonBody(map[string]any{"seed": seed.Seed, "password": password})
-		if err != nil {
-			return err
-		}
-		if err := walletPost(baseURL, "/v1/wallet/create", body, nil); err != nil {
-			return err
-		}
-		fmt.Println(seed.Seed)
+	var seed struct {
+		Seed string `json:"seed"`
 	}
-
-	body, err := jsonBody(map[string]any{"password": password})
+	if err := walletGet(baseURL, "/v1/wallet/seed", &seed); err != nil {
+		return err
+	}
+	body, err := jsonBody(map[string]any{"seed": seed.Seed, "password": password})
 	if err != nil {
 		return err
 	}
-	if err := walletPost(baseURL, "/v1/wallet/unlock", body, nil); err != nil {
+	if err := walletPost(baseURL, "/v1/wallet/create", body, nil); err != nil {
 		return err
 	}
-	fmt.Println("wallet unlocked")
-	return nil
+	fmt.Println(seed.Seed)
+
+	return unlockWallet(baseURL, password)
+}
+
+// restoreAction restores a wallet from a mnemonic and unlocks it, talking
+// directly to the arkd-wallet gateway. arkd does not manage the wallet
+// lifecycle: each arkd-wallet must be set up this way out of band.
+func restoreAction(ctx *cli.Context) error {
+	baseURL := ctx.String("url")
+	password := ctx.String("password")
+
+	body, err := jsonBody(map[string]any{
+		"seed":      ctx.String("mnemonic"),
+		"password":  password,
+		"gap_limit": ctx.Uint64("addr-gap-limit"),
+	})
+	if err != nil {
+		return err
+	}
+	if err := walletPost(baseURL, "/v1/wallet/restore", body, nil); err != nil {
+		return err
+	}
+	fmt.Println("wallet restored")
+
+	return unlockWallet(baseURL, password)
 }
 
 func unlockAction(ctx *cli.Context) error {
-	baseURL := ctx.String("url")
-	body, err := jsonBody(map[string]any{"password": ctx.String("password")})
+	return unlockWallet(ctx.String("url"), ctx.String("password"))
+}
+
+// unlockWallet unlocks the wallet via the arkd-wallet gateway and prints
+// confirmation. It is shared by the create, restore and unlock commands.
+func unlockWallet(baseURL, password string) error {
+	body, err := jsonBody(map[string]any{"password": password})
 	if err != nil {
 		return err
 	}
