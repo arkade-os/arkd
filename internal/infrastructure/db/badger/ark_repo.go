@@ -99,6 +99,20 @@ func (r *arkRepository) PatchCollectedFees(
 	return nil
 }
 
+// PatchForfeitTxs replaces the stored tx bytes of the given forfeit txs, keyed by
+// txid. Forfeit txs are persisted as standalone Tx records (see addTxs), so the
+// patch is a direct upsert under the same txid.
+func (r *arkRepository) PatchForfeitTxs(
+	ctx context.Context, txByTxid map[string]string,
+) error {
+	for txid, tx := range txByTxid {
+		if err := r.store.Upsert(txid, Tx{Txid: txid, Tx: tx}); err != nil {
+			return fmt.Errorf("failed to patch forfeit tx %s: %w", txid, err)
+		}
+	}
+	return nil
+}
+
 func (r *arkRepository) GetRoundWithCommitmentTxid(
 	ctx context.Context, txid string,
 ) (*domain.Round, error) {

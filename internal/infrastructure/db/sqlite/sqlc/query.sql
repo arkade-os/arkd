@@ -419,6 +419,9 @@ VALUES (@asset_id, @txid, @vout, @amount);
 -- name: UpdateRoundCollectedFees :exec
 UPDATE round SET fees = sqlc.arg('fees') WHERE id = sqlc.arg('id');
 
+-- name: UpdateForfeitTx :exec
+UPDATE tx SET tx = sqlc.arg('tx') WHERE txid = sqlc.arg('txid') AND type = 'forfeit';
+
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id IN (sqlc.slice('ids'));
 

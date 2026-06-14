@@ -720,6 +720,50 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		}
 	})
 
+	t.Run("test_patch_forfeit_txs", func(t *testing.T) {
+		ctx := context.Background()
+		repo := svc.Rounds()
+
+		// Finalize a round with four forfeit txs (as stored at collection time).
+		id := uuid.New().String()
+		commitmentTxid := randomString(32)
+		forfeits := []domain.ForfeitTx{f1Tx(), f2Tx(), f3Tx(), f4Tx()}
+		untouchedTxid := forfeits[2].Txid // f3Tx has a random txid; keep a reference
+		round := domain.NewRoundFromEvents([]domain.Event{
+			domain.RoundStarted{
+				RoundEvent: domain.RoundEvent{Id: id, Type: domain.EventTypeRoundStarted},
+				Timestamp:  100,
+			},
+			domain.RoundFinalizationStarted{
+				RoundEvent:     domain.RoundEvent{Id: id, Type: domain.EventTypeRoundFinalizationStarted},
+				CommitmentTxid: commitmentTxid,
+				CommitmentTx:   emptyTx,
+			},
+			domain.RoundFinalized{
+				RoundEvent:        domain.RoundEvent{Id: id, Type: domain.EventTypeRoundFinalized},
+				ForfeitTxs:        forfeits,
+				FinalCommitmentTx: emptyTx,
+				Timestamp:         110,
+			},
+		})
+		require.NoError(t, repo.AddOrUpdateRound(ctx, *round))
+
+		// Patch f1 (txida) and f2 (txidb) with new operator-signed tx bytes, leaving
+		// f3/f4 untouched. The txid is unchanged by signing, so it keys the update.
+		patches := map[string]string{txida: f3, txidb: f4}
+		require.NoError(t, repo.PatchForfeitTxs(ctx, patches))
+
+		got, err := repo.GetRoundForfeitTxs(ctx, commitmentTxid)
+		require.NoError(t, err)
+		byTxid := make(map[string]string, len(got))
+		for _, ftx := range got {
+			byTxid[ftx.Txid] = ftx.Tx
+		}
+		require.Equal(t, f3, byTxid[txida], "txida forfeit tx should be patched")
+		require.Equal(t, f4, byTxid[txidb], "txidb forfeit tx should be patched")
+		require.Equal(t, f3, byTxid[untouchedTxid], "unpatched forfeit tx must be unchanged")
+	})
+
 }
 
 func testVtxoRepository(t *testing.T, svc ports.RepoManager) {

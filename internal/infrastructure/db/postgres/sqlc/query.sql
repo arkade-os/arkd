@@ -411,6 +411,9 @@ SELECT * FROM asset WHERE asset.id = ANY($1::varchar[]);
 -- name: UpdateRoundCollectedFees :exec
 UPDATE round SET fees = @fees WHERE id = @id;
 
+-- name: UpdateForfeitTx :exec
+UPDATE tx SET tx = @tx WHERE txid = @txid AND type = 'forfeit';
+
 -- name: SelectAssetSupply :one
 SELECT (COALESCE(SUM(ap.amount), 0))::TEXT AS supply
 FROM asset_projection ap

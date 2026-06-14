@@ -564,6 +564,23 @@ func (r *roundRepository) PatchCollectedFees(
 	return execTx(ctx, r.db, txBody)
 }
 
+func (r *roundRepository) PatchForfeitTxs(
+	ctx context.Context, txByTxid map[string]string,
+) error {
+	txBody := func(querierWithTx *queries.Queries) error {
+		for txid, tx := range txByTxid {
+			if err := querierWithTx.UpdateForfeitTx(
+				ctx,
+				queries.UpdateForfeitTxParams{Tx: tx, Txid: txid},
+			); err != nil {
+				return fmt.Errorf("failed to patch forfeit tx %s: %w", txid, err)
+			}
+		}
+		return nil
+	}
+	return execTx(ctx, r.db, txBody)
+}
+
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
 	return domain.Receiver{
 		Amount:         uint64(row.Amount.Int64),

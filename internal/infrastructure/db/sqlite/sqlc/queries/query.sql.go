@@ -1963,6 +1963,20 @@ func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error
 	return err
 }
 
+const updateForfeitTx = `-- name: UpdateForfeitTx :exec
+UPDATE tx SET tx = ?1 WHERE txid = ?2 AND type = 'forfeit'
+`
+
+type UpdateForfeitTxParams struct {
+	Tx   string
+	Txid string
+}
+
+func (q *Queries) UpdateForfeitTx(ctx context.Context, arg UpdateForfeitTxParams) error {
+	_, err := q.db.ExecContext(ctx, updateForfeitTx, arg.Tx, arg.Txid)
+	return err
+}
+
 const updateRoundCollectedFees = `-- name: UpdateRoundCollectedFees :exec
 UPDATE round SET fees = ?1 WHERE id = ?2
 `
