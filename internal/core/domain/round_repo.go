@@ -16,6 +16,9 @@ type RoundRepository interface {
 	GetRoundConnectorTree(ctx context.Context, commitmentTxid string) (tree.FlatTxTree, error)
 	GetRoundVtxoTree(ctx context.Context, txid string) (tree.FlatTxTree, error)
 	GetSweepableRounds(ctx context.Context) ([]string, error)
+	// GetExpiredRounds returns the list of info about batches that expired but haven't been
+	// swept because of uneconomical conditions (amount too low to cover network fees)
+	GetExpiredRounds(ctx context.Context, expiredBefore int64) ([]ExpiredRound, error)
 	GetRoundIds(
 		ctx context.Context,
 		startedAfter, startedBefore int64,
@@ -26,7 +29,17 @@ type RoundRepository interface {
 	GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error)
 	GetRoundsWithCommitmentTxids(ctx context.Context, txids []string) (map[string]any, error)
 	GetIntentByTxid(ctx context.Context, txid string) (*Intent, error)
+	// PatchCollectedFees sets the collected fees of the given rounds (by id),
+	// used to lazily persist fees recomputed for rounds finalized before fee
+	// persistence was introduced (https://github.com/arkade-os/arkd/pull/933).
+	PatchCollectedFees(ctx context.Context, feesByRoundId map[string]uint64) error
 	Close()
+}
+
+type ExpiredRound struct {
+	RoundId        string
+	CommitmentTxid string
+	ExpiredAt      int64
 }
 
 type RoundStats struct {

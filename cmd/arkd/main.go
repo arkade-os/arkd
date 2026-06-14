@@ -45,6 +45,7 @@ func startAction(_ *cli.Context) error {
 		HeartbeatInterval:    cfg.HeartbeatInterval,
 		EnablePprof:          cfg.EnablePprof,
 		MaxConcurrentStreams: cfg.MaxConcurrentStreams,
+		StreamConnPoolSize:   cfg.StreamConnPoolSize,
 	}
 
 	svc, err := grpcservice.NewService(Version, svcConfig, cfg)
@@ -89,7 +90,9 @@ func main() {
 		noteCmd,
 		intentsCmd,
 		scheduledSweepCmd,
+		expiredRoundsCmd,
 		sweepCmd,
+		walletUtxosCmd,
 		roundInfoCmd,
 		roundsInTimeRangeCmd,
 		scheduledSessionCmd,
@@ -99,6 +102,7 @@ func main() {
 		liquidityRecoverableCmd,
 		liquidityReportCmd,
 		feesCmd,
+		settingsCmd,
 	)
 
 	app.DefaultCommand = startCmd.Name

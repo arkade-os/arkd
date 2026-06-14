@@ -24,26 +24,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var (
-	// asset packet overhead: OP_RETURN(1) + push_data(1) + magic_bytes + marker(1) + varuint_count(1)
-	assetPacketOverheadWU uint64 = (1 + 1 + uint64(len(extension.ArkadeMagic)) + 1 + 1) * 4
-
-	// ref group weight
-	refAssetId, _ = asset.NewAssetId(
-		"0100000000000000000000000000000000000000000000000000000000000000", 0,
-	)
-	// we assume that to spend an asset, we need to transfer it to at least 1 output.
-	// the minimum group size is 1 input + 1 output + asset Id (not an issuance)
-	refGroup = asset.AssetGroup{
-		AssetId: refAssetId,
-		Inputs:  []asset.AssetInput{{Type: asset.AssetInputTypeLocal, Vin: 0, Amount: 1}},
-		Outputs: []asset.AssetOutput{{Type: asset.AssetOutputTypeLocal, Vout: 0, Amount: 1}},
-	}
-	groupBytes, _ = refGroup.Serialize()
-	// group is in OP_RETURN, so weight = bytes * 4
-	refGroupWeight = uint64(len(groupBytes)) * 4 // 180 WU
-)
-
 // onchainOutputs iterates over all the nodes' outputs in the vtxo tree and checks their onchain state
 // returns the sweepable outputs as ports.SweepInput mapped by their expiration time
 func findSweepableOutputs(
@@ -590,20 +570,57 @@ func computeWeight(tx *wire.MsgTx) uint64 {
 	return uint64((baseSize * 3) + totalSize)
 }
 
-// maxAssetsPerVtxo computes the maximum number of asset groups (unique assets)
-// that a VTXO can hold while remaining spendable within maxTxWeight.
-// The spendingWeightThreshold parameter controls the fraction of maxTxWeight
-// reserved for the asset packet.
-func maxAssetsPerVtxo(maxTxWeight uint64, spendingWeightThreshold float64) int {
-	if maxTxWeight == 0 {
+// calculateCollectedFees computes the total fees (sats) collected by the coordinator for a given round.
+func calculateCollectedFees(round *domain.Round, boardingInputAmount uint64) uint64 {
+	totalIn := boardingInputAmount
+	totalOut := uint64(0)
+	for _, intent := range round.Intents {
+		totalIn += intent.TotalInputAmount()
+		totalOut += intent.TotalOutputAmount()
+	}
+	if totalOut >= totalIn {
 		return 0
 	}
+	return totalIn - totalOut
+}
 
-	maxPacketWU := uint64(float64(maxTxWeight) * spendingWeightThreshold)
-	if maxPacketWU <= assetPacketOverheadWU {
-		return 0
+// calculateBoardingInputAmount computes the total amount (sats) of boarding inputs in a PSBT.
+func calculateBoardingInputAmount(ptx *psbt.Packet) uint64 {
+	boardingInputAmount := uint64(0)
+	for _, input := range ptx.Inputs {
+		if isBoardingInput(input) {
+			boardingInputAmount += uint64(input.WitnessUtxo.Value)
+		}
 	}
+	return boardingInputAmount
+}
 
-	availableWU := maxPacketWU - assetPacketOverheadWU
-	return int(availableWU / refGroupWeight)
+// isBoardingInput reports whether a PSBT input is a boarding input, i.e. an
+// onchain UTXO spent through a taproot script-path leaf.
+//
+// TODO: fragile — this assumes only boarding inputs carry a TaprootLeafScript.
+// It may misclassify inputs if arkd-wallet starts populating TaprootLeafScript
+// for other input types in the future.
+func isBoardingInput(in psbt.PInput) bool {
+	return in.WitnessUtxo != nil && len(in.TaprootLeafScript) > 0
+}
+
+// isBoardingWitness reports whether a finalized (raw tx) input witness is a
+// taproot script-path spend, which is how boarding inputs are spent. The last
+// witness element of a taproot script-path spend is the control block: a
+// (33 + 32*m)-byte blob whose first byte encodes leaf version 0xc0 (with the
+// parity bit), distinguishing it from a key-path signature (a single witness
+// element) or a p2wpkh pubkey (33 bytes starting with 0x02/0x03).
+//
+// TODO: fragile — same caveat as isBoardingInput: it assumes only boarding
+// inputs are spent via taproot script path in a commitment tx.
+func isBoardingWitness(witness wire.TxWitness) bool {
+	if len(witness) < 2 {
+		return false
+	}
+	controlBlock := witness[len(witness)-1]
+	if len(controlBlock) < 33 || (len(controlBlock)-33)%32 != 0 {
+		return false
+	}
+	return controlBlock[0]&0xfe == 0xc0
 }

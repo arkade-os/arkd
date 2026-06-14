@@ -11,10 +11,8 @@ import (
 )
 
 func (s *service) validateAssetTransaction(
-	ctx context.Context,
-	tx *wire.MsgTx,
-	ext extension.Extension,
-	inputAssets map[int][]domain.AssetDenomination,
+	ctx context.Context, tx *wire.MsgTx, ext extension.Extension,
+	inputAssets map[int][]domain.AssetDenomination, maxAssetsPerVtxo int,
 ) errors.Error {
 	assetsPrevout := make(map[int][]asset.Asset)
 	for inputIndex, assets := range inputAssets {
@@ -39,13 +37,13 @@ func (s *service) validateAssetTransaction(
 	}
 
 	for vout, denominations := range assets {
-		if len(denominations) > s.maxAssetsPerVtxo {
+		if len(denominations) > maxAssetsPerVtxo {
 			return errors.VTXO_WITH_TOO_MANY_ASSETS.New(
 				"output %d has %d assets, exceeds max %d",
-				vout, len(denominations), s.maxAssetsPerVtxo,
+				vout, len(denominations), maxAssetsPerVtxo,
 			).WithMetadata(errors.VtxoWithTooManyAssetsMetadata{
 				AssetCount: len(denominations),
-				MaxAssets:  s.maxAssetsPerVtxo,
+				MaxAssets:  maxAssetsPerVtxo,
 			})
 		}
 	}

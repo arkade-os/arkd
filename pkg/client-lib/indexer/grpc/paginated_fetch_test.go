@@ -21,17 +21,17 @@ func TestPaginatedFetch(t *testing.T) {
 			{
 				name:       "single page",
 				totalPages: 1,
-				wantItems:  []int{0},
+				wantItems:  []int{1},
 			},
 			{
 				name:       "multiple pages",
 				totalPages: 3,
-				wantItems:  []int{0, 1, 2},
+				wantItems:  []int{1, 2, 3},
 			},
 			{
 				name:       "nil page response stops after first page",
 				totalPages: 0, // unused, fetch returns nil page
-				wantItems:  []int{0},
+				wantItems:  []int{1},
 			},
 			{
 				name:       "throttles after maxReqsPerSec requests",
@@ -39,7 +39,7 @@ func TestPaginatedFetch(t *testing.T) {
 				wantItems: func() []int {
 					items := make([]int, maxReqsPerSec+2)
 					for i := range items {
-						items[i] = i
+						items[i] = i + 1
 					}
 					return items
 				}(),
@@ -84,11 +84,11 @@ func TestPaginatedFetch(t *testing.T) {
 				name: "fetch error propagates",
 				ctx:  context.Background(),
 				fetch: func(_ context.Context, page *arkv1.IndexerPageRequest) ([]int, *arkv1.IndexerPageResponse, error) {
-					if page.GetIndex() == 1 {
+					if page.GetIndex() == 2 {
 						return nil, nil, fmt.Errorf("server error")
 					}
 					return []int{1}, &arkv1.IndexerPageResponse{
-						Current: 0, Next: 1, Total: 3,
+						Current: 1, Next: 2, Total: 3,
 					}, nil
 				},
 				wantErr: "server error",

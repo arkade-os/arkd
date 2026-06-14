@@ -1093,6 +1093,38 @@ func TestStopClearsSubscriptions(t *testing.T) {
 	})
 }
 
+func TestNewExplorerPollInterval(t *testing.T) {
+	t.Run("uses default interval on websocket fallback", func(t *testing.T) {
+		//The test server is just a plain HTTP test server.
+		//It does not register /v1/ws, so websocket setup fails and the explorer falls back to polling.
+		ts := newTestServer(t)
+
+		svc, err := mempool.NewExplorer(
+			ts.URL, arklib.Bitcoin, mempool.WithTracker(true),
+		)
+		require.NoError(t, err)
+
+		require.NotPanics(t, func() { svc.Start() })
+		t.Cleanup(svc.Stop)
+		time.Sleep(25 * time.Millisecond)
+
+		require.Equal(t, 0, svc.GetConnectionCount())
+	})
+
+	t.Run("rejects non-positive interval", func(t *testing.T) {
+		ts := newTestServer(t)
+
+		for _, interval := range []time.Duration{0, -time.Second} {
+			_, err := mempool.NewExplorer(
+				ts.URL, arklib.Bitcoin,
+				mempool.WithTracker(true),
+				mempool.WithPollInterval(interval),
+			)
+			require.ErrorContains(t, err, "poll interval must be positive")
+		}
+	})
+}
+
 func TestStartIsIdempotent(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		ts := newTestServer(t)
