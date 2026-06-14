@@ -37,7 +37,11 @@ type ForfeitStore interface {
 // ports.SignerService.
 type Signer interface {
 	GetPubkey(ctx context.Context) (*btcec.PublicKey, error)
-	SignTransactionTapscript(ctx context.Context, partialTx string, inputIndexes []int) (string, error)
+	SignTransactionTapscript(
+		ctx context.Context,
+		partialTx string,
+		inputIndexes []int,
+	) (string, error)
 }
 
 // Result is a summary of a backfill run.
@@ -52,7 +56,12 @@ type Result struct {
 // forfeit txs when missing, and persists the result. A per-forfeit failure is
 // logged and counted but does not abort the run, so re-running retries only the
 // forfeits that are still unsigned.
-func Run(ctx context.Context, vtxos VtxoSource, rounds ForfeitStore, signer Signer) (Result, error) {
+func Run(
+	ctx context.Context,
+	vtxos VtxoSource,
+	rounds ForfeitStore,
+	signer Signer,
+) (Result, error) {
 	pubkey, err := signer.GetPubkey(ctx)
 	if err != nil {
 		return Result{}, fmt.Errorf("failed to get operator pubkey: %w", err)
@@ -92,7 +101,8 @@ func Run(ctx context.Context, vtxos VtxoSource, rounds ForfeitStore, signer Sign
 			forfeitTx, err := findForfeitTx(round.ForfeitTxs, v.Outpoint)
 			if err != nil {
 				res.Failed++
-				log.WithError(err).Errorf("failed to find forfeit tx for vtxo %s", v.Outpoint.String())
+				log.WithError(err).
+					Errorf("failed to find forfeit tx for vtxo %s", v.Outpoint.String())
 				continue
 			}
 
@@ -104,21 +114,24 @@ func Run(ctx context.Context, vtxos VtxoSource, rounds ForfeitStore, signer Sign
 			b64, err := forfeitTx.B64Encode()
 			if err != nil {
 				res.Failed++
-				log.WithError(err).Errorf("failed to encode forfeit tx for vtxo %s", v.Outpoint.String())
+				log.WithError(err).
+					Errorf("failed to encode forfeit tx for vtxo %s", v.Outpoint.String())
 				continue
 			}
 
 			signedTx, err := signer.SignTransactionTapscript(ctx, b64, nil)
 			if err != nil {
 				res.Failed++
-				log.WithError(err).Errorf("failed to sign forfeit tx for vtxo %s", v.Outpoint.String())
+				log.WithError(err).
+					Errorf("failed to sign forfeit tx for vtxo %s", v.Outpoint.String())
 				continue
 			}
 
 			signedPtx, err := psbt.NewFromRawBytes(strings.NewReader(signedTx), true)
 			if err != nil {
 				res.Failed++
-				log.WithError(err).Errorf("failed to parse signed forfeit tx for vtxo %s", v.Outpoint.String())
+				log.WithError(err).
+					Errorf("failed to parse signed forfeit tx for vtxo %s", v.Outpoint.String())
 				continue
 			}
 
