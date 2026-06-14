@@ -33,15 +33,17 @@ func unaryDigestHandler(getDigest func() (string, bool, error)) grpc.UnaryServer
 					"failed to verify digest header, retry later",
 				)
 			}
-			if guardEnabled {
-				digest := digestHeaderValue(ctx)
-				if digest != expectedDigest {
-					return nil, errors.DIGEST_MISMATCH.
-						New("invalid digest header").WithMetadata(errors.DigestMetadata{
-						ExpectedDigest: expectedDigest,
-						GotDigest:      digest,
-					})
-				}
+			// A present digest is always validated against the expected one;
+			// an absent (empty) digest is rejected only when the header is
+			// required. guardEnabled therefore governs only the missing-header
+			// case, not whether a provided digest is checked.
+			digest := digestHeaderValue(ctx)
+			if digest != expectedDigest && (guardEnabled || digest != "") {
+				return nil, errors.DIGEST_MISMATCH.
+					New("invalid digest header").WithMetadata(errors.DigestMetadata{
+					ExpectedDigest: expectedDigest,
+					GotDigest:      digest,
+				})
 			}
 		}
 		return handler(ctx, req)
@@ -60,15 +62,17 @@ func streamDigestHandler(
 			if err != nil {
 				return errors.INTERNAL_ERROR.New("failed to verify digest header, retry later")
 			}
-			if guardEnabled {
-				digest := digestHeaderValue(ss.Context())
-				if digest != expectedDigest {
-					return errors.DIGEST_MISMATCH.
-						New("invalid digest header").WithMetadata(errors.DigestMetadata{
-						ExpectedDigest: expectedDigest,
-						GotDigest:      digest,
-					})
-				}
+			// A present digest is always validated against the expected one;
+			// an absent (empty) digest is rejected only when the header is
+			// required. guardEnabled therefore governs only the missing-header
+			// case, not whether a provided digest is checked.
+			digest := digestHeaderValue(ss.Context())
+			if digest != expectedDigest && (guardEnabled || digest != "") {
+				return errors.DIGEST_MISMATCH.
+					New("invalid digest header").WithMetadata(errors.DigestMetadata{
+					ExpectedDigest: expectedDigest,
+					GotDigest:      digest,
+				})
 			}
 		}
 		return handler(srv, ss)
