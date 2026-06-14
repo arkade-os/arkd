@@ -631,9 +631,11 @@ func (s *service) onReady() {
 // is safe to call repeatedly and from multiple goroutines.
 func (s *service) tryStartAppServices() {
 	if !s.walletReady.Load() {
+		log.Warn("app services not started yet: waiting for the wallet to become ready")
 		return
 	}
 	if !s.config.NoMacaroons && s.macaroonSvc.IsLocked(context.Background()) {
+		log.Warn("app services not started yet: waiting for the macaroon service to be unlocked")
 		return
 	}
 	if err := s.startAppServices(); err != nil {
