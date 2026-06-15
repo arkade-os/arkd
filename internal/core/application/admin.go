@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
 )
+
 const maxSweepInputs = 1000
 
 type AdminService interface {
