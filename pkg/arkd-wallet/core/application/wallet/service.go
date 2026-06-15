@@ -44,11 +44,18 @@ var (
 const biggestInputSize = 148 + 182 // = 330 vbytes
 
 type WalletOptions struct {
-	SeedRepository ports.SeedRepository
-	Cypher         ports.Cypher
-	Nbxplorer      ports.Nbxplorer
-	Network        string
-	SignerKey      *btcec.PrivateKey
+	SeedRepository       ports.SeedRepository
+	Cypher               ports.Cypher
+	Nbxplorer            ports.Nbxplorer
+	Network              string
+	SignerKey            *btcec.PrivateKey
+	DeprecatedSignerKeys []DeprecatedSignerKey
+}
+
+type DeprecatedSignerKey struct {
+	Key *btcec.PrivateKey
+	// unix timestamp after which the key is no longer accepted, 0 if unset
+	CutoffDate int64
 }
 
 type wallet struct {
@@ -236,6 +243,19 @@ func (w *wallet) GetSignerPubkey(ctx context.Context) (string, error) {
 
 	pubkey := hex.EncodeToString(w.SignerKey.PubKey().SerializeCompressed())
 	return pubkey, nil
+}
+
+func (w *wallet) GetDeprecatedSignerPubkeys(
+	ctx context.Context,
+) ([]application.DeprecatedSignerPubkey, error) {
+	pubkeys := make([]application.DeprecatedSignerPubkey, 0, len(w.DeprecatedSignerKeys))
+	for _, k := range w.DeprecatedSignerKeys {
+		pubkeys = append(pubkeys, application.DeprecatedSignerPubkey{
+			Pubkey:     hex.EncodeToString(k.Key.PubKey().SerializeCompressed()),
+			CutoffDate: k.CutoffDate,
+		})
+	}
+	return pubkeys, nil
 }
 
 func (w *wallet) EstimateFees(ctx context.Context, rawTx string) (uint64, error) {
@@ -642,9 +662,9 @@ func (w *wallet) SignTransaction(
 		}
 
 		if len(input.TaprootLeafScript) > 0 {
-			signingKey := w.SignerKey
-			if signMode == application.SignModeLiquidityProvider {
-				signingKey = w.keyMgr.forfeitPrvkey
+			signingKey := w.keyMgr.forfeitPrvkey
+			if signMode == application.SignModeSigner {
+				signingKey  = w.signerKeyForLeaf(input.TaprootLeafScript[0].Script)
 			}
 
 			tapLeaf := txscript.NewBaseTapLeaf(input.TaprootLeafScript[0].Script)
@@ -757,6 +777,40 @@ func (w *wallet) SignTransaction(
 	}
 
 	return ptx.B64Encode()
+}
+
+// signerKeyForLeaf returns the deprecated signer key referenced by the leaf, or the current SignerKey.
+func (w *wallet) signerKeyForLeaf(leafScript []byte) *btcec.PrivateKey {
+	if len(w.DeprecatedSignerKeys) == 0 {
+		return w.SignerKey
+	}
+
+	closure, err := script.DecodeClosure(leafScript)
+	if err != nil {
+		return w.SignerKey
+	}
+
+	leafKeys := make([]*btcec.PublicKey, 0)
+	switch c := closure.(type) {
+	case *script.MultisigClosure:
+		leafKeys = c.PubKeys
+	case *script.CLTVMultisigClosure:
+		leafKeys = c.PubKeys
+	case *script.ConditionMultisigClosure:
+		leafKeys = c.PubKeys
+	default:
+		return w.SignerKey
+	}
+	
+	for _, k := range w.DeprecatedSignerKeys {
+		want := schnorr.SerializePubKey(k.Key.PubKey())
+		for _, pubkey := range leafKeys {
+			if bytes.Equal(schnorr.SerializePubKey(pubkey), want) {
+				return k.Key
+			}
+		}
+	}
+	return w.SignerKey
 }
 
 // WithdrawAll withdraws all available balance including connectors account funds
@@ -882,7 +936,6 @@ func (w *wallet) LoadSignerKey(ctx context.Context, prvkey *btcec.PrivateKey) er
 	w.SignerKey = prvkey
 	return nil
 }
-
 
 func (w *wallet) Close() {
 	// nolint:errcheck
