@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	arkerrors "github.com/arkade-os/arkd/pkg/errors"
@@ -13,13 +12,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
-
-var sensitiveRequestFields = map[string]struct{}{
-	"macaroon":      {},
-	"password":      {},
-	"secret":        {},
-	"authorization": {},
-}
 
 // metadataOfInterest is the allowlist of incoming gRPC metadata keys we log.
 // gRPC lowercases all incoming metadata keys, so entries here must be lowercase.
@@ -52,9 +44,6 @@ func logUnaryCall(method string, req any, ctx context.Context, dur time.Duration
 	str := fmt.Sprintf("method=%s duration=%dms", method, dur.Milliseconds())
 
 	if log.IsLevelEnabled(log.DebugLevel) {
-		if sanitizedReq, ok := sanitizeRequest(req); ok && sanitizedReq != "{}" {
-			str += fmt.Sprintf(" request=%s", sanitizedReq)
-		}
 		if md, ok := sanitizeMetadata(ctx); ok {
 			str += fmt.Sprintf(" metadata=%s", md)
 		}
@@ -108,10 +97,6 @@ func sanitizeMetadata(ctx context.Context) (string, bool) {
 		if len(vals) == 0 {
 			continue
 		}
-		if isSensitiveField(key) {
-			selected[key] = "******"
-			continue
-		}
 		if len(vals) == 1 {
 			selected[key] = vals[0]
 			continue
@@ -129,79 +114,4 @@ func sanitizeMetadata(ctx context.Context) (string, bool) {
 	}
 
 	return string(formatted), true
-}
-
-func sanitizeRequest(req any) (string, bool) {
-	if req == nil {
-		return "", false
-	}
-
-	raw, err := json.Marshal(req)
-	if err != nil {
-		return "", false
-	}
-
-	var decoded interface{}
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return "", false
-	}
-
-	sanitized := redactSensitiveFields(decoded)
-	formatted, err := json.Marshal(sanitized)
-	if err != nil {
-		return "", false
-	}
-
-	return string(formatted), true
-}
-
-func redactSensitiveFields(value interface{}) interface{} {
-	switch v := value.(type) {
-	case map[string]interface{}:
-		redacted := make(map[string]interface{}, len(v))
-		for key, item := range v {
-			if isSensitiveField(key) {
-				redacted[key] = "******"
-				continue
-			}
-			redacted[key] = redactSensitiveFields(item)
-		}
-		return redacted
-	case []interface{}:
-		redacted := make([]interface{}, len(v))
-		for i, item := range v {
-			redacted[i] = redactSensitiveFields(item)
-		}
-		return redacted
-	default:
-		return v
-	}
-}
-
-func isSensitiveField(name string) bool {
-	normalized := normalizeFieldName(name)
-	if _, ok := sensitiveRequestFields[normalized]; ok {
-		return true
-	}
-
-	for sensitive := range sensitiveRequestFields {
-		if strings.Contains(normalized, sensitive) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func normalizeFieldName(name string) string {
-	var builder strings.Builder
-	builder.Grow(len(name))
-
-	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			builder.WriteRune(r)
-		}
-	}
-
-	return strings.ToLower(builder.String())
 }
