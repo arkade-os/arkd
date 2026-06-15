@@ -21,6 +21,14 @@ service AdminService {
       get: "/v1/admin/rounds"
     };
   }
+  // GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose
+  // batch outputs have expired but have not been swept yet. It is meant to surface
+  // rounds for which the sweep should have happened but likely failed.
+  rpc GetExpiredRounds(GetExpiredRoundsRequest) returns (GetExpiredRoundsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/rounds/expired"
+    };
+  }
   rpc CreateNote(CreateNoteRequest) returns (CreateNoteResponse) {
     option (meshapi.gateway.http) = {
       post: "/v1/admin/note"
@@ -132,10 +140,31 @@ service AdminService {
       get: "/v1/admin/liquidity/recoverable"
     };
   }
+  rpc GetCollectedFees(GetCollectedFeesRequest) returns (GetCollectedFeesResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/fees/collected"
+    };
+  }
   rpc Sweep(SweepRequest) returns (SweepResponse) {
     option (meshapi.gateway.http) = {
       post: "/v1/admin/sweep"
       body: "*"
+    };
+  }
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/settings"
+    };
+  }
+  rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/admin/settings"
+      body: "*"
+    };
+  }
+  rpc GetMainAccountUtxos(GetMainAccountUtxosRequest) returns (GetMainAccountUtxosResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/wallet/utxos"
     };
   }
 }
@@ -170,6 +199,17 @@ message GetRoundsRequest {
 }
 message GetRoundsResponse {
   repeated string rounds = 1;
+}
+
+message GetExpiredRoundsRequest {}
+message GetExpiredRoundsResponse {
+  repeated ExpiredRound rounds = 1;
+}
+
+message ExpiredRound {
+  string round_id = 1;
+  string commitment_txid = 2;
+  int64 expired_at = 3; // Unix timestamp at which the round's batch outputs expired.
 }
 
 message CreateNoteRequest {
@@ -283,8 +323,8 @@ message ScheduledSweep {
 }
 
 message ScheduledSessionConfig {
-  int64 start_time = 1;
-  int64 end_time = 2;
+  string start_time = 1;
+  string end_time = 2;
   int64 period = 3;
   int64 duration = 4;
   int64 round_min_participants_count = 5;
@@ -364,6 +404,14 @@ message GetRecoverableLiquidityResponse {
   uint64 amount = 1;
 }
 
+message GetCollectedFeesRequest {
+  int64 after = 1; // Unix timestamp (UTC, exclusive). Only include rounds starting after this time. 0 means no lower bound.
+  int64 before = 2; // Unix timestamp (UTC, exclusive). Only include rounds starting before this time. 0 means no upper bound.
+}
+message GetCollectedFeesResponse {
+  uint64 collected_fees = 1; // Total collected fees in satoshis.
+}
+
 message SweepRequest {
   bool connectors = 1;
   repeated string commitment_txids = 2;
@@ -371,6 +419,61 @@ message SweepRequest {
 message SweepResponse {
   string txid = 1;
   string hex = 2;
+}
+
+message Settings {
+  optional int64 session_duration = 1;
+  optional int64 unrolled_vtxo_min_expiry_margin = 2;
+  optional int64 ban_threshold = 3;
+  optional int64 ban_duration = 4;
+  optional int64 unilateral_exit_delay = 5;
+  optional int64 public_unilateral_exit_delay = 6;
+  optional int64 checkpoint_exit_delay = 7;
+  optional int64 boarding_exit_delay = 8;
+  optional int64 vtxo_tree_expiry = 9;
+  optional int64 round_min_participants_count = 10;
+  optional int64 round_max_participants_count = 11;
+  optional int64 vtxo_min_amount = 12;
+  optional int64 vtxo_max_amount = 13;
+  optional int64 utxo_min_amount = 14;
+  optional int64 utxo_max_amount = 15;
+  optional int64 settlement_min_expiry_gap = 16;
+  optional string vtxo_no_csv_validation_cutoff_date = 17;
+  optional int64 max_tx_weight = 18;
+  optional int64 max_op_return_outputs = 19;
+  optional float asset_tx_max_weight_ratio = 20;
+  optional string note_uri_prefix = 21;
+  optional string build_version_header = 22;
+  optional bool build_version_header_required = 23;
+  optional string updated_at = 24;
+  optional bool digest_header_required = 25;
+}
+
+message GetSettingsRequest {}
+message GetSettingsResponse {
+  Settings settings = 1;
+}
+
+message UpdateSettingsRequest {
+  Settings settings = 1;
+}
+message UpdateSettingsResponse {
+  repeated string change_log = 1;
+}
+
+message GetMainAccountUtxosRequest {}
+message GetMainAccountUtxosResponse {
+  repeated WalletUtxo utxos = 1;
+}
+
+message WalletUtxo {
+  string txid = 1;
+  uint32 vout = 2;
+  uint64 value = 3;
+  string script = 4;
+  string address = 5;
+  uint32 confirmations = 6;
+  bool locked = 7;
 }
 
 message ListTokensRequest {

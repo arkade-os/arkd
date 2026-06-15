@@ -1,0 +1,59 @@
+{
+  "invalidExpressions": [
+    {
+      "name": "syntax error",
+      "expression": "&& foo",
+      "err": "Syntax error"
+    },
+    {
+      "name": "incomplete expression",
+      "expression": "has(",
+      "err": "Syntax error"
+    },
+    {
+      "name": "wrong return type - int",
+      "expression": "42",
+      "err": "expected return type bool"
+    },
+    {
+      "name": "wrong return type - string",
+      "expression": "'hello'",
+      "err": "expected return type bool"
+    },
+    {
+      "name": "wrong return type - map",
+      "expression": "tx.extension",
+      "err": "expected return type bool"
+    },
+    {
+      "name": "undefined variable",
+      "expression": "unknownVar",
+      "err": "undeclared reference"
+    },
+    {
+      "name": "undefined field on tx",
+      "expression": "has(tx.unknown)",
+      "err": "undefined field 'unknown'"
+    },
+    {
+      "name": "hasPacket missing arg",
+      "expression": "hasPacket(tx.extension)",
+      "err": "found no matching overload"
+    },
+    {
+      "name": "hasPacket first arg wrong type",
+      "expression": "hasPacket(42, 1)",
+      "err": "found no matching overload"
+    },
+    {
+      "name": "hasPacket second arg wrong type",
+      "expression": "hasPacket(tx.extension, 'x')",
+      "err": "found no matching overload"
+    },
+    {
+      "name": "hasPacket on tx object",
+      "expression": "hasPacket(tx, 1)",
+      "err": "found no matching overload"
+    }
+  ]
+}

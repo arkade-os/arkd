@@ -91,6 +91,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 				ConnectorAddress:   round.ConnectorAddress,
 				Version:            int32(round.Version),
 				Swept:              round.Swept,
+				Fees:               int64(round.CollectedFees),
 				FailReason: sql.NullString{
 					String: round.FailReason, Valid: len(round.FailReason) > 0,
 				},
@@ -310,6 +311,25 @@ func (r *roundRepository) GetSweepableRounds(ctx context.Context) ([]string, err
 	return r.querier.SelectSweepableRounds(ctx)
 }
 
+func (r *roundRepository) GetExpiredRounds(
+	ctx context.Context, expiredBefore int64,
+) ([]domain.ExpiredRound, error) {
+	rows, err := r.querier.SelectExpiredRounds(ctx, expiredBefore)
+	if err != nil {
+		return nil, err
+	}
+
+	expiredRounds := make([]domain.ExpiredRound, 0, len(rows))
+	for _, row := range rows {
+		expiredRounds = append(expiredRounds, domain.ExpiredRound{
+			RoundId:        row.ID,
+			CommitmentTxid: row.Txid,
+			ExpiredAt:      row.ExpiredAt,
+		})
+	}
+	return expiredRounds, nil
+}
+
 func (r *roundRepository) GetRoundForfeitTxs(
 	ctx context.Context, commitmentTxid string,
 ) ([]domain.ForfeitTx, error) {
@@ -462,6 +482,23 @@ func (r *roundRepository) GetIntentByTxid(
 	}, nil
 }
 
+func (r *roundRepository) PatchCollectedFees(
+	ctx context.Context, feesByRoundId map[string]uint64,
+) error {
+	txBody := func(querierWithTx *queries.Queries) error {
+		for id, fees := range feesByRoundId {
+			if err := querierWithTx.UpdateRoundCollectedFees(
+				ctx,
+				queries.UpdateRoundCollectedFeesParams{Fees: int64(fees), ID: id},
+			); err != nil {
+				return fmt.Errorf("failed to patch collected fees for round %s: %w", id, err)
+			}
+		}
+		return nil
+	}
+	return execTx(ctx, r.db, txBody)
+}
+
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
 	return domain.Receiver{
 		Amount:         uint64(row.Amount.Int64),
@@ -501,6 +538,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 				Swept:              v.round.Swept,
 				Intents:            make(map[string]domain.Intent),
 				VtxoTreeExpiration: v.round.VtxoTreeExpiration,
+				CollectedFees:      uint64(v.round.Fees),
 				FailReason:         v.round.FailReason.String,
 			}
 		}

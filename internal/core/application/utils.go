@@ -24,26 +24,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var (
-	// asset packet overhead: OP_RETURN(1) + push_data(1) + magic_bytes + marker(1) + varuint_count(1)
-	assetPacketOverheadWU uint64 = (1 + 1 + uint64(len(extension.ArkadeMagic)) + 1 + 1) * 4
-
-	// ref group weight
-	refAssetId, _ = asset.NewAssetId(
-		"0100000000000000000000000000000000000000000000000000000000000000", 0,
-	)
-	// we assume that to spend an asset, we need to transfer it to at least 1 output.
-	// the minimum group size is 1 input + 1 output + asset Id (not an issuance)
-	refGroup = asset.AssetGroup{
-		AssetId: refAssetId,
-		Inputs:  []asset.AssetInput{{Type: asset.AssetInputTypeLocal, Vin: 0, Amount: 1}},
-		Outputs: []asset.AssetOutput{{Type: asset.AssetOutputTypeLocal, Vout: 0, Amount: 1}},
-	}
-	groupBytes, _ = refGroup.Serialize()
-	// group is in OP_RETURN, so weight = bytes * 4
-	refGroupWeight = uint64(len(groupBytes)) * 4 // 180 WU
-)
-
 // onchainOutputs iterates over all the nodes' outputs in the vtxo tree and checks their onchain state
 // returns the sweepable outputs as ports.SweepInput mapped by their expiration time
 func findSweepableOutputs(
@@ -181,8 +161,55 @@ func decodeTx(offchainTx domain.OffchainTx) (string, []domain.Outpoint, []domain
 	return txid, ins, outs, nil
 }
 
+// acceptedSignerPubkeys returns the current signer pubkey plus the deprecated ones
+// whose cutoff date has not passed yet at the given time.
+func acceptedSignerPubkeys(
+	current *btcec.PublicKey, deprecated []ports.DeprecatedSignerPubkey, now time.Time,
+) []*btcec.PublicKey {
+	pubkeys := make([]*btcec.PublicKey, 0, len(deprecated)+1)
+	pubkeys = append(pubkeys, current)
+	for _, key := range deprecated {
+		if isPastCutoff(key, now) {
+			continue
+		}
+		pubkeys = append(pubkeys, key.PubKey)
+	}
+	return pubkeys
+}
+
+func isPastCutoff(key ports.DeprecatedSignerPubkey, now time.Time) bool {
+	return !key.CutoffDate.IsZero() && now.After(key.CutoffDate)
+}
+
+// validateVtxoScriptForSigners accepts the script if it validates against the current
+// signer pubkey or any deprecated one whose cutoff date has not passed yet.
+func validateVtxoScriptForSigners(
+	v script.VtxoScript, current *btcec.PublicKey, deprecated []ports.DeprecatedSignerPubkey,
+	now time.Time, minLocktime arklib.RelativeLocktime, blockTypeAllowed bool,
+) error {
+	var err error
+	for _, signer := range acceptedSignerPubkeys(current, deprecated, now) {
+		if err = v.Validate(signer, minLocktime, blockTypeAllowed); err == nil {
+			return nil
+		}
+	}
+	for _, key := range deprecated {
+		if !isPastCutoff(key, now) {
+			continue
+		}
+		if v.Validate(key.PubKey, minLocktime, blockTypeAllowed) == nil {
+			return fmt.Errorf(
+				"%x is a deprecated key since %s",
+				key.PubKey.SerializeCompressed(), key.CutoffDate.Format(time.RFC3339),
+			)
+		}
+	}
+	return err
+}
+
 func newBoardingInput(
 	tx wire.MsgTx, input ports.Input, signerPubkey *btcec.PublicKey,
+	deprecatedSigners []ports.DeprecatedSignerPubkey, now time.Time,
 	boardingExitDelay arklib.RelativeLocktime, blockTypeCSVAllowed bool,
 ) (*ports.BoardingInput, error) {
 	if len(tx.TxOut) <= int(input.VOut) {
@@ -213,8 +240,9 @@ func newBoardingInput(
 		)
 	}
 
-	if err := boardingScript.Validate(
-		signerPubkey, boardingExitDelay, blockTypeCSVAllowed,
+	if err := validateVtxoScriptForSigners(
+		boardingScript, signerPubkey, deprecatedSigners, now,
+		boardingExitDelay, blockTypeCSVAllowed,
 	); err != nil {
 		return nil, fmt.Errorf("invalid boarding utxo taproot tree: %w", err)
 	}
@@ -590,20 +618,57 @@ func computeWeight(tx *wire.MsgTx) uint64 {
 	return uint64((baseSize * 3) + totalSize)
 }
 
-// maxAssetsPerVtxo computes the maximum number of asset groups (unique assets)
-// that a VTXO can hold while remaining spendable within maxTxWeight.
-// The spendingWeightThreshold parameter controls the fraction of maxTxWeight
-// reserved for the asset packet.
-func maxAssetsPerVtxo(maxTxWeight uint64, spendingWeightThreshold float64) int {
-	if maxTxWeight == 0 {
+// calculateCollectedFees computes the total fees (sats) collected by the coordinator for a given round.
+func calculateCollectedFees(round *domain.Round, boardingInputAmount uint64) uint64 {
+	totalIn := boardingInputAmount
+	totalOut := uint64(0)
+	for _, intent := range round.Intents {
+		totalIn += intent.TotalInputAmount()
+		totalOut += intent.TotalOutputAmount()
+	}
+	if totalOut >= totalIn {
 		return 0
 	}
+	return totalIn - totalOut
+}
 
-	maxPacketWU := uint64(float64(maxTxWeight) * spendingWeightThreshold)
-	if maxPacketWU <= assetPacketOverheadWU {
-		return 0
+// calculateBoardingInputAmount computes the total amount (sats) of boarding inputs in a PSBT.
+func calculateBoardingInputAmount(ptx *psbt.Packet) uint64 {
+	boardingInputAmount := uint64(0)
+	for _, input := range ptx.Inputs {
+		if isBoardingInput(input) {
+			boardingInputAmount += uint64(input.WitnessUtxo.Value)
+		}
 	}
+	return boardingInputAmount
+}
 
-	availableWU := maxPacketWU - assetPacketOverheadWU
-	return int(availableWU / refGroupWeight)
+// isBoardingInput reports whether a PSBT input is a boarding input, i.e. an
+// onchain UTXO spent through a taproot script-path leaf.
+//
+// TODO: fragile — this assumes only boarding inputs carry a TaprootLeafScript.
+// It may misclassify inputs if arkd-wallet starts populating TaprootLeafScript
+// for other input types in the future.
+func isBoardingInput(in psbt.PInput) bool {
+	return in.WitnessUtxo != nil && len(in.TaprootLeafScript) > 0
+}
+
+// isBoardingWitness reports whether a finalized (raw tx) input witness is a
+// taproot script-path spend, which is how boarding inputs are spent. The last
+// witness element of a taproot script-path spend is the control block: a
+// (33 + 32*m)-byte blob whose first byte encodes leaf version 0xc0 (with the
+// parity bit), distinguishing it from a key-path signature (a single witness
+// element) or a p2wpkh pubkey (33 bytes starting with 0x02/0x03).
+//
+// TODO: fragile — same caveat as isBoardingInput: it assumes only boarding
+// inputs are spent via taproot script path in a commitment tx.
+func isBoardingWitness(witness wire.TxWitness) bool {
+	if len(witness) < 2 {
+		return false
+	}
+	controlBlock := witness[len(witness)-1]
+	if len(controlBlock) < 33 || (len(controlBlock)-33)%32 != 0 {
+		return false
+	}
+	return controlBlock[0]&0xfe == 0xc0
 }

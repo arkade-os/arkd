@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -74,8 +75,15 @@ func runDockerExec(container string, arg ...string) (string, error) {
 }
 
 func runCommand(name string, arg ...string) (string, error) {
+	return runCommandWithEnv(nil, name, arg...)
+}
+
+func runCommandWithEnv(extraEnv []string, name string, arg ...string) (string, error) {
 	errb := new(strings.Builder)
 	cmd := newCommand(name, arg...)
+	if len(extraEnv) > 0 {
+		cmd.Env = append(os.Environ(), extraEnv...)
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -435,6 +443,28 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.
 	return incomingFunds[0]
 }
 
+func settleVtxo(t *testing.T, ctx context.Context, client wallet.Wallet, offchainAddr string) {
+	t.Helper()
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	var incomingFunds []types.Vtxo
+	var incomingErr error
+	go func() {
+		incomingFunds, incomingErr = client.NotifyIncomingFunds(ctx, offchainAddr)
+		wg.Done()
+	}()
+
+	_, err := client.Settle(ctx)
+	require.NoError(t, err)
+
+	wg.Wait()
+	require.NoError(t, incomingErr)
+	require.NotEmpty(t, incomingFunds)
+
+	time.Sleep(time.Second)
+}
+
 func getBatchExpiryLocktime(batchExpiry uint32) arklib.RelativeLocktime {
 	if batchExpiry >= 512 {
 		return arklib.RelativeLocktime{
@@ -500,6 +530,24 @@ func updateIntentFees(intentFees intentFees) error {
 	return nil
 }
 
+type collectedFeesResponse struct {
+	CollectedFees uint64 `json:"collectedFees,string"`
+}
+
+func getCollectedFees(after, before int64) (uint64, error) {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/fees/collected?after=%d&before=%d", adminUrl, after, before)
+	resp, err := get[collectedFeesResponse](adminHttpClient, url, "collected fees")
+	if err != nil {
+		return 0, fmt.Errorf("failed to get collected fees: %w", err)
+	}
+
+	return resp.CollectedFees, nil
+}
+
 func clearIntentFees() error {
 	adminHttpClient := &http.Client{
 		Timeout: 15 * time.Second,
@@ -538,7 +586,43 @@ func restartArkd() error {
 		return err
 	}
 
-	return nil
+	// wait until the wallet is synced again before returning, otherwise RPCs
+	// racing the restart get "server not ready".
+	return waitUntilReady(adminHttpClient)
+}
+
+// recreate the arkd-wallet container with overridden signer keys, reusing the
+// named data volume so the seed persists, then unlock it and restart arkd so it
+// re-fetches the signer pubkey.
+func recreateArkdWallet(signerKey, deprecated string) error {
+	env := []string{
+		"ARKD_WALLET_SIGNER_KEY=" + signerKey,
+		"ARKD_WALLET_DEPRECATED_SIGNER_KEYS=" + deprecated,
+	}
+	args := []string{
+		"compose", "-f", "../../../docker-compose.regtest.yml",
+		"up", "-d", "--force-recreate", "--no-deps", "arkd-wallet",
+	}
+	if _, err := runCommandWithEnv(env, "docker", args...); err != nil {
+		return fmt.Errorf("failed to recreate arkd-wallet: %w", err)
+	}
+
+	time.Sleep(8 * time.Second)
+
+	if err := unlockArkdWallet(); err != nil {
+		return err
+	}
+
+	time.Sleep(5 * time.Second)
+
+	return restartArkd()
+}
+
+func unlockArkdWallet() error {
+	adminHttpClient := &http.Client{Timeout: 15 * time.Second}
+	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
+	body := fmt.Sprintf(`{"password": "%s"}`, password)
+	return post(adminHttpClient, url, body, "unlock")
 }
 
 func setupArkd() error {

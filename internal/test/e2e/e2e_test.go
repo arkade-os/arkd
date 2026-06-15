@@ -5132,6 +5132,103 @@ func TestFee(t *testing.T) {
 	require.Empty(t, bobBalance.OnchainBalance.LockedAmount)
 }
 
+func TestCollectedFees(t *testing.T) {
+	// Record timestamp before any rounds so every round in this test falls
+	// inside the query window.
+	startTime := time.Now().Unix()
+
+	// Save and clear fees so the funding round (faucetOffchain) doesn't
+	// collect fees — only the final settle round should.
+	originalFees, err := getIntentFees()
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, clearIntentFees())
+		if !isEmptyIntentFees(*originalFees) {
+			require.NoError(t, updateIntentFees(*originalFees))
+		}
+	})
+
+	require.NoError(t, clearIntentFees())
+
+	ctx := t.Context()
+	alice := setupClientWallet(t)
+	bob := setupClientWallet(t)
+
+	_, aliceOffchainAddr, aliceBoardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+	_, bobOffchainAddr, _, err := bob.Receive(ctx)
+	require.NoError(t, err)
+
+	// Fund Alice onchain (no round triggered) and Bob offchain (round triggered,
+	// but no fees configured yet so collected fees stay zero).
+	faucetOnchain(t, aliceBoardingAddr.Address, 0.001)
+	faucetOffchain(t, bob, 0.001)
+	time.Sleep(6 * time.Second)
+
+	// Configure 1% input fees so the next round generates non-zero collected fees.
+	fees := intentFees{
+		IntentOffchainInputFeeProgram:  "0.01 * amount",
+		IntentOnchainInputFeeProgram:   "0.01 * amount",
+		IntentOffchainOutputFeeProgram: "0.0",
+		IntentOnchainOutputFeeProgram:  "0.0",
+	}
+	err = updateIntentFees(fees)
+	require.NoError(t, err)
+
+	// Alice (boarding / onchain input) and Bob (renewal / offchain input) settle together.
+	wg := &sync.WaitGroup{}
+	wg.Add(4)
+
+	var aliceIncomingErr error
+	go func() {
+		_, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr.Address)
+		wg.Done()
+	}()
+
+	var bobIncomingErr error
+	go func() {
+		_, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
+		wg.Done()
+	}()
+
+	var aliceSettleErr error
+	go func() {
+		_, aliceSettleErr = alice.Settle(ctx)
+		wg.Done()
+	}()
+
+	var bobSettleErr error
+	go func() {
+		_, bobSettleErr = bob.Settle(ctx)
+		wg.Done()
+	}()
+
+	wg.Wait()
+	require.NoError(t, aliceIncomingErr)
+	require.NoError(t, bobIncomingErr)
+	require.NoError(t, aliceSettleErr)
+	require.NoError(t, bobSettleErr)
+
+	time.Sleep(time.Second)
+
+	// Query collected fees for the window that includes our round.
+	endTime := time.Now().Unix() + 10
+	collectedFees, err := getCollectedFees(startTime-1, endTime)
+	require.NoError(t, err)
+
+	// Alice's boarding input: 100,000 sats × 1% = 1,000 sats
+	// Bob's offchain input:   100,000 sats × 1% = 1,000 sats
+	// Total expected: 2,000 sats
+	require.Equal(t, 2000, int(collectedFees),
+		"collected fees should equal sum of onchain and offchain input fees")
+
+	// Query with a future window — should return zero.
+	futureFees, err := getCollectedFees(endTime, 0)
+	require.NoError(t, err)
+	require.Zero(t, futureFees, "expected zero collected fees for future time range")
+}
+
 func TestAsset(t *testing.T) {
 	// This test ensures that an asset vtxo can be issued, transfered and then refreshed
 	t.Run("transfer and renew", func(t *testing.T) {
@@ -6482,4 +6579,180 @@ func TestEventListenerChurn(t *testing.T) {
 			return
 		}
 	}
+}
+
+// TestDeprecatedSignerKey makes sure coins locked to a signer key that has
+// been rotated out (moved to DEPRECATED_SIGNER_KEYS) can still be spent. We
+// fund a VTXO and boarding utxos with the old signer key, rotate it to
+// deprecated, then verify the old-key VTXO can still be settled and spent in an
+// offchain transaction, and the old-key boarding utxo can still be settled; in
+// all cases the server co-signs using the deprecated key the coin was locked
+// to. Once the cutoff date has passed, both vtxo and boarding inputs locked to
+// the old key must be rejected.
+func TestDeprecatedSignerKey(t *testing.T) {
+	const (
+		oldSignerKey = "afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0"
+		newSignerKey = "1111111111111111111111111111111111111111111111111111111111111111"
+		sendAmount   = 10000
+		// unix timestamp after which the deprecated key is no longer accepted
+		cutoffDate = int64(33256915200) // 3023-11-04
+	)
+	ctx := t.Context()
+
+	// Restore the old signer key without deprecated keys for other integration tests
+	t.Cleanup(func() {
+		require.NoError(t, recreateArkdWallet(oldSignerKey, ""))
+	})
+
+	alice := setupClientWallet(t)
+	_, aliceOffchainAddr, aliceBoardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	bob := setupClientWallet(t)
+	_, bobOffchainAddr, _, err := bob.Receive(ctx)
+	require.NoError(t, err)
+
+	// carol and dave are initialized before the rotation so their boarding
+	// addresses embed the OLD signer key. Their boarding utxos are funded right
+	// before being settled (in regtest the boarding exit path becomes available
+	// within seconds, making older utxos not claimable anymore).
+	carol := setupClientWallet(t)
+	_, carolOffchainAddr, carolBoardingAddr, err := carol.Receive(ctx)
+	require.NoError(t, err)
+
+	dave := setupClientWallet(t)
+	_, _, daveBoardingAddr, err := dave.Receive(ctx)
+	require.NoError(t, err)
+
+	faucetOnchain(t, aliceBoardingAddr.Address, 0.00021)
+	time.Sleep(6 * time.Second)
+
+	// settle boarding utxo into a VTXO locked to the OLD signer pubkey
+	settleVtxo(t, ctx, alice, aliceOffchainAddr.Address)
+
+	balBefore, err := alice.Balance(ctx)
+	require.NoError(t, err)
+	require.NotZero(t, int(balBefore.OffchainBalance.Total))
+
+	// rotate: new key current, old key deprecated with a cutoff date
+	require.NoError(t, recreateArkdWallet(
+		newSignerKey, fmt.Sprintf("%s:%d", oldSignerKey, cutoffDate),
+	))
+
+	// the public GetInfo endpoint must expose the old key as a deprecated signer
+	// along with its cutoff date
+	oldKeyBytes, err := hex.DecodeString(oldSignerKey)
+	require.NoError(t, err)
+	_, oldPubkey := btcec.PrivKeyFromBytes(oldKeyBytes)
+	expectedDeprecated := hex.EncodeToString(oldPubkey.SerializeCompressed())
+
+	newKeyBytes, err := hex.DecodeString(newSignerKey)
+	require.NoError(t, err)
+	_, newPubkey := btcec.PrivKeyFromBytes(newKeyBytes)
+	expectedSigner := hex.EncodeToString(newPubkey.SerializeCompressed())
+
+	info, err := alice.Client().GetInfo(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedSigner, info.SignerPubKey)
+	cutoffDates := make(map[string]int64, len(info.DeprecatedSignerPubKeys))
+	for _, s := range info.DeprecatedSignerPubKeys {
+		cutoffDates[s.PubKey] = s.CutoffDate
+	}
+	require.Contains(t, cutoffDates, expectedDeprecated)
+	require.Equal(t, cutoffDate, cutoffDates[expectedDeprecated])
+
+	t.Run("settle", func(t *testing.T) {
+		// the old-key VTXO must still settle (wallet selects the deprecated key)
+		settleVtxo(t, ctx, alice, aliceOffchainAddr.Address)
+
+		balAfter, err := alice.Balance(ctx)
+		require.NoError(t, err)
+		require.NotZero(t, int(balAfter.OffchainBalance.Total))
+	})
+
+	t.Run("boarding", func(t *testing.T) {
+		// a boarding utxo locked to the old signer key must still be settled: the
+		// server validates the boarding script against the deprecated key and
+		// co-signs the commitment tx input with it.
+		faucetOnchain(t, carolBoardingAddr.Address, 0.00021)
+		time.Sleep(6 * time.Second)
+
+		settleVtxo(t, ctx, carol, carolOffchainAddr.Address)
+
+		balAfter, err := carol.Balance(ctx)
+		require.NoError(t, err)
+		require.NotZero(t, int(balAfter.OffchainBalance.Total))
+	})
+
+	t.Run("offchain_tx", func(t *testing.T) {
+		// the old-key VTXO must still be spendable in an offchain tx: the server
+		// co-signs the checkpoint tx with the deprecated key it was locked to.
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		var incomingFunds []types.Vtxo
+		var incomingErr error
+		go func() {
+			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
+			wg.Done()
+		}()
+
+		res, err := alice.SendOffChain(ctx, []types.Receiver{{
+			To:     bobOffchainAddr.Address,
+			Amount: sendAmount,
+		}})
+		require.NoError(t, err)
+		require.NotEmpty(t, res.Txid)
+
+		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.NotEmpty(t, incomingFunds)
+	})
+
+	t.Run("expired_cutoff", func(t *testing.T) {
+		// rotate again, this time with a cutoff date in the past: the old key
+		// must no longer be accepted by the server.
+		expiredCutoff := time.Now().Add(-time.Hour).Unix()
+		require.NoError(t, recreateArkdWallet(
+			newSignerKey, fmt.Sprintf("%s:%d", oldSignerKey, expiredCutoff),
+		))
+
+		info, err := bob.Client().GetInfo(ctx)
+		require.NoError(t, err)
+		expiredCutoffs := make(map[string]int64, len(info.DeprecatedSignerPubKeys))
+		for _, s := range info.DeprecatedSignerPubKeys {
+			expiredCutoffs[s.PubKey] = s.CutoffDate
+		}
+		require.Contains(t, expiredCutoffs, expectedDeprecated)
+		require.Equal(t, expiredCutoff, expiredCutoffs[expectedDeprecated])
+
+		// vtxo input path: bob holds a VTXO locked to the old key. Pass it
+		// explicitly so the failure can only come from the server rejecting the
+		// expired key at intent registration.
+		bobVtxos, _, err := bob.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, bobVtxos)
+
+		_, err = bob.Settle(ctx, wallet.WithFunds(nil, []types.VtxoWithTapTree{{
+			Vtxo:       bobVtxos[0],
+			Tapscripts: bobOffchainAddr.Tapscripts,
+		}}))
+		require.ErrorContains(t, err, "is a deprecated key since")
+
+		// wait for the funds to be recoverable
+		require.NoError(t, generateBlocks(41))
+		time.Sleep(20 * time.Second)
+
+		_, err = bob.Settle(ctx, wallet.WithFunds(nil, []types.VtxoWithTapTree{{
+			Vtxo:       bobVtxos[0],
+			Tapscripts: bobOffchainAddr.Tapscripts,
+		}}))
+		require.NoError(t, err)
+
+		// boarding input path: dave's boarding utxo is locked to the old key
+		faucetOnchain(t, daveBoardingAddr.Address, 0.00021)
+		time.Sleep(6 * time.Second)
+
+		_, err = dave.Settle(ctx)
+		require.ErrorContains(t, err, "is a deprecated key since")
+	})
 }
