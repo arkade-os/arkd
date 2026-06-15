@@ -19,6 +19,7 @@ var sensitiveRequestFields = map[string]struct{}{
 	"password":      {},
 	"secret":        {},
 	"authorization": {},
+	"seed":          {},
 }
 
 // metadataOfInterest is the allowlist of incoming gRPC metadata keys we log.
