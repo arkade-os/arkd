@@ -113,10 +113,15 @@
         "operationId": "WalletService_ListConnectorUtxos",
         "parameters": [
           {
-            "name": "connectorAddress",
+            "name": "connectorAddresses",
             "in": "query",
+            "style": "simple",
             "schema": {
-              "type": "string"
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         ],
@@ -1604,8 +1609,11 @@
         "title": "ListConnectorUtxosRequest",
         "type": "object",
         "properties": {
-          "connectorAddress": {
-            "type": "string"
+          "connectorAddresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

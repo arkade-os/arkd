@@ -18,6 +18,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const maxSweepInputs = 1000
+
 type AdminService interface {
 	Wallet() ports.WalletService
 	GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep, error)
@@ -465,6 +467,9 @@ func (a *adminService) Sweep(
 ) (txid string, txhex string, err error) {
 	inputs := make([]ports.TxInput, 0)
 	connectorsToLock := make([]domain.Outpoint, 0)
+	// truncated is set when the maxSweepInputs cap is reached while sweepable
+	// outputs remain; those are left for a subsequent sweep call.
+	truncated := false
 
 	if withConnectors {
 		connectorAddresses, err := a.repoManager.Rounds().GetSweptRoundsConnectorAddress(ctx)
@@ -472,23 +477,22 @@ func (a *adminService) Sweep(
 			return "", "", err
 		}
 
-		connectorUtxos := make([]ports.TxInput, 0)
-		for _, connectorAddress := range connectorAddresses {
-			utxos, err := a.walletSvc.ListConnectorUtxos(ctx, connectorAddress)
-			if err != nil {
-				return "", "", err
-			}
-			connectorUtxos = append(connectorUtxos, utxos...)
+		connectorUtxos, err := a.walletSvc.ListConnectorUtxos(ctx, connectorAddresses)
+		if err != nil {
+			return "", "", err
 		}
 
 		for _, utxo := range connectorUtxos {
+			if len(inputs) >= maxSweepInputs {
+				truncated = true
+				break
+			}
 			connectorsToLock = append(connectorsToLock, domain.Outpoint{
 				Txid: utxo.Txid,
 				VOut: utxo.Index,
 			})
+			inputs = append(inputs, utxo)
 		}
-
-		inputs = append(inputs, connectorUtxos...)
 	}
 
 	now := time.Now()
@@ -501,6 +505,11 @@ func (a *adminService) Sweep(
 
 	// for each commitment txid, find the sweepable outputs and add them to the inputs
 	for _, commitmentTxid := range commitmentTxids {
+		if len(inputs) >= maxSweepInputs {
+			truncated = true
+			break
+		}
+
 		// Get the round first (contains VtxoTree)
 		round, err := a.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
 		if err != nil {
@@ -544,8 +553,18 @@ func (a *adminService) Sweep(
 				continue
 			}
 
-			batchInputsList = append(batchInputsList, batchOutputs...)
-			inputs = append(inputs, batchOutputs...)
+			for _, batchOutput := range batchOutputs {
+				if len(inputs) >= maxSweepInputs {
+					truncated = true
+					break
+				}
+				batchInputsList = append(batchInputsList, batchOutput)
+				inputs = append(inputs, batchOutput)
+			}
+
+			if truncated {
+				break
+			}
 		}
 
 		if len(batchInputsList) > 0 {
@@ -555,6 +574,13 @@ func (a *adminService) Sweep(
 
 	if len(inputs) == 0 {
 		return "", "", fmt.Errorf("no funds to sweep")
+	}
+
+	if truncated {
+		log.Warnf(
+			"sweep: input count capped at %d; remaining sweepable outputs left for a subsequent sweep",
+			maxSweepInputs,
+		)
 	}
 
 	txid, txhex, err = a.txBuilder.BuildSweepTx(inputs)

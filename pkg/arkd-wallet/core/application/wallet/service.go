@@ -347,9 +347,16 @@ func (w *wallet) LockConnectorUtxos(ctx context.Context, utxos []wire.OutPoint) 
 	return w.locker.lock(ctx, utxos...)
 }
 
-func (w *wallet) ListConnectorUtxos(ctx context.Context, connectorAddress string) ([]application.Utxo, error) {
+func (w *wallet) ListConnectorUtxos(
+	ctx context.Context, connectorAddresses []string,
+) ([]application.Utxo, error) {
 	if w.keyMgr == nil {
 		return nil, ErrWalletLocked
+	}
+
+	addressSet := make(map[string]struct{}, len(connectorAddresses))
+	for _, addr := range connectorAddresses {
+		addressSet[addr] = struct{}{}
 	}
 
 	connectorAccountUtxos, err := w.Nbxplorer.GetUtxos(ctx, w.keyMgr.connectorAccountDerivationScheme)
@@ -369,7 +376,7 @@ func (w *wallet) ListConnectorUtxos(ctx context.Context, connectorAddress string
 			continue
 		}
 
-		if utxo.Address != connectorAddress {
+		if _, ok := addressSet[utxo.Address]; !ok {
 			continue
 		}
 		if _, isLocked := lockedOutpoints[utxo.OutPoint]; isLocked {

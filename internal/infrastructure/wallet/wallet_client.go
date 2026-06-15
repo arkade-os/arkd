@@ -418,10 +418,10 @@ func (w *walletDaemonClient) FeeRate(ctx context.Context) (uint64, error) {
 }
 
 func (w *walletDaemonClient) ListConnectorUtxos(
-	ctx context.Context, connectorAddress string,
+	ctx context.Context, connectorAddresses []string,
 ) ([]ports.TxInput, error) {
 	resp, err := w.client.ListConnectorUtxos(
-		ctx, &arkwalletv1.ListConnectorUtxosRequest{ConnectorAddress: connectorAddress},
+		ctx, &arkwalletv1.ListConnectorUtxosRequest{ConnectorAddresses: connectorAddresses},
 	)
 	if err != nil {
 		return nil, err
