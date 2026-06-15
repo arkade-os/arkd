@@ -36,6 +36,8 @@ var (
 	supportedIdentities = utils.SupportedType[struct{}]{
 		SingleKeyIdentity: struct{}{},
 	}
+
+	ClientVersion string
 )
 
 type service struct {
@@ -131,7 +133,7 @@ func LoadWallet(storeSvc types.Store, opts ...ServiceOption) (Wallet, error) {
 		client.explorer = explorerSvc
 	}
 
-	clientSvc, err := grpcclient.NewClient(cfgData.ServerUrl)
+	clientSvc, err := grpcclient.NewClient(cfgData.ServerUrl, ClientVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup transport client: %s", err)
 	}

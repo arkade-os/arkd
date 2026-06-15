@@ -25,6 +25,7 @@ var sensitiveRequestFields = map[string]struct{}{
 // gRPC lowercases all incoming metadata keys, so entries here must be lowercase.
 var metadataOfInterest = map[string]struct{}{
 	"x-build-version": {},
+	"x-sdk-version":   {},
 	"x-digest":        {},
 }
 

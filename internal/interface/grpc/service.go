@@ -449,6 +449,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 			return "macaroon", true
 		case "X-Build-Version":
 			return "x-build-version", true
+		case "X-Sdk-Version":
+			return "x-sdk-version", true
 		case "X-Digest":
 			return "x-digest", true
 		default:
