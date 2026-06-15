@@ -5458,7 +5458,7 @@ func TestTxListenerChurn(t *testing.T) {
 		go func(workerID int) {
 			defer wg.Done()
 
-			streamClient, err := grpcclient.NewClient(serverUrl)
+			streamClient, err := grpcclient.NewClient(serverUrl, "")
 			if err != nil {
 				if stressCtx.Err() != nil {
 					return
@@ -5487,7 +5487,7 @@ func TestTxListenerChurn(t *testing.T) {
 				// Reconnect if the previous iteration tore down the client
 				// due to a transient error.
 				if streamClient == nil {
-					streamClient, err = grpcclient.NewClient(serverUrl)
+					streamClient, err = grpcclient.NewClient(serverUrl, "")
 					if err != nil {
 						if stressCtx.Err() != nil {
 							return
@@ -5746,7 +5746,7 @@ func TestEventListenerChurn(t *testing.T) {
 		go func(workerID int) {
 			defer wg.Done()
 
-			streamClient, err := grpcclient.NewClient(serverUrl)
+			streamClient, err := grpcclient.NewClient(serverUrl, "")
 			if err != nil {
 				if stressCtx.Err() != nil {
 					return
@@ -5774,7 +5774,7 @@ func TestEventListenerChurn(t *testing.T) {
 
 				// Reconnect after a transient error tore down the client.
 				if streamClient == nil {
-					streamClient, err = grpcclient.NewClient(serverUrl)
+					streamClient, err = grpcclient.NewClient(serverUrl, "")
 					if err != nil {
 						if stressCtx.Err() != nil {
 							return

@@ -37,7 +37,7 @@ type grpcClient struct {
 	digest     string
 }
 
-func NewClient(serverUrl string) (client.TransportClient, error) {
+func NewClient(serverUrl, clientVersion string) (client.TransportClient, error) {
 	if len(serverUrl) <= 0 {
 		return nil, fmt.Errorf("missing server url")
 	}
@@ -60,6 +60,17 @@ func NewClient(serverUrl string) (client.TransportClient, error) {
 		infoMu:     &sync.RWMutex{},
 	}
 
+	unaryInterceptors := []grpc.UnaryClientInterceptor{
+		unaryVersionInterceptor(), unaryDigestInterceptor(client.getDigest),
+	}
+	streamInterceptors := []grpc.StreamClientInterceptor{
+		streamVersionInterceptor(), streamDigestInterceptor(client.getDigest),
+	}
+	if len(clientVersion) > 0 {
+		unaryInterceptors = append(unaryInterceptors, unaryClientVersionInterceptor(clientVersion))
+		streamInterceptors = append(streamInterceptors, streamClientVersionInterceptor(clientVersion))
+	}
+
 	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
 		grpc.WithDisableServiceConfig(),
@@ -73,12 +84,8 @@ func NewClient(serverUrl string) (client.TransportClient, error) {
 			},
 			MinConnectTimeout: 3 * time.Second,
 		}),
-		grpc.WithChainUnaryInterceptor(
-			unaryVersionInterceptor(), unaryDigestInterceptor(client.getDigest),
-		),
-		grpc.WithChainStreamInterceptor(
-			streamVersionInterceptor(), streamDigestInterceptor(client.getDigest),
-		),
+		grpc.WithChainUnaryInterceptor(unaryInterceptors...),
+		grpc.WithChainStreamInterceptor(streamInterceptors...),
 	}
 	options = append(options, testDialOptions...)
 

@@ -27,7 +27,7 @@ func (a *service) Init(ctx context.Context, args InitArgs) error {
 func (a *service) init(
 	ctx context.Context, args args, explorerSvc explorer.Explorer,
 ) error {
-	clientSvc, err := grpcclient.NewClient(args.serverUrl)
+	clientSvc, err := grpcclient.NewClient(args.serverUrl, ClientVersion)
 	if err != nil {
 		return fmt.Errorf("failed to setup client: %s", err)
 	}
