@@ -196,17 +196,44 @@ func TestEvalBatchTrigger(t *testing.T) {
 			tr, err := batchtrigger.New(tt.program)
 			require.NoError(t, err)
 
-			s := &service{batchTrigger: tr}
-			require.Equal(t, tt.want, s.evalBatchTrigger(tt.ctx))
+			require.Equal(t, tt.want, evalBatchTrigger(tr, tt.ctx))
 		})
 	}
 }
 
 func TestEvalBatchTriggerNilFailsOpen(t *testing.T) {
-	// A nil service.batchTrigger must permit; the context value is ignored.
+	// A nil trigger must permit; the context value is ignored.
+	require.True(t, evalBatchTrigger(nil, batchtrigger.Context{}))
+	require.True(t, evalBatchTrigger(nil, batchtrigger.Context{IntentsCount: 0}))
+}
+
+func TestResolveBatchTriggerCaches(t *testing.T) {
 	s := &service{}
-	require.True(t, s.evalBatchTrigger(batchtrigger.Context{}))
-	require.True(t, s.evalBatchTrigger(batchtrigger.Context{IntentsCount: 0}))
+
+	// Empty program compiles to a nil trigger but is still cached.
+	tr, err := s.resolveBatchTrigger("")
+	require.NoError(t, err)
+	require.Nil(t, tr)
+	require.True(t, s.batchTriggerSet)
+
+	// Same source returns the identical cached trigger without recompiling.
+	tr1, err := s.resolveBatchTrigger("intents_count >= 2.0")
+	require.NoError(t, err)
+	require.NotNil(t, tr1)
+	tr2, err := s.resolveBatchTrigger("intents_count >= 2.0")
+	require.NoError(t, err)
+	require.Same(t, tr1, tr2)
+
+	// A changed source (e.g. an admin UpdateSettings call) recompiles.
+	tr3, err := s.resolveBatchTrigger("intents_count >= 5.0")
+	require.NoError(t, err)
+	require.NotNil(t, tr3)
+	require.NotSame(t, tr1, tr3)
+	require.Equal(t, "intents_count >= 5.0", s.batchTriggerSrc)
+
+	// An invalid program surfaces the compile error and leaves the cache intact.
+	_, err = s.resolveBatchTrigger("this is not (valid cel")
+	require.Error(t, err)
 }
 
 func TestLastBatchAtRoundtrip(t *testing.T) {

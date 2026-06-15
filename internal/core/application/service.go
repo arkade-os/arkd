@@ -52,9 +52,16 @@ type service struct {
 	alerts         ports.Alerts
 	feeManager     ports.FeeManager
 
-	// batchTrigger is an optional CEL gate evaluated at the top of every
-	// startRound() call. A nil trigger always permits the round.
-	batchTrigger *batchtrigger.Trigger
+	// batchTrigger caches the compiled CEL gate evaluated at the top of every
+	// startRound() call, together with the program text it was compiled from.
+	// The gate program lives in settings, so it can change at runtime via the
+	// admin UpdateSettings endpoint; the trigger is recompiled lazily whenever
+	// batchTriggerSrc no longer matches the configured program. A nil trigger
+	// always permits the round. startRound runs in a single goroutine, so these
+	// fields need no synchronization.
+	batchTrigger    *batchtrigger.Trigger
+	batchTriggerSrc string
+	batchTriggerSet bool
 	// lastBatchAt is the Unix timestamp of the most recently finalized
 	// batch. Set after a successful EndFinalization. Zero until the first
 	// batch is finalized after server start.
@@ -87,7 +94,6 @@ func NewService(
 	reportSvc RoundReportService,
 	alerts ports.Alerts,
 	feeManager ports.FeeManager,
-	batchTriggerProgram string,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -99,11 +105,6 @@ func NewService(
 	signerPubkey, err := signer.GetPubkey(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch signer pubkey: %w", err)
-	}
-
-	batchTrigger, err := batchtrigger.New(batchTriggerProgram)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compile batch trigger: %w", err)
 	}
 
 	deprecatedSignerPubkeys, err := signer.GetDeprecatedPubkeys(ctx)
@@ -178,7 +179,6 @@ func NewService(
 		roundReportSvc:           roundReportSvc,
 		alerts:                   alerts,
 		feeManager:               feeManager,
-		batchTrigger:             batchTrigger,
 	}
 	return svc, nil
 }
@@ -2453,33 +2453,60 @@ func (s *service) collectTriggerContext(ctx context.Context) batchtrigger.Contex
 	return tc
 }
 
-// evalBatchTrigger evaluates the configured trigger against the supplied
-// context. Returns true when no trigger is configured, when the program
-// returns true, or when evaluation fails (failing open is intentional — we
-// never want a buggy formula to halt rounds permanently; the misconfiguration
-// is logged loudly).
-func (s *service) evalBatchTrigger(tc batchtrigger.Context) bool {
-	if s.batchTrigger == nil {
+// resolveBatchTrigger returns the compiled CEL gate for the given program text,
+// recompiling (and caching) only when the source changed since the last call.
+// The gate program lives in settings, so operators can retune it on the fly via
+// the admin UpdateSettings endpoint without restarting the server. A nil trigger
+// means "always permit"; the empty program compiles to a nil trigger.
+func (s *service) resolveBatchTrigger(program string) (*batchtrigger.Trigger, error) {
+	if s.batchTriggerSet && s.batchTriggerSrc == program {
+		return s.batchTrigger, nil
+	}
+	tr, err := batchtrigger.New(program)
+	if err != nil {
+		return nil, err
+	}
+	s.batchTrigger = tr
+	s.batchTriggerSrc = program
+	s.batchTriggerSet = true
+	return tr, nil
+}
+
+// evalBatchTrigger evaluates the supplied trigger against the supplied context.
+// Returns true when the trigger is nil, when the program returns true, or when
+// evaluation fails (failing open is intentional — we never want a buggy formula
+// to halt rounds permanently; the misconfiguration is logged loudly).
+func evalBatchTrigger(tr *batchtrigger.Trigger, tc batchtrigger.Context) bool {
+	if tr == nil {
 		return true
 	}
-	ok, err := s.batchTrigger.Eval(tc)
+	ok, err := tr.Eval(tc)
 	if err != nil {
 		log.WithError(err).Warnf(
 			"batch_trigger: evaluation failed for program %q, starting batch as fallback",
-			s.batchTrigger.Source(),
+			tr.Source(),
 		)
 		return true
 	}
 	return ok
 }
 
-// shouldStartBatch evaluates the batch_trigger gate using a freshly collected
-// context.
-func (s *service) shouldStartBatch(ctx context.Context) bool {
-	if s.batchTrigger == nil {
+// shouldStartBatch evaluates the batch_trigger gate for the given program using
+// a freshly collected context. An empty or uncompilable program permits the
+// round (failing open); a stored program is already validated at write time, so
+// a compile error here is unexpected and logged loudly.
+func (s *service) shouldStartBatch(ctx context.Context, program string) bool {
+	tr, err := s.resolveBatchTrigger(program)
+	if err != nil {
+		log.WithError(err).Warnf(
+			"batch_trigger: failed to compile program %q, starting batch as fallback", program,
+		)
 		return true
 	}
-	return s.evalBatchTrigger(s.collectTriggerContext(ctx))
+	if tr == nil {
+		return true
+	}
+	return evalBatchTrigger(tr, s.collectTriggerContext(ctx))
 }
 
 func (s *service) startRound() {
@@ -2542,7 +2569,7 @@ func (s *service) startRound() {
 		}
 	}
 
-	if !s.shouldStartBatch(ctx) {
+	if !s.shouldStartBatch(ctx, settings.BatchTrigger) {
 		// Gate denied the round. Wait one registration window then re-check
 		// without creating any round state.
 		backoff := newRoundTiming(settings.SessionDuration).registrationDuration()

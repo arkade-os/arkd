@@ -931,7 +931,6 @@ func (c *Config) appService() error {
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
 		c.scheduler, c.liveStore, roundReportSvc, c.alerts, c.fee,
-		c.BatchTrigger,
 	)
 	if err != nil {
 		return err
@@ -1011,6 +1010,7 @@ func (c *Config) getSettings() (*domain.Settings, error) {
 		c.BoardingExitDelay, c.VtxoTreeExpiry,
 		c.MaxTxWeight, c.MaxOpReturnOutputs, c.AssetTxMaxWeightRatio, c.NoteUriPrefix,
 		c.BuildVersionHeader, c.BuildVersionHeaderRequired, c.DigestHeaderRequired,
+		c.BatchTrigger,
 	)
 	if err != nil {
 		return nil, err

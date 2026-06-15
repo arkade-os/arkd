@@ -363,6 +363,7 @@ func testNewSettings(t *testing.T) {
 		noteUriPrefix := "testNote"
 		buildVersionHeader, buildVersionHeaderRequired := "v1.0.0", true
 		digestHeaderRequired := true
+		batchTrigger := "intents_count >= 5.0"
 
 		t.Run("valid", func(t *testing.T) {
 			settings, err := domain.NewSettings(
@@ -374,6 +375,7 @@ func testNewSettings(t *testing.T) {
 				boardingExitDelay, vtxoTreeExpiry,
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				batchTrigger,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, settings)
@@ -383,6 +385,7 @@ func testNewSettings(t *testing.T) {
 			require.Equal(t, buildVersionHeader, settings.BuildVersionHeader)
 			require.Equal(t, buildVersionHeaderRequired, settings.BuildVersionHeaderRequired)
 			require.Equal(t, digestHeaderRequired, settings.DigestHeaderRequired)
+			require.Equal(t, batchTrigger, settings.BatchTrigger)
 			require.False(t, settings.UpdatedAt.IsZero())
 		})
 
@@ -396,6 +399,7 @@ func testNewSettings(t *testing.T) {
 				boardingExitDelay, vtxoTreeExpiry,
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				batchTrigger,
 			)
 			require.ErrorContains(t, err, "invalid session duration")
 			require.Nil(t, settings)
@@ -411,8 +415,25 @@ func testNewSettings(t *testing.T) {
 				boardingExitDelay, vtxoTreeExpiry,
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				"", true, true,
+				batchTrigger,
 			)
 			require.ErrorContains(t, err, "build version header is required but no version is set")
+			require.Nil(t, settings)
+		})
+
+		t.Run("invalid batch trigger", func(t *testing.T) {
+			settings, err := domain.NewSettings(
+				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
+				batchMinParticipants, batchMaxParticipants,
+				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
+				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
+				boardingExitDelay, vtxoTreeExpiry,
+				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				"this is not (valid cel",
+			)
+			require.ErrorContains(t, err, "invalid batch trigger program")
 			require.Nil(t, settings)
 		})
 	})
