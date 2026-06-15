@@ -162,6 +162,8 @@ func createAction(ctx *cli.Context) error {
 	if err := walletPost(baseURL, "/v1/wallet/create", body, nil); err != nil {
 		return err
 	}
+	fmt.Println("IMPORTANT: store the following seed phrase securely and offline.")
+	fmt.Println("Anyone with access to it can control this wallet and spend its funds.")
 	fmt.Println(seed.Seed)
 
 	return unlockWallet(baseURL, password)
