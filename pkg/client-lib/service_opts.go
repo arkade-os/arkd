@@ -30,3 +30,9 @@ func WithoutFinalizePendingTxs() ServiceOption {
 		c.withFinalizePendingTxs = false
 	}
 }
+
+func WithClientVersion(version string) ServiceOption {
+	return func(c *service) {
+		c.clientVersion = version
+	}
+}

@@ -37,8 +37,6 @@ var (
 	supportedWallets = utils.SupportedType[struct{}]{
 		SingleKeyWallet: struct{}{},
 	}
-
-	ClientVersion string
 )
 
 type service struct {
@@ -53,6 +51,7 @@ type service struct {
 	txLock                 *sync.RWMutex
 	verbose                bool
 	withFinalizePendingTxs bool
+	clientVersion          string
 }
 
 func NewArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, error) {
@@ -130,7 +129,7 @@ func LoadArkClient(storeSvc types.Store, opts ...ServiceOption) (ArkClient, erro
 		client.explorer = explorerSvc
 	}
 
-	clientSvc, err := grpcclient.NewClient(cfgData.ServerUrl, ClientVersion)
+	clientSvc, err := grpcclient.NewClient(cfgData.ServerUrl, client.clientVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup transport client: %s", err)
 	}
