@@ -119,13 +119,15 @@ func TestForfeitTxOperatorSigned(t *testing.T) {
 		return p
 	}
 
-	require.True(t, forfeitTxOperatorSigned(build(true), operatorXOnly),
+	require.True(t, forfeitTxOperatorSigned(build(true), [][]byte{operatorXOnly}),
 		"must detect the operator signature")
-	require.False(t, forfeitTxOperatorSigned(build(false), operatorXOnly),
+	require.False(t, forfeitTxOperatorSigned(build(false), [][]byte{operatorXOnly}),
 		"must report unsigned when the operator sig is absent")
 
 	otherXOnly := make([]byte, 32)
 	otherXOnly[0] = 0x09
-	require.False(t, forfeitTxOperatorSigned(build(true), otherXOnly),
+	require.False(t, forfeitTxOperatorSigned(build(true), [][]byte{otherXOnly}),
 		"must not match a different pubkey")
+	require.True(t, forfeitTxOperatorSigned(build(true), [][]byte{otherXOnly, operatorXOnly}),
+		"must match when any key in the set is present (e.g. a deprecated key)")
 }

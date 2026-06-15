@@ -170,12 +170,31 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 	// operator signature and produce an invalid PSBT (duplicate key), so we only
 	// sign here when the operator signature is still missing (e.g. forfeit txs
 	// collected before collection-time signing was introduced).
-	signedForfeitTx := forfeitTxB64
-	signerPubkey, err := s.signer.GetPubkey(ctx)
+	//
+	// The operator key set is read from the cached settings, not the live signer:
+	// a pre-signed forfeit must stay broadcastable even when the signer is down,
+	// which is the whole point of signing at collection time. Deprecated keys are
+	// included so a forfeit signed before a key rotation is still recognized as
+	// signed and not re-signed with the current (wrong-for-its-tapscript) key.
+	settings, err := s.cache.Settings().Get(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get signer pubkey: %s", err)
+		return fmt.Errorf("failed to get settings: %s", err)
 	}
-	if !forfeitTxOperatorSigned(forfeitTx, schnorr.SerializePubKey(signerPubkey)) {
+	if settings == nil {
+		return fmt.Errorf("settings not available")
+	}
+	operatorKeys := make([][]byte, 0, 1+len(settings.DeprecatedSignerPubkeys))
+	if settings.SignerPubkey != nil {
+		operatorKeys = append(operatorKeys, schnorr.SerializePubKey(settings.SignerPubkey))
+	}
+	for _, deprecated := range settings.DeprecatedSignerPubkeys {
+		if deprecated.PubKey != nil {
+			operatorKeys = append(operatorKeys, schnorr.SerializePubKey(deprecated.PubKey))
+		}
+	}
+
+	signedForfeitTx := forfeitTxB64
+	if !forfeitTxOperatorSigned(forfeitTx, operatorKeys) {
 		signedForfeitTx, err = s.signer.SignTransactionTapscript(ctx, forfeitTxB64, nil)
 		if err != nil {
 			return fmt.Errorf("failed to sign forfeit tx: %s", err)
@@ -431,13 +450,18 @@ func findForfeitTx(
 }
 
 // forfeitTxOperatorSigned reports whether the forfeit tx already carries a
-// tapscript signature from the operator (its signer key), i.e. it was signed at
-// collection time and must not be signed again.
-func forfeitTxOperatorSigned(ptx *psbt.Packet, operatorXOnly []byte) bool {
+// tapscript signature from one of the operator's signer keys (the current key or
+// any deprecated one), i.e. it was signed at collection time and must not be
+// signed again. Deprecated keys are included because a forfeit signed before a
+// key rotation is still valid for its own (old-key) tapscript and must not be
+// re-signed with the current key.
+func forfeitTxOperatorSigned(ptx *psbt.Packet, operatorXOnlyKeys [][]byte) bool {
 	for _, in := range ptx.Inputs {
 		for _, sig := range in.TaprootScriptSpendSig {
-			if bytes.Equal(sig.XOnlyPubKey, operatorXOnly) {
-				return true
+			for _, key := range operatorXOnlyKeys {
+				if bytes.Equal(sig.XOnlyPubKey, key) {
+					return true
+				}
 			}
 		}
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/backfill"
 	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -69,12 +70,19 @@ func (f *fakeRounds) PatchForfeitTxs(_ context.Context, txByTxid map[string]stri
 type fakeSigner struct {
 	pubkey        *btcec.PublicKey
 	operatorXOnly []byte
+	deprecated    []ports.DeprecatedSignerPubkey
 	signErr       error
 	calls         int
 }
 
 func (f *fakeSigner) GetPubkey(_ context.Context) (*btcec.PublicKey, error) {
 	return f.pubkey, nil
+}
+
+func (f *fakeSigner) GetDeprecatedPubkeys(
+	_ context.Context,
+) ([]ports.DeprecatedSignerPubkey, error) {
+	return f.deprecated, nil
 }
 
 func (f *fakeSigner) SignTransactionTapscript(
@@ -279,4 +287,34 @@ func TestBackfillSignerErrorCountsAsFailed(t *testing.T) {
 	require.Equal(t, 1, res.Failed)
 	require.Equal(t, 0, res.Signed)
 	require.Empty(t, rounds.patches, "nothing persisted when signing failed")
+}
+
+func TestBackfillSkipsForfeitsSignedWithDeprecatedKey(t *testing.T) {
+	ctx := context.Background()
+	pub, xOnly := newOperator(t)       // current operator key
+	depPub, depXOnly := newOperator(t) // a now-deprecated operator key
+	commitment := txid(0x11)
+	vtxoOp := domain.Outpoint{Txid: txid(0xaa), VOut: 0}
+
+	// The forfeit was signed with the operator key that was active before a key
+	// rotation; it must be recognized as already signed, not re-signed.
+	forfeit := buildForfeit(t, vtxoOp, depXOnly, true)
+	rounds := &fakeRounds{rounds: map[string]*domain.Round{
+		commitment: {CommitmentTxid: commitment, ForfeitTxs: []domain.ForfeitTx{forfeit}},
+	}}
+	vtxos := &fakeVtxos{vtxos: []domain.Vtxo{forfeitableVtxo(vtxoOp, commitment)}}
+	signer := &fakeSigner{
+		pubkey:        pub,
+		operatorXOnly: xOnly,
+		deprecated:    []ports.DeprecatedSignerPubkey{{PubKey: depPub}},
+	}
+
+	res, err := backfill.Run(ctx, vtxos, rounds, signer)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, res.Scanned)
+	require.Equal(t, 0, res.Signed)
+	require.Equal(t, 1, res.AlreadySigned)
+	require.Equal(t, 0, signer.calls, "must not re-sign a forfeit signed with a deprecated key")
+	require.Empty(t, rounds.patches)
 }

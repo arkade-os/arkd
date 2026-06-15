@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -37,6 +38,7 @@ type ForfeitStore interface {
 // ports.SignerService.
 type Signer interface {
 	GetPubkey(ctx context.Context) (*btcec.PublicKey, error)
+	GetDeprecatedPubkeys(ctx context.Context) ([]ports.DeprecatedSignerPubkey, error)
 	SignTransactionTapscript(
 		ctx context.Context,
 		partialTx string,
@@ -66,7 +68,19 @@ func Run(
 	if err != nil {
 		return Result{}, fmt.Errorf("failed to get operator pubkey: %w", err)
 	}
-	operatorXOnly := schnorr.SerializePubKey(pubkey)
+	operatorKeys := [][]byte{schnorr.SerializePubKey(pubkey)}
+
+	// Include deprecated keys so forfeits signed before a key rotation are
+	// recognized as already signed and not re-signed with the current key.
+	deprecated, err := signer.GetDeprecatedPubkeys(ctx)
+	if err != nil {
+		return Result{}, fmt.Errorf("failed to get deprecated operator pubkeys: %w", err)
+	}
+	for _, d := range deprecated {
+		if d.PubKey != nil {
+			operatorKeys = append(operatorKeys, schnorr.SerializePubKey(d.PubKey))
+		}
+	}
 
 	allVtxos, err := vtxos.GetAllVtxos(ctx)
 	if err != nil {
@@ -106,7 +120,7 @@ func Run(
 				continue
 			}
 
-			if forfeitOperatorSigned(forfeitTx, operatorXOnly) {
+			if forfeitOperatorSigned(forfeitTx, operatorKeys) {
 				res.AlreadySigned++
 				continue
 			}
@@ -175,12 +189,16 @@ func findForfeitTx(forfeits []domain.ForfeitTx, vtxo domain.Outpoint) (*psbt.Pac
 }
 
 // forfeitOperatorSigned reports whether the forfeit tx already carries a tapscript
-// signature from the operator (its signer key).
-func forfeitOperatorSigned(ptx *psbt.Packet, operatorXOnly []byte) bool {
+// signature from one of the operator's signer keys (the current key or any
+// deprecated one). Deprecated keys are included so a forfeit signed before a key
+// rotation is recognized as already signed and not re-signed with the current key.
+func forfeitOperatorSigned(ptx *psbt.Packet, operatorXOnlyKeys [][]byte) bool {
 	for _, in := range ptx.Inputs {
 		for _, sig := range in.TaprootScriptSpendSig {
-			if bytes.Equal(sig.XOnlyPubKey, operatorXOnly) {
-				return true
+			for _, key := range operatorXOnlyKeys {
+				if bytes.Equal(sig.XOnlyPubKey, key) {
+					return true
+				}
 			}
 		}
 	}
