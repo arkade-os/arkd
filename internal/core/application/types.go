@@ -39,9 +39,7 @@ type Service interface {
 	) (tx *AcceptedOffchainTx, err errors.Error)
 	FinalizeOffchainTx(ctx context.Context, txid string, finalCheckpoints []string) errors.Error
 	GetPendingOffchainTxs(
-		ctx context.Context,
-		proof intent.Proof,
-		message intent.GetPendingTxMessage,
+		ctx context.Context, proof intent.Proof, message intent.GetPendingTxMessage,
 	) ([]AcceptedOffchainTx, errors.Error)
 	// Tree signing methods
 	RegisterCosignerNonces(
@@ -52,26 +50,25 @@ type Service interface {
 	) errors.Error
 	GetTxEventsChannel(ctx context.Context) <-chan TransactionEvent
 	DeleteIntentsByProof(
-		ctx context.Context,
-		proof intent.Proof,
-		message intent.DeleteMessage,
+		ctx context.Context, proof intent.Proof, message intent.DeleteMessage,
 	) errors.Error
 	// TODO: remove when detaching the indexer svc.
 	GetIndexerTxChannel(ctx context.Context) <-chan TransactionEvent
-	GetIntentByTxid(
-		ctx context.Context,
-		txid string,
-	) (*domain.Intent, errors.Error)
+	GetIntentByTxid(ctx context.Context, txid string) (*domain.Intent, errors.Error)
 	GetIntentByProofs(
-		ctx context.Context,
-		proof intent.Proof,
-		message intent.GetIntentMessage,
+		ctx context.Context, proof intent.Proof, message intent.GetIntentMessage,
 	) ([]*domain.Intent, errors.Error)
-	RefreshInfoCache()
+}
+
+type DeprecatedSignerKey struct {
+	PubKey string
+	// unix timestamp after which the key is no longer accepted, 0 if unset
+	CutoffDate int64
 }
 
 type ServiceInfo struct {
 	SignerPubKey         string
+	DeprecatedSignerKeys []DeprecatedSignerKey
 	ForfeitPubKey        string
 	UnilateralExitDelay  int64
 	BoardingExitDelay    int64
@@ -88,6 +85,7 @@ type ServiceInfo struct {
 	Fees                 FeeInfo
 	MaxTxWeight          int64
 	MaxOpReturnOutputs   int64
+	Digest               string
 }
 
 type NextScheduledSession struct {
@@ -105,7 +103,7 @@ type WalletStatus struct {
 }
 
 type FeeInfo struct {
-	IntentFees domain.IntentFees
+	IntentFees domain.BatchFees
 	TxFeeRate  float64
 }
 

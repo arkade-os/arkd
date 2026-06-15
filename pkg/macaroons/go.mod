@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd/pkg/macaroons
 
-go 1.26.3
+go 1.26.4
 
 replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.3
 

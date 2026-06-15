@@ -14,22 +14,20 @@ import (
 )
 
 type vtxoRepository struct {
-	db      *sql.DB
-	querier *queries.Queries
+	db SQLiteDB
 }
 
 func NewVtxoRepository(config ...interface{}) (domain.VtxoRepository, error) {
 	if len(config) != 1 {
 		return nil, fmt.Errorf("invalid config")
 	}
-	db, ok := config[0].(*sql.DB)
+	db, ok := config[0].(SQLiteDB)
 	if !ok {
 		return nil, fmt.Errorf("cannot open vtxo repository: invalid config")
 	}
 
 	return &vtxoRepository{
-		db:      db,
-		querier: queries.New(db),
+		db: db,
 	}, nil
 }
 
@@ -100,14 +98,18 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 		return nil
 	}
 
-	return execTx(ctx, v.db, txBody)
+	return execTx(ctx, v.db.Write(), txBody)
 }
 
 func (v *vtxoRepository) GetAllSweepableUnrolledVtxos(
 	ctx context.Context,
 ) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectSweepableUnrolledVtxos(ctx)
-	if err != nil {
+	var res []queries.SelectSweepableUnrolledVtxosRow
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		res, err = q.SelectSweepableUnrolledVtxos(ctx)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -124,24 +126,30 @@ func (v *vtxoRepository) GetAllNonUnrolledVtxos(
 	withPubkey := len(pubkey) > 0
 
 	var rows []queries.VtxoVw
-	if withPubkey {
-		res, err := v.querier.SelectNotUnrolledVtxosWithPubkey(ctx, pubkey)
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		if withPubkey {
+			res, err := q.SelectNotUnrolledVtxosWithPubkey(ctx, pubkey)
+			if err != nil {
+				return err
+			}
+			rows = make([]queries.VtxoVw, 0, len(res))
+			for _, row := range res {
+				rows = append(rows, row.VtxoVw)
+			}
+			return nil
+		}
+
+		res, err := q.SelectNotUnrolledVtxos(ctx)
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
 		rows = make([]queries.VtxoVw, 0, len(res))
 		for _, row := range res {
 			rows = append(rows, row.VtxoVw)
 		}
-	} else {
-		res, err := v.querier.SelectNotUnrolledVtxos(ctx)
-		if err != nil {
-			return nil, nil, err
-		}
-		rows = make([]queries.VtxoVw, 0, len(res))
-		for _, row := range res {
-			rows = append(rows, row.VtxoVw)
-		}
+		return nil
+	}); err != nil {
+		return nil, nil, err
 	}
 
 	vtxos, err := readRows(rows)
@@ -167,45 +175,52 @@ func (v *vtxoRepository) GetVtxos(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) ([]domain.Vtxo, error) {
 	vtxos := make([]domain.Vtxo, 0, len(outpoints))
-	for _, o := range outpoints {
-		res, err := v.querier.SelectVtxo(
-			ctx,
-			queries.SelectVtxoParams{
-				Txid: o.Txid,
-				Vout: int64(o.VOut),
-			},
-		)
-		if err != nil {
-			return nil, err
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		for _, o := range outpoints {
+			res, err := q.SelectVtxo(
+				ctx,
+				queries.SelectVtxoParams{Txid: o.Txid, Vout: int64(o.VOut)},
+			)
+			if err != nil {
+				return err
+			}
+
+			if len(res) == 0 {
+				continue
+			}
+
+			rows := make([]queries.VtxoVw, 0, len(res))
+			for _, row := range res {
+				rows = append(rows, row.VtxoVw)
+			}
+
+			result, err := readRows(rows)
+			if err != nil {
+				return err
+			}
+
+			if len(result) == 0 {
+				continue
+			}
+
+			vtxos = append(vtxos, result[0])
 		}
 
-		if len(res) == 0 {
-			continue
-		}
-
-		rows := make([]queries.VtxoVw, 0, len(res))
-		for _, row := range res {
-			rows = append(rows, row.VtxoVw)
-		}
-
-		result, err := readRows(rows)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(result) == 0 {
-			continue
-		}
-
-		vtxos = append(vtxos, result[0])
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	return vtxos, nil
 }
 
 func (v *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectAllVtxos(ctx)
-	if err != nil {
+	var res []queries.SelectAllVtxosRow
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		res, err = q.SelectAllVtxos(ctx)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	rows := make([]queries.VtxoVw, 0, len(res))
@@ -219,14 +234,15 @@ func (v *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error)
 func (v *vtxoRepository) GetExpiringLiquidity(
 	ctx context.Context, after, before int64,
 ) (uint64, error) {
-	amount, err := v.querier.SelectExpiringLiquidityAmount(
-		ctx,
-		queries.SelectExpiringLiquidityAmountParams{
-			After:  after,
-			Before: before,
-		},
-	)
-	if err != nil {
+	var amount interface{}
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		amount, err = q.SelectExpiringLiquidityAmount(
+			ctx,
+			queries.SelectExpiringLiquidityAmountParams{After: after, Before: before},
+		)
+		return err
+	}); err != nil {
 		return 0, err
 	}
 
@@ -241,13 +257,17 @@ func (v *vtxoRepository) GetExpiringLiquidity(
 }
 
 func (v *vtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
-	amount, err := v.querier.SelectRecoverableLiquidityAmount(ctx)
-	if err != nil {
+	var amount interface{}
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		amount, err = q.SelectRecoverableLiquidityAmount(ctx)
+		return err
+	}); err != nil {
 		return 0, err
 	}
 	n, ok := amount.(int64)
 	if !ok {
-		return 0, nil
+		return 0, fmt.Errorf("unexpected type for recoverable liquidity: %T", amount)
 	}
 	if n < 0 {
 		return 0, fmt.Errorf("data integrity issue: got negative value %d", n)
@@ -258,8 +278,12 @@ func (v *vtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, e
 func (v *vtxoRepository) GetLeafVtxosForBatch(
 	ctx context.Context, txid string,
 ) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectRoundVtxoTreeLeaves(ctx, txid)
-	if err != nil {
+	var res []queries.SelectRoundVtxoTreeLeavesRow
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		res, err = q.SelectRoundVtxoTreeLeaves(ctx, txid)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	rows := make([]queries.VtxoVw, 0, len(res))
@@ -283,7 +307,7 @@ func (v *vtxoRepository) UnrollVtxos(ctx context.Context, vtxos []domain.Outpoin
 		return nil
 	}
 
-	return execTx(ctx, v.db, txBody)
+	return execTx(ctx, v.db.Write(), txBody)
 }
 
 func (v *vtxoRepository) SettleVtxos(
@@ -307,7 +331,7 @@ func (v *vtxoRepository) SettleVtxos(
 		return nil
 	}
 
-	return execTx(ctx, v.db, txBody)
+	return execTx(ctx, v.db.Write(), txBody)
 }
 
 func (v *vtxoRepository) SpendVtxos(
@@ -331,7 +355,7 @@ func (v *vtxoRepository) SpendVtxos(
 		return nil
 	}
 
-	return execTx(ctx, v.db, txBody)
+	return execTx(ctx, v.db.Write(), txBody)
 }
 
 func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint) (int, error) {
@@ -356,7 +380,7 @@ func (v *vtxoRepository) SweepVtxos(ctx context.Context, vtxos []domain.Outpoint
 		return nil
 	}
 
-	if err := execTx(ctx, v.db, txBody); err != nil {
+	if err := execTx(ctx, v.db.Write(), txBody); err != nil {
 		return -1, err
 	}
 
@@ -383,7 +407,7 @@ func (v *vtxoRepository) UpdateVtxosExpiration(
 		return nil
 	}
 
-	return execTx(ctx, v.db, txBody)
+	return execTx(ctx, v.db.Write(), txBody)
 }
 
 func (v *vtxoRepository) GetAllVtxosWithPubKeys(
@@ -392,12 +416,16 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 	if err := validateTimeRange(after, before); err != nil {
 		return nil, err
 	}
-	res, err := v.querier.SelectVtxosWithPubkeys(ctx, queries.SelectVtxosWithPubkeysParams{
-		Pubkeys: pubkeys,
-		After:   sql.NullInt64{Int64: after, Valid: true},
-		Before:  before,
-	})
-	if err != nil {
+	var res []queries.SelectVtxosWithPubkeysRow
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		res, err = q.SelectVtxosWithPubkeys(ctx, queries.SelectVtxosWithPubkeysParams{
+			Pubkeys: pubkeys,
+			After:   sql.NullInt64{Int64: after, Valid: true},
+			Before:  before,
+		})
+		return err
+	}); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -425,8 +453,12 @@ func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 ) (
 	[]domain.Outpoint, error,
 ) {
-	res, err := v.querier.SelectSweepableVtxoOutpointsByCommitmentTxid(ctx, commitmentTxid)
-	if err != nil {
+	var res []queries.SelectSweepableVtxoOutpointsByCommitmentTxidRow
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		res, err = q.SelectSweepableVtxoOutpointsByCommitmentTxid(ctx, commitmentTxid)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -444,8 +476,12 @@ func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 func (v *vtxoRepository) GetAllChildrenVtxos(
 	ctx context.Context, txid string,
 ) ([]domain.Outpoint, error) {
-	res, err := v.querier.SelectVtxosOutpointsByArkTxidRecursive(ctx, txid)
-	if err != nil {
+	var res []queries.SelectVtxosOutpointsByArkTxidRecursiveRow
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		res, err = q.SelectVtxosOutpointsByArkTxidRecursive(ctx, txid)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -467,16 +503,120 @@ func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 		return nil, nil
 	}
 
-	taprootKeys, err := v.querier.SelectVtxoPubKeysByCommitmentTxid(ctx,
-		queries.SelectVtxoPubKeysByCommitmentTxidParams{
-			MinAmount:      int64(withMinimumAmount),
-			CommitmentTxid: commitmentTxid,
-		})
-	if err != nil {
+	var taprootKeys []string
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		taprootKeys, err = q.SelectVtxoPubKeysByCommitmentTxid(ctx,
+			queries.SelectVtxoPubKeysByCommitmentTxidParams{
+				MinAmount:      int64(withMinimumAmount),
+				CommitmentTxid: commitmentTxid,
+			})
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
 	return taprootKeys, nil
+}
+
+// sqliteVtxoPubKeysBatchSize bounds the number of commitment_txids bound to
+// a single SelectVtxoPubKeysByCommitmentTxids invocation. Because the query
+// expands the same slice into two IN clauses, each call binds (1 + 2N)
+// parameters: one for the amount filter, plus N for each of the two slice
+// placeholders. modernc.org/sqlite caps total bound parameters at
+// SQLITE_MAX_VARIABLE_NUMBER = 32766; with batchSize = 5000 a single call
+// binds at most 10001 params, leaving generous headroom. The wrapper below
+// splits the input slice into batches of this size and merges the
+// deduplicated results in Go.
+const sqliteVtxoPubKeysBatchSize = 5000
+
+// GetVtxoPubKeysByCommitmentTxids is the bulk variant of
+// GetVtxoPubKeysByCommitmentTxid. It returns the deduplicated set of vtxo
+// pubkeys whose root commitment_txid is in the given list, or whose
+// vtxo_commitment_txid join row references one of those commitment txids.
+// This replaces a per-round loop in restoreWatchingVtxos / stopWatchingVtxos
+// that previously fired one query per sweepable round (the N+1 pattern).
+//
+// The input slice is split into batches of sqliteVtxoPubKeysBatchSize to
+// stay below the sqlite parameter cap (see the const doc above). For inputs
+// up to 5000 txids the loop iterates once and the behaviour is identical
+// to a single underlying query call.
+//
+// The generated SelectVtxoPubKeysByCommitmentTxidsParams struct exposes two
+// CommitmentTxids* fields, but the public API of this method takes a single
+// slice and binds it to both. Both fields MUST receive the same slice; the
+// query template has two distinct slice placeholders only because sqlc's
+// sqlite generator expands a slice placeholder only once per generated
+// query, and the bulk query needs to look in two places (the root column
+// and the join table). Passing different slices to the two fields would
+// silently produce wrong results, so all calls to the generated method
+// must go through this wrapper.
+func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxids(
+	ctx context.Context, commitmentTxids []string, withMinimumAmount uint64,
+) ([]string, error) {
+	return v.getVtxoPubKeysByCommitmentTxidsBatched(
+		ctx, commitmentTxids, withMinimumAmount, sqliteVtxoPubKeysBatchSize,
+	)
+}
+
+// getVtxoPubKeysByCommitmentTxidsBatched is the testable inner of
+// GetVtxoPubKeysByCommitmentTxids that splits commitmentTxids into chunks of
+// batchSize, issues one query per chunk, and merges the deduplicated union
+// of results in Go. Kept as a method (not a free function) so the
+// underlying querier is the live one from the repository. batchSize <= 0 is
+// treated as "no batching" and runs a single call. This differs from
+// chunkStrings (which panics on size <= 0) because the production caller
+// always passes sqliteVtxoPubKeysBatchSize > 0; the permissive fallback
+// only matters when tests reach this method directly with batchSize=0.
+func (v *vtxoRepository) getVtxoPubKeysByCommitmentTxidsBatched(
+	ctx context.Context,
+	commitmentTxids []string,
+	withMinimumAmount uint64,
+	batchSize int,
+) ([]string, error) {
+	if len(commitmentTxids) == 0 {
+		return nil, nil
+	}
+	if batchSize <= 0 {
+		batchSize = len(commitmentTxids)
+	}
+
+	seen := make(map[string]struct{})
+	for start := 0; start < len(commitmentTxids); start += batchSize {
+		end := start + batchSize
+		if end > len(commitmentTxids) {
+			end = len(commitmentTxids)
+		}
+		batch := commitmentTxids[start:end]
+		// Same slice in both fields by construction; see public method
+		// doc for the sqlc dual-placeholder explanation.
+		var keys []string
+		if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+			res, err := q.SelectVtxoPubKeysByCommitmentTxids(
+				ctx, queries.SelectVtxoPubKeysByCommitmentTxidsParams{
+					MinAmount:          int64(withMinimumAmount),
+					CommitmentTxids:    batch,
+					CommitmentTxidsAlt: batch,
+				},
+			)
+			if err != nil {
+				return err
+			}
+			keys = res
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+		for _, k := range keys {
+			seen[k] = struct{}{}
+		}
+	}
+
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	return out, nil
 }
 
 func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
@@ -485,15 +625,19 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
 	if err := validateTimeRange(after, before); err != nil {
 		return nil, err
 	}
-	rows, err := v.querier.SelectPendingSpentVtxosWithPubkeys(
-		ctx,
-		queries.SelectPendingSpentVtxosWithPubkeysParams{
-			Pubkeys: pubkeys,
-			After:   sql.NullInt64{Int64: after, Valid: true},
-			Before:  before,
-		},
-	)
-	if err != nil {
+	var rows []queries.VtxoVw
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectPendingSpentVtxosWithPubkeys(
+			ctx,
+			queries.SelectPendingSpentVtxosWithPubkeysParams{
+				Pubkeys: pubkeys,
+				After:   sql.NullInt64{Int64: after, Valid: true},
+				Before:  before,
+			},
+		)
+		return err
+	}); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -515,27 +659,34 @@ func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) ([]domain.Vtxo, error) {
 	var vtxos []domain.Vtxo
-	for _, outpoint := range outpoints {
-		res, err := v.querier.SelectPendingSpentVtxo(
-			ctx, queries.SelectPendingSpentVtxoParams{
-				Txid: outpoint.Txid,
-				Vout: int64(outpoint.VOut),
-			},
-		)
-		if err != nil {
-			return nil, err
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		for _, outpoint := range outpoints {
+			res, err := q.SelectPendingSpentVtxo(
+				ctx,
+				queries.SelectPendingSpentVtxoParams{
+					Txid: outpoint.Txid,
+					Vout: int64(outpoint.VOut),
+				},
+			)
+			if err != nil {
+				return err
+			}
+
+			if len(res) == 0 {
+				continue
+			}
+
+			result, err := readRows(res)
+			if err != nil {
+				return err
+			}
+
+			vtxos = append(vtxos, result...)
 		}
 
-		if len(res) == 0 {
-			continue
-		}
-
-		result, err := readRows(res)
-		if err != nil {
-			return nil, err
-		}
-
-		vtxos = append(vtxos, result...)
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	sort.SliceStable(vtxos, func(i, j int) bool {

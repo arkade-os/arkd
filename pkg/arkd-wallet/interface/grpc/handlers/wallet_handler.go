@@ -220,7 +220,7 @@ func (h *walletHandler) FeeRate(
 func (h *walletHandler) ListConnectorUtxos(
 	ctx context.Context, req *arkwalletv1.ListConnectorUtxosRequest,
 ) (*arkwalletv1.ListConnectorUtxosResponse, error) {
-	utxos, err := h.wallet.ListConnectorUtxos(ctx, req.GetConnectorAddress())
+	utxos, err := h.wallet.ListConnectorUtxos(ctx, req.GetConnectorAddresses())
 	if err != nil {
 		return nil, err
 	}
@@ -229,6 +229,28 @@ func (h *walletHandler) ListConnectorUtxos(
 		respUtxos = append(respUtxos, toTxInput(u))
 	}
 	return &arkwalletv1.ListConnectorUtxosResponse{Utxos: respUtxos}, nil
+}
+
+func (h *walletHandler) GetMainAccountUtxos(
+	ctx context.Context, _ *arkwalletv1.GetMainAccountUtxosRequest,
+) (*arkwalletv1.GetMainAccountUtxosResponse, error) {
+	utxos, err := h.wallet.GetMainAccountUtxos(ctx)
+	if err != nil {
+		return nil, err
+	}
+	respUtxos := make([]*arkwalletv1.WalletUtxo, 0, len(utxos))
+	for _, u := range utxos {
+		respUtxos = append(respUtxos, &arkwalletv1.WalletUtxo{
+			Txid:          u.Txid,
+			Vout:          u.Vout,
+			Value:         u.Value,
+			Script:        u.Script,
+			Address:       u.Address,
+			Confirmations: u.Confirmations,
+			Locked:        u.Locked,
+		})
+	}
+	return &arkwalletv1.GetMainAccountUtxosResponse{Utxos: respUtxos}, nil
 }
 
 func (h *walletHandler) MainAccountBalance(

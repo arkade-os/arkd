@@ -311,6 +311,56 @@
         }
       }
     },
+    "/v1/admin/fees/collected": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetCollectedFees",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Unix timestamp (UTC, exclusive). Only include rounds starting after this time. 0 means no lower bound.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Unix timestamp (UTC, exclusive). Only include rounds starting before this time. 0 means no upper bound.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCollectedFeesResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/intentFees": {
       "get": {
         "tags": [
@@ -725,6 +775,37 @@
         }
       }
     },
+    "/v1/admin/rounds/expired": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "description": "GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose\nbatch outputs have expired but have not been swept yet. It is meant to surface\nrounds for which the sweep should have happened but likely failed.",
+        "operationId": "AdminService_GetExpiredRounds",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetExpiredRoundsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/scheduledSession": {
       "get": {
         "tags": [
@@ -816,6 +897,74 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ClearScheduledSessionConfigResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/settings": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetSettings",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSettingsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_UpdateSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateSettingsResponse"
                 }
               }
             }
@@ -966,6 +1115,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RevokeTokensResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/wallet/utxos": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetMainAccountUtxos",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetMainAccountUtxosResponse"
                 }
               }
             }
@@ -1136,6 +1315,23 @@
         "title": "DeleteIntentsResponse",
         "type": "object"
       },
+      "ExpiredRound": {
+        "title": "ExpiredRound",
+        "type": "object",
+        "properties": {
+          "commitmentTxid": {
+            "type": "string"
+          },
+          "expiredAt": {
+            "type": "integer",
+            "description": "Unix timestamp at which the round's batch outputs expired.",
+            "format": "int64"
+          },
+          "roundId": {
+            "type": "string"
+          }
+        }
+      },
       "FeeInfo": {
         "title": "FeeInfo",
         "type": "object",
@@ -1166,6 +1362,33 @@
             "items": {
               "$ref": "#/components/schemas/Conviction"
             }
+          }
+        }
+      },
+      "GetCollectedFeesRequest": {
+        "title": "GetCollectedFeesRequest",
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Unix timestamp (UTC, exclusive). Only include rounds starting after this time. 0 means no lower bound.",
+            "format": "int64"
+          },
+          "before": {
+            "type": "integer",
+            "description": "Unix timestamp (UTC, exclusive). Only include rounds starting before this time. 0 means no upper bound.",
+            "format": "int64"
+          }
+        }
+      },
+      "GetCollectedFeesResponse": {
+        "title": "GetCollectedFeesResponse",
+        "type": "object",
+        "properties": {
+          "collectedFees": {
+            "type": "integer",
+            "description": "Total collected fees in satoshis.",
+            "format": "uint64"
           }
         }
       },
@@ -1242,6 +1465,22 @@
           }
         }
       },
+      "GetExpiredRoundsRequest": {
+        "title": "GetExpiredRoundsRequest",
+        "type": "object"
+      },
+      "GetExpiredRoundsResponse": {
+        "title": "GetExpiredRoundsResponse",
+        "type": "object",
+        "properties": {
+          "rounds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExpiredRound"
+            }
+          }
+        }
+      },
       "GetExpiringLiquidityRequest": {
         "title": "GetExpiringLiquidityRequest",
         "type": "object",
@@ -1278,6 +1517,22 @@
         "properties": {
           "fees": {
             "$ref": "#/components/schemas/IntentFees"
+          }
+        }
+      },
+      "GetMainAccountUtxosRequest": {
+        "title": "GetMainAccountUtxosRequest",
+        "type": "object"
+      },
+      "GetMainAccountUtxosResponse": {
+        "title": "GetMainAccountUtxosResponse",
+        "type": "object",
+        "properties": {
+          "utxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WalletUtxo"
+            }
           }
         }
       },
@@ -1412,6 +1667,19 @@
             "items": {
               "$ref": "#/components/schemas/ScheduledSweep"
             }
+          }
+        }
+      },
+      "GetSettingsRequest": {
+        "title": "GetSettingsRequest",
+        "type": "object"
+      },
+      "GetSettingsResponse": {
+        "title": "GetSettingsResponse",
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
           }
         }
       },
@@ -1665,8 +1933,7 @@
             "format": "int64"
           },
           "endTime": {
-            "type": "integer",
-            "format": "int64"
+            "type": "string"
           },
           "fees": {
             "$ref": "#/components/schemas/FeeInfo"
@@ -1684,8 +1951,7 @@
             "format": "int64"
           },
           "startTime": {
-            "type": "integer",
-            "format": "int64"
+            "type": "string"
           }
         }
       },
@@ -1704,6 +1970,181 @@
           },
           "roundId": {
             "type": "string"
+          }
+        }
+      },
+      "Settings": {
+        "title": "Settings",
+        "type": "object",
+        "properties": {
+          "assetTxMaxWeightRatio": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "banDuration": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "banThreshold": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "boardingExitDelay": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "buildVersionHeader": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "buildVersionHeaderRequired": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "checkpointExitDelay": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "digestHeaderRequired": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "maxOpReturnOutputs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "maxTxWeight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "noteUriPrefix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publicUnilateralExitDelay": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "roundMaxParticipantsCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "roundMinParticipantsCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "sessionDuration": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "settlementMinExpiryGap": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "unilateralExitDelay": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "unrolledVtxoMinExpiryMargin": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "utxoMaxAmount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "utxoMinAmount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "vtxoMaxAmount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "vtxoMinAmount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "vtxoNoCsvValidationCutoffDate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "vtxoTreeExpiry": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -1819,6 +2260,57 @@
       "UpdateScheduledSessionConfigResponse": {
         "title": "UpdateScheduledSessionConfigResponse",
         "type": "object"
+      },
+      "UpdateSettingsRequest": {
+        "title": "UpdateSettingsRequest",
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          }
+        }
+      },
+      "UpdateSettingsResponse": {
+        "title": "UpdateSettingsResponse",
+        "type": "object",
+        "properties": {
+          "changeLog": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "WalletUtxo": {
+        "title": "WalletUtxo",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "confirmations": {
+            "type": "integer",
+            "format": "uint32"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "script": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
       }
     }
   },
