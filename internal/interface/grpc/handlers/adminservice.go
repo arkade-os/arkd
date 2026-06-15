@@ -519,14 +519,14 @@ func (a *adminHandler) Sweep(
 	withConnectors := req.GetConnectors()
 	commitmentTxids := req.GetCommitmentTxids()
 
-	txids, hexes, err := a.adminService.Sweep(ctx, withConnectors, commitmentTxids)
+	txid, hex, err := a.adminService.Sweep(ctx, withConnectors, commitmentTxids)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	return &arkv1.SweepResponse{
-		Txids: txids,
-		Hexes: hexes,
+		Txid: txid,
+		Hex:  hex,
 	}, nil
 }
 
