@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	arkerrors "github.com/arkade-os/arkd/pkg/errors"
@@ -115,17 +114,4 @@ func sanitizeMetadata(ctx context.Context) (string, bool) {
 	}
 
 	return string(formatted), true
-}
-
-func normalizeFieldName(name string) string {
-	var builder strings.Builder
-	builder.Grow(len(name))
-
-	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			builder.WriteRune(r)
-		}
-	}
-
-	return strings.ToLower(builder.String())
 }
