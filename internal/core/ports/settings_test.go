@@ -75,6 +75,9 @@ func TestSettingsDigest(t *testing.T) {
 	}{
 		// Fields the digest is computed from: changing any of them must change the digest.
 		{"signer pubkey", func(s *ports.Settings) { s.SignerPubkey = otherPubkey }, true},
+		{"deprecated signer pubkeys", func(s *ports.Settings) {
+			s.DeprecatedSignerPubkeys = []ports.DeprecatedSignerPubkey{{PubKey: otherPubkey, CutoffDate: time.Unix(1_700_000_000, 0)}}
+		}, true},
 		{"forfeit pubkey", func(s *ports.Settings) { s.ForfeitPubkey = otherPubkey }, true},
 		{"public unilateral exit delay", func(s *ports.Settings) { s.PublicUnilateralExitDelay = delay(1536) }, true},
 		{"boarding exit delay", func(s *ports.Settings) { s.BoardingExitDelay = delay(1536) }, true},
