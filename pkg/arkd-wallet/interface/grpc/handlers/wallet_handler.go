@@ -220,7 +220,7 @@ func (h *walletHandler) FeeRate(
 func (h *walletHandler) ListConnectorUtxos(
 	ctx context.Context, req *arkwalletv1.ListConnectorUtxosRequest,
 ) (*arkwalletv1.ListConnectorUtxosResponse, error) {
-	utxos, err := h.wallet.ListConnectorUtxos(ctx, req.GetConnectorAddress())
+	utxos, err := h.wallet.ListConnectorUtxos(ctx, req.GetConnectorAddresses())
 	if err != nil {
 		return nil, err
 	}

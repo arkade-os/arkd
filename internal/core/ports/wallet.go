@@ -37,7 +37,7 @@ type WalletService interface {
 	BroadcastTransaction(ctx context.Context, txs ...string) (string, error)
 	EstimateFees(ctx context.Context, psbt string) (uint64, error)
 	FeeRate(ctx context.Context) (uint64, error)
-	ListConnectorUtxos(ctx context.Context, connectorAddress string) ([]TxInput, error)
+	ListConnectorUtxos(ctx context.Context, connectorAddresses []string) ([]TxInput, error)
 	// GetMainAccountUtxos lists the whole UTXO set of the main account,
 	// including locked and unconfirmed UTXOs, each flagged accordingly.
 	GetMainAccountUtxos(ctx context.Context) ([]WalletUtxo, error)

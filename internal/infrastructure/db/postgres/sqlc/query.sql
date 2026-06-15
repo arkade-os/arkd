@@ -414,6 +414,22 @@ UPDATE round SET fees = @fees WHERE id = @id;
 -- name: UpdateForfeitTx :exec
 UPDATE tx SET tx = @tx WHERE txid = @txid AND type = 'forfeit';
 
+-- name: SelectAssetsWithUnspentAmountsByIds :many
+SELECT
+  a.id,
+  a.is_immutable,
+  a.metadata_hash,
+  a.metadata,
+  a.control_asset_id,
+  COALESCE(v.asset_amount, 0)::TEXT AS asset_amount
+FROM asset a
+LEFT JOIN vtxo_vw v
+  ON v.asset_id = a.id
+ AND v.spent = false
+ AND v.asset_amount > 0
+WHERE a.id = ANY($1::varchar[])
+ORDER BY a.id;
+
 -- name: SelectAssetSupply :one
 SELECT (COALESCE(SUM(ap.amount), 0))::TEXT AS supply
 FROM asset_projection ap

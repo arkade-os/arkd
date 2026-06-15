@@ -71,10 +71,11 @@ type versionCompatCase struct {
 
 func TestVersionCompat(t *testing.T) {
 	testCases := []versionCompatCase{
-		// The guard enforces the version policy only when requireHeader is true.
-		// When it is false the guard is bypassed entirely (see the
-		// "header not required" group below), so every version-comparison case
-		// here sets requireHeader: true.
+		// A present, parseable version is always held to the minimum,
+		// regardless of requireHeader (see the "header not required" group
+		// below). requireHeader only governs whether a missing/empty/unparseable
+		// header is rejected. The comparison cases here set requireHeader: true,
+		// but their parseable-and-below-min verdicts hold either way.
 
 		// --- Client below the minimum is rejected ---
 		{
@@ -206,8 +207,9 @@ func TestVersionCompat(t *testing.T) {
 			ctx:           ctxWithVersion("2.3.4"),
 		},
 
-		// --- Header not required (requireHeader=false): the guard is bypassed,
-		// so even a missing/invalid/below-min header passes ---
+		// --- Header not required (requireHeader=false): a missing, empty or
+		// unparseable header passes, but a present parseable version is still
+		// held to the minimum ---
 		{
 			description: "not required: missing header passes",
 			minVersion:  "2.3.4",
@@ -224,9 +226,22 @@ func TestVersionCompat(t *testing.T) {
 			ctx:         ctxWithVersion("not-a-version"),
 		},
 		{
-			description: "not required: below-min client passes (no enforcement)",
+			description:       "not required: below-min client rejected",
+			minVersion:        "2.3.4",
+			ctx:               ctxWithVersion("1.0.0"),
+			wantReject:        true,
+			wantClientVersion: "1.0.0",
+			wantMinVersion:    "2.3.4",
+		},
+		{
+			description: "not required: client equal to min passes",
 			minVersion:  "2.3.4",
-			ctx:         ctxWithVersion("1.0.0"),
+			ctx:         ctxWithVersion("2.3.4"),
+		},
+		{
+			description: "not required: client above min passes",
+			minVersion:  "2.3.4",
+			ctx:         ctxWithVersion("2.4.0"),
 		},
 
 		// --- Configured min version unparseable/empty: the header is still
