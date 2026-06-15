@@ -14,8 +14,7 @@ import (
 )
 
 type settingsRepository struct {
-	db      *sql.DB
-	querier *queries.Queries
+	db SQLiteDB
 
 	updateHandlerMu *sync.Mutex
 	updateHandler   func(domain.Settings, []string)
@@ -25,7 +24,7 @@ func NewSettingsRepository(config ...interface{}) (domain.SettingsRepository, er
 	if len(config) != 1 {
 		return nil, fmt.Errorf("invalid config: expected 1 argument, got %d", len(config))
 	}
-	db, ok := config[0].(*sql.DB)
+	db, ok := config[0].(SQLiteDB)
 	if !ok {
 		return nil, fmt.Errorf(
 			"cannot open settings repository: expected *sql.DB but got %T", config[0],
@@ -34,7 +33,6 @@ func NewSettingsRepository(config ...interface{}) (domain.SettingsRepository, er
 
 	return &settingsRepository{
 		db:              db,
-		querier:         queries.New(db),
 		updateHandlerMu: &sync.Mutex{},
 	}, nil
 }
@@ -46,11 +44,18 @@ func (r *settingsRepository) RegisterUpdatesHandler(handler func(domain.Settings
 }
 
 func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) {
-	row, err := r.querier.SelectSettings(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
+	var row queries.Setting
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		res, qErr := q.SelectSettings(ctx)
+		if qErr != nil {
+			return qErr
+		}
+		row = res
+		return nil
+	}); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("failed to get settings: %w", err)
 	}
 
@@ -154,7 +159,9 @@ func (r *settingsRepository) Upsert(
 		params.ScheduledSessionRoundMaxParticipantsCount = ss.RoundMaxParticipantsCount
 	}
 
-	if err := r.querier.UpsertSettings(ctx, params); err != nil {
+	if err := withWriteQuerier(ctx, r.db, func(q *queries.Queries) error {
+		return q.UpsertSettings(ctx, params)
+	}); err != nil {
 		return err
 	}
 
