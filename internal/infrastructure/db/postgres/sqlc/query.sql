@@ -411,7 +411,7 @@ SELECT * FROM asset WHERE asset.id = ANY($1::varchar[]);
 -- name: UpdateRoundCollectedFees :exec
 UPDATE round SET fees = @fees WHERE id = @id;
 
--- name: UpdateForfeitTx :exec
+-- name: UpdateForfeitTx :execrows
 UPDATE tx SET tx = @tx WHERE txid = @txid AND type = 'forfeit';
 
 -- name: SelectAssetsWithUnspentAmountsByIds :many

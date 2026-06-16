@@ -106,7 +106,14 @@ func (r *arkRepository) PatchForfeitTxs(
 	ctx context.Context, txByTxid map[string]string,
 ) error {
 	for txid, tx := range txByTxid {
-		if err := r.store.Upsert(txid, Tx{Txid: txid, Tx: tx}); err != nil {
+		// Update (not Upsert) so a missing txid fails loudly instead of inserting a
+		// stray record, matching the SQL backends' "UPDATE ... WHERE txid = ?" guard.
+		// Badger keys txs by txid alone (no type column), so unlike SQL this can't
+		// also assert type = 'forfeit'; that's safe because txids are globally unique.
+		if err := r.store.Update(txid, Tx{Txid: txid, Tx: tx}); err != nil {
+			if errors.Is(err, badgerhold.ErrNotFound) {
+				return fmt.Errorf("forfeit tx %s not found", txid)
+			}
 			return fmt.Errorf("failed to patch forfeit tx %s: %w", txid, err)
 		}
 	}

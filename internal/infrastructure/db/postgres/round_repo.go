@@ -504,11 +504,15 @@ func (r *roundRepository) PatchForfeitTxs(
 ) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for txid, tx := range txByTxid {
-			if err := querierWithTx.UpdateForfeitTx(
+			affectedRows, err := querierWithTx.UpdateForfeitTx(
 				ctx,
 				queries.UpdateForfeitTxParams{Tx: tx, Txid: txid},
-			); err != nil {
+			)
+			if err != nil {
 				return fmt.Errorf("failed to patch forfeit tx %s: %w", txid, err)
+			}
+			if affectedRows == 0 {
+				return fmt.Errorf("forfeit tx %s not found", txid)
 			}
 		}
 		return nil

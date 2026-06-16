@@ -2029,7 +2029,7 @@ func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error
 	return err
 }
 
-const updateForfeitTx = `-- name: UpdateForfeitTx :exec
+const updateForfeitTx = `-- name: UpdateForfeitTx :execrows
 UPDATE tx SET tx = ?1 WHERE txid = ?2 AND type = 'forfeit'
 `
 
@@ -2038,9 +2038,12 @@ type UpdateForfeitTxParams struct {
 	Txid string
 }
 
-func (q *Queries) UpdateForfeitTx(ctx context.Context, arg UpdateForfeitTxParams) error {
-	_, err := q.db.ExecContext(ctx, updateForfeitTx, arg.Tx, arg.Txid)
-	return err
+func (q *Queries) UpdateForfeitTx(ctx context.Context, arg UpdateForfeitTxParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateForfeitTx, arg.Tx, arg.Txid)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateRoundCollectedFees = `-- name: UpdateRoundCollectedFees :exec

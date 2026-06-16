@@ -763,6 +763,11 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.Equal(t, f3, byTxid[txida], "txida forfeit tx should be patched")
 		require.Equal(t, f4, byTxid[txidb], "txidb forfeit tx should be patched")
 		require.Equal(t, f3, byTxid[untouchedTxid], "unpatched forfeit tx must be unchanged")
+
+		// Patching an unknown txid must fail loudly rather than silently no-op,
+		// so the backfill never reports a forfeit as signed when nothing was written.
+		err = repo.PatchForfeitTxs(ctx, map[string]string{randomString(32): f3})
+		require.ErrorContains(t, err, "not found")
 	})
 
 }
