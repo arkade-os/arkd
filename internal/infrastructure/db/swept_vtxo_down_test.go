@@ -99,7 +99,7 @@ func newSweptVtxoMigrator(t *testing.T) (*migrate.Migrate, *sql.DB) {
 	db, err := sqlitedb.OpenDb(":memory:")
 	require.NoError(t, err)
 
-	driver, err := sqlitemigrate.WithInstance(db, &sqlitemigrate.Config{})
+	driver, err := sqlitemigrate.WithInstance(db.Write(), &sqlitemigrate.Config{})
 	require.NoError(t, err)
 
 	source, err := iofs.New(sweptVtxoTestMigrations, "sqlite/migration")
@@ -108,5 +108,5 @@ func newSweptVtxoMigrator(t *testing.T) (*migrate.Migrate, *sql.DB) {
 	m, err := migrate.NewWithInstance("iofs", source, "arkdb", driver)
 	require.NoError(t, err)
 
-	return m, db
+	return m, db.Write()
 }

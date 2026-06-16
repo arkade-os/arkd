@@ -17,8 +17,13 @@ import (
 // missed dedup across batch boundaries.
 func TestGetVtxoPubKeysByCommitmentTxidsBatched(t *testing.T) {
 	ctx := context.Background()
-	db, err := sqlitedb.OpenDb(":memory:")
+	// Shared-cache in-memory DB so the split read/write pools (see OpenDb)
+	// both see the same database; a bare ":memory:" gives each connection
+	// its own DB and the read-side query would not find tables seeded on
+	// the write connection.
+	dbSvc, err := sqlitedb.OpenDb("file::memory:", sqlitedb.WithSharedCache())
 	require.NoError(t, err)
+	db := dbSvc.Write()
 	t.Cleanup(func() {
 		//nolint:errcheck
 		db.Close()
@@ -53,7 +58,7 @@ func TestGetVtxoPubKeysByCommitmentTxidsBatched(t *testing.T) {
 		}
 	}
 
-	repo, err := sqlitedb.NewVtxoRepository(db)
+	repo, err := sqlitedb.NewVtxoRepository(dbSvc)
 	require.NoError(t, err)
 
 	// 1, 2, 3 force the multi-batch loop; rounds-1 leaves a short tail
@@ -80,8 +85,11 @@ func TestGetVtxoPubKeysByCommitmentTxidsBatched(t *testing.T) {
 // withMinimumAmount predicate survives the per-batch query and merge.
 func TestGetVtxoPubKeysByCommitmentTxidsBatched_MinAmount(t *testing.T) {
 	ctx := context.Background()
-	db, err := sqlitedb.OpenDb(":memory:")
+	// Shared-cache in-memory DB so the split read/write pools both see the
+	// same database (see the sibling test for the full rationale).
+	dbSvc, err := sqlitedb.OpenDb("file::memory:", sqlitedb.WithSharedCache())
 	require.NoError(t, err)
+	db := dbSvc.Write()
 	t.Cleanup(func() {
 		//nolint:errcheck
 		db.Close()
@@ -100,7 +108,7 @@ func TestGetVtxoPubKeysByCommitmentTxidsBatched_MinAmount(t *testing.T) {
 	insertVtxoRow(t, db, "vtxo-b-low", 0, "pubkey-b-low", 200, commitmentTxids[1])
 	insertVtxoRow(t, db, "vtxo-b-high", 0, "pubkey-b-high", 7500, commitmentTxids[1])
 
-	repo, err := sqlitedb.NewVtxoRepository(db)
+	repo, err := sqlitedb.NewVtxoRepository(dbSvc)
 	require.NoError(t, err)
 
 	got, err := sqlitedb.GetVtxoPubKeysByCommitmentTxidsBatched(
