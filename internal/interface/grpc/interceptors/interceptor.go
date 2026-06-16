@@ -7,18 +7,15 @@ import (
 )
 
 // UnaryInterceptor returns the unary interceptor.
-// serverVersion is the arkd build version (e.g. "v1.2.3"); only its major
-// component is used for SDK compatibility checks.
 func UnaryInterceptor(
-	svc *macaroons.Service,
-	readiness *ReadinessService,
-	serverVersion string,
+	svc *macaroons.Service, readiness *ReadinessService,
+	getVersionGuard func() (*VersionGuard, error), getDigest func() (string, bool, error),
 ) grpc.ServerOption {
-	major, minor, _ := parseVersion(serverVersion)
 	return grpc.UnaryInterceptor(middleware.ChainUnaryServer(
 		unaryPanicRecoveryInterceptor(),
 		unaryLogger,
-		unaryVersionCompatHandler(major, minor, serverVersion),
+		unaryVersionCompatHandler(getVersionGuard),
+		unaryDigestHandler(getDigest),
 		unaryMacaroonAuthHandler(svc),
 		unaryReadinessHandler(readiness),
 		errorConverter,
@@ -26,18 +23,15 @@ func UnaryInterceptor(
 }
 
 // StreamInterceptor returns the stream interceptor with a logrus log.
-// serverVersion is the arkd build version (e.g. "v1.2.3"); only its major
-// component is used for SDK compatibility checks.
 func StreamInterceptor(
-	svc *macaroons.Service,
-	readiness *ReadinessService,
-	serverVersion string,
+	svc *macaroons.Service, readiness *ReadinessService,
+	getVersionGuard func() (*VersionGuard, error), getDigest func() (string, bool, error),
 ) grpc.ServerOption {
-	major, minor, _ := parseVersion(serverVersion)
 	return grpc.StreamInterceptor(middleware.ChainStreamServer(
 		streamPanicRecoveryInterceptor(),
 		streamLogger,
-		streamVersionCompatHandler(major, minor, serverVersion),
+		streamVersionCompatHandler(getVersionGuard),
+		streamDigestHandler(getDigest),
 		streamMacaroonAuthHandler(svc),
 		streamReadinessHandler(readiness),
 	))

@@ -114,7 +114,7 @@ func Verify(proofB64, message string, skip []*btcec.PublicKey) error {
 		if len(in.TaprootLeafScript) != 1 {
 			return fmt.Errorf("malformed input %d: missing TaprootLeafScript", i)
 		}
-		
+
 		if !script.IsNoteClosureScript(in.TaprootLeafScript[0].Script) {
 			continue
 		}
@@ -208,7 +208,7 @@ func (p Proof) ContainsOutputs() bool {
 	return true
 }
 
-func (p Proof) FinalizeAndExtract(signer *btcec.PublicKey) (*wire.MsgTx, error) {
+func (p Proof) FinalizeAndExtract(signers ...*btcec.PublicKey) (*wire.MsgTx, error) {
 	if len(p.Inputs) < 2 {
 		return nil, ErrInvalidTxNumberOfInputs
 	}
@@ -230,15 +230,18 @@ func (p Proof) FinalizeAndExtract(signer *btcec.PublicKey) (*wire.MsgTx, error) 
 	// in order to have the condition witness also in the first "fake" proof input
 	ptx.Inputs[0].Unknowns = ptx.Inputs[1].Unknowns
 
-	// we add fakeSignerSignature to make the finalization possible
+	// we add a fake signature for each accepted signer to make the finalization possible
 	// the signer is never signing intent proof but we need the finalization to estimate the right tx weight
-	fakeSignerSig := psbt.TaprootScriptSpendSig{
-		XOnlyPubKey: schnorr.SerializePubKey(signer),
-		Signature:   make([]byte, 64),
+	fakeSigs := make([]*psbt.TaprootScriptSpendSig, 0, len(signers))
+	for _, signer := range signers {
+		fakeSigs = append(fakeSigs, &psbt.TaprootScriptSpendSig{
+			XOnlyPubKey: schnorr.SerializePubKey(signer),
+			Signature:   make([]byte, 64),
+		})
 	}
 
 	for i := range p.Inputs {
-		ptx.Inputs[i].TaprootScriptSpendSig = append(ptx.Inputs[i].TaprootScriptSpendSig, &fakeSignerSig)
+		ptx.Inputs[i].TaprootScriptSpendSig = append(ptx.Inputs[i].TaprootScriptSpendSig, fakeSigs...)
 
 		if err := finalizeInput(ptx, i); err != nil {
 			return nil, err
@@ -441,4 +444,3 @@ func verifyNoteInput(
 
 	return nil
 }
-

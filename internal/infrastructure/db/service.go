@@ -53,11 +53,6 @@ var (
 		"sqlite":   sqlitedb.NewVtxoRepository,
 		"postgres": pgdb.NewVtxoRepository,
 	}
-	scheduledSessionStoreTypes = map[string]func(...interface{}) (domain.ScheduledSessionRepo, error){
-		"badger":   badgerdb.NewScheduledSessionRepository,
-		"sqlite":   sqlitedb.NewScheduledSessionRepository,
-		"postgres": pgdb.NewScheduledSessionRepository,
-	}
 	offchainTxStoreTypes = map[string]func(...interface{}) (domain.OffchainTxRepository, error){
 		"badger":   newBadgerOffchainTxRepository,
 		"sqlite":   sqlitedb.NewOffchainTxRepository,
@@ -73,10 +68,10 @@ var (
 		"badger":   badgerdb.NewAssetRepository,
 		"postgres": pgdb.NewAssetRepository,
 	}
-	intentFeesStoreTypes = map[string]func(...interface{}) (domain.FeeRepository, error){
-		"badger":   badgerdb.NewIntentFeesRepository,
-		"sqlite":   sqlitedb.NewIntentFeesRepository,
-		"postgres": pgdb.NewIntentFeesRepository,
+	settingsStoreTypes = map[string]func(...interface{}) (domain.SettingsRepository, error){
+		"badger":   badgerdb.NewSettingsRepository,
+		"sqlite":   sqlitedb.NewSettingsRepository,
+		"postgres": pgdb.NewSettingsRepository,
 	}
 )
 
@@ -90,20 +85,23 @@ type ServiceConfig struct {
 
 	EventStoreConfig []interface{}
 	DataStoreConfig  []interface{}
+
+	// Settings is the config-built default settings used to seed the settings
+	// table on first boot (see handleSettingsSeed).
+	Settings domain.Settings
 }
 
 type service struct {
-	eventStore              domain.EventRepository
-	roundStore              domain.RoundRepository
-	vtxoStore               domain.VtxoRepository
-	scheduledSessionStore   domain.ScheduledSessionRepo
-	offchainTxStore         domain.OffchainTxRepository
-	convictionStore         domain.ConvictionRepository
-	assetStore              domain.AssetRepository
-	intentFeesStore         domain.FeeRepository
-	txDecoder               ports.TxDecoder
-	batchUpdateHandler      *updateHandler[domain.Round]
-	offchainTxUpdateHandler *updateHandler[domain.OffchainTx]
+	eventStore             domain.EventRepository
+	roundStore             domain.RoundRepository
+	vtxoStore              domain.VtxoRepository
+	offchainTxStore        domain.OffchainTxRepository
+	convictionStore        domain.ConvictionRepository
+	assetStore             domain.AssetRepository
+	settingsStore          domain.SettingsRepository
+	txDecoder              ports.TxDecoder
+	batchEventHandler      *updateHandler[domain.Round]
+	offchainTxEventHandler *updateHandler[domain.OffchainTx]
 }
 
 func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoManager, error) {
@@ -119,10 +117,6 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	if !ok {
 		return nil, fmt.Errorf("vtxo store type not supported")
 	}
-	scheduledSessionStoreFactory, ok := scheduledSessionStoreTypes[config.DataStoreType]
-	if !ok {
-		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
-	}
 	offchainTxStoreFactory, ok := offchainTxStoreTypes[config.DataStoreType]
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
@@ -135,8 +129,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
-
-	intentFeesStoreFactory, ok := intentFeesStoreTypes[config.DataStoreType]
+	settingsStoreFactory, ok := settingsStoreTypes[config.DataStoreType]
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
@@ -144,11 +137,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	var eventStore domain.EventRepository
 	var roundStore domain.RoundRepository
 	var vtxoStore domain.VtxoRepository
-	var scheduledSessionStore domain.ScheduledSessionRepo
 	var offchainTxStore domain.OffchainTxRepository
 	var convictionStore domain.ConvictionRepository
 	var assetStore domain.AssetRepository
-	var intentFeesStore domain.FeeRepository
+	var settingsStore domain.SettingsRepository
 	var err error
 
 	switch config.EventStoreType {
@@ -200,10 +192,6 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
 		}
-		scheduledSessionStore, err = scheduledSessionStoreFactory(config.DataStoreConfig...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create scheduled session store: %w", err)
-		}
 		offchainTxStore, err = offchainTxStoreFactory(config.DataStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create offchain tx store: %w", err)
@@ -217,9 +205,22 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}
-		intentFeesStore, err = intentFeesStoreFactory(config.DataStoreConfig...)
+		settingsStore, err = settingsStoreFactory(config.DataStoreConfig...)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
+			return nil, fmt.Errorf("failed to create settings store: %w", err)
+		}
+		// Badger has no legacy SQL tables, so its seed is just the config
+		// defaults when the store is empty (no backfill).
+		existingSettings, err := settingsStore.Get(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("failed to read settings for seed: %w", err)
+		}
+		if existingSettings == nil {
+			if err := settingsStore.Upsert(
+				context.Background(), config.Settings, nil,
+			); err != nil {
+				return nil, fmt.Errorf("failed to seed settings: %w", err)
+			}
 		}
 	case "postgres":
 		if len(config.DataStoreConfig) != 3 {
@@ -270,6 +271,12 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to run postgres migrations: %s", err)
 		}
 
+		if err := handleSettingsSeed(
+			context.Background(), db, config.DataStoreType, config.Settings,
+		); err != nil {
+			return nil, fmt.Errorf("failed to seed settings: %w", err)
+		}
+
 		roundStore, err = roundStoreFactory(db)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open round store: %s", err)
@@ -278,11 +285,6 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		vtxoStore, err = vtxoStoreFactory(db)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
-		}
-
-		scheduledSessionStore, err = scheduledSessionStoreFactory(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create scheduled session store: %w", err)
 		}
 
 		offchainTxStore, err = offchainTxStoreFactory(db)
@@ -297,9 +299,9 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}
-		intentFeesStore, err = intentFeesStoreFactory(db)
+		settingsStore, err = settingsStoreFactory(db)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
+			return nil, fmt.Errorf("failed to create settings store: %w", err)
 		}
 	case "sqlite":
 		if len(config.DataStoreConfig) != 1 {
@@ -312,12 +314,16 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		}
 
 		dbFile := filepath.Join(baseDir, sqliteDbFile)
-		db, err := sqlitedb.OpenDb(dbFile)
+		db, err := sqlitedb.OpenDb(
+			dbFile,
+			sqlitedb.WithJournalModeWAL(),
+			sqlitedb.WithBusyTimeout(5*time.Second),
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open db: %s", err)
 		}
 
-		driver, err := sqlitemigrate.WithInstance(db, &sqlitemigrate.Config{})
+		driver, err := sqlitemigrate.WithInstance(db.Write(), &sqlitemigrate.Config{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to init driver: %s", err)
 		}
@@ -332,13 +338,19 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to create migration instance: %s", err)
 		}
 
-		err = handleIntentTxidMigration(m, db, config.DataStoreType)
+		err = handleIntentTxidMigration(m, db.Write(), config.DataStoreType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to handle intent txid migration: %w", err)
 		}
 
 		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 			return nil, fmt.Errorf("failed to run migrations: %s", err)
+		}
+
+		if err := handleSettingsSeed(
+			context.Background(), db.Write(), config.DataStoreType, config.Settings,
+		); err != nil {
+			return nil, fmt.Errorf("failed to seed settings: %w", err)
 		}
 
 		roundStore, err = roundStoreFactory(db)
@@ -348,10 +360,6 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		vtxoStore, err = vtxoStoreFactory(db)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
-		}
-		scheduledSessionStore, err = scheduledSessionStoreFactory(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create scheduled session store: %w", err)
 		}
 		offchainTxStore, err = offchainTxStoreFactory(db)
 		if err != nil {
@@ -365,24 +373,23 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}
-		intentFeesStore, err = intentFeesStoreFactory(db)
+		settingsStore, err = settingsStoreFactory(db)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
+			return nil, fmt.Errorf("failed to create settings store: %w", err)
 		}
 	}
 
 	svc := &service{
-		eventStore:              eventStore,
-		roundStore:              roundStore,
-		vtxoStore:               vtxoStore,
-		scheduledSessionStore:   scheduledSessionStore,
-		offchainTxStore:         offchainTxStore,
-		txDecoder:               txDecoder,
-		convictionStore:         convictionStore,
-		assetStore:              assetStore,
-		intentFeesStore:         intentFeesStore,
-		batchUpdateHandler:      newUpdateHandler[domain.Round](),
-		offchainTxUpdateHandler: newUpdateHandler[domain.OffchainTx](),
+		eventStore:             eventStore,
+		roundStore:             roundStore,
+		vtxoStore:              vtxoStore,
+		offchainTxStore:        offchainTxStore,
+		txDecoder:              txDecoder,
+		convictionStore:        convictionStore,
+		assetStore:             assetStore,
+		settingsStore:          settingsStore,
+		batchEventHandler:      newUpdateHandler[domain.Round](),
+		offchainTxEventHandler: newUpdateHandler[domain.OffchainTx](),
 	}
 
 	// Register handlers that take care of keeping the projection store up-to-date.
@@ -412,10 +419,6 @@ func (s *service) Vtxos() domain.VtxoRepository {
 	return s.vtxoStore
 }
 
-func (s *service) ScheduledSession() domain.ScheduledSessionRepo {
-	return s.scheduledSessionStore
-}
-
 func (s *service) OffchainTxs() domain.OffchainTxRepository {
 	return s.offchainTxStore
 }
@@ -424,25 +427,29 @@ func (s *service) Convictions() domain.ConvictionRepository {
 	return s.convictionStore
 }
 
-func (s *service) Fees() domain.FeeRepository {
-	return s.intentFeesStore
+func (s *service) Settings() domain.SettingsRepository {
+	return s.settingsStore
 }
 
 func (s *service) RegisterBatchUpdateHandler(handler func(data domain.Round)) {
-	s.batchUpdateHandler.set(handler)
+	s.batchEventHandler.set(handler)
 }
 
 func (s *service) RegisterOffchainTxUpdateHandler(handler func(data domain.OffchainTx)) {
-	s.offchainTxUpdateHandler.set(handler)
+	s.offchainTxEventHandler.set(handler)
+}
+
+func (s *service) RegisterSettingsUpdateHandler(handler func(domain.Settings, []string)) {
+	s.settingsStore.RegisterUpdatesHandler(handler)
 }
 
 func (s *service) Close() {
 	s.eventStore.Close()
 	s.roundStore.Close()
 	s.vtxoStore.Close()
-	s.scheduledSessionStore.Close()
 	s.offchainTxStore.Close()
 	s.convictionStore.Close()
+	s.settingsStore.Close()
 }
 
 func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
@@ -506,7 +513,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 
 	dispatch := updateFn()
 	if dispatch {
-		go s.batchUpdateHandler.dispatch(*round)
+		go s.batchEventHandler.dispatch(*round)
 	}
 }
 
@@ -634,7 +641,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 
 	dispatch := updateFn()
 	if dispatch {
-		go s.offchainTxUpdateHandler.dispatch(*offchainTx)
+		go s.offchainTxEventHandler.dispatch(*offchainTx)
 	}
 }
 
@@ -852,4 +859,20 @@ func handleIntentTxidMigration(m *migrate.Migrate, db *sql.DB, dbType string) er
 	}
 
 	return nil
+}
+
+// handleSettingsSeed seeds the settings table from the config-built defaults on
+// first boot, carrying over any legacy intent_fees / scheduled_session rows. It is
+// a no-op once the settings row exists. Mirrors handleIntentTxidMigration's dispatch.
+func handleSettingsSeed(
+	ctx context.Context, db *sql.DB, dbType string, defaults domain.Settings,
+) error {
+	switch dbType {
+	case "postgres":
+		return pgdb.SeedSettings(ctx, db, defaults)
+	case "sqlite":
+		return sqlitedb.SeedSettings(ctx, db, defaults)
+	default:
+		return fmt.Errorf("unsupported db type for settings seed: %s", dbType)
+	}
 }
