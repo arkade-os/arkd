@@ -6,90 +6,168 @@ import (
 	"strconv"
 	"strings"
 
+	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	errors "github.com/arkade-os/arkd/pkg/errors"
-	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
 
 const buildVersionHeader = "x-build-version"
 
-// parseVersion extracts the major and minor version components from a semver string.
-// Accepts formats like "1.0.0", "v1.0.0", or just "1".
-func parseVersion(ver string) (int64, int64, error) {
+// VersionGuard holds the configuration for the build-version compatibility
+// check. The threshold is always the server's own build version. Use
+// NewVersionGuard to construct it: the server version is parsed once there
+// instead of on every request.
+type VersionGuard struct {
+	BuilldVersion string
+	RequireHeader bool
+
+	serverMajor, serverMinor, serverPatch int64
+	// // minAllowedVersion is the lowest client version accepted at the
+	// // configured guard level, e.g. "2.3.0" for server 2.3.4 at minor level.
+	// minAllowedVersion string
+}
+
+// NewVersionGuard builds a VersionGuard, pre-parsing serverVersion and
+// pre-computing the minimum allowed client version for the given level.
+func NewVersionGuard(
+	serverVersion string, requireHeader bool,
+) VersionGuard {
+	guard := VersionGuard{
+		BuilldVersion: serverVersion,
+		RequireHeader: requireHeader,
+	}
+	major, minor, patch, err := parseVersion(serverVersion)
+	if err != nil {
+		// Server version unknown: cannot guard, allow all clients.
+		return guard
+	}
+	guard.serverMajor, guard.serverMinor, guard.serverPatch = major, minor, patch
+	return guard
+}
+
+// parseVersion extracts major, minor and patch from a semver-ish string.
+// Accepts "1.0.0", "v1.0.0", "1", "1.2", and tolerates pre-release/build
+// suffixes on the patch component (e.g. "1.2.3-rc1" -> patch 3). Returns an
+// error only when the major component is unparseable.
+func parseVersion(ver string) (int64, int64, int64, error) {
 	ver = strings.TrimPrefix(ver, "v")
 	parts := strings.Split(ver, ".")
 	major, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
-		return 0, 0, fmt.Errorf("cannot parse major version from %q: %w", ver, err)
-	}
-	if len(parts) < 2 {
-		return major, 0, nil
+		return 0, 0, 0, fmt.Errorf("cannot parse major version from %q: %w", ver, err)
 	}
 
-	minor, err := strconv.ParseInt(parts[1], 10, 64)
-	if err != nil {
-		return 0, 0, fmt.Errorf("cannot parse minor version from %q: %w", ver, err)
+	var minor, patch int64
+	if len(parts) >= 2 {
+		minor, err = strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("cannot parse minor version from %q: %w", ver, err)
+		}
 	}
-	return major, minor, nil
+	if len(parts) >= 3 {
+		patch, err = parseLeadingInt(parts[2])
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("cannot parse patch version from %q: %w", ver, err)
+		}
+	}
+	return major, minor, patch, nil
 }
 
-func checkVersionCompat(
-	ctx context.Context, serverMajor, serverMinor int64, serverVersion string,
-) error {
+// parseLeadingInt parses the leading run of digits in s, ignoring any
+// pre-release/build suffix (e.g. "3-rc1" -> 3, "3+build" -> 3).
+func parseLeadingInt(s string) (int64, error) {
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i == 0 {
+		return 0, fmt.Errorf("no numeric prefix in %q", s)
+	}
+	return strconv.ParseInt(s[:i], 10, 64)
+}
+
+// isBehind reports whether the client version is strictly lower than the
+// minimum required version, comparing major, then minor, then patch.
+func isBehind(guard VersionGuard, clientMajor, clientMinor, clientPatch int64) bool {
+	if clientMajor != guard.serverMajor {
+		return clientMajor < guard.serverMajor
+	}
+	if clientMinor != guard.serverMinor {
+		return clientMinor < guard.serverMinor
+	}
+	return clientPatch < guard.serverPatch
+}
+
+// versionHeaderValue returns the first x-build-version header value and whether
+// the header was present at all.
+func versionHeaderValue(ctx context.Context) (string, bool) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return nil
+		return "", false
 	}
-
 	vals := md.Get(buildVersionHeader)
 	if len(vals) == 0 {
+		return "", false
+	}
+	return vals[0], true
+}
+
+func buildVersionTooOld(clientVersion string, guard VersionGuard) error {
+	return errors.BUILD_VERSION_TOO_OLD.
+		New("server requires build version header >= %s", guard.BuilldVersion).
+		WithMetadata(errors.BuildVersionMetadata{
+			ClientVersion: clientVersion,
+			MinVersion:    guard.BuilldVersion,
+		})
+}
+
+func checkVersionCompat(ctx context.Context, fullMethod string, guard VersionGuard) error {
+	// The guard only applies to the public ArkService.
+	if !strings.Contains(fullMethod, arkv1.ArkService_ServiceDesc.ServiceName) {
 		return nil
 	}
 
-	clientMajor, clientMinor, err := parseVersion(vals[0])
+	headerVal, present := versionHeaderValue(ctx)
+	if !present || headerVal == "" {
+		// A missing or empty header is rejected only when the header is required.
+		if guard.RequireHeader {
+			return buildVersionTooOld("", guard)
+		}
+		return nil
+	}
+
+	clientMajor, clientMinor, clientPatch, err := parseVersion(headerVal)
 	if err != nil {
-		// Don't break clients with malformed version strings.
+		// An unparseable header cannot be compared to the minimum: reject it only
+		// when the header is required, otherwise let it through.
+		if guard.RequireHeader {
+			return buildVersionTooOld(headerVal, guard)
+		}
 		return nil
 	}
 
-	minAllowedVersion := fmt.Sprintf("%d.%d.0", serverMajor, serverMinor)
-	if clientMajor < serverMajor {
-		log.Debugf(
-			"rejecting request: build version header %d below server major version %d",
-			clientMajor, serverMajor,
-		)
-		return errors.BUILD_VERSION_TOO_OLD.
-			New("server requires build version header >= %s", serverVersion).
-			WithMetadata(errors.BuildVersionMetadata{
-				ClientVersion: vals[0],
-				MinVersion:    minAllowedVersion,
-			})
-	}
-	if clientMajor == serverMajor && clientMinor < serverMinor {
-		log.Debugf(
-			"rejecting request: build version header %d below server minor version %d",
-			clientMinor, serverMinor,
-		)
-		return errors.BUILD_VERSION_TOO_OLD.
-			New("server requires build version header >= %s", serverVersion).
-			WithMetadata(errors.BuildVersionMetadata{
-				ClientVersion: vals[0],
-				MinVersion:    minAllowedVersion,
-			})
+	// A present, parseable version is always held to the minimum, regardless of
+	// whether the header is required.
+	if isBehind(guard, clientMajor, clientMinor, clientPatch) {
+		return buildVersionTooOld(headerVal, guard)
 	}
 
 	return nil
 }
 
 func unaryVersionCompatHandler(
-	serverMajor, serverMinor int64, serverVersion string,
+	getVersionGuard func() (*VersionGuard, error),
 ) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context, req interface{},
 		info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 	) (interface{}, error) {
-		if err := checkVersionCompat(ctx, serverMajor, serverMinor, serverVersion); err != nil {
+		guard, err := getVersionGuard()
+		if err != nil {
+			return nil, errors.INTERNAL_ERROR.New("failed to verify version header, retry later")
+		}
+		if err := checkVersionCompat(ctx, info.FullMethod, *guard); err != nil {
 			return nil, err
 		}
 		return handler(ctx, req)
@@ -97,15 +175,17 @@ func unaryVersionCompatHandler(
 }
 
 func streamVersionCompatHandler(
-	serverMajor, serverMinor int64, serverVersion string,
+	getVersionGuard func() (*VersionGuard, error),
 ) grpc.StreamServerInterceptor {
 	return func(
 		srv interface{}, ss grpc.ServerStream,
 		info *grpc.StreamServerInfo, handler grpc.StreamHandler,
 	) error {
-		if err := checkVersionCompat(
-			ss.Context(), serverMajor, serverMinor, serverVersion,
-		); err != nil {
+		guard, err := getVersionGuard()
+		if err != nil {
+			return errors.INTERNAL_ERROR.New("failed to verify version header, retry later")
+		}
+		if err := checkVersionCompat(ss.Context(), info.FullMethod, *guard); err != nil {
 			return err
 		}
 		return handler(srv, ss)

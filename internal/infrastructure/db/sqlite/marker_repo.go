@@ -14,22 +14,20 @@ import (
 )
 
 type markerRepository struct {
-	db      *sql.DB
-	querier *queries.Queries
+	db SQLiteDB
 }
 
 func NewMarkerRepository(config ...interface{}) (domain.MarkerRepository, error) {
 	if len(config) != 1 {
 		return nil, fmt.Errorf("invalid config")
 	}
-	db, ok := config[0].(*sql.DB)
+	db, ok := config[0].(SQLiteDB)
 	if !ok {
 		return nil, fmt.Errorf("cannot open marker repository: invalid config")
 	}
 
 	return &markerRepository{
-		db:      db,
-		querier: queries.New(db),
+		db: db,
 	}, nil
 }
 
@@ -43,16 +41,22 @@ func (m *markerRepository) AddMarker(ctx context.Context, marker domain.Marker) 
 		return fmt.Errorf("failed to marshal parent markers: %w", err)
 	}
 
-	return m.querier.UpsertMarker(ctx, queries.UpsertMarkerParams{
-		ID:            marker.ID,
-		Depth:         int64(marker.Depth),
-		ParentMarkers: sql.NullString{String: string(parentMarkersJSON), Valid: true},
+	return withWriteQuerier(ctx, m.db, func(q *queries.Queries) error {
+		return q.UpsertMarker(ctx, queries.UpsertMarkerParams{
+			ID:            marker.ID,
+			Depth:         int64(marker.Depth),
+			ParentMarkers: sql.NullString{String: string(parentMarkersJSON), Valid: true},
+		})
 	})
 }
 
 func (m *markerRepository) GetMarker(ctx context.Context, id string) (*domain.Marker, error) {
-	row, err := m.querier.SelectMarker(ctx, id)
-	if err != nil {
+	var row queries.Marker
+	if err := withReadQuerier(ctx, m.db, func(q *queries.Queries) error {
+		var err error
+		row, err = q.SelectMarker(ctx, id)
+		return err
+	}); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -70,8 +74,12 @@ func (m *markerRepository) GetMarkersByDepth(
 	ctx context.Context,
 	depth uint32,
 ) ([]domain.Marker, error) {
-	rows, err := m.querier.SelectMarkersByDepth(ctx, int64(depth))
-	if err != nil {
+	var rows []queries.Marker
+	if err := withReadQuerier(ctx, m.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectMarkersByDepth(ctx, int64(depth))
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -90,11 +98,15 @@ func (m *markerRepository) GetMarkersByDepthRange(
 	ctx context.Context,
 	minDepth, maxDepth uint32,
 ) ([]domain.Marker, error) {
-	rows, err := m.querier.SelectMarkersByDepthRange(ctx, queries.SelectMarkersByDepthRangeParams{
-		MinDepth: int64(minDepth),
-		MaxDepth: int64(maxDepth),
-	})
-	if err != nil {
+	var rows []queries.Marker
+	if err := withReadQuerier(ctx, m.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectMarkersByDepthRange(ctx, queries.SelectMarkersByDepthRangeParams{
+			MinDepth: int64(minDepth),
+			MaxDepth: int64(maxDepth),
+		})
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -117,8 +129,12 @@ func (m *markerRepository) GetMarkersByIds(
 		return nil, nil
 	}
 
-	rows, err := m.querier.SelectMarkersByIds(ctx, ids)
-	if err != nil {
+	var rows []queries.Marker
+	if err := withReadQuerier(ctx, m.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectMarkersByIds(ctx, ids)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -134,9 +150,11 @@ func (m *markerRepository) GetMarkersByIds(
 }
 
 func (m *markerRepository) SweepMarker(ctx context.Context, markerID string, sweptAt int64) error {
-	return m.querier.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
-		MarkerID: markerID,
-		SweptAt:  sweptAt,
+	return withWriteQuerier(ctx, m.db, func(q *queries.Queries) error {
+		return q.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
+			MarkerID: markerID,
+			SweptAt:  sweptAt,
+		})
 	})
 }
 
@@ -159,7 +177,7 @@ func (m *markerRepository) BulkSweepMarkers(
 		}
 		return nil
 	}
-	return execTx(ctx, m.db, txBody)
+	return execTx(ctx, m.db.Write(), txBody)
 }
 
 func (m *markerRepository) SweepVtxoOutpoints(
@@ -182,7 +200,7 @@ func (m *markerRepository) SweepVtxoOutpoints(
 		}
 		return nil
 	}
-	return execTx(ctx, m.db, txBody)
+	return execTx(ctx, m.db.Write(), txBody)
 }
 
 func (m *markerRepository) SweepMarkerWithDescendants(
@@ -210,15 +228,19 @@ func (m *markerRepository) SweepMarkerWithDescendants(
 		}
 		return nil
 	}
-	if err := execTx(ctx, m.db, txBody); err != nil {
+	if err := execTx(ctx, m.db.Write(), txBody); err != nil {
 		return 0, err
 	}
 	return count, nil
 }
 
 func (m *markerRepository) IsMarkerSwept(ctx context.Context, markerID string) (bool, error) {
-	result, err := m.querier.IsMarkerSwept(ctx, markerID)
-	if err != nil {
+	var result int64
+	if err := withReadQuerier(ctx, m.db, func(q *queries.Queries) error {
+		var err error
+		result, err = q.IsMarkerSwept(ctx, markerID)
+		return err
+	}); err != nil {
 		return false, err
 	}
 	return result == 1, nil
@@ -232,8 +254,12 @@ func (m *markerRepository) GetSweptMarkers(
 		return nil, nil
 	}
 
-	rows, err := m.querier.SelectSweptMarkersByIds(ctx, markerIDs)
-	if err != nil {
+	var rows []queries.SweptMarker
+	if err := withReadQuerier(ctx, m.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectSweptMarkersByIds(ctx, markerIDs)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -256,10 +282,12 @@ func (m *markerRepository) UpdateVtxoMarkers(
 	if err != nil {
 		return fmt.Errorf("failed to marshal markers: %w", err)
 	}
-	return m.querier.UpdateVtxoMarkers(ctx, queries.UpdateVtxoMarkersParams{
-		Markers: string(markersJSON),
-		Txid:    outpoint.Txid,
-		Vout:    int64(outpoint.VOut),
+	return withWriteQuerier(ctx, m.db, func(q *queries.Queries) error {
+		return q.UpdateVtxoMarkers(ctx, queries.UpdateVtxoMarkersParams{
+			Markers: string(markersJSON),
+			Txid:    outpoint.Txid,
+			Vout:    int64(outpoint.VOut),
+		})
 	})
 }
 
@@ -267,11 +295,15 @@ func (m *markerRepository) GetVtxosByMarker(
 	ctx context.Context,
 	markerID string,
 ) ([]domain.Vtxo, error) {
-	rows, err := m.querier.SelectVtxosByMarkerId(
-		ctx,
-		sql.NullString{String: markerID, Valid: len(markerID) > 0},
-	)
-	if err != nil {
+	var rows []queries.SelectVtxosByMarkerIdRow
+	if err := withReadQuerier(ctx, m.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectVtxosByMarkerId(
+			ctx,
+			sql.NullString{String: markerID, Valid: len(markerID) > 0},
+		)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -312,7 +344,7 @@ func (m *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID stri
 		count = c
 		return nil
 	}
-	if err := execTx(ctx, m.db, txBody); err != nil {
+	if err := execTx(ctx, m.db.Write(), txBody); err != nil {
 		return 0, err
 	}
 	return count, nil
@@ -343,18 +375,22 @@ func (m *markerRepository) CreateRootMarkersForVtxos(
 		return nil
 	}
 
-	return execTx(ctx, m.db, txBody)
+	return execTx(ctx, m.db.Write(), txBody)
 }
 
 func (m *markerRepository) GetVtxosByDepthRange(
 	ctx context.Context,
 	minDepth, maxDepth uint32,
 ) ([]domain.Vtxo, error) {
-	rows, err := m.querier.SelectVtxosByDepthRange(ctx, queries.SelectVtxosByDepthRangeParams{
-		MinDepth: int64(minDepth),
-		MaxDepth: int64(maxDepth),
-	})
-	if err != nil {
+	var rows []queries.SelectVtxosByDepthRangeRow
+	if err := withReadQuerier(ctx, m.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectVtxosByDepthRange(ctx, queries.SelectVtxosByDepthRangeParams{
+			MinDepth: int64(minDepth),
+			MaxDepth: int64(maxDepth),
+		})
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -369,11 +405,15 @@ func (m *markerRepository) GetVtxosByArkTxid(
 	ctx context.Context,
 	arkTxid string,
 ) ([]domain.Vtxo, error) {
-	rows, err := m.querier.SelectVtxosByArkTxid(
-		ctx,
-		sql.NullString{String: arkTxid, Valid: arkTxid != ""},
-	)
-	if err != nil {
+	var rows []queries.SelectVtxosByArkTxidRow
+	if err := withReadQuerier(ctx, m.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectVtxosByArkTxid(
+			ctx,
+			sql.NullString{String: arkTxid, Valid: arkTxid != ""},
+		)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -398,11 +438,15 @@ func (m *markerRepository) GetVtxoChainByMarkers(
 	vtxos := make([]domain.Vtxo, 0)
 
 	for _, markerID := range markerIDs {
-		rows, err := m.querier.SelectVtxoChainByMarker(
-			ctx,
-			sql.NullString{String: markerID, Valid: len(markerID) > 0},
-		)
-		if err != nil {
+		var rows []queries.SelectVtxoChainByMarkerRow
+		if err := withReadQuerier(ctx, m.db, func(q *queries.Queries) error {
+			var err error
+			rows, err = q.SelectVtxoChainByMarker(
+				ctx,
+				sql.NullString{String: markerID, Valid: len(markerID) > 0},
+			)
+			return err
+		}); err != nil {
 			return nil, err
 		}
 

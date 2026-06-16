@@ -96,12 +96,15 @@ func (m *mockWalletService) FeeRate(ctx context.Context) (uint64, error) { retur
 
 func (m *mockWalletService) ListConnectorUtxos(
 	ctx context.Context,
-	addr string,
+	addrs []string,
 ) ([]ports.TxInput, error) {
 	return nil, nil
 }
 func (m *mockWalletService) MainAccountBalance(ctx context.Context) (uint64, uint64, error) {
 	return 0, 0, nil
+}
+func (m *mockWalletService) GetMainAccountUtxos(ctx context.Context) ([]ports.WalletUtxo, error) {
+	return nil, nil
 }
 func (m *mockWalletService) ConnectorsAccountBalance(ctx context.Context) (uint64, uint64, error) {
 	return 0, 0, nil
@@ -472,18 +475,18 @@ type mockRepoManager struct {
 	markers *mockMarkerRepository
 }
 
-func (m *mockRepoManager) Events() domain.EventRepository                { return nil }
-func (m *mockRepoManager) Rounds() domain.RoundRepository                { return nil }
-func (m *mockRepoManager) Vtxos() domain.VtxoRepository                  { return m.vtxos }
-func (m *mockRepoManager) Markers() domain.MarkerRepository              { return m.markers }
-func (m *mockRepoManager) ScheduledSession() domain.ScheduledSessionRepo { return nil }
-func (m *mockRepoManager) OffchainTxs() domain.OffchainTxRepository      { return nil }
-func (m *mockRepoManager) Convictions() domain.ConvictionRepository              { return nil }
-func (m *mockRepoManager) Assets() domain.AssetRepository                        { return nil }
-func (m *mockRepoManager) Fees() domain.FeeRepository                            { return nil }
-func (m *mockRepoManager) RegisterBatchUpdateHandler(func(data domain.Round))    {}
-func (m *mockRepoManager) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx)) {}
-func (m *mockRepoManager) Close()                                                {}
+func (m *mockRepoManager) Events() domain.EventRepository                                { return nil }
+func (m *mockRepoManager) Rounds() domain.RoundRepository                                { return nil }
+func (m *mockRepoManager) Vtxos() domain.VtxoRepository                                  { return m.vtxos }
+func (m *mockRepoManager) Markers() domain.MarkerRepository                              { return m.markers }
+func (m *mockRepoManager) OffchainTxs() domain.OffchainTxRepository                      { return nil }
+func (m *mockRepoManager) Convictions() domain.ConvictionRepository                      { return nil }
+func (m *mockRepoManager) Assets() domain.AssetRepository                                { return nil }
+func (m *mockRepoManager) Settings() domain.SettingsRepository                           { return nil }
+func (m *mockRepoManager) RegisterBatchUpdateHandler(func(data domain.Round))            {}
+func (m *mockRepoManager) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx))       {}
+func (m *mockRepoManager) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {}
+func (m *mockRepoManager) Close()                                                        {}
 
 type mockScheduler struct{}
 
@@ -507,7 +510,7 @@ func newTestSweeper() (
 	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
 	builder := &mockTxBuilder{}
 	scheduler := &mockScheduler{}
-	s := newSweeper(wallet, repoManager, builder, scheduler, "")
+	s := newSweeper(wallet, repoManager, builder, scheduler)
 	return wallet, vtxoRepo, markerRepo, builder, s
 }
 

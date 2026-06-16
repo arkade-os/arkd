@@ -353,19 +353,20 @@ func (m *mockRepoManagerForIndexer) Markers() domain.MarkerRepository {
 	}
 	return m.markers
 }
-func (m *mockRepoManagerForIndexer) ScheduledSession() domain.ScheduledSessionRepo { return nil }
 func (m *mockRepoManagerForIndexer) OffchainTxs() domain.OffchainTxRepository {
 	if m.offchainTxs == nil {
 		return nil
 	}
 	return m.offchainTxs
 }
-func (m *mockRepoManagerForIndexer) Convictions() domain.ConvictionRepository              { return nil }
-func (m *mockRepoManagerForIndexer) Assets() domain.AssetRepository                        { return nil }
-func (m *mockRepoManagerForIndexer) Fees() domain.FeeRepository                            { return nil }
-func (m *mockRepoManagerForIndexer) RegisterBatchUpdateHandler(func(data domain.Round))    {}
+func (m *mockRepoManagerForIndexer) Convictions() domain.ConvictionRepository                { return nil }
+func (m *mockRepoManagerForIndexer) Assets() domain.AssetRepository                          { return nil }
+func (m *mockRepoManagerForIndexer) Settings() domain.SettingsRepository                     { return nil }
+func (m *mockRepoManagerForIndexer) RegisterBatchUpdateHandler(func(data domain.Round))      {}
 func (m *mockRepoManagerForIndexer) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx)) {}
-func (m *mockRepoManagerForIndexer) Close()                                                {}
+func (m *mockRepoManagerForIndexer) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {
+}
+func (m *mockRepoManagerForIndexer) Close() {}
 
 // newTestIndexer creates a fresh set of mock repos and an indexerService for testing.
 func newChainTestIndexer() (

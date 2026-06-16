@@ -119,11 +119,21 @@ var (
 		Usage:  "List all scheduled batches sweepings",
 		Action: scheduledSweepAction,
 	}
+	expiredRoundsCmd = &cli.Command{
+		Name:   "expired-rounds",
+		Usage:  "List all batches that expired but have not been swept (uneconomical conditions)",
+		Action: expiredRoundsAction,
+	}
 	sweepCmd = &cli.Command{
 		Name:   "sweep",
 		Usage:  "Trigger a sweep transaction",
 		Flags:  []cli.Flag{sweepConnectorsFlag, sweepCommitmentTxidsFlag},
 		Action: sweepAction,
+	}
+	walletUtxosCmd = &cli.Command{
+		Name:   "wallet-utxos",
+		Usage:  "List the UTXO set of the wallet main account",
+		Action: walletUtxosAction,
 	}
 	roundInfoCmd = &cli.Command{
 		Name:   "round-info",
@@ -157,9 +167,9 @@ var (
 		Usage: "Update the scheduled session configuration",
 		Flags: []cli.Flag{
 			scheduledSessionStartDateFlag, scheduledSessionEndDateFlag,
-			scheduledSessionDurationFlag, scheduledSessionPeriodFlag,
-			scheduledSessionRoundMinParticipantsCountFlag,
-			scheduledSessionRoundMaxParticipantsCountFlag,
+			sessionDurationFlag, scheduledSessionPeriodFlag,
+			roundMinParticipantsFlag,
+			roundMaxParticipantsFlag,
 		},
 		Action: updateScheduledSessionAction,
 	}
@@ -251,6 +261,27 @@ var (
 		Name:   "clear",
 		Usage:  "Clear intent and offchain tx fees",
 		Action: clearFeesAction,
+	}
+	settingsCmd = &cli.Command{
+		Name:        "settings",
+		Usage:       "Manage settings",
+		Subcommands: cli.Commands{updateSettingsCmd},
+		Action:      getSettingsAction,
+	}
+	updateSettingsCmd = &cli.Command{
+		Name:  "update",
+		Usage: "Update settings",
+		Flags: []cli.Flag{
+			sessionDurationFlag, unrolledVtxoMinExpiryMarginFlag, banThresholdFlag,
+			banDurationFlag, unilateralExitDelayFlag, publicUnilateralExitDelayFlag,
+			checkpointExitDelayFlag, boardingExitDelayFlag, vtxoTreeExpiryFlag,
+			roundMinParticipantsFlag, roundMaxParticipantsFlag, vtxoMinAmountFlag,
+			vtxoMaxAmountFlag, utxoMinAmountFlag, utxoMaxAmountFlag, settlementMinExpiryGapFlag,
+			vtxoNoCsvValidationCutoffDateFlag, maxTxWeightFlag, maxOpReturnOutsFlag,
+			assetTxMaxWeightRatioFlag, notePrefixFlag, buildVersionHeaderFlag,
+			buildVersionHeaderRequiredFlag, digestHeaderRequiredFlag,
+		},
+		Action: updateSettingsAction,
 	}
 )
 
@@ -575,6 +606,50 @@ func scheduledSweepAction(ctx *cli.Context) error {
 	return nil
 }
 
+func expiredRoundsAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/rounds/expired", baseURL)
+
+	resp, err := get[[]map[string]any](url, "rounds", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func walletUtxosAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/wallet/utxos", baseURL)
+
+	resp, err := get[[]map[string]any](url, "utxos", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
 func roundInfoAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	roundId := ctx.String(roundIdFlagName)
@@ -739,10 +814,10 @@ func updateScheduledSessionAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
 	startDate := ctx.String(scheduledSessionStartDateFlagName)
 	endDate := ctx.String(scheduledSessionEndDateFlagName)
-	duration := ctx.Uint(scheduledSessionDurationFlagName)
+	duration := ctx.Uint(sessionDurationFlagName)
 	period := ctx.Uint(scheduledSessionPeriodFlagName)
-	roundMinParticipantsCount := ctx.Uint(scheduledSessionRoundMinParticipantsCountFlagName)
-	roundMaxParticipantsCount := ctx.Uint(scheduledSessionRoundMaxParticipantsCountFlagName)
+	roundMinParticipantsCount := ctx.Uint(roundMinParticipantsFlagName)
+	roundMaxParticipantsCount := ctx.Uint(roundMaxParticipantsFlagName)
 
 	if ctx.IsSet(scheduledSessionStartDateFlagName) != ctx.IsSet(scheduledSessionEndDateFlagName) {
 		return fmt.Errorf("--start-date and --end-date must be set together")
@@ -1263,6 +1338,125 @@ func updateIntentFees(ctx *cli.Context) error {
 	}
 
 	fmt.Println("successfully updated intent fees")
+	return nil
+}
+
+func getSettingsAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/settings", baseURL)
+	resp, err := get[map[string]any](url, "settings", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+func updateSettingsAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	settings := map[string]any{}
+
+	// int64-valued settings: forwarded only when the flag was explicitly set, so
+	// omitted flags leave the corresponding setting unchanged (partial update). The
+	// map keys are the proto JSON (camelCase) field names of the Settings message.
+	intFields := []struct {
+		flag string
+		key  string
+	}{
+		{sessionDurationFlagName, "sessionDuration"},
+		{unrolledVtxoMinExpiryMarginFlagName, "unrolledVtxoMinExpiryMargin"},
+		{banThresholdFlagName, "banThreshold"},
+		{banDurationFlagName, "banDuration"},
+		{unilateralExitDelayFlagName, "unilateralExitDelay"},
+		{publicUnilateralExitDelayFlagName, "publicUnilateralExitDelay"},
+		{checkpointExitDelayFlagName, "checkpointExitDelay"},
+		{boardingExitDelayFlagName, "boardingExitDelay"},
+		{vtxoTreeExpiryFlagName, "vtxoTreeExpiry"},
+		{roundMinParticipantsFlagName, "roundMinParticipantsCount"},
+		{roundMaxParticipantsFlagName, "roundMaxParticipantsCount"},
+		{vtxoMinAmountFlagName, "vtxoMinAmount"},
+		{vtxoMaxAmountFlagName, "vtxoMaxAmount"},
+		{utxoMinAmountFlagName, "utxoMinAmount"},
+		{utxoMaxAmountFlagName, "utxoMaxAmount"},
+		{settlementMinExpiryGapFlagName, "settlementMinExpiryGap"},
+		{vtxoNoCsvValidationCutoffDateFlagName, "vtxoNoCsvValidationCutoffDate"},
+		{maxTxWeightFlagName, "maxTxWeight"},
+		{maxOpReturnOutsFlagName, "maxOpReturnOutputs"},
+	}
+	for _, f := range intFields {
+		if ctx.IsSet(f.flag) {
+			settings[f.key] = ctx.Int(f.flag)
+		}
+	}
+	if ctx.IsSet(assetTxMaxWeightRatioFlagName) {
+		settings["assetTxMaxWeightRatio"] = ctx.Float64(assetTxMaxWeightRatioFlagName)
+	}
+	if ctx.IsSet(notePrefixFlagName) {
+		settings["noteUriPrefix"] = ctx.String(notePrefixFlagName)
+	}
+	if ctx.IsSet(buildVersionHeaderFlagName) {
+		settings["buildVersionHeader"] = ctx.String(buildVersionHeaderFlagName)
+	}
+	if ctx.IsSet(buildVersionHeaderRequiredFlagName) {
+		raw := ctx.String(buildVersionHeaderRequiredFlagName)
+		required, err := strconv.ParseBool(raw)
+		if err != nil {
+			return fmt.Errorf(
+				"invalid --%s value %q, must be true or false",
+				buildVersionHeaderRequiredFlagName, raw,
+			)
+		}
+		settings["buildVersionHeaderRequired"] = required
+	}
+	if ctx.IsSet(digestHeaderRequiredFlagName) {
+		raw := ctx.String(digestHeaderRequiredFlagName)
+		required, err := strconv.ParseBool(raw)
+		if err != nil {
+			return fmt.Errorf(
+				"invalid --%s value %q, must be true or false",
+				digestHeaderRequiredFlagName, raw,
+			)
+		}
+		settings["digestHeaderRequired"] = required
+	}
+
+	if len(settings) <= 0 {
+		return fmt.Errorf("no settings provided to update")
+	}
+
+	body, err := json.Marshal(map[string]any{"settings": settings})
+	if err != nil {
+		return fmt.Errorf("failed to encode request body: %s", err)
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/settings", baseURL)
+	changelog, err := post[[]string](url, string(body), "changeLog", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(
+		map[string][]string{"changeLog": changelog}, "", "  ",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
 	return nil
 }
 

@@ -117,28 +117,28 @@ type benchRepoManager struct {
 	offchainRepo domain.OffchainTxRepository
 }
 
-func (m *benchRepoManager) Events() domain.EventRepository   { return nil }
-func (m *benchRepoManager) Rounds() domain.RoundRepository   { return nil }
-func (m *benchRepoManager) Vtxos() domain.VtxoRepository     { return m.vtxoRepo }
+func (m *benchRepoManager) Events() domain.EventRepository { return nil }
+func (m *benchRepoManager) Rounds() domain.RoundRepository { return nil }
+func (m *benchRepoManager) Vtxos() domain.VtxoRepository   { return m.vtxoRepo }
 func (m *benchRepoManager) Markers() domain.MarkerRepository {
 	if m.markerRepo == nil {
 		return nil
 	}
 	return m.markerRepo
 }
-func (m *benchRepoManager) ScheduledSession() domain.ScheduledSessionRepo { return nil }
 func (m *benchRepoManager) OffchainTxs() domain.OffchainTxRepository {
 	if m.offchainRepo == nil {
 		return nil
 	}
 	return m.offchainRepo
 }
-func (m *benchRepoManager) Convictions() domain.ConvictionRepository              { return nil }
-func (m *benchRepoManager) Assets() domain.AssetRepository                        { return nil }
-func (m *benchRepoManager) Fees() domain.FeeRepository                            { return nil }
-func (m *benchRepoManager) RegisterBatchUpdateHandler(func(data domain.Round))    {}
-func (m *benchRepoManager) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx)) {}
-func (m *benchRepoManager) Close()                                                {}
+func (m *benchRepoManager) Convictions() domain.ConvictionRepository                      { return nil }
+func (m *benchRepoManager) Assets() domain.AssetRepository                                { return nil }
+func (m *benchRepoManager) Settings() domain.SettingsRepository                           { return nil }
+func (m *benchRepoManager) RegisterBatchUpdateHandler(func(data domain.Round))            {}
+func (m *benchRepoManager) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx))       {}
+func (m *benchRepoManager) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {}
+func (m *benchRepoManager) Close()                                                        {}
 
 // benchTxid returns a deterministic 64-char hex txid for index i.
 func benchTxid(i int) string {
@@ -242,12 +242,12 @@ func buildLinearChain(n int, withMarkers bool) (*indexerService, domain.Outpoint
 // buildFanoutTree creates a binary-tree shaped chain where each VTXO has
 // 2 checkpoints pointing to 2 children. Depth d produces 2^(d+1)-1 VTXOs.
 //
-//	         V0
-//	        / \
-//	      V1   V2
-//	     / \   / \
-//	   V3  V4 V5  V6
-//	   ...
+//	      V0
+//	     / \
+//	   V1   V2
+//	  / \   / \
+//	V3  V4 V5  V6
+//	...
 func buildFanoutTree(depth int) (*indexerService, domain.Outpoint, int) {
 	n := (1 << (depth + 1)) - 1
 	vtxoRepo := &benchVtxoRepo{vtxos: make(map[string]domain.Vtxo, n)}
@@ -865,15 +865,15 @@ func (m *wrappedRepoManager) Vtxos() domain.VtxoRepository   { return m.vtxos }
 func (m *wrappedRepoManager) Markers() domain.MarkerRepository {
 	return m.markers
 }
-func (m *wrappedRepoManager) ScheduledSession() domain.ScheduledSessionRepo {
-	panic("ScheduledSession: not wired")
-}
 func (m *wrappedRepoManager) OffchainTxs() domain.OffchainTxRepository { return m.offchainTxs }
 func (m *wrappedRepoManager) Convictions() domain.ConvictionRepository {
 	panic("Convictions: not wired")
 }
-func (m *wrappedRepoManager) Assets() domain.AssetRepository                        { panic("Assets: not wired") }
-func (m *wrappedRepoManager) Fees() domain.FeeRepository                            { panic("Fees: not wired") }
-func (m *wrappedRepoManager) RegisterBatchUpdateHandler(func(data domain.Round))    {}
-func (m *wrappedRepoManager) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx)) {}
-func (m *wrappedRepoManager) Close()                                                {}
+func (m *wrappedRepoManager) Assets() domain.AssetRepository { panic("Assets: not wired") }
+func (m *wrappedRepoManager) Settings() domain.SettingsRepository {
+	panic("Settings: not wired")
+}
+func (m *wrappedRepoManager) RegisterBatchUpdateHandler(func(data domain.Round))            {}
+func (m *wrappedRepoManager) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx))       {}
+func (m *wrappedRepoManager) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {}
+func (m *wrappedRepoManager) Close()                                                        {}
