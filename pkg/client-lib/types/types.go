@@ -28,7 +28,6 @@ type Config struct {
 	ServerUrl           string
 	SignerPubKey        *btcec.PublicKey
 	ForfeitPubKey       *btcec.PublicKey
-	WalletType          string
 	Network             arklib.Network
 	SessionDuration     int64
 	UnilateralExitDelay arklib.RelativeLocktime
@@ -76,6 +75,10 @@ type DeprecatedSigner struct {
 }
 
 type Address struct {
+	// KeyID identifies which wallet key produced this address.
+	// Single-key wallets populate it with their fixed key handle; HD wallets can
+	// use the derivation path.
+	KeyID      string
 	Tapscripts []string
 	Address    string
 }
@@ -282,6 +285,7 @@ type Utxo struct {
 	Spent       bool
 	SpentBy     string
 	Tx          string
+	Assets      []Asset
 }
 
 func (u Utxo) IsConfirmed() bool {

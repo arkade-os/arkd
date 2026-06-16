@@ -33,6 +33,10 @@ func DecodeClosure(script []byte) (Closure, error) {
 		return nil, fmt.Errorf("cannot decode empty script")
 	}
 
+	if txscript.ScriptHasOpSuccess(script) {
+		return nil, fmt.Errorf("script contains forbidden OP_SUCCESS opcode")
+	}
+
 	types := []struct {
 		closure Closure
 		name    string

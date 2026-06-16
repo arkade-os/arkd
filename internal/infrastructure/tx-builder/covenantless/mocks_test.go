@@ -262,13 +262,24 @@ func (m *mockedWallet) GetNotificationChannel(
 }
 
 func (m *mockedWallet) ListConnectorUtxos(
-	ctx context.Context, addr string,
+	ctx context.Context, addrs []string,
 ) ([]ports.TxInput, error) {
-	args := m.Called(ctx, addr)
+	args := m.Called(ctx, addrs)
 
 	var res []ports.TxInput
 	if a := args.Get(0); a != nil {
 		res = a.([]ports.TxInput)
+	}
+
+	return res, args.Error(1)
+}
+
+func (m *mockedWallet) GetMainAccountUtxos(ctx context.Context) ([]ports.WalletUtxo, error) {
+	args := m.Called(ctx)
+
+	var res []ports.WalletUtxo
+	if a := args.Get(0); a != nil {
+		res = a.([]ports.WalletUtxo)
 	}
 
 	return res, args.Error(1)
@@ -386,9 +397,14 @@ type staticSigner struct {
 	pubkey *btcec.PublicKey
 }
 
-func (s *staticSigner) IsReady(_ context.Context) (bool, error)          { return true, nil }
+func (s *staticSigner) IsReady(_ context.Context) (bool, error) { return true, nil }
 func (s *staticSigner) GetPubkey(_ context.Context) (*btcec.PublicKey, error) {
 	return s.pubkey, nil
+}
+func (s *staticSigner) GetDeprecatedPubkeys(
+	_ context.Context,
+) ([]ports.DeprecatedSignerPubkey, error) {
+	return nil, nil
 }
 func (s *staticSigner) SignTransaction(_ context.Context, _ string, _ bool) (string, error) {
 	return "", nil

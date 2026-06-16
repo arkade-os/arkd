@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/application"
-	arksdk "github.com/arkade-os/arkd/pkg/client-lib"
+	wallet "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -24,8 +24,8 @@ import (
 type singleBatchConfig struct {
 	NumClients              int    // Number of clients to participate in the batch
 	AmountPerVtxo           uint64 // Amount in satoshis per VTXO
-	MinParticipantsPerRound int    // Minimum number of participants per round (ARKD_ROUND_MIN_PARTICIPANTS_COUNT)
-	MaxParticipantsPerRound int    // Maximum number of participants per round (ARKD_ROUND_MAX_PARTICIPANTS_COUNT)
+	MinParticipantsPerRound int    // Minimum number of participants per round
+	MaxParticipantsPerRound int    // Maximum number of participants per round
 }
 
 var (
@@ -42,13 +42,7 @@ var (
 // TestBatchSettleMultipleClients tests multiple clients registering VTXOs in a single batch
 //
 // This test verifies that multiple clients can register VTXOs in a single batch settlement round.
-// It is affected by the following environment variables:
-// - ARKD_ROUND_MIN_PARTICIPANTS_COUNT: Minimum number of participants per round (default: 1)
-// - ARKD_ROUND_MAX_PARTICIPANTS_COUNT: Maximum number of participants per round (default: 128)
-//
-// To run this test with specific round participant limits, set these environment variables before running.
-// For example, to test with exactly 5 participants per round:
-// ARKD_ROUND_MIN_PARTICIPANTS_COUNT=5 ARKD_ROUND_MAX_PARTICIPANTS_COUNT=5 make run-simulation
+// Round participant limits are configured via the admin settings API.
 //
 // To specify the number of clients via command line:
 // go test -v -run TestBatchSettleMultipleClients -args -num-clients=8
@@ -109,25 +103,25 @@ func runBatchSettleTest(t *testing.T, config singleBatchConfig) {
 
 type orchestrator struct {
 	config  singleBatchConfig
-	clients map[int]arksdk.ArkClient
+	clients map[int]wallet.Wallet
 }
 
 func newOrchestrator(t *testing.T, config singleBatchConfig) *orchestrator {
 	chClients := make(chan struct {
 		id     int
-		client arksdk.ArkClient
+		client wallet.Wallet
 	}, config.NumClients)
-	clients := make(map[int]arksdk.ArkClient)
+	clients := make(map[int]wallet.Wallet)
 	wg := &sync.WaitGroup{}
 	wg.Add(config.NumClients)
 	go func() {
 		for i := range config.NumClients {
 			go func(wg *sync.WaitGroup, id int) {
 				defer wg.Done()
-				client := setupArkSDK(t)
+				client := setupClientWallet(t)
 				chClients <- struct {
 					id     int
-					client arksdk.ArkClient
+					client wallet.Wallet
 				}{id, client}
 			}(wg, i)
 		}
@@ -162,7 +156,7 @@ func (o *orchestrator) onboard(t *testing.T) {
 	go func() {
 		for i, client := range o.clients {
 			note := append([]string{}, notes[i])
-			go func(id int, client arksdk.ArkClient, note []string) {
+			go func(id int, client wallet.Wallet, note []string) {
 				defer wg.Done()
 
 				res, err := client.RedeemNotes(context.Background(), note)
@@ -192,7 +186,7 @@ func (o *orchestrator) settle(t *testing.T) string {
 
 	go func() {
 		for i, client := range o.clients {
-			go func(id int, client arksdk.ArkClient) {
+			go func(id int, client wallet.Wallet) {
 				defer wg.Done()
 
 				res, err := client.Settle(context.Background())

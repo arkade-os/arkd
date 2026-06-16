@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 
@@ -69,6 +70,35 @@ func (c *signerClient) GetPubkey(ctx context.Context) (*btcec.PublicKey, error) 
 		return nil, fmt.Errorf("failed to parse ec signer pubkey: %s", err)
 	}
 	return pubkey, nil
+}
+
+func (c *signerClient) GetDeprecatedPubkeys(
+	ctx context.Context,
+) ([]ports.DeprecatedSignerPubkey, error) {
+	resp, err := c.client.GetPubkey(ctx, &signerv1.GetPubkeyRequest{})
+	if err != nil {
+		return nil, err
+	}
+	pubkeys := make([]ports.DeprecatedSignerPubkey, 0, len(resp.GetDeprecatedSigners()))
+	for _, signer := range resp.GetDeprecatedSigners() {
+		buf, err := hex.DecodeString(signer.GetPubkey())
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode deprecated signer pubkey from hex: %s", err)
+		}
+		pubkey, err := btcec.ParsePubKey(buf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse deprecated signer pubkey: %s", err)
+		}
+		var cutoffDate time.Time
+		if c := signer.GetCutoffDate(); c > 0 {
+			cutoffDate = time.Unix(c, 0)
+		}
+		pubkeys = append(pubkeys, ports.DeprecatedSignerPubkey{
+			PubKey:     pubkey,
+			CutoffDate: cutoffDate,
+		})
+	}
+	return pubkeys, nil
 }
 
 func (c *signerClient) SignTransaction(

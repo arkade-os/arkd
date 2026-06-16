@@ -139,10 +139,11 @@ func (*GetPubkeyRequest) Descriptor() ([]byte, []int) {
 }
 
 type GetPubkeyResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Pubkey        string                 `protobuf:"bytes,1,opt,name=pubkey,proto3" json:"pubkey,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Pubkey            string                 `protobuf:"bytes,1,opt,name=pubkey,proto3" json:"pubkey,omitempty"`
+	DeprecatedSigners []*DeprecatedSigner    `protobuf:"bytes,2,rep,name=deprecated_signers,json=deprecatedSigners,proto3" json:"deprecated_signers,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *GetPubkeyResponse) Reset() {
@@ -182,6 +183,66 @@ func (x *GetPubkeyResponse) GetPubkey() string {
 	return ""
 }
 
+func (x *GetPubkeyResponse) GetDeprecatedSigners() []*DeprecatedSigner {
+	if x != nil {
+		return x.DeprecatedSigners
+	}
+	return nil
+}
+
+type DeprecatedSigner struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Pubkey string                 `protobuf:"bytes,1,opt,name=pubkey,proto3" json:"pubkey,omitempty"`
+	// unix timestamp after which the key is no longer accepted, 0 if unset
+	CutoffDate    int64 `protobuf:"varint,2,opt,name=cutoff_date,json=cutoffDate,proto3" json:"cutoff_date,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeprecatedSigner) Reset() {
+	*x = DeprecatedSigner{}
+	mi := &file_signer_v1_service_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeprecatedSigner) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeprecatedSigner) ProtoMessage() {}
+
+func (x *DeprecatedSigner) ProtoReflect() protoreflect.Message {
+	mi := &file_signer_v1_service_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeprecatedSigner.ProtoReflect.Descriptor instead.
+func (*DeprecatedSigner) Descriptor() ([]byte, []int) {
+	return file_signer_v1_service_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *DeprecatedSigner) GetPubkey() string {
+	if x != nil {
+		return x.Pubkey
+	}
+	return ""
+}
+
+func (x *DeprecatedSigner) GetCutoffDate() int64 {
+	if x != nil {
+		return x.CutoffDate
+	}
+	return 0
+}
+
 type SignTransactionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	PartialTx     string                 `protobuf:"bytes,1,opt,name=partial_tx,json=partialTx,proto3" json:"partial_tx,omitempty"`
@@ -192,7 +253,7 @@ type SignTransactionRequest struct {
 
 func (x *SignTransactionRequest) Reset() {
 	*x = SignTransactionRequest{}
-	mi := &file_signer_v1_service_proto_msgTypes[4]
+	mi := &file_signer_v1_service_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -204,7 +265,7 @@ func (x *SignTransactionRequest) String() string {
 func (*SignTransactionRequest) ProtoMessage() {}
 
 func (x *SignTransactionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_signer_v1_service_proto_msgTypes[4]
+	mi := &file_signer_v1_service_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -217,7 +278,7 @@ func (x *SignTransactionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignTransactionRequest.ProtoReflect.Descriptor instead.
 func (*SignTransactionRequest) Descriptor() ([]byte, []int) {
-	return file_signer_v1_service_proto_rawDescGZIP(), []int{4}
+	return file_signer_v1_service_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SignTransactionRequest) GetPartialTx() string {
@@ -243,7 +304,7 @@ type SignTransactionResponse struct {
 
 func (x *SignTransactionResponse) Reset() {
 	*x = SignTransactionResponse{}
-	mi := &file_signer_v1_service_proto_msgTypes[5]
+	mi := &file_signer_v1_service_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -255,7 +316,7 @@ func (x *SignTransactionResponse) String() string {
 func (*SignTransactionResponse) ProtoMessage() {}
 
 func (x *SignTransactionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_signer_v1_service_proto_msgTypes[5]
+	mi := &file_signer_v1_service_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -268,7 +329,7 @@ func (x *SignTransactionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignTransactionResponse.ProtoReflect.Descriptor instead.
 func (*SignTransactionResponse) Descriptor() ([]byte, []int) {
-	return file_signer_v1_service_proto_rawDescGZIP(), []int{5}
+	return file_signer_v1_service_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SignTransactionResponse) GetSignedTx() string {
@@ -288,7 +349,7 @@ type SignTransactionTapscriptRequest struct {
 
 func (x *SignTransactionTapscriptRequest) Reset() {
 	*x = SignTransactionTapscriptRequest{}
-	mi := &file_signer_v1_service_proto_msgTypes[6]
+	mi := &file_signer_v1_service_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -300,7 +361,7 @@ func (x *SignTransactionTapscriptRequest) String() string {
 func (*SignTransactionTapscriptRequest) ProtoMessage() {}
 
 func (x *SignTransactionTapscriptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_signer_v1_service_proto_msgTypes[6]
+	mi := &file_signer_v1_service_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -313,7 +374,7 @@ func (x *SignTransactionTapscriptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignTransactionTapscriptRequest.ProtoReflect.Descriptor instead.
 func (*SignTransactionTapscriptRequest) Descriptor() ([]byte, []int) {
-	return file_signer_v1_service_proto_rawDescGZIP(), []int{6}
+	return file_signer_v1_service_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *SignTransactionTapscriptRequest) GetPartialTx() string {
@@ -339,7 +400,7 @@ type SignTransactionTapscriptResponse struct {
 
 func (x *SignTransactionTapscriptResponse) Reset() {
 	*x = SignTransactionTapscriptResponse{}
-	mi := &file_signer_v1_service_proto_msgTypes[7]
+	mi := &file_signer_v1_service_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -351,7 +412,7 @@ func (x *SignTransactionTapscriptResponse) String() string {
 func (*SignTransactionTapscriptResponse) ProtoMessage() {}
 
 func (x *SignTransactionTapscriptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_signer_v1_service_proto_msgTypes[7]
+	mi := &file_signer_v1_service_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -364,7 +425,7 @@ func (x *SignTransactionTapscriptResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignTransactionTapscriptResponse.ProtoReflect.Descriptor instead.
 func (*SignTransactionTapscriptResponse) Descriptor() ([]byte, []int) {
-	return file_signer_v1_service_proto_rawDescGZIP(), []int{7}
+	return file_signer_v1_service_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SignTransactionTapscriptResponse) GetSignedTx() string {
@@ -384,7 +445,7 @@ type SignMessageRequest struct {
 
 func (x *SignMessageRequest) Reset() {
 	*x = SignMessageRequest{}
-	mi := &file_signer_v1_service_proto_msgTypes[8]
+	mi := &file_signer_v1_service_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -396,7 +457,7 @@ func (x *SignMessageRequest) String() string {
 func (*SignMessageRequest) ProtoMessage() {}
 
 func (x *SignMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_signer_v1_service_proto_msgTypes[8]
+	mi := &file_signer_v1_service_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -409,7 +470,7 @@ func (x *SignMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignMessageRequest.ProtoReflect.Descriptor instead.
 func (*SignMessageRequest) Descriptor() ([]byte, []int) {
-	return file_signer_v1_service_proto_rawDescGZIP(), []int{8}
+	return file_signer_v1_service_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SignMessageRequest) GetMessage() string {
@@ -429,7 +490,7 @@ type SignMessageResponse struct {
 
 func (x *SignMessageResponse) Reset() {
 	*x = SignMessageResponse{}
-	mi := &file_signer_v1_service_proto_msgTypes[9]
+	mi := &file_signer_v1_service_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -441,7 +502,7 @@ func (x *SignMessageResponse) String() string {
 func (*SignMessageResponse) ProtoMessage() {}
 
 func (x *SignMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_signer_v1_service_proto_msgTypes[9]
+	mi := &file_signer_v1_service_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -454,7 +515,7 @@ func (x *SignMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignMessageResponse.ProtoReflect.Descriptor instead.
 func (*SignMessageResponse) Descriptor() ([]byte, []int) {
-	return file_signer_v1_service_proto_rawDescGZIP(), []int{9}
+	return file_signer_v1_service_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *SignMessageResponse) GetSignature() string {
@@ -472,9 +533,14 @@ const file_signer_v1_service_proto_rawDesc = "" +
 	"\x10GetStatusRequest\")\n" +
 	"\x11GetStatusResponse\x12\x14\n" +
 	"\x05ready\x18\x01 \x01(\bR\x05ready\"\x12\n" +
-	"\x10GetPubkeyRequest\"+\n" +
+	"\x10GetPubkeyRequest\"w\n" +
 	"\x11GetPubkeyResponse\x12\x16\n" +
-	"\x06pubkey\x18\x01 \x01(\tR\x06pubkey\"]\n" +
+	"\x06pubkey\x18\x01 \x01(\tR\x06pubkey\x12J\n" +
+	"\x12deprecated_signers\x18\x02 \x03(\v2\x1b.signer.v1.DeprecatedSignerR\x11deprecatedSigners\"K\n" +
+	"\x10DeprecatedSigner\x12\x16\n" +
+	"\x06pubkey\x18\x01 \x01(\tR\x06pubkey\x12\x1f\n" +
+	"\vcutoff_date\x18\x02 \x01(\x03R\n" +
+	"cutoffDate\"]\n" +
 	"\x16SignTransactionRequest\x12\x1d\n" +
 	"\n" +
 	"partial_tx\x18\x01 \x01(\tR\tpartialTx\x12$\n" +
@@ -514,35 +580,37 @@ func file_signer_v1_service_proto_rawDescGZIP() []byte {
 	return file_signer_v1_service_proto_rawDescData
 }
 
-var file_signer_v1_service_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_signer_v1_service_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_signer_v1_service_proto_goTypes = []any{
 	(*GetStatusRequest)(nil),                 // 0: signer.v1.GetStatusRequest
 	(*GetStatusResponse)(nil),                // 1: signer.v1.GetStatusResponse
 	(*GetPubkeyRequest)(nil),                 // 2: signer.v1.GetPubkeyRequest
 	(*GetPubkeyResponse)(nil),                // 3: signer.v1.GetPubkeyResponse
-	(*SignTransactionRequest)(nil),           // 4: signer.v1.SignTransactionRequest
-	(*SignTransactionResponse)(nil),          // 5: signer.v1.SignTransactionResponse
-	(*SignTransactionTapscriptRequest)(nil),  // 6: signer.v1.SignTransactionTapscriptRequest
-	(*SignTransactionTapscriptResponse)(nil), // 7: signer.v1.SignTransactionTapscriptResponse
-	(*SignMessageRequest)(nil),               // 8: signer.v1.SignMessageRequest
-	(*SignMessageResponse)(nil),              // 9: signer.v1.SignMessageResponse
+	(*DeprecatedSigner)(nil),                 // 4: signer.v1.DeprecatedSigner
+	(*SignTransactionRequest)(nil),           // 5: signer.v1.SignTransactionRequest
+	(*SignTransactionResponse)(nil),          // 6: signer.v1.SignTransactionResponse
+	(*SignTransactionTapscriptRequest)(nil),  // 7: signer.v1.SignTransactionTapscriptRequest
+	(*SignTransactionTapscriptResponse)(nil), // 8: signer.v1.SignTransactionTapscriptResponse
+	(*SignMessageRequest)(nil),               // 9: signer.v1.SignMessageRequest
+	(*SignMessageResponse)(nil),              // 10: signer.v1.SignMessageResponse
 }
 var file_signer_v1_service_proto_depIdxs = []int32{
-	0, // 0: signer.v1.SignerService.GetStatus:input_type -> signer.v1.GetStatusRequest
-	2, // 1: signer.v1.SignerService.GetPubkey:input_type -> signer.v1.GetPubkeyRequest
-	4, // 2: signer.v1.SignerService.SignTransaction:input_type -> signer.v1.SignTransactionRequest
-	6, // 3: signer.v1.SignerService.SignTransactionTapscript:input_type -> signer.v1.SignTransactionTapscriptRequest
-	8, // 4: signer.v1.SignerService.SignMessage:input_type -> signer.v1.SignMessageRequest
-	1, // 5: signer.v1.SignerService.GetStatus:output_type -> signer.v1.GetStatusResponse
-	3, // 6: signer.v1.SignerService.GetPubkey:output_type -> signer.v1.GetPubkeyResponse
-	5, // 7: signer.v1.SignerService.SignTransaction:output_type -> signer.v1.SignTransactionResponse
-	7, // 8: signer.v1.SignerService.SignTransactionTapscript:output_type -> signer.v1.SignTransactionTapscriptResponse
-	9, // 9: signer.v1.SignerService.SignMessage:output_type -> signer.v1.SignMessageResponse
-	5, // [5:10] is the sub-list for method output_type
-	0, // [0:5] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	4,  // 0: signer.v1.GetPubkeyResponse.deprecated_signers:type_name -> signer.v1.DeprecatedSigner
+	0,  // 1: signer.v1.SignerService.GetStatus:input_type -> signer.v1.GetStatusRequest
+	2,  // 2: signer.v1.SignerService.GetPubkey:input_type -> signer.v1.GetPubkeyRequest
+	5,  // 3: signer.v1.SignerService.SignTransaction:input_type -> signer.v1.SignTransactionRequest
+	7,  // 4: signer.v1.SignerService.SignTransactionTapscript:input_type -> signer.v1.SignTransactionTapscriptRequest
+	9,  // 5: signer.v1.SignerService.SignMessage:input_type -> signer.v1.SignMessageRequest
+	1,  // 6: signer.v1.SignerService.GetStatus:output_type -> signer.v1.GetStatusResponse
+	3,  // 7: signer.v1.SignerService.GetPubkey:output_type -> signer.v1.GetPubkeyResponse
+	6,  // 8: signer.v1.SignerService.SignTransaction:output_type -> signer.v1.SignTransactionResponse
+	8,  // 9: signer.v1.SignerService.SignTransactionTapscript:output_type -> signer.v1.SignTransactionTapscriptResponse
+	10, // 10: signer.v1.SignerService.SignMessage:output_type -> signer.v1.SignMessageResponse
+	6,  // [6:11] is the sub-list for method output_type
+	1,  // [1:6] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_signer_v1_service_proto_init() }
@@ -556,7 +624,7 @@ func file_signer_v1_service_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_signer_v1_service_proto_rawDesc), len(file_signer_v1_service_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

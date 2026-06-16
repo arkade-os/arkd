@@ -9,9 +9,25 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
 
-var coinSelector = coinset.MinNumberCoinSelector{
-	MaxInputs:       50,
-	MinChangeAmount: 800,
+const (
+	// maxSelectionInputs caps the number of inputs a single selection may use.
+	maxSelectionInputs = 50
+	// defaultMinChangeAmount is the min change a selection must leave to be
+	// accepted (roughly the P2TR/P2WSH dust limit). It avoids producing dust
+	// change outputs for general-purpose selections.
+	defaultMinChangeAmount = 330
+)
+
+// newCoinSelector builds a coin selector that prefers the fewest inputs.
+// minChangeAmount controls the minimum change a selection must leave behind:
+// any selection whose total is in (target, target+minChangeAmount) is rejected.
+// Pass 0 to accept any total >= target (useful when sub-dust change is folded
+// into the fee instead of becoming an output).
+func newCoinSelector(minChangeAmount btcutil.Amount) coinset.MinNumberCoinSelector {
+	return coinset.MinNumberCoinSelector{
+		MaxInputs:       maxSelectionInputs,
+		MinChangeAmount: minChangeAmount,
+	}
 }
 
 // coin implements coinset.Coin interface
@@ -45,4 +61,18 @@ func (u coin) Index() uint32 {
 
 func (u coin) NumConfs() int64 {
 	return int64(u.utxo.Confirmations)
+}
+
+// effectiveValueCoin wraps a coin so the selector ranks and accumulates it by
+// its effective value (real value minus the fee to spend it as an input), while
+// still exposing the real outpoint/script/value for tx building. Selecting by
+// effective value against a target of amount+baseFee guarantees the chosen
+// UTXOs cover the amount plus the fee for their actual input count.
+type effectiveValueCoin struct {
+	coin
+	effectiveValue btcutil.Amount
+}
+
+func (c effectiveValueCoin) Value() btcutil.Amount {
+	return c.effectiveValue
 }
