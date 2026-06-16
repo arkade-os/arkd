@@ -113,6 +113,11 @@ func NewIndexerService(
 		return nil, fmt.Errorf("invalid exposure value: %q", txExposure)
 	}
 
+	// withheld and private modes require a signing key for auth tokens
+	if exposure(txExposure) != exposurePublic && privkey == nil {
+		return nil, fmt.Errorf("privkey is required for %s exposure", txExposure)
+	}
+
 	ttl := defaultAuthTokenTTL
 	if authTokenExpirySec > 0 {
 		ttl = time.Duration(authTokenExpirySec) * time.Second
@@ -1175,9 +1180,13 @@ func (i *indexerService) RevokeTokens(
 
 func (i *indexerService) allSignerPubkeys() []*btcec.PublicKey {
 	pubkeys := make([]*btcec.PublicKey, 0, len(i.deprecatedSignerPubkeys)+1)
-	pubkeys = append(pubkeys, i.signerPubkey)
+	if i.signerPubkey != nil {
+		pubkeys = append(pubkeys, i.signerPubkey)
+	}
 	for _, deprecated := range i.deprecatedSignerPubkeys {
-		pubkeys = append(pubkeys, deprecated.PubKey)
+		if deprecated.PubKey != nil {
+			pubkeys = append(pubkeys, deprecated.PubKey)
+		}
 	}
 	return pubkeys
 }
