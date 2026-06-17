@@ -63,12 +63,9 @@ type Settings struct {
 	BuildVersionHeader            string
 	BuildVersionHeaderRequired    bool
 	DigestHeaderRequired          bool
-	// WalletAddr / WalletFallbackAddrs hold the primary and fallback arkd-wallet
-	// connection addresses. Seeded from env on first boot, then sourced from here;
-	// changing them via the admin API is applied on the next restart.
-	WalletAddr          string
-	WalletFallbackAddrs []string
-	UpdatedAt           time.Time
+	WalletAddr                    string
+	WalletFallbackAddrs           []string
+	UpdatedAt                     time.Time
 }
 
 func NewSettings(

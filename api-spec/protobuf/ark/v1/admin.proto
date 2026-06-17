@@ -447,8 +447,6 @@ message Settings {
   optional bool build_version_header_required = 23;
   optional string updated_at = 24;
   optional bool digest_header_required = 25;
-  // Primary and fallback arkd-wallet connection addresses. Seeded from env on
-  // first boot; changes take effect on the next restart.
   optional string wallet_addr = 26;
   repeated string wallet_fallback_addrs = 27;
 }

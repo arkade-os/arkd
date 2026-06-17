@@ -642,9 +642,8 @@ func (a *adminService) UpdateSettings(
 	a.settingsMu.Lock()
 	defer a.settingsMu.Unlock()
 
-	// Partial update: only the fields set on the request (non-nil pointers) are
-	// applied to the stored settings; omitted fields are left unchanged. The
-	// returned changelog lists exactly the fields that were updated.
+	// Partial updates allowed. Only the fields set on the request (non-nil pointers) are
+	// applied to the stored settings and omitted fields are left unchanged.
 	settings, err := a.repoManager.Settings().Get(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current settings: %w", err)
@@ -660,17 +659,6 @@ func (a *adminService) UpdateSettings(
 
 	if err := a.repoManager.Settings().Upsert(ctx, *settings, changelog); err != nil {
 		return nil, fmt.Errorf("failed to update settings: %w", err)
-	}
-
-	// Wallet addresses are read at startup to dial the arkd-wallet(s); a change to
-	// them is persisted now but only takes effect on the next restart.
-	for _, field := range changelog {
-		if field == "wallet_addr" || field == "wallet_fallback_addrs" {
-			log.Warnf(
-				"settings field %q updated; wallet address changes take effect on restart",
-				field,
-			)
-		}
 	}
 
 	return changelog, nil
