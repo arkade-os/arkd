@@ -151,7 +151,7 @@ type Config struct {
 	svc             application.Service
 	adminSvc        application.AdminService
 	wallet          ports.WalletService
-	walletFallbacks []ports.WalletService
+	walletFallbacks []FallbackWallet
 	signer          ports.SignerService
 	txBuilder       ports.TxBuilder
 	scanner         ports.BlockchainScanner
@@ -668,8 +668,27 @@ func (c *Config) WalletService() ports.WalletService {
 	return c.wallet
 }
 
-func (c *Config) FallbackWalletServices() []ports.WalletService {
+// FallbackWallet pairs a dialed fallback wallet client with the address it was
+// dialed at, so failures can name the specific wallet (host:port) rather than a
+// positional index.
+type FallbackWallet struct {
+	Addr    string
+	Service ports.WalletService
+}
+
+func (c *Config) FallbackWallets() []FallbackWallet {
 	return c.walletFallbacks
+}
+
+// fallbackWalletServices returns just the dialed fallback wallet clients, for
+// consumers (the app and admin services) that sign with them but don't need the
+// dial address.
+func (c *Config) fallbackWalletServices() []ports.WalletService {
+	svcs := make([]ports.WalletService, 0, len(c.walletFallbacks))
+	for _, fb := range c.walletFallbacks {
+		svcs = append(svcs, fb.Service)
+	}
+	return svcs
 }
 
 func (c *Config) UnlockerService() ports.Unlocker {
@@ -855,7 +874,7 @@ func (c *Config) walletService() error {
 	// this node dialed (it may come from the DB, not the env var).
 	log.Infof("dialed primary arkd-wallet at %q on network %s", arkWallet, network.Name)
 
-	fallbacks, err := c.dialFallbackWallets(fallbackAddrs)
+	fallbacks, err := c.dialFallbackWallets(arkWallet, fallbackAddrs)
 	if err != nil {
 		return err
 	}
@@ -864,18 +883,30 @@ func (c *Config) walletService() error {
 	return nil
 }
 
-// dialFallbackWallets dials the configured fallback arkd-wallets and validates
-// that each one is reachable and on the same network as the primary. Fallback
-// wallets belong to additional liquidity providers and are used only as sweep
-// fallbacks; the primary remains the sole source of the forfeit pubkey,
-// addresses and signing. Any failure is fatal so a misconfigured wallet is
-// surfaced at startup rather than at sweep time.
-func (c *Config) dialFallbackWallets(fallbackAddrs []string) ([]ports.WalletService, error) {
-	fallbacks := make([]ports.WalletService, 0, len(fallbackAddrs))
+// dialFallbackWallets dials the given fallback arkd-wallets (sourced from
+// settings or env), used as sweep signers, validating each is reachable and on
+// the primary's network. Any failure is fatal so misconfiguration surfaces at
+// startup.
+func (c *Config) dialFallbackWallets(
+	primaryAddr string, fallbackAddrs []string,
+) ([]FallbackWallet, error) {
+	fallbacks := make([]FallbackWallet, 0, len(fallbackAddrs))
+	seen := make(map[string]struct{}, len(fallbackAddrs))
 	for _, addr := range fallbackAddrs {
 		if addr == "" {
 			continue
 		}
+		// Reject a fallback that duplicates the primary or another fallback.
+		if addr == primaryAddr {
+			closeWallets(fallbacks)
+			return nil, fmt.Errorf("fallback wallet %q is the same as the primary wallet", addr)
+		}
+		if _, dup := seen[addr]; dup {
+			closeWallets(fallbacks)
+			return nil, fmt.Errorf("duplicate fallback wallet %q", addr)
+		}
+		seen[addr] = struct{}{}
+
 		fbSvc, fbNetwork, err := newWalletClient(addr, c.OtelCollectorEndpoint)
 		if err != nil {
 			closeWallets(fallbacks)
@@ -890,14 +921,14 @@ func (c *Config) dialFallbackWallets(fallbackAddrs []string) ([]ports.WalletServ
 			)
 		}
 		log.Infof("dialed fallback wallet %q on network %s", addr, fbNetwork.Name)
-		fallbacks = append(fallbacks, fbSvc)
+		fallbacks = append(fallbacks, FallbackWallet{Addr: addr, Service: fbSvc})
 	}
 	return fallbacks, nil
 }
 
-func closeWallets(wallets []ports.WalletService) {
+func closeWallets(wallets []FallbackWallet) {
 	for _, w := range wallets {
-		w.Close()
+		w.Service.Close()
 	}
 }
 
@@ -1017,7 +1048,7 @@ func (c *Config) appService() error {
 	}
 
 	svc, err := application.NewService(
-		c.wallet, c.FallbackWalletServices(), c.signer, c.repo, c.txBuilder, c.scanner,
+		c.wallet, c.fallbackWalletServices(), c.signer, c.repo, c.txBuilder, c.scanner,
 		c.scheduler, c.liveStore, roundReportSvc, c.alerts, c.fee,
 	)
 	if err != nil {
@@ -1035,7 +1066,7 @@ func (c *Config) adminService() error {
 	}
 
 	c.adminSvc = application.NewAdminService(
-		c.wallet, c.FallbackWalletServices(), c.repo, c.txBuilder, c.liveStore, unit, c.fee,
+		c.wallet, c.fallbackWalletServices(), c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 	)
 	return nil
 }

@@ -93,7 +93,7 @@ func NewAdminService(
 // signingWallets returns the wallets to try when signing a sweep, in order: the
 // primary wallet first, then any configured fallbacks.
 func (a *adminService) signingWallets() []ports.WalletService {
-	return primaryThenFallbacks(a.walletSvc, a.walletFallbacks)
+	return append([]ports.WalletService{a.walletSvc}, a.walletFallbacks...)
 }
 
 func (a *adminService) Wallet() ports.WalletService {
