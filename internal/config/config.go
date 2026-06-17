@@ -151,7 +151,7 @@ type Config struct {
 	svc             application.Service
 	adminSvc        application.AdminService
 	wallet          ports.WalletService
-	walletFallbacks []ports.WalletService
+	walletFallbacks []FallbackWallet
 	signer          ports.SignerService
 	txBuilder       ports.TxBuilder
 	scanner         ports.BlockchainScanner
@@ -668,7 +668,15 @@ func (c *Config) WalletService() ports.WalletService {
 	return c.wallet
 }
 
-func (c *Config) FallbackWalletServices() []ports.WalletService {
+// FallbackWallet pairs a dialed fallback wallet client with the address it was
+// dialed at, so failures can name the specific wallet (host:port) rather than a
+// positional index.
+type FallbackWallet struct {
+	Addr    string
+	Service ports.WalletService
+}
+
+func (c *Config) FallbackWallets() []FallbackWallet {
 	return c.walletFallbacks
 }
 
@@ -840,8 +848,8 @@ func (c *Config) walletService() error {
 // fallbacks; the primary remains the sole source of the forfeit pubkey,
 // addresses and signing. Any failure is fatal so a misconfigured wallet is
 // surfaced at startup rather than at sweep time.
-func (c *Config) dialFallbackWallets() ([]ports.WalletService, error) {
-	fallbacks := make([]ports.WalletService, 0, len(c.WalletFallbackAddrs))
+func (c *Config) dialFallbackWallets() ([]FallbackWallet, error) {
+	fallbacks := make([]FallbackWallet, 0, len(c.WalletFallbackAddrs))
 	for _, addr := range c.WalletFallbackAddrs {
 		if addr == "" {
 			continue
@@ -860,14 +868,14 @@ func (c *Config) dialFallbackWallets() ([]ports.WalletService, error) {
 			)
 		}
 		log.Infof("dialed fallback wallet %q on network %s", addr, fbNetwork.Name)
-		fallbacks = append(fallbacks, fbSvc)
+		fallbacks = append(fallbacks, FallbackWallet{Addr: addr, Service: fbSvc})
 	}
 	return fallbacks, nil
 }
 
-func closeWallets(wallets []ports.WalletService) {
+func closeWallets(wallets []FallbackWallet) {
 	for _, w := range wallets {
-		w.Close()
+		w.Service.Close()
 	}
 }
 
