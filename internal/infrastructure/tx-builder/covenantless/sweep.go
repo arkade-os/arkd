@@ -18,9 +18,9 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-// buildSweepTransaction builds the UNSIGNED sweep transaction. The destination
+// buildSweepTransaction builds the unsigned sweep transaction. The destination
 // address, fee estimate and dust limit are all taken from the given wallet (the
-// primary wallet), so every signing candidate sweeps to the same output and the
+// primary wallet) so every signing candidate sweeps to the same output and the
 // returned txid is stable regardless of which wallet ends up signing it.
 func buildSweepTransaction(
 	ctx context.Context, wallet ports.WalletService, inputs []ports.TxInput,
@@ -186,8 +186,8 @@ func buildSweepTransaction(
 }
 
 // signSweepTransaction signs the unsigned sweep transaction with the given wallet
-// and returns the raw signed tx hex. The tapscript inputs that need signing are
-// re-derived from the psbt, so the caller only has to pass the unsigned tx.
+// The tapscript inputs that need signing are re-derived from the psbt, so the caller
+// only has to pass the unsigned tx.
 func signSweepTransaction(
 	ctx context.Context, wallet ports.WalletService, unsignedTx string,
 ) (string, error) {

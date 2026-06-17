@@ -65,15 +65,7 @@ func newSweeper(
 // signingWallets returns the wallets to try when signing a sweep, in order: the
 // primary wallet first, then any configured fallbacks.
 func (s *sweeper) signingWallets() []ports.WalletService {
-	return primaryThenFallbacks(s.wallet, s.walletFallbacks)
-}
-
-// primaryThenFallbacks returns the primary wallet followed by the fallbacks — the
-// order in which sweep signing is attempted.
-func primaryThenFallbacks(
-	primary ports.WalletService, fallbacks []ports.WalletService,
-) []ports.WalletService {
-	return append([]ports.WalletService{primary}, fallbacks...)
+	return append([]ports.WalletService{s.wallet}, s.walletFallbacks...)
 }
 
 // buildAndSignSweepTx builds the sweep transaction once (its destination and fees
@@ -720,11 +712,11 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			log.Debugf("sweeper: batch %s swept by: %s", commitmentTxid, txid)
 		} else {
 			// if all outputs are spent, it means we missed to mark the batch as swept,
-			// build a sweep transaction without broadcasting it. we'll use it to rebuild
+			// build a sweep transaction without broadcasting it. We'll use it to rebuild
 			// sweepEvent. The outputs are already spent on-chain, so this tx is never
 			// broadcast and a signing failure (e.g. the wallet that swept them is no
-			// longer primary or fallback) must not block reconciliation: fall back to the
-			// unsigned tx, which still carries the txid the event needs.
+			// longer primary or fallback) must not block reconciliation so we fall back to the
+			// unsigned tx which still carries the txid the event needs.
 			sweepTxId, sweepTx, err = buildAndSignSweepTx(
 				s.builder, s.signingWallets(), outputsToSweep,
 			)
