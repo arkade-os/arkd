@@ -40,9 +40,14 @@ It never re-runs and never overwrites a value an admin changed later.
 
 > **Note:** only the *settings* environment variables below follow this first-boot-only rule.
 > Infrastructure variables (database, signer address, ports, TLS, unlocker, …) are read on
-> **every** boot as usual. The wallet addresses are an exception: like the other settings they
-> are seeded on first boot and then sourced from the stored row (env is only a fallback when the
-> stored value is empty).
+> **every** boot as usual.
+>
+> The wallet addresses (`ARKD_WALLET_ADDR` / `ARKD_WALLET_FALLBACK_ADDRS`) are a hybrid. Like
+> settings, they're seeded on first boot, persisted, and normally read from the stored row (and
+> changed via the admin API). But unlike other settings — whose env vars are ignored after first
+> boot — the wallet env vars are still honored on **every** boot as a fallback whenever the stored
+> value is empty. This keeps upgrades safe: the migration adds the new columns empty, so a node
+> falls back to its env-configured address until an admin sets it.
 
 ## Seed environment variables
 
