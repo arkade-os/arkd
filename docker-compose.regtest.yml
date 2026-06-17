@@ -62,7 +62,8 @@ services:
     volumes:
       - arkd-wallet-volume:/app/data
   # A second arkd-wallet acting as an additional LP wallet, wired into arkd as a
-  # sweep fallback via ARKD_WALLET_FALLBACK_ADDRS.
+  # sweep fallback via ARKD_WALLET_FALLBACK_ADDRS: sweep signing is attempted with
+  # the primary first, then each fallback.
   arkd-wallet-2:
     restart: unless-stopped
     build:
