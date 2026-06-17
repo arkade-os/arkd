@@ -844,10 +844,11 @@ func (c *Config) walletService() error {
 
 // dialFallbackWallets dials the configured fallback arkd-wallets and validates
 // that each one is reachable and on the same network as the primary. Fallback
-// wallets belong to additional liquidity providers and are used only as sweep
-// fallbacks; the primary remains the sole source of the forfeit pubkey,
-// addresses and signing. Any failure is fatal so a misconfigured wallet is
-// surfaced at startup rather than at sweep time.
+// wallets belong to additional liquidity providers and are intended as sweep
+// fallbacks, though arkd does not yet use them to sign sweeps; for now they are
+// only dialed and readiness-checked. The primary remains the sole source of the
+// forfeit pubkey, addresses and signing. Any failure is fatal so a misconfigured
+// wallet is surfaced at startup.
 func (c *Config) dialFallbackWallets() ([]FallbackWallet, error) {
 	fallbacks := make([]FallbackWallet, 0, len(c.WalletFallbackAddrs))
 	for _, addr := range c.WalletFallbackAddrs {
