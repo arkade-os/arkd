@@ -3,6 +3,7 @@ package filestore
 import (
 	"encoding/hex"
 	"strconv"
+	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
@@ -23,23 +24,29 @@ type intentFeeData struct {
 	OnchainOutput  string `json:"onchain_output"`
 }
 
+type deprecatedSignerData struct {
+	Pubkey     string `json:"pubkey"`
+	CutoffDate string `json:"cutoff_date"`
+}
+
 type storeData struct {
-	ServerUrl           string  `json:"server_url"`
-	SignerPubKey        string  `json:"signer_pubkey"`
-	ForfeitPubKey       string  `json:"forfeit_pubkey"`
-	Network             string  `json:"network"`
-	SessionDuration     string  `json:"session_duration"`
-	UnilateralExitDelay string  `json:"unilateral_exit_delay"`
-	Dust                string  `json:"dust"`
-	BoardingExitDelay   string  `json:"boarding_exit_delay"`
-	ExplorerURL         string  `json:"explorer_url"`
-	ForfeitAddress      string  `json:"forfeit_address"`
-	UtxoMinAmount       string  `json:"utxo_min_amount"`
-	UtxoMaxAmount       string  `json:"utxo_max_amount"`
-	VtxoMinAmount       string  `json:"vtxo_min_amount"`
-	VtxoMaxAmount       string  `json:"vtxo_max_amount"`
-	CheckpointTapscript string  `json:"checkpoint_tapscript"`
-	Fees                feeData `json:"fees"`
+	ServerUrl           string                 `json:"server_url"`
+	SignerPubKey        string                 `json:"signer_pubkey"`
+	ForfeitPubKey       string                 `json:"forfeit_pubkey"`
+	Network             string                 `json:"network"`
+	SessionDuration     string                 `json:"session_duration"`
+	UnilateralExitDelay string                 `json:"unilateral_exit_delay"`
+	Dust                string                 `json:"dust"`
+	BoardingExitDelay   string                 `json:"boarding_exit_delay"`
+	ExplorerURL         string                 `json:"explorer_url"`
+	ForfeitAddress      string                 `json:"forfeit_address"`
+	UtxoMinAmount       string                 `json:"utxo_min_amount"`
+	UtxoMaxAmount       string                 `json:"utxo_max_amount"`
+	VtxoMinAmount       string                 `json:"vtxo_min_amount"`
+	VtxoMaxAmount       string                 `json:"vtxo_max_amount"`
+	CheckpointTapscript string                 `json:"checkpoint_tapscript"`
+	Fees                feeData                `json:"fees"`
+	DeprecatedSigners   []deprecatedSignerData `json:"deprecated_signers"`
 }
 
 func (d storeData) isEmpty() bool {
@@ -88,6 +95,17 @@ func (d storeData) decode() types.Config {
 		},
 	}
 
+	deprecatedSigners := make([]types.DeprecatedSigner, 0, len(d.DeprecatedSigners))
+	for _, ds := range d.DeprecatedSigners {
+		buf, _ := hex.DecodeString(ds.Pubkey)
+		pubkey, _ := btcec.ParsePubKey(buf)
+		cutoff, _ := time.Parse(time.RFC3339, ds.CutoffDate)
+		deprecatedSigners = append(deprecatedSigners, types.DeprecatedSigner{
+			PubKey:     pubkey,
+			CutoffDate: cutoff,
+		})
+	}
+
 	return types.Config{
 		ServerUrl:     d.ServerUrl,
 		SignerPubKey:  signerPubkey,
@@ -111,6 +129,7 @@ func (d storeData) decode() types.Config {
 		VtxoMaxAmount:       int64(vtxoMaxAmount),
 		CheckpointTapscript: d.CheckpointTapscript,
 		Fees:                fees,
+		DeprecatedSigners:   deprecatedSigners,
 	}
 }
 
@@ -140,5 +159,6 @@ func (d storeData) asMap() map[string]any {
 				"onchain_output":  d.Fees.IntentFees.OnchainOutput,
 			},
 		},
+		"deprecated_signers": d.DeprecatedSigners,
 	}
 }
