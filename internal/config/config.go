@@ -851,10 +851,22 @@ func (c *Config) walletService() error {
 // wallet is surfaced at startup.
 func (c *Config) dialFallbackWallets() ([]FallbackWallet, error) {
 	fallbacks := make([]FallbackWallet, 0, len(c.WalletFallbackAddrs))
+	seen := make(map[string]struct{}, len(c.WalletFallbackAddrs))
 	for _, addr := range c.WalletFallbackAddrs {
 		if addr == "" {
 			continue
 		}
+		// Reject a fallback that duplicates the primary or another fallback.
+		if addr == c.WalletAddr {
+			closeWallets(fallbacks)
+			return nil, fmt.Errorf("fallback wallet %q is the same as the primary wallet", addr)
+		}
+		if _, dup := seen[addr]; dup {
+			closeWallets(fallbacks)
+			return nil, fmt.Errorf("duplicate fallback wallet %q", addr)
+		}
+		seen[addr] = struct{}{}
+
 		fbSvc, fbNetwork, err := newWalletClient(addr, c.OtelCollectorEndpoint)
 		if err != nil {
 			closeWallets(fallbacks)

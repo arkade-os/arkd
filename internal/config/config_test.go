@@ -366,4 +366,48 @@ func TestDialFallbackWallets(t *testing.T) {
 		// The first, successfully dialed fallback is closed.
 		require.Equal(t, 1, closes)
 	})
+
+	t.Run("fallback equal to primary hard-fails", func(t *testing.T) {
+		var closes, calls int
+		newWalletClient = func(_, _ string) (ports.WalletService, *arklib.Network, error) {
+			calls++
+			return &fakeFallbackWallet{closed: &closes}, regtest, nil
+		}
+
+		c := &Config{
+			network:             regtest,
+			WalletAddr:          "primary:6060",
+			WalletFallbackAddrs: []string{"a:6060", "primary:6060"},
+		}
+		fbs, err := c.dialFallbackWallets()
+
+		require.Error(t, err)
+		require.Nil(t, fbs)
+		require.Contains(t, err.Error(), "primary:6060")
+		require.Contains(t, err.Error(), "same as the primary")
+		// The first, successfully dialed fallback is closed; the primary-equal
+		// entry is rejected before dialing.
+		require.Equal(t, 1, closes)
+		require.Equal(t, 1, calls)
+	})
+
+	t.Run("duplicate fallback hard-fails", func(t *testing.T) {
+		var closes, calls int
+		newWalletClient = func(_, _ string) (ports.WalletService, *arklib.Network, error) {
+			calls++
+			return &fakeFallbackWallet{closed: &closes}, regtest, nil
+		}
+
+		c := &Config{network: regtest, WalletFallbackAddrs: []string{"a:6060", "a:6060"}}
+		fbs, err := c.dialFallbackWallets()
+
+		require.Error(t, err)
+		require.Nil(t, fbs)
+		require.Contains(t, err.Error(), "duplicate fallback wallet")
+		require.Contains(t, err.Error(), "a:6060")
+		// The first dial succeeded and is closed; the duplicate is rejected
+		// before dialing.
+		require.Equal(t, 1, closes)
+		require.Equal(t, 1, calls)
+	})
 }
