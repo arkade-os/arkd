@@ -56,7 +56,7 @@ func TestAdminService_Settings(t *testing.T) {
 		if seed != nil {
 			require.NoError(t, repo.settingsRepo.Upsert(ctx, *seed, nil))
 		}
-		return application.NewAdminService(nil, repo, nil, nil, ports.UnixTime, nil)
+		return application.NewAdminService(nil, nil, repo, nil, nil, ports.UnixTime, nil)
 	}
 
 	t.Run("settings", func(t *testing.T) {
@@ -246,7 +246,7 @@ func TestAdminService_SettingsSerialization(t *testing.T) {
 	seed := validSettings()
 	probe := &serializeProbeRepo{settings: &seed, delay: 10 * time.Millisecond}
 	svc := application.NewAdminService(
-		nil, &mockRepoManager{settingsRepo: probe}, nil, nil, ports.UnixTime, nil,
+		nil, nil, &mockRepoManager{settingsRepo: probe}, nil, nil, ports.UnixTime, nil,
 	)
 
 	const workers = 8

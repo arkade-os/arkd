@@ -275,10 +275,17 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 }
 
 func (b *txBuilder) BuildSweepTx(inputs []ports.TxInput) (
-	txid, signedSweepTx string, err error,
+	txid, unsignedTx string, err error,
 ) {
 	ctx := context.Background()
-	return sweepTransaction(ctx, b.wallet, inputs)
+	return buildSweepTransaction(ctx, b.wallet, inputs)
+}
+
+func (b *txBuilder) SignSweepTx(
+	wallet ports.WalletService, unsignedTx string,
+) (signedTx string, err error) {
+	ctx := context.Background()
+	return signSweepTransaction(ctx, wallet, unsignedTx)
 }
 
 func (b *txBuilder) VerifyForfeitTxs(

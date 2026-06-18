@@ -69,6 +69,7 @@ type service struct {
 
 func NewService(
 	wallet ports.WalletService,
+	walletFallbacks []ports.WalletService,
 	signer ports.SignerService,
 	repoManager ports.RepoManager,
 	builder ports.TxBuilder,
@@ -142,13 +143,19 @@ func NewService(
 	ctx, cancel := context.WithCancel(ctx)
 
 	svc := &service{
-		wallet:                   wallet,
-		signer:                   signer,
-		repoManager:              repoManager,
-		builder:                  builder,
-		cache:                    cache,
-		scanner:                  scanner,
-		sweeper:                  newSweeper(wallet, repoManager, builder, scheduler),
+		wallet:      wallet,
+		signer:      signer,
+		repoManager: repoManager,
+		builder:     builder,
+		cache:       cache,
+		scanner:     scanner,
+		sweeper: newSweeper(
+			wallet,
+			walletFallbacks,
+			repoManager,
+			builder,
+			scheduler,
+		),
 		operatorPrvkey:           operatorSigningKey,
 		operatorPubkey:           operatorSigningKey.PubKey(),
 		forfeitsBoardingSigsChan: make(chan struct{}, 1),
@@ -396,9 +403,8 @@ func (s *service) Stop() {
 		}
 	}
 
-	// nolint
-	s.wallet.Lock(ctx)
-	log.Debug("locked wallet")
+	// arkd does not own the wallet lifecycle: leave the (possibly shared)
+	// arkd-wallet unlocked so it stays usable across restarts and by other LPs.
 	s.wallet.Close()
 	log.Debug("closed connection to wallet")
 	s.repoManager.Close()

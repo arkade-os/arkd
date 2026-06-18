@@ -95,6 +95,7 @@ type Config struct {
 	RedisUrl                   string
 	RedisTxNumOfRetries        int
 	WalletAddr                 string
+	WalletFallbackAddrs        []string
 	SignerAddr                 string
 	VtxoTreeExpiry             arklib.RelativeLocktime
 	UnilateralExitDelay        arklib.RelativeLocktime
@@ -145,21 +146,22 @@ type Config struct {
 	MaxConcurrentStreams uint32
 	StreamConnPoolSize   uint32
 
-	fee            ports.FeeManager
-	repo           ports.RepoManager
-	svc            application.Service
-	adminSvc       application.AdminService
-	wallet         ports.WalletService
-	signer         ports.SignerService
-	txBuilder      ports.TxBuilder
-	scanner        ports.BlockchainScanner
-	scheduler      ports.SchedulerService
-	unlocker       ports.Unlocker
-	liveStore      ports.LiveStore
-	network        *arklib.Network
-	roundReportSvc application.RoundReportService
-	alerts         ports.Alerts
-	settings       *domain.Settings
+	fee             ports.FeeManager
+	repo            ports.RepoManager
+	svc             application.Service
+	adminSvc        application.AdminService
+	wallet          ports.WalletService
+	walletFallbacks []FallbackWallet
+	signer          ports.SignerService
+	txBuilder       ports.TxBuilder
+	scanner         ports.BlockchainScanner
+	scheduler       ports.SchedulerService
+	unlocker        ports.Unlocker
+	liveStore       ports.LiveStore
+	network         *arklib.Network
+	roundReportSvc  application.RoundReportService
+	alerts          ports.Alerts
+	settings        *domain.Settings
 }
 
 func (c *Config) String() string {
@@ -180,6 +182,7 @@ func (c *Config) String() string {
 var (
 	Datadir                   = "DATADIR"
 	WalletAddr                = "WALLET_ADDR"
+	WalletFallbackAddrs       = "WALLET_FALLBACK_ADDRS"
 	SignerAddr                = "SIGNER_ADDR"
 	SessionDuration           = "SESSION_DURATION"
 	BanDuration               = "BAN_DURATION"
@@ -442,6 +445,7 @@ func LoadConfig() (*Config, error) {
 	return &Config{
 		Datadir:                   viper.GetString(Datadir),
 		WalletAddr:                viper.GetString(WalletAddr),
+		WalletFallbackAddrs:       parseWalletFallbackAddrs(viper.GetString(WalletFallbackAddrs)),
 		SignerAddr:                signerAddr,
 		SessionDuration:           viper.GetInt64(SessionDuration),
 		BanDuration:               viper.GetInt64(BanDuration),
@@ -664,6 +668,29 @@ func (c *Config) WalletService() ports.WalletService {
 	return c.wallet
 }
 
+// FallbackWallet pairs a dialed fallback wallet client with the address it was
+// dialed at, so failures can name the specific wallet (host:port) rather than a
+// positional index.
+type FallbackWallet struct {
+	Addr    string
+	Service ports.WalletService
+}
+
+func (c *Config) FallbackWallets() []FallbackWallet {
+	return c.walletFallbacks
+}
+
+// fallbackWalletServices returns just the dialed fallback wallet clients, for
+// consumers (the app and admin services) that sign with them but don't need the
+// dial address.
+func (c *Config) fallbackWalletServices() []ports.WalletService {
+	svcs := make([]ports.WalletService, 0, len(c.walletFallbacks))
+	for _, fb := range c.walletFallbacks {
+		svcs = append(svcs, fb.Service)
+	}
+	return svcs
+}
+
 func (c *Config) UnlockerService() ports.Unlocker {
 	return c.unlocker
 }
@@ -808,20 +835,93 @@ func (c *Config) repoManager() error {
 	return nil
 }
 
+// newWalletClient is the wallet client constructor, indirected so tests can
+// stub out the gRPC dial.
+var newWalletClient = walletclient.New
+
 func (c *Config) walletService() error {
 	arkWallet := c.WalletAddr
 	if arkWallet == "" {
 		return fmt.Errorf("missing ark wallet address")
 	}
 
-	walletSvc, network, err := walletclient.New(arkWallet, c.OtelCollectorEndpoint)
+	walletSvc, network, err := newWalletClient(arkWallet, c.OtelCollectorEndpoint)
 	if err != nil {
 		return err
 	}
 
 	c.wallet = walletSvc
 	c.network = network
+
+	fallbacks, err := c.dialFallbackWallets()
+	if err != nil {
+		return err
+	}
+	c.walletFallbacks = fallbacks
+
 	return nil
+}
+
+// dialFallbackWallets dials the configured fallback arkd-wallets, used as sweep
+// signers, validating each is reachable and on the primary's network. Any
+// failure is fatal so misconfiguration surfaces at startup.
+func (c *Config) dialFallbackWallets() ([]FallbackWallet, error) {
+	fallbacks := make([]FallbackWallet, 0, len(c.WalletFallbackAddrs))
+	seen := make(map[string]struct{}, len(c.WalletFallbackAddrs))
+	for _, addr := range c.WalletFallbackAddrs {
+		if addr == "" {
+			continue
+		}
+		// Reject a fallback that duplicates the primary or another fallback.
+		if addr == c.WalletAddr {
+			closeWallets(fallbacks)
+			return nil, fmt.Errorf("fallback wallet %q is the same as the primary wallet", addr)
+		}
+		if _, dup := seen[addr]; dup {
+			closeWallets(fallbacks)
+			return nil, fmt.Errorf("duplicate fallback wallet %q", addr)
+		}
+		seen[addr] = struct{}{}
+
+		fbSvc, fbNetwork, err := newWalletClient(addr, c.OtelCollectorEndpoint)
+		if err != nil {
+			closeWallets(fallbacks)
+			return nil, fmt.Errorf("failed to dial fallback wallet %q: %w", addr, err)
+		}
+		if fbNetwork.Name != c.network.Name {
+			fbSvc.Close()
+			closeWallets(fallbacks)
+			return nil, fmt.Errorf(
+				"fallback wallet %q is on network %q, expected %q (same as primary)",
+				addr, fbNetwork.Name, c.network.Name,
+			)
+		}
+		log.Infof("dialed fallback wallet %q on network %s", addr, fbNetwork.Name)
+		fallbacks = append(fallbacks, FallbackWallet{Addr: addr, Service: fbSvc})
+	}
+	return fallbacks, nil
+}
+
+func closeWallets(wallets []FallbackWallet) {
+	for _, w := range wallets {
+		w.Service.Close()
+	}
+}
+
+// parseWalletFallbackAddrs splits a comma-separated list of wallet addresses,
+// trimming whitespace and dropping empty entries.
+func parseWalletFallbackAddrs(raw string) []string {
+	parts := strings.Split(raw, ",")
+	addrs := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			addrs = append(addrs, p)
+		}
+	}
+	if len(addrs) == 0 {
+		return nil
+	}
+	return addrs
 }
 
 func (c *Config) signerService() error {
@@ -924,7 +1024,7 @@ func (c *Config) appService() error {
 	}
 
 	svc, err := application.NewService(
-		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
+		c.wallet, c.fallbackWalletServices(), c.signer, c.repo, c.txBuilder, c.scanner,
 		c.scheduler, c.liveStore, roundReportSvc, c.alerts, c.fee,
 	)
 	if err != nil {
@@ -942,7 +1042,7 @@ func (c *Config) adminService() error {
 	}
 
 	c.adminSvc = application.NewAdminService(
-		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
+		c.wallet, c.fallbackWalletServices(), c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 	)
 	return nil
 }

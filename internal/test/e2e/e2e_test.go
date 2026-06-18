@@ -3591,7 +3591,7 @@ func TestSweep(t *testing.T) {
 
 		time.Sleep(2 * time.Second)
 
-		// lock/unlock the wallet to restart the sweeper
+		// restart arkd to restart the sweeper
 		err = restartArkd()
 		require.NoError(t, err)
 

@@ -60,7 +60,12 @@ type TxBuilder interface {
 	VerifyForfeitTxs(
 		vtxos []domain.Vtxo, connectors tree.FlatTxTree, txs []string,
 	) (valid map[domain.Outpoint]ValidForfeitTx, err error)
-	BuildSweepTx(inputs []TxInput) (txid string, signedSweepTx string, err error)
+	// BuildSweepTx builds the unsigned sweep tx, using the primary wallet for the
+	// destination address and fees.
+	BuildSweepTx(inputs []TxInput) (txid string, unsignedTx string, err error)
+	// SignSweepTx signs an unsigned sweep tx with the given wallet, so it can be
+	// signed by any primary/fallback wallet without rebuilding it.
+	SignSweepTx(wallet WalletService, unsignedTx string) (signedTx string, err error)
 	GetSweepableBatchOutputs(vtxoTree *tree.TxTree) (
 		vtxoTreeExpiry *arklib.RelativeLocktime, batchOutputs *TxInput, err error,
 	)
