@@ -840,7 +840,26 @@ func (c *Config) repoManager() error {
 var newWalletClient = walletclient.New
 
 func (c *Config) walletService() error {
+	// Wallet addresses are sourced from the persisted settings (seeded from
+	// env on first boot) so admin changes take effect on the next restart. Fall
+	// back to env if settings aren't available yet.
 	arkWallet := c.WalletAddr
+	fallbackAddrs := c.WalletFallbackAddrs
+	if c.repo != nil {
+		settings, err := c.repo.Settings().Get(context.Background())
+		switch {
+		case err != nil:
+			log.Warnf("failed to read settings for wallet addresses, using env: %v", err)
+		case settings != nil:
+			if settings.WalletAddr != "" {
+				arkWallet = settings.WalletAddr
+			}
+			if len(settings.WalletFallbackAddrs) > 0 {
+				fallbackAddrs = settings.WalletFallbackAddrs
+			}
+		}
+	}
+
 	if arkWallet == "" {
 		return fmt.Errorf("missing ark wallet address")
 	}
@@ -853,7 +872,9 @@ func (c *Config) walletService() error {
 	c.wallet = walletSvc
 	c.network = network
 
-	fallbacks, err := c.dialFallbackWallets()
+	log.Infof("dialed primary arkd-wallet at %q on network %s", arkWallet, network.Name)
+
+	fallbacks, err := c.dialFallbackWallets(arkWallet, fallbackAddrs)
 	if err != nil {
 		return err
 	}
@@ -862,18 +883,21 @@ func (c *Config) walletService() error {
 	return nil
 }
 
-// dialFallbackWallets dials the configured fallback arkd-wallets, used as sweep
-// signers, validating each is reachable and on the primary's network. Any
-// failure is fatal so misconfiguration surfaces at startup.
-func (c *Config) dialFallbackWallets() ([]FallbackWallet, error) {
-	fallbacks := make([]FallbackWallet, 0, len(c.WalletFallbackAddrs))
-	seen := make(map[string]struct{}, len(c.WalletFallbackAddrs))
-	for _, addr := range c.WalletFallbackAddrs {
+// dialFallbackWallets dials the given fallback arkd-wallets (sourced from
+// settings or env), used as sweep signers, validating each is reachable and on
+// the primary's network. Any failure is fatal so misconfiguration surfaces at
+// startup.
+func (c *Config) dialFallbackWallets(
+	primaryAddr string, fallbackAddrs []string,
+) ([]FallbackWallet, error) {
+	fallbacks := make([]FallbackWallet, 0, len(fallbackAddrs))
+	seen := make(map[string]struct{}, len(fallbackAddrs))
+	for _, addr := range fallbackAddrs {
 		if addr == "" {
 			continue
 		}
 		// Reject a fallback that duplicates the primary or another fallback.
-		if addr == c.WalletAddr {
+		if addr == primaryAddr {
 			closeWallets(fallbacks)
 			return nil, fmt.Errorf("fallback wallet %q is the same as the primary wallet", addr)
 		}
@@ -1105,6 +1129,7 @@ func (c *Config) getSettings() (*domain.Settings, error) {
 		c.BoardingExitDelay, c.VtxoTreeExpiry,
 		c.MaxTxWeight, c.MaxOpReturnOutputs, c.AssetTxMaxWeightRatio, c.NoteUriPrefix,
 		c.BuildVersionHeader, c.BuildVersionHeaderRequired, c.DigestHeaderRequired,
+		c.WalletAddr, c.WalletFallbackAddrs,
 	)
 	if err != nil {
 		return nil, err

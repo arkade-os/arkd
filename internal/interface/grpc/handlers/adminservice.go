@@ -725,6 +725,8 @@ func (a *adminHandler) GetSettings(
 			BuildVersionHeader:            &settings.BuildVersionHeader,
 			BuildVersionHeaderRequired:    &settings.BuildVersionHeaderRequired,
 			DigestHeaderRequired:          &settings.DigestHeaderRequired,
+			WalletAddr:                    &settings.WalletAddr,
+			WalletFallbackAddrs:           settings.WalletFallbackAddrs,
 			UpdatedAt:                     formatTime(settings.UpdatedAt),
 		}
 	}
@@ -864,6 +866,8 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		noteUriPrefix                                    *string
 		buildVersionHeader                               *string
 		buildVersionHeaderRequired, digestHeaderRequired *bool
+		walletAddr                                       *string
+		walletFallbackAddrs                              *[]string
 	)
 	if settings.BanThreshold != nil {
 		t := uint64(settings.GetBanThreshold())
@@ -921,6 +925,14 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		t := settings.GetDigestHeaderRequired()
 		digestHeaderRequired = &t
 	}
+	if settings.WalletAddr != nil {
+		t := settings.GetWalletAddr()
+		walletAddr = &t
+	}
+	if len(settings.WalletFallbackAddrs) > 0 {
+		t := settings.GetWalletFallbackAddrs()
+		walletFallbackAddrs = &t
+	}
 
 	return &domain.SettingsUpdate{
 		SessionDuration:               parseDuration(settings.SessionDuration),
@@ -947,6 +959,8 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		BuildVersionHeader:            buildVersionHeader,
 		BuildVersionHeaderRequired:    buildVersionHeaderRequired,
 		DigestHeaderRequired:          digestHeaderRequired,
+		WalletAddr:                    walletAddr,
+		WalletFallbackAddrs:           walletFallbackAddrs,
 	}, nil
 }
 

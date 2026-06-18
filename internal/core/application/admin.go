@@ -642,9 +642,8 @@ func (a *adminService) UpdateSettings(
 	a.settingsMu.Lock()
 	defer a.settingsMu.Unlock()
 
-	// Partial update: only the fields set on the request (non-nil pointers) are
-	// applied to the stored settings; omitted fields are left unchanged. The
-	// returned changelog lists exactly the fields that were updated.
+	// Partial updates allowed. Only the fields set on the request (non-nil pointers) are
+	// applied to the stored settings and omitted fields are left unchanged.
 	settings, err := a.repoManager.Settings().Get(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current settings: %w", err)

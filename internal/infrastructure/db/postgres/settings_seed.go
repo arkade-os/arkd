@@ -144,6 +144,8 @@ func seedParams(settings domain.Settings) queries.UpsertSettingsParams {
 		BuildVersionHeader:            settings.BuildVersionHeader,
 		BuildVersionHeaderRequired:    settings.BuildVersionHeaderRequired,
 		DigestHeaderRequired:          settings.DigestHeaderRequired,
+		WalletAddr:                    settings.WalletAddr,
+		WalletFallbackAddrs:           domain.EncodeFallbackAddrs(settings.WalletFallbackAddrs),
 		BatchOnchainInputFee:          settings.BatchFees.OnchainInputFee,
 		BatchOffchainInputFee:         settings.BatchFees.OffchainInputFee,
 		BatchOnchainOutputFee:         settings.BatchFees.OnchainOutputFee,

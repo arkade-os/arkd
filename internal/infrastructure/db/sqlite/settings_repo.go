@@ -103,6 +103,8 @@ func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) 
 		BuildVersionHeader:            row.BuildVersionHeader,
 		BuildVersionHeaderRequired:    row.BuildVersionHeaderRequired,
 		DigestHeaderRequired:          row.DigestHeaderRequired,
+		WalletAddr:                    row.WalletAddr,
+		WalletFallbackAddrs:           domain.DecodeFallbackAddrs(row.WalletFallbackAddrs),
 		ScheduledSession:              scheduledSession,
 		BatchFees: domain.BatchFees{
 			OnchainInputFee:   row.BatchOnchainInputFee,
@@ -144,6 +146,8 @@ func (r *settingsRepository) Upsert(
 		BuildVersionHeader:            settings.BuildVersionHeader,
 		BuildVersionHeaderRequired:    settings.BuildVersionHeaderRequired,
 		DigestHeaderRequired:          settings.DigestHeaderRequired,
+		WalletAddr:                    settings.WalletAddr,
+		WalletFallbackAddrs:           domain.EncodeFallbackAddrs(settings.WalletFallbackAddrs),
 		BatchOnchainInputFee:          settings.BatchFees.OnchainInputFee,
 		BatchOffchainInputFee:         settings.BatchFees.OffchainInputFee,
 		BatchOnchainOutputFee:         settings.BatchFees.OnchainOutputFee,
