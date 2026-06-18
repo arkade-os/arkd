@@ -680,6 +680,17 @@ func (c *Config) FallbackWallets() []FallbackWallet {
 	return c.walletFallbacks
 }
 
+// fallbackWalletServices returns just the dialed fallback wallet clients, for
+// consumers (the app and admin services) that sign with them but don't need the
+// dial address.
+func (c *Config) fallbackWalletServices() []ports.WalletService {
+	svcs := make([]ports.WalletService, 0, len(c.walletFallbacks))
+	for _, fb := range c.walletFallbacks {
+		svcs = append(svcs, fb.Service)
+	}
+	return svcs
+}
+
 func (c *Config) UnlockerService() ports.Unlocker {
 	return c.unlocker
 }
@@ -842,13 +853,9 @@ func (c *Config) walletService() error {
 	return nil
 }
 
-// dialFallbackWallets dials the configured fallback arkd-wallets and validates
-// that each one is reachable and on the same network as the primary. Fallback
-// wallets belong to additional liquidity providers and are intended as sweep
-// fallbacks, though arkd does not yet use them to sign sweeps; for now they are
-// only dialed and readiness-checked. The primary remains the sole source of the
-// forfeit pubkey, addresses and signing. Any failure is fatal so a misconfigured
-// wallet is surfaced at startup.
+// dialFallbackWallets dials the configured fallback arkd-wallets, used as sweep
+// signers, validating each is reachable and on the primary's network. Any
+// failure is fatal so misconfiguration surfaces at startup.
 func (c *Config) dialFallbackWallets() ([]FallbackWallet, error) {
 	fallbacks := make([]FallbackWallet, 0, len(c.WalletFallbackAddrs))
 	seen := make(map[string]struct{}, len(c.WalletFallbackAddrs))
@@ -1008,7 +1015,7 @@ func (c *Config) appService() error {
 	}
 
 	svc, err := application.NewService(
-		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
+		c.wallet, c.fallbackWalletServices(), c.signer, c.repo, c.txBuilder, c.scanner,
 		c.scheduler, c.liveStore, roundReportSvc, c.alerts, c.fee,
 	)
 	if err != nil {
@@ -1026,7 +1033,7 @@ func (c *Config) adminService() error {
 	}
 
 	c.adminSvc = application.NewAdminService(
-		c.wallet, c.repo, c.txBuilder, c.liveStore, unit, c.fee,
+		c.wallet, c.fallbackWalletServices(), c.repo, c.txBuilder, c.liveStore, unit, c.fee,
 	)
 	return nil
 }

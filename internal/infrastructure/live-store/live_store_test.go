@@ -834,11 +834,18 @@ func (m *mockedTxBuilder) BuildCommitmentTx(
 
 func (m *mockedTxBuilder) BuildSweepTx(
 	inputs []ports.TxInput,
-) (txid string, signedSweepTx string, err error) {
+) (txid string, unsignedTx string, err error) {
 	args := m.Called(inputs)
 	res0 := args.Get(0).(string)
 	res1 := args.Get(1).(string)
 	return res0, res1, args.Error(2)
+}
+
+func (m *mockedTxBuilder) SignSweepTx(
+	wallet ports.WalletService, unsignedTx string,
+) (signedTx string, err error) {
+	args := m.Called(wallet, unsignedTx)
+	return args.Get(0).(string), args.Error(1)
 }
 
 func (m *mockedTxBuilder) GetSweepableBatchOutputs(

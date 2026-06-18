@@ -61,9 +61,9 @@ services:
       - ARKD_WALLET_DEPRECATED_SIGNER_KEYS=${ARKD_WALLET_DEPRECATED_SIGNER_KEYS:-}
     volumes:
       - arkd-wallet-volume:/app/data
-  # A second arkd-wallet acting as an additional LP wallet, registered with arkd
-  # via ARKD_WALLET_FALLBACK_ADDRS. arkd currently only dials it and verifies it
-  # is initialized and unlocked at startup; it is not yet used to sign sweeps.
+  # A second arkd-wallet acting as an additional LP wallet, wired into arkd as a
+  # sweep fallback via ARKD_WALLET_FALLBACK_ADDRS: sweep signing is attempted with
+  # the primary first, then each fallback.
   arkd-wallet-2:
     restart: unless-stopped
     build:
