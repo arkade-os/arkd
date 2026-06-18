@@ -31,7 +31,7 @@ func (b *fakeSweepBuilder) BuildSweepTx(inputs []ports.TxInput) (string, string,
 	if b.buildErr != nil {
 		return "", "", b.buildErr
 	}
-	return b.unsignedTx, b.txid, nil
+	return b.txid, b.unsignedTx, nil
 }
 
 func (b *fakeSweepBuilder) SignSweepTx(
@@ -76,7 +76,7 @@ func TestBuildAndSignSweepTx(t *testing.T) {
 
 		txid, signed, err := buildAndSignSweepTx(b, wallets, inputs)
 		require.Error(t, err)
-		require.Empty(t, txid)
+		require.Equal(t, "txid123", txid)
 		require.Empty(t, signed)
 		require.Contains(t, err.Error(), "no wallet could sign sweep tx txid123")
 		require.Contains(t, err.Error(), "wallet[0]")

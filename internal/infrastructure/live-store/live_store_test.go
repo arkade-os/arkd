@@ -834,7 +834,7 @@ func (m *mockedTxBuilder) BuildCommitmentTx(
 
 func (m *mockedTxBuilder) BuildSweepTx(
 	inputs []ports.TxInput,
-) (unsignedTx string, txid string, err error) {
+) (txid string, unsignedTx string, err error) {
 	args := m.Called(inputs)
 	res0 := args.Get(0).(string)
 	res1 := args.Get(1).(string)

@@ -70,19 +70,24 @@ func (s *sweeper) signingWallets() []ports.WalletService {
 
 // buildAndSignSweepTx builds the sweep transaction once (its destination and fees
 // come from the primary wallet) and then attempts to sign it with each wallet in
-// order, returning as soon as one succeeds. This lets a single arkd sweep batches
-// signed by any of its primary/fallback arkd-wallets. Broadcasting is left to the
-// caller.
+// order, returning (txid, signedTx, nil) as soon as one succeeds. This lets a
+// single arkd sweep batches signed by any of its primary/fallback arkd-wallets.
+// Broadcasting is left to the caller.
+//
+// On signing failure it still returns the txid (with a non-nil error and an empty
+// signed tx) so a reconcile-only caller can use the txid without rebuilding the
+// tx. Callers that broadcast must treat a non-nil error as fatal. A build failure
+// returns an empty txid.
 func buildAndSignSweepTx(
 	builder ports.TxBuilder, wallets []ports.WalletService, inputs []ports.TxInput,
 ) (string, string, error) {
-	unsignedTx, txid, err := builder.BuildSweepTx(inputs)
+	txid, unsignedTx, err := builder.BuildSweepTx(inputs)
 	if err != nil {
 		return "", "", err
 	}
 
 	if len(wallets) == 0 {
-		return "", "", fmt.Errorf("no signing wallets configured for sweep tx %s", txid)
+		return txid, "", fmt.Errorf("no signing wallets configured for sweep tx %s", txid)
 	}
 
 	signErrs := make([]error, 0, len(wallets))
@@ -95,7 +100,7 @@ func buildAndSignSweepTx(
 		signErrs = append(signErrs, fmt.Errorf("wallet[%d]: %w", i, signErr))
 	}
 
-	return "", "", fmt.Errorf(
+	return txid, "", fmt.Errorf(
 		"no wallet could sign sweep tx %s: %w", txid, errors.Join(signErrs...),
 	)
 }
@@ -711,24 +716,26 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			}
 			log.Debugf("sweeper: batch %s swept by: %s", commitmentTxid, txid)
 		} else {
-			// if all outputs are spent, it means we missed to mark the batch as swept,
-			// build a sweep transaction without broadcasting it. We'll use it to rebuild
-			// sweepEvent. The outputs are already spent on-chain, so this tx is never
-			// broadcast and a signing failure (e.g. the wallet that swept them is no
-			// longer primary or fallback) must not block reconciliation so we fall back to the
-			// unsigned tx which still carries the txid the event needs.
+			// All outputs are already spent on-chain — we just missed marking the
+			// batch swept. We rebuild the sweepEvent from the txid; the tx is never
+			// broadcast here, so a signing failure (e.g. the wallet that swept them
+			// is no longer primary or fallback) must not block reconciliation.
+			// buildAndSignSweepTx still returns the txid on signing failure, so we
+			// reconcile with the txid and store no tx bytes (an unsigned PSBT here
+			// would masquerade as a signed sweep tx in SweepTxs / the swept event).
 			sweepTxId, sweepTx, err = buildAndSignSweepTx(
 				s.builder, s.signingWallets(), outputsToSweep,
 			)
 			if err != nil {
-				log.WithError(err).Warnf(
-					"sweeper: could not sign sweep tx for already-spent batch %s, "+
-						"reconciling with unsigned tx", commitmentTxid,
-				)
-				sweepTx, sweepTxId, err = s.builder.BuildSweepTx(outputsToSweep)
-				if err != nil {
+				if sweepTxId == "" {
+					// the build itself failed; nothing to reconcile with
 					return err
 				}
+				log.WithError(err).Warnf(
+					"sweeper: could not sign sweep tx for already-spent batch %s, "+
+						"reconciling with txid only", commitmentTxid,
+				)
+				sweepTx = ""
 			}
 		}
 

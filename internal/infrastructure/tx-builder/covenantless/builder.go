@@ -275,7 +275,7 @@ func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
 }
 
 func (b *txBuilder) BuildSweepTx(inputs []ports.TxInput) (
-	unsignedTx, txid string, err error,
+	txid, unsignedTx string, err error,
 ) {
 	ctx := context.Background()
 	return buildSweepTransaction(ctx, b.wallet, inputs)

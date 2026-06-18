@@ -24,7 +24,7 @@ import (
 // returned txid is stable regardless of which wallet ends up signing it.
 func buildSweepTransaction(
 	ctx context.Context, wallet ports.WalletService, inputs []ports.TxInput,
-) (unsignedTx string, txid string, err error) {
+) (txid string, unsignedTx string, err error) {
 	ins := make([]*wire.OutPoint, 0)
 	sequences := make([]uint32, 0)
 
@@ -182,7 +182,7 @@ func buildSweepTransaction(
 		return "", "", err
 	}
 
-	return unsignedTx, ptx.UnsignedTx.TxID(), nil
+	return ptx.UnsignedTx.TxID(), unsignedTx, nil
 }
 
 // signSweepTransaction signs the unsigned sweep transaction with the given wallet
