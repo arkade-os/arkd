@@ -99,6 +99,27 @@ func (r *arkRepository) PatchCollectedFees(
 	return nil
 }
 
+// PatchForfeitTxs replaces the stored tx bytes of the given forfeit txs, keyed by
+// txid. Forfeit txs are persisted as standalone Tx records (see addTxs), so the
+// patch is a direct upsert under the same txid.
+func (r *arkRepository) PatchForfeitTxs(
+	ctx context.Context, txByTxid map[string]string,
+) error {
+	for txid, tx := range txByTxid {
+		// Update (not Upsert) so a missing txid fails loudly instead of inserting a
+		// stray record, matching the SQL backends' "UPDATE ... WHERE txid = ?" guard.
+		// Badger keys txs by txid alone (no type column), so unlike SQL this can't
+		// also assert type = 'forfeit'; that's safe because txids are globally unique.
+		if err := r.store.Update(txid, Tx{Txid: txid, Tx: tx}); err != nil {
+			if errors.Is(err, badgerhold.ErrNotFound) {
+				return fmt.Errorf("forfeit tx %s not found", txid)
+			}
+			return fmt.Errorf("failed to patch forfeit tx %s: %w", txid, err)
+		}
+	}
+	return nil
+}
+
 func (r *arkRepository) GetRoundWithCommitmentTxid(
 	ctx context.Context, txid string,
 ) (*domain.Round, error) {

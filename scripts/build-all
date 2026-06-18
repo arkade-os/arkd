@@ -46,6 +46,13 @@ for os in "${OS[@]}"; do
             handle_error $os $arch $?
         fi
 
+        if VERSION=$VERSION GOOS=$os GOARCH=$arch ./scripts/build-arkd-forfeit-backfill; then
+            echo "Built arkd-forfeit-backfill successfully for $os $arch"
+            echo ""
+        else
+            handle_error $os $arch $?
+        fi
+
         if VERSION=$VERSION GOOS=$os GOARCH=$arch ./pkg/ark-cli/scripts/build; then
             echo "Built ark-cli successfully for $os $arch"
             echo ""
