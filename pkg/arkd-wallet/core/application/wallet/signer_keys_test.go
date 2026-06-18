@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -131,4 +132,85 @@ func leafScript(t *testing.T, owner, signer *btcec.PublicKey) []byte {
 	s, err := closure.Script()
 	require.NoError(t, err)
 	return s
+}
+
+// TestSignerKeyForLeaf covers the key selection used when signing tapscript leaves:
+// the wallet signs with whichever of its keys (current or deprecated) the leaf
+// references, including CSV (sweep) leaves; a required leaf that references none of
+// the wallet's keys is a hard error instead of a silent wrong-key signature.
+func TestSignerKeyForLeaf(t *testing.T) {
+	mustKey := func() *btcec.PrivateKey {
+		k, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		return k
+	}
+	current, deprecated, user, stranger := mustKey(), mustKey(), mustKey(), mustKey()
+
+	multisigLeaf := func(keys ...*btcec.PublicKey) []byte {
+		s, err := (&script.MultisigClosure{
+			PubKeys: keys, Type: script.MultisigTypeChecksig,
+		}).Script()
+		require.NoError(t, err)
+		return s
+	}
+	pub := func(k *btcec.PrivateKey) []byte { return schnorr.SerializePubKey(k.PubKey()) }
+
+	w := &wallet{WalletOptions: WalletOptions{
+		SignerKey:            current,
+		DeprecatedSignerKeys: []DeprecatedSignerKey{{Key: deprecated}},
+	}}
+
+	t.Run("current key in multisig leaf", func(t *testing.T) {
+		key, err := w.signerKeyForLeaf(multisigLeaf(user.PubKey(), current.PubKey()), true)
+		require.NoError(t, err)
+		require.Equal(t, pub(current), pub(key))
+	})
+
+	// The fix must select the deprecated key for every multisig closure type,
+	// including the CSV (sweep) and condition variants that previously fell
+	// through to the current key (the regression surface).
+	t.Run("deprecated key matched across all closure types", func(t *testing.T) {
+		ms := script.MultisigClosure{
+			PubKeys: []*btcec.PublicKey{user.PubKey(), deprecated.PubKey()},
+			Type:    script.MultisigTypeChecksig,
+		}
+		csv := script.CSVMultisigClosure{
+			MultisigClosure: ms,
+			Locktime:        arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144},
+		}
+		cond := []byte{txscript.OP_TRUE}
+		closures := map[string]script.Closure{
+			"multisig":      &ms,
+			"csv":           &csv,
+			"cltv":          &script.CLTVMultisigClosure{MultisigClosure: ms, Locktime: arklib.AbsoluteLocktime(1000)},
+			"condition":     &script.ConditionMultisigClosure{MultisigClosure: ms, Condition: cond},
+			"condition_csv": &script.ConditionCSVMultisigClosure{CSVMultisigClosure: csv, Condition: cond},
+		}
+		for name, c := range closures {
+			t.Run(name, func(t *testing.T) {
+				leaf, err := c.Script()
+				require.NoError(t, err)
+				key, err := w.signerKeyForLeaf(leaf, true)
+				require.NoError(t, err)
+				require.Equal(t, pub(deprecated), pub(key))
+			})
+		}
+	})
+
+	t.Run("required leaf with no held key errors", func(t *testing.T) {
+		_, err := w.signerKeyForLeaf(multisigLeaf(user.PubKey(), stranger.PubKey()), true)
+		require.ErrorContains(t, err, "no signer key for tapscript leaf")
+	})
+
+	t.Run("best-effort leaf with no held key falls back to current", func(t *testing.T) {
+		key, err := w.signerKeyForLeaf(multisigLeaf(user.PubKey(), stranger.PubKey()), false)
+		require.NoError(t, err)
+		require.Equal(t, pub(current), pub(key))
+	})
+
+	t.Run("non-multisig leaf falls back to current", func(t *testing.T) {
+		key, err := w.signerKeyForLeaf([]byte{0x01, 0x02, 0x03}, true)
+		require.NoError(t, err)
+		require.Equal(t, pub(current), pub(key))
+	})
 }
