@@ -370,7 +370,7 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	)
 	walletHandler := handlers.NewWalletHandler(walletSvc)
 	walletInitHandler := handlers.NewWalletInitializerHandler(walletSvc, onInit, onUnlock, onReady)
-	signerManagerHandler := handlers.NewSignerManagerHandler(walletSvc, onLoadSigner)
+	signerManagerHandler := handlers.NewSignerManagerHandler(onLoadSigner)
 	healthHandler := handlers.NewHealthHandler()
 
 	var adminGrpcServer *grpc.Server

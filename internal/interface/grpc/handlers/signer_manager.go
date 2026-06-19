@@ -4,42 +4,38 @@ import (
 	"context"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
-	"github.com/arkade-os/arkd/internal/core/ports"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
 type signerManagerHandler struct {
-	walletSvc    ports.WalletService
 	onLoadSigner func(addr string) error
 }
 
 func NewSignerManagerHandler(
-	walletSvc ports.WalletService, onLoadSigner func(addr string) error,
+	onLoadSigner func(addr string) error,
 ) arkv1.SignerManagerServiceServer {
-	return &signerManagerHandler{walletSvc, onLoadSigner}
+	return &signerManagerHandler{onLoadSigner}
 }
 
 func (h *signerManagerHandler) LoadSigner(
 	ctx context.Context, req *arkv1.LoadSignerRequest,
 ) (*arkv1.LoadSignerResponse, error) {
-	signerUrl := req.GetSignerUrl()
-	signerPrvkey := req.GetSignerPrivateKey()
-	if signerUrl == "" && signerPrvkey == "" {
-		return nil, status.Error(codes.InvalidArgument, "missing address or private key")
-	}
-	if signerUrl != "" && signerPrvkey != "" {
+	// Runtime key injection into arkd-wallet is no longer supported: the operator
+	// key now lives in arkd-signer (ARKD_SIGNER_SECRET_KEY). Only repointing arkd
+	// at a signer URL is supported.
+	if req.GetSignerPrivateKey() != "" {
 		return nil, status.Error(
-			codes.InvalidArgument, "address and private key are mutually exclusive",
+			codes.InvalidArgument,
+			"runtime signer key injection is no longer supported; "+
+				"configure ARKD_SIGNER_SECRET_KEY on arkd-signer and provide signer_url",
 		)
 	}
 
-	if signerPrvkey != "" {
-		if err := h.walletSvc.LoadSignerKey(ctx, signerPrvkey); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-		return &arkv1.LoadSignerResponse{}, nil
+	signerUrl := req.GetSignerUrl()
+	if signerUrl == "" {
+		return nil, status.Error(codes.InvalidArgument, "missing signer url")
 	}
 
 	if h.onLoadSigner == nil {

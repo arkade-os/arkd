@@ -386,7 +386,7 @@ func LoadConfig() (*Config, error) {
 
 	signerAddr := viper.GetString(SignerAddr)
 	if signerAddr == "" {
-		signerAddr = viper.GetString(WalletAddr)
+		return nil, fmt.Errorf("ARKD_SIGNER_ADDR is required")
 	}
 
 	// In case the admin port is unset, fallback to service port.
