@@ -28,7 +28,21 @@ func (h *signerHandler) GetPubkey(
 	if err != nil {
 		return nil, err
 	}
-	return &signerv1.GetPubkeyResponse{Pubkey: pubkey}, nil
+	deprecated, err := h.signer.GetDeprecatedPubkeys(ctx)
+	if err != nil {
+		return nil, err
+	}
+	deprecatedSigners := make([]*signerv1.DeprecatedSigner, 0, len(deprecated))
+	for _, d := range deprecated {
+		deprecatedSigners = append(deprecatedSigners, &signerv1.DeprecatedSigner{
+			Pubkey:     d.Pubkey,
+			CutoffDate: d.CutoffDate,
+		})
+	}
+	return &signerv1.GetPubkeyResponse{
+		Pubkey:            pubkey,
+		DeprecatedSigners: deprecatedSigners,
+	}, nil
 }
 
 func (h *signerHandler) SignTransaction(

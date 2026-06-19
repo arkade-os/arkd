@@ -15,7 +15,7 @@ import (
 func TestSignerHandlerStatusAndPubkey(t *testing.T) {
 	priv, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-	h := handlers.NewSignerHandler(application.New(priv))
+	h := handlers.NewSignerHandler(application.New(priv, nil))
 
 	status, err := h.GetStatus(context.Background(), &signerv1.GetStatusRequest{})
 	require.NoError(t, err)
