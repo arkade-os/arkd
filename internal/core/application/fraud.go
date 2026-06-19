@@ -164,9 +164,17 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 		return fmt.Errorf("failed to encode forfeit tx: %s", err)
 	}
 
+	// Sign the vtxo input (tapscript) with the operator signer.
 	signedForfeitTx, err := s.signer.SignTransactionTapscript(ctx, forfeitTxB64, nil)
 	if err != nil {
 		return fmt.Errorf("failed to sign forfeit tx: %s", err)
+	}
+
+	// Sign the connector input (a wallet-owned key-path output) with the wallet:
+	// the operator signer holds no wallet keys, so it cannot sign it.
+	signedForfeitTx, err = s.wallet.SignTransaction(ctx, signedForfeitTx, false)
+	if err != nil {
+		return fmt.Errorf("failed to sign forfeit connector input: %s", err)
 	}
 
 	forfeitTxHex, err := s.builder.FinalizeAndExtract(signedForfeitTx)
