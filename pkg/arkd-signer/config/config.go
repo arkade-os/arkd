@@ -18,10 +18,10 @@ import (
 )
 
 var (
-	Port                 = "PORT"
-	LogLevel             = "LOG_LEVEL"
-	SecretKey            = "SECRET_KEY"
-	DeprecatedKeys       = "DEPRECATED_KEYS"
+	Port                  = "PORT"
+	LogLevel              = "LOG_LEVEL"
+	SecretKey             = "SECRET_KEY"
+	DeprecatedKeys        = "DEPRECATED_KEYS"
 	EmulatorComputeLimits = "EMULATOR_COMPUTE_LIMITS"
 
 	defaultPort     = 6061
