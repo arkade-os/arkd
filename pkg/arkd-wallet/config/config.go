@@ -1,13 +1,10 @@
 package config
 
 import (
-	"bytes"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
@@ -17,7 +14,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/infrastructure/cypher"
 	db "github.com/arkade-os/arkd/pkg/arkd-wallet/core/infrastructure/db/badger"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/infrastructure/nbxplorer"
-	"github.com/btcsuite/btcd/btcec/v2"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
@@ -28,8 +24,6 @@ var (
 	LogLevel              = "LOG_LEVEL"
 	Network               = "NETWORK"
 	NbxplorerURL          = "NBXPLORER_URL"
-	SignerKey             = "SIGNER_KEY"
-	DeprecatedSignerKeys  = "DEPRECATED_SIGNER_KEYS"
 	OtelCollectorEndpoint = "OTEL_COLLECTOR_ENDPOINT"
 	OtelPushInterval      = "OTEL_PUSH_INTERVAL"
 	PyroscopeServerURL    = "PYROSCOPE_SERVER_URL"
@@ -71,8 +65,6 @@ func LoadConfig() (*Config, error) {
 		LogLevel:              viper.GetInt(LogLevel),
 		Network:               net,
 		NbxplorerURL:          viper.GetString(NbxplorerURL),
-		SignerKey:             viper.GetString(SignerKey),
-		DeprecatedSignerKeys:  viper.GetString(DeprecatedSignerKeys),
 		OtelCollectorEndpoint: viper.GetString(OtelCollectorEndpoint),
 		OtelPushInterval:      viper.GetInt64(OtelPushInterval),
 		PyroscopeServerURL:    viper.GetString(PyroscopeServerURL),
@@ -91,8 +83,6 @@ type Config struct {
 	LogLevel              int
 	Network               arklib.Network
 	NbxplorerURL          string
-	SignerKey             string
-	DeprecatedSignerKeys  string
 	OtelCollectorEndpoint string
 	OtelPushInterval      int64
 	PyroscopeServerURL    string
@@ -112,32 +102,6 @@ func (c *Config) String() string {
 }
 
 func (c *Config) initServices() error {
-	var signerKey *btcec.PrivateKey
-	if c.SignerKey != "" {
-		buf, err := hex.DecodeString(c.SignerKey)
-		if err != nil {
-			return fmt.Errorf("invalid signer key format, must be hex")
-		}
-		signerKey, _ = btcec.PrivKeyFromBytes(buf)
-	}
-
-	deprecatedSignerKeys, err := parseDeprecatedSignerKeys(c.DeprecatedSignerKeys)
-	if err != nil {
-		return err
-	}
-
-	if signerKey != nil {
-		currentPubkey := signerKey.PubKey().SerializeCompressed()
-		for _, k := range deprecatedSignerKeys {
-			if bytes.Equal(k.Key.PubKey().SerializeCompressed(), currentPubkey) {
-				return fmt.Errorf(
-					"deprecated signer key %x matches the current signer key",
-					currentPubkey,
-				)
-			}
-		}
-	}
-
 	repository, err := db.NewSeedRepository(c.DbDir, nil)
 	if err != nil {
 		return fmt.Errorf("error while creating seed repository: %s", err)
@@ -156,12 +120,10 @@ func (c *Config) initServices() error {
 	}
 
 	walletSvc := wallet.New(wallet.WalletOptions{
-		SeedRepository:       repository,
-		Cypher:               cryptoSvc,
-		Nbxplorer:            nbxplorerSvc,
-		Network:              network.Name,
-		SignerKey:            signerKey,
-		DeprecatedSignerKeys: deprecatedSignerKeys,
+		SeedRepository: repository,
+		Cypher:         cryptoSvc,
+		Nbxplorer:      nbxplorerSvc,
+		Network:        network.Name,
 	})
 
 	scannerSvc, err := scanner.New(nbxplorerSvc, network.Name)
@@ -203,45 +165,4 @@ func getNetwork() (arklib.Network, error) {
 	default:
 		return arklib.Network{}, fmt.Errorf("unknown network %s", viper.GetString(Network))
 	}
-}
-
-// parseDeprecatedSignerKeys parses a comma-separated list of hex-encoded private
-// keys, each optionally followed by a cutoff date: "<hexkey>[:<unix timestamp>]".
-// The cutoff date is the time after which the key is no longer accepted, 0 if unset.
-func parseDeprecatedSignerKeys(raw string) ([]wallet.DeprecatedSignerKey, error) {
-	keys := make([]wallet.DeprecatedSignerKey, 0)
-	for _, entry := range strings.Split(raw, ",") {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-
-		keyPart, cutoffPart, hasCutoff := strings.Cut(entry, ":")
-		if strings.TrimSpace(keyPart) == "" {
-			return nil, fmt.Errorf("invalid signer key entry, missing hex key: %s", entry)
-		}
-
-		buf, err := hex.DecodeString(keyPart)
-		if err != nil {
-			return nil, fmt.Errorf("invalid signer key format, must be hex: %s", keyPart)
-		}
-		if len(buf) != 32 {
-			return nil, fmt.Errorf("invalid signer key format") 
-		}
-		key, _ := btcec.PrivKeyFromBytes(buf)
-
-		var cutoffDate int64
-		if hasCutoff {
-			cutoff, err := strconv.ParseInt(cutoffPart, 10, 64)
-			if err != nil || cutoff < 0 {
-				return nil, fmt.Errorf(
-					"invalid cutoff date, must be a positive unix timestamp: %s", entry,
-				)
-			}
-			cutoffDate = cutoff
-		}
-		
-		keys = append(keys, wallet.DeprecatedSignerKey{Key: key, CutoffDate: cutoffDate})
-	}
-	return keys, nil
 }
