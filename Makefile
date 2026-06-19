@@ -1,5 +1,5 @@
 .PHONY: \
-	build build-all build-cli build-wallet clean cov \
+	build build-all build-cli build-signer build-wallet clean cov \
 	docker-run docker-run-light docker-stop droppg droppgtest \
 	help integrationtest lint migrate pg pgmigrate pgsqlc pgtest \
 	pprof proto proto-lint psql \
@@ -41,6 +41,11 @@ build-cli:
 build-wallet:
 	@echo "Building arkd wallet binary..."
 	@bash ./scripts/build-arkd-wallet
+
+## build-signer: build arkd signer for your platforms
+build-signer:
+	@echo "Building arkd signer binary..."
+	@bash ./scripts/build-arkd-signer
 
 ## clean: run go clean
 clean:
@@ -173,12 +178,11 @@ run-light: clean
 	$(call setup_env, envs/arkd.light.env)
 	@go run ./cmd/arkd
 
-## run-signer: run arkd wallet as signer without a wallet
+## run-signer: run arkd-signer in dev mode
 run-signer:
-	@echo "Running signer in dev mode"
-	@docker compose -f docker-compose.regtest.yml up -d pg nbxplorer
+	@echo "Running arkd-signer in dev mode"
 	$(call setup_env, envs/signer.dev.env)
-	@go run ./cmd/arkd-wallet
+	@go run ./cmd/arkd-signer
 
 ## run-simulation: run the multi-VTXO batch settlement test
 ## Usage: make run-simulation [CLIENTS=n]

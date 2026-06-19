@@ -591,38 +591,25 @@ func restartArkd() error {
 	return waitUntilReady(adminHttpClient)
 }
 
-// recreate the arkd-wallet container with overridden signer keys, reusing the
-// named data volume so the seed persists, then unlock it and restart arkd so it
-// re-fetches the signer pubkey.
-func recreateArkdWallet(signerKey, deprecated string) error {
+// recreate the arkd-signer container with overridden signer keys, then restart
+// arkd so it re-fetches the signer pubkey. The signer is stateless (key from
+// config), so no data volume or wallet unlock is involved.
+func recreateArkdSigner(secretKey, deprecated string) error {
 	env := []string{
-		"ARKD_WALLET_SIGNER_KEY=" + signerKey,
-		"ARKD_WALLET_DEPRECATED_SIGNER_KEYS=" + deprecated,
+		"ARKD_SIGNER_SECRET_KEY=" + secretKey,
+		"ARKD_SIGNER_DEPRECATED_KEYS=" + deprecated,
 	}
 	args := []string{
 		"compose", "-f", "../../../docker-compose.regtest.yml",
-		"up", "-d", "--force-recreate", "--no-deps", "arkd-wallet",
+		"up", "-d", "--force-recreate", "--no-deps", "arkd-signer",
 	}
 	if _, err := runCommandWithEnv(env, "docker", args...); err != nil {
-		return fmt.Errorf("failed to recreate arkd-wallet: %w", err)
-	}
-
-	time.Sleep(8 * time.Second)
-
-	if err := unlockArkdWallet(); err != nil {
-		return err
+		return fmt.Errorf("failed to recreate arkd-signer: %w", err)
 	}
 
 	time.Sleep(5 * time.Second)
 
 	return restartArkd()
-}
-
-func unlockArkdWallet() error {
-	adminHttpClient := &http.Client{Timeout: 15 * time.Second}
-	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
-	body := fmt.Sprintf(`{"password": "%s"}`, password)
-	return post(adminHttpClient, url, body, "unlock")
 }
 
 func setupArkd() error {
