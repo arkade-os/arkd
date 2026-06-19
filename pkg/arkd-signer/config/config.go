@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -9,16 +10,19 @@ import (
 	"strings"
 
 	"github.com/arkade-os/arkd/pkg/arkd-signer/core/application"
+	"github.com/arkade-os/emulator/pkg/arkade"
+	"github.com/arkade-os/emulator/pkg/emulator"
 	"github.com/btcsuite/btcd/btcec/v2"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
 var (
-	Port           = "PORT"
-	LogLevel       = "LOG_LEVEL"
-	SecretKey      = "SECRET_KEY"
-	DeprecatedKeys = "DEPRECATED_KEYS"
+	Port                 = "PORT"
+	LogLevel             = "LOG_LEVEL"
+	SecretKey            = "SECRET_KEY"
+	DeprecatedKeys       = "DEPRECATED_KEYS"
+	EmulatorComputeLimits = "EMULATOR_COMPUTE_LIMITS"
 
 	defaultPort     = 6061
 	defaultLogLevel = int(log.InfoLevel)
@@ -30,7 +34,9 @@ type Config struct {
 	SecretKey      string
 	DeprecatedKeys string
 
-	SignerSvc application.Signer
+	SignerSvc     application.Signer
+	EmulatorSvc   emulator.Service
+	ComputeLimits arkade.ComputeLimits
 }
 
 func LoadConfig() (*Config, error) {
@@ -45,6 +51,7 @@ func LoadConfig() (*Config, error) {
 		LogLevel:       viper.GetInt(LogLevel),
 		SecretKey:      viper.GetString(SecretKey),
 		DeprecatedKeys: viper.GetString(DeprecatedKeys),
+		ComputeLimits:  parseComputeLimits(viper.GetString(EmulatorComputeLimits)),
 	}
 
 	if err := cfg.initServices(); err != nil {
@@ -79,6 +86,26 @@ func (c *Config) initServices() error {
 	}
 
 	c.SignerSvc = application.New(prvkey, deprecated)
+
+	// Build []*btcec.PrivateKey for the emulator (strips the cutoff metadata).
+	deprecatedPrivKeys := make([]*btcec.PrivateKey, 0, len(deprecated))
+	for _, d := range deprecated {
+		deprecatedPrivKeys = append(deprecatedPrivKeys, d.Key)
+	}
+
+	emulatorSvc, err := emulator.New(
+		context.Background(),
+		prvkey,
+		deprecatedPrivKeys,
+		prvkey.PubKey(), // arkdPubKey = our own operator pubkey (signing-only mode)
+		nil,             // finalizer: nil => signing-only
+		c.ComputeLimits,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to init emulator service: %w", err)
+	}
+	c.EmulatorSvc = emulatorSvc
+
 	return nil
 }
 
@@ -92,6 +119,39 @@ func (c *Config) String() string {
 		return fmt.Sprintf("error while marshalling config JSON: %s", err)
 	}
 	return string(out)
+}
+
+// parseComputeLimits parses the ARKD_SIGNER_EMULATOR_COMPUTE_LIMITS env var.
+// An empty string returns DefaultComputeLimits(). Non-empty values must be a
+// comma-separated list of "OPCODE=limit" pairs, e.g. "OP_CHECKSIG=10,OP_ECMUL=5".
+// Unrecognised opcode names are silently ignored so the service stays forward-compatible.
+func parseComputeLimits(raw string) arkade.ComputeLimits {
+	limits := arkade.DefaultComputeLimits()
+	if raw == "" {
+		return limits
+	}
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		name, valueStr, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		name = strings.TrimSpace(name)
+		valueStr = strings.TrimSpace(valueStr)
+		val, err := strconv.Atoi(valueStr)
+		if err != nil || val < 0 {
+			continue
+		}
+		opcode, found := arkade.OpcodeByName[name]
+		if !found {
+			continue
+		}
+		limits[opcode] = val
+	}
+	return limits
 }
 
 // parseDeprecatedKeys parses a comma-separated list of hex-encoded private keys,
