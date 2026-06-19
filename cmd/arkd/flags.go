@@ -30,7 +30,6 @@ const (
 	scheduledSessionPeriodFlagName    = "period"
 	roundMinParticipantsFlagName      = "round-min-participants"
 	roundMaxParticipantsFlagName      = "round-max-participants"
-	signerKeyFlagName                 = "signer-prvkey"
 	signerUrlFlagName                 = "signer-url"
 	tokenFlagName                     = "token"
 	convictionIdsFlagName             = "ids"
@@ -182,10 +181,6 @@ var (
 	roundMaxParticipantsFlag = &cli.IntFlag{
 		Name:  roundMaxParticipantsFlagName,
 		Usage: "the max number of participants per round",
-	}
-	signerKeyFlag = &cli.StringFlag{
-		Name:  signerKeyFlagName,
-		Usage: "the private key to be loaded to arkd wallet and used as signer",
 	}
 	signerUrlFlag = &cli.StringFlag{
 		Name:  signerUrlFlagName,
