@@ -6,17 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	signerv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/signer/v1"
 	"github.com/arkade-os/arkd/pkg/arkd-signer/config"
 	"github.com/arkade-os/arkd/pkg/arkd-signer/interface/grpc/handlers"
 	"github.com/arkade-os/arkd/pkg/arkd-signer/interface/grpc/interceptors"
-	"github.com/arkade-os/arkd/pkg/arkd-signer/telemetry"
 	"github.com/meshapi/grpc-api-gateway/gateway"
-	log "github.com/sirupsen/logrus"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
@@ -25,12 +20,10 @@ import (
 )
 
 type service struct {
-	cfg               *config.Config
-	server            *http.Server
-	grpcSrv           *grpc.Server
-	otelShutdown      func(context.Context) error
-	pyroscopeShutdown func() error
-	stopFn            func()
+	cfg     *config.Config
+	server  *http.Server
+	grpcSrv *grpc.Server
+	stopFn  func()
 }
 
 func NewService(cfg *config.Config) (*service, error) {
@@ -44,36 +37,6 @@ func (s *service) Start() error {
 		grpc.Creds(insecure.NewCredentials()),
 		interceptors.UnaryInterceptor(),
 		interceptors.StreamInterceptor(),
-	}
-
-	if s.cfg.OtelCollectorEndpoint != "" {
-		pushInteval := time.Duration(s.cfg.OtelPushInterval) * time.Second
-		otelShutdown, err := telemetry.InitOtelSDK(
-			context.Background(),
-			s.cfg.OtelCollectorEndpoint,
-			pushInteval,
-		)
-		if err != nil {
-			return err
-		}
-
-		otelHandler := otelgrpc.NewServerHandler(
-			otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
-		)
-		grpcOpts = append(grpcOpts, grpc.StatsHandler(otelHandler))
-
-		if s.cfg.PyroscopeServerURL != "" {
-			pyroscopeShutdown, err := telemetry.InitPyroscope(
-				s.cfg.PyroscopeServerURL,
-			)
-			if err != nil {
-				log.WithError(err).Warn("failed to initialize pyroscope, continuing without profiling")
-			}
-
-			s.pyroscopeShutdown = pyroscopeShutdown
-		}
-
-		s.otelShutdown = otelShutdown
 	}
 	grpcSrv := grpc.NewServer(grpcOpts...)
 
@@ -131,20 +94,6 @@ func (s *service) Stop() {
 	}
 	if s.grpcSrv != nil {
 		s.grpcSrv.GracefulStop()
-	}
-	if s.pyroscopeShutdown != nil {
-		if err := s.pyroscopeShutdown(); err != nil {
-			log.Errorf("failed to shutdown pyroscope: %s", err)
-		}
-
-		log.Info("shutdown pyroscope")
-	}
-	if s.otelShutdown != nil {
-		if err := s.otelShutdown(context.Background()); err != nil {
-			log.Errorf("failed to shutdown otel: %s", err)
-		}
-
-		log.Infof("otel shutdown")
 	}
 }
 

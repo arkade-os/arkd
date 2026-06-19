@@ -12,25 +12,18 @@ import (
 )
 
 var (
-	Port                  = "PORT"
-	LogLevel              = "LOG_LEVEL"
-	SecretKey             = "SECRET_KEY"
-	OtelCollectorEndpoint = "OTEL_COLLECTOR_ENDPOINT"
-	OtelPushInterval      = "OTEL_PUSH_INTERVAL"
-	PyroscopeServerURL    = "PYROSCOPE_SERVER_URL"
+	Port      = "PORT"
+	LogLevel  = "LOG_LEVEL"
+	SecretKey = "SECRET_KEY"
 
-	defaultPort             = 6061
-	defaultLogLevel         = int(log.InfoLevel)
-	defaultOtelPushInterval = 10 // seconds
+	defaultPort     = 6061
+	defaultLogLevel = int(log.InfoLevel)
 )
 
 type Config struct {
-	Port                  uint32
-	LogLevel              int
-	SecretKey             string
-	OtelCollectorEndpoint string
-	OtelPushInterval      int64
-	PyroscopeServerURL    string
+	Port      uint32
+	LogLevel  int
+	SecretKey string
 
 	SignerSvc application.Signer
 }
@@ -41,15 +34,11 @@ func LoadConfig() (*Config, error) {
 
 	viper.SetDefault(Port, defaultPort)
 	viper.SetDefault(LogLevel, defaultLogLevel)
-	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 
 	cfg := &Config{
-		Port:                  viper.GetUint32(Port),
-		LogLevel:              viper.GetInt(LogLevel),
-		SecretKey:             viper.GetString(SecretKey),
-		OtelCollectorEndpoint: viper.GetString(OtelCollectorEndpoint),
-		OtelPushInterval:      viper.GetInt64(OtelPushInterval),
-		PyroscopeServerURL:    viper.GetString(PyroscopeServerURL),
+		Port:      viper.GetUint32(Port),
+		LogLevel:  viper.GetInt(LogLevel),
+		SecretKey: viper.GetString(SecretKey),
 	}
 
 	if err := cfg.initServices(); err != nil {
