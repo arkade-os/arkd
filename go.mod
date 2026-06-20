@@ -76,9 +76,9 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
-	github.com/arkade-os/emulator/api-spec v0.0.0-00010101000000-000000000000 // indirect
-	github.com/arkade-os/emulator/pkg/arkade v0.0.0-00010101000000-000000000000 // indirect
-	github.com/arkade-os/emulator/pkg/emulator v0.0.0-00010101000000-000000000000 // indirect
+	github.com/arkade-os/emulator/api-spec v0.0.0-20260620052341-17dd9d4ed168 // indirect
+	github.com/arkade-os/emulator/pkg/arkade v0.0.0-20260620052341-17dd9d4ed168 // indirect
+	github.com/arkade-os/emulator/pkg/emulator v0.0.0-20260620052341-17dd9d4ed168 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect
 	github.com/btcsuite/btcwallet/wallet/txauthor v1.3.4 // indirect
@@ -245,9 +245,3 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/arkade-os/emulator/pkg/emulator => C:/Git/_emulator_ref/pkg/emulator
-
-replace github.com/arkade-os/emulator/pkg/arkade => C:/Git/_emulator_ref/pkg/arkade
-
-replace github.com/arkade-os/emulator/api-spec => C:/Git/_emulator_ref/api-spec

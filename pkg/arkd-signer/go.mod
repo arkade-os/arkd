@@ -11,9 +11,9 @@ replace github.com/arkade-os/arkd/api-spec => ../../api-spec
 require (
 	github.com/arkade-os/arkd/api-spec v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260423153230-9b5d8e96256f
-	github.com/arkade-os/emulator/api-spec v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/emulator/pkg/arkade v0.0.0-00010101000000-000000000000
-	github.com/arkade-os/emulator/pkg/emulator v0.0.0-00010101000000-000000000000
+	github.com/arkade-os/emulator/api-spec v0.0.0-20260620052341-17dd9d4ed168
+	github.com/arkade-os/emulator/pkg/arkade v0.0.0-20260620052341-17dd9d4ed168
+	github.com/arkade-os/emulator/pkg/emulator v0.0.0-20260620052341-17dd9d4ed168
 	github.com/btcsuite/btcd v0.24.3-0.20240921052913-67b8efd3ba53
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.9
@@ -64,9 +64,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/arkade-os/emulator/pkg/emulator => C:/Git/_emulator_ref/pkg/emulator
-
-replace github.com/arkade-os/emulator/pkg/arkade => C:/Git/_emulator_ref/pkg/arkade
-
-replace github.com/arkade-os/emulator/api-spec => C:/Git/_emulator_ref/api-spec
