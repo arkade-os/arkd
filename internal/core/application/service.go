@@ -484,30 +484,17 @@ func (s *service) SubmitOffchainTx(
 		).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 	}
 
-	// check if the offchain tx is not in cache.
-	// it means the db didn't updated yet, but we still want to return duplicated offchain tx error.
-	s.offchainTxMu.Lock()
-	existingOffchainTxInCache, err := s.cache.OffchainTxs().Get(ctx, txid)
-	if err != nil {
-		s.offchainTxMu.Unlock()
-		log.WithError(err).Errorf("failed to check duplicated offchain tx in cache")
-		return nil, errors.INTERNAL_ERROR.New("something went wrong").
-			WithMetadata(map[string]any{"txid": txid})
-	}
-	if existingOffchainTxInCache != nil {
-		s.offchainTxMu.Unlock()
-		return nil, errors.INVALID_ARK_PSBT.New("duplicated offchain tx %s", txid).
-			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
-	}
-	s.offchainTxMu.Unlock()
-
 	event, err := offchainTx.Request(txid, signedArkTx, checkpointTxs)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.Wrap(err)
 	}
 	changes = []domain.Event{event}
 
+	skipDefer := false
 	defer func() {
+		if skipDefer {
+			return
+		}
 		if structErr != nil {
 			change := offchainTx.Fail(structErr)
 			changes = append(changes, change)
@@ -1081,6 +1068,20 @@ func (s *service) SubmitOffchainTx(
 
 	s.offchainTxMu.Lock()
 	defer s.offchainTxMu.Unlock()
+
+	// check if the offchain tx is not in cache.
+	// it means the db didn't updated yet, but we still want to return duplicated offchain tx error.
+	existingOffchainTxInCache, err := s.cache.OffchainTxs().Get(ctx, txid)
+	if err != nil {
+		log.WithError(err).Errorf("failed to check duplicated offchain tx in cache")
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithMetadata(map[string]any{"txid": txid})
+	}
+	if existingOffchainTxInCache != nil {
+		skipDefer = true
+		return nil, errors.INVALID_ARK_PSBT.New("duplicated offchain tx %s", txid).
+			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+	}
 
 	// before pushing to the cache, check if any of the spent vtxos are already spent by another offchain tx
 	// we redo this check after locking the mutex to avoid race conditions between concurrent offchain tx submissions
