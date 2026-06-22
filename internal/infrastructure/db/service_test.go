@@ -1501,64 +1501,139 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		signedCheckpointPtx2 := "cHNldP8BAgQCAAAAAQQBAAEFAQABBgEDAfsEAgAAAAB=signed"
 		rootCommitmentTxid := "0000000000000000000000000000000000000000000000000000000000000003"
 		commitmentTxid := "0000000000000000000000000000000000000000000000000000000000000004"
-		events := []domain.Event{
-			domain.OffchainTxRequested{
-				OffchainTxEvent: domain.OffchainTxEvent{
-					Id:   arkTxid,
-					Type: domain.EventTypeOffchainTxRequested,
-				},
-				ArkTx:                 "",
-				UnsignedCheckpointTxs: nil,
-				StartingTimestamp:     now.Unix(),
-			},
-			domain.OffchainTxAccepted{
-				OffchainTxEvent: domain.OffchainTxEvent{
-					Id:   arkTxid,
-					Type: domain.EventTypeOffchainTxAccepted,
-				},
-				CommitmentTxids: map[string]string{
-					checkpointTxid1: rootCommitmentTxid,
-					checkpointTxid2: commitmentTxid,
-				},
-				FinalArkTx: "",
-				SignedCheckpointTxs: map[string]string{
-					checkpointTxid1: signedCheckpointPtx1,
-					checkpointTxid2: signedCheckpointPtx2,
-				},
-				RootCommitmentTxid: rootCommitmentTxid,
-			},
-		}
-		offchainTx = domain.NewOffchainTxFromEvents(events)
-		err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
-		require.NoError(t, err)
 
-		gotOffchainTx, err := repo.GetOffchainTx(ctx, arkTxid)
-		require.NoError(t, err)
-		require.NotNil(t, offchainTx)
-		require.True(t, gotOffchainTx.IsAccepted())
-		require.Equal(t, rootCommitmentTxid, gotOffchainTx.RootCommitmentTxId)
-		require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
-
-		newEvents := []domain.Event{
-			domain.OffchainTxFinalized{
-				OffchainTxEvent: domain.OffchainTxEvent{
-					Id:   arkTxid,
-					Type: domain.EventTypeOffchainTxFinalized,
+		t.Run("request -> accept -> finalize", func(t *testing.T) {
+			events := []domain.Event{
+				domain.OffchainTxRequested{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   arkTxid,
+						Type: domain.EventTypeOffchainTxRequested,
+					},
+					ArkTx:                 "",
+					UnsignedCheckpointTxs: nil,
+					StartingTimestamp:     now.Unix(),
 				},
-				FinalCheckpointTxs: nil,
-				Timestamp:          endTimestamp,
-			},
-		}
-		events = append(events, newEvents...)
-		offchainTx = domain.NewOffchainTxFromEvents(events)
-		err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
-		require.NoError(t, err)
+				domain.OffchainTxAccepted{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   arkTxid,
+						Type: domain.EventTypeOffchainTxAccepted,
+					},
+					CommitmentTxids: map[string]string{
+						checkpointTxid1: rootCommitmentTxid,
+						checkpointTxid2: commitmentTxid,
+					},
+					FinalArkTx: "",
+					SignedCheckpointTxs: map[string]string{
+						checkpointTxid1: signedCheckpointPtx1,
+						checkpointTxid2: signedCheckpointPtx2,
+					},
+					RootCommitmentTxid: rootCommitmentTxid,
+				},
+			}
+			offchainTx = domain.NewOffchainTxFromEvents(events)
+			err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
+			require.NoError(t, err)
 
-		gotOffchainTx, err = repo.GetOffchainTx(ctx, arkTxid)
-		require.NoError(t, err)
-		require.NotNil(t, offchainTx)
-		require.True(t, gotOffchainTx.IsFinalized())
-		require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
+			gotOffchainTx, err := repo.GetOffchainTx(ctx, arkTxid)
+			require.NoError(t, err)
+			require.NotNil(t, offchainTx)
+			require.True(t, gotOffchainTx.IsAccepted())
+			require.Equal(t, rootCommitmentTxid, gotOffchainTx.RootCommitmentTxId)
+			require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
+
+			newEvents := []domain.Event{
+				domain.OffchainTxFinalized{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   arkTxid,
+						Type: domain.EventTypeOffchainTxFinalized,
+					},
+					FinalCheckpointTxs: nil,
+					Timestamp:          endTimestamp,
+				},
+			}
+			events = append(events, newEvents...)
+			offchainTx = domain.NewOffchainTxFromEvents(events)
+			err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
+			require.NoError(t, err)
+
+			gotOffchainTx, err = repo.GetOffchainTx(ctx, arkTxid)
+			require.NoError(t, err)
+			require.NotNil(t, offchainTx)
+			require.True(t, gotOffchainTx.IsFinalized())
+			require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
+		})
+
+		t.Run("request -> accept -> fail -> finalize", func(t *testing.T) {
+			events := []domain.Event{
+				domain.OffchainTxRequested{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   txidb,
+						Type: domain.EventTypeOffchainTxRequested,
+					},
+					ArkTx:                 "",
+					UnsignedCheckpointTxs: nil,
+					StartingTimestamp:     now.Unix(),
+				},
+				domain.OffchainTxAccepted{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   txidb,
+						Type: domain.EventTypeOffchainTxAccepted,
+					},
+					CommitmentTxids: map[string]string{
+						checkpointTxid1: rootCommitmentTxid,
+						checkpointTxid2: commitmentTxid,
+					},
+					FinalArkTx: "",
+					SignedCheckpointTxs: map[string]string{
+						checkpointTxid1: signedCheckpointPtx1,
+						checkpointTxid2: signedCheckpointPtx2,
+					},
+					RootCommitmentTxid: rootCommitmentTxid,
+				},
+				domain.OffchainTxFailed{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   txidb,
+						Type: domain.EventTypeOffchainTxFailed,
+					},
+					Reason:    "whatever",
+					Timestamp: time.Now().Unix(),
+				},
+			}
+			offchainTx = domain.NewOffchainTxFromEvents(events)
+			err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
+			require.NoError(t, err)
+
+			gotOffchainTx, err := repo.GetOffchainTx(ctx, txidb)
+			require.NoError(t, err)
+			require.NotNil(t, offchainTx)
+			require.Equal(t, int(domain.OffchainTxAcceptedStage), gotOffchainTx.Stage.Code)
+			require.True(t, gotOffchainTx.Stage.Failed)
+			require.NotEmpty(t, gotOffchainTx.FailReason)
+			require.Equal(t, rootCommitmentTxid, gotOffchainTx.RootCommitmentTxId)
+			require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
+
+			newEvents := []domain.Event{
+				domain.OffchainTxFinalized{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   txidb,
+						Type: domain.EventTypeOffchainTxFinalized,
+					},
+					FinalCheckpointTxs: nil,
+					Timestamp:          endTimestamp,
+				},
+			}
+			events = append(events, newEvents...)
+			offchainTx = domain.NewOffchainTxFromEvents(events)
+			err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
+			require.NoError(t, err)
+
+			gotOffchainTx, err = repo.GetOffchainTx(ctx, txidb)
+			require.NoError(t, err)
+			require.NotNil(t, offchainTx)
+			require.True(t, gotOffchainTx.IsFinalized())
+			require.Empty(t, gotOffchainTx.FailReason)
+			require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
+		})
 	})
 }
 

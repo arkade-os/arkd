@@ -271,8 +271,10 @@ FROM vtxo
 WHERE swept = true
   AND spent = false;
 
+-- Returns only accepted or finalized offchain txs
 -- name: SelectOffchainTx :many
-SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid AND COALESCE(fail_reason, '') = '';
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid
+    AND (stage_code = 2 OR stage_code = 3);
 
 -- name: SelectVtxoPubKeysByCommitmentTxid :many
 SELECT DISTINCT v.pubkey
