@@ -472,12 +472,12 @@ func (s *service) SubmitOffchainTx(
 		spentVtxoKeys = append(spentVtxoKeys, vtxoKey)
 	}
 
-	// check the offchain tx is not in database
 	existingOffchainTx, err := s.repoManager.OffchainTxs().GetOffchainTx(ctx, txid)
 	if err != nil && !strings.Contains(err.Error(), "not found") {
 		return nil, errors.INTERNAL_ERROR.New("failed to fetch offchain tx").
 			WithMetadata(map[string]any{"txid": txid})
 	}
+
 	if existingOffchainTx != nil {
 		return nil, errors.INVALID_ARK_PSBT.New(
 			"duplicated offchain tx %s", txid,
@@ -490,11 +490,7 @@ func (s *service) SubmitOffchainTx(
 	}
 	changes = []domain.Event{event}
 
-	skipDefer := false
 	defer func() {
-		if skipDefer {
-			return
-		}
 		if structErr != nil {
 			change := offchainTx.Fail(structErr)
 			changes = append(changes, change)
@@ -1068,20 +1064,6 @@ func (s *service) SubmitOffchainTx(
 
 	s.offchainTxMu.Lock()
 	defer s.offchainTxMu.Unlock()
-
-	// check if the offchain tx is not in cache.
-	// it means the db didn't updated yet, but we still want to return duplicated offchain tx error.
-	existingOffchainTxInCache, err := s.cache.OffchainTxs().Get(ctx, txid)
-	if err != nil {
-		log.WithError(err).Errorf("failed to check duplicated offchain tx in cache")
-		return nil, errors.INTERNAL_ERROR.New("something went wrong").
-			WithMetadata(map[string]any{"txid": txid})
-	}
-	if existingOffchainTxInCache != nil {
-		skipDefer = true
-		return nil, errors.INVALID_ARK_PSBT.New("duplicated offchain tx %s", txid).
-			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
-	}
 
 	// before pushing to the cache, check if any of the spent vtxos are already spent by another offchain tx
 	// we redo this check after locking the mutex to avoid race conditions between concurrent offchain tx submissions
