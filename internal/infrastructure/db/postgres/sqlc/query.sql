@@ -273,9 +273,9 @@ WHERE swept = true
   AND spent = false;
 
 -- name: SelectOffchainTxsByTxids :many
+-- Returns only accepted or finalized offchain txs.
 SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw
-WHERE COALESCE(fail_reason, '') = ''
-  AND stage_code <> 0
+WHERE (stage_code = 2 OR stage_code = 3)
   AND txid = ANY(sqlc.arg('txids')::varchar[])
   AND (sqlc.arg('with_extension')::boolean = false OR (packets IS NOT NULL AND packets <> ''))
   AND (sqlc.arg('with_after')::boolean = false OR starting_timestamp >= sqlc.arg('after_ts')::bigint)
@@ -283,14 +283,14 @@ WHERE COALESCE(fail_reason, '') = ''
 ORDER BY starting_timestamp DESC, txid ASC;
 
 -- name: SelectOffchainTxs :many
+-- Returns only accepted or finalized offchain txs.
 -- The cap is enforced over a deduplicated set of base txids in the CTE,
 -- then expanded back through the LEFT JOIN view so a tx with N
 -- checkpoint rows still contributes one txid to the cap.
 WITH limited_txids AS (
     SELECT txid
     FROM offchain_tx
-    WHERE COALESCE(fail_reason, '') = ''
-      AND stage_code <> 0
+    WHERE (stage_code = 2 OR stage_code = 3)
       AND (sqlc.arg('with_extension')::boolean = false OR (packets IS NOT NULL AND packets <> ''))
       AND (sqlc.arg('with_after')::boolean = false OR starting_timestamp >= sqlc.arg('after_ts')::bigint)
       AND (sqlc.arg('with_before')::boolean = false OR starting_timestamp <= sqlc.arg('before_ts')::bigint)

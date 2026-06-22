@@ -632,8 +632,7 @@ const selectOffchainTxs = `-- name: SelectOffchainTxs :many
 WITH limited_txids AS (
     SELECT txid
     FROM offchain_tx
-    WHERE COALESCE(fail_reason, '') = ''
-      AND stage_code <> 0
+    WHERE (stage_code = 2 OR stage_code = 3)
       AND ($1::boolean = false OR (packets IS NOT NULL AND packets <> ''))
       AND ($2::boolean = false OR starting_timestamp >= $3::bigint)
       AND ($4::boolean = false OR starting_timestamp <= $5::bigint)
@@ -658,6 +657,7 @@ type SelectOffchainTxsRow struct {
 	OffchainTxVw OffchainTxVw
 }
 
+// Returns only accepted or finalized offchain txs.
 // The cap is enforced over a deduplicated set of base txids in the CTE,
 // then expanded back through the LEFT JOIN view so a tx with N
 // checkpoint rows still contributes one txid to the cap.
@@ -707,8 +707,7 @@ func (q *Queries) SelectOffchainTxs(ctx context.Context, arg SelectOffchainTxsPa
 
 const selectOffchainTxsByTxids = `-- name: SelectOffchainTxsByTxids :many
 SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.packets, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw
-WHERE COALESCE(fail_reason, '') = ''
-  AND stage_code <> 0
+WHERE (stage_code = 2 OR stage_code = 3)
   AND txid = ANY($1::varchar[])
   AND ($2::boolean = false OR (packets IS NOT NULL AND packets <> ''))
   AND ($3::boolean = false OR starting_timestamp >= $4::bigint)
@@ -729,6 +728,7 @@ type SelectOffchainTxsByTxidsRow struct {
 	OffchainTxVw OffchainTxVw
 }
 
+// Returns only accepted or finalized offchain txs.
 func (q *Queries) SelectOffchainTxsByTxids(ctx context.Context, arg SelectOffchainTxsByTxidsParams) ([]SelectOffchainTxsByTxidsRow, error) {
 	rows, err := q.db.QueryContext(ctx, selectOffchainTxsByTxids,
 		pq.Array(arg.Txids),
