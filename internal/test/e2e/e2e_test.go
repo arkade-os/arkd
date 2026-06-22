@@ -2011,6 +2011,115 @@ func TestOffchainTx(t *testing.T) {
 		require.Empty(t, finalArkTx)
 		require.Empty(t, signedCheckpoints)
 	})
+
+	// In this test, 2 goroutines submit the same transaction at the same time.
+	// it ensures 1 succeed and the other failed with "duplicated tx" error. 
+	t.Run("concurrent submitTx should return duplicated tx error", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
+
+		vtxo := faucetOffchain(t, alice, 0.00021)
+
+		_, offchainAddresses, _, _, err := alice.GetAddresses(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddresses)
+		offchainAddress := offchainAddresses[0]
+
+		serverParams, err := aliceClient.GetInfo(ctx)
+		require.NoError(t, err)
+
+		vtxoScript, err := script.ParseVtxoScript(offchainAddress.Tapscripts)
+		require.NoError(t, err)
+		forfeitClosures := vtxoScript.ForfeitClosures()
+		require.Len(t, forfeitClosures, 1)
+		closure := forfeitClosures[0]
+
+		scriptBytes, err := closure.Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+		)
+		require.NoError(t, err)
+
+		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+		require.NoError(t, err)
+
+		tapscript := &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: merkleProof.Script,
+		}
+
+		checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		addr, err := arklib.DecodeAddressV0(offchainAddress.Address)
+		require.NoError(t, err)
+		pkscript, err := addr.GetPkScript()
+		require.NoError(t, err)
+
+		ptx, checkpointsPtx, err := offchain.BuildTxs(
+			[]offchain.VtxoInput{
+				{
+					Outpoint: &wire.OutPoint{
+						Hash:  *vtxoHash,
+						Index: vtxo.VOut,
+					},
+					Tapscript:          tapscript,
+					Amount:             int64(vtxo.Amount),
+					RevealedTapscripts: offchainAddress.Tapscripts,
+				},
+			},
+			[]*wire.TxOut{
+				{
+					Value:    int64(vtxo.Amount),
+					PkScript: pkscript,
+				},
+			},
+			checkpointTapscript,
+		)
+		require.NoError(t, err)
+
+		checkpoints := make([]string, 0, len(checkpointsPtx))
+		for _, checkpoint := range checkpointsPtx {
+			encoded, err := checkpoint.B64Encode()
+			require.NoError(t, err)
+			checkpoints = append(checkpoints, encoded)
+		}
+
+		encodedArkTx, err := ptx.B64Encode()
+		require.NoError(t, err)
+		offchainTx, err := alice.SignTransaction(ctx, encodedArkTx)
+		require.NoError(t, err)
+
+		// 2 concurrent SubmitTx calls with the very same signed ark tx (same txid,
+		// same input vtxo): exactly one must be accepted, and the other rejected as a
+		// duplicate offchain tx. This way we ensure the last is not altering the first.
+		var wg sync.WaitGroup
+		errs := make([]error, 2)
+		wg.Go(func() {
+			_, _, _, errs[0] = aliceClient.SubmitTx(ctx, offchainTx, checkpoints)
+		})
+		wg.Go(func() {
+			_, _, _, errs[1] = aliceClient.SubmitTx(ctx, offchainTx, checkpoints)
+		})
+		wg.Wait()
+
+		failure := errs[0]
+		if failure == nil {
+			failure = errs[1]
+		}
+		require.NotNil(t, failure)
+		require.ErrorContains(t, failure, "duplicated offchain tx")
+	})
 }
 
 // TestDelegateRefresh tests the case where Alice owns a vtxo and delegates Bob to refresh it.
