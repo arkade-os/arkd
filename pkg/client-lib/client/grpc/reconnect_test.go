@@ -76,8 +76,10 @@ func TestGetTransactionsStreamEmitsConnectionLifecycleEvents(t *testing.T) {
 
 	c := &grpcClient{
 		conn:       conn,
-		connMu:     &sync.RWMutex{},
+		svc:        arkv1.NewArkServiceClient(conn),
+		connMu:     &sync.Mutex{},
 		listenerMu: &sync.RWMutex{},
+		infoMu:     &sync.RWMutex{},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -157,8 +159,10 @@ func TestGetTransactionsStreamReconnectsAfterServerRestart(t *testing.T) {
 
 	c := &grpcClient{
 		conn:       conn,
-		connMu:     &sync.RWMutex{},
+		svc:        arkv1.NewArkServiceClient(conn),
+		connMu:     &sync.Mutex{},
 		listenerMu: &sync.RWMutex{},
+		infoMu:     &sync.RWMutex{},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

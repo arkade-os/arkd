@@ -40,6 +40,11 @@ func (a *service) SendOffChain(
 	a.txLock.Lock()
 	defer a.txLock.Unlock()
 
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	baseArkTx, checkpointTxs, selectedCoins, changeReceiver, err := a.createOffchainTx(
 		ctx, receivers, o,
 	)
@@ -84,12 +89,13 @@ func (a *service) SendOffChain(
 		return nil, err
 	}
 
+	signers := cfgData.AllSigners()
 	// validate and verify transactions returned by the server
-	if err := verifySignedArk(arkTx, signedArkTx, a.SignerPubKey); err != nil {
+	if err := verifySignedArk(arkTx, signedArkTx, signers); err != nil {
 		return nil, err
 	}
 
-	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, a.SignerPubKey); err != nil {
+	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, signers); err != nil {
 		return nil, err
 	}
 

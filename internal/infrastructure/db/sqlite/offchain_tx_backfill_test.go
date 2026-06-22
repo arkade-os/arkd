@@ -28,32 +28,37 @@ func TestBackfillPackets(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	setupOffchainTxTableForBackfill(t, db)
+	// OpenDb returns split read/write pools. With an in-memory DSN the
+	// data only lives on the single-connection write pool, so the whole
+	// fixture is driven through db.Write().
+	writeDB := db.Write()
+
+	setupOffchainTxTableForBackfill(t, writeDB)
 
 	// Three pre-existing rows, all with packets = NULL (the
 	// pre-migration state). The backfill should:
 	//   * carrier        -> packets = "0,255"
 	//   * no-extension   -> packets = ""   (Valid, distinguishes from NULL)
 	//   * malformed psbt -> packets = ""   (Valid, marked to avoid retry)
-	carrierTxid := insertRow(t, db, "carrier-txid", psbtBase64FromTxHex(t, rawTxTwoPackets))
-	noExtTxid := insertRow(t, db, "no-ext-txid", psbtBase64FromTxHex(t, rawTxNoExtension))
-	malformedTxid := insertRow(t, db, "malformed-txid", "not-a-psbt")
+	carrierTxid := insertRow(t, writeDB, "carrier-txid", psbtBase64FromTxHex(t, rawTxTwoPackets))
+	noExtTxid := insertRow(t, writeDB, "no-ext-txid", psbtBase64FromTxHex(t, rawTxNoExtension))
+	malformedTxid := insertRow(t, writeDB, "malformed-txid", "not-a-psbt")
 
-	require.NoError(t, sqlitedb.BackfillPackets(ctx, db))
+	require.NoError(t, sqlitedb.BackfillPackets(ctx, writeDB))
 
-	require.Equal(t, "0,255", readPackets(t, db, carrierTxid))
-	require.Equal(t, "", readPackets(t, db, noExtTxid))
-	require.Equal(t, "", readPackets(t, db, malformedTxid))
+	require.Equal(t, "0,255", readPackets(t, writeDB, carrierTxid))
+	require.Equal(t, "", readPackets(t, writeDB, noExtTxid))
+	require.Equal(t, "", readPackets(t, writeDB, malformedTxid))
 
 	// Re-running should be a no-op: rows with non-NULL packets are not
 	// revisited. (Verifies the malformed-row sentinel works.)
-	require.NoError(t, sqlitedb.BackfillPackets(ctx, db))
+	require.NoError(t, sqlitedb.BackfillPackets(ctx, writeDB))
 
 	// And no rows are left with NULL packets.
 	var nullCount int
 	require.NoError(
 		t,
-		db.QueryRow(`SELECT COUNT(*) FROM offchain_tx WHERE packets IS NULL`).
+		writeDB.QueryRow(`SELECT COUNT(*) FROM offchain_tx WHERE packets IS NULL`).
 			Scan(&nullCount),
 	)
 	require.Zero(t, nullCount)

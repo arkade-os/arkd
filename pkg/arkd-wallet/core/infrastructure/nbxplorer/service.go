@@ -44,6 +44,11 @@ type nbxplorer struct {
 	groupID string
 }
 
+const (
+	nbxplorerMaxRetries    = 30
+	nbxplorerRetryInterval = 5 * time.Second
+)
+
 func New(rawURL string) (ports.Nbxplorer, error) {
 	rawURL = strings.TrimSuffix(rawURL, "/")
 
@@ -67,9 +72,24 @@ func New(rawURL string) (ports.Nbxplorer, error) {
 		groupID:    "",
 	}
 
-	status, err := svc.GetBitcoinStatus(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to nbxplorer: %s", err)
+	var status *ports.BitcoinStatus
+
+	for attempt := 1; attempt <= nbxplorerMaxRetries; attempt++ {
+		status, err = svc.GetBitcoinStatus(context.Background())
+		if err == nil {
+			break
+		}
+
+		if attempt == nbxplorerMaxRetries {
+			return nil, fmt.Errorf("failed to connect to nbxplorer after %d attempts: %s", nbxplorerMaxRetries, err)
+		}
+
+		log.WithFields(log.Fields{
+			"attempt": attempt,
+			"error":   err.Error(),
+		}).Warn("nbxplorer not ready, retrying")
+
+		time.Sleep(nbxplorerRetryInterval)
 	}
 
 	svc.minRelayTxFee = status.MinRelayTxFee

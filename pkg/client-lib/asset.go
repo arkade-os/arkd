@@ -27,6 +27,11 @@ func (a *service) IssueAsset(
 		}
 	}
 
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	if amount == 0 {
 		return nil, fmt.Errorf("amount must be > 0")
 	}
@@ -156,12 +161,13 @@ func (a *service) IssueAsset(
 		return nil, err
 	}
 
+	signers := cfgData.AllSigners()
 	// validate and verify transactions returned by the server
-	if err := verifySignedArk(arkTx, signedArkTx, a.SignerPubKey); err != nil {
+	if err := verifySignedArk(arkTx, signedArkTx, signers); err != nil {
 		return nil, err
 	}
 
-	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, a.SignerPubKey); err != nil {
+	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, signers); err != nil {
 		return nil, err
 	}
 
@@ -242,6 +248,11 @@ func (a *service) ReissueAsset(
 		if err := opt.applySend(o); err != nil {
 			return nil, err
 		}
+	}
+
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	if amount == 0 {
@@ -361,12 +372,13 @@ func (a *service) ReissueAsset(
 		return nil, err
 	}
 
+	signers := cfgData.AllSigners()
 	// validate and verify transactions returned by the server
-	if err := verifySignedArk(arkTx, signedArkTx, a.SignerPubKey); err != nil {
+	if err := verifySignedArk(arkTx, signedArkTx, signers); err != nil {
 		return nil, err
 	}
 
-	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, a.SignerPubKey); err != nil {
+	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, signers); err != nil {
 		return nil, err
 	}
 
@@ -423,6 +435,11 @@ func (a *service) BurnAsset(
 		if err := opt.applySend(o); err != nil {
 			return nil, err
 		}
+	}
+
+	cfgData, err := a.GetConfigData(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	addr, err := a.getReceiver(ctx, o.receiver)
@@ -492,12 +509,13 @@ func (a *service) BurnAsset(
 		return nil, err
 	}
 
+	signers := cfgData.AllSigners()
 	// validate and verify transactions returned by the server
-	if err := verifySignedArk(arkTx, signedArkTx, a.SignerPubKey); err != nil {
+	if err := verifySignedArk(arkTx, signedArkTx, signers); err != nil {
 		return nil, err
 	}
 
-	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, a.SignerPubKey); err != nil {
+	if err := verifySignedCheckpoints(checkpointTxs, signedCheckpointTxs, signers); err != nil {
 		return nil, err
 	}
 

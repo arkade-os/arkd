@@ -10,46 +10,67 @@ import (
 )
 
 const (
-	urlFlagName                                       = "url"
-	datadirFlagName                                   = "datadir"
-	macaroonFlagName                                  = "macaroon"
-	passwordFlagName                                  = "password"
-	mnemonicFlagName                                  = "mnemonic"
-	gapLimitFlagName                                  = "addr-gap-limit"
-	amountFlagName                                    = "amount"
-	withdrawAllFlagName                               = "all"
-	quantityFlagName                                  = "quantity"
-	addressFlagName                                   = "address"
-	intentIdsFlagName                                 = "ids"
-	roundIdFlagName                                   = "id"
-	beforeDateFlagName                                = "before-date"
-	afterDateFlagName                                 = "after-date"
-	scheduledSessionStartDateFlagName                 = "start-date"
-	scheduledSessionEndDateFlagName                   = "end-date"
-	scheduledSessionDurationFlagName                  = "duration"
-	scheduledSessionPeriodFlagName                    = "period"
-	scheduledSessionRoundMinParticipantsCountFlagName = "round-min-participants"
-	scheduledSessionRoundMaxParticipantsCountFlagName = "round-max-participants"
-	signerKeyFlagName                                 = "signer-prvkey"
-	signerUrlFlagName                                 = "signer-url"
-	tokenFlagName                                     = "token"
-	convictionIdsFlagName                             = "ids"
-	convictionFromFlagName                            = "from"
-	convictionToFlagName                              = "to"
-	convictionIdFlagName                              = "id"
-	scriptFlagName                                    = "script"
-	banDurationFlagName                               = "duration"
-	banReasonFlagName                                 = "reason"
-	completedFlagName                                 = "completed"
-	failedFlagName                                    = "failed"
-	withDetailsFlagName                               = "with-details"
-	sweepConnectorsFlagName                           = "with-connectors"
-	sweepCommitmentTxidsFlagName                      = "commitment-txids"
-	onchainInputFlagName                              = "onchain-input"
-	offchainInputFlagName                             = "offchain-input"
-	onchainOutputFlagName                             = "onchain-output"
-	offchainOutputFlagName                            = "offchain-output"
-	clearFlagName                                     = "clear"
+	urlFlagName                       = "url"
+	datadirFlagName                   = "datadir"
+	macaroonFlagName                  = "macaroon"
+	passwordFlagName                  = "password"
+	mnemonicFlagName                  = "mnemonic"
+	gapLimitFlagName                  = "addr-gap-limit"
+	amountFlagName                    = "amount"
+	withdrawAllFlagName               = "all"
+	quantityFlagName                  = "quantity"
+	addressFlagName                   = "address"
+	intentIdsFlagName                 = "ids"
+	roundIdFlagName                   = "id"
+	beforeDateFlagName                = "before-date"
+	afterDateFlagName                 = "after-date"
+	scheduledSessionStartDateFlagName = "start-date"
+	scheduledSessionEndDateFlagName   = "end-date"
+	sessionDurationFlagName           = "session-duration"
+	scheduledSessionPeriodFlagName    = "period"
+	roundMinParticipantsFlagName      = "round-min-participants"
+	roundMaxParticipantsFlagName      = "round-max-participants"
+	signerKeyFlagName                 = "signer-prvkey"
+	signerUrlFlagName                 = "signer-url"
+	tokenFlagName                     = "token"
+	convictionIdsFlagName             = "ids"
+	convictionFromFlagName            = "from"
+	convictionToFlagName              = "to"
+	convictionIdFlagName              = "id"
+	scriptFlagName                    = "script"
+	banDurationFlagName               = "duration"
+	banReasonFlagName                 = "reason"
+	completedFlagName                 = "completed"
+	failedFlagName                    = "failed"
+	withDetailsFlagName               = "with-details"
+	sweepConnectorsFlagName           = "with-connectors"
+	sweepCommitmentTxidsFlagName      = "commitment-txids"
+	onchainInputFlagName              = "onchain-input"
+	offchainInputFlagName             = "offchain-input"
+	onchainOutputFlagName             = "onchain-output"
+	offchainOutputFlagName            = "offchain-output"
+	clearFlagName                     = "clear"
+
+	unrolledVtxoMinExpiryMarginFlagName   = "unrolled-vtxo-min-expiry-margin"
+	banThresholdFlagName                  = "ban-threshold"
+	unilateralExitDelayFlagName           = "unilateral-exit-delay"
+	publicUnilateralExitDelayFlagName     = "public-unilateral-exit-delay"
+	checkpointExitDelayFlagName           = "checkpoint-exit-delay"
+	boardingExitDelayFlagName             = "boarding-exit-delay"
+	vtxoTreeExpiryFlagName                = "vtxo-tree-expiry"
+	vtxoMinAmountFlagName                 = "vtxo-min-amount"
+	vtxoMaxAmountFlagName                 = "vtxo-max-amount"
+	utxoMinAmountFlagName                 = "utxo-min-amount"
+	utxoMaxAmountFlagName                 = "utxo-max-amount"
+	settlementMinExpiryGapFlagName        = "settlement-min-expiry-gap"
+	vtxoNoCsvValidationCutoffDateFlagName = "vtxo-no-csv-validation-cutoff-date"
+	maxTxWeightFlagName                   = "max-tx-weight"
+	maxOpReturnOutsFlagName               = "max-op-return-outputs"
+	assetTxMaxWeightRatioFlagName         = "asset-tx-max-weight-ratio"
+	notePrefixFlagName                    = "note-uri-prefix"
+	buildVersionHeaderFlagName            = "build-version-header"
+	buildVersionHeaderRequiredFlagName    = "build-version-header-required"
+	digestHeaderRequiredFlagName          = "digest-header-required"
 
 	dateFormat         = time.DateOnly
 	dateWithTimeFormat = time.DateTime
@@ -146,21 +167,21 @@ var (
 			dateWithTimeFormat,
 		),
 	}
-	scheduledSessionDurationFlag = &cli.IntFlag{
-		Name:  scheduledSessionDurationFlagName,
+	sessionDurationFlag = &cli.IntFlag{
+		Name:  sessionDurationFlagName,
 		Usage: "the duration of the scheduled sessions in seconds",
 	}
 	scheduledSessionPeriodFlag = &cli.IntFlag{
 		Name:  scheduledSessionPeriodFlagName,
 		Usage: "the interval between a scheduled session and the next one",
 	}
-	scheduledSessionRoundMinParticipantsCountFlag = &cli.IntFlag{
-		Name:  scheduledSessionRoundMinParticipantsCountFlagName,
-		Usage: "the min number of participants per round during a scheduled session",
+	roundMinParticipantsFlag = &cli.IntFlag{
+		Name:  roundMinParticipantsFlagName,
+		Usage: "the min number of participants per round",
 	}
-	scheduledSessionRoundMaxParticipantsCountFlag = &cli.IntFlag{
-		Name:  scheduledSessionRoundMaxParticipantsCountFlagName,
-		Usage: "the max number of participants per round during a scheduled session",
+	roundMaxParticipantsFlag = &cli.IntFlag{
+		Name:  roundMaxParticipantsFlagName,
+		Usage: "the max number of participants per round",
 	}
 	signerKeyFlag = &cli.StringFlag{
 		Name:  signerKeyFlagName,
@@ -271,5 +292,87 @@ var (
 		Name:  clearFlagName,
 		Usage: "clear all intent fee programs",
 		Value: false,
+	}
+	unrolledVtxoMinExpiryMarginFlag = &cli.IntFlag{
+		Name:  unrolledVtxoMinExpiryMarginFlagName,
+		Usage: "the min expiry margin for unrolled vtxos in seconds",
+	}
+	banThresholdFlag = &cli.IntFlag{
+		Name:  banThresholdFlagName,
+		Usage: "the number of offenses before a script gets banned",
+	}
+	unilateralExitDelayFlag = &cli.IntFlag{
+		Name:  unilateralExitDelayFlagName,
+		Usage: "the unilateral exit delay as a relative locktime (seconds if >= 512, blocks otherwise)",
+	}
+	publicUnilateralExitDelayFlag = &cli.IntFlag{
+		Name:  publicUnilateralExitDelayFlagName,
+		Usage: "the public unilateral exit delay as a relative locktime (seconds if >= 512, blocks otherwise)",
+	}
+	checkpointExitDelayFlag = &cli.IntFlag{
+		Name:  checkpointExitDelayFlagName,
+		Usage: "the checkpoint exit delay as a relative locktime (seconds if >= 512, blocks otherwise)",
+	}
+	boardingExitDelayFlag = &cli.IntFlag{
+		Name:  boardingExitDelayFlagName,
+		Usage: "the boarding exit delay as a relative locktime (seconds if >= 512, blocks otherwise)",
+	}
+	vtxoTreeExpiryFlag = &cli.IntFlag{
+		Name:  vtxoTreeExpiryFlagName,
+		Usage: "the vtxo tree expiry as a relative locktime (seconds if >= 512, blocks otherwise)",
+	}
+	vtxoMinAmountFlag = &cli.IntFlag{
+		Name:  vtxoMinAmountFlagName,
+		Usage: "the min amount in satoshis for a vtxo (-1 to disable)",
+	}
+	vtxoMaxAmountFlag = &cli.IntFlag{
+		Name:  vtxoMaxAmountFlagName,
+		Usage: "the max amount in satoshis for a vtxo (-1 to disable)",
+	}
+	utxoMinAmountFlag = &cli.IntFlag{
+		Name:  utxoMinAmountFlagName,
+		Usage: "the min amount in satoshis for a boarding/exit utxo (-1 to disable)",
+	}
+	utxoMaxAmountFlag = &cli.IntFlag{
+		Name:  utxoMaxAmountFlagName,
+		Usage: "the max amount in satoshis for a boarding/exit utxo (-1 to disable)",
+	}
+	settlementMinExpiryGapFlag = &cli.IntFlag{
+		Name:  settlementMinExpiryGapFlagName,
+		Usage: "the min expiry gap in seconds required to settle a vtxo",
+	}
+	vtxoNoCsvValidationCutoffDateFlag = &cli.IntFlag{
+		Name:  vtxoNoCsvValidationCutoffDateFlagName,
+		Usage: "the cutoff date (Unix timestamp) before which vtxos skip CSV validation",
+	}
+	maxTxWeightFlag = &cli.IntFlag{
+		Name:  maxTxWeightFlagName,
+		Usage: "the max allowed weight for a transaction",
+	}
+	maxOpReturnOutsFlag = &cli.IntFlag{
+		Name:  maxOpReturnOutsFlagName,
+		Usage: "the max number of OP_RETURN outputs allowed in a transaction",
+	}
+	assetTxMaxWeightRatioFlag = &cli.Float64Flag{
+		Name:  assetTxMaxWeightRatioFlagName,
+		Usage: "the max ratio of asset tx weight over the total tx weight, in range (0, 1)",
+	}
+	notePrefixFlag = &cli.StringFlag{
+		Name:  notePrefixFlagName,
+		Usage: "the URI prefix used to encode notes",
+	}
+	buildVersionHeaderFlag = &cli.StringFlag{
+		Name:  buildVersionHeaderFlagName,
+		Usage: "the min client build version accepted by the server",
+	}
+	buildVersionHeaderRequiredFlag = &cli.StringFlag{
+		Name: buildVersionHeaderRequiredFlagName,
+		Usage: "whether clients are required to send a valid build version header " +
+			"(true or false); omit to leave unchanged",
+	}
+	digestHeaderRequiredFlag = &cli.StringFlag{
+		Name: digestHeaderRequiredFlagName,
+		Usage: "whether clients are required to send a valid digest header " +
+			"(true or false); omit to leave unchanged",
 	}
 )

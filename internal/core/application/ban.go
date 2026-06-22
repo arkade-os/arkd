@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -16,11 +17,14 @@ type withOutputScript interface {
 	OutputScript() ([]byte, error)
 }
 
-func (s *service) checkIfBanned(ctx context.Context, script withOutputScript) error {
-	// if ban threshold is less than 1, we disable banning
-	if s.banThreshold <= 0 {
+func (s *service) checkIfBanned(
+	ctx context.Context, banThreshold uint64, script withOutputScript,
+) error {
+	// If ban threshold is less than 1, we disable banning
+	if banThreshold == 0 {
 		return nil
 	}
+
 	scriptBytes, err := script.OutputScript()
 	if err != nil {
 		return err
@@ -30,16 +34,14 @@ func (s *service) checkIfBanned(ctx context.Context, script withOutputScript) er
 	if err != nil {
 		return err
 	}
-	if int64(len(conviction)) >= s.banThreshold {
+	if len(conviction) >= int(banThreshold) {
 		convictionsStr := make([]string, 0)
 		for _, conviction := range conviction {
 			convictionsStr = append(convictionsStr, conviction.String())
 		}
 		return fmt.Errorf(
 			"script %s is banned by %d convictions: %s",
-			script,
-			len(conviction),
-			strings.Join(convictionsStr, ", "),
+			script, len(conviction), strings.Join(convictionsStr, ", "),
 		)
 	}
 
@@ -48,13 +50,12 @@ func (s *service) checkIfBanned(ctx context.Context, script withOutputScript) er
 
 func (s *service) banCosignerInputs(
 	ctx context.Context,
-	toBan map[string]domain.Crime,
-	registeredIntents []ports.TimedIntent,
+	banDuration *time.Duration, toBan map[string]domain.Crime, intents []ports.TimedIntent,
 ) {
 	convictions := make([]domain.Conviction, 0)
 
 	for cosignerPublicKey, crime := range toBan {
-		for _, intent := range registeredIntents {
+		for _, intent := range intents {
 			if !slices.Contains(intent.CosignersPublicKeys, cosignerPublicKey) {
 				// intent is not associated with the cosigner, skip
 				continue
@@ -89,7 +90,7 @@ func (s *service) banCosignerInputs(
 			for script := range uniqueScripts {
 				convictions = append(
 					convictions,
-					domain.NewScriptConviction(script, crime, &s.banDuration),
+					domain.NewScriptConviction(script, crime, banDuration),
 				)
 			}
 		}
@@ -99,15 +100,13 @@ func (s *service) banCosignerInputs(
 		if err := s.repoManager.Convictions().Add(ctx, convictions...); err != nil {
 			log.WithError(err).Warn("failed to ban")
 		}
-		log.Debugf("banned %d script for %s", len(convictions), s.banDuration)
+		log.Debugf("banned %d scripts for %s", len(convictions), banDuration)
 	}
 }
 
 func (s *service) banNoncesCollectionTimeout(
-	ctx context.Context,
-	roundId string,
-	signingSession *ports.MusigSigningSession,
-	registeredIntents []ports.TimedIntent,
+	ctx context.Context, roundId string, banDuration *time.Duration,
+	signingSession *ports.MusigSigningSession, registeredIntents []ports.TimedIntent,
 ) {
 	toBan := make(map[string]domain.Crime)
 
@@ -122,14 +121,12 @@ func (s *service) banNoncesCollectionTimeout(
 		}
 	}
 
-	s.banCosignerInputs(ctx, toBan, registeredIntents)
+	s.banCosignerInputs(ctx, banDuration, toBan, registeredIntents)
 }
 
 func (s *service) banSignaturesCollectionTimeout(
-	ctx context.Context,
-	roundId string,
-	signingSession *ports.MusigSigningSession,
-	registeredIntents []ports.TimedIntent,
+	ctx context.Context, roundId string, banDuration *time.Duration,
+	signingSession *ports.MusigSigningSession, registeredIntents []ports.TimedIntent,
 ) {
 	toBan := make(map[string]domain.Crime)
 
@@ -144,11 +141,11 @@ func (s *service) banSignaturesCollectionTimeout(
 		}
 	}
 
-	s.banCosignerInputs(ctx, toBan, registeredIntents)
+	s.banCosignerInputs(ctx, banDuration, toBan, registeredIntents)
 }
 
 func (s *service) banForfeitCollectionTimeout(
-	ctx context.Context, roundId string,
+	ctx context.Context, roundId string, banDuration *time.Duration,
 ) {
 	unsignedVtxoKeys, err := s.cache.ForfeitTxs().GetUnsignedInputs(ctx)
 	if err != nil {
@@ -178,7 +175,7 @@ func (s *service) banForfeitCollectionTimeout(
 			Type:    domain.CrimeTypeForfeitSubmission,
 			RoundID: roundId,
 			Reason:  "missing forfeit signature",
-		}, &s.banDuration))
+		}, banDuration))
 	}
 
 	if err := s.repoManager.Convictions().Add(ctx, convictions...); err != nil {

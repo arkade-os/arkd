@@ -11,79 +11,6 @@ import (
 	"strings"
 )
 
-const addIntentFees = `-- name: AddIntentFees :exec
-INSERT INTO intent_fees (
-  offchain_input_fee_program,
-  onchain_input_fee_program,
-  offchain_output_fee_program,
-  onchain_output_fee_program
-)
-SELECT
-    -- if all fee programs are empty, set them all to empty, else use provided, but if provided is empty fetch and use latest for that fee program.
-    -- if no rows exist in intent_fees, and a specific fee program is passed in as empty, default to empty string. 
-  CASE
-    WHEN (?1 = '' AND ?2 = '' AND ?3 = '' AND ?4 = '') THEN ''
-    WHEN ?1 != '' THEN ?1
-    ELSE COALESCE((SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
-  END,
-  CASE
-    WHEN (?1 = '' AND ?2 = '' AND ?3 = '' AND ?4 = '') THEN ''
-    WHEN ?2 != '' THEN ?2
-    ELSE COALESCE((SELECT onchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
-  END,
-  CASE
-    WHEN (?1 = '' AND ?2 = '' AND ?3 = '' AND ?4 = '') THEN ''
-    WHEN ?3 != '' THEN ?3
-    ELSE COALESCE((SELECT offchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
-  END,
-  CASE
-    WHEN (?1 = '' AND ?2 = '' AND ?3 = '' AND ?4 = '') THEN ''
-    WHEN ?4 != '' THEN ?4
-    ELSE COALESCE((SELECT onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
-  END
-`
-
-type AddIntentFeesParams struct {
-	OffchainInputFeeProgram  interface{}
-	OnchainInputFeeProgram   interface{}
-	OffchainOutputFeeProgram interface{}
-	OnchainOutputFeeProgram  interface{}
-}
-
-func (q *Queries) AddIntentFees(ctx context.Context, arg AddIntentFeesParams) error {
-	_, err := q.db.ExecContext(ctx, addIntentFees,
-		arg.OffchainInputFeeProgram,
-		arg.OnchainInputFeeProgram,
-		arg.OffchainOutputFeeProgram,
-		arg.OnchainOutputFeeProgram,
-	)
-	return err
-}
-
-const clearIntentFees = `-- name: ClearIntentFees :exec
-INSERT INTO intent_fees (
-  offchain_input_fee_program,
-  onchain_input_fee_program,
-  offchain_output_fee_program,
-  onchain_output_fee_program
-)
-VALUES ('', '', '', '')
-`
-
-func (q *Queries) ClearIntentFees(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, clearIntentFees)
-	return err
-}
-
-const clearScheduledSession = `-- name: ClearScheduledSession :exec
-DELETE FROM scheduled_session
-`
-
-func (q *Queries) ClearScheduledSession(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, clearScheduledSession)
-	return err
-}
-
 const insertAsset = `-- name: InsertAsset :exec
 INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
 VALUES (?1, ?2, ?3, ?4, ?5)
@@ -352,6 +279,72 @@ func (q *Queries) SelectAssetsByIds(ctx context.Context, ids []string) ([]Asset,
 	return items, nil
 }
 
+const selectAssetsWithUnspentAmountsByIds = `-- name: SelectAssetsWithUnspentAmountsByIds :many
+SELECT
+  a.id,
+  a.is_immutable,
+  a.metadata_hash,
+  a.metadata,
+  a.control_asset_id,
+  COALESCE(v.asset_amount, '0') AS asset_amount
+FROM asset a
+LEFT JOIN vtxo_vw v
+  ON v.asset_id = a.id
+ AND v.spent = false
+ AND v.asset_amount > 0
+WHERE a.id IN (/*SLICE:ids*/?)
+ORDER BY a.id
+`
+
+type SelectAssetsWithUnspentAmountsByIdsRow struct {
+	ID             string
+	IsImmutable    bool
+	MetadataHash   sql.NullString
+	Metadata       sql.NullString
+	ControlAssetID sql.NullString
+	AssetAmount    string
+}
+
+func (q *Queries) SelectAssetsWithUnspentAmountsByIds(ctx context.Context, ids []string) ([]SelectAssetsWithUnspentAmountsByIdsRow, error) {
+	query := selectAssetsWithUnspentAmountsByIds
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectAssetsWithUnspentAmountsByIdsRow
+	for rows.Next() {
+		var i SelectAssetsWithUnspentAmountsByIdsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.IsImmutable,
+			&i.MetadataHash,
+			&i.Metadata,
+			&i.ControlAssetID,
+			&i.AssetAmount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectControlAssetByID = `-- name: SelectControlAssetByID :one
 SELECT control_asset_id FROM asset WHERE id = ?
 `
@@ -467,6 +460,46 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 	return items, nil
 }
 
+const selectExpiredRounds = `-- name: SelectExpiredRounds :many
+SELECT r.id, r.txid, CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS expired_at
+FROM round_with_commitment_tx_vw r
+WHERE r.swept = false AND r.ended = true AND r.failed = false
+AND (r.ending_timestamp + r.vtxo_tree_expiration) < ?1
+AND EXISTS (
+    SELECT 1 FROM tx tree_tx
+    WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
+)
+`
+
+type SelectExpiredRoundsRow struct {
+	ID        string
+	Txid      string
+	ExpiredAt int64
+}
+
+func (q *Queries) SelectExpiredRounds(ctx context.Context, now int64) ([]SelectExpiredRoundsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectExpiredRounds, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectExpiredRoundsRow
+	for rows.Next() {
+		var i SelectExpiredRoundsRow
+		if err := rows.Scan(&i.ID, &i.Txid, &i.ExpiredAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectExpiringLiquidityAmount = `-- name: SelectExpiringLiquidityAmount :one
 SELECT COALESCE(SUM(amount), 0) AS amount
 FROM vtxo
@@ -554,44 +587,6 @@ func (q *Queries) SelectIntentReceiversByRoundId(ctx context.Context, roundID sq
 		return nil, err
 	}
 	return items, nil
-}
-
-const selectLatestIntentFees = `-- name: SelectLatestIntentFees :one
-SELECT id, created_at, offchain_input_fee_program, onchain_input_fee_program, offchain_output_fee_program, onchain_output_fee_program FROM intent_fees ORDER BY id DESC LIMIT 1
-`
-
-func (q *Queries) SelectLatestIntentFees(ctx context.Context) (IntentFee, error) {
-	row := q.db.QueryRowContext(ctx, selectLatestIntentFees)
-	var i IntentFee
-	err := row.Scan(
-		&i.ID,
-		&i.CreatedAt,
-		&i.OffchainInputFeeProgram,
-		&i.OnchainInputFeeProgram,
-		&i.OffchainOutputFeeProgram,
-		&i.OnchainOutputFeeProgram,
-	)
-	return i, err
-}
-
-const selectLatestScheduledSession = `-- name: SelectLatestScheduledSession :one
-SELECT id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at FROM scheduled_session ORDER BY updated_at DESC LIMIT 1
-`
-
-func (q *Queries) SelectLatestScheduledSession(ctx context.Context) (ScheduledSession, error) {
-	row := q.db.QueryRowContext(ctx, selectLatestScheduledSession)
-	var i ScheduledSession
-	err := row.Scan(
-		&i.ID,
-		&i.StartTime,
-		&i.EndTime,
-		&i.Period,
-		&i.Duration,
-		&i.RoundMinParticipants,
-		&i.RoundMaxParticipants,
-		&i.UpdatedAt,
-	)
-	return i, err
 }
 
 const selectNotUnrolledVtxos = `-- name: SelectNotUnrolledVtxos :many
@@ -1565,11 +1560,59 @@ func (q *Queries) SelectRoundsWithTxids(ctx context.Context, txids []string) ([]
 	return items, nil
 }
 
+const selectSettings = `-- name: SelectSettings :one
+SELECT id, session_duration, unrolled_vtxo_min_expiry_margin, ban_threshold, ban_duration, unilateral_exit_delay, public_unilateral_exit_delay, checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry, round_min_participants_count, round_max_participants_count, vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount, settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date, max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio, note_uri_prefix, scheduled_session_start_time, scheduled_session_end_time, scheduled_session_period, scheduled_session_duration, scheduled_session_round_min_participants_count, scheduled_session_round_max_participants_count, batch_onchain_input_fee, batch_offchain_input_fee, batch_onchain_output_fee, batch_offchain_output_fee, build_version_header, build_version_header_required, digest_header_required, updated_at FROM settings WHERE id = 1
+`
+
+func (q *Queries) SelectSettings(ctx context.Context) (Setting, error) {
+	row := q.db.QueryRowContext(ctx, selectSettings)
+	var i Setting
+	err := row.Scan(
+		&i.ID,
+		&i.SessionDuration,
+		&i.UnrolledVtxoMinExpiryMargin,
+		&i.BanThreshold,
+		&i.BanDuration,
+		&i.UnilateralExitDelay,
+		&i.PublicUnilateralExitDelay,
+		&i.CheckpointExitDelay,
+		&i.BoardingExitDelay,
+		&i.VtxoTreeExpiry,
+		&i.RoundMinParticipantsCount,
+		&i.RoundMaxParticipantsCount,
+		&i.VtxoMinAmount,
+		&i.VtxoMaxAmount,
+		&i.UtxoMinAmount,
+		&i.UtxoMaxAmount,
+		&i.SettlementMinExpiryGap,
+		&i.VtxoNoCsvValidationCutoffDate,
+		&i.MaxTxWeight,
+		&i.MaxOpReturnOutputs,
+		&i.AssetTxMaxWeightRatio,
+		&i.NoteUriPrefix,
+		&i.ScheduledSessionStartTime,
+		&i.ScheduledSessionEndTime,
+		&i.ScheduledSessionPeriod,
+		&i.ScheduledSessionDuration,
+		&i.ScheduledSessionRoundMinParticipantsCount,
+		&i.ScheduledSessionRoundMaxParticipantsCount,
+		&i.BatchOnchainInputFee,
+		&i.BatchOffchainInputFee,
+		&i.BatchOnchainOutputFee,
+		&i.BatchOffchainOutputFee,
+		&i.BuildVersionHeader,
+		&i.BuildVersionHeaderRequired,
+		&i.DigestHeaderRequired,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const selectSweepableRounds = `-- name: SelectSweepableRounds :many
-SELECT txid FROM round_with_commitment_tx_vw r 
+SELECT txid FROM round_with_commitment_tx_vw r
 WHERE r.swept = false AND r.ended = true AND r.failed = false
 AND EXISTS (
-    SELECT 1 FROM tx tree_tx 
+    SELECT 1 FROM tx tree_tx
     WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
 )
 `
@@ -2488,39 +2531,160 @@ func (q *Queries) UpsertRound(ctx context.Context, arg UpsertRoundParams) error 
 	return err
 }
 
-const upsertScheduledSession = `-- name: UpsertScheduledSession :exec
-INSERT INTO scheduled_session (id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-ON CONFLICT (id) DO UPDATE SET
-    start_time = EXCLUDED.start_time,
-    end_time = EXCLUDED.end_time,
-    period = EXCLUDED.period,
-    duration = EXCLUDED.duration,
-    round_min_participants = EXCLUDED.round_min_participants,
-    round_max_participants = EXCLUDED.round_max_participants,
+const upsertSettings = `-- name: UpsertSettings :exec
+INSERT INTO settings (
+    id,
+    session_duration, unrolled_vtxo_min_expiry_margin,
+    ban_threshold, ban_duration,
+    unilateral_exit_delay, public_unilateral_exit_delay,
+    checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry,
+    round_min_participants_count, round_max_participants_count,
+    vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount,
+    settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date,
+    max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio,
+    note_uri_prefix,
+    scheduled_session_start_time, scheduled_session_end_time,
+    scheduled_session_period, scheduled_session_duration,
+    scheduled_session_round_min_participants_count,
+    scheduled_session_round_max_participants_count,
+    batch_onchain_input_fee, batch_offchain_input_fee,
+    batch_onchain_output_fee, batch_offchain_output_fee,
+    build_version_header, build_version_header_required,digest_header_required,
+    updated_at
+) VALUES (
+    1,
+    ?1, ?2,
+    ?3, ?4,
+    ?5, ?6,
+    ?7, ?8, ?9,
+    ?10, ?11,
+    ?12, ?13, ?14, ?15,
+    ?16, ?17,
+    ?18, ?19, ?20,
+    ?21,
+    ?22, ?23,
+    ?24, ?25,
+    ?26,
+    ?27,
+    ?28, ?29,
+    ?30, ?31,
+    ?32, ?33, ?34,
+    ?35
+)
+ON CONFLICT(id) DO UPDATE SET
+    session_duration = EXCLUDED.session_duration,
+    unrolled_vtxo_min_expiry_margin = EXCLUDED.unrolled_vtxo_min_expiry_margin,
+    ban_threshold = EXCLUDED.ban_threshold,
+    ban_duration = EXCLUDED.ban_duration,
+    unilateral_exit_delay = EXCLUDED.unilateral_exit_delay,
+    public_unilateral_exit_delay = EXCLUDED.public_unilateral_exit_delay,
+    checkpoint_exit_delay = EXCLUDED.checkpoint_exit_delay,
+    boarding_exit_delay = EXCLUDED.boarding_exit_delay,
+    vtxo_tree_expiry = EXCLUDED.vtxo_tree_expiry,
+    round_min_participants_count = EXCLUDED.round_min_participants_count,
+    round_max_participants_count = EXCLUDED.round_max_participants_count,
+    vtxo_min_amount = EXCLUDED.vtxo_min_amount,
+    vtxo_max_amount = EXCLUDED.vtxo_max_amount,
+    utxo_min_amount = EXCLUDED.utxo_min_amount,
+    utxo_max_amount = EXCLUDED.utxo_max_amount,
+    settlement_min_expiry_gap = EXCLUDED.settlement_min_expiry_gap,
+    vtxo_no_csv_validation_cutoff_date = EXCLUDED.vtxo_no_csv_validation_cutoff_date,
+    max_tx_weight = EXCLUDED.max_tx_weight,
+    max_op_return_outputs = EXCLUDED.max_op_return_outputs,
+    asset_tx_max_weight_ratio = EXCLUDED.asset_tx_max_weight_ratio,
+    note_uri_prefix = EXCLUDED.note_uri_prefix,
+    scheduled_session_start_time = EXCLUDED.scheduled_session_start_time,
+    scheduled_session_end_time = EXCLUDED.scheduled_session_end_time,
+    scheduled_session_period = EXCLUDED.scheduled_session_period,
+    scheduled_session_duration = EXCLUDED.scheduled_session_duration,
+    scheduled_session_round_min_participants_count =
+        EXCLUDED.scheduled_session_round_min_participants_count,
+    scheduled_session_round_max_participants_count =
+        EXCLUDED.scheduled_session_round_max_participants_count,
+    batch_onchain_input_fee = EXCLUDED.batch_onchain_input_fee,
+    batch_offchain_input_fee = EXCLUDED.batch_offchain_input_fee,
+    batch_onchain_output_fee = EXCLUDED.batch_onchain_output_fee,
+    batch_offchain_output_fee = EXCLUDED.batch_offchain_output_fee,
+    build_version_header = EXCLUDED.build_version_header,
+    build_version_header_required = EXCLUDED.build_version_header_required,
+    digest_header_required = EXCLUDED.digest_header_required,
     updated_at = EXCLUDED.updated_at
 `
 
-type UpsertScheduledSessionParams struct {
-	ID                   int64
-	StartTime            int64
-	EndTime              int64
-	Period               int64
-	Duration             int64
-	RoundMinParticipants int64
-	RoundMaxParticipants int64
-	UpdatedAt            int64
+type UpsertSettingsParams struct {
+	SessionDuration                           int64
+	UnrolledVtxoMinExpiryMargin               int64
+	BanThreshold                              int64
+	BanDuration                               int64
+	UnilateralExitDelay                       int64
+	PublicUnilateralExitDelay                 int64
+	CheckpointExitDelay                       int64
+	BoardingExitDelay                         int64
+	VtxoTreeExpiry                            int64
+	RoundMinParticipantsCount                 int64
+	RoundMaxParticipantsCount                 int64
+	VtxoMinAmount                             int64
+	VtxoMaxAmount                             int64
+	UtxoMinAmount                             int64
+	UtxoMaxAmount                             int64
+	SettlementMinExpiryGap                    int64
+	VtxoNoCsvValidationCutoffDate             int64
+	MaxTxWeight                               int64
+	MaxOpReturnOutputs                        int64
+	AssetTxMaxWeightRatio                     float64
+	NoteUriPrefix                             string
+	ScheduledSessionStartTime                 int64
+	ScheduledSessionEndTime                   int64
+	ScheduledSessionPeriod                    int64
+	ScheduledSessionDuration                  int64
+	ScheduledSessionRoundMinParticipantsCount int64
+	ScheduledSessionRoundMaxParticipantsCount int64
+	BatchOnchainInputFee                      string
+	BatchOffchainInputFee                     string
+	BatchOnchainOutputFee                     string
+	BatchOffchainOutputFee                    string
+	BuildVersionHeader                        string
+	BuildVersionHeaderRequired                bool
+	DigestHeaderRequired                      bool
+	UpdatedAt                                 int64
 }
 
-func (q *Queries) UpsertScheduledSession(ctx context.Context, arg UpsertScheduledSessionParams) error {
-	_, err := q.db.ExecContext(ctx, upsertScheduledSession,
-		arg.ID,
-		arg.StartTime,
-		arg.EndTime,
-		arg.Period,
-		arg.Duration,
-		arg.RoundMinParticipants,
-		arg.RoundMaxParticipants,
+func (q *Queries) UpsertSettings(ctx context.Context, arg UpsertSettingsParams) error {
+	_, err := q.db.ExecContext(ctx, upsertSettings,
+		arg.SessionDuration,
+		arg.UnrolledVtxoMinExpiryMargin,
+		arg.BanThreshold,
+		arg.BanDuration,
+		arg.UnilateralExitDelay,
+		arg.PublicUnilateralExitDelay,
+		arg.CheckpointExitDelay,
+		arg.BoardingExitDelay,
+		arg.VtxoTreeExpiry,
+		arg.RoundMinParticipantsCount,
+		arg.RoundMaxParticipantsCount,
+		arg.VtxoMinAmount,
+		arg.VtxoMaxAmount,
+		arg.UtxoMinAmount,
+		arg.UtxoMaxAmount,
+		arg.SettlementMinExpiryGap,
+		arg.VtxoNoCsvValidationCutoffDate,
+		arg.MaxTxWeight,
+		arg.MaxOpReturnOutputs,
+		arg.AssetTxMaxWeightRatio,
+		arg.NoteUriPrefix,
+		arg.ScheduledSessionStartTime,
+		arg.ScheduledSessionEndTime,
+		arg.ScheduledSessionPeriod,
+		arg.ScheduledSessionDuration,
+		arg.ScheduledSessionRoundMinParticipantsCount,
+		arg.ScheduledSessionRoundMaxParticipantsCount,
+		arg.BatchOnchainInputFee,
+		arg.BatchOffchainInputFee,
+		arg.BatchOnchainOutputFee,
+		arg.BatchOffchainOutputFee,
+		arg.BuildVersionHeader,
+		arg.BuildVersionHeaderRequired,
+		arg.DigestHeaderRequired,
 		arg.UpdatedAt,
 	)
 	return err

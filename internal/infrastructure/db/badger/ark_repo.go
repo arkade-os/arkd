@@ -134,6 +134,36 @@ func (r *arkRepository) GetSweepableRounds(
 	return txids, nil
 }
 
+func (r *arkRepository) GetExpiredRounds(
+	ctx context.Context, expiredBefore int64,
+) ([]domain.ExpiredRound, error) {
+	query := badgerhold.Where("Stage.Code").Eq(int(domain.RoundFinalizationStage)).
+		And("Stage.Ended").Eq(true).And("Swept").Eq(false)
+	rounds, err := r.findRound(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	expiredRounds := make([]domain.ExpiredRound, 0, len(rounds))
+	for _, round := range rounds {
+		// skip non-sweepable rounds (no vtxo tree)
+		if len(round.VtxoTree) == 0 {
+			continue
+		}
+		// ExpiryTimestamp returns -1 for failed/not-ended rounds.
+		expiredAt := round.ExpiryTimestamp()
+		if expiredAt <= 0 || expiredAt >= expiredBefore {
+			continue
+		}
+		expiredRounds = append(expiredRounds, domain.ExpiredRound{
+			RoundId:        round.Id,
+			CommitmentTxid: round.CommitmentTxid,
+			ExpiredAt:      expiredAt,
+		})
+	}
+	return expiredRounds, nil
+}
+
 func (r *arkRepository) GetRoundStats(
 	ctx context.Context, commitmentTxid string,
 ) (*domain.RoundStats, error) {

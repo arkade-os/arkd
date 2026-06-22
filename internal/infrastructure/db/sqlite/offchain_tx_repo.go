@@ -13,8 +13,7 @@ import (
 )
 
 type offchainTxRepository struct {
-	db             *sql.DB
-	querier        *queries.Queries
+	db             SQLiteDB
 	backfillCancel context.CancelFunc
 	backfillDone   chan struct{}
 }
@@ -23,7 +22,7 @@ func NewOffchainTxRepository(config ...interface{}) (domain.OffchainTxRepository
 	if len(config) != 1 {
 		return nil, fmt.Errorf("invalid config")
 	}
-	db, ok := config[0].(*sql.DB)
+	db, ok := config[0].(SQLiteDB)
 	if !ok {
 		return nil, fmt.Errorf("cannot open offchain tx repository: invalid config")
 	}
@@ -31,7 +30,6 @@ func NewOffchainTxRepository(config ...interface{}) (domain.OffchainTxRepository
 	backfillCtx, cancel := context.WithCancel(context.Background())
 	repo := &offchainTxRepository{
 		db:             db,
-		querier:        queries.New(db),
 		backfillCancel: cancel,
 		backfillDone:   make(chan struct{}),
 	}
@@ -77,7 +75,7 @@ func (v *offchainTxRepository) AddOrUpdateOffchainTx(
 		}
 		return nil
 	}
-	return execTx(ctx, v.db, txBody)
+	return execTx(ctx, v.db.Write(), txBody)
 }
 
 func (v *offchainTxRepository) GetOffchainTxs(
@@ -93,15 +91,19 @@ func (v *offchainTxRepository) GetOffchainTxs(
 
 	var rows []vwRow
 	if len(filter.WithTxids) > 0 {
-		raw, err := v.querier.SelectOffchainTxsByTxids(ctx, queries.SelectOffchainTxsByTxidsParams{
-			Txids:         filter.WithTxids,
-			WithExtension: boolToInt64(filter.WithExtension || len(filter.WithPacket) > 0),
-			WithAfter:     boolToInt64(filter.WithAfterDate > 0),
-			AfterTs:       filter.WithAfterDate,
-			WithBefore:    boolToInt64(filter.WithBeforeDate > 0),
-			BeforeTs:      filter.WithBeforeDate,
-		})
-		if err != nil {
+		var raw []queries.SelectOffchainTxsByTxidsRow
+		if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+			var err error
+			raw, err = q.SelectOffchainTxsByTxids(ctx, queries.SelectOffchainTxsByTxidsParams{
+				Txids:         filter.WithTxids,
+				WithExtension: boolToInt64(filter.WithExtension || len(filter.WithPacket) > 0),
+				WithAfter:     boolToInt64(filter.WithAfterDate > 0),
+				AfterTs:       filter.WithAfterDate,
+				WithBefore:    boolToInt64(filter.WithBeforeDate > 0),
+				BeforeTs:      filter.WithBeforeDate,
+			})
+			return err
+		}); err != nil {
 			return nil, err
 		}
 		rows = make([]vwRow, 0, len(raw))
@@ -109,15 +111,19 @@ func (v *offchainTxRepository) GetOffchainTxs(
 			rows = append(rows, vwRow{OffchainTxVw: r.OffchainTxVw})
 		}
 	} else {
-		raw, err := v.querier.SelectOffchainTxs(ctx, queries.SelectOffchainTxsParams{
-			WithExtension: boolToInt64(filter.WithExtension || len(filter.WithPacket) > 0),
-			WithAfter:     boolToInt64(filter.WithAfterDate > 0),
-			AfterTs:       filter.WithAfterDate,
-			WithBefore:    boolToInt64(filter.WithBeforeDate > 0),
-			BeforeTs:      filter.WithBeforeDate,
-			Lim:           int64(domain.OffchainTxsScanLimit),
-		})
-		if err != nil {
+		var raw []queries.SelectOffchainTxsRow
+		if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+			var err error
+			raw, err = q.SelectOffchainTxs(ctx, queries.SelectOffchainTxsParams{
+				WithExtension: boolToInt64(filter.WithExtension || len(filter.WithPacket) > 0),
+				WithAfter:     boolToInt64(filter.WithAfterDate > 0),
+				AfterTs:       filter.WithAfterDate,
+				WithBefore:    boolToInt64(filter.WithBeforeDate > 0),
+				BeforeTs:      filter.WithBeforeDate,
+				Lim:           int64(domain.OffchainTxsScanLimit),
+			})
+			return err
+		}); err != nil {
 			return nil, err
 		}
 		rows = make([]vwRow, 0, len(raw))
@@ -206,7 +212,7 @@ const backfillBatchSize = 500
 func (v *offchainTxRepository) startBackfill(ctx context.Context) {
 	go func() {
 		defer close(v.backfillDone)
-		if err := BackfillPackets(ctx, v.db); err != nil {
+		if err := BackfillPackets(ctx, v.db.Write()); err != nil {
 			log.WithError(err).
 				Error("offchain_tx.packets backfill stopped before completion")
 		}
