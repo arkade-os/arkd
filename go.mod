@@ -30,6 +30,8 @@ require (
 	github.com/arkade-os/arkd/pkg/errors v0.0.0-20260303153651-8615412e4dea
 	github.com/arkade-os/arkd/pkg/kvdb v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/arkade-os/arkd/pkg/macaroons v0.0.0-00010101000000-000000000000
+	github.com/arkade-os/emulator/api-spec v0.0.0-20260620052341-17dd9d4ed168
+	github.com/arkade-os/emulator/pkg/arkade v0.0.0-20260620052341-17dd9d4ed168
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/docker/docker v27.1.1+incompatible
@@ -76,8 +78,6 @@ require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
-	github.com/arkade-os/emulator/api-spec v0.0.0-20260620052341-17dd9d4ed168 // indirect
-	github.com/arkade-os/emulator/pkg/arkade v0.0.0-20260620052341-17dd9d4ed168 // indirect
 	github.com/arkade-os/emulator/pkg/emulator v0.0.0-20260620052341-17dd9d4ed168 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect
