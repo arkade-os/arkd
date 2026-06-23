@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/client-lib/store"
@@ -12,9 +13,11 @@ import (
 )
 
 var (
-	key, _         = btcec.NewPrivateKey()
-	forfeitkKey, _ = btcec.NewPrivateKey()
-	testConfigData = types.Config{
+	key, _           = btcec.NewPrivateKey()
+	forfeitkKey, _   = btcec.NewPrivateKey()
+	deprecatedKey, _ = btcec.NewPrivateKey()
+	cutoffDate       = time.Date(2026, 6, 17, 12, 0, 0, 0, time.UTC)
+	testConfigData   = types.Config{
 		ServerUrl:           "127.0.0.1:7070",
 		SignerPubKey:        key.PubKey(),
 		ForfeitPubKey:       forfeitkKey.PubKey(),
@@ -25,6 +28,7 @@ var (
 		BoardingExitDelay:   arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512},
 		ForfeitAddress:      "bcrt1qzvqj",
 		CheckpointTapscript: "abcdefghijklmnopqrtuvxyz",
+		DeprecatedSigners:   []types.DeprecatedSigner{},
 	}
 )
 
@@ -79,6 +83,21 @@ func testConfigStore(t *testing.T, storeSvc types.ConfigStore) {
 	data, err = storeSvc.GetData(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testConfigData, *data)
+
+	// Check deprecated signers are persisted and restored.
+	configWithDeprecatedSigners := testConfigData
+	configWithDeprecatedSigners.DeprecatedSigners = []types.DeprecatedSigner{
+		{
+			PubKey:     deprecatedKey.PubKey(),
+			CutoffDate: cutoffDate,
+		},
+	}
+	err = storeSvc.AddData(ctx, configWithDeprecatedSigners)
+	require.NoError(t, err)
+
+	data, err = storeSvc.GetData(ctx)
+	require.NoError(t, err)
+	require.Equal(t, configWithDeprecatedSigners, *data)
 
 	// Check clean and retrieve data.
 	err = storeSvc.CleanData(ctx)

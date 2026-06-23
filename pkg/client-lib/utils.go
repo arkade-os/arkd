@@ -916,7 +916,7 @@ func toOutputScript(onchainAddress string, network arklib.Network) ([]byte, erro
 }
 
 func verifySignedCheckpoints(
-	originalCheckpoints, signedCheckpoints []string, signerpubkey *btcec.PublicKey,
+	originalCheckpoints, signedCheckpoints []string, signers map[string]*btcec.PublicKey,
 ) error {
 	// index by txid
 	indexedOriginalCheckpoints := make(map[string]*psbt.Packet)
@@ -943,7 +943,7 @@ func verifySignedCheckpoints(
 		if !ok {
 			return fmt.Errorf("signed checkpoint %s not found", txid)
 		}
-		if err := verifyOffchainPsbt(originalPtx, signedPtx, signerpubkey); err != nil {
+		if err := verifyOffchainPsbt(originalPtx, signedPtx, signers); err != nil {
 			return err
 		}
 	}
@@ -951,7 +951,7 @@ func verifySignedCheckpoints(
 	return nil
 }
 
-func verifySignedArk(original, signed string, signerPubKey *btcec.PublicKey) error {
+func verifySignedArk(original, signed string, signers map[string]*btcec.PublicKey) error {
 	originalPtx, err := psbt.NewFromRawBytes(strings.NewReader(original), true)
 	if err != nil {
 		return err
@@ -962,12 +962,10 @@ func verifySignedArk(original, signed string, signerPubKey *btcec.PublicKey) err
 		return err
 	}
 
-	return verifyOffchainPsbt(originalPtx, signedPtx, signerPubKey)
+	return verifyOffchainPsbt(originalPtx, signedPtx, signers)
 }
 
-func verifyOffchainPsbt(original, signed *psbt.Packet, signerpubkey *btcec.PublicKey) error {
-	xonlySigner := schnorr.SerializePubKey(signerpubkey)
-
+func verifyOffchainPsbt(original, signed *psbt.Packet, signers map[string]*btcec.PublicKey) error {
 	if original.UnsignedTx.TxID() != signed.UnsignedTx.TxID() {
 		return fmt.Errorf("invalid offchain tx : txids mismatch")
 	}
@@ -1016,10 +1014,12 @@ func verifyOffchainPsbt(original, signed *psbt.Packet, signerpubkey *btcec.Publi
 
 		// check that every input has the signer's signature
 		var signerSig *psbt.TaprootScriptSpendSig
-
+		var signerPubkey *btcec.PublicKey
 		for _, sig := range signedInput.TaprootScriptSpendSig {
-			if bytes.Equal(sig.XOnlyPubKey, xonlySigner) {
+			pubkey, ok := signers[hex.EncodeToString(sig.XOnlyPubKey)]
+			if ok {
 				signerSig = sig
+				signerPubkey = pubkey
 				break
 			}
 		}
@@ -1046,7 +1046,7 @@ func verifyOffchainPsbt(original, signed *psbt.Packet, signerpubkey *btcec.Publi
 			return err
 		}
 
-		if !sig.Verify(message, signerpubkey) {
+		if !sig.Verify(message, signerPubkey) {
 			return fmt.Errorf("invalid signer signature for input %d", inputIndex)
 		}
 	}

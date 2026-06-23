@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/arkade-os/arkd/pkg/client-lib/types"
 )
@@ -50,6 +51,13 @@ func (s *configStore) GetDatadir() string {
 }
 
 func (s *configStore) AddData(ctx context.Context, data types.Config) error {
+	deprecatedSigners := make([]deprecatedSignerData, 0, len(data.DeprecatedSigners))
+	for _, ds := range data.DeprecatedSigners {
+		deprecatedSigners = append(deprecatedSigners, deprecatedSignerData{
+			Pubkey:     hex.EncodeToString(ds.PubKey.SerializeCompressed()),
+			CutoffDate: ds.CutoffDate.Format(time.RFC3339),
+		})
+	}
 	sd := &storeData{
 		ServerUrl:           data.ServerUrl,
 		SignerPubKey:        hex.EncodeToString(data.SignerPubKey.SerializeCompressed()),
@@ -75,6 +83,7 @@ func (s *configStore) AddData(ctx context.Context, data types.Config) error {
 				OnchainOutput:  data.Fees.IntentFees.IntentOnchainOutputProgram,
 			},
 		},
+		DeprecatedSigners: deprecatedSigners,
 	}
 
 	if err := s.write(sd); err != nil {
