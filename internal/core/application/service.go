@@ -322,12 +322,18 @@ func (s *service) registerEventHandlers() {
 			}
 
 			checkpointTxsByOutpoint := make(map[string]TxData)
+			checkpointScripts := make([]string, 0, len(offchainTx.CheckpointTxs))
 			for txid, tx := range offchainTx.CheckpointTxs {
 				// nolint
 				ptx, _ := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 				checkpointTxsByOutpoint[ptx.UnsignedTx.TxIn[0].PreviousOutPoint.String()] = TxData{
 					Tx: tx, Txid: txid,
 				}
+				script := hex.EncodeToString(ptx.UnsignedTx.TxOut[0].PkScript)
+				checkpointScripts = append(
+					checkpointScripts,
+					script,
+				)
 			}
 
 			txEvent := TransactionEvent{
@@ -343,6 +349,14 @@ func (s *service) registerEventHandlers() {
 			go func() {
 				if err := s.startWatchingVtxos(newVtxos); err != nil {
 					log.WithError(err).Warn("failed to start watching vtxos")
+				}
+			}()
+
+			go func() {
+				if err := s.scanner.WatchScripts(
+					context.Background(), checkpointScripts,
+				); err != nil {
+					log.WithError(err).Warn("failed to start watching checkpoints")
 				}
 			}()
 		},
