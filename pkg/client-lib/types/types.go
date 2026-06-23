@@ -41,12 +41,23 @@ type Config struct {
 	VtxoMaxAmount       int64
 	CheckpointTapscript string
 	Fees                FeeInfo
+	DeprecatedSigners   []DeprecatedSigner
 }
 
 func (c Config) CheckpointExitPath() []byte {
 	// nolint
 	buf, _ := hex.DecodeString(c.CheckpointTapscript)
 	return buf
+}
+
+func (c Config) AllSigners() map[string]*btcec.PublicKey {
+	m := map[string]*btcec.PublicKey{
+		hex.EncodeToString(schnorr.SerializePubKey(c.SignerPubKey)): c.SignerPubKey,
+	}
+	for _, signer := range c.DeprecatedSigners {
+		m[hex.EncodeToString(schnorr.SerializePubKey(signer.PubKey))] = signer.PubKey
+	}
+	return m
 }
 
 type StreamConnectionState string

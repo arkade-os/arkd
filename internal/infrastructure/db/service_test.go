@@ -3446,125 +3446,225 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		signedCheckpointPtx2 := "cHNldP8BAgQCAAAAAQQBAAEFAQABBgEDAfsEAgAAAAB=signed"
 		rootCommitmentTxid := "0000000000000000000000000000000000000000000000000000000000000003"
 		commitmentTxid := "0000000000000000000000000000000000000000000000000000000000000004"
-		events := []domain.Event{
-			domain.OffchainTxRequested{
-				OffchainTxEvent: domain.OffchainTxEvent{
-					Id:   arkTxid,
-					Type: domain.EventTypeOffchainTxRequested,
-				},
-				ArkTx:                 "",
-				UnsignedCheckpointTxs: nil,
-				StartingTimestamp:     now.Unix(),
-			},
-			domain.OffchainTxAccepted{
-				OffchainTxEvent: domain.OffchainTxEvent{
-					Id:   arkTxid,
-					Type: domain.EventTypeOffchainTxAccepted,
-				},
-				CommitmentTxids: map[string]string{
-					checkpointTxid1: rootCommitmentTxid,
-					checkpointTxid2: commitmentTxid,
-				},
-				FinalArkTx: "",
-				SignedCheckpointTxs: map[string]string{
-					checkpointTxid1: signedCheckpointPtx1,
-					checkpointTxid2: signedCheckpointPtx2,
-				},
-				RootCommitmentTxid: rootCommitmentTxid,
-			},
-		}
-		offchainTx = domain.NewOffchainTxFromEvents(events)
-		err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
-		require.NoError(t, err)
 
-		gotOffchainTx, err := repo.GetOffchainTx(ctx, arkTxid)
-		require.NoError(t, err)
-		require.NotNil(t, offchainTx)
-		require.True(t, gotOffchainTx.IsAccepted())
-		require.Equal(t, rootCommitmentTxid, gotOffchainTx.RootCommitmentTxId)
-		require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
-
-		newEvents := []domain.Event{
-			domain.OffchainTxFinalized{
-				OffchainTxEvent: domain.OffchainTxEvent{
-					Id:   arkTxid,
-					Type: domain.EventTypeOffchainTxFinalized,
+		t.Run("request -> accept -> finalize", func(t *testing.T) {
+			events := []domain.Event{
+				domain.OffchainTxRequested{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   arkTxid,
+						Type: domain.EventTypeOffchainTxRequested,
+					},
+					ArkTx:                 "",
+					UnsignedCheckpointTxs: nil,
+					StartingTimestamp:     now.Unix(),
 				},
-				FinalCheckpointTxs: nil,
-				Timestamp:          endTimestamp,
-			},
-		}
-		events = append(events, newEvents...)
-		offchainTx = domain.NewOffchainTxFromEvents(events)
-		err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
-		require.NoError(t, err)
-
-		gotOffchainTx, err = repo.GetOffchainTx(ctx, arkTxid)
-		require.NoError(t, err)
-		require.NotNil(t, offchainTx)
-		require.True(t, gotOffchainTx.IsFinalized())
-		require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
-
-		bulkFetchedTxs, err := repo.GetOffchainTxsByTxids(ctx, []string{arkTxid})
-		require.NoError(t, err)
-		require.Len(t, bulkFetchedTxs, 1)
-		require.Equal(t, arkTxid, bulkFetchedTxs[0].ArkTxid)
-
-		bulkFetchedTxs, err = repo.GetOffchainTxsByTxids(ctx, []string{"missing-txid"})
-		require.NoError(t, err)
-		require.Empty(t, bulkFetchedTxs)
-
-		// Insert a second offchain tx so we can exercise multi-txid bulk fetch.
-		secondArkTxid := txidb
-		secondCheckpointTxid := "0000000000000000000000000000000000000000000000000000000000000005"
-		secondCheckpointPtx := "cHNldP8BAgQCAAAAAQQBAAEFAQABBgEDAfsEAgAAAAA=signed-2"
-		secondEvents := []domain.Event{
-			domain.OffchainTxRequested{
-				OffchainTxEvent: domain.OffchainTxEvent{
-					Id:   secondArkTxid,
-					Type: domain.EventTypeOffchainTxRequested,
+				domain.OffchainTxAccepted{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   arkTxid,
+						Type: domain.EventTypeOffchainTxAccepted,
+					},
+					CommitmentTxids: map[string]string{
+						checkpointTxid1: rootCommitmentTxid,
+						checkpointTxid2: commitmentTxid,
+					},
+					FinalArkTx: "",
+					SignedCheckpointTxs: map[string]string{
+						checkpointTxid1: signedCheckpointPtx1,
+						checkpointTxid2: signedCheckpointPtx2,
+					},
+					RootCommitmentTxid: rootCommitmentTxid,
 				},
-				StartingTimestamp: now.Unix(),
-			},
-			domain.OffchainTxAccepted{
-				OffchainTxEvent: domain.OffchainTxEvent{
-					Id:   secondArkTxid,
-					Type: domain.EventTypeOffchainTxAccepted,
-				},
-				CommitmentTxids: map[string]string{
-					secondCheckpointTxid: rootCommitmentTxid,
-				},
-				SignedCheckpointTxs: map[string]string{
-					secondCheckpointTxid: secondCheckpointPtx,
-				},
-				RootCommitmentTxid: rootCommitmentTxid,
-			},
-		}
-		secondOffchainTx := domain.NewOffchainTxFromEvents(secondEvents)
-		require.NoError(t, repo.AddOrUpdateOffchainTx(ctx, secondOffchainTx))
+			}
+			offchainTx = domain.NewOffchainTxFromEvents(events)
+			err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
+			require.NoError(t, err)
 
-		// Multi-txid fetch returns both, plus tolerates a missing entry.
-		bulkFetchedTxs, err = repo.GetOffchainTxsByTxids(
-			ctx, []string{arkTxid, secondArkTxid, "missing-txid"},
-		)
-		require.NoError(t, err)
-		require.Len(t, bulkFetchedTxs, 2)
+			gotOffchainTx, err := repo.GetOffchainTx(ctx, arkTxid)
+			require.NoError(t, err)
+			require.NotNil(t, offchainTx)
+			require.True(t, gotOffchainTx.IsAccepted())
+			require.Equal(t, rootCommitmentTxid, gotOffchainTx.RootCommitmentTxId)
+			require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
 
-		got := make(map[string]*domain.OffchainTx, len(bulkFetchedTxs))
-		for _, tx := range bulkFetchedTxs {
-			got[tx.ArkTxid] = tx
-		}
-		require.Contains(t, got, arkTxid)
-		require.Contains(t, got, secondArkTxid)
+			newEvents := []domain.Event{
+				domain.OffchainTxFinalized{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   arkTxid,
+						Type: domain.EventTypeOffchainTxFinalized,
+					},
+					FinalCheckpointTxs: nil,
+					Timestamp:          endTimestamp,
+				},
+			}
+			events = append(events, newEvents...)
+			offchainTx = domain.NewOffchainTxFromEvents(events)
+			err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
+			require.NoError(t, err)
 
-		// Each result must carry its own checkpoint mapping — guards the
-		// row-grouping logic against cross-txid contamination.
-		require.Contains(t, got[arkTxid].CheckpointTxs, checkpointTxid1)
-		require.Contains(t, got[arkTxid].CheckpointTxs, checkpointTxid2)
-		require.NotContains(t, got[arkTxid].CheckpointTxs, secondCheckpointTxid)
-		require.Contains(t, got[secondArkTxid].CheckpointTxs, secondCheckpointTxid)
-		require.NotContains(t, got[secondArkTxid].CheckpointTxs, checkpointTxid1)
-		require.NotContains(t, got[secondArkTxid].CheckpointTxs, checkpointTxid2)
+			gotOffchainTx, err = repo.GetOffchainTx(ctx, arkTxid)
+			require.NoError(t, err)
+			require.NotNil(t, offchainTx)
+			require.True(t, gotOffchainTx.IsFinalized())
+			require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
+		})
+
+		t.Run("request -> accept -> fail -> finalize", func(t *testing.T) {
+			events := []domain.Event{
+				domain.OffchainTxRequested{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   txidb,
+						Type: domain.EventTypeOffchainTxRequested,
+					},
+					ArkTx:                 "",
+					UnsignedCheckpointTxs: nil,
+					StartingTimestamp:     now.Unix(),
+				},
+				domain.OffchainTxAccepted{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   txidb,
+						Type: domain.EventTypeOffchainTxAccepted,
+					},
+					CommitmentTxids: map[string]string{
+						checkpointTxid1: rootCommitmentTxid,
+						checkpointTxid2: commitmentTxid,
+					},
+					FinalArkTx: "",
+					SignedCheckpointTxs: map[string]string{
+						checkpointTxid1: signedCheckpointPtx1,
+						checkpointTxid2: signedCheckpointPtx2,
+					},
+					RootCommitmentTxid: rootCommitmentTxid,
+				},
+				domain.OffchainTxFailed{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   txidb,
+						Type: domain.EventTypeOffchainTxFailed,
+					},
+					Reason:    "whatever",
+					Timestamp: time.Now().Unix(),
+				},
+			}
+			offchainTx = domain.NewOffchainTxFromEvents(events)
+			err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
+			require.NoError(t, err)
+
+			gotOffchainTx, err := repo.GetOffchainTx(ctx, txidb)
+			require.NoError(t, err)
+			require.NotNil(t, offchainTx)
+			require.Equal(t, int(domain.OffchainTxAcceptedStage), gotOffchainTx.Stage.Code)
+			require.True(t, gotOffchainTx.Stage.Failed)
+			require.NotEmpty(t, gotOffchainTx.FailReason)
+			require.Equal(t, rootCommitmentTxid, gotOffchainTx.RootCommitmentTxId)
+			require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
+
+			newEvents := []domain.Event{
+				domain.OffchainTxFinalized{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   txidb,
+						Type: domain.EventTypeOffchainTxFinalized,
+					},
+					FinalCheckpointTxs: nil,
+					Timestamp:          endTimestamp,
+				},
+			}
+			events = append(events, newEvents...)
+			offchainTx = domain.NewOffchainTxFromEvents(events)
+			err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
+			require.NoError(t, err)
+
+			gotOffchainTx, err = repo.GetOffchainTx(ctx, txidb)
+			require.NoError(t, err)
+			require.NotNil(t, offchainTx)
+			require.True(t, gotOffchainTx.IsFinalized())
+			require.Empty(t, gotOffchainTx.FailReason)
+			require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
+		})
+
+		t.Run("bulk fetch by txids", func(t *testing.T) {
+			// Self-contained: create two offchain txs with their own
+			// checkpoint txids. The other subtests reuse checkpointTxid1/
+			// checkpointTxid2, and since checkpoint_tx.txid is the primary
+			// key an upsert reassigns the checkpoint to the latest offchain
+			// tx, so this subtest must not depend on their state.
+			firstTxid := txidc
+			firstCheckpointTxid := "0000000000000000000000000000000000000000000000000000000000000006"
+			firstCheckpointPtx := "cHNldP8BAgQCAAAAAQQBAAEFAQABBgEDAfsEAgAAAAA=signed-c1"
+			secondTxid := "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+			secondCheckpointTxid := "0000000000000000000000000000000000000000000000000000000000000007"
+			secondCheckpointPtx := "cHNldP8BAgQCAAAAAQQBAAEFAQABBgEDAfsEAgAAAAA=signed-c2"
+
+			firstEvents := []domain.Event{
+				domain.OffchainTxRequested{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   firstTxid,
+						Type: domain.EventTypeOffchainTxRequested,
+					},
+					StartingTimestamp: now.Unix(),
+				},
+				domain.OffchainTxAccepted{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   firstTxid,
+						Type: domain.EventTypeOffchainTxAccepted,
+					},
+					CommitmentTxids:     map[string]string{firstCheckpointTxid: rootCommitmentTxid},
+					SignedCheckpointTxs: map[string]string{firstCheckpointTxid: firstCheckpointPtx},
+					RootCommitmentTxid:  rootCommitmentTxid,
+				},
+			}
+			require.NoError(t, repo.AddOrUpdateOffchainTx(ctx, domain.NewOffchainTxFromEvents(firstEvents)))
+
+			// Single-txid fetch returns the row; an unknown txid returns nothing.
+			bulkFetchedTxs, err := repo.GetOffchainTxsByTxids(ctx, []string{firstTxid})
+			require.NoError(t, err)
+			require.Len(t, bulkFetchedTxs, 1)
+			require.Equal(t, firstTxid, bulkFetchedTxs[0].ArkTxid)
+
+			bulkFetchedTxs, err = repo.GetOffchainTxsByTxids(ctx, []string{"missing-txid"})
+			require.NoError(t, err)
+			require.Empty(t, bulkFetchedTxs)
+
+			// Insert a second offchain tx so we can exercise multi-txid bulk fetch.
+			secondEvents := []domain.Event{
+				domain.OffchainTxRequested{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   secondTxid,
+						Type: domain.EventTypeOffchainTxRequested,
+					},
+					StartingTimestamp: now.Unix(),
+				},
+				domain.OffchainTxAccepted{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   secondTxid,
+						Type: domain.EventTypeOffchainTxAccepted,
+					},
+					CommitmentTxids:     map[string]string{secondCheckpointTxid: rootCommitmentTxid},
+					SignedCheckpointTxs: map[string]string{secondCheckpointTxid: secondCheckpointPtx},
+					RootCommitmentTxid:  rootCommitmentTxid,
+				},
+			}
+			require.NoError(t, repo.AddOrUpdateOffchainTx(ctx, domain.NewOffchainTxFromEvents(secondEvents)))
+
+			// Multi-txid fetch returns both, plus tolerates a missing entry.
+			bulkFetchedTxs, err = repo.GetOffchainTxsByTxids(
+				ctx, []string{firstTxid, secondTxid, "missing-txid"},
+			)
+			require.NoError(t, err)
+			require.Len(t, bulkFetchedTxs, 2)
+
+			got := make(map[string]*domain.OffchainTx, len(bulkFetchedTxs))
+			for _, tx := range bulkFetchedTxs {
+				got[tx.ArkTxid] = tx
+			}
+			require.Contains(t, got, firstTxid)
+			require.Contains(t, got, secondTxid)
+
+			// Each result must carry its own checkpoint mapping, guarding the
+			// row-grouping logic against cross-txid contamination.
+			require.Contains(t, got[firstTxid].CheckpointTxs, firstCheckpointTxid)
+			require.NotContains(t, got[firstTxid].CheckpointTxs, secondCheckpointTxid)
+			require.Contains(t, got[secondTxid].CheckpointTxs, secondCheckpointTxid)
+			require.NotContains(t, got[secondTxid].CheckpointTxs, firstCheckpointTxid)
+		})
 	})
 }
 
