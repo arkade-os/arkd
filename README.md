@@ -175,6 +175,14 @@ To rotate the signer key while still accepting coins locked to the old key, list
 export ARKD_SIGNER_DEPRECATED_KEYS=<old_hex_key>:<unix_cutoff>
 ```
 
+`arkd-signer` also natively signs ArkadeScript spends with the same operator key (tweaked per script), signing-only: it runs the embedded arkade script and co-signs the input only if the script passes. No extra configuration is required. To bound the script VM's per-opcode work, optionally set comma-separated `OPCODE=limit` pairs (empty uses the engine defaults):
+
+```sh
+export ARKD_SIGNER_EMULATOR_COMPUTE_LIMITS=OP_ECPAIRING=8,OP_MODEXP=128
+```
+
+For independent emulation under a separate key, run a standalone [emulator](https://github.com/arkade-os/emulator) instance alongside `arkd-signer`.
+
 ### Connect to wallet
 
 To connect `arkd` to `arkd-wallet` use this environment variable:
