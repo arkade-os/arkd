@@ -835,13 +835,9 @@ func multisigClosureKeys(leafScript []byte) ([]*btcec.PublicKey, bool) {
 	switch c := closure.(type) {
 	case *script.MultisigClosure:
 		return c.PubKeys, true
-	case *script.CSVMultisigClosure:
-		return c.PubKeys, true
 	case *script.CLTVMultisigClosure:
 		return c.PubKeys, true
 	case *script.ConditionMultisigClosure:
-		return c.PubKeys, true
-	case *script.ConditionCSVMultisigClosure:
 		return c.PubKeys, true
 	default:
 		return nil, false
