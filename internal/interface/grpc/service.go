@@ -23,8 +23,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -488,26 +486,23 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 
 	mux.Handle("/", handler)
 
-	h2srv := &http2.Server{
-		MaxConcurrentStreams: s.config.MaxConcurrentStreams,
-	}
-
-	httpServerHandler := http.Handler(mux)
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
 	if s.config.insecure() {
-		httpServerHandler = h2c.NewHandler(httpServerHandler, h2srv)
+		protocols.SetUnencryptedHTTP2(true)
+	} else {
+		protocols.SetHTTP2(true)
 	}
 
 	s.grpcServer = grpcServer
 	s.server = &http.Server{
 		Addr:      s.config.address(),
-		Handler:   httpServerHandler,
+		Handler:   mux,
 		TLSConfig: tlsConfig,
-	}
-
-	if !s.config.insecure() {
-		if err := http2.ConfigureServer(s.server, h2srv); err != nil {
-			return err
-		}
+		Protocols: protocols,
+		HTTP2: &http.HTTP2Config{
+			MaxConcurrentStreams: int(s.config.MaxConcurrentStreams),
+		},
 	}
 
 	// Create separate admin server if admin port is configured
@@ -561,16 +556,12 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 
 		adminMux.Handle("/", adminHandler)
 
-		adminHttpServerHandler := http.Handler(adminMux)
-		if s.config.insecure() {
-			adminHttpServerHandler = h2c.NewHandler(adminHttpServerHandler, &http2.Server{})
-		}
-
 		s.adminGrpcSrvr = adminGrpcServer
 		s.adminServer = &http.Server{
 			Addr:      s.config.adminAddress(),
-			Handler:   adminHttpServerHandler,
+			Handler:   adminMux,
 			TLSConfig: tlsConfig,
+			Protocols: protocols,
 		}
 	}
 
