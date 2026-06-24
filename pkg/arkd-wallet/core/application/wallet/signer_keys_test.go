@@ -135,9 +135,9 @@ func leafScript(t *testing.T, owner, signer *btcec.PublicKey) []byte {
 }
 
 // TestSignerKeyForLeaf covers the key selection used when signing tapscript leaves:
-// the wallet signs with whichever of its keys (current or deprecated) the leaf
-// references, including CSV (sweep) leaves; a required leaf that references none of
-// the wallet's keys is a hard error instead of a silent wrong-key signature.
+// the wallet signs with whichever of its keys (current or deprecated) the leaf's
+// multisig closure references; a required leaf that references none of the wallet's
+// keys is a hard error instead of a silent wrong-key signature.
 func TestSignerKeyForLeaf(t *testing.T) {
 	mustKey := func() *btcec.PrivateKey {
 		k, err := btcec.NewPrivateKey()
@@ -166,25 +166,19 @@ func TestSignerKeyForLeaf(t *testing.T) {
 		require.Equal(t, pub(current), pub(key))
 	})
 
-	// The fix must select the deprecated key for every multisig closure type,
-	// including the CSV (sweep) and condition variants that previously fell
+	// The fix must select the deprecated key for every multisig closure type the
+	// server co-signs (plain, CLTV, and condition multisig), which previously fell
 	// through to the current key (the regression surface).
 	t.Run("deprecated key matched across all closure types", func(t *testing.T) {
 		ms := script.MultisigClosure{
 			PubKeys: []*btcec.PublicKey{user.PubKey(), deprecated.PubKey()},
 			Type:    script.MultisigTypeChecksig,
 		}
-		csv := script.CSVMultisigClosure{
-			MultisigClosure: ms,
-			Locktime:        arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144},
-		}
 		cond := []byte{txscript.OP_TRUE}
 		closures := map[string]script.Closure{
-			"multisig":      &ms,
-			"csv":           &csv,
-			"cltv":          &script.CLTVMultisigClosure{MultisigClosure: ms, Locktime: arklib.AbsoluteLocktime(1000)},
-			"condition":     &script.ConditionMultisigClosure{MultisigClosure: ms, Condition: cond},
-			"condition_csv": &script.ConditionCSVMultisigClosure{CSVMultisigClosure: csv, Condition: cond},
+			"multisig":  &ms,
+			"cltv":      &script.CLTVMultisigClosure{MultisigClosure: ms, Locktime: arklib.AbsoluteLocktime(1000)},
+			"condition": &script.ConditionMultisigClosure{MultisigClosure: ms, Condition: cond},
 		}
 		for name, c := range closures {
 			t.Run(name, func(t *testing.T) {
