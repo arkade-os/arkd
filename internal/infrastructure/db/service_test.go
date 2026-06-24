@@ -18,6 +18,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -159,6 +160,7 @@ func TestService(t *testing.T) {
 				DataStoreType:    "sqlite",
 				EventStoreConfig: []interface{}{"", nil},
 				DataStoreConfig:  []interface{}{dbDir},
+				Settings:         validSettings(),
 			},
 		},
 		{
@@ -168,6 +170,7 @@ func TestService(t *testing.T) {
 				DataStoreType:    "postgres",
 				EventStoreConfig: []interface{}{pgEventDns, false, pgdb.ConnectionConfig{}},
 				DataStoreConfig:  []interface{}{pgDns, false, pgdb.ConnectionConfig{}},
+				Settings:         validSettings(),
 			},
 		},
 	}
@@ -186,9 +189,8 @@ func TestService(t *testing.T) {
 			testOffchainTxRepository(t, svc)
 			testAssetRepository(t, svc)
 			testVtxoRepository(t, svc)
-			testScheduledSessionRepository(t, svc)
 			testConvictionRepository(t, svc)
-			testFeeRepository(t, svc)
+			testSettingsRepository(t, svc)
 
 			svc.Close()
 		})
@@ -665,6 +667,59 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		// - second round has no vtxo tree
 		require.Empty(t, sweepableRounds)
 	})
+
+	t.Run("test_patch_collected_fees", func(t *testing.T) {
+		ctx := context.Background()
+		repo := svc.Rounds()
+
+		// Create two completed rounds with zero (unpersisted) collected fees.
+		patches := map[string]uint64{}
+		for _, fee := range []uint64{1500, 2500} {
+			id := uuid.New().String()
+			patches[id] = fee
+			round := domain.NewRoundFromEvents([]domain.Event{
+				domain.RoundStarted{
+					RoundEvent: domain.RoundEvent{
+						Id:   id,
+						Type: domain.EventTypeRoundStarted,
+					},
+					Timestamp: 100,
+				},
+				domain.RoundFinalizationStarted{
+					RoundEvent: domain.RoundEvent{
+						Id:   id,
+						Type: domain.EventTypeRoundFinalizationStarted,
+					},
+					CommitmentTxid: randomString(32),
+					CommitmentTx:   emptyTx,
+				},
+				domain.RoundFinalized{
+					RoundEvent: domain.RoundEvent{
+						Id:   id,
+						Type: domain.EventTypeRoundFinalized,
+					},
+					FinalCommitmentTx: emptyTx,
+					Fees:              0,
+					Timestamp:         110,
+				},
+			})
+			require.NoError(t, repo.AddOrUpdateRound(ctx, *round))
+
+			// sanity: stored fee is zero before patching
+			stored, err := repo.GetRoundWithId(ctx, id)
+			require.NoError(t, err)
+			require.Zero(t, stored.CollectedFees)
+		}
+
+		require.NoError(t, repo.PatchCollectedFees(ctx, patches))
+
+		for id, want := range patches {
+			round, err := repo.GetRoundWithId(ctx, id)
+			require.NoError(t, err)
+			require.Equal(t, want, round.CollectedFees)
+		}
+	})
+
 }
 
 func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
@@ -1008,6 +1063,53 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		tapKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, nonExistentCommitmentTxid, 0)
 		require.NoError(t, err)
 		require.Empty(t, tapKeys)
+
+		// Bulk variant: must return the deduplicated union of the per-txid
+		// results across all provided commitment_txids.
+		bulkKeys, err := svc.Vtxos().GetVtxoPubKeysByCommitmentTxids(
+			ctx, []string{otherCommitmentTxid}, 0,
+		)
+		require.NoError(t, err)
+		require.Len(t, bulkKeys, 3)
+		require.ElementsMatch(t, []string{"tapkey1", "tapkey2", "tapkey3"}, bulkKeys)
+
+		bulkKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxids(
+			ctx, []string{otherCommitmentTxid}, 3000,
+		)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"tapkey1", "tapkey3"}, bulkKeys)
+
+		// Combine with a known existing commitmentTxid that has keys too,
+		// expect the dedup'd union, no duplicates.
+		bulkKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxids(
+			ctx, []string{otherCommitmentTxid, commitmentTxid}, 0,
+		)
+		require.NoError(t, err)
+		seen := make(map[string]int)
+		for _, k := range bulkKeys {
+			seen[k]++
+		}
+		for k, n := range seen {
+			require.Equalf(t, 1, n, "duplicate pubkey %s in bulk result", k)
+		}
+		// Verify the full union: keys from both commitment txids must be
+		// present (tapkey1/2/3 from otherCommitmentTxid, plus pubkey and
+		// pubkey2 from the earlier commitmentTxid seed).
+		require.Contains(t, bulkKeys, "tapkey1")
+		require.Contains(t, bulkKeys, "tapkey2")
+		require.Contains(t, bulkKeys, "tapkey3")
+		require.Contains(t, bulkKeys, pubkey)
+		require.Contains(t, bulkKeys, pubkey2)
+
+		bulkKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxids(ctx, nil, 0)
+		require.NoError(t, err)
+		require.Empty(t, bulkKeys)
+
+		bulkKeys, err = svc.Vtxos().GetVtxoPubKeysByCommitmentTxids(
+			ctx, []string{nonExistentCommitmentTxid}, 0,
+		)
+		require.NoError(t, err)
+		require.Empty(t, bulkKeys)
 
 		t.Run("test_get_pending_spent_vtxos", func(t *testing.T) {
 			ctx := t.Context()
@@ -1383,56 +1485,6 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
-func testScheduledSessionRepository(t *testing.T, svc ports.RepoManager) {
-	t.Run("test_scheduled_session_repository", func(t *testing.T) {
-		ctx := context.Background()
-		repo := svc.ScheduledSession()
-
-		scheduledSession, err := repo.Get(ctx)
-		require.NoError(t, err)
-		require.Nil(t, scheduledSession)
-
-		now := time.Now().Truncate(time.Second)
-		expected := domain.ScheduledSession{
-			StartTime: now,
-			Period:    time.Duration(3) * time.Hour,
-			Duration:  time.Duration(20) * time.Second,
-			UpdatedAt: now,
-		}
-
-		err = repo.Upsert(ctx, expected)
-		require.NoError(t, err)
-
-		got, err := repo.Get(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, got)
-		assertScheduledSessionEqual(t, expected, *got)
-
-		expected.Period = time.Duration(4) * time.Hour
-		expected.Duration = time.Duration(40) * time.Second
-		expected.UpdatedAt = now.Add(100 * time.Second)
-
-		err = repo.Upsert(ctx, expected)
-		require.NoError(t, err)
-
-		got, err = repo.Get(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, got)
-		assertScheduledSessionEqual(t, expected, *got)
-
-		err = repo.Clear(ctx)
-		require.NoError(t, err)
-
-		scheduledSession, err = repo.Get(ctx)
-		require.NoError(t, err)
-		require.Nil(t, scheduledSession)
-
-		// No error if trying to clear already cleared scheduled session
-		err = repo.Clear(ctx)
-		require.NoError(t, err)
-	})
-}
-
 func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_offchain_tx_repository", func(t *testing.T) {
 		ctx := context.Background()
@@ -1769,126 +1821,158 @@ func testAssetRepository(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
-func testFeeRepository(t *testing.T, svc ports.RepoManager) {
-	t.Run("test_fee_repository", func(t *testing.T) {
+// validSettings returns a fully-valid settings value, used both to seed the
+// service config and as the baseline for settings repo round-trips. The exit
+// delays are all seconds-type multiples of MinAllowedSequence so they survive
+// the repo's store/reload (the repo persists the raw value and reconstructs the
+// type via ParseRelativeLocktime).
+func validSettings() domain.Settings {
+	delay := func(v uint32) arklib.RelativeLocktime {
+		lt, _ := arklib.ParseRelativeLocktime(v)
+		return lt
+	}
+	return domain.Settings{
+		SessionDuration:               30 * time.Second,
+		UnrolledVtxoMinExpiryMargin:   30 * time.Second,
+		BanThreshold:                  3,
+		BanDuration:                   3600 * time.Second,
+		UnilateralExitDelay:           delay(512),
+		PublicUnilateralExitDelay:     delay(512),
+		CheckpointExitDelay:           delay(1024),
+		BoardingExitDelay:             delay(1536),
+		VtxoTreeExpiry:                delay(1024),
+		RoundMinParticipantsCount:     2,
+		RoundMaxParticipantsCount:     128,
+		VtxoMinAmount:                 1000,
+		VtxoMaxAmount:                 100000000,
+		UtxoMinAmount:                 5000,
+		UtxoMaxAmount:                 500000000,
+		SettlementMinExpiryGap:        7200 * time.Second,
+		VtxoNoCsvValidationCutoffDate: time.Unix(1700000000, 0),
+		MaxTxWeight:                   400000,
+		MaxOpReturnOutputs:            3,
+		AssetTxMaxWeightRatio:         0.5,
+		BuildVersionHeader:            "v1.0.0",
+		BuildVersionHeaderRequired:    true,
+		DigestHeaderRequired:          true,
+		UpdatedAt:                     time.Unix(1700000000, 0),
+	}
+}
+
+func testSettingsRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_settings_repository", func(t *testing.T) {
 		ctx := context.Background()
-		repo := svc.Fees()
+		repo := svc.Settings()
 
-		// fees should be initialized to empty strings
-		currentFees, err := repo.GetIntentFees(ctx)
+		// Settings are seeded from the service config when the service is built.
+		seeded, err := repo.Get(ctx)
 		require.NoError(t, err)
-		require.NotNil(t, currentFees)
-		require.Equal(t, "", currentFees.OnchainInputFee)
-		require.Equal(t, "", currentFees.OffchainInputFee)
-		require.Equal(t, "", currentFees.OnchainOutputFee)
-		require.Equal(t, "", currentFees.OffchainOutputFee)
+		require.NotNil(t, seeded)
+		assertSettingsEqual(t, validSettings(), *seeded)
 
-		newFees := domain.IntentFees{
-			OnchainInputFee:   "0.25",
-			OffchainInputFee:  "0.30",
-			OnchainOutputFee:  "0.35",
-			OffchainOutputFee: "0.40",
+		// The repo notifies a registered handler synchronously on every Upsert,
+		// forwarding the changelog it was given.
+		type handlerCall struct {
+			settings  domain.Settings
+			changelog []string
+		}
+		calls := make(chan handlerCall, 1)
+		repo.RegisterUpdatesHandler(func(s domain.Settings, changelog []string) {
+			calls <- handlerCall{settings: s, changelog: changelog}
+		})
+		waitForHandler := func() handlerCall {
+			t.Helper()
+			select {
+			case c := <-calls:
+				return c
+			case <-time.After(2 * time.Second):
+				t.Fatal("update handler was not triggered")
+				return handlerCall{}
+			}
 		}
 
-		// sqlite and postgres use millisecond precision for created_at so we need to
-		// wait to ensure the updated_at is different.
-		// set the new fees
-		time.Sleep(10 * time.Millisecond)
-		err = repo.UpdateIntentFees(ctx, newFees)
-		require.NoError(t, err)
-
-		updatedFees, err := repo.GetIntentFees(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, updatedFees)
-		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
-		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
-		require.Equal(t, newFees.OnchainOutputFee, updatedFees.OnchainOutputFee)
-		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
-		time.Sleep(10 * time.Millisecond)
-		// zero out the fees
-		err = repo.ClearIntentFees(ctx)
-		require.NoError(t, err)
-
-		clearedFees, err := repo.GetIntentFees(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, clearedFees)
-		require.Equal(t, "", clearedFees.OnchainInputFee)
-		require.Equal(t, "", clearedFees.OffchainInputFee)
-		require.Equal(t, "", clearedFees.OnchainOutputFee)
-		require.Equal(t, "", clearedFees.OffchainOutputFee)
-
-		// set the fees back to newFees
-		time.Sleep(10 * time.Millisecond)
-		err = repo.UpdateIntentFees(ctx, newFees)
-		require.NoError(t, err)
-
-		updatedFees, err = repo.GetIntentFees(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, updatedFees)
-		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
-		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
-		require.Equal(t, newFees.OnchainOutputFee, updatedFees.OnchainOutputFee)
-		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
-
-		// only change 2 of the fees, the others should remain the same (testing partial updates)
-		newFees = domain.IntentFees{
-			OnchainInputFee:   "0.25",
-			OffchainOutputFee: "0.40",
+		// Upsert overwrites the seeded settings; the handler receives the exact
+		// changelog it was given.
+		expected := validSettings()
+		expected.BanThreshold = 5
+		expected.BanDuration = 7200 * time.Second
+		expected.RoundMaxParticipantsCount = 256
+		expected.VtxoMinAmount = 2000
+		expected.MaxTxWeight = 500000
+		expected.BuildVersionHeader = "v2.0.0"
+		expected.BuildVersionHeaderRequired = false
+		expected.DigestHeaderRequired = false
+		changelog := []string{
+			"ban_threshold", "ban_duration", "round_max_participants_count",
+			"vtxo_min_amount", "max_tx_weight",
+			"build_version_header", "build_version_header_required",
+			"digest_header_required",
 		}
-		time.Sleep(10 * time.Millisecond)
-		err = repo.UpdateIntentFees(ctx, newFees)
+		err = repo.Upsert(ctx, expected, changelog)
 		require.NoError(t, err)
 
-		updatedFees, err = repo.GetIntentFees(ctx)
+		// Dispatch is synchronous: the handler has already run by the time Upsert
+		// returns, so the buffered call is observable without waiting for it.
+		require.Len(t, calls, 1, "settings update handler must be dispatched synchronously")
+
+		call := waitForHandler()
+		require.Equal(t, changelog, call.changelog)
+		assertSettingsEqual(t, expected, call.settings)
+
+		got, err := repo.Get(ctx)
 		require.NoError(t, err)
-		require.NotNil(t, updatedFees)
-		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
-		require.Equal(t, "0.30", updatedFees.OffchainInputFee)
-		require.Equal(t, "0.35", updatedFees.OnchainOutputFee)
-		require.Equal(t, newFees.OffchainOutputFee, updatedFees.OffchainOutputFee)
+		require.NotNil(t, got)
+		assertSettingsEqual(t, expected, *got)
 
-		// test that updating with no fees yields an error and does not change existing fees
-		newFees = domain.IntentFees{}
-		time.Sleep(10 * time.Millisecond)
-		err = repo.UpdateIntentFees(ctx, newFees)
-		require.Error(t, err)
-
-		updatedFees, err = repo.GetIntentFees(ctx)
-		require.NoError(t, err)
-		require.NotNil(t, updatedFees)
-		require.Equal(t, "0.25", updatedFees.OnchainInputFee)
-		require.Equal(t, "0.30", updatedFees.OffchainInputFee)
-		require.Equal(t, "0.35", updatedFees.OnchainOutputFee)
-		require.Equal(t, "0.40", updatedFees.OffchainOutputFee)
-
-		// zero out the fees
-		err = repo.ClearIntentFees(ctx)
+		// A further update notifies the handler again with its own changelog.
+		expected.BanThreshold = 9
+		nextChangelog := []string{"ban_threshold"}
+		err = repo.Upsert(ctx, expected, nextChangelog)
 		require.NoError(t, err)
 
-		// do partial update after clearing to ensure fees are set correctly from zero state
-		newFees = domain.IntentFees{
-			OnchainInputFee:  "0.15",
-			OffchainInputFee: "0.20",
-		}
-		time.Sleep(10 * time.Millisecond)
-		err = repo.UpdateIntentFees(ctx, newFees)
-		require.NoError(t, err)
+		call = waitForHandler()
+		require.Equal(t, nextChangelog, call.changelog)
 
-		updatedFees, err = repo.GetIntentFees(ctx)
+		got, err = repo.Get(ctx)
 		require.NoError(t, err)
-		require.NotNil(t, updatedFees)
-		require.Equal(t, newFees.OnchainInputFee, updatedFees.OnchainInputFee)
-		require.Equal(t, newFees.OffchainInputFee, updatedFees.OffchainInputFee)
-		require.Equal(t, "", updatedFees.OnchainOutputFee)
-		require.Equal(t, "", updatedFees.OffchainOutputFee)
+		require.NotNil(t, got)
+		assertSettingsEqual(t, expected, *got)
 	})
+}
+
+func assertSettingsEqual(t *testing.T, expected, actual domain.Settings) {
+	t.Helper()
+	assert.Equal(t, expected.SessionDuration, actual.SessionDuration, "SessionDuration not equal")
+	assert.Equal(t, expected.UnrolledVtxoMinExpiryMargin, actual.UnrolledVtxoMinExpiryMargin, "UnrolledVtxoMinExpiryMargin not equal")
+	assert.Equal(t, expected.BanThreshold, actual.BanThreshold, "BanThreshold not equal")
+	assert.Equal(t, expected.BanDuration, actual.BanDuration, "BanDuration not equal")
+	assert.Equal(t, expected.UnilateralExitDelay, actual.UnilateralExitDelay, "UnilateralExitDelay not equal")
+	assert.Equal(t, expected.PublicUnilateralExitDelay, actual.PublicUnilateralExitDelay, "PublicUnilateralExitDelay not equal")
+	assert.Equal(t, expected.CheckpointExitDelay, actual.CheckpointExitDelay, "CheckpointExitDelay not equal")
+	assert.Equal(t, expected.BoardingExitDelay, actual.BoardingExitDelay, "BoardingExitDelay not equal")
+	assert.Equal(t, expected.VtxoTreeExpiry, actual.VtxoTreeExpiry, "VtxoTreeExpiry not equal")
+	assert.Equal(t, expected.RoundMinParticipantsCount, actual.RoundMinParticipantsCount, "RoundMinParticipantsCount not equal")
+	assert.Equal(t, expected.RoundMaxParticipantsCount, actual.RoundMaxParticipantsCount, "RoundMaxParticipantsCount not equal")
+	assert.Equal(t, expected.VtxoMinAmount, actual.VtxoMinAmount, "VtxoMinAmount not equal")
+	assert.Equal(t, expected.VtxoMaxAmount, actual.VtxoMaxAmount, "VtxoMaxAmount not equal")
+	assert.Equal(t, expected.UtxoMinAmount, actual.UtxoMinAmount, "UtxoMinAmount not equal")
+	assert.Equal(t, expected.UtxoMaxAmount, actual.UtxoMaxAmount, "UtxoMaxAmount not equal")
+	assert.Equal(t, expected.SettlementMinExpiryGap, actual.SettlementMinExpiryGap, "SettlementMinExpiryGap not equal")
+	assert.Equal(t, expected.VtxoNoCsvValidationCutoffDate, actual.VtxoNoCsvValidationCutoffDate, "VtxoNoCsvValidationCutoffDate not equal")
+	assert.Equal(t, expected.MaxTxWeight, actual.MaxTxWeight, "MaxTxWeight not equal")
+	assert.True(t, expected.UpdatedAt.Equal(actual.UpdatedAt), "UpdatedAt not equal")
+	assert.Equal(t, expected.AssetTxMaxWeightRatio, actual.AssetTxMaxWeightRatio, "AssetTxMaxWeightRatio not equal")
+	assert.Equal(t, expected.MaxOpReturnOutputs, actual.MaxOpReturnOutputs, "MaxOpReturnOutputs not equal")
+	assert.Equal(t, expected.NoteUriPrefix, actual.NoteUriPrefix, "NoteUriPrefix not equal")
+	assert.Equal(t, expected.BuildVersionHeader, actual.BuildVersionHeader, "BuildVersionHeader not equal")
+	assert.Equal(t, expected.BuildVersionHeaderRequired, actual.BuildVersionHeaderRequired, "BuildVersionHeaderRequired not equal")
+	assert.Equal(t, expected.DigestHeaderRequired, actual.DigestHeaderRequired, "DigestHeaderRequired not equal")
 }
 
 func assertScheduledSessionEqual(t *testing.T, expected, actual domain.ScheduledSession) {
 	assert.True(t, expected.StartTime.Equal(actual.StartTime), "StartTime not equal")
 	assert.Equal(t, expected.Period, actual.Period, "Period not equal")
 	assert.Equal(t, expected.Duration, actual.Duration, "Duration not equal")
-	assert.True(t, expected.UpdatedAt.Equal(actual.UpdatedAt), "UpdatedAt not equal")
 	assert.True(t, expected.EndTime.Equal(actual.EndTime), "EndTime not equal")
 }
 

@@ -33,6 +33,7 @@ type RoundFinalized struct {
 	RoundEvent
 	ForfeitTxs        []ForfeitTx
 	FinalCommitmentTx string
+	Fees              uint64
 	Timestamp         int64
 }
 

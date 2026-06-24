@@ -90,7 +90,9 @@ func main() {
 		noteCmd,
 		intentsCmd,
 		scheduledSweepCmd,
+		expiredRoundsCmd,
 		sweepCmd,
+		walletUtxosCmd,
 		roundInfoCmd,
 		roundsInTimeRangeCmd,
 		scheduledSessionCmd,
@@ -100,6 +102,7 @@ func main() {
 		liquidityRecoverableCmd,
 		liquidityReportCmd,
 		feesCmd,
+		settingsCmd,
 	)
 
 	app.DefaultCommand = startCmd.Name

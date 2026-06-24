@@ -38,7 +38,7 @@ import (
 
 type service struct {
 	started atomic.Bool
-	// services
+	// Services
 	wallet         ports.WalletService
 	signer         ports.SignerService
 	repoManager    ports.RepoManager
@@ -47,46 +47,11 @@ type service struct {
 	cache          ports.LiveStore
 	sweeper        *sweeper
 	sweeperCancel  context.CancelFunc
-	infoCache      *infoCache
 	roundReportSvc RoundReportService
 	alerts         ports.Alerts
+	feeManager     ports.FeeManager
 
-	// config
-	network                   arklib.Network
-	signerPubkey              *btcec.PublicKey
-	forfeitPubkey             *btcec.PublicKey
-	forfeitAddress            string
-	checkpointTapscript       []byte
-	batchExpiry               arklib.RelativeLocktime
-	sessionDuration           time.Duration
-	banDuration               time.Duration
-	banThreshold              int64
-	unilateralExitDelay       arklib.RelativeLocktime
-	publicUnilateralExitDelay arklib.RelativeLocktime
-	boardingExitDelay         arklib.RelativeLocktime
-	roundMinParticipantsCount int64
-	roundMaxParticipantsCount int64
-	dustAmount                uint64
-	utxoMaxAmount             int64
-	utxoMinAmount             int64
-	vtxoMaxAmount             int64
-	vtxoMinAmount             int64
-	allowCSVBlockType         bool
-	checkpointExitDelay       arklib.RelativeLocktime
-	maxTxWeight               uint64
-	maxAssetsPerVtxo          int
-	maxOpReturnOutputs        uint32
-
-	// fees
-	feeManager ports.FeeManager
-
-	// cutoff date (unix timestamp) before which CSV validation is skipped for VTXOs
-	vtxoNoCsvValidationCutoffTime time.Time
-
-	settlementMinExpiryGap      time.Duration
-	unrolledVtxoMinExpiryMargin time.Duration
-
-	// TODO: derive the key pair used for the musig2 signing session from wallet.
+	// Config derived from signer
 	operatorPrvkey *btcec.PrivateKey
 	operatorPubkey *btcec.PublicKey
 
@@ -114,57 +79,54 @@ func NewService(
 	reportSvc RoundReportService,
 	alerts ports.Alerts,
 	feeManager ports.FeeManager,
-	vtxoTreeExpiry, unilateralExitDelay, publicUnilateralExitDelay,
-	boardingExitDelay, checkpointExitDelay arklib.RelativeLocktime,
-	sessionDuration, roundMinParticipantsCount, roundMaxParticipantsCount,
-	utxoMaxAmount, utxoMinAmount, vtxoMaxAmount, vtxoMinAmount, banDuration, banThreshold int64,
-	maxTxWeight uint64, assetTxMaxWeightRatio float64,
-	network arklib.Network, noteUriPrefix string,
-	scheduledSessionStartTime, scheduledSessionEndTime time.Time,
-	scheduledSessionPeriod, scheduledSessionDuration time.Duration,
-	scheduledSessionRoundMinParticipantsCount, scheduledSessionRoundMaxParticipantsCount int64,
-	settlementMinExpiryGap int64,
-	unrolledVtxoMinExpiryMargin int64,
-	vtxoNoCsvValidationCutoffTime time.Time,
-	maxOpReturnOutputs uint32,
 ) (Service, error) {
 	ctx := context.Background()
 
+	settings, err := repoManager.Settings().Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get settings: %w", err)
+	}
+
 	signerPubkey, err := signer.GetPubkey(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch signer pubkey: %s", err)
+		return nil, fmt.Errorf("failed to fetch signer pubkey: %w", err)
 	}
-
-	// Try to load scheduled session from DB first
-	scheduledSession, err := repoManager.ScheduledSession().Get(ctx)
+	dustAmount, err := wallet.GetDustAmount(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get scheduled session from db: %w", err)
+		return nil, fmt.Errorf("failed to get dust amount: %w", err)
+	}
+	network, err := wallet.GetNetwork(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get network: %w", err)
 	}
 
-	if scheduledSession == nil &&
-		!scheduledSessionStartTime.IsZero() && !scheduledSessionEndTime.IsZero() &&
-		scheduledSessionPeriod > 0 && scheduledSessionDuration > 0 {
-		rMinParticipantsCount := roundMinParticipantsCount
-		if scheduledSessionRoundMinParticipantsCount > 0 {
-			rMinParticipantsCount = scheduledSessionRoundMinParticipantsCount
-		}
-		rMaxParticipantsCount := roundMaxParticipantsCount
-		if scheduledSessionRoundMaxParticipantsCount > 0 {
-			rMaxParticipantsCount = scheduledSessionRoundMaxParticipantsCount
-		}
-		scheduledSession = domain.NewScheduledSession(
-			scheduledSessionStartTime, scheduledSessionEndTime,
-			scheduledSessionPeriod, scheduledSessionDuration,
-			rMinParticipantsCount, rMaxParticipantsCount,
-		)
-		if err := repoManager.ScheduledSession().Upsert(ctx, *scheduledSession); err != nil {
-			return nil, fmt.Errorf("failed to upsert initial scheduled session to db: %w", err)
-		}
+	// The dust-resolved min amounts are runtime-derived (they depend on the
+	// wallet's dust limit), so they live only in the cache, never in the stored
+	// settings row.
+	vtxoMinAmount, utxoMinAmount := resolveMinAmounts(
+		settings.VtxoMinAmount, settings.UtxoMinAmount, int64(dustAmount),
+	)
+
+	if _, err := settings.Update(domain.SettingsUpdate{
+		VtxoMinAmount: &vtxoMinAmount,
+		UtxoMinAmount: &utxoMinAmount,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to resolve min amounts: %w", err)
+	}
+
+	extendedSettings := ports.Settings{
+		Settings:     *settings,
+		Network:      *network,
+		DustAmount:   dustAmount,
+		SignerPubkey: signerPubkey,
+	}
+	if err := cache.Settings().Upsert(ctx, extendedSettings); err != nil {
+		return nil, fmt.Errorf("failed to update settings cache: %w", err)
 	}
 
 	operatorSigningKey, err := btcec.NewPrivateKey()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate ephemeral key: %s", err)
+		return nil, fmt.Errorf("failed to generate ephemeral key: %w", err)
 	}
 
 	roundReportSvc := reportSvc
@@ -172,58 +134,30 @@ func NewService(
 		roundReportSvc = roundReportUnimplemented{}
 	}
 
-	allowCSVBlockType := vtxoTreeExpiry.Type == arklib.LocktimeTypeBlock
-
 	ctx, cancel := context.WithCancel(ctx)
 
 	svc := &service{
-		network:                   network,
-		signerPubkey:              signerPubkey,
-		batchExpiry:               vtxoTreeExpiry,
-		sessionDuration:           time.Duration(sessionDuration) * time.Second,
-		banDuration:               time.Duration(banDuration) * time.Second,
-		banThreshold:              banThreshold,
-		unilateralExitDelay:       unilateralExitDelay,
-		publicUnilateralExitDelay: publicUnilateralExitDelay,
-		allowCSVBlockType:         allowCSVBlockType,
-		checkpointExitDelay:       checkpointExitDelay,
-		maxTxWeight:               maxTxWeight,
-		maxAssetsPerVtxo:          maxAssetsPerVtxo(maxTxWeight, assetTxMaxWeightRatio),
-		maxOpReturnOutputs:        maxOpReturnOutputs,
-		wallet:                    wallet,
-		signer:                    signer,
-		repoManager:               repoManager,
-		builder:                   builder,
-		cache:                     cache,
-		scanner:                   scanner,
-		sweeper: newSweeper(
-			wallet, repoManager, builder, scheduler, noteUriPrefix,
-		),
-		boardingExitDelay:             boardingExitDelay,
-		operatorPrvkey:                operatorSigningKey,
-		operatorPubkey:                operatorSigningKey.PubKey(),
-		forfeitsBoardingSigsChan:      make(chan struct{}, 1),
-		roundMinParticipantsCount:     roundMinParticipantsCount,
-		roundMaxParticipantsCount:     roundMaxParticipantsCount,
-		utxoMaxAmount:                 utxoMaxAmount,
-		utxoMinAmount:                 utxoMinAmount,
-		vtxoMaxAmount:                 vtxoMaxAmount,
-		vtxoMinAmount:                 vtxoMinAmount,
-		eventsCh:                      make(chan []domain.Event, 64),
-		transactionEventsCh:           make(chan TransactionEvent, 64),
-		indexerTxEventsCh:             make(chan TransactionEvent, 64),
-		stop:                          cancel,
-		ctx:                           ctx,
-		wg:                            &sync.WaitGroup{},
-		offchainTxMu:                  &sync.Mutex{},
-		roundReportSvc:                roundReportSvc,
-		alerts:                        alerts,
-		settlementMinExpiryGap:        time.Duration(settlementMinExpiryGap) * time.Second,
-		unrolledVtxoMinExpiryMargin:   time.Duration(unrolledVtxoMinExpiryMargin) * time.Second,
-		vtxoNoCsvValidationCutoffTime: vtxoNoCsvValidationCutoffTime,
-		feeManager:                    feeManager,
+		wallet:                   wallet,
+		signer:                   signer,
+		repoManager:              repoManager,
+		builder:                  builder,
+		cache:                    cache,
+		scanner:                  scanner,
+		sweeper:                  newSweeper(wallet, repoManager, builder, scheduler),
+		operatorPrvkey:           operatorSigningKey,
+		operatorPubkey:           operatorSigningKey.PubKey(),
+		forfeitsBoardingSigsChan: make(chan struct{}, 1),
+		eventsCh:                 make(chan []domain.Event, 64),
+		transactionEventsCh:      make(chan TransactionEvent, 64),
+		indexerTxEventsCh:        make(chan TransactionEvent, 64),
+		stop:                     cancel,
+		ctx:                      ctx,
+		wg:                       &sync.WaitGroup{},
+		offchainTxMu:             &sync.Mutex{},
+		roundReportSvc:           roundReportSvc,
+		alerts:                   alerts,
+		feeManager:               feeManager,
 	}
-	svc.infoCache = newInfoCache(svc.loadInfo)
 	return svc, nil
 }
 
@@ -232,25 +166,18 @@ func (s *service) Start() error {
 		return fmt.Errorf("service already started")
 	}
 
-	ctx := context.Background()
-	dustAmount, err := s.wallet.GetDustAmount(ctx)
+	settings, err := s.cache.Settings().Get(s.ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get dust amount: %s", err)
+		return fmt.Errorf("failed to get settings: %s", err)
 	}
 
-	s.dustAmount = dustAmount
-	s.vtxoMinAmount, s.utxoMinAmount = resolveMinAmounts(
-		s.vtxoMinAmount, s.utxoMinAmount, int64(dustAmount),
-	)
-
-	forfeitPubkey, err := s.wallet.GetForfeitPubkey(ctx)
+	forfeitPubkey, err := s.wallet.GetForfeitPubkey(s.ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch forfeit pubkey: %s", err)
 	}
-	s.forfeitPubkey = forfeitPubkey
 
 	checkpointClosure := &script.CSVMultisigClosure{
-		Locktime: s.checkpointExitDelay,
+		Locktime: settings.CheckpointExitDelay,
 		MultisigClosure: script.MultisigClosure{
 			PubKeys: []*btcec.PublicKey{forfeitPubkey},
 		},
@@ -260,17 +187,20 @@ func (s *service) Start() error {
 	if err != nil {
 		return fmt.Errorf("failed to encode checkpoint tapscript: %s", err)
 	}
-	s.checkpointTapscript = checkpointTapscript
 
 	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
-	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, s.chainParams())
+	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+		pubkeyHash, chainParams(settings.Network),
+	)
 	if err != nil {
 		return err
 	}
-	s.forfeitAddress = forfeitAddr.String()
 
-	if err := s.infoCache.refresh(); err != nil {
-		log.WithError(err).Warn("failed to initialize info cache")
+	settings.ForfeitPubkey = forfeitPubkey
+	settings.CheckpointTapscript = checkpointTapscript
+	settings.ForfeitAddress = forfeitAddr.String()
+	if err := s.cache.Settings().Upsert(s.ctx, *settings); err != nil {
+		return fmt.Errorf("failed to update settings cache: %s", err)
 	}
 
 	s.registerEventHandlers()
@@ -283,10 +213,9 @@ func (s *service) Start() error {
 	go s.listenToScannerNotifications()
 
 	log.Debug("starting sweeper service...")
-	ctx, cancel := context.WithCancel(ctx)
-	s.sweeperCancel = cancel
+	s.sweeperCancel = s.stop
 	go func() {
-		if err := s.sweeper.start(ctx); err != nil {
+		if err := s.sweeper.start(s.ctx); err != nil {
 			log.WithError(err).Warn("failed to start sweeper")
 			return
 		}
@@ -413,6 +342,27 @@ func (s *service) registerEventHandlers() {
 			}()
 		},
 	)
+
+	s.repoManager.RegisterSettingsUpdateHandler(
+		func(updates domain.Settings, changelog []string) {
+			extendedSettings, err := s.cache.Settings().Get(context.Background())
+			if err != nil {
+				log.WithError(err).Warn("failed to get cached settings")
+				return
+			}
+
+			updates.VtxoMinAmount, updates.UtxoMinAmount = resolveMinAmounts(
+				updates.VtxoMinAmount, updates.UtxoMinAmount, int64(extendedSettings.DustAmount),
+			)
+
+			extendedSettings.Settings = updates
+			if err := s.cache.Settings().Upsert(s.ctx, *extendedSettings); err != nil {
+				log.WithError(err).Warn("failed to update cached settings")
+			} else {
+				log.Debug("updated cached settings after admin changes")
+			}
+		},
+	)
 }
 
 func (s *service) Stop() {
@@ -426,21 +376,19 @@ func (s *service) Stop() {
 	s.sweeper.stop()
 
 	commitmentTxIds, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
-	if err == nil {
-		tapkeys := make([]string, 0)
-
-		for _, commitmentTxId := range commitmentTxIds {
-			keys, err := s.repoManager.Vtxos().
-				GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
-			if err != nil {
-				log.WithError(err).Warn("failed to get vtxo tap keys")
-				continue
-			}
-
-			tapkeys = append(tapkeys, keys...)
+	if err == nil && len(commitmentTxIds) > 0 {
+		tapkeys, err := s.repoManager.Vtxos().
+			GetVtxoPubKeysByCommitmentTxids(ctx, commitmentTxIds, 0)
+		if err != nil {
+			log.WithError(err).Warnf(
+				"failed to get vtxo tap keys for %d sweepable rounds; "+
+					"skipping UnwatchScripts on shutdown, wallet may keep "+
+					"watching these scripts until the next restart",
+				len(commitmentTxIds),
+			)
+		} else {
+			s.stopWatchingVtxos(tapkeys)
 		}
-
-		s.stopWatchingVtxos(tapkeys)
 	}
 
 	// nolint
@@ -462,6 +410,23 @@ func (s *service) SubmitOffchainTx(
 			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 	}
 	txid := arkPtx.UnsignedTx.TxID()
+
+	settings, err := s.cache.Settings().Get(ctx)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
+	}
+
+	banThreshold := settings.BanThreshold
+	minAllowedExitDelay := settings.UnilateralExitDelay
+	vtxoNoCsvValidationCutoffDate := settings.VtxoNoCsvValidationCutoffDate
+	signerPubkey := settings.SignerPubkey
+	vtxoMinAmount := settings.VtxoMinAmount
+	vtxoMaxAmount := settings.VtxoMaxAmount
+	checkpointTapscript := settings.CheckpointTapscript
+	maxOpReturnOutputs := settings.MaxOpReturnOutputs
+	maxTxWeight := settings.MaxTxWeight
+	maxAssetsPerVtxo := settings.MaxAssetsPerVtxo()
+	allowCSVBlockType := settings.AllowCSVBlockType()
 
 	offchainTx := domain.NewOffchainTx()
 	var changes []domain.Event
@@ -565,7 +530,7 @@ func (s *service) SubmitOffchainTx(
 
 	for _, vtxo := range spentVtxos {
 		// check if banned
-		if err := s.checkIfBanned(ctx, vtxo); err != nil {
+		if err := s.checkIfBanned(ctx, banThreshold, vtxo); err != nil {
 			return nil, errors.VTXO_BANNED.Wrap(err).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
 		}
@@ -721,13 +686,10 @@ func (s *service) SubmitOffchainTx(
 			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
 		}
 
-		// validate the vtxo script
-		minAllowedExitDelay := s.unilateralExitDelay
-
 		// if the vtxo was created before the vtxoNoCsvValidationCutoffTime date, we use the
 		// smallest exit delay as the minimum allowed exit delay in validation: making the CSV
 		// check always successful.
-		if time.Unix(vtxo.CreatedAt, 0).Before(s.vtxoNoCsvValidationCutoffTime) {
+		if time.Unix(vtxo.CreatedAt, 0).Before(vtxoNoCsvValidationCutoffDate) {
 			smallestExitDelay, err := vtxoScript.SmallestExitDelay()
 			if err != nil {
 				return nil, errors.INVALID_VTXO_SCRIPT.New(
@@ -738,7 +700,7 @@ func (s *service) SubmitOffchainTx(
 		}
 
 		if err := vtxoScript.Validate(
-			s.signerPubkey, minAllowedExitDelay, s.allowCSVBlockType,
+			signerPubkey, minAllowedExitDelay, allowCSVBlockType,
 		); err != nil {
 			return nil, errors.INVALID_VTXO_SCRIPT.Wrap(err).
 				WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: taptree})
@@ -916,7 +878,7 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// iterate over the ark tx inputs and verify that the user signed a collaborative path
-	signerXOnlyPubkey := schnorr.SerializePubKey(s.signerPubkey)
+	signerXOnlyPubkey := schnorr.SerializePubKey(signerPubkey)
 	for inputIndex, input := range arkPtx.Inputs {
 		if len(input.TaprootScriptSpendSig) == 0 {
 			return nil, errors.INVALID_PSBT_INPUT.New(
@@ -959,17 +921,17 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	outputs, ext, outputsErr := validateOffchainTxOutputs(
-		arkPtx.UnsignedTx.TxOut, dust,
-		s.vtxoMaxAmount, s.vtxoMinAmount,
-		int64(s.maxOpReturnOutputs),
-		signedArkTx, txid,
+		arkPtx.UnsignedTx.TxOut, dust, vtxoMaxAmount, vtxoMinAmount,
+		int64(maxOpReturnOutputs), signedArkTx, txid,
 	)
 	if outputsErr != nil {
 		return nil, outputsErr
 	}
 
 	// validate assets
-	if err := s.validateAssetTransaction(ctx, arkPtx.UnsignedTx, ext, assetInputs); err != nil {
+	if err := s.validateAssetTransaction(
+		ctx, arkPtx.UnsignedTx, ext, assetInputs, maxAssetsPerVtxo,
+	); err != nil {
 		return nil, err
 	}
 
@@ -977,7 +939,7 @@ func (s *service) SubmitOffchainTx(
 	var rebuiltCheckpointTxs []*psbt.Packet
 	// recompute all txs (checkpoint txs + ark tx)
 	rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildTxs(
-		ins, outputs, s.checkpointTapscript,
+		ins, outputs, checkpointTapscript,
 	)
 
 	if err != nil {
@@ -986,7 +948,7 @@ func (s *service) SubmitOffchainTx(
 				"ark_tx":               signedArkTx,
 				"outputs":              outputs,
 				"ins":                  ins,
-				"checkpoint_tapscript": s.checkpointTapscript,
+				"checkpoint_tapscript": checkpointTapscript,
 			})
 	}
 
@@ -1049,11 +1011,11 @@ func (s *service) SubmitOffchainTx(
 			})
 	}
 	weight := computeWeight(&arkTx)
-	if weight > s.maxTxWeight {
+	if weight > maxTxWeight {
 		return nil, errors.TX_TOO_LARGE.New("ark tx weight is too high: %d", weight).
 			WithMetadata(errors.TxTooLargeMetadata{
 				Weight:    int(weight),
-				MaxWeight: int(s.maxTxWeight),
+				MaxWeight: int(maxTxWeight),
 			})
 	}
 
@@ -1320,6 +1282,12 @@ func (s *service) GetPendingOffchainTxs(
 		}
 	}
 
+	settings, err := s.cache.Settings().Get(ctx)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
+	}
+
+	signerPubkey := settings.SignerPubkey
 	outpoints := proof.GetOutpoints()
 	proofTxid := proof.UnsignedTx.TxID()
 
@@ -1418,9 +1386,7 @@ func (s *service) GetPendingOffchainTxs(
 	}
 
 	if err := intent.Verify(
-		encodedProof,
-		encodedMessage,
-		[]*btcec.PublicKey{s.signerPubkey},
+		encodedProof, encodedMessage, []*btcec.PublicKey{signerPubkey},
 	); err != nil {
 		log.
 			WithField("proof", encodedProof).
@@ -1523,6 +1489,22 @@ func (s *service) RegisterIntent(
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
 
+	settings, err := s.cache.Settings().Get(ctx)
+	if err != nil {
+		return "", errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
+	}
+
+	banThreshold := settings.BanThreshold
+	signerPubkey := settings.SignerPubkey
+	settlementMinExpiryGap := settings.SettlementMinExpiryGap
+	maxTxWeight := settings.MaxTxWeight
+	utxoMinAmount := settings.UtxoMinAmount
+	utxoMaxAmount := settings.UtxoMaxAmount
+	vtxoMaxAmount := settings.VtxoMaxAmount
+	dustAmount := settings.DustAmount
+	network := settings.Network
+	maxAssetsPerVtxo := settings.MaxAssetsPerVtxo()
+
 	for i, outpoint := range outpoints {
 		if _, seen := seenOutpoints[outpoint]; seen {
 			return "", errors.INVALID_INTENT_PROOF.New(
@@ -1599,7 +1581,7 @@ func (s *service) RegisterIntent(
 				Tapscripts: tapscripts,
 			}
 
-			if err := s.checkIfBanned(ctx, input); err != nil {
+			if err := s.checkIfBanned(ctx, banThreshold, input); err != nil {
 				return "", errors.VTXO_BANNED.Wrap(err).
 					WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint.String()})
 			}
@@ -1615,7 +1597,7 @@ func (s *service) RegisterIntent(
 		}
 
 		vtxo := vtxosResult[0]
-		if err := s.checkIfBanned(ctx, vtxo); err != nil {
+		if err := s.checkIfBanned(ctx, banThreshold, vtxo); err != nil {
 			return "", errors.VTXO_BANNED.Wrap(err).
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
 		}
@@ -1646,14 +1628,14 @@ func (s *service) RegisterIntent(
 			continue
 		}
 
-		if s.settlementMinExpiryGap > 0 && !vtxo.Swept {
+		if settlementMinExpiryGap > 0 && !vtxo.Swept {
 			// reject if expires after now + settlementMinExpiryGap
 			expiresAt := time.Unix(vtxo.ExpiresAt, 0)
-			limit := time.Now().Add(s.settlementMinExpiryGap)
+			limit := time.Now().Add(settlementMinExpiryGap)
 			if expiresAt.After(limit) {
 				return "", errors.INVALID_PSBT_INPUT.New(
 					"vtxo %s expires after %s (minExpiryGap: %s)",
-					vtxo.Outpoint.String(), limit, s.settlementMinExpiryGap,
+					vtxo.Outpoint.String(), limit, settlementMinExpiryGap,
 				).WithMetadata(errors.InputMetadata{
 					Txid:       proofTxid,
 					InputIndex: int(outpoint.Index),
@@ -1722,7 +1704,7 @@ func (s *service) RegisterIntent(
 			}
 			if err := s.validateVtxoInput(
 				tapscripts, vtxoTapKey, vtxo.CreatedAt, now,
-				locktime, locktimeDisabled, proofTxid, i+1,
+				locktime, locktimeDisabled, proofTxid, i+1, *settings,
 			); err != nil {
 				return "", err
 			}
@@ -1735,9 +1717,7 @@ func (s *service) RegisterIntent(
 	}
 
 	if err := intent.Verify(
-		encodedProof,
-		encodedMessage,
-		[]*btcec.PublicKey{s.signerPubkey},
+		encodedProof, encodedMessage, []*btcec.PublicKey{signerPubkey},
 	); err != nil {
 		log.
 			WithField("proof", encodedProof).
@@ -1760,7 +1740,7 @@ func (s *service) RegisterIntent(
 
 	finalizedProofTx, err := intent.Proof{
 		Packet: *signedProofPtx,
-	}.FinalizeAndExtract(s.signerPubkey)
+	}.FinalizeAndExtract(signerPubkey)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to finalize proof: %w", err).
 			WithMetadata(map[string]any{
@@ -1768,11 +1748,11 @@ func (s *service) RegisterIntent(
 			})
 	}
 	weight := computeWeight(finalizedProofTx)
-	if weight > s.maxTxWeight {
+	if weight > maxTxWeight {
 		return "", errors.TX_TOO_LARGE.New("proof weight is too high: %d", weight).
 			WithMetadata(errors.TxTooLargeMetadata{
 				Weight:    int(weight),
-				MaxWeight: int(s.maxTxWeight),
+				MaxWeight: int(maxTxWeight),
 			})
 	}
 
@@ -1824,37 +1804,35 @@ func (s *service) RegisterIntent(
 
 		isOnchainOutput := slices.Contains(message.OnchainOutputIndexes, outputIndex)
 		if isOnchainOutput {
-			if s.utxoMaxAmount >= 0 {
-				if amount > uint64(s.utxoMaxAmount) {
+			if utxoMaxAmount >= 0 {
+				if amount > uint64(utxoMaxAmount) {
 					return "", errors.AMOUNT_TOO_HIGH.New(
 						"output %d amount is higher than max utxo amount: %d",
 						outputIndex,
-						s.utxoMaxAmount,
+						utxoMaxAmount,
 					).WithMetadata(errors.AmountTooHighMetadata{
 						OutputIndex: outputIndex,
 						Amount:      int(amount),
-						MaxAmount:   int(s.utxoMaxAmount),
+						MaxAmount:   int(utxoMaxAmount),
 					})
 				}
 			}
-			if amount < uint64(s.utxoMinAmount) {
+			if amount < uint64(utxoMinAmount) {
 				return "", errors.AMOUNT_TOO_LOW.New(
 					"output %d amount is lower than min utxo amount: %d",
 					outputIndex,
-					s.utxoMinAmount,
+					utxoMinAmount,
 				).WithMetadata(errors.AmountTooLowMetadata{
 					OutputIndex: outputIndex,
 					Amount:      int(amount),
-					MinAmount:   int(s.utxoMinAmount),
+					MinAmount:   int(utxoMinAmount),
 				})
 			}
 
-			chainParams := s.chainParams()
+			chainParams := chainParams(network)
 			if chainParams == nil {
-				return "", errors.INTERNAL_ERROR.New("unsupported network: %s", s.network.Name).
-					WithMetadata(map[string]any{
-						"network": s.network.Name,
-					})
+				return "", errors.INTERNAL_ERROR.New("unsupported network: %s", network.Name).
+					WithMetadata(map[string]any{"network": network.Name})
 			}
 			scriptType, addrs, _, err := txscript.ExtractPkScriptAddrs(
 				output.PkScript, chainParams,
@@ -1878,26 +1856,26 @@ func (s *service) RegisterIntent(
 			rcv.OnchainAddress = addrs[0].EncodeAddress()
 			onchainOutputs = append(onchainOutputs, *output)
 		} else {
-			if s.vtxoMaxAmount >= 0 {
-				if amount > uint64(s.vtxoMaxAmount) {
+			if vtxoMaxAmount >= 0 {
+				if amount > uint64(vtxoMaxAmount) {
 					return "", errors.AMOUNT_TOO_HIGH.New(
 						"output %d amount is higher than max vtxo amount: %d",
-						outputIndex, s.vtxoMaxAmount,
+						outputIndex, vtxoMaxAmount,
 					).WithMetadata(errors.AmountTooHighMetadata{
 						OutputIndex: outputIndex,
 						Amount:      int(amount),
-						MaxAmount:   int(s.vtxoMaxAmount),
+						MaxAmount:   int(vtxoMaxAmount),
 					})
 				}
 			}
-			if amount < s.dustAmount {
+			if amount < dustAmount {
 				return "", errors.AMOUNT_TOO_LOW.New(
 					"output %d amount is lower than min vtxo amount: %d",
-					outputIndex, s.dustAmount,
+					outputIndex, dustAmount,
 				).WithMetadata(errors.AmountTooLowMetadata{
 					OutputIndex: outputIndex,
 					Amount:      int(amount),
-					MinAmount:   int(s.dustAmount),
+					MinAmount:   int(dustAmount),
 				})
 			}
 
@@ -1932,7 +1910,9 @@ func (s *service) RegisterIntent(
 	}
 
 	// validate assets
-	if err := s.validateAssetTransaction(ctx, proof.UnsignedTx, ext, assetInputs); err != nil {
+	if err := s.validateAssetTransaction(
+		ctx, proof.UnsignedTx, ext, assetInputs, maxAssetsPerVtxo,
+	); err != nil {
 		return "", err
 	}
 
@@ -2038,7 +2018,7 @@ func (s *service) RegisterIntent(
 
 	if len(boardingUtxos) > 0 {
 		var err errors.Error
-		boardingInputs, err = s.processBoardingInputs(ctx, intent.Id, boardingUtxos)
+		boardingInputs, err = s.processBoardingInputs(ctx, intent.Id, boardingUtxos, *settings)
 		if err != nil {
 			return "", err
 		}
@@ -2147,56 +2127,69 @@ func (s *service) GetIndexerTxChannel(ctx context.Context) <-chan TransactionEve
 }
 
 func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
-	cached, err := s.infoCache.get()
+	settings, err := s.cache.Settings().Get(ctx)
 	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to get cached info: %w", err)
+		return nil, errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
 	}
 
-	signerPubkey := hex.EncodeToString(s.signerPubkey.SerializeCompressed())
-	forfeitPubkey := hex.EncodeToString(s.forfeitPubkey.SerializeCompressed())
+	digest, err := settings.Digest()
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to compute digest: %w", err)
+	}
+
+	publicUnilateralExitDelay := settings.PublicUnilateralExitDelay
+	boardingExitDelay := settings.BoardingExitDelay
+	sessionDuration := settings.SessionDuration
+	utxoMinAmount := settings.UtxoMinAmount
+	utxoMaxAmount := settings.UtxoMaxAmount
+	vtxoMinAmount := settings.VtxoMinAmount
+	vtxoMaxAmount := settings.VtxoMaxAmount
+	batchFees := settings.BatchFees
+	dustAmount := settings.DustAmount
+	network := settings.Network.Name
+	maxTxWeight := settings.MaxTxWeight
+	maxOpReturnOutputs := settings.MaxOpReturnOutputs
+	signerPubkey := hex.EncodeToString(settings.SignerPubkey.SerializeCompressed())
+	forfeitPubkey := hex.EncodeToString(settings.ForfeitPubkey.SerializeCompressed())
+	forfeitAddress := settings.ForfeitAddress
+	checkpointTapscript := hex.EncodeToString(settings.CheckpointTapscript)
 
 	var nextScheduledSession *NextScheduledSession
-	if cached.scheduledSession != nil {
+	if settings.ScheduledSession != nil {
 		scheduledSessionNextStart, scheduledSessionNextEnd := calcNextScheduledSession(
-			time.Now(), cached.scheduledSession.StartTime, cached.scheduledSession.EndTime,
-			cached.scheduledSession.Period,
+			time.Now(), settings.ScheduledSession.StartTime, settings.ScheduledSession.EndTime,
+			settings.ScheduledSession.Period,
 		)
 		nextScheduledSession = &NextScheduledSession{
 			StartTime: scheduledSessionNextStart,
 			EndTime:   scheduledSessionNextEnd,
-			Period:    cached.scheduledSession.Period,
-			Duration:  cached.scheduledSession.Duration,
+			Period:    settings.ScheduledSession.Period,
+			Duration:  settings.ScheduledSession.Duration,
 		}
 	}
 
 	return &ServiceInfo{
 		SignerPubKey:         signerPubkey,
 		ForfeitPubKey:        forfeitPubkey,
-		UnilateralExitDelay:  int64(s.publicUnilateralExitDelay.Value),
-		BoardingExitDelay:    int64(s.boardingExitDelay.Value),
-		SessionDuration:      int64(s.sessionDuration.Seconds()),
-		Network:              s.network.Name,
-		Dust:                 s.dustAmount,
-		ForfeitAddress:       s.forfeitAddress,
+		UnilateralExitDelay:  int64(publicUnilateralExitDelay.Value),
+		BoardingExitDelay:    int64(boardingExitDelay.Value),
+		SessionDuration:      int64(sessionDuration.Seconds()),
+		Network:              network,
+		Dust:                 dustAmount,
+		ForfeitAddress:       forfeitAddress,
 		NextScheduledSession: nextScheduledSession,
-		UtxoMinAmount:        s.utxoMinAmount,
-		UtxoMaxAmount:        s.utxoMaxAmount,
-		VtxoMinAmount:        s.vtxoMinAmount,
-		VtxoMaxAmount:        s.vtxoMaxAmount,
-		CheckpointTapscript:  hex.EncodeToString(s.checkpointTapscript),
-		MaxTxWeight:          int64(s.maxTxWeight),
-		MaxOpReturnOutputs:   int64(s.maxOpReturnOutputs),
+		UtxoMinAmount:        utxoMinAmount,
+		UtxoMaxAmount:        utxoMaxAmount,
+		VtxoMinAmount:        vtxoMinAmount,
+		VtxoMaxAmount:        vtxoMaxAmount,
+		CheckpointTapscript:  checkpointTapscript,
+		MaxTxWeight:          int64(maxTxWeight),
+		MaxOpReturnOutputs:   int64(maxOpReturnOutputs),
 		Fees: FeeInfo{
-			IntentFees: cached.intentFees,
+			IntentFees: batchFees,
 		},
+		Digest: digest,
 	}, nil
-}
-
-// RefreshInfoCache is called by the admin service to trigger update of the info data.
-func (s *service) RefreshInfoCache() {
-	if err := s.infoCache.refresh(); err != nil {
-		log.WithError(err).Warn("failed to refresh info cache")
-	}
 }
 
 // DeleteIntentsByProof deletes transaction intents matching the proof of ownership.
@@ -2372,6 +2365,13 @@ func (s *service) startRound() {
 	}
 
 	ctx := context.Background()
+
+	settings, err := s.cache.Settings().Get(ctx)
+	if err != nil {
+		log.WithError(err).Error("failed to get settings from cache")
+		return
+	}
+
 	existingRound, err := s.cache.CurrentRound().Get(ctx)
 	if err != nil {
 		log.WithError(err).Error("failed to get current round from cache")
@@ -2434,10 +2434,10 @@ func (s *service) startRound() {
 
 	s.roundReportSvc.StageStarted(SelectIntentsStage)
 
-	sessionDuration := s.sessionDuration
-	roundMinParticipants := s.roundMinParticipantsCount
-	roundMaxParticipants := s.roundMaxParticipantsCount
-	scheduledSession, _ := s.repoManager.ScheduledSession().Get(ctx)
+	sessionDuration := settings.SessionDuration
+	roundMinParticipants := int64(settings.RoundMinParticipantsCount)
+	roundMaxParticipants := int64(settings.RoundMaxParticipantsCount)
+	scheduledSession := settings.ScheduledSession
 	if scheduledSession != nil {
 		nextStartTime, nextEndTime := calcNextScheduledSession(
 			time.Now(),
@@ -2458,12 +2458,14 @@ func (s *service) startRound() {
 	roundTiming := newRoundTiming(sessionDuration)
 	<-time.After(roundTiming.registrationDuration())
 	s.wg.Add(1)
-	go s.startConfirmation(round.Id, roundTiming, roundMinParticipants, roundMaxParticipants)
+	go s.startConfirmation(
+		round.Id, roundTiming, *settings, roundMinParticipants, roundMaxParticipants,
+	)
 }
 
 func (s *service) startConfirmation(
-	roundId string, roundTiming roundTiming,
-	roundMinParticipantsCount, roundMaxParticipantsCount int64,
+	roundId string, roundTiming roundTiming, settings ports.Settings,
+	roundMinParticipants, roundMaxParticipants int64,
 ) {
 	defer s.wg.Done()
 
@@ -2505,7 +2507,7 @@ func (s *service) startConfirmation(
 			return
 		}
 
-		go s.startFinalization(round.Id, roundTiming, registeredIntents)
+		go s.startFinalization(round.Id, roundTiming, registeredIntents, settings)
 	}()
 
 	num, err := s.cache.Intents().Len(ctx)
@@ -2515,14 +2517,14 @@ func (s *service) startConfirmation(
 		return
 	}
 
-	if num < roundMinParticipantsCount {
+	if num < roundMinParticipants {
 		roundAborted = true
-		err := fmt.Errorf("not enough intents registered %d/%d", num, roundMinParticipantsCount)
+		err := fmt.Errorf("not enough intents registered %d/%d", num, roundMinParticipants)
 		log.WithError(err).Debugf("round %s aborted", round.Id)
 		return
 	}
-	if num > roundMaxParticipantsCount {
-		num = roundMaxParticipantsCount
+	if num > roundMaxParticipants {
+		num = roundMaxParticipants
 	}
 
 	availableBalance, _, err := s.wallet.MainAccountBalance(ctx)
@@ -2567,7 +2569,7 @@ func (s *service) startConfirmation(
 		}
 	}
 
-	if len(intents) < int(s.roundMinParticipantsCount) {
+	if len(intents) < int(roundMinParticipants) {
 		// repush valid intents back to the queue
 		for _, intent := range intents {
 			if err := s.cache.Intents().Push(
@@ -2580,7 +2582,7 @@ func (s *service) startConfirmation(
 
 		roundAborted = true
 		err := fmt.Errorf(
-			"not enough intents registered %d/%d", len(intents), s.roundMinParticipantsCount,
+			"not enough intents registered %d/%d", len(intents), roundMinParticipants,
 		)
 		log.WithError(err).Debugf("round %s aborted", round.Id)
 		return
@@ -2604,7 +2606,7 @@ func (s *service) startConfirmation(
 
 	s.roundReportSvc.OpStarted(SendConfirmationEventOp)
 
-	s.propagateBatchStartedEvent(ctx, roundId, intents)
+	s.propagateBatchStartedEvent(ctx, roundId, intents, settings.VtxoTreeExpiry)
 
 	s.roundReportSvc.OpEnded(SendConfirmationEventOp)
 
@@ -2639,7 +2641,7 @@ func (s *service) startConfirmation(
 	s.roundReportSvc.OpEnded(WaitForConfirmationOp)
 
 	repushToQueue := notConfirmedIntents
-	if int64(len(confirmedIntents)) < roundMinParticipantsCount {
+	if int64(len(confirmedIntents)) < roundMinParticipants {
 		repushToQueue = append(repushToQueue, confirmedIntents...)
 		confirmedIntents = make([]ports.TimedIntent, 0)
 	}
@@ -2695,7 +2697,8 @@ func (s *service) startConfirmation(
 }
 
 func (s *service) startFinalization(
-	roundId string, roundTiming roundTiming, registeredIntents []ports.TimedIntent,
+	roundId string, roundTiming roundTiming,
+	registeredIntents []ports.TimedIntent, settings ports.Settings,
 ) {
 	defer s.wg.Done()
 
@@ -2706,6 +2709,13 @@ func (s *service) startFinalization(
 	}
 
 	ctx := context.Background()
+	forfeitPubkey := settings.ForfeitPubkey
+	vtxoTreeExpiry := settings.VtxoTreeExpiry
+	var banDuration *time.Duration
+	if settings.BanDuration > 0 {
+		banDuration = &settings.BanDuration
+	}
+
 	round, err := s.cache.CurrentRound().Get(ctx)
 	if err != nil {
 		log.WithError(err).Errorf("failed to get round %s from cache", roundId)
@@ -2740,7 +2750,7 @@ func (s *service) startFinalization(
 			return
 		}
 
-		go s.finalizeRound(roundId, roundTiming)
+		go s.finalizeRound(roundId, roundTiming, settings)
 	}()
 
 	if round.IsFailed() {
@@ -2773,7 +2783,7 @@ func (s *service) startFinalization(
 	s.roundReportSvc.OpStarted(BuildCommitmentTxOp)
 
 	commitmentTx, vtxoTree, connectorAddress, connectors, err := s.builder.BuildCommitmentTx(
-		s.forfeitPubkey, intents, boardingInputs, cosignersPublicKeys,
+		forfeitPubkey, intents, boardingInputs, cosignersPublicKeys,
 	)
 	if err != nil {
 		round.Fail(errors.INTERNAL_ERROR.New("failed to create commitment tx: %s", err))
@@ -2818,8 +2828,8 @@ func (s *service) startFinalization(
 		s.roundReportSvc.StageStarted(TreeSigningStage)
 
 		sweepClosure := script.CSVMultisigClosure{
-			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{s.forfeitPubkey}},
-			Locktime:        s.batchExpiry,
+			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{forfeitPubkey}},
+			Locktime:        vtxoTreeExpiry,
 		}
 
 		sweepScript, err := sweepClosure.Script()
@@ -2899,7 +2909,9 @@ func (s *service) startFinalization(
 				len(signingSession.Nonces), len(uniqueSignerPubkeys),
 			))
 			// ban all the scripts that didn't submitted their nonces
-			go s.banNoncesCollectionTimeout(ctx, roundId, signingSession, registeredIntents)
+			go s.banNoncesCollectionTimeout(
+				ctx, roundId, banDuration, signingSession, registeredIntents,
+			)
 			return
 		case _, ok := <-s.cache.TreeSigingSessions().NoncesCollected(roundId):
 			if ok {
@@ -2970,8 +2982,10 @@ func (s *service) startFinalization(
 			}
 			round.Fail(errors.SIGNING_SESSION_TIMED_OUT.New("%s", msg))
 
-			// ban all the scripts that didn't submitted their signatures
-			go s.banSignaturesCollectionTimeout(ctx, roundId, signingSession, registeredIntents)
+			// ban all the scripts that didn't submit their signatures
+			go s.banSignaturesCollectionTimeout(
+				ctx, roundId, banDuration, signingSession, registeredIntents,
+			)
 			return
 		case _, ok := <-s.cache.TreeSigingSessions().SignaturesCollected(roundId):
 			if ok {
@@ -3009,7 +3023,7 @@ func (s *service) startFinalization(
 				// the round fails and those cosigners are banned
 				if len(cosignersToBan) > 0 {
 					round.Fail(errors.INTERNAL_ERROR.New("some musig2 signatures are invalid"))
-					go s.banCosignerInputs(ctx, cosignersToBan, registeredIntents)
+					go s.banCosignerInputs(ctx, banDuration, cosignersToBan, registeredIntents)
 					return
 				}
 			}
@@ -3043,7 +3057,7 @@ func (s *service) startFinalization(
 
 	if _, err := round.StartFinalization(
 		connectorAddress, flatConnectors, flatVtxoTree,
-		round.CommitmentTxid, round.CommitmentTx, s.batchExpiry.Seconds(),
+		round.CommitmentTxid, round.CommitmentTx, vtxoTreeExpiry.Seconds(),
 	); err != nil {
 		round.Fail(errors.INTERNAL_ERROR.New("failed to start finalization: %s", err))
 		return
@@ -3057,11 +3071,16 @@ func (s *service) startFinalization(
 	}
 }
 
-func (s *service) finalizeRound(roundId string, roundTiming roundTiming) {
+func (s *service) finalizeRound(roundId string, roundTiming roundTiming, settings ports.Settings) {
 	defer s.wg.Done()
 
 	var stopped bool
 	ctx := context.Background()
+	var banDuration *time.Duration
+	if settings.BanDuration > 0 {
+		banDuration = &settings.BanDuration
+	}
+
 	round, err := s.cache.CurrentRound().Get(ctx)
 	if err != nil {
 		log.WithError(err).Errorf("failed to get round %s from cache", roundId)
@@ -3156,7 +3175,7 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming) {
 			return
 		}
 		if !allForfeitTxsSigned {
-			go s.banForfeitCollectionTimeout(ctx, roundId)
+			go s.banForfeitCollectionTimeout(ctx, roundId, banDuration)
 
 			changes = round.Fail(errors.INTERNAL_ERROR.New("missing forfeit transactions"))
 			return
@@ -3165,7 +3184,9 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming) {
 		s.roundReportSvc.OpStarted(VerifyForfeitsSignaturesOp)
 
 		// verify is forfeit tx signatures are valid, if not we ban the associated scripts
-		if convictions := s.verifyForfeitTxsSigs(roundId, forfeitTxList); len(convictions) > 0 {
+		if convictions := s.verifyForfeitTxsSigs(
+			roundId, forfeitTxList, banDuration,
+		); len(convictions) > 0 {
 			changes = round.Fail(errors.INTERNAL_ERROR.New("invalid forfeit txs signature"))
 			go func() {
 				if err := s.repoManager.Convictions().Add(ctx, convictions...); err != nil {
@@ -3230,7 +3251,7 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming) {
 							Type:    domain.CrimeTypeBoardingInputSubmission,
 							RoundID: roundId,
 							Reason:  fmt.Sprintf("missing tapscript spend sig for input %d", i),
-						}, &s.banDuration),
+						}, banDuration),
 					)
 					continue
 				}
@@ -3305,7 +3326,10 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming) {
 
 	s.roundReportSvc.OpEnded(PublishCommitmentTxOp)
 
-	changes, err = round.EndFinalization(forfeitTxs, signedCommitmentTx)
+	boardingAmount := calculateBoardingInputAmount(commitmentTx)
+	// fees in sats
+	collectedFees := calculateCollectedFees(round, boardingAmount)
+	changes, err = round.EndFinalization(forfeitTxs, signedCommitmentTx, collectedFees)
 	if err != nil {
 		changes = round.Fail(errors.INTERNAL_ERROR.New("failed to finalize round: %s", err))
 		return
@@ -3478,7 +3502,8 @@ func (s *service) propagateEvents(ctx context.Context, round domain.Round) {
 }
 
 func (s *service) propagateBatchStartedEvent(
-	ctx context.Context, roundId string, intents []ports.TimedIntent,
+	ctx context.Context,
+	roundId string, intents []ports.TimedIntent, vtxoTreeExpiry arklib.RelativeLocktime,
 ) {
 	hashedIntentIds := make([][32]byte, 0, len(intents))
 	for _, intent := range intents {
@@ -3497,7 +3522,7 @@ func (s *service) propagateBatchStartedEvent(
 			Type: domain.EventTypeUndefined,
 		},
 		IntentIdsHashes: hashedIntentIds,
-		BatchExpiry:     s.batchExpiry.Value,
+		BatchExpiry:     vtxoTreeExpiry.Value,
 	}
 	s.eventsCh <- []domain.Event{ev}
 }
@@ -3547,6 +3572,13 @@ func (s *service) scheduleSweepBatchOutput(round domain.Round) {
 		return
 	}
 
+	settings, err := s.cache.Settings().Get(s.ctx)
+	if err != nil {
+		log.WithError(err).Warn("failed to get settings")
+		return
+	}
+	vtxoTreeExpiry := settings.VtxoTreeExpiry
+
 	blockTimestamp, err := waitForConfirmation(context.Background(), round.CommitmentTxid, s.wallet)
 	if err != nil {
 		log.WithError(err).Warnf(
@@ -3559,10 +3591,10 @@ func (s *service) scheduleSweepBatchOutput(round domain.Round) {
 	var expirationTimestamp int64
 	var skipExpiryUpdate bool
 	if s.sweeper.scheduler.Unit() == ports.BlockHeight {
-		expirationTimestamp = int64(blockTimestamp.Height) + int64(s.batchExpiry.Value)
+		expirationTimestamp = int64(blockTimestamp.Height) + int64(vtxoTreeExpiry.Value)
 		skipExpiryUpdate = true
 	} else {
-		expirationTimestamp = blockTimestamp.Time + s.batchExpiry.Seconds()
+		expirationTimestamp = blockTimestamp.Time + vtxoTreeExpiry.Seconds()
 	}
 
 	if err := s.sweeper.scheduleBatchSweep(
@@ -3624,6 +3656,14 @@ func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
 	return s.scanner.WatchScripts(context.Background(), scripts)
 }
 
+// restoreWatchingVtxos re-registers every sweepable round's vtxo pubkeys
+// with the chain scanner so we resume receiving notifications after a
+// restart. The pubkey lookup uses the bulk repo method
+// GetVtxoPubKeysByCommitmentTxids so we issue exactly two DB queries
+// (one for the round list, one for all keys) regardless of how many
+// sweepable rounds exist. The cross-process WatchScripts gRPC call is
+// chunked by walletclient.WatchScripts to stay below the default
+// 4 MiB gRPC max-message size at large script counts.
 func (s *service) restoreWatchingVtxos() error {
 	ctx := context.Background()
 
@@ -3632,30 +3672,30 @@ func (s *service) restoreWatchingVtxos() error {
 		return err
 	}
 
-	total := len(commitmentTxIds)
-	lastMilestone := 0
-	scripts := make([]string, 0)
-	for i, commitmentTxId := range commitmentTxIds {
-		tapKeys, err := s.repoManager.Vtxos().GetVtxoPubKeysByCommitmentTxid(ctx, commitmentTxId, 0)
-		if err != nil {
-			return err
-		}
-
-		for _, key := range tapKeys {
-			// skip if the key is not a valid x-only hex encoded pubkey
-			if len(key) != 64 {
-				continue
-			}
-			scripts = append(scripts, fmt.Sprintf("5120%s", key))
-		}
-
-		if milestone := (i + 1) * 100 / total / 10; milestone > lastMilestone {
-			lastMilestone = milestone
-			log.Debugf("restore watching vtxos: %d%%...", milestone*10)
-		}
+	if len(commitmentTxIds) == 0 {
+		return nil
 	}
 
-	if len(scripts) <= 0 {
+	tapKeys, err := s.repoManager.Vtxos().
+		GetVtxoPubKeysByCommitmentTxids(ctx, commitmentTxIds, 0)
+	if err != nil {
+		return err
+	}
+
+	scripts := make([]string, 0, len(tapKeys))
+	for _, key := range tapKeys {
+		// Skip values that are not a 32-byte x-only pubkey encoded as 64
+		// hex chars. arkd writes valid keys, but defending against a
+		// corrupted DB row here means a single bad pubkey cannot poison
+		// the entire WatchScripts gRPC payload at startup recovery.
+		decoded, err := hex.DecodeString(key)
+		if err != nil || len(decoded) != 32 {
+			continue
+		}
+		scripts = append(scripts, fmt.Sprintf("5120%s", key))
+	}
+
+	if len(scripts) == 0 {
 		return nil
 	}
 
@@ -3663,7 +3703,10 @@ func (s *service) restoreWatchingVtxos() error {
 		return err
 	}
 
-	log.Debugf("restored watching %d vtxo scripts", len(scripts))
+	log.Debugf(
+		"restored watching %d vtxo scripts from %d sweepable rounds",
+		len(scripts), len(commitmentTxIds),
+	)
 	return nil
 }
 
@@ -3746,8 +3789,8 @@ func (s *service) saveEvents(
 	return s.repoManager.Events().Save(ctx, domain.RoundTopic, id, events)
 }
 
-func (s *service) chainParams() *chaincfg.Params {
-	switch s.network.Name {
+func chainParams(network arklib.Network) *chaincfg.Params {
+	switch network.Name {
 	case arklib.Bitcoin.Name:
 		return &chaincfg.MainNetParams
 	case arklib.BitcoinTestNet.Name:
@@ -3767,9 +3810,13 @@ func (s *service) chainParams() *chaincfg.Params {
 
 func (s *service) processBoardingInputs(
 	ctx context.Context,
-	intentTxid string,
-	boardingUtxos []boardingIntentInput,
+	intentTxid string, boardingUtxos []boardingIntentInput, settings ports.Settings,
 ) ([]ports.BoardingInput, errors.Error) {
+	boardingExitDelay := settings.BoardingExitDelay
+	unilateralExitDelay := settings.UnilateralExitDelay
+	signerPubkey := settings.SignerPubkey
+	allowCSVBlockType := settings.AllowCSVBlockType()
+
 	scripts := make([]string, 0)
 	outpoints := make([]wire.OutPoint, 0)
 
@@ -3834,7 +3881,7 @@ func (s *service) processBoardingInputs(
 				})
 			}
 
-			tx, err := s.validateBoardingInput(ctx, input, now)
+			tx, err := s.validateBoardingInput(ctx, input, now, settings)
 			if err != nil {
 				return nil, errors.INVALID_PSBT_INPUT.New(
 					"failed to validate boarding input: %w", err,
@@ -3877,13 +3924,13 @@ func (s *service) processBoardingInputs(
 				WithMetadata(errors.InputMetadata{Txid: intentTxid, InputIndex: int(input.VOut)})
 		}
 
-		exitDelay := s.boardingExitDelay
+		exitDelay := boardingExitDelay
 		if input.isUnrolledVtxo {
-			exitDelay = s.unilateralExitDelay
+			exitDelay = unilateralExitDelay
 		}
 
 		boardingInput, err := newBoardingInput(
-			tx, input.Input, s.signerPubkey, exitDelay, s.allowCSVBlockType,
+			tx, input.Input, signerPubkey, exitDelay, allowCSVBlockType,
 		)
 		if err != nil {
 			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).WithMetadata(
@@ -3898,8 +3945,16 @@ func (s *service) processBoardingInputs(
 }
 
 func (s *service) validateBoardingInput(
-	ctx context.Context, input boardingIntentInput, now time.Time,
+	ctx context.Context, input boardingIntentInput, now time.Time, settings ports.Settings,
 ) (*wire.MsgTx, error) {
+	boardingExitDelay := settings.BoardingExitDelay
+	unilateralExitDelay := settings.UnilateralExitDelay
+	signerPubkey := settings.SignerPubkey
+	utxoMinAmount := settings.UtxoMinAmount
+	utxoMaxAmount := settings.UtxoMaxAmount
+	unrolledVtxoMinExpiryMargin := settings.UnrolledVtxoMinExpiryMargin
+	allowCSVBlockType := settings.AllowCSVBlockType()
+
 	vtxoScript, err := script.ParseVtxoScript(input.Tapscripts)
 	if err != nil {
 		return nil, err
@@ -3926,15 +3981,15 @@ func (s *service) validateBoardingInput(
 	}
 
 	// validate the vtxo script
-	expectedExitDelay := s.boardingExitDelay
+	expectedExitDelay := boardingExitDelay
 	if input.isUnrolledVtxo {
-		expectedExitDelay = s.unilateralExitDelay
+		expectedExitDelay = unilateralExitDelay
 	}
 
-	if err := vtxoScript.Validate(s.signerPubkey, arklib.RelativeLocktime{
+	if err := vtxoScript.Validate(signerPubkey, arklib.RelativeLocktime{
 		Type:  expectedExitDelay.Type,
 		Value: expectedExitDelay.Value,
-	}, s.allowCSVBlockType); err != nil {
+	}, allowCSVBlockType); err != nil {
 		return nil, fmt.Errorf("invalid vtxo script: %s", err)
 	}
 
@@ -3953,7 +4008,9 @@ func (s *service) validateBoardingInput(
 	// For unrolled VTXOs, ensure the CSV is far enough from expiring so the
 	// batch has time to finalize before the exit path becomes available.
 	if input.isUnrolledVtxo {
-		if err := s.checkUnrolledVtxoExpiry(csvExpiresAt, now); err != nil {
+		if err := checkUnrolledVtxoExpiry(
+			csvExpiresAt, now, unrolledVtxoMinExpiryMargin,
+		); err != nil {
 			return nil, err
 		}
 	}
@@ -3979,27 +4036,28 @@ func (s *service) validateBoardingInput(
 		)
 	}
 
-	if s.utxoMaxAmount >= 0 {
-		if tx.TxOut[input.VOut].Value > s.utxoMaxAmount {
+	if utxoMaxAmount >= 0 {
+		if tx.TxOut[input.VOut].Value > utxoMaxAmount {
 			return nil, fmt.Errorf(
-				"boarding input amount is higher than max utxo amount:%d", s.utxoMaxAmount,
+				"boarding input amount is higher than max utxo amount:%d", utxoMaxAmount,
 			)
 		}
 	}
-	if tx.TxOut[input.VOut].Value < s.utxoMinAmount {
+	if tx.TxOut[input.VOut].Value < utxoMinAmount {
 		return nil, fmt.Errorf(
-			"boarding input amount is lower than min utxo amount:%d", s.utxoMinAmount,
+			"boarding input amount is lower than min utxo amount:%d", utxoMinAmount,
 		)
 	}
 
 	return &tx, nil
 }
 
-func (s *service) checkUnrolledVtxoExpiry(csvExpiresAt, now time.Time) error {
-	margin := s.unrolledVtxoMinExpiryMargin
-	if csvExpiresAt.Before(now.Add(margin)) {
+func checkUnrolledVtxoExpiry(
+	csvExpiresAt, now time.Time, unrolledVtxoMinExpiryMargin time.Duration,
+) error {
+	if csvExpiresAt.Before(now.Add(unrolledVtxoMinExpiryMargin)) {
 		return fmt.Errorf(
-			"unrolled vtxo CSV expires too soon (within %s)", margin,
+			"unrolled vtxo CSV expires too soon (within %s)", unrolledVtxoMinExpiryMargin,
 		)
 	}
 	return nil
@@ -4008,7 +4066,7 @@ func (s *service) checkUnrolledVtxoExpiry(csvExpiresAt, now time.Time) error {
 func (s *service) validateVtxoInput(
 	tapscripts txutils.TapTree, expectedTapKey *btcec.PublicKey,
 	vtxoCreatedAt int64, now time.Time, locktime *arklib.RelativeLocktime, disabled bool,
-	txid string, inputIndex int,
+	txid string, inputIndex int, settings ports.Settings,
 ) errors.Error {
 	vtxoScript, err := script.ParseVtxoScript(tapscripts)
 	if err != nil {
@@ -4024,19 +4082,22 @@ func (s *service) validateVtxoInput(
 			WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: tapscripts})
 	}
 
-	minAllowedExitDelay := s.unilateralExitDelay
+	minAllowedExitDelay := settings.UnilateralExitDelay
+	vtxoNoCsvValidationCutoffDate := settings.VtxoNoCsvValidationCutoffDate
+	signerPubkey := settings.SignerPubkey
+	allowCSVBlockType := settings.AllowCSVBlockType()
 
 	// if the vtxo was created before the vtxoNoCsvValidationCutoffTime date, we use the smallest
 	// exit delay as the minimum allowed exit delay in validation: making the CSV check always
 	// successful.
 	if smallestExitDelay != nil &&
-		time.Unix(vtxoCreatedAt, 0).Before(s.vtxoNoCsvValidationCutoffTime) {
+		time.Unix(vtxoCreatedAt, 0).Before(vtxoNoCsvValidationCutoffDate) {
 		minAllowedExitDelay = *smallestExitDelay
 	}
 
 	// validate the vtxo script
 	if err := vtxoScript.Validate(
-		s.signerPubkey, minAllowedExitDelay, s.allowCSVBlockType,
+		signerPubkey, minAllowedExitDelay, allowCSVBlockType,
 	); err != nil {
 		return errors.INVALID_VTXO_SCRIPT.New("invalid vtxo script: %w", err).
 			WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: tapscripts})
@@ -4071,7 +4132,9 @@ func (s *service) validateVtxoInput(
 	return nil
 }
 
-func (s *service) verifyForfeitTxsSigs(roundId string, txs []string) []domain.Conviction {
+func (s *service) verifyForfeitTxsSigs(
+	roundId string, txs []string, banDuration *time.Duration,
+) []domain.Conviction {
 	nbWorkers := runtime.NumCPU()
 	jobs := make(chan string, len(txs))
 
@@ -4128,7 +4191,7 @@ func (s *service) verifyForfeitTxsSigs(roundId string, txs []string) []domain.Co
 	convictions := make([]domain.Conviction, 0, len(crimes))
 	for outScript, crime := range crimes {
 		convictions = append(convictions, domain.NewScriptConviction(
-			outScript, crime, &s.banDuration,
+			outScript, crime, banDuration,
 		))
 	}
 
@@ -4155,9 +4218,7 @@ func (s *service) GetIntentByTxid(
 }
 
 func (s *service) GetIntentByProofs(
-	ctx context.Context,
-	proof intent.Proof,
-	message intent.GetIntentMessage,
+	ctx context.Context, proof intent.Proof, message intent.GetIntentMessage,
 ) ([]*domain.Intent, errors.Error) {
 	matches, err := s.verifyIntentProofAndFindMatches(ctx, proof, message)
 	if err != nil {
@@ -4187,6 +4248,12 @@ type intentProofMessage interface {
 func (s *service) verifyIntentProofAndFindMatches(
 	ctx context.Context, proof intent.Proof, message intentProofMessage,
 ) ([]ports.TimedIntent, errors.Error) {
+	settings, err := s.cache.Settings().Get(ctx)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
+	}
+	signerPubkey := settings.SignerPubkey
+
 	if expireAt := message.GetExpireAt(); expireAt > 0 {
 		if time.Now().After(time.Unix(expireAt, 0)) {
 			return nil, errors.INVALID_INTENT_TIMERANGE.New("proof of ownership expired").
@@ -4320,9 +4387,7 @@ func (s *service) verifyIntentProofAndFindMatches(
 	}
 
 	if err := intent.Verify(
-		encodedProof,
-		encodedMessage,
-		[]*btcec.PublicKey{s.signerPubkey},
+		encodedProof, encodedMessage, []*btcec.PublicKey{signerPubkey},
 	); err != nil {
 		log.
 			WithField("proof", encodedProof).
@@ -4564,23 +4629,4 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 	go func() {
 		s.transactionEventsCh <- event
 	}()
-}
-
-func (s *service) loadInfo() (*infoData, error) {
-	ctx := context.Background()
-
-	scheduledSessionConfig, err := s.repoManager.ScheduledSession().Get(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get scheduled session config: %w", err)
-	}
-
-	intentFees, err := s.repoManager.Fees().GetIntentFees(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get intent fees: %w", err)
-	}
-
-	return &infoData{
-		scheduledSession: scheduledSessionConfig,
-		intentFees:       *intentFees,
-	}, nil
 }

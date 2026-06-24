@@ -318,15 +318,17 @@ func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 		return nil, err
 	}
 
-	// Combine and deduplicate by pubkey
+	// Combine and deduplicate by pubkey. The amount comparison must be >= to
+	// match the WHERE v.amount >= $1 contract used by the sqlite and postgres
+	// backends; a VTXO with Amount equal to the filter is included.
 	pubkeyMap := make(map[string]bool)
 	for _, vtxo := range vtxos1 {
-		if vtxo.Amount > amountFilter {
+		if vtxo.Amount >= amountFilter {
 			pubkeyMap[vtxo.PubKey] = true
 		}
 	}
 	for _, vtxo := range vtxos2 {
-		if vtxo.Amount > amountFilter {
+		if vtxo.Amount >= amountFilter {
 			pubkeyMap[vtxo.PubKey] = true
 		}
 	}
@@ -336,6 +338,83 @@ func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 		taprootKeys = append(taprootKeys, pubkey)
 	}
 
+	return taprootKeys, nil
+}
+
+// GetVtxoPubKeysByCommitmentTxids is the bulk variant of
+// GetVtxoPubKeysByCommitmentTxid. It returns the deduplicated set of vtxo
+// pubkeys whose root commitment_txid is in the given list, or whose
+// CommitmentTxids slice intersects the given list. badgerhold has no native
+// "slice intersects set" operator, so the second scan uses a MatchFunc that
+// walks the in-memory slice; the SQL backends accomplish the same with a
+// JOIN against vtxo_commitment_txid in a single query.
+func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxids(
+	ctx context.Context, commitmentTxids []string, amountFilter uint64,
+) ([]string, error) {
+	if len(commitmentTxids) == 0 {
+		return nil, nil
+	}
+
+	idxIfaces := make([]interface{}, len(commitmentTxids))
+	for i, txid := range commitmentTxids {
+		idxIfaces[i] = txid
+	}
+
+	// Two scans of the vtxo store: one for vtxos whose RootCommitmentTxid is in
+	// the set, one for vtxos whose CommitmentTxids slice intersects the set.
+	// badgerhold has no Contains-In, so we fall back to a single scan with a
+	// matcher function for the CommitmentTxids case.
+	query1 := badgerhold.Where("RootCommitmentTxid").
+		In(idxIfaces...).
+		And("Amount").
+		Ge(amountFilter)
+	vtxos1, err := r.findVtxos(ctx, query1)
+	if err != nil {
+		return nil, err
+	}
+
+	wanted := make(map[string]struct{}, len(commitmentTxids))
+	for _, t := range commitmentTxids {
+		wanted[t] = struct{}{}
+	}
+	query2 := badgerhold.Where("CommitmentTxids").
+		MatchFunc(func(ra *badgerhold.RecordAccess) (bool, error) {
+			txids, ok := ra.Field().([]string)
+			if !ok {
+				return false, nil
+			}
+			for _, t := range txids {
+				if _, hit := wanted[t]; hit {
+					return true, nil
+				}
+			}
+			return false, nil
+		}).
+		And("Amount").
+		Ge(amountFilter)
+	vtxos2, err := r.findVtxos(ctx, query2)
+	if err != nil {
+		return nil, err
+	}
+
+	// Amount comparison is >= to match the sqlite/postgres
+	// WHERE v.amount >= $1 contract; including amount == amountFilter.
+	pubkeyMap := make(map[string]struct{})
+	for _, vtxo := range vtxos1 {
+		if vtxo.Amount >= amountFilter {
+			pubkeyMap[vtxo.PubKey] = struct{}{}
+		}
+	}
+	for _, vtxo := range vtxos2 {
+		if vtxo.Amount >= amountFilter {
+			pubkeyMap[vtxo.PubKey] = struct{}{}
+		}
+	}
+
+	taprootKeys := make([]string, 0, len(pubkeyMap))
+	for pubkey := range pubkeyMap {
+		taprootKeys = append(taprootKeys, pubkey)
+	}
 	return taprootKeys, nil
 }
 

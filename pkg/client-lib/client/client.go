@@ -20,11 +20,20 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// testDialOptions is a test-only seam appended to the dial options in
+// NewClient. It is nil in production builds (zero effect) and is set by tests
+// to inject a bufconn dialer so the real NewClient path — including the
+// build-version interceptors registered above — can be exercised in-process.
+var testDialOptions []grpc.DialOption
+
 type grpcClient struct {
 	conn       *grpc.ClientConn
-	connMu     *sync.RWMutex
+	connMu     *sync.Mutex
+	svc        arkv1.ArkServiceClient
 	listenerMu *sync.RWMutex
 	listenerId string
+	infoMu     *sync.RWMutex
+	digest     string
 }
 
 func NewClient(serverUrl string) (clientlib.Client, error) {
@@ -44,6 +53,12 @@ func NewClient(serverUrl string) (clientlib.Client, error) {
 		serverUrl = fmt.Sprintf("%s:%d", serverUrl, port)
 	}
 
+	client := &grpcClient{
+		connMu:     &sync.Mutex{},
+		listenerMu: &sync.RWMutex{},
+		infoMu:     &sync.RWMutex{},
+	}
+
 	options := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
 		grpc.WithDisableServiceConfig(),
@@ -57,26 +72,28 @@ func NewClient(serverUrl string) (clientlib.Client, error) {
 			},
 			MinConnectTimeout: 3 * time.Second,
 		}),
+		grpc.WithChainUnaryInterceptor(
+			unaryVersionInterceptor(), unaryDigestInterceptor(client.getDigest),
+		),
+		grpc.WithChainStreamInterceptor(
+			streamVersionInterceptor(), streamDigestInterceptor(client.getDigest),
+		),
 	}
+	options = append(options, testDialOptions...)
 
 	conn, err := grpc.NewClient(serverUrl, options...)
 	if err != nil {
 		return nil, err
 	}
-
-	client := &grpcClient{
-		conn:       conn,
-		connMu:     &sync.RWMutex{},
-		listenerMu: &sync.RWMutex{},
-		listenerId: "",
-	}
+	client.conn = conn
+	client.svc = arkv1.NewArkServiceClient(conn)
 
 	return client, nil
 }
 
-func (a *grpcClient) GetInfo(ctx context.Context) (*clientlib.Info, error) {
+func (c *grpcClient) GetInfo(ctx context.Context) (*clientlib.Info, error) {
 	req := &arkv1.GetInfoRequest{}
-	resp, err := a.svc().GetInfo(ctx, req)
+	resp, err := c.svc.GetInfo(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +125,14 @@ func (a *grpcClient) GetInfo(ctx context.Context) (*clientlib.Info, error) {
 			CutoffDate: s.GetCutoffDate(),
 		})
 	}
+
+	// Cache the latest digest under the lock. This must NOT wrap the RPC above:
+	// the digest interceptor reads a.digest under the same mutex, so holding it
+	// across the call would self-deadlock the RWMutex.
+	c.infoMu.Lock()
+	c.digest = resp.GetDigest()
+	c.infoMu.Unlock()
+
 	return &clientlib.Info{
 		SignerPubKey:              resp.GetSignerPubkey(),
 		ForfeitPubKey:             resp.GetForfeitPubkey(),
@@ -137,10 +162,7 @@ func (a *grpcClient) GetInfo(ctx context.Context) (*clientlib.Info, error) {
 	}, nil
 }
 
-func (a *grpcClient) RegisterIntent(
-	ctx context.Context,
-	proof, message string,
-) (string, error) {
+func (c *grpcClient) RegisterIntent(ctx context.Context, proof, message string) (string, error) {
 	req := &arkv1.RegisterIntentRequest{
 		Intent: &arkv1.Intent{
 			Message: message,
@@ -148,53 +170,56 @@ func (a *grpcClient) RegisterIntent(
 		},
 	}
 
-	resp, err := a.svc().RegisterIntent(ctx, req)
+	resp, err := withDigestRefresh(c, ctx, func() (*arkv1.RegisterIntentResponse, error) {
+		return c.svc.RegisterIntent(ctx, req)
+	})
 	if err != nil {
 		return "", err
 	}
 	return resp.GetIntentId(), nil
 }
 
-func (a *grpcClient) DeleteIntent(ctx context.Context, proof, message string) error {
+func (c *grpcClient) DeleteIntent(ctx context.Context, proof, message string) error {
 	req := &arkv1.DeleteIntentRequest{
 		Intent: &arkv1.Intent{
 			Message: message,
 			Proof:   proof,
 		},
 	}
-	_, err := a.svc().DeleteIntent(ctx, req)
-	if err != nil {
-		return err
-	}
-	return nil
+	_, err := withDigestRefresh(c, ctx, func() (*arkv1.DeleteIntentResponse, error) {
+		return c.svc.DeleteIntent(ctx, req)
+	})
+	return err
 }
 
-func (a *grpcClient) EstimateIntentFee(ctx context.Context, proof, message string) (int64, error) {
+func (c *grpcClient) EstimateIntentFee(ctx context.Context, proof, message string) (int64, error) {
 	req := &arkv1.EstimateIntentFeeRequest{
 		Intent: &arkv1.Intent{
 			Message: message,
 			Proof:   proof,
 		},
 	}
-	resp, err := a.svc().EstimateIntentFee(ctx, req)
+	resp, err := withDigestRefresh(c, ctx, func() (*arkv1.EstimateIntentFeeResponse, error) {
+		return c.svc.EstimateIntentFee(ctx, req)
+	})
 	if err != nil {
 		return -1, err
 	}
 	return resp.GetFee(), nil
 }
 
-func (a *grpcClient) ConfirmRegistration(ctx context.Context, intentID string) error {
+func (c *grpcClient) ConfirmRegistration(ctx context.Context, intentID string) error {
 	req := &arkv1.ConfirmRegistrationRequest{
 		IntentId: intentID,
 	}
-	_, err := a.svc().ConfirmRegistration(ctx, req)
+	_, err := c.svc.ConfirmRegistration(ctx, req)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (a *grpcClient) SubmitTreeNonces(
+func (c *grpcClient) SubmitTreeNonces(
 	ctx context.Context, batchId, cosignerPubkey string, nonces tree.TreeNonces,
 ) error {
 	req := &arkv1.SubmitTreeNoncesRequest{
@@ -203,14 +228,14 @@ func (a *grpcClient) SubmitTreeNonces(
 		TreeNonces: nonces.ToMap(),
 	}
 
-	if _, err := a.svc().SubmitTreeNonces(ctx, req); err != nil {
+	if _, err := c.svc.SubmitTreeNonces(ctx, req); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (a *grpcClient) SubmitTreeSignatures(
+func (c *grpcClient) SubmitTreeSignatures(
 	ctx context.Context, batchId, cosignerPubkey string, signatures tree.TreePartialSigs,
 ) error {
 	sigs, err := signatures.ToMap()
@@ -224,14 +249,14 @@ func (a *grpcClient) SubmitTreeSignatures(
 		TreeSignatures: sigs,
 	}
 
-	if _, err := a.svc().SubmitTreeSignatures(ctx, req); err != nil {
+	if _, err := c.svc.SubmitTreeSignatures(ctx, req); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (a *grpcClient) SubmitSignedForfeitTxs(
+func (c *grpcClient) SubmitSignedForfeitTxs(
 	ctx context.Context, signedForfeitTxs []string, signedCommitmentTx string,
 ) error {
 	req := &arkv1.SubmitSignedForfeitTxsRequest{
@@ -239,14 +264,14 @@ func (a *grpcClient) SubmitSignedForfeitTxs(
 		SignedCommitmentTx: signedCommitmentTx,
 	}
 
-	_, err := a.svc().SubmitSignedForfeitTxs(ctx, req)
+	_, err := c.svc.SubmitSignedForfeitTxs(ctx, req)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (a *grpcClient) GetEventStream(
+func (c *grpcClient) GetEventStream(
 	ctx context.Context, topics []string,
 ) (<-chan clientlib.BatchEventChannel, func(), error) {
 	req := &arkv1.GetEventStreamRequest{Topics: topics}
@@ -257,10 +282,12 @@ func (a *grpcClient) GetEventStream(
 		clientlib.BatchEventChannel,
 	]{
 		Connect: func(ctx context.Context) (arkv1.ArkService_GetEventStreamClient, error) {
-			return a.svc().GetEventStream(ctx, req)
+			return withDigestRefresh(c, ctx, func() (arkv1.ArkService_GetEventStreamClient, error) {
+				return c.svc.GetEventStream(ctx, req)
+			})
 		},
 		Reconnect: func(ctx context.Context) (string, arkv1.ArkService_GetEventStreamClient, error) {
-			stream, err := a.svc().GetEventStream(ctx, req)
+			stream, err := c.svc.GetEventStream(ctx, req)
 			return "", stream, err
 		},
 		Recv: func(stream arkv1.ArkService_GetEventStreamClient) (**arkv1.GetEventStreamResponse, error) {
@@ -276,7 +303,7 @@ func (a *grpcClient) GetEventStream(
 			resp *arkv1.GetEventStreamResponse,
 		) error {
 			if started := resp.GetStreamStarted(); started != nil {
-				a.setListenerID(started.GetId())
+				c.setListenerID(started.GetId())
 			}
 
 			ev, err := event{resp}.toBatchEvent()
@@ -308,12 +335,12 @@ func (a *grpcClient) GetEventStream(
 			}
 		},
 		OnDisconnect: func(error) {
-			a.setListenerID("")
+			c.setListenerID("")
 		},
 	})
 }
 
-func (a *grpcClient) SubmitTx(
+func (c *grpcClient) SubmitTx(
 	ctx context.Context, signedArkTx string, checkpointTxs []string,
 ) (string, string, []string, error) {
 	req := &arkv1.SubmitTxRequest{
@@ -321,7 +348,9 @@ func (a *grpcClient) SubmitTx(
 		CheckpointTxs: checkpointTxs,
 	}
 
-	resp, err := a.svc().SubmitTx(ctx, req)
+	resp, err := withDigestRefresh(c, ctx, func() (*arkv1.SubmitTxResponse, error) {
+		return c.svc.SubmitTx(ctx, req)
+	})
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -329,7 +358,7 @@ func (a *grpcClient) SubmitTx(
 	return resp.GetArkTxid(), resp.GetFinalArkTx(), resp.GetSignedCheckpointTxs(), nil
 }
 
-func (a *grpcClient) FinalizeTx(
+func (c *grpcClient) FinalizeTx(
 	ctx context.Context, arkTxid string, finalCheckpointTxs []string,
 ) error {
 	req := &arkv1.FinalizeTxRequest{
@@ -337,16 +366,14 @@ func (a *grpcClient) FinalizeTx(
 		FinalCheckpointTxs: finalCheckpointTxs,
 	}
 
-	_, err := a.svc().FinalizeTx(ctx, req)
-	if err != nil {
-		return err
-	}
-	return nil
+	_, err := withDigestRefresh(c, ctx, func() (*arkv1.FinalizeTxResponse, error) {
+		return c.svc.FinalizeTx(ctx, req)
+	})
+	return err
 }
 
-func (a *grpcClient) GetPendingTx(
-	ctx context.Context,
-	proof, message string,
+func (c *grpcClient) GetPendingTx(
+	ctx context.Context, proof, message string,
 ) ([]clientlib.AcceptedOffchainTx, error) {
 	req := &arkv1.GetPendingTxRequest{
 		Identifier: &arkv1.GetPendingTxRequest_Intent{
@@ -357,7 +384,9 @@ func (a *grpcClient) GetPendingTx(
 		},
 	}
 
-	resp, err := a.svc().GetPendingTx(ctx, req)
+	resp, err := withDigestRefresh(c, ctx, func() (*arkv1.GetPendingTxResponse, error) {
+		return c.svc.GetPendingTx(ctx, req)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -384,13 +413,20 @@ func (c *grpcClient) GetTransactionsStream(
 		clientlib.TransactionEvent,
 	]{
 		Connect: func(ctx context.Context) (arkv1.ArkService_GetTransactionsStreamClient, error) {
-			return c.svc().GetTransactionsStream(ctx, req)
+			return withDigestRefresh(c, ctx, func() (arkv1.ArkService_GetTransactionsStreamClient, error) {
+				return c.svc.GetTransactionsStream(ctx, req)
+			})
 		},
 		Reconnect: func(
 			ctx context.Context,
 		) (string, arkv1.ArkService_GetTransactionsStreamClient, error) {
-			stream, err := c.svc().GetTransactionsStream(ctx, req)
-			return "", stream, err
+			reconnect := func() (string, arkv1.ArkService_GetTransactionsStreamClient, error) {
+				stream, err := withDigestRefresh(c, ctx, func() (arkv1.ArkService_GetTransactionsStreamClient, error) {
+					return c.svc.GetTransactionsStream(ctx, req)
+				})
+				return "", stream, err
+			}
+			return reconnect()
 		},
 		Recv: func(
 			stream arkv1.ArkService_GetTransactionsStreamClient,
@@ -515,7 +551,7 @@ func (c *grpcClient) ModifyStreamTopics(
 			},
 		},
 	}
-	updateRes, err := c.svc().UpdateStreamTopics(ctx, req)
+	updateRes, err := c.svc.UpdateStreamTopics(ctx, req)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -539,7 +575,7 @@ func (c *grpcClient) OverwriteStreamTopics(
 			},
 		},
 	}
-	updateRes, err := c.svc().UpdateStreamTopics(ctx, req)
+	updateRes, err := c.svc.UpdateStreamTopics(ctx, req)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -554,25 +590,24 @@ func (c *grpcClient) Close() {
 	c.conn.Close()
 }
 
-func (a *grpcClient) svc() arkv1.ArkServiceClient {
-	a.connMu.RLock()
-	defer a.connMu.RUnlock()
+func (c *grpcClient) getListenerID() string {
+	c.listenerMu.RLock()
+	defer c.listenerMu.RUnlock()
 
-	return arkv1.NewArkServiceClient(a.conn)
+	return c.listenerId
 }
 
-func (a *grpcClient) getListenerID() string {
-	a.listenerMu.RLock()
-	defer a.listenerMu.RUnlock()
+func (c *grpcClient) setListenerID(id string) {
+	c.listenerMu.Lock()
+	defer c.listenerMu.Unlock()
 
-	return a.listenerId
+	c.listenerId = id
 }
 
-func (a *grpcClient) setListenerID(id string) {
-	a.listenerMu.Lock()
-	defer a.listenerMu.Unlock()
-
-	a.listenerId = id
+func (c *grpcClient) getDigest() string {
+	c.infoMu.RLock()
+	defer c.infoMu.RUnlock()
+	return c.digest
 }
 
 func toClientStreamConnectionState(

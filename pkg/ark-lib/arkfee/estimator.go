@@ -40,35 +40,39 @@ type Estimator struct {
 }
 
 // New parses the intent input and output programs if not empty and returns a new Estimator
-func New(config Config) (estimator *Estimator, err error) {
-	estimator = &Estimator{}
+func New(config Config) (*Estimator, error) {
+	estimator := &Estimator{}
 
 	if len(config.IntentOffchainInputProgram) > 0 {
-		estimator.intentOffchainInput, err = Parse(config.IntentOffchainInputProgram, celenv.IntentOffchainInputEnv)
+		program, err := Parse(config.IntentOffchainInputProgram, celenv.IntentOffchainInputEnv)
 		if err != nil {
-			return
+			return nil, fmt.Errorf("failed to evaluate batch offchain input program: %w", err)
 		}
+		estimator.intentOffchainInput = program
 	}
 	if len(config.IntentOnchainInputProgram) > 0 {
-		estimator.intentOnchainInput, err = Parse(config.IntentOnchainInputProgram, celenv.IntentOnchainInputEnv)
+		program, err := Parse(config.IntentOnchainInputProgram, celenv.IntentOnchainInputEnv)
 		if err != nil {
-			return
+			return nil, fmt.Errorf("failed to evaluate batch onchain input program: %w", err)
 		}
+		estimator.intentOnchainInput = program
 	}
 	if len(config.IntentOffchainOutputProgram) > 0 {
-		estimator.intentOffchainOutput, err = Parse(config.IntentOffchainOutputProgram, celenv.IntentOutputEnv)
+		program, err := Parse(config.IntentOffchainOutputProgram, celenv.IntentOutputEnv)
 		if err != nil {
-			return
+			return nil, fmt.Errorf("failed to evaluate batch offchain output program: %w", err)
 		}
+		estimator.intentOffchainOutput = program
 	}
 	if len(config.IntentOnchainOutputProgram) > 0 {
-		estimator.intentOnchainOutput, err = Parse(config.IntentOnchainOutputProgram, celenv.IntentOutputEnv)
+		program, err := Parse(config.IntentOnchainOutputProgram, celenv.IntentOutputEnv)
 		if err != nil {
-			return
+			return nil, fmt.Errorf("failed to evaluate batch onchain output program: %w", err)
 		}
+		estimator.intentOnchainOutput = program
 	}
 
-	return
+	return estimator, nil
 }
 
 // EvalOffchainInput evalutes the fee for a given vtxo input

@@ -3,10 +3,14 @@ package ports
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/btcsuite/btcd/btcec/v2"
 )
 
 type LiveStore interface {
@@ -17,6 +21,7 @@ type LiveStore interface {
 	ConfirmationSessions() ConfirmationSessionsStore
 	TreeSigingSessions() TreeSigningSessionsStore
 	BoardingInputs() BoardingInputsStore
+	Settings() SettingsStore
 }
 
 type IntentStore interface {
@@ -89,6 +94,11 @@ type BoardingInputsStore interface {
 	DeleteSignatures(ctx context.Context, batchId string) error
 }
 
+type SettingsStore interface {
+	Get(ctx context.Context) (*Settings, error)
+	Upsert(ctx context.Context, settings Settings) error
+}
+
 type TimedIntent struct {
 	domain.Intent
 	BoardingInputs      []BoardingInput
@@ -113,4 +123,67 @@ type ConfirmationSessions struct {
 	IntentsHashes       map[[32]byte]bool // hash --> confirmed
 	NumIntents          int
 	NumConfirmedIntents int
+}
+
+type Settings struct {
+	domain.Settings
+	Network             arklib.Network
+	DustAmount          uint64
+	SignerPubkey        *btcec.PublicKey
+	ForfeitPubkey       *btcec.PublicKey
+	ForfeitAddress      string
+	CheckpointTapscript []byte
+}
+
+func (s Settings) Digest() (string, error) {
+	data := digestData{
+		SignerPubKey:        hex.EncodeToString(s.SignerPubkey.SerializeCompressed()),
+		ForfeitPubKey:       hex.EncodeToString(s.ForfeitPubkey.SerializeCompressed()),
+		UnilateralExitDelay: s.PublicUnilateralExitDelay.Seconds(),
+		BoardingExitDelay:   s.BoardingExitDelay.Seconds(),
+		SessionDuration:     int64(s.SessionDuration.Seconds()),
+		Network:             s.Network.Name,
+		Dust:                s.DustAmount,
+		ForfeitAddress:      s.ForfeitAddress,
+		UtxoMinAmount:       s.UtxoMinAmount,
+		UtxoMaxAmount:       s.UtxoMaxAmount,
+		VtxoMinAmount:       s.VtxoMinAmount,
+		VtxoMaxAmount:       s.VtxoMaxAmount,
+		CheckpointTapscript: hex.EncodeToString(s.CheckpointTapscript),
+		Fees: feeDigestData{
+			IntentFees: s.BatchFees,
+		},
+		MaxTxWeight:        int64(s.MaxTxWeight),
+		MaxOpReturnOutputs: int64(s.MaxOpReturnOutputs),
+	}
+	buf, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(buf)
+	return hex.EncodeToString(digest[:]), nil
+}
+
+type digestData struct {
+	SignerPubKey        string
+	ForfeitPubKey       string
+	UnilateralExitDelay int64
+	BoardingExitDelay   int64
+	SessionDuration     int64
+	Network             string
+	Dust                uint64
+	ForfeitAddress      string
+	UtxoMinAmount       int64
+	UtxoMaxAmount       int64
+	VtxoMinAmount       int64
+	VtxoMaxAmount       int64
+	CheckpointTapscript string
+	Fees                feeDigestData
+	MaxTxWeight         int64
+	MaxOpReturnOutputs  int64
+}
+
+type feeDigestData struct {
+	IntentFees domain.BatchFees
+	TxFeeRate  float64
 }
