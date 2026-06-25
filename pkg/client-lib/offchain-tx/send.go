@@ -15,10 +15,7 @@ func Send(ctx context.Context, args SendArgs, opts ...Option) (*OffchainTxRes, e
 	}
 
 	buildArgs := args.toBuildArgs()
-	signerPubKey, err := buildArgs.signerPubKey()
-	if err != nil {
-		return nil, fmt.Errorf("invalid signer pubkey: %w", err)
-	}
+	signers := args.ServerParams.AllSigners()
 
 	build, err := BuildAndSignTx(ctx, buildArgs, opts...)
 	if err != nil {
@@ -26,7 +23,7 @@ func Send(ctx context.Context, args SendArgs, opts ...Option) (*OffchainTxRes, e
 	}
 
 	txid, signedArk, finalCps, err := submitAndFinalize(
-		ctx, args.Client, args.SignTx, signerPubKey, build,
+		ctx, args.Client, args.SignTx, signers, build,
 	)
 	if err != nil {
 		return nil, err

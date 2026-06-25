@@ -4,11 +4,12 @@ import (
 	"context"
 	"sync"
 
+	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/arkade-os/arkd/pkg/client-wallet/types"
 )
 
 type service struct {
-	data *types.Config
+	data *clientlib.ServerParams
 	lock *sync.RWMutex
 }
 
@@ -28,7 +29,7 @@ func (s *service) GetDatadir() string {
 }
 
 func (s *service) AddData(
-	_ context.Context, data types.Config,
+	_ context.Context, data clientlib.ServerParams,
 ) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -38,7 +39,7 @@ func (s *service) AddData(
 	return nil
 }
 
-func (s *service) GetData(_ context.Context) (*types.Config, error) {
+func (s *service) GetData(_ context.Context) (*clientlib.ServerParams, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 

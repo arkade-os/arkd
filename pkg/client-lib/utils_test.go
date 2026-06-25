@@ -184,32 +184,106 @@ func TestCoinSelectAsset(t *testing.T) {
 }
 
 func TestParseBitcoinAddress(t *testing.T) {
-	// Known-good mainnet p2wpkh / p2pkh / testnet p2wpkh fixtures.
-	const (
-		// Same fixture used by pkg/client-lib/explorer/service_test.go.
-		mainnetP2WPKH = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
-		notAnAddress  = "not-an-address"
-	)
+	t.Run("valid", func(t *testing.T) {
+		fixtures := []struct {
+			name string
+			addr string
+			net  chaincfg.Params
+		}{
+			{
+				// Same fixture used by pkg/client-lib/explorer/service_test.go.
+				name: "mainnet p2wpkh",
+				addr: "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+				net:  chaincfg.MainNetParams,
+			},
+			{
+				name: "mainnet p2pkh",
+				addr: "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2",
+				net:  chaincfg.MainNetParams,
+			},
+			{
+				name: "testnet p2wpkh",
+				addr: "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx",
+				net:  chaincfg.TestNet3Params,
+			},
+		}
 
-	t.Run("decodes valid address on matching network", func(t *testing.T) {
-		ok, script, err := clientlib.ParseBitcoinAddress(mainnetP2WPKH, chaincfg.MainNetParams)
-		require.NoError(t, err)
-		require.True(t, ok)
-		require.NotEmpty(t, script)
+		for _, f := range fixtures {
+			t.Run(f.name, func(t *testing.T) {
+				ok, script, err := clientlib.ParseBitcoinAddress(f.addr, f.net)
+				require.NoError(t, err)
+				require.True(t, ok)
+				require.NotEmpty(t, script)
+			})
+		}
 	})
 
-	t.Run("rejects garbage input", func(t *testing.T) {
-		ok, script, err := clientlib.ParseBitcoinAddress(notAnAddress, chaincfg.MainNetParams)
-		require.NoError(t, err)
-		require.False(t, ok)
-		require.Nil(t, script)
+	t.Run("invalid", func(t *testing.T) {
+		fixtures := []struct {
+			name string
+			addr string
+			net  chaincfg.Params
+		}{
+			{name: "empty", addr: "", net: chaincfg.MainNetParams},
+			{name: "invalid address", addr: "not-an-address", net: chaincfg.MainNetParams},
+		}
+
+		for _, f := range fixtures {
+			t.Run(f.name, func(t *testing.T) {
+				ok, script, err := clientlib.ParseBitcoinAddress(f.addr, f.net)
+				require.NoError(t, err)
+				require.False(t, ok)
+				require.Nil(t, script)
+			})
+		}
+	})
+}
+
+func TestEcPubkeyFromHex(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		fixtures := []struct {
+			name   string
+			pubkey string
+		}{
+			{
+				// Compressed secp256k1 generator point G.
+				name:   "compressed",
+				pubkey: "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+			},
+			{
+				// Uncompressed secp256k1 generator point G.
+				name: "uncompressed",
+				pubkey: "0479be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798" +
+					"483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8",
+			},
+		}
+
+		for _, f := range fixtures {
+			t.Run(f.name, func(t *testing.T) {
+				pubkey, err := clientlib.EcPubkeyFromHex(f.pubkey)
+				require.NoError(t, err)
+				require.NotNil(t, pubkey)
+			})
+		}
 	})
 
-	t.Run("rejects empty input", func(t *testing.T) {
-		ok, script, err := clientlib.ParseBitcoinAddress("", chaincfg.MainNetParams)
-		require.NoError(t, err)
-		require.False(t, ok)
-		require.Nil(t, script)
+	t.Run("invalid", func(t *testing.T) {
+		fixtures := []struct {
+			name   string
+			pubkey string
+		}{
+			{name: "invalid format", pubkey: "nothex"},
+			{name: "invalid hex", pubkey: "0279be66"},
+			{name: "empty", pubkey: ""},
+		}
+
+		for _, f := range fixtures {
+			t.Run(f.name, func(t *testing.T) {
+				pubkey, err := clientlib.EcPubkeyFromHex(f.pubkey)
+				require.Error(t, err)
+				require.Nil(t, pubkey)
+			})
+		}
 	})
 }
 

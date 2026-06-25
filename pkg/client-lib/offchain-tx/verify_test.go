@@ -1,9 +1,11 @@
 package offchaintx
 
 import (
+	"encoding/hex"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -59,12 +61,13 @@ func newTestVerifyPSBT(
 	return encoded
 }
 
-// signerPubKey parses the canonical testSignerPubKey constant.
-func signerPubKey(t *testing.T) *btcec.PublicKey {
+// getSigners parses the canonical testSignerPubKey constant and returns it as a set of signers,
+// ie a map xonly pubkey string -> pubkey object.
+func getSigners(t *testing.T) map[string]*btcec.PublicKey {
 	t.Helper()
-	key, err := parsePubkey(testSignerPubKey)
-	require.NoError(t, err)
-	return key
+	return map[string]*btcec.PublicKey{
+		hex.EncodeToString(schnorr.SerializePubKey(testSignerPubKey)): testSignerPubKey,
+	}
 }
 
 func TestVerifySignedTx(t *testing.T) {
@@ -88,7 +91,7 @@ func TestVerifySignedTx(t *testing.T) {
 			{"missing signer signature", validOriginal, validSigned, "signer signature not found"},
 		}
 
-		pubKey := signerPubKey(t)
+		pubKey := getSigners(t)
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				err := VerifySignedTx(tc.original, tc.signed, pubKey)
@@ -133,7 +136,7 @@ func TestVerifySignedCheckpointTxs(t *testing.T) {
 			},
 		}
 
-		pubKey := signerPubKey(t)
+		pubKey := getSigners(t)
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				err := VerifySignedCheckpointTxs(tc.original, tc.signed, pubKey)

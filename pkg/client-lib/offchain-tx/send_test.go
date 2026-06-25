@@ -2,16 +2,18 @@ package offchaintx
 
 import (
 	"context"
+	"encoding/hex"
 	"testing"
 
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/require"
 )
 
 // testSignerPubKey is a real compressed pubkey hex used so that parsePubkey()
 // succeeds when a test is not exercising the pubkey error path. Reused across
 // every offchain-tx invalid-path test file.
-const testSignerPubKey = "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+var testSignerPubKey = pubkey("02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5")
 
 func TestSend(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
@@ -37,18 +39,13 @@ func TestSend(t *testing.T) {
 			},
 			{
 				name:      "missing server info",
-				mutate:    func(a *SendArgs) { a.ServerInfo.Dust = 0 },
+				mutate:    func(a *SendArgs) { a.ServerParams.Dust = 0 },
 				errSubstr: "missing server info",
 			},
 			{
 				name:      "missing signer pubkey",
-				mutate:    func(a *SendArgs) { a.ServerInfo.SignerPubKey = "" },
+				mutate:    func(a *SendArgs) { a.ServerParams.SignerPubKey = nil },
 				errSubstr: "missing signer pubkey",
-			},
-			{
-				name:      "invalid signer pubkey hex",
-				mutate:    func(a *SendArgs) { a.ServerInfo.SignerPubKey = "zz" },
-				errSubstr: "invalid signer pubkey",
 			},
 			{
 				name:      "missing change addr",
@@ -89,18 +86,13 @@ func TestBuildAndSignTx(t *testing.T) {
 			},
 			{
 				name:      "missing server info",
-				mutate:    func(a *BuildAndSignTxArgs) { a.ServerInfo.Dust = 0 },
+				mutate:    func(a *BuildAndSignTxArgs) { a.ServerParams.Dust = 0 },
 				errSubstr: "missing server info",
 			},
 			{
 				name:      "missing signer pubkey",
-				mutate:    func(a *BuildAndSignTxArgs) { a.ServerInfo.SignerPubKey = "" },
+				mutate:    func(a *BuildAndSignTxArgs) { a.ServerParams.SignerPubKey = nil },
 				errSubstr: "missing signer pubkey",
-			},
-			{
-				name:      "invalid signer pubkey hex",
-				mutate:    func(a *BuildAndSignTxArgs) { a.ServerInfo.SignerPubKey = "zz" },
-				errSubstr: "invalid signer pubkey",
 			},
 			{
 				name:      "missing change addr",
@@ -137,12 +129,12 @@ func mockSignTx(context.Context, string) (string, error) { return "", nil }
 func newTestSendArgs() SendArgs {
 	b := newTestSendBuildArgs()
 	return SendArgs{
-		Client:     mockClient{},
-		ServerInfo: b.ServerInfo,
-		SignTx:     b.SignTx,
-		Vtxos:      b.Vtxos,
-		ChangeAddr: b.ChangeAddr,
-		Receivers:  b.Receivers,
+		Client:       mockClient{},
+		ServerParams: b.ServerParams,
+		SignTx:       b.SignTx,
+		Vtxos:        b.Vtxos,
+		ChangeAddr:   b.ChangeAddr,
+		Receivers:    b.Receivers,
 	}
 }
 
@@ -152,10 +144,16 @@ func newTestSendArgs() SendArgs {
 func newTestSendBuildArgs() BuildAndSignTxArgs {
 	return BuildAndSignTxArgs{
 		BaseArgs: BaseArgs{
-			ServerInfo: clientlib.Info{Dust: 1000, SignerPubKey: testSignerPubKey},
-			SignTx:     mockSignTx,
-			ChangeAddr: "tark1qexample",
+			ServerParams: clientlib.ServerParams{Dust: 1000, SignerPubKey: testSignerPubKey},
+			SignTx:       mockSignTx,
+			ChangeAddr:   "tark1qexample",
 		},
 		Receivers: []clientlib.Receiver{{To: "tark1qexample", Amount: 10000}},
 	}
+}
+
+func pubkey(str string) *btcec.PublicKey {
+	buf, _ := hex.DecodeString(str)
+	key, _ := btcec.ParsePubKey(buf)
+	return key
 }

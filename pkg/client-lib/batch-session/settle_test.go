@@ -2,9 +2,12 @@ package batchsession
 
 import (
 	"context"
+	"encoding/hex"
 	"testing"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,7 +18,7 @@ const testAddr = "bcrt1qhhq55mut9easvrncy4se8q6vg3crlug7yj4j56"
 
 // testForfeitPubKey is a real compressed pubkey hex; satisfies
 // validateServerInfo's hex-decode + ParsePubKey checks.
-const testForfeitPubKey = "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+var testForfeitPubKey = pubkey("02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5")
 
 func TestSettle(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
@@ -49,7 +52,7 @@ func TestSettle(t *testing.T) {
 			},
 			{
 				name:      "missing server info",
-				mutate:    func(a *SettleArgs) { a.ServerInfo.Dust = 0 },
+				mutate:    func(a *SettleArgs) { a.ServerParams.Dust = 0 },
 				errSubstr: "missing server info",
 			},
 		}
@@ -83,13 +86,19 @@ func newTestSettleArgs(t *testing.T) SettleArgs {
 	t.Helper()
 
 	return SettleArgs{
-		Client:     mockClient{},
-		ServerInfo: clientlib.Info{Dust: 1000, Network: "regtest"},
-		SignTx:     clientlib.SignFn(mockSignTx),
+		Client:       mockClient{},
+		ServerParams: clientlib.ServerParams{Dust: 1000, Network: arklib.BitcoinRegTest},
+		SignTx:       clientlib.SignFn(mockSignTx),
 		Vtxos: []clientlib.Vtxo{{
 			Outpoint: clientlib.Outpoint{Txid: "deadbeef", VOut: 0},
 			Amount:   10000,
 		}},
 		ReceiverAddr: "tark1qexample",
 	}
+}
+
+func pubkey(str string) *btcec.PublicKey {
+	buf, _ := hex.DecodeString(str)
+	key, _ := btcec.ParsePubKey(buf)
+	return key
 }

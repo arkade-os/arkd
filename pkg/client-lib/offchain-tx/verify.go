@@ -9,7 +9,7 @@ import (
 )
 
 func VerifySignedCheckpointTxs(
-	originalCheckpoints, signedCheckpoints []string, signerpubkey *btcec.PublicKey,
+	originalCheckpoints, signedCheckpoints []string, signers map[string]*btcec.PublicKey,
 ) error {
 	// index by txid
 	indexedOriginalCheckpoints := make(map[string]*psbt.Packet)
@@ -36,7 +36,7 @@ func VerifySignedCheckpointTxs(
 		if !ok {
 			return fmt.Errorf("signed checkpoint %s not found", txid)
 		}
-		if err := verifyOffchainTx(originalPtx, signedPtx, signerpubkey); err != nil {
+		if err := verifyOffchainTx(originalPtx, signedPtx, signers); err != nil {
 			return err
 		}
 	}
@@ -44,7 +44,7 @@ func VerifySignedCheckpointTxs(
 	return nil
 }
 
-func VerifySignedTx(original, signed string, signerPubKey *btcec.PublicKey) error {
+func VerifySignedTx(original, signed string, signers map[string]*btcec.PublicKey) error {
 	originalPtx, err := psbt.NewFromRawBytes(strings.NewReader(original), true)
 	if err != nil {
 		return err
@@ -55,5 +55,5 @@ func VerifySignedTx(original, signed string, signerPubKey *btcec.PublicKey) erro
 		return err
 	}
 
-	return verifyOffchainTx(originalPtx, signedPtx, signerPubKey)
+	return verifyOffchainTx(originalPtx, signedPtx, signers)
 }

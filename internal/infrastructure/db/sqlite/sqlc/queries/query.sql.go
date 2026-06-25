@@ -692,13 +692,15 @@ func (q *Queries) SelectNotUnrolledVtxosWithPubkey(ctx context.Context, pubkey s
 }
 
 const selectOffchainTx = `-- name: SelectOffchainTx :many
-SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid = ?1 AND COALESCE(fail_reason, '') = ''
+SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid = ?1
+    AND (stage_code = 2 OR stage_code = 3)
 `
 
 type SelectOffchainTxRow struct {
 	OffchainTxVw OffchainTxVw
 }
 
+// Returns only accepted or finalized txs
 func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOffchainTxRow, error) {
 	rows, err := q.db.QueryContext(ctx, selectOffchainTx, txid)
 	if err != nil {

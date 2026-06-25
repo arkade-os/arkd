@@ -19,10 +19,7 @@ func IssueAsset(
 	}
 
 	buildArgs := args.toBuildArgs()
-	signerPubKey, err := buildArgs.signerPubKey()
-	if err != nil {
-		return nil, fmt.Errorf("invalid signer pubkey: %w", err)
-	}
+	signers := args.ServerParams.AllSigners()
 
 	build, err := BuildAndSignIssuanceTx(ctx, buildArgs, opts...)
 	if err != nil {
@@ -30,7 +27,7 @@ func IssueAsset(
 	}
 
 	txid, tx, checkpointTxs, err := submitAndFinalize(
-		ctx, args.Client, args.SignTx, signerPubKey, &build.BuildAndSignTxRes,
+		ctx, args.Client, args.SignTx, signers, &build.BuildAndSignTxRes,
 	)
 	if err != nil {
 		return nil, err
@@ -41,7 +38,7 @@ func IssueAsset(
 	// also carries one unit of the existing control asset.
 	receiver := clientlib.Receiver{
 		To:     args.ChangeAddr,
-		Amount: args.ServerInfo.Dust,
+		Amount: args.ServerParams.Dust,
 	}
 	if existing, ok := args.ControlAsset.(clientlib.ExistingControlAsset); ok {
 		receiver.Assets = append(receiver.Assets, clientlib.Asset{
@@ -97,10 +94,7 @@ func ReissueAsset(
 	}
 
 	buildArgs := args.toBuildArgs()
-	signerPubKey, err := buildArgs.signerPubKey()
-	if err != nil {
-		return nil, fmt.Errorf("invalid signer pubkey: %w", err)
-	}
+	signers := args.ServerParams.AllSigners()
 
 	build, err := BuildAndSignReissuanceTx(ctx, buildArgs, opts...)
 	if err != nil {
@@ -108,7 +102,7 @@ func ReissueAsset(
 	}
 
 	txid, tx, checkpointTxs, err := submitAndFinalize(
-		ctx, args.Client, args.SignTx, signerPubKey, build,
+		ctx, args.Client, args.SignTx, signers, build,
 	)
 	if err != nil {
 		return nil, err
@@ -116,7 +110,7 @@ func ReissueAsset(
 
 	receiver := clientlib.Receiver{
 		To:     args.ChangeAddr,
-		Amount: args.ServerInfo.Dust,
+		Amount: args.ServerParams.Dust,
 		Assets: []clientlib.Asset{args.ControlAsset, args.Asset},
 	}
 
@@ -144,10 +138,7 @@ func BurnAsset(ctx context.Context, args BurnAssetArgs, opts ...Option) (*Offcha
 	}
 
 	buildArgs := args.toBuildArgs()
-	signerPubKey, err := buildArgs.signerPubKey()
-	if err != nil {
-		return nil, fmt.Errorf("invalid signer pubkey: %w", err)
-	}
+	signers := args.ServerParams.AllSigners()
 
 	build, err := BuildAndSignBurnTx(ctx, buildArgs, opts...)
 	if err != nil {
@@ -155,7 +146,7 @@ func BurnAsset(ctx context.Context, args BurnAssetArgs, opts ...Option) (*Offcha
 	}
 
 	txid, tx, checkpointTxs, err := submitAndFinalize(
-		ctx, args.Client, args.SignTx, signerPubKey, build,
+		ctx, args.Client, args.SignTx, signers, build,
 	)
 	if err != nil {
 		return nil, err
@@ -171,7 +162,7 @@ func BurnAsset(ctx context.Context, args BurnAssetArgs, opts ...Option) (*Offcha
 
 	outs := []clientlib.Receiver{{
 		To:     args.ChangeAddr,
-		Amount: args.ServerInfo.Dust,
+		Amount: args.ServerParams.Dust,
 		Assets: burnAssets,
 	}}
 	if build.ChangeReceiver != nil {

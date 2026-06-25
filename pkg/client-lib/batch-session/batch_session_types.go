@@ -33,13 +33,13 @@ type BatchTxRes struct {
 // JoinBatchArgs configures a JoinBatch call: the funds to consume
 // (Notes/Vtxos/BoardingUtxos from BaseArgs), the desired Outputs, the SignTx
 // callback used to sign the intent proof and ark-side artifacts, plus the
-// Client used to talk to the server and the cached ServerInfo.
+// Client used to talk to the server and the cached ServerParams.
 type JoinBatchArgs struct {
 	BaseArgs
-	TreeSigners []tree.SignerSession
-	IntentId    string
-	Client      clientlib.Client
-	ServerInfo  clientlib.Info
+	TreeSigners  []tree.SignerSession
+	IntentId     string
+	Client       clientlib.Client
+	ServerParams clientlib.ServerParams
 }
 
 func (a JoinBatchArgs) validate() error {

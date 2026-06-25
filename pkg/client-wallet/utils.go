@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"slices"
@@ -20,7 +19,6 @@ import (
 	identityfilestore "github.com/arkade-os/arkd/pkg/client-wallet/identity/store/file"
 	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-wallet/identity/store/inmemory"
 	"github.com/arkade-os/arkd/pkg/client-wallet/types"
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -289,14 +287,6 @@ func getVtxo(usedVtxos []clientlib.Vtxo, spentByVtxos []clientlib.Vtxo) clientli
 		return spentByVtxos[0]
 	}
 	return clientlib.Vtxo{}
-}
-
-func ecPubkeyFromHex(pubkey string) (*btcec.PublicKey, error) {
-	buf, err := hex.DecodeString(pubkey)
-	if err != nil {
-		return nil, err
-	}
-	return btcec.ParsePubKey(buf)
 }
 
 func toOutputScript(onchainAddress string, network arklib.Network) ([]byte, error) {

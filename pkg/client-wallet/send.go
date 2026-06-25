@@ -33,12 +33,12 @@ func (w *wallet) SendOffChain(
 	defer w.txLock.Unlock()
 
 	return offchaintx.Send(ctx, offchaintx.SendArgs{
-		Client:     w.client,
-		ServerInfo: w.Config.ClientInfo(),
-		SignTx:     signTx,
-		Vtxos:      vtxos,
-		ChangeAddr: offchainAddr.Address,
-		Receivers:  receivers,
+		Client:       w.client,
+		ServerParams: *w.ServerParams,
+		SignTx:       signTx,
+		Vtxos:        vtxos,
+		ChangeAddr:   offchainAddr.Address,
+		Receivers:    receivers,
 	}, opts...)
 }
 

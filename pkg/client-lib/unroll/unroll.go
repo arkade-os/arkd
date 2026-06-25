@@ -25,13 +25,13 @@ import (
 // UnrollArgs configures Unroll: builds 1C1P bump packages for each given
 // vtxo's next branch tx and broadcasts each parent+child pair.
 type UnrollArgs struct {
-	Explorer   clientlib.Explorer
-	Indexer    clientlib.Indexer
-	SignTx     clientlib.SignFn
-	ServerInfo clientlib.Info
-	Vtxos      []clientlib.Vtxo
-	BumpAddr   string
-	BumpPubKey *btcec.PublicKey
+	Explorer     clientlib.Explorer
+	Indexer      clientlib.Indexer
+	SignTx       clientlib.SignFn
+	ServerParams clientlib.ServerParams
+	Vtxos        []clientlib.Vtxo
+	BumpAddr     string
+	BumpPubKey   *btcec.PublicKey
 }
 
 func (a UnrollArgs) validate() error {
@@ -47,8 +47,8 @@ func (a UnrollArgs) validate() error {
 	if a.BumpPubKey == nil {
 		return fmt.Errorf("missing bump pub key")
 	}
-	if len(a.ServerInfo.Network) <= 0 {
-		return fmt.Errorf("missing server info")
+	if len(a.ServerParams.Network.Name) <= 0 {
+		return fmt.Errorf("missing server params")
 	}
 	if len(a.Vtxos) <= 0 {
 		return fmt.Errorf("missing vtxos to unroll")
@@ -56,7 +56,7 @@ func (a UnrollArgs) validate() error {
 	if len(a.BumpAddr) <= 0 {
 		return fmt.Errorf("missing bump address")
 	}
-	netParams := clientlib.ToBitcoinNetwork(clientlib.NetworkFromString(a.ServerInfo.Network))
+	netParams := clientlib.ToBitcoinNetwork(a.ServerParams.Network)
 	if _, err := btcutil.DecodeAddress(a.BumpAddr, &netParams); err != nil {
 		return fmt.Errorf("invalid bump address")
 	}
@@ -179,7 +179,7 @@ func bumpAnchorTx(
 	fees := uint64(math.Ceil(float64(packageSize) * feeRate))
 
 	addr := args.BumpAddr
-	pkScript, err := toOutputScript(addr, clientlib.NetworkFromString(args.ServerInfo.Network))
+	pkScript, err := toOutputScript(addr, args.ServerParams.Network)
 	if err != nil {
 		return "", "", err
 	}

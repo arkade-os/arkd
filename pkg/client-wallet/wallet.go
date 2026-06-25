@@ -10,7 +10,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-lib/client"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
-	storetypes "github.com/arkade-os/arkd/pkg/client-wallet/types"
 	types "github.com/arkade-os/arkd/pkg/client-wallet/types"
 	log "github.com/sirupsen/logrus"
 )
@@ -34,7 +33,7 @@ var (
 )
 
 type wallet struct {
-	*storetypes.Config
+	*clientlib.ServerParams
 	identity clientlib.Identity
 	store    types.Store
 	explorer clientlib.Explorer
@@ -97,7 +96,7 @@ func LoadWallet(storeSvc types.Store, opts ...WalletOption) (Wallet, error) {
 	}
 
 	wallet := &wallet{
-		Config:                 cfgData,
+		ServerParams:           cfgData,
 		store:                  storeSvc,
 		txLock:                 &sync.RWMutex{},
 		withFinalizePendingTxs: true,
@@ -162,11 +161,11 @@ func (w *wallet) GetVersion() string {
 	return Version
 }
 
-func (w *wallet) GetConfigData(_ context.Context) (*storetypes.Config, error) {
-	if w.Config == nil {
+func (w *wallet) GetConfigData(_ context.Context) (*clientlib.ServerParams, error) {
+	if w.ServerParams == nil {
 		return nil, fmt.Errorf("client sdk not initialized")
 	}
-	return w.Config, nil
+	return w.ServerParams, nil
 }
 
 func (w *wallet) Unlock(ctx context.Context, password string) error {
@@ -260,6 +259,26 @@ func (w *wallet) safeCheck() error {
 		return ErrIsLocked
 	}
 	return nil
+}
+
+func (w *wallet) getServerParams(ctx context.Context) (*clientlib.ServerParams, error) {
+	info, err := w.client.GetInfo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	serverParams, err := info.ServerParams(w.ServerUrl, w.explorer.BaseUrl())
+	if err != nil {
+		return nil, err
+	}
+	if serverParams.Digest != w.Digest {
+		w.ServerParams = serverParams
+		go func() {
+			if err := w.store.AddData(context.Background(), *serverParams); err != nil {
+				log.WithError(err).Warn("failed to persist updated server params")
+			}
+		}()
+	}
+	return w.ServerParams, nil
 }
 
 type getVtxosFilter struct {

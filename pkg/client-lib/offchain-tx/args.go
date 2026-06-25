@@ -1,13 +1,11 @@
 package offchaintx
 
 import (
-	"encoding/hex"
 	"fmt"
 	"time"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/btcsuite/btcd/btcec/v2"
 )
 
 // BuildAndSignTxArgs configures the BuildAndSignTx primitive. Receivers are
@@ -32,12 +30,12 @@ func (a *BuildAndSignTxArgs) validate() error {
 // submit and finalize the tx plus every input needed to build it: ServerInfo,
 // SignTx, the Vtxos to spend, the change address and the payment Receivers.
 type SendArgs struct {
-	Client     clientlib.Client
-	ServerInfo clientlib.Info
-	SignTx     clientlib.SignFn
-	Vtxos      []clientlib.Vtxo
-	ChangeAddr string
-	Receivers  []clientlib.Receiver
+	Client       clientlib.Client
+	ServerParams clientlib.ServerParams
+	SignTx       clientlib.SignFn
+	Vtxos        []clientlib.Vtxo
+	ChangeAddr   string
+	Receivers    []clientlib.Receiver
 }
 
 func (a SendArgs) validate() error {
@@ -51,10 +49,10 @@ func (a SendArgs) validate() error {
 func (a SendArgs) toBuildArgs() BuildAndSignTxArgs {
 	return BuildAndSignTxArgs{
 		BaseArgs: BaseArgs{
-			ServerInfo: a.ServerInfo,
-			SignTx:     a.SignTx,
-			Vtxos:      a.Vtxos,
-			ChangeAddr: a.ChangeAddr,
+			ServerParams: a.ServerParams,
+			SignTx:       a.SignTx,
+			Vtxos:        a.Vtxos,
+			ChangeAddr:   a.ChangeAddr,
 		},
 		Receivers: a.Receivers,
 	}
@@ -89,7 +87,7 @@ func (a BuildAndSignIssuanceTxArgs) validate() error {
 // BuildAndSignIssuanceTxArgs for the ControlAsset semantics.
 type IssueAssetArgs struct {
 	Client       clientlib.Client
-	ServerInfo   clientlib.Info
+	ServerParams clientlib.ServerParams
 	SignTx       clientlib.SignFn
 	Vtxos        []clientlib.Vtxo
 	ChangeAddr   string
@@ -109,10 +107,10 @@ func (a IssueAssetArgs) validate() error {
 func (a IssueAssetArgs) toBuildArgs() BuildAndSignIssuanceTxArgs {
 	return BuildAndSignIssuanceTxArgs{
 		BaseArgs: BaseArgs{
-			ServerInfo: a.ServerInfo,
-			SignTx:     a.SignTx,
-			Vtxos:      a.Vtxos,
-			ChangeAddr: a.ChangeAddr,
+			ServerParams: a.ServerParams,
+			SignTx:       a.SignTx,
+			Vtxos:        a.Vtxos,
+			ChangeAddr:   a.ChangeAddr,
 		},
 		Amount:       a.Amount,
 		ControlAsset: a.ControlAsset,
@@ -156,7 +154,7 @@ func (a BuildAndSignReissuanceTxArgs) validate() error {
 // BuildAndSignReissuanceTxArgs for the Asset/ControlAsset semantics.
 type ReissueAssetArgs struct {
 	Client       clientlib.Client
-	ServerInfo   clientlib.Info
+	ServerParams clientlib.ServerParams
 	SignTx       clientlib.SignFn
 	Vtxos        []clientlib.Vtxo
 	ChangeAddr   string
@@ -175,10 +173,10 @@ func (a ReissueAssetArgs) validate() error {
 func (a ReissueAssetArgs) toBuildArgs() BuildAndSignReissuanceTxArgs {
 	return BuildAndSignReissuanceTxArgs{
 		BaseArgs: BaseArgs{
-			ServerInfo: a.ServerInfo,
-			SignTx:     a.SignTx,
-			Vtxos:      a.Vtxos,
-			ChangeAddr: a.ChangeAddr,
+			ServerParams: a.ServerParams,
+			SignTx:       a.SignTx,
+			Vtxos:        a.Vtxos,
+			ChangeAddr:   a.ChangeAddr,
 		},
 		Asset:        a.Asset,
 		ControlAsset: a.ControlAsset,
@@ -211,12 +209,12 @@ func (a BuildAndSignBurnTxArgs) validate() error {
 // ServerInfo, SignTx, the Vtxos to spend, the change address and the Asset to
 // destroy. See BuildAndSignBurnTxArgs for the Asset semantics.
 type BurnAssetArgs struct {
-	Client     clientlib.Client
-	ServerInfo clientlib.Info
-	SignTx     clientlib.SignFn
-	Vtxos      []clientlib.Vtxo
-	ChangeAddr string
-	Asset      clientlib.Asset
+	Client       clientlib.Client
+	ServerParams clientlib.ServerParams
+	SignTx       clientlib.SignFn
+	Vtxos        []clientlib.Vtxo
+	ChangeAddr   string
+	Asset        clientlib.Asset
 }
 
 func (a BurnAssetArgs) validate() error {
@@ -230,10 +228,10 @@ func (a BurnAssetArgs) validate() error {
 func (a BurnAssetArgs) toBuildArgs() BuildAndSignBurnTxArgs {
 	return BuildAndSignBurnTxArgs{
 		BaseArgs: BaseArgs{
-			ServerInfo: a.ServerInfo,
-			SignTx:     a.SignTx,
-			Vtxos:      a.Vtxos,
-			ChangeAddr: a.ChangeAddr,
+			ServerParams: a.ServerParams,
+			SignTx:       a.SignTx,
+			Vtxos:        a.Vtxos,
+			ChangeAddr:   a.ChangeAddr,
 		},
 		Asset: a.Asset,
 	}
@@ -267,26 +265,23 @@ func (a FinalizePendingTxsArgs) validate() error {
 // BaseArgs is the input shared by every BuildAndSign...Tx primitive
 // and the orchestrators that wrap them.
 type BaseArgs struct {
-	ServerInfo clientlib.Info   // provides Dust, SignerPubKey (hex), CheckpointTapscript (hex)
-	SignTx     clientlib.SignFn // signs ark tx + checkpoint txs
-	Vtxos      []clientlib.Vtxo // pre-fetched spendable vtxos (selection runs inside the primitive)
-	ChangeAddr string           // pre-derived offchain change address
-
-	signerPubkey        *btcec.PublicKey
-	checkpointTapscript []byte
+	ServerParams clientlib.ServerParams // provides Dust, SignerPubKey (hex), CheckpointTapscript (hex)
+	SignTx       clientlib.SignFn       // signs ark tx + checkpoint txs
+	Vtxos        []clientlib.Vtxo       // pre-fetched spendable vtxos (selection runs inside the primitive)
+	ChangeAddr   string                 // pre-derived offchain change address
 }
 
-func (a *BaseArgs) validateBase() error {
+func (a BaseArgs) validateBase() error {
 	if a.SignTx == nil {
 		return fmt.Errorf("missing sign tx")
 	}
-	if a.ServerInfo.Dust == 0 {
+	if a.ServerParams.Dust == 0 {
 		return fmt.Errorf("missing server info")
 	}
-	if a.ServerInfo.SignerPubKey == "" {
+	if a.ServerParams.SignerPubKey == nil {
 		return fmt.Errorf("missing signer pubkey")
 	}
-	if a.ChangeAddr == "" {
+	if len(a.ChangeAddr) <= 0 {
 		return fmt.Errorf("missing change address")
 	}
 	for _, v := range a.Vtxos {
@@ -300,42 +295,6 @@ func (a *BaseArgs) validateBase() error {
 			return fmt.Errorf("invalid funds: vtxo %s is unrolled", v.String())
 		}
 	}
-	signerPubkey, err := parsePubkey(a.ServerInfo.SignerPubKey)
-	if err != nil {
-		return fmt.Errorf("invalid signer pubkey: %w", err)
-	}
-	a.signerPubkey = signerPubkey
+
 	return nil
-}
-
-func (a *BaseArgs) signerPubKey() (*btcec.PublicKey, error) {
-	if a.signerPubkey != nil {
-		return a.signerPubkey, nil
-	}
-
-	signerPubkey, err := parsePubkey(a.ServerInfo.SignerPubKey)
-	if err != nil {
-		return nil, err
-	}
-	a.signerPubkey = signerPubkey
-	return signerPubkey, nil
-}
-
-func (a *BaseArgs) checkpointExitPath() ([]byte, error) {
-	if len(a.checkpointTapscript) > 0 {
-		return a.checkpointTapscript, nil
-	}
-
-	if len(a.ServerInfo.CheckpointTapscript) <= 0 {
-		return nil, fmt.Errorf("missing checkpoint tapscript")
-	}
-	buf, err := hex.DecodeString(a.ServerInfo.CheckpointTapscript)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"invalid checkpoint tapscript format: expected hex, got %s",
-			a.ServerInfo.CheckpointTapscript,
-		)
-	}
-	a.checkpointTapscript = buf
-	return buf, nil
 }

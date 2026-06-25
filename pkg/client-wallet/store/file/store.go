@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/arkade-os/arkd/pkg/client-wallet/types"
 )
 
@@ -49,7 +51,14 @@ func (s *configStore) GetDatadir() string {
 	return filepath.Dir(s.filePath)
 }
 
-func (s *configStore) AddData(ctx context.Context, data types.Config) error {
+func (s *configStore) AddData(ctx context.Context, data clientlib.ServerParams) error {
+	deprecatedSigners := make([]deprecatedSignerData, 0, len(data.DeprecatedSigners))
+	for _, ds := range data.DeprecatedSigners {
+		deprecatedSigners = append(deprecatedSigners, deprecatedSignerData{
+			Pubkey:     hex.EncodeToString(ds.PubKey.SerializeCompressed()),
+			CutoffDate: ds.CutoffDate.Format(time.RFC3339),
+		})
+	}
 	sd := &storeData{
 		ServerUrl:           data.ServerUrl,
 		SignerPubKey:        hex.EncodeToString(data.SignerPubKey.SerializeCompressed()),
@@ -75,6 +84,8 @@ func (s *configStore) AddData(ctx context.Context, data types.Config) error {
 				OnchainOutput:  data.Fees.IntentFees.IntentOnchainOutputProgram,
 			},
 		},
+		DeprecatedSigners: deprecatedSigners,
+		Digest:            data.Digest,
 	}
 
 	if err := s.write(sd); err != nil {
@@ -83,7 +94,7 @@ func (s *configStore) AddData(ctx context.Context, data types.Config) error {
 	return nil
 }
 
-func (s *configStore) GetData(_ context.Context) (*types.Config, error) {
+func (s *configStore) GetData(_ context.Context) (*clientlib.ServerParams, error) {
 	sd, err := s.open()
 	if err != nil {
 		return nil, err

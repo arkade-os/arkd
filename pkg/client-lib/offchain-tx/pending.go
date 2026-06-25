@@ -19,10 +19,12 @@ func FinalizePendingTxs(
 	}
 
 	proofTx, message, err := batchsession.BuildAndSignGetPendingTxIntent(
-		ctx, batchsession.IntentArgs{BaseArgs: batchsession.BaseArgs{
-			Vtxos:  args.Vtxos,
-			SignTx: clientlib.SignFn(args.SignTx),
-		}},
+		ctx, batchsession.IntentArgs{
+			BaseArgs: batchsession.BaseArgs{
+				Vtxos:  args.Vtxos,
+				SignTx: clientlib.SignFn(args.SignTx),
+			},
+		},
 	)
 	if err != nil {
 		return nil, err

@@ -18,11 +18,11 @@ import (
 // onchain Ark UTXOs (those past their exit delay) to Receiver and broadcasts
 // the resulting transaction.
 type CompleteUnrollArgs struct {
-	Explorer   clientlib.Explorer
-	SignTx     clientlib.SignFn
-	ServerInfo clientlib.Info
-	Utxos      []clientlib.Utxo
-	Receiver   string
+	Explorer     clientlib.Explorer
+	SignTx       clientlib.SignFn
+	ServerParams clientlib.ServerParams
+	Utxos        []clientlib.Utxo
+	Receiver     string
 }
 
 func (a CompleteUnrollArgs) validate() error {
@@ -32,10 +32,10 @@ func (a CompleteUnrollArgs) validate() error {
 	if a.SignTx == nil {
 		return fmt.Errorf("missing sign tx function")
 	}
-	if len(a.ServerInfo.Network) <= 0 {
+	if len(a.ServerParams.Network.Name) <= 0 {
 		return fmt.Errorf("missing server info")
 	}
-	if a.ServerInfo.Dust == 0 {
+	if a.ServerParams.Dust == 0 {
 		return fmt.Errorf("missing server info")
 	}
 	if len(a.Utxos) <= 0 {
@@ -44,7 +44,7 @@ func (a CompleteUnrollArgs) validate() error {
 	if len(a.Receiver) <= 0 {
 		return fmt.Errorf("missing receiver address")
 	}
-	netParams := clientlib.ToBitcoinNetwork(clientlib.NetworkFromString(a.ServerInfo.Network))
+	netParams := clientlib.ToBitcoinNetwork(a.ServerParams.Network)
 	if _, err := btcutil.DecodeAddress(a.Receiver, &netParams); err != nil {
 		return fmt.Errorf("invalid receiver address")
 	}
@@ -59,9 +59,7 @@ func CompleteUnroll(ctx context.Context, args CompleteUnrollArgs) (string, error
 		return "", fmt.Errorf("invalid args: %w", err)
 	}
 
-	network := clientlib.NetworkFromString(args.ServerInfo.Network)
-
-	pkscript, err := toOutputScript(args.Receiver, network)
+	pkscript, err := toOutputScript(args.Receiver, args.ServerParams.Network)
 	if err != nil {
 		return "", err
 	}
@@ -103,7 +101,7 @@ func CompleteUnroll(ctx context.Context, args CompleteUnrollArgs) (string, error
 
 	feeAmount := uint64(math.Ceil(float64(vbytes)*feeRate) + 100)
 
-	if targetAmount-feeAmount <= args.ServerInfo.Dust {
+	if targetAmount-feeAmount <= args.ServerParams.Dust {
 		return "", fmt.Errorf("not enough funds to cover network fees")
 	}
 

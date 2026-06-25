@@ -27,18 +27,13 @@ func TestIssueAsset(t *testing.T) {
 			},
 			{
 				name:      "missing server info",
-				mutate:    func(a *IssueAssetArgs) { a.ServerInfo.Dust = 0 },
+				mutate:    func(a *IssueAssetArgs) { a.ServerParams.Dust = 0 },
 				errSubstr: "missing server info",
 			},
 			{
 				name:      "missing signer pubkey",
-				mutate:    func(a *IssueAssetArgs) { a.ServerInfo.SignerPubKey = "" },
+				mutate:    func(a *IssueAssetArgs) { a.ServerParams.SignerPubKey = nil },
 				errSubstr: "missing signer pubkey",
-			},
-			{
-				name:      "invalid signer pubkey hex",
-				mutate:    func(a *IssueAssetArgs) { a.ServerInfo.SignerPubKey = "zz" },
-				errSubstr: "invalid signer pubkey",
 			},
 			{
 				name:      "missing change addr",
@@ -79,18 +74,13 @@ func TestBuildAndSignIssuanceTx(t *testing.T) {
 			},
 			{
 				name:      "missing server info",
-				mutate:    func(a *BuildAndSignIssuanceTxArgs) { a.ServerInfo.Dust = 0 },
+				mutate:    func(a *BuildAndSignIssuanceTxArgs) { a.ServerParams.Dust = 0 },
 				errSubstr: "missing server info",
 			},
 			{
 				name:      "missing signer pubkey",
-				mutate:    func(a *BuildAndSignIssuanceTxArgs) { a.ServerInfo.SignerPubKey = "" },
+				mutate:    func(a *BuildAndSignIssuanceTxArgs) { a.ServerParams.SignerPubKey = nil },
 				errSubstr: "missing signer pubkey",
-			},
-			{
-				name:      "invalid signer pubkey hex",
-				mutate:    func(a *BuildAndSignIssuanceTxArgs) { a.ServerInfo.SignerPubKey = "zz" },
-				errSubstr: "invalid signer pubkey",
 			},
 			{
 				name:      "missing change addr",
@@ -136,18 +126,13 @@ func TestReissueAsset(t *testing.T) {
 			},
 			{
 				name:      "missing server info",
-				mutate:    func(a *ReissueAssetArgs) { a.ServerInfo.Dust = 0 },
+				mutate:    func(a *ReissueAssetArgs) { a.ServerParams.Dust = 0 },
 				errSubstr: "missing server info",
 			},
 			{
 				name:      "missing signer pubkey",
-				mutate:    func(a *ReissueAssetArgs) { a.ServerInfo.SignerPubKey = "" },
+				mutate:    func(a *ReissueAssetArgs) { a.ServerParams.SignerPubKey = nil },
 				errSubstr: "missing signer pubkey",
-			},
-			{
-				name:      "invalid signer pubkey hex",
-				mutate:    func(a *ReissueAssetArgs) { a.ServerInfo.SignerPubKey = "zz" },
-				errSubstr: "invalid signer pubkey",
 			},
 			{
 				name:      "missing change addr",
@@ -203,18 +188,13 @@ func TestBuildAndSignReissuanceTx(t *testing.T) {
 			},
 			{
 				name:      "missing server info",
-				mutate:    func(a *BuildAndSignReissuanceTxArgs) { a.ServerInfo.Dust = 0 },
+				mutate:    func(a *BuildAndSignReissuanceTxArgs) { a.ServerParams.Dust = 0 },
 				errSubstr: "missing server info",
 			},
 			{
 				name:      "missing signer pubkey",
-				mutate:    func(a *BuildAndSignReissuanceTxArgs) { a.ServerInfo.SignerPubKey = "" },
+				mutate:    func(a *BuildAndSignReissuanceTxArgs) { a.ServerParams.SignerPubKey = nil },
 				errSubstr: "missing signer pubkey",
-			},
-			{
-				name:      "invalid signer pubkey hex",
-				mutate:    func(a *BuildAndSignReissuanceTxArgs) { a.ServerInfo.SignerPubKey = "zz" },
-				errSubstr: "invalid signer pubkey",
 			},
 			{
 				name:      "missing change addr",
@@ -275,18 +255,13 @@ func TestBurnAsset(t *testing.T) {
 			},
 			{
 				name:      "missing server info",
-				mutate:    func(a *BurnAssetArgs) { a.ServerInfo.Dust = 0 },
+				mutate:    func(a *BurnAssetArgs) { a.ServerParams.Dust = 0 },
 				errSubstr: "missing server info",
 			},
 			{
 				name:      "missing signer pubkey",
-				mutate:    func(a *BurnAssetArgs) { a.ServerInfo.SignerPubKey = "" },
+				mutate:    func(a *BurnAssetArgs) { a.ServerParams.SignerPubKey = nil },
 				errSubstr: "missing signer pubkey",
-			},
-			{
-				name:      "invalid signer pubkey hex",
-				mutate:    func(a *BurnAssetArgs) { a.ServerInfo.SignerPubKey = "zz" },
-				errSubstr: "invalid signer pubkey",
 			},
 			{
 				name:      "missing change addr",
@@ -332,18 +307,13 @@ func TestBuildAndSignBurnTx(t *testing.T) {
 			},
 			{
 				name:      "missing server info",
-				mutate:    func(a *BuildAndSignBurnTxArgs) { a.ServerInfo.Dust = 0 },
+				mutate:    func(a *BuildAndSignBurnTxArgs) { a.ServerParams.Dust = 0 },
 				errSubstr: "missing server info",
 			},
 			{
 				name:      "missing signer pubkey",
-				mutate:    func(a *BuildAndSignBurnTxArgs) { a.ServerInfo.SignerPubKey = "" },
+				mutate:    func(a *BuildAndSignBurnTxArgs) { a.ServerParams.SignerPubKey = nil },
 				errSubstr: "missing signer pubkey",
-			},
-			{
-				name:      "invalid signer pubkey hex",
-				mutate:    func(a *BuildAndSignBurnTxArgs) { a.ServerInfo.SignerPubKey = "zz" },
-				errSubstr: "invalid signer pubkey",
 			},
 			{
 				name:      "missing change addr",
@@ -381,7 +351,7 @@ func newTestIssueAssetArgs() IssueAssetArgs {
 	b := newTestIssueAssetBuildArgs()
 	return IssueAssetArgs{
 		Client:       mockClient{},
-		ServerInfo:   b.ServerInfo,
+		ServerParams: b.ServerParams,
 		SignTx:       b.SignTx,
 		Vtxos:        b.Vtxos,
 		ChangeAddr:   b.ChangeAddr,
@@ -397,9 +367,9 @@ func newTestIssueAssetArgs() IssueAssetArgs {
 func newTestIssueAssetBuildArgs() BuildAndSignIssuanceTxArgs {
 	return BuildAndSignIssuanceTxArgs{
 		BaseArgs: BaseArgs{
-			ServerInfo: clientlib.Info{Dust: 1000, SignerPubKey: testSignerPubKey},
-			SignTx:     mockSignTx,
-			ChangeAddr: "tark1qexample",
+			ServerParams: clientlib.ServerParams{Dust: 1000, SignerPubKey: testSignerPubKey},
+			SignTx:       mockSignTx,
+			ChangeAddr:   "tark1qexample",
 		},
 		Amount:       100,
 		ControlAsset: clientlib.NewControlAsset{Amount: 1},
@@ -411,7 +381,7 @@ func newTestReissueAssetArgs() ReissueAssetArgs {
 	b := newTestReissueAssetBuildArgs()
 	return ReissueAssetArgs{
 		Client:       mockClient{},
-		ServerInfo:   b.ServerInfo,
+		ServerParams: b.ServerParams,
 		SignTx:       b.SignTx,
 		Vtxos:        b.Vtxos,
 		ChangeAddr:   b.ChangeAddr,
@@ -426,9 +396,9 @@ func newTestReissueAssetArgs() ReissueAssetArgs {
 func newTestReissueAssetBuildArgs() BuildAndSignReissuanceTxArgs {
 	return BuildAndSignReissuanceTxArgs{
 		BaseArgs: BaseArgs{
-			ServerInfo: clientlib.Info{Dust: 1000, SignerPubKey: testSignerPubKey},
-			SignTx:     mockSignTx,
-			ChangeAddr: "tark1qexample",
+			ServerParams: clientlib.ServerParams{Dust: 1000, SignerPubKey: testSignerPubKey},
+			SignTx:       mockSignTx,
+			ChangeAddr:   "tark1qexample",
 		},
 		Asset: clientlib.Asset{
 			AssetId: "fakeassetid",
@@ -445,12 +415,12 @@ func newTestReissueAssetBuildArgs() BuildAndSignReissuanceTxArgs {
 func newTestBurnAssetArgs() BurnAssetArgs {
 	b := newTestBurnAssetBuildArgs()
 	return BurnAssetArgs{
-		Client:     mockClient{},
-		ServerInfo: b.ServerInfo,
-		SignTx:     b.SignTx,
-		Vtxos:      b.Vtxos,
-		ChangeAddr: b.ChangeAddr,
-		Asset:      b.Asset,
+		Client:       mockClient{},
+		ServerParams: b.ServerParams,
+		SignTx:       b.SignTx,
+		Vtxos:        b.Vtxos,
+		ChangeAddr:   b.ChangeAddr,
+		Asset:        b.Asset,
 	}
 }
 
@@ -459,9 +429,9 @@ func newTestBurnAssetArgs() BurnAssetArgs {
 func newTestBurnAssetBuildArgs() BuildAndSignBurnTxArgs {
 	return BuildAndSignBurnTxArgs{
 		BaseArgs: BaseArgs{
-			ServerInfo: clientlib.Info{Dust: 1000, SignerPubKey: testSignerPubKey},
-			SignTx:     mockSignTx,
-			ChangeAddr: "tark1qexample",
+			ServerParams: clientlib.ServerParams{Dust: 1000, SignerPubKey: testSignerPubKey},
+			SignTx:       mockSignTx,
+			ChangeAddr:   "tark1qexample",
 		},
 		Asset: clientlib.Asset{
 			AssetId: "fakeassetid",

@@ -35,7 +35,7 @@ func JoinBatch(ctx context.Context, args JoinBatchArgs, opts ...Option) (*BatchT
 
 	handlerArgs := batcheventhandler.Args{
 		Client:         args.Client,
-		ServerInfo:     args.ServerInfo,
+		ServerParams:   args.ServerParams,
 		SignTx:         args.SignTx,
 		IntentId:       args.IntentId,
 		Vtxos:          args.Vtxos,
@@ -195,11 +195,11 @@ func joinBatchWithRetry(
 		log.Debugf("registered inputs and outputs with request id: %s", intentId)
 
 		res, err := JoinBatch(ctx, JoinBatchArgs{
-			BaseArgs:    args.BaseArgs,
-			TreeSigners: signerSessions,
-			IntentId:    intentId,
-			Client:      args.Client,
-			ServerInfo:  args.ServerInfo,
+			BaseArgs:     args.BaseArgs,
+			TreeSigners:  signerSessions,
+			IntentId:     intentId,
+			Client:       args.Client,
+			ServerParams: args.ServerParams,
 		}, opts...)
 		if err != nil {
 			if retryCount < maxRetry-1 {

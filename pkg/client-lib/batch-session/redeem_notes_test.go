@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/stretchr/testify/require"
 )
@@ -27,7 +28,7 @@ func TestRedeemNotes(t *testing.T) {
 			},
 			{
 				name:      "missing server info",
-				mutate:    func(a *RedeemNotesArgs) { a.ServerInfo.Network = "" },
+				mutate:    func(a *RedeemNotesArgs) { a.ServerParams.Network = arklib.Network{} },
 				errSubstr: "missing server info",
 			},
 			{
@@ -57,8 +58,8 @@ func newTestRedeemNotesArgs() RedeemNotesArgs {
 	return RedeemNotesArgs{
 		Client: mockClient{},
 		SignTx: clientlib.SignFn(mockSignTx),
-		ServerInfo: clientlib.Info{
-			Network:        "regtest",
+		ServerParams: clientlib.ServerParams{
+			Network:        arklib.BitcoinRegTest,
 			ForfeitPubKey:  testForfeitPubKey,
 			ForfeitAddress: testAddr,
 		},

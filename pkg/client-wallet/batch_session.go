@@ -18,9 +18,9 @@ func (w *wallet) Settle(
 	w.txLock.Lock()
 	defer w.txLock.Unlock()
 
-	info, err := w.client.GetInfo(ctx)
+	serverParams, err := w.getServerParams(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get server params: %w", err)
 	}
 
 	vtxos, err := w.getSpendableVtxos(ctx, nil)
@@ -44,7 +44,7 @@ func (w *wallet) Settle(
 
 	return batchsession.Settle(ctx, batchsession.SettleArgs{
 		Client:        w.client,
-		ServerInfo:    *info,
+		ServerParams:  *serverParams,
 		SignTx:        signTx,
 		BoardingUtxos: boardingUtxos,
 		Vtxos:         vtxos,
@@ -59,12 +59,15 @@ func (w *wallet) RedeemNotes(
 		return nil, err
 	}
 
-	_, offchainAddr, _, _, err := w.getAddresses(ctx)
+	w.txLock.Lock()
+	defer w.txLock.Unlock()
+
+	serverParams, err := w.getServerParams(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get server params: %w", err)
 	}
 
-	info, err := w.client.GetInfo(ctx)
+	_, offchainAddr, _, _, err := w.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +78,7 @@ func (w *wallet) RedeemNotes(
 
 	return batchsession.RedeemNotes(ctx, batchsession.RedeemNotesArgs{
 		Client:       w.client,
-		ServerInfo:   *info,
+		ServerParams: *serverParams,
 		SignTx:       signTx,
 		Notes:        notes,
 		ReceiverAddr: offchainAddr.Address,
@@ -96,10 +99,9 @@ func (w *wallet) CollaborativeExit(
 	w.txLock.Lock()
 	defer w.txLock.Unlock()
 
-	// send all case: substract fees from exited amount
-	info, err := w.client.GetInfo(ctx)
+	serverParams, err := w.getServerParams(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get server params: %w", err)
 	}
 
 	_, offchainAddr, _, _, err := w.getAddresses(ctx)
@@ -117,12 +119,12 @@ func (w *wallet) CollaborativeExit(
 	}
 
 	return batchsession.CollaborativeExit(ctx, batchsession.CollaborativeExitArgs{
-		Client:     w.client,
-		SignTx:     signTx,
-		ServerInfo: *info,
-		Vtxos:      vtxos,
-		Receiver:   clientlib.Receiver{To: addr, Amount: amount},
-		ChangeAddr: offchainAddr.Address,
+		Client:       w.client,
+		SignTx:       signTx,
+		ServerParams: *serverParams,
+		Vtxos:        vtxos,
+		Receiver:     clientlib.Receiver{To: addr, Amount: amount},
+		ChangeAddr:   offchainAddr.Address,
 	}, opts...)
 }
 

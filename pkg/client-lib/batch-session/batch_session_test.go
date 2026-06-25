@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/stretchr/testify/require"
@@ -76,9 +77,9 @@ func newTestJoinBatchArgs(t *testing.T) JoinBatchArgs {
 			Outputs: []clientlib.Receiver{{To: "tark1qexample", Amount: 10000}},
 			SignTx:  clientlib.SignFn(mockSignTx),
 		},
-		Client:      mockClient{},
-		ServerInfo:  clientlib.Info{Network: "regtest", Dust: 1000},
-		IntentId:    "test-intent-id",
-		TreeSigners: []tree.SignerSession{signer},
+		Client:       mockClient{},
+		ServerParams: clientlib.ServerParams{Network: arklib.BitcoinRegTest, Dust: 1000},
+		IntentId:     "test-intent-id",
+		TreeSigners:  []tree.SignerSession{signer},
 	}
 }

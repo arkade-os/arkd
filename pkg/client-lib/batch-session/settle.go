@@ -15,7 +15,7 @@ import (
 // to the server.
 type SettleArgs struct {
 	Client        clientlib.Client
-	ServerInfo    clientlib.Info
+	ServerParams  clientlib.ServerParams
 	SignTx        clientlib.SignFn
 	BoardingUtxos []clientlib.Utxo
 	Vtxos         []clientlib.Vtxo
@@ -35,7 +35,7 @@ func (a SettleArgs) validate() error {
 	if len(a.ReceiverAddr) <= 0 {
 		return fmt.Errorf("missing receiver")
 	}
-	if a.ServerInfo.Dust == 0 {
+	if a.ServerParams.Dust == 0 {
 		return fmt.Errorf("missing server info")
 	}
 	return nil
@@ -57,14 +57,14 @@ func Settle(ctx context.Context, args SettleArgs, opts ...Option) (*BatchTxRes, 
 		}
 	}
 
-	feeEstimator, err := arkfee.New(args.ServerInfo.Fees.IntentFees)
+	feeEstimator, err := arkfee.New(args.ServerParams.Fees.IntentFees)
 	if err != nil {
 		return nil, err
 	}
 
 	vtxos, boardingUtxos, outputs, err := selectFunds(
 		ctx, feeEstimator, args.Vtxos, args.BoardingUtxos,
-		nil, args.ReceiverAddr, o.expiryThreshold, args.ServerInfo.Dust,
+		nil, args.ReceiverAddr, o.expiryThreshold, args.ServerParams.Dust,
 	)
 	if err != nil {
 		return nil, err
@@ -77,8 +77,8 @@ func Settle(ctx context.Context, args SettleArgs, opts ...Option) (*BatchTxRes, 
 			Outputs:       outputs,
 			SignTx:        args.SignTx,
 		},
-		Client:     args.Client,
-		ServerInfo: args.ServerInfo,
+		Client:       args.Client,
+		ServerParams: args.ServerParams,
 	}, opts...)
 }
 

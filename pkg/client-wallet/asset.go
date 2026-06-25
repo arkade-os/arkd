@@ -53,7 +53,7 @@ func (w *wallet) IssueAsset(
 
 	return offchaintx.IssueAsset(ctx, offchaintx.IssueAssetArgs{
 		Client:       w.client,
-		ServerInfo:   w.Config.ClientInfo(),
+		ServerParams: *w.ServerParams,
 		SignTx:       signTx,
 		Vtxos:        vtxos,
 		ChangeAddr:   offchainAddr.Address,
@@ -96,11 +96,11 @@ func (w *wallet) ReissueAsset(
 	defer w.txLock.Unlock()
 
 	return offchaintx.ReissueAsset(ctx, offchaintx.ReissueAssetArgs{
-		Client:     w.client,
-		ServerInfo: w.Config.ClientInfo(),
-		SignTx:     signTx,
-		Vtxos:      vtxos,
-		ChangeAddr: offchainAddr.Address,
+		Client:       w.client,
+		ServerParams: *w.ServerParams,
+		SignTx:       signTx,
+		Vtxos:        vtxos,
+		ChangeAddr:   offchainAddr.Address,
 		Asset: clientlib.Asset{
 			AssetId: assetId,
 			Amount:  amount,
@@ -134,11 +134,11 @@ func (w *wallet) BurnAsset(
 	defer w.txLock.Unlock()
 
 	return offchaintx.BurnAsset(ctx, offchaintx.BurnAssetArgs{
-		Client:     w.client,
-		ServerInfo: w.Config.ClientInfo(),
-		SignTx:     signTx,
-		Vtxos:      vtxos,
-		ChangeAddr: offchainAddr.Address,
+		Client:       w.client,
+		ServerParams: *w.ServerParams,
+		SignTx:       signTx,
+		Vtxos:        vtxos,
+		ChangeAddr:   offchainAddr.Address,
 		Asset: clientlib.Asset{
 			AssetId: assetId,
 			Amount:  amount,

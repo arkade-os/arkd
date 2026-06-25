@@ -9,17 +9,17 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 )
 
-// CollaborativeExitArgs configures a CollaborativeExit call: the Vtxos to spend
-// and the on-chain Receiver to credit. FeeEstimator is used to size the on-chain
-// output, SignTx signs the intent proof, and ServerInfo/Client are used to talk
-// to the server.
+// CollaborativeExitArgs configures a CollaborativeExit call: the Vtxos to spend and the on-chain
+// Receiver to credit.
+// FeeEstimator is used to size the on-chain output, SignTx signs the intent proof, and
+// ServerParams/Client are used to talk to the server.
 type CollaborativeExitArgs struct {
-	Client     clientlib.Client
-	ServerInfo clientlib.Info
-	SignTx     clientlib.SignFn
-	Vtxos      []clientlib.Vtxo
-	Receiver   clientlib.Receiver
-	ChangeAddr string
+	Client       clientlib.Client
+	ServerParams clientlib.ServerParams
+	SignTx       clientlib.SignFn
+	Vtxos        []clientlib.Vtxo
+	Receiver     clientlib.Receiver
+	ChangeAddr   string
 }
 
 func (a CollaborativeExitArgs) validate() error {
@@ -35,13 +35,13 @@ func (a CollaborativeExitArgs) validate() error {
 	if len(a.Receiver.To) <= 0 {
 		return fmt.Errorf("missing receiver address")
 	}
-	if len(a.ServerInfo.Network) <= 0 || a.ServerInfo.Dust == 0 {
+	if len(a.ServerParams.Network.Name) <= 0 || a.ServerParams.Dust == 0 {
 		return fmt.Errorf("missing server info")
 	}
-	if a.Receiver.Amount < a.ServerInfo.Dust {
-		return fmt.Errorf("invalid receiver amount, must be at least %d", a.ServerInfo.Dust)
+	if a.Receiver.Amount < a.ServerParams.Dust {
+		return fmt.Errorf("invalid receiver amount, must be at least %d", a.ServerParams.Dust)
 	}
-	netParams := clientlib.ToBitcoinNetwork(clientlib.NetworkFromString(a.ServerInfo.Network))
+	netParams := clientlib.ToBitcoinNetwork(a.ServerParams.Network)
 	if _, err := btcutil.DecodeAddress(a.Receiver.To, &netParams); err != nil {
 		return fmt.Errorf("invalid receiver address")
 	}
@@ -51,10 +51,9 @@ func (a CollaborativeExitArgs) validate() error {
 	return nil
 }
 
-// CollaborativeExit performs the full lifecycle of an on-chain exit through a
-// batch session: selects vtxos to fund the on-chain output, then builds,
-// signs, submits, handles batch events, and finalizes the resulting commitment
-// transaction via JoinBatch.
+// CollaborativeExit performs the full lifecycle of an on-chain exit through a batch session:
+// selects vtxos to fund the on-chain output, builds, signs, and submits the intent, and then
+// joins the batch session.
 func CollaborativeExit(
 	ctx context.Context, args CollaborativeExitArgs, opts ...Option,
 ) (*BatchTxRes, error) {
@@ -69,14 +68,14 @@ func CollaborativeExit(
 		}
 	}
 
-	feeEstimator, err := arkfee.New(args.ServerInfo.Fees.IntentFees)
+	feeEstimator, err := arkfee.New(args.ServerParams.Fees.IntentFees)
 	if err != nil {
 		return nil, err
 	}
 
 	vtxos, _, outputs, err := selectFunds(
 		ctx, feeEstimator, args.Vtxos, nil, []clientlib.Receiver{args.Receiver},
-		args.ChangeAddr, o.expiryThreshold, args.ServerInfo.Dust,
+		args.ChangeAddr, o.expiryThreshold, args.ServerParams.Dust,
 	)
 	if err != nil {
 		return nil, err
@@ -88,7 +87,7 @@ func CollaborativeExit(
 			Outputs: outputs,
 			SignTx:  args.SignTx,
 		},
-		Client:     args.Client,
-		ServerInfo: args.ServerInfo,
+		Client:       args.Client,
+		ServerParams: args.ServerParams,
 	}, opts...)
 }

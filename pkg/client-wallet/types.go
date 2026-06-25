@@ -21,7 +21,7 @@ type Wallet interface {
 	Explorer() clientlib.Explorer
 
 	GetVersion() string
-	GetConfigData(ctx context.Context) (*types.Config, error)
+	GetConfigData(ctx context.Context) (*clientlib.ServerParams, error)
 	Init(ctx context.Context, args InitArgs) error
 	IsLocked(ctx context.Context) bool
 	Unlock(ctx context.Context, password string) error

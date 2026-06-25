@@ -1,12 +1,14 @@
 package clientlib
 
 import (
+	"encoding/hex"
 	"fmt"
 	"sort"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
@@ -300,4 +302,16 @@ func ParseClosure(
 	}
 
 	return pkScript, leafProof, nil
+}
+
+// EcPubkeyFromHex decodes a hex-encoded secp256k1 public key and parses it into a
+// *btcec.PublicKey.
+// The input may be compressed or uncompressed, as accepted by btcec.ParsePubKey.
+// It returns an error if the string is not valid hex or does not encode a valid public key.
+func EcPubkeyFromHex(pubkey string) (*btcec.PublicKey, error) {
+	buf, err := hex.DecodeString(pubkey)
+	if err != nil {
+		return nil, err
+	}
+	return btcec.ParsePubKey(buf)
 }

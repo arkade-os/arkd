@@ -2,11 +2,12 @@ package client
 
 import (
 	"context"
-	"strings"
 
+	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -49,11 +50,23 @@ func streamDigestInterceptor(getDigest func() string) grpc.StreamClientIntercept
 
 // isDigestMismatch reports whether err is the server's DIGEST_MISMATCH error.
 //
-// TODO: decode the gRPC status details (arkv1.ErrorDetails) instead of matching
-// the error message, once that path works end to end. Until then this matches the
-// structured error's name in the message.
+// The server attaches a structured arkv1.ErrorDetails to the gRPC status, so we
+// match on its name rather than the raw error message.
 func isDigestMismatch(err error) bool {
-	return err != nil && strings.Contains(err.Error(), errors.DIGEST_MISMATCH.Name)
+	if err == nil {
+		return false
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	for _, detail := range st.Details() {
+		if d, ok := detail.(*arkv1.ErrorDetails); ok &&
+			d.GetName() == errors.DIGEST_MISMATCH.Name {
+			return true
+		}
+	}
+	return false
 }
 
 // withDigestRefresh runs call and, if it fails with the server's DIGEST_MISMATCH

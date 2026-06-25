@@ -117,7 +117,7 @@ func BuildAndSignIssuanceTx(
 
 	receiver := clientlib.Receiver{
 		To:     args.ChangeAddr,
-		Amount: args.ServerInfo.Dust,
+		Amount: args.ServerParams.Dust,
 		Assets: receiverAsset,
 	}
 
@@ -256,7 +256,7 @@ func BuildAndSignReissuanceTx(
 
 	receiver := clientlib.Receiver{
 		To:     args.ChangeAddr,
-		Amount: args.ServerInfo.Dust,
+		Amount: args.ServerParams.Dust,
 		Assets: []clientlib.Asset{args.ControlAsset},
 	}
 
@@ -365,7 +365,7 @@ func BuildAndSignBurnTx(
 
 	burnReceiver := clientlib.Receiver{
 		To:     args.ChangeAddr,
-		Amount: args.ServerInfo.Dust,
+		Amount: args.ServerParams.Dust,
 		Assets: []clientlib.Asset{args.Asset},
 	}
 

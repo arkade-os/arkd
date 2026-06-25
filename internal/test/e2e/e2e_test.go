@@ -469,7 +469,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 
 			res, err := batchsession.Settle(ctx, batchsession.SettleArgs{
 				Client:        alice.Client(),
-				ServerInfo:    cfgData.ClientInfo(),
+				ServerParams:  *cfgData,
 				SignTx:        alice.SignTransaction,
 				BoardingUtxos: []clientlib.Utxo{boardingUtxo},
 				ReceiverAddr:  offchainAddr.Address,
@@ -610,7 +610,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 
 			res, err := batchsession.Settle(ctx, batchsession.SettleArgs{
 				Client:        alice.Client(),
-				ServerInfo:    cfgData.ClientInfo(),
+				ServerParams:  *cfgData,
 				SignTx:        alice.SignTransaction,
 				BoardingUtxos: []clientlib.Utxo{boardingUtxo},
 				ReceiverAddr:  offchainAddr.Address,
@@ -703,7 +703,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 
 			_, err = batchsession.Settle(ctx, batchsession.SettleArgs{
 				Client:        alice.Client(),
-				ServerInfo:    cfgData.ClientInfo(),
+				ServerParams:  *cfgData,
 				SignTx:        alice.SignTransaction,
 				BoardingUtxos: []clientlib.Utxo{boardingUtxo},
 				ReceiverAddr:  offchainAddr.Address,
@@ -778,7 +778,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 
 			_, err = batchsession.Settle(ctx, batchsession.SettleArgs{
 				Client:        alice.Client(),
-				ServerInfo:    cfgData.ClientInfo(),
+				ServerParams:  *cfgData,
 				SignTx:        alice.SignTransaction,
 				BoardingUtxos: []clientlib.Utxo{boardingUtxo},
 				ReceiverAddr:  offchainAddr.Address,
@@ -2343,10 +2343,10 @@ func TestDelegateRefresh(t *testing.T) {
 			}},
 			SignTx: alice.SignTransaction,
 		},
-		TreeSigners: []tree.SignerSession{bobTreeSigner},
-		IntentId:    intentId,
-		Client:      aliceClient,
-		ServerInfo:  aliceConfig.ClientInfo(),
+		TreeSigners:  []tree.SignerSession{bobTreeSigner},
+		IntentId:     intentId,
+		Client:       aliceClient,
+		ServerParams: *aliceConfig,
 	}
 	res, err := batchsession.JoinBatch(
 		ctx, args, batchsession.WithHandler(handler),
@@ -4192,10 +4192,10 @@ func TestBan(t *testing.T) {
 					Amount: aliceVtxo.Amount,
 				}},
 			},
-			TreeSigners: []tree.SignerSession{signerSession},
-			IntentId:    intentId,
-			Client:      aliceClient,
-			ServerInfo:  cfgData.ClientInfo(),
+			TreeSigners:  []tree.SignerSession{signerSession},
+			IntentId:     intentId,
+			Client:       aliceClient,
+			ServerParams: *cfgData,
 		}, batchsession.WithHandler(handler))
 		require.Error(t, err)
 
@@ -4338,10 +4338,10 @@ func TestBan(t *testing.T) {
 					Amount: aliceVtxo.Amount,
 				}},
 			},
-			TreeSigners: []tree.SignerSession{signerSession},
-			IntentId:    intentId,
-			Client:      aliceClient,
-			ServerInfo:  cfgData.ClientInfo(),
+			TreeSigners:  []tree.SignerSession{signerSession},
+			IntentId:     intentId,
+			Client:       aliceClient,
+			ServerParams: *cfgData,
 		}, batchsession.WithHandler(handler))
 
 		// next settle should fail because the signature has not been submitted
@@ -4478,10 +4478,10 @@ func TestBan(t *testing.T) {
 					Amount: aliceVtxo.Amount,
 				}},
 			},
-			TreeSigners: []tree.SignerSession{signerSession},
-			IntentId:    intentId,
-			Client:      aliceClient,
-			ServerInfo:  cfgData.ClientInfo(),
+			TreeSigners:  []tree.SignerSession{signerSession},
+			IntentId:     intentId,
+			Client:       aliceClient,
+			ServerParams: *cfgData,
 		}, batchsession.WithHandler(handler))
 		require.Error(t, err)
 
@@ -4639,10 +4639,10 @@ func TestBan(t *testing.T) {
 					Amount: aliceVtxo.Amount,
 				}},
 			},
-			TreeSigners: []tree.SignerSession{signerSession},
-			IntentId:    intentId,
-			Client:      aliceClient,
-			ServerInfo:  cfgData.ClientInfo(),
+			TreeSigners:  []tree.SignerSession{signerSession},
+			IntentId:     intentId,
+			Client:       aliceClient,
+			ServerParams: *cfgData,
 		}, batchsession.WithHandler(handler))
 		require.Error(t, err)
 
@@ -4697,7 +4697,6 @@ func TestBan(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, cfgData)
 
-		info := cfgData.ClientInfo()
 		var batchExpiry arklib.RelativeLocktime
 
 		handler := &customBatchEventsHandler{
@@ -4797,7 +4796,7 @@ func TestBan(t *testing.T) {
 				// use a wrong script to create invalid signatures
 				fakeScript := []byte("random_script")
 
-				forfeitOutputAddr, err := btcutil.DecodeAddress(info.ForfeitAddress, nil)
+				forfeitOutputAddr, err := btcutil.DecodeAddress(cfgData.ForfeitAddress, nil)
 				if err != nil {
 					return nil, err
 				}
@@ -4850,10 +4849,10 @@ func TestBan(t *testing.T) {
 					Amount: aliceVtxo.Amount,
 				}},
 			},
-			TreeSigners: []tree.SignerSession{signerSession},
-			IntentId:    intentId,
-			Client:      aliceClient,
-			ServerInfo:  cfgData.ClientInfo(),
+			TreeSigners:  []tree.SignerSession{signerSession},
+			IntentId:     intentId,
+			Client:       aliceClient,
+			ServerParams: *cfgData,
 		}, batchsession.WithHandler(handler))
 
 		// next settle should fail because the forfeit txs have not been submitted
@@ -5054,10 +5053,10 @@ func TestBan(t *testing.T) {
 					Amount: aliceUtxo.Amount,
 				}},
 			},
-			TreeSigners: []tree.SignerSession{signerSession},
-			IntentId:    intentId,
-			Client:      aliceClient,
-			ServerInfo:  cfgData.ClientInfo(),
+			TreeSigners:  []tree.SignerSession{signerSession},
+			IntentId:     intentId,
+			Client:       aliceClient,
+			ServerParams: *cfgData,
 		}, batchsession.WithHandler(handler))
 
 		// next settle should fail because the forfeit txs have not been submitted

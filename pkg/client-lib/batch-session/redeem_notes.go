@@ -2,21 +2,19 @@ package batchsession
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/btcsuite/btcd/btcec/v2"
 )
 
-// RedeemNotesArgs configures a RedeemNotes call: the Notes to redeem and the
-// ReceiverAddr that will receive the resulting vtxo. SignTx signs the intent
-// proof, and Client/ServerInfo are used to talk to the server.
+// RedeemNotesArgs configures a RedeemNotes call: the Notes to redeem and the ReceiverAddr that
+// will receive the resulting vtxo. SignTx signs the intent proof, and Client/ServerParams are used
+// to talk to the server.
 type RedeemNotesArgs struct {
 	Client       clientlib.Client
 	SignTx       clientlib.SignFn
-	ServerInfo   clientlib.Info
+	ServerParams clientlib.ServerParams
 	Notes        []string
 	ReceiverAddr string
 }
@@ -34,20 +32,9 @@ func (a RedeemNotesArgs) validate() error {
 	if len(a.ReceiverAddr) <= 0 {
 		return fmt.Errorf("missing receiver")
 	}
-	info := a.ServerInfo
-	if len(info.Network) <= 0 ||
-		len(info.ForfeitPubKey) <= 0 ||
-		len(info.ForfeitAddress) <= 0 {
+	p := a.ServerParams
+	if len(p.Network.Name) <= 0 || p.ForfeitPubKey == nil || len(p.ForfeitAddress) <= 0 {
 		return fmt.Errorf("missing server info")
-	}
-	buf, err := hex.DecodeString(info.ForfeitPubKey)
-	if err != nil {
-		return fmt.Errorf(
-			"expected hex format for forfeit pubkey, got %s", info.ForfeitPubKey,
-		)
-	}
-	if _, err := btcec.ParsePubKey(buf); err != nil {
-		return fmt.Errorf("failed to parse forfeit pubkey: %w", err)
 	}
 	return nil
 }
@@ -81,7 +68,7 @@ func RedeemNotes(
 				Amount: amount,
 			}},
 		},
-		Client:     args.Client,
-		ServerInfo: args.ServerInfo,
+		Client:       args.Client,
+		ServerParams: args.ServerParams,
 	}, opts...)
 }

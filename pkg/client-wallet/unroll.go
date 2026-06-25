@@ -57,13 +57,13 @@ func (w *wallet) Unroll(ctx context.Context, opts ...UnrollOption) ([]UnrollRes,
 	}
 
 	return unroll.Unroll(ctx, unroll.UnrollArgs{
-		Explorer:   w.explorer,
-		Indexer:    w.indexer,
-		SignTx:     w.SignTransaction,
-		ServerInfo: w.Config.ClientInfo(),
-		Vtxos:      vtxos,
-		BumpAddr:   onchainAddr.Address,
-		BumpPubKey: keyRef.PubKey,
+		Explorer:     w.explorer,
+		Indexer:      w.indexer,
+		SignTx:       w.SignTransaction,
+		ServerParams: *w.ServerParams,
+		Vtxos:        vtxos,
+		BumpAddr:     onchainAddr.Address,
+		BumpPubKey:   keyRef.PubKey,
 	})
 }
 
@@ -84,6 +84,10 @@ func (w *wallet) CompleteUnroll(ctx context.Context, opts ...UnrollOption) (stri
 		return "", err
 	}
 
+	if len(utxos) <= 0 {
+		return "", fmt.Errorf("no mature funds available")
+	}
+
 	to := options.receiver
 	if len(to) <= 0 {
 		onchainAddr, _, _, _, err := w.getAddresses(ctx)
@@ -94,11 +98,11 @@ func (w *wallet) CompleteUnroll(ctx context.Context, opts ...UnrollOption) (stri
 	}
 
 	return unroll.CompleteUnroll(ctx, unroll.CompleteUnrollArgs{
-		Explorer:   w.explorer,
-		SignTx:     w.SignTransaction,
-		ServerInfo: w.Config.ClientInfo(),
-		Utxos:      utxos,
-		Receiver:   to,
+		Explorer:     w.explorer,
+		SignTx:       w.SignTransaction,
+		ServerParams: *w.ServerParams,
+		Utxos:        utxos,
+		Receiver:     to,
 	})
 }
 

@@ -26,9 +26,9 @@ import (
 )
 
 type Args struct {
-	Client     clientlib.Client
-	ServerInfo clientlib.Info
-	SignTx     clientlib.SignFn
+	Client       clientlib.Client
+	ServerParams clientlib.ServerParams
+	SignTx       clientlib.SignFn
 
 	IntentId       string
 	Vtxos          []clientlib.Vtxo
@@ -36,10 +36,7 @@ type Args struct {
 	Receivers      []clientlib.Receiver
 	SignerSessions []tree.SignerSession
 
-	vtxosToSign    []clientlib.Vtxo
-	forfeitPubkey  *btcec.PublicKey
-	forfeitAddress string
-	network        arklib.Network
+	vtxosToSign []clientlib.Vtxo
 }
 
 func (a *Args) validate() error {
@@ -49,8 +46,8 @@ func (a *Args) validate() error {
 	if a.SignTx == nil {
 		return fmt.Errorf("missing sign tx function")
 	}
-	if len(a.ServerInfo.Network) <= 0 || len(a.ServerInfo.ForfeitPubKey) <= 0 ||
-		len(a.ServerInfo.ForfeitAddress) <= 0 {
+	if len(a.ServerParams.Network.Name) <= 0 || a.ServerParams.ForfeitPubKey == nil ||
+		len(a.ServerParams.ForfeitAddress) <= 0 {
 		return fmt.Errorf("missing server info")
 	}
 	if len(a.IntentId) <= 0 {
@@ -59,19 +56,6 @@ func (a *Args) validate() error {
 	if len(a.Receivers) <= 0 {
 		return fmt.Errorf("missing receivers")
 	}
-
-	buf, err := hex.DecodeString(a.ServerInfo.ForfeitPubKey)
-	if err != nil {
-		return fmt.Errorf(
-			"expected hex format for forfeit pubkey, got %s", a.ServerInfo.ForfeitPubKey,
-		)
-	}
-	pubkey, err := btcec.ParsePubKey(buf)
-	if err != nil {
-		return fmt.Errorf("failed to parse forfeit pubkey: %w", err)
-	}
-
-	a.forfeitPubkey = pubkey
 
 	vtxosToSign := make([]clientlib.Vtxo, 0, len(a.Vtxos))
 	for _, vtxo := range a.Vtxos {
@@ -82,7 +66,6 @@ func (a *Args) validate() error {
 		vtxosToSign = append(vtxosToSign, vtxo)
 	}
 	a.vtxosToSign = vtxosToSign
-	a.network = clientlib.NetworkFromString(a.ServerInfo.Network)
 
 	return nil
 }
@@ -181,8 +164,10 @@ func (h *defaultHandler) OnTreeSigningStarted(
 	}
 
 	sweepClosure := script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{h.forfeitPubkey}},
-		Locktime:        h.batchExpiry,
+		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{
+			h.ServerParams.ForfeitPubKey,
+		}},
+		Locktime: h.batchExpiry,
 	}
 
 	script, err := sweepClosure.Script()
@@ -460,7 +445,7 @@ func (h *defaultHandler) validateVtxoTree(
 	// validate the vtxo tree is well formed
 	if !isOnchainOnly(h.Receivers) {
 		if err := tree.ValidateVtxoTree(
-			vtxoTree, commitmentPtx, h.forfeitPubkey, h.batchExpiry,
+			vtxoTree, commitmentPtx, h.ServerParams.ForfeitPubKey, h.batchExpiry,
 		); err != nil {
 			return err
 		}
@@ -486,7 +471,9 @@ func (h *defaultHandler) validateVtxoTree(
 	}
 
 	// validate it contains our outputs
-	if err := validateReceivers(h.network, commitmentPtx, h.Receivers, vtxoTree); err != nil {
+	if err := validateReceivers(
+		h.ServerParams.Network, commitmentPtx, h.Receivers, vtxoTree,
+	); err != nil {
 		return err
 	}
 
@@ -517,8 +504,8 @@ func (h *defaultHandler) validateVtxoTree(
 func (h *defaultHandler) createAndSignForfeits(
 	ctx context.Context, vtxosToSign []clientlib.Vtxo, connectorsLeaves []*psbt.Packet,
 ) ([]string, error) {
-	network := clientlib.ToBitcoinNetwork(h.network)
-	parsedForfeitAddr, err := btcutil.DecodeAddress(h.ServerInfo.ForfeitAddress, &network)
+	network := clientlib.ToBitcoinNetwork(h.ServerParams.Network)
+	parsedForfeitAddr, err := btcutil.DecodeAddress(h.ServerParams.ForfeitAddress, &network)
 	if err != nil {
 		return nil, err
 	}

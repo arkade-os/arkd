@@ -18,6 +18,43 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
+type ServerParams struct {
+	ServerUrl           string
+	SignerPubKey        *btcec.PublicKey
+	ForfeitPubKey       *btcec.PublicKey
+	Network             arklib.Network
+	SessionDuration     int64
+	UnilateralExitDelay arklib.RelativeLocktime
+	Dust                uint64
+	BoardingExitDelay   arklib.RelativeLocktime
+	ExplorerURL         string
+	ForfeitAddress      string
+	UtxoMinAmount       int64
+	UtxoMaxAmount       int64
+	VtxoMinAmount       int64
+	VtxoMaxAmount       int64
+	CheckpointTapscript string
+	Fees                FeeInfo
+	DeprecatedSigners   []DeprecatedSigner
+	Digest              string
+}
+
+func (p ServerParams) CheckpointExitPath() []byte {
+	// nolint
+	buf, _ := hex.DecodeString(p.CheckpointTapscript)
+	return buf
+}
+
+func (p ServerParams) AllSigners() map[string]*btcec.PublicKey {
+	m := map[string]*btcec.PublicKey{
+		hex.EncodeToString(schnorr.SerializePubKey(p.SignerPubKey)): p.SignerPubKey,
+	}
+	for _, signer := range p.DeprecatedSigners {
+		m[hex.EncodeToString(schnorr.SerializePubKey(signer.PubKey))] = signer.PubKey
+	}
+	return m
+}
+
 type StreamConnectionState string
 
 const (

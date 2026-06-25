@@ -267,9 +267,7 @@ func addExtension(
 }
 
 // verifyOffchainTx verifies the signer signatures of the given transaction
-func verifyOffchainTx(original, signed *psbt.Packet, signerPubkey *btcec.PublicKey) error {
-	xonlySigner := schnorr.SerializePubKey(signerPubkey)
-
+func verifyOffchainTx(original, signed *psbt.Packet, signers map[string]*btcec.PublicKey) error {
 	if original.UnsignedTx.TxID() != signed.UnsignedTx.TxID() {
 		return fmt.Errorf("invalid offchain tx : txids mismatch")
 	}
@@ -317,10 +315,12 @@ func verifyOffchainTx(original, signed *psbt.Packet, signerPubkey *btcec.PublicK
 
 		// check that every input has the signer's signature
 		var signerSig *psbt.TaprootScriptSpendSig
-
+		var signerPubkey *btcec.PublicKey
 		for _, sig := range signedInput.TaprootScriptSpendSig {
-			if bytes.Equal(sig.XOnlyPubKey, xonlySigner) {
+			pubkey, ok := signers[hex.EncodeToString(sig.XOnlyPubKey)]
+			if ok {
 				signerSig = sig
+				signerPubkey = pubkey
 				break
 			}
 		}
@@ -363,16 +363,8 @@ func createOffchainTx(
 		return "", nil, nil, nil, fmt.Errorf("missing receivers")
 	}
 
-	checkpointExitPath, err := args.checkpointExitPath()
-	if err != nil {
-		return "", nil, nil, nil, err
-	}
-
-	signerPubKey, err := args.signerPubKey()
-	if err != nil {
-		return "", nil, nil, nil, fmt.Errorf("invalid signer pubkey: %w", err)
-	}
-	expectedSignerPubkey := schnorr.SerializePubKey(signerPubKey)
+	checkpointExitPath := args.ServerParams.CheckpointExitPath()
+	expectedSignerPubkey := schnorr.SerializePubKey(args.ServerParams.SignerPubKey)
 
 	for _, receiver := range receivers {
 		if receiver.IsOnchain() {
@@ -478,7 +470,7 @@ func createOffchainTx(
 			changeAmount = 0
 		} else {
 			if isZero {
-				btcAmountToSelect = int64(args.ServerInfo.Dust)
+				btcAmountToSelect = int64(args.ServerParams.Dust)
 			}
 
 			_, selectedBtcCoins, changeBtcAmount, err := clientlib.CoinSelect(
@@ -486,7 +478,7 @@ func createOffchainTx(
 				// use a "fake" receiver to select only the remaining btc amount
 				// it works for offchain tx because feeEstimator is nil (no offchain fee)
 				[]clientlib.Receiver{{Amount: uint64(btcAmountToSelect)}},
-				args.ServerInfo.Dust, nil,
+				args.ServerParams.Dust, nil,
 			)
 			if err != nil {
 				return "", nil, nil, nil, err
@@ -504,7 +496,7 @@ func createOffchainTx(
 			selectedCoins = append(selectedCoins, selectedBtcCoins...)
 			changeAmount = changeBtcAmount
 			if isZero {
-				changeAmount = changeBtcAmount + args.ServerInfo.Dust
+				changeAmount = changeBtcAmount + args.ServerParams.Dust
 			}
 		}
 	} else {
@@ -534,8 +526,8 @@ func createOffchainTx(
 		}
 
 		_, selectedBtcCoins, changeBtcAmount, err := clientlib.CoinSelect(
-			nil, availableVtxos, []clientlib.Receiver{{Amount: args.ServerInfo.Dust}},
-			args.ServerInfo.Dust, nil,
+			nil, availableVtxos, []clientlib.Receiver{{Amount: args.ServerParams.Dust}},
+			args.ServerParams.Dust, nil,
 		)
 		if err != nil {
 			return "", nil, nil, nil, fmt.Errorf(
@@ -545,7 +537,7 @@ func createOffchainTx(
 		}
 
 		selectedCoins = append(selectedCoins, selectedBtcCoins...)
-		changeAmount = changeBtcAmount + args.ServerInfo.Dust
+		changeAmount = changeBtcAmount + args.ServerParams.Dust
 	}
 
 	if changeAmount > 0 {
@@ -591,7 +583,7 @@ func createOffchainTx(
 	}
 
 	arkTx, checkpointTxs, err := buildOffchainTx(
-		inputs, receivers, checkpointExitPath, args.ServerInfo.Dust,
+		inputs, receivers, checkpointExitPath, args.ServerParams.Dust,
 	)
 	if err != nil {
 		return "", nil, nil, nil, err
@@ -606,7 +598,7 @@ func createOffchainTx(
 // Shared by every orchestrator (Send, IssueAsset, ReissueAsset, BurnAsset).
 func submitAndFinalize(
 	ctx context.Context, c clientlib.Client, signTx clientlib.SignFn,
-	signerPubKey *btcec.PublicKey, build *BuildAndSignTxRes,
+	signers map[string]*btcec.PublicKey, build *BuildAndSignTxRes,
 ) (string, string, []string, error) {
 	arkTxid, signedArk, signedCps, err := c.SubmitTx(
 		ctx, build.SignedArkTx, build.CheckpointTxs,
@@ -615,10 +607,10 @@ func submitAndFinalize(
 		return "", "", nil, err
 	}
 
-	if err := VerifySignedTx(build.ArkTx, signedArk, signerPubKey); err != nil {
+	if err := VerifySignedTx(build.ArkTx, signedArk, signers); err != nil {
 		return "", "", nil, err
 	}
-	if err := VerifySignedCheckpointTxs(build.CheckpointTxs, signedCps, signerPubKey); err != nil {
+	if err := VerifySignedCheckpointTxs(build.CheckpointTxs, signedCps, signers); err != nil {
 		return "", "", nil, err
 	}
 

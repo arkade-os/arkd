@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/stretchr/testify/require"
 )
@@ -37,7 +38,7 @@ func TestCollaborativeExit(t *testing.T) {
 			},
 			{
 				name:      "missing server info",
-				mutate:    func(a *CollaborativeExitArgs) { a.ServerInfo.Network = "" },
+				mutate:    func(a *CollaborativeExitArgs) { a.ServerParams.Network = arklib.Network{} },
 				errSubstr: "missing server info",
 			},
 			{
@@ -67,9 +68,9 @@ func newTestCollaborativeExitArgs(t *testing.T) CollaborativeExitArgs {
 	t.Helper()
 
 	return CollaborativeExitArgs{
-		Client:     mockClient{},
-		ServerInfo: clientlib.Info{Dust: 1000, Network: "regtest"},
-		SignTx:     clientlib.SignFn(mockSignTx),
+		Client:       mockClient{},
+		ServerParams: clientlib.ServerParams{Dust: 1000, Network: arklib.BitcoinRegTest},
+		SignTx:       clientlib.SignFn(mockSignTx),
 		Vtxos: []clientlib.Vtxo{{
 			Outpoint: clientlib.Outpoint{Txid: "deadbeef", VOut: 0},
 			Amount:   10000,
