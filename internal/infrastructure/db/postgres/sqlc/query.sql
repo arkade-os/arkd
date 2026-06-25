@@ -238,6 +238,15 @@ SELECT offchain_tx.txid, offchain_tx.tx AS data FROM offchain_tx WHERE offchain_
 UNION
 SELECT checkpoint_tx.txid, checkpoint_tx.tx AS data FROM checkpoint_tx WHERE checkpoint_tx.txid = ANY($1::varchar[]);
 
+-- name: SelectCheckpointTxsByVtxoPubKeys :many
+SELECT DISTINCT c.txid, c.tx AS data
+FROM vtxo v
+JOIN checkpoint_tx c ON c.txid = v.spent_by
+JOIN offchain_tx o ON o.txid = c.offchain_txid
+WHERE v.pubkey = ANY(@pubkeys::text[])
+  AND v.swept = false
+  AND o.stage_code = 3;
+
 -- name: SelectNotUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false;
 

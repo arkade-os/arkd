@@ -418,6 +418,12 @@ func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxids(
 	return taprootKeys, nil
 }
 
+func (r *vtxoRepository) GetCheckpointTxsByVtxoPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]domain.Tx, error) {
+	return nil, nil
+}
+
 func (r *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
 	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
