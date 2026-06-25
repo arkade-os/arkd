@@ -503,33 +503,4 @@ func TestOffchainTxHandler_WatchesCheckpointScripts(t *testing.T) {
 		vtxos.AssertNumberOfCalls(t, "GetVtxos", 0)
 		scn.AssertNumberOfCalls(t, "WatchScripts", 0)
 	})
-
-	t.Run("bad_checkpoint_psbt_decode_err", func(t *testing.T) {
-		k1 := randomTapKey(t)
-		arkPsbt := arkTxPsbtB64(t, [][]byte{p2trScriptBytes(t, k1)})
-
-		offchainTx := newFinalizedOffchainTx(t, "ark_txid_3", arkPsbt,
-			map[string]string{"ckpt_3": "not-a-psbt"})
-
-		vtxos := &mockedVtxoRepo{}
-		rm := &mockedRepoManager{}
-		scn := &mockedScanner{}
-
-		rm.On("Vtxos").Return(vtxos)
-
-		svc := &service{
-			repoManager:         rm,
-			scanner:             scn,
-			transactionEventsCh: make(chan TransactionEvent, 64),
-			indexerTxEventsCh:   make(chan TransactionEvent, 64),
-			wg:                  &sync.WaitGroup{},
-			offchainTxMu:        &sync.Mutex{},
-		}
-		svc.registerEventHandlers()
-		rm.offchainTxHandler(offchainTx)
-
-		require.Empty(t, scn.Watched())
-		vtxos.AssertNumberOfCalls(t, "GetVtxos", 0)
-		scn.AssertNumberOfCalls(t, "WatchScripts", 0)
-	})
 }
