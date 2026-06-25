@@ -25,7 +25,7 @@ const (
 )
 
 var (
-	Version string
+	Version = "0.1.0-dev"
 	client  wallet.Wallet
 )
 
@@ -76,7 +76,6 @@ var (
 		Usage:    "Specify the data directory",
 		Required: false,
 		Value:    arklib.AppDataDir("ark-cli", false),
-		EnvVars:  []string{DatadirEnvVar},
 	}
 	explorerFlag = &cli.StringFlag{
 		Name:  "explorer",
@@ -686,7 +685,9 @@ func getArkSdkClient(ctx *cli.Context) (wallet.Wallet, error) {
 		return nil, fmt.Errorf("CLI not initialized, run 'init' cmd to initialize")
 	}
 
-	opts := make([]wallet.WalletOption, 0)
+	opts := []wallet.WalletOption{
+		wallet.WithClientVersion(fmt.Sprintf("go-cli/%s", Version)),
+	}
 	if ctx.Bool(verboseFlag.Name) {
 		opts = append(opts, wallet.WithVerbose())
 	}

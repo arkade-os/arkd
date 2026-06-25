@@ -26,9 +26,11 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -287,7 +289,11 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 	s.readinessSvc.ListenToWalletState(func() <-chan bool {
 		ch, err := s.appConfig.WalletService().GetReadyUpdate(context.Background())
 		if err != nil {
-			log.WithError(err).Error("failed to get wallet ready update stream")
+			// A Canceled status here means the wallet connection is closing
+			// (e.g. during shutdown); that's benign, so don't log it as an error.
+			if status.Code(err) != codes.Canceled {
+				log.WithError(err).Error("failed to get wallet ready update stream")
+			}
 			return nil
 		}
 		return ch
@@ -443,6 +449,8 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 			return "macaroon", true
 		case "X-Build-Version":
 			return "x-build-version", true
+		case "X-Sdk-Version":
+			return "x-sdk-version", true
 		case "X-Digest":
 			return "x-digest", true
 		default:

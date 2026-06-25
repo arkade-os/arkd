@@ -123,14 +123,14 @@ func buildVersionTooOld(clientVersion string, guard VersionGuard) error {
 }
 
 func checkVersionCompat(ctx context.Context, fullMethod string, guard VersionGuard) error {
-	if !guard.RequireHeader || !strings.Contains(
-		fullMethod, arkv1.ArkService_ServiceDesc.ServiceName,
-	) {
+	// The guard only applies to the public ArkService.
+	if !strings.Contains(fullMethod, arkv1.ArkService_ServiceDesc.ServiceName) {
 		return nil
 	}
 
 	headerVal, present := versionHeaderValue(ctx)
 	if !present || headerVal == "" {
+		// A missing or empty header is rejected only when the header is required.
 		if guard.RequireHeader {
 			return buildVersionTooOld("", guard)
 		}
@@ -139,9 +139,16 @@ func checkVersionCompat(ctx context.Context, fullMethod string, guard VersionGua
 
 	clientMajor, clientMinor, clientPatch, err := parseVersion(headerVal)
 	if err != nil {
-		return buildVersionTooOld(headerVal, guard)
+		// An unparseable header cannot be compared to the minimum: reject it only
+		// when the header is required, otherwise let it through.
+		if guard.RequireHeader {
+			return buildVersionTooOld(headerVal, guard)
+		}
+		return nil
 	}
 
+	// A present, parseable version is always held to the minimum, regardless of
+	// whether the header is required.
 	if isBehind(guard, clientMajor, clientMinor, clientPatch) {
 		return buildVersionTooOld(headerVal, guard)
 	}

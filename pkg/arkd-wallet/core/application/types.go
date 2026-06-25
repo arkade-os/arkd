@@ -24,6 +24,7 @@ type WalletService interface {
 	Status(ctx context.Context) WalletStatus
 	GetNetwork(ctx context.Context) string
 	GetSignerPubkey(ctx context.Context) (string, error)
+	GetDeprecatedSignerPubkeys(ctx context.Context) ([]DeprecatedSignerPubkey, error)
 	GetForfeitPubkey(ctx context.Context) (string, error)
 	DeriveConnectorAddress(ctx context.Context) (string, error)
 	DeriveAddresses(ctx context.Context, num int) ([]string, error)
@@ -34,7 +35,7 @@ type WalletService interface {
 	BroadcastTransaction(ctx context.Context, txs ...string) (string, error)
 	EstimateFees(ctx context.Context, psbt string) (uint64, error)
 	FeeRate(ctx context.Context) (chainfee.SatPerKVByte, error)
-	ListConnectorUtxos(ctx context.Context, connectorAddress string) ([]Utxo, error)
+	ListConnectorUtxos(ctx context.Context, connectorAddresses []string) ([]Utxo, error)
 	// GetMainAccountUtxos lists the whole UTXO set of the main account,
 	// including locked and unconfirmed UTXOs, each flagged accordingly.
 	GetMainAccountUtxos(ctx context.Context) ([]MainAccountUtxo, error)
@@ -92,6 +93,12 @@ type MainAccountUtxo struct {
 type BlockTimestamp struct {
 	Height uint32
 	Time   int64
+}
+
+type DeprecatedSignerPubkey struct {
+	Pubkey string
+	// unix timestamp after which the key is no longer accepted, 0 if unset
+	CutoffDate int64
 }
 
 var ErrTransactionNotFound = fmt.Errorf("transaction not found")

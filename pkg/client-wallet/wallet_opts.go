@@ -7,25 +7,31 @@ import (
 type WalletOption func(*wallet)
 
 func WithVerbose() WalletOption {
-	return func(c *wallet) {
-		c.verbose = true
+	return func(w *wallet) {
+		w.verbose = true
 	}
 }
 
 func WithExplorer(explorer clientlib.Explorer) WalletOption {
-	return func(c *wallet) {
-		c.explorer = explorer
+	return func(w *wallet) {
+		w.explorer = explorer
 	}
 }
 
 func WithIdentity(identitySvc clientlib.Identity) WalletOption {
-	return func(c *wallet) {
-		c.identity = identitySvc
+	return func(w *wallet) {
+		w.identity = identitySvc
 	}
 }
 
 func WithoutFinalizePendingTxs() WalletOption {
-	return func(c *wallet) {
-		c.withFinalizePendingTxs = false
+	return func(w *wallet) {
+		w.withFinalizePendingTxs = false
+	}
+}
+
+func WithClientVersion(version string) WalletOption {
+	return func(w *wallet) {
+		w.clientVersion = version
 	}
 }

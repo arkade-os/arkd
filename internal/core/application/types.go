@@ -60,8 +60,15 @@ type Service interface {
 	) ([]*domain.Intent, errors.Error)
 }
 
+type DeprecatedSignerKey struct {
+	PubKey string
+	// unix timestamp after which the key is no longer accepted, 0 if unset
+	CutoffDate int64
+}
+
 type ServiceInfo struct {
 	SignerPubKey         string
+	DeprecatedSignerKeys []DeprecatedSignerKey
 	ForfeitPubKey        string
 	UnilateralExitDelay  int64
 	BoardingExitDelay    int64

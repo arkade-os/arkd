@@ -17,7 +17,7 @@ import (
 // TestBuildVersionHeaderInjected_Unary verifies that a unary RPC issued through
 // the real NewClient constructor carries the x-build-version header server-side.
 func TestBuildVersionHeaderInjected_Unary(t *testing.T) {
-	capture := &headerCapture{}
+	capture := &headerCapture{key: buildVersionHeader}
 	dialer := startArkHeaderServer(t, capture)
 
 	// Drive the REAL NewClient path; the bufconn dialer is injected via the
@@ -27,7 +27,7 @@ func TestBuildVersionHeaderInjected_Unary(t *testing.T) {
 	testDialOptions = []grpc.DialOption{grpc.WithContextDialer(dialer)}
 	t.Cleanup(func() { testDialOptions = prev })
 
-	c, err := NewClient("passthrough:///bufconn")
+	c, err := NewClient("passthrough:///bufconn", "")
 	require.NoError(t, err)
 	t.Cleanup(c.Close)
 
@@ -47,14 +47,14 @@ func TestBuildVersionHeaderInjected_Unary(t *testing.T) {
 // through the real NewClient constructor carries the x-build-version header
 // server-side.
 func TestBuildVersionHeaderInjected_Stream(t *testing.T) {
-	capture := &headerCapture{}
+	capture := &headerCapture{key: buildVersionHeader}
 	dialer := startArkHeaderServer(t, capture)
 
 	prev := testDialOptions
 	testDialOptions = []grpc.DialOption{grpc.WithContextDialer(dialer)}
 	t.Cleanup(func() { testDialOptions = prev })
 
-	c, err := NewClient("passthrough:///bufconn")
+	c, err := NewClient("passthrough:///bufconn", "")
 	require.NoError(t, err)
 	t.Cleanup(c.Close)
 
@@ -82,9 +82,11 @@ func TestBuildVersionHeaderInjected_Stream(t *testing.T) {
 	require.Equal(t, buildVersion, value)
 }
 
-// headerCapture records the x-build-version metadata value seen by the server.
+// headerCapture records the value of the metadata key it is configured for, as
+// seen by the server on incoming calls.
 type headerCapture struct {
 	mu    sync.Mutex
+	key   string
 	value string
 	seen  bool
 }
@@ -93,7 +95,7 @@ func (h *headerCapture) record(ctx context.Context) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if vals := md.Get(buildVersionHeader); len(vals) > 0 {
+		if vals := md.Get(h.key); len(vals) > 0 {
 			h.value = vals[0]
 			h.seen = true
 		}

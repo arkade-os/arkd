@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"sort"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -127,17 +128,35 @@ type ConfirmationSessions struct {
 
 type Settings struct {
 	domain.Settings
-	Network             arklib.Network
-	DustAmount          uint64
-	SignerPubkey        *btcec.PublicKey
-	ForfeitPubkey       *btcec.PublicKey
-	ForfeitAddress      string
-	CheckpointTapscript []byte
+	Network                 arklib.Network
+	DustAmount              uint64
+	SignerPubkey            *btcec.PublicKey
+	DeprecatedSignerPubkeys []DeprecatedSignerPubkey
+	ForfeitPubkey           *btcec.PublicKey
+	ForfeitAddress          string
+	CheckpointTapscript     []byte
 }
 
 func (s Settings) Digest() (string, error) {
+	deprecatedSigners := make([]deprecatedSignerDigestData, 0, len(s.DeprecatedSignerPubkeys))
+	for _, deprecated := range s.DeprecatedSignerPubkeys {
+		deprecatedSigners = append(deprecatedSigners, deprecatedSignerDigestData{
+			PubKey:     hex.EncodeToString(deprecated.PubKey.SerializeCompressed()),
+			CutoffDate: deprecated.CutoffDate.Unix(),
+		})
+	}
+
+	// sort to make the digest deterministic regardless of input order
+	sort.Slice(deprecatedSigners, func(i, j int) bool {
+		if deprecatedSigners[i].PubKey != deprecatedSigners[j].PubKey {
+			return deprecatedSigners[i].PubKey < deprecatedSigners[j].PubKey
+		}
+		return deprecatedSigners[i].CutoffDate < deprecatedSigners[j].CutoffDate
+	})
+
 	data := digestData{
 		SignerPubKey:        hex.EncodeToString(s.SignerPubkey.SerializeCompressed()),
+		DeprecatedSigners:   deprecatedSigners,
 		ForfeitPubKey:       hex.EncodeToString(s.ForfeitPubkey.SerializeCompressed()),
 		UnilateralExitDelay: s.PublicUnilateralExitDelay.Seconds(),
 		BoardingExitDelay:   s.BoardingExitDelay.Seconds(),
@@ -164,8 +183,14 @@ func (s Settings) Digest() (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 
+type deprecatedSignerDigestData struct {
+	PubKey     string
+	CutoffDate int64
+}
+
 type digestData struct {
 	SignerPubKey        string
+	DeprecatedSigners   []deprecatedSignerDigestData
 	ForfeitPubKey       string
 	UnilateralExitDelay int64
 	BoardingExitDelay   int64

@@ -8,39 +8,38 @@ import (
 )
 
 const (
-	// buildVersionHeader is the gRPC metadata key carrying the client build version.
+	// clientVersionHeader is the gRPC metadata key carrying the client build version.
 	// It must match the key the arkd server reads via md.Get on the version interceptor
 	// (internal/interface/grpc/interceptors/version.go).
 	// gRPC normalises all metadata keys to lowercase.
-	buildVersionHeader = "x-build-version"
-	buildVersion       = "0.9.9"
+	clientVersionHeader = "x-sdk-version"
 )
 
-// unaryVersionInterceptor returns a gRPC unary client interceptor that sets
-// buildVersionHeader=buildVersion to the outgoing metadata of every unary RPC.
-func unaryVersionInterceptor() grpc.UnaryClientInterceptor {
+// unaryClientVersionInterceptor returns a gRPC unary client interceptor that sets
+// clientVersionHeader=version to the outgoing metadata of every unary RPC.
+func unaryClientVersionInterceptor(version string) grpc.UnaryClientInterceptor {
 	return func(
 		ctx context.Context, method string, req, reply interface{},
 		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		md, _ := metadata.FromOutgoingContext(ctx)
 		md = md.Copy()
-		md.Set(buildVersionHeader, buildVersion)
+		md.Set(clientVersionHeader, version)
 		ctx = metadata.NewOutgoingContext(ctx, md)
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
 }
 
-// streamVersionInterceptor returns a gRPC stream client interceptor that sets
-// buildVersionHeader=buildVersion to the outgoing metadata of every streaming RPC
-func streamVersionInterceptor() grpc.StreamClientInterceptor {
+// streamClientVersionInterceptor returns a gRPC stream client interceptor that sets
+// clientVersionHeader=version to the outgoing metadata of every streaming RPC
+func streamClientVersionInterceptor(version string) grpc.StreamClientInterceptor {
 	return func(
 		ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn,
 		method string, streamer grpc.Streamer, opts ...grpc.CallOption,
 	) (grpc.ClientStream, error) {
 		md, _ := metadata.FromOutgoingContext(ctx)
 		md = md.Copy()
-		md.Set(buildVersionHeader, buildVersion)
+		md.Set(clientVersionHeader, version)
 		ctx = metadata.NewOutgoingContext(ctx, md)
 		return streamer(ctx, desc, cc, method, opts...)
 	}

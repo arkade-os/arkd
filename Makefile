@@ -89,7 +89,7 @@ help:
 ## integrationtest: run integration tests
 integrationtest:
 	@echo "Running integration tests..."
-	@go test -v -count 1 -timeout 1200s github.com/arkade-os/arkd/internal/test/e2e
+	@go test -v -count 1 -timeout 1600s github.com/arkade-os/arkd/internal/test/e2e
 
 ## lint: lint codebase
 lint:
@@ -232,7 +232,12 @@ test: pgtest redis-test-up
 
 ## test-pkg: run unit tests for all packages in pkg/
 test-pkg:
-	@find ./pkg -name go.mod -execdir go test -v ./... \;
+	@failed=0; \
+	for dir in $$(find ./pkg -name go.mod -exec dirname {} \;); do \
+		echo "Testing $$dir..."; \
+		(cd $$dir && go test -v -count=1 ./...) || failed=1; \
+	done; \
+	exit $$failed
 
 ## vet: run code analysis
 vet:

@@ -51,7 +51,6 @@ type service struct {
 	alerts         ports.Alerts
 	feeManager     ports.FeeManager
 
-	// Config derived from signer
 	operatorPrvkey *btcec.PrivateKey
 	operatorPubkey *btcec.PublicKey
 
@@ -91,6 +90,11 @@ func NewService(
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch signer pubkey: %w", err)
 	}
+	deprecatedSignerPubkeys, err := signer.GetDeprecatedPubkeys(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch deprecated signer pubkeys: %w", err)
+	}
+
 	dustAmount, err := wallet.GetDustAmount(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dust amount: %w", err)
@@ -115,10 +119,11 @@ func NewService(
 	}
 
 	extendedSettings := ports.Settings{
-		Settings:     *settings,
-		Network:      *network,
-		DustAmount:   dustAmount,
-		SignerPubkey: signerPubkey,
+		Settings:                *settings,
+		Network:                 *network,
+		DustAmount:              dustAmount,
+		SignerPubkey:            signerPubkey,
+		DeprecatedSignerPubkeys: deprecatedSignerPubkeys,
 	}
 	if err := cache.Settings().Upsert(ctx, extendedSettings); err != nil {
 		return nil, fmt.Errorf("failed to update settings cache: %w", err)
@@ -426,7 +431,6 @@ func (s *service) SubmitOffchainTx(
 	maxOpReturnOutputs := settings.MaxOpReturnOutputs
 	maxTxWeight := settings.MaxTxWeight
 	maxAssetsPerVtxo := settings.MaxAssetsPerVtxo()
-	allowCSVBlockType := settings.AllowCSVBlockType()
 
 	offchainTx := domain.NewOffchainTx()
 	var changes []domain.Event
@@ -699,8 +703,9 @@ func (s *service) SubmitOffchainTx(
 			minAllowedExitDelay = *smallestExitDelay
 		}
 
-		if err := vtxoScript.Validate(
-			signerPubkey, minAllowedExitDelay, allowCSVBlockType,
+		if err := validateVtxoScriptForSigners(
+			vtxoScript, settings.SignerPubkey, settings.DeprecatedSignerPubkeys,
+			time.Now(), minAllowedExitDelay, settings.AllowCSVBlockType(),
 		); err != nil {
 			return nil, errors.INVALID_VTXO_SCRIPT.Wrap(err).
 				WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: taptree})
@@ -1287,7 +1292,6 @@ func (s *service) GetPendingOffchainTxs(
 		return nil, errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
 	}
 
-	signerPubkey := settings.SignerPubkey
 	outpoints := proof.GetOutpoints()
 	proofTxid := proof.UnsignedTx.TxID()
 
@@ -1386,7 +1390,9 @@ func (s *service) GetPendingOffchainTxs(
 	}
 
 	if err := intent.Verify(
-		encodedProof, encodedMessage, []*btcec.PublicKey{signerPubkey},
+		encodedProof,
+		encodedMessage,
+		allSignerPubkeys(settings),
 	); err != nil {
 		log.
 			WithField("proof", encodedProof).
@@ -1495,7 +1501,6 @@ func (s *service) RegisterIntent(
 	}
 
 	banThreshold := settings.BanThreshold
-	signerPubkey := settings.SignerPubkey
 	settlementMinExpiryGap := settings.SettlementMinExpiryGap
 	maxTxWeight := settings.MaxTxWeight
 	utxoMinAmount := settings.UtxoMinAmount
@@ -1717,7 +1722,9 @@ func (s *service) RegisterIntent(
 	}
 
 	if err := intent.Verify(
-		encodedProof, encodedMessage, []*btcec.PublicKey{signerPubkey},
+		encodedProof,
+		encodedMessage,
+		allSignerPubkeys(settings),
 	); err != nil {
 		log.
 			WithField("proof", encodedProof).
@@ -1740,7 +1747,7 @@ func (s *service) RegisterIntent(
 
 	finalizedProofTx, err := intent.Proof{
 		Packet: *signedProofPtx,
-	}.FinalizeAndExtract(signerPubkey)
+	}.FinalizeAndExtract(allSignerPubkeys(settings)...)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("failed to finalize proof: %w", err).
 			WithMetadata(map[string]any{
@@ -2154,6 +2161,18 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 	forfeitAddress := settings.ForfeitAddress
 	checkpointTapscript := hex.EncodeToString(settings.CheckpointTapscript)
 
+	deprecatedSignerKeys := make([]DeprecatedSignerKey, 0, len(settings.DeprecatedSignerPubkeys))
+	for _, deprecated := range settings.DeprecatedSignerPubkeys {
+		var cutoffDate int64
+		if !deprecated.CutoffDate.IsZero() {
+			cutoffDate = deprecated.CutoffDate.Unix()
+		}
+		deprecatedSignerKeys = append(deprecatedSignerKeys, DeprecatedSignerKey{
+			PubKey:     hex.EncodeToString(deprecated.PubKey.SerializeCompressed()),
+			CutoffDate: cutoffDate,
+		})
+	}
+
 	var nextScheduledSession *NextScheduledSession
 	if settings.ScheduledSession != nil {
 		scheduledSessionNextStart, scheduledSessionNextEnd := calcNextScheduledSession(
@@ -2170,6 +2189,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 
 	return &ServiceInfo{
 		SignerPubKey:         signerPubkey,
+		DeprecatedSignerKeys: deprecatedSignerKeys,
 		ForfeitPubKey:        forfeitPubkey,
 		UnilateralExitDelay:  int64(publicUnilateralExitDelay.Value),
 		BoardingExitDelay:    int64(boardingExitDelay.Value),
@@ -3814,8 +3834,6 @@ func (s *service) processBoardingInputs(
 ) ([]ports.BoardingInput, errors.Error) {
 	boardingExitDelay := settings.BoardingExitDelay
 	unilateralExitDelay := settings.UnilateralExitDelay
-	signerPubkey := settings.SignerPubkey
-	allowCSVBlockType := settings.AllowCSVBlockType()
 
 	scripts := make([]string, 0)
 	outpoints := make([]wire.OutPoint, 0)
@@ -3930,7 +3948,13 @@ func (s *service) processBoardingInputs(
 		}
 
 		boardingInput, err := newBoardingInput(
-			tx, input.Input, signerPubkey, exitDelay, allowCSVBlockType,
+			tx,
+			input.Input,
+			settings.SignerPubkey,
+			settings.DeprecatedSignerPubkeys,
+			time.Now(),
+			exitDelay,
+			settings.AllowCSVBlockType(),
 		)
 		if err != nil {
 			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).WithMetadata(
@@ -3949,11 +3973,9 @@ func (s *service) validateBoardingInput(
 ) (*wire.MsgTx, error) {
 	boardingExitDelay := settings.BoardingExitDelay
 	unilateralExitDelay := settings.UnilateralExitDelay
-	signerPubkey := settings.SignerPubkey
 	utxoMinAmount := settings.UtxoMinAmount
 	utxoMaxAmount := settings.UtxoMaxAmount
 	unrolledVtxoMinExpiryMargin := settings.UnrolledVtxoMinExpiryMargin
-	allowCSVBlockType := settings.AllowCSVBlockType()
 
 	vtxoScript, err := script.ParseVtxoScript(input.Tapscripts)
 	if err != nil {
@@ -3986,10 +4008,15 @@ func (s *service) validateBoardingInput(
 		expectedExitDelay = unilateralExitDelay
 	}
 
-	if err := vtxoScript.Validate(signerPubkey, arklib.RelativeLocktime{
+	minAllowedCSV := arklib.RelativeLocktime{
 		Type:  expectedExitDelay.Type,
 		Value: expectedExitDelay.Value,
-	}, allowCSVBlockType); err != nil {
+	}
+
+	if err := validateVtxoScriptForSigners(
+		vtxoScript, settings.SignerPubkey, settings.DeprecatedSignerPubkeys,
+		time.Now(), minAllowedCSV, settings.AllowCSVBlockType(),
+	); err != nil {
 		return nil, fmt.Errorf("invalid vtxo script: %s", err)
 	}
 
@@ -4084,8 +4111,6 @@ func (s *service) validateVtxoInput(
 
 	minAllowedExitDelay := settings.UnilateralExitDelay
 	vtxoNoCsvValidationCutoffDate := settings.VtxoNoCsvValidationCutoffDate
-	signerPubkey := settings.SignerPubkey
-	allowCSVBlockType := settings.AllowCSVBlockType()
 
 	// if the vtxo was created before the vtxoNoCsvValidationCutoffTime date, we use the smallest
 	// exit delay as the minimum allowed exit delay in validation: making the CSV check always
@@ -4095,9 +4120,9 @@ func (s *service) validateVtxoInput(
 		minAllowedExitDelay = *smallestExitDelay
 	}
 
-	// validate the vtxo script
-	if err := vtxoScript.Validate(
-		signerPubkey, minAllowedExitDelay, allowCSVBlockType,
+	if err := validateVtxoScriptForSigners(
+		vtxoScript, settings.SignerPubkey, settings.DeprecatedSignerPubkeys,
+		time.Now(), minAllowedExitDelay, settings.AllowCSVBlockType(),
 	); err != nil {
 		return errors.INVALID_VTXO_SCRIPT.New("invalid vtxo script: %w", err).
 			WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: tapscripts})
@@ -4252,7 +4277,6 @@ func (s *service) verifyIntentProofAndFindMatches(
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
 	}
-	signerPubkey := settings.SignerPubkey
 
 	if expireAt := message.GetExpireAt(); expireAt > 0 {
 		if time.Now().After(time.Unix(expireAt, 0)) {
@@ -4387,7 +4411,7 @@ func (s *service) verifyIntentProofAndFindMatches(
 	}
 
 	if err := intent.Verify(
-		encodedProof, encodedMessage, []*btcec.PublicKey{signerPubkey},
+		encodedProof, encodedMessage, allSignerPubkeys(settings),
 	); err != nil {
 		log.
 			WithField("proof", encodedProof).
@@ -4421,6 +4445,16 @@ func (s *service) verifyIntentProofAndFindMatches(
 	}
 
 	return matches, nil
+}
+
+// allSignerPubkeys returns the current signer pubkey plus every deprecated one regardless of cutoff date.
+func allSignerPubkeys(settings *ports.Settings) []*btcec.PublicKey {
+	pubkeys := make([]*btcec.PublicKey, 0, len(settings.DeprecatedSignerPubkeys)+1)
+	pubkeys = append(pubkeys, settings.SignerPubkey)
+	for _, deprecated := range settings.DeprecatedSignerPubkeys {
+		pubkeys = append(pubkeys, deprecated.PubKey)
+	}
+	return pubkeys
 }
 
 func validateOffchainTxOutputs(

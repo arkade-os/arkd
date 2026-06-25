@@ -44,6 +44,7 @@ type wallet struct {
 	txLock                 *sync.RWMutex
 	verbose                bool
 	withFinalizePendingTxs bool
+	clientVersion          string
 }
 
 func NewWallet(storeSvc types.Store, opts ...WalletOption) (Wallet, error) {
@@ -126,7 +127,7 @@ func LoadWallet(storeSvc types.Store, opts ...WalletOption) (Wallet, error) {
 		wallet.explorer = explorerSvc
 	}
 
-	clientSvc, err := client.NewClient(cfgData.ServerUrl)
+	clientSvc, err := client.NewClient(cfgData.ServerUrl, wallet.clientVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup transport client: %s", err)
 	}

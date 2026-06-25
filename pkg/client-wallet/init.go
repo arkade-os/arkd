@@ -26,7 +26,7 @@ func (w *wallet) Init(ctx context.Context, args InitArgs) error {
 func (w *wallet) init(
 	ctx context.Context, args args, explorerSvc clientlib.Explorer,
 ) error {
-	clientSvc, err := client.NewClient(args.serverUrl)
+	clientSvc, err := client.NewClient(args.serverUrl, w.clientVersion)
 	if err != nil {
 		return fmt.Errorf("failed to setup client: %s", err)
 	}

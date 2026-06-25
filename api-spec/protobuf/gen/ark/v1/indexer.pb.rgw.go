@@ -415,7 +415,7 @@ func request_IndexerService_UnsubscribeForScripts_0(ctx context.Context, marshal
 
 var (
 	query_params_IndexerService_GetSubscription_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("subscriptionId", "subscription_id"),
+		Filter: trie.New("subscription_id", "subscriptionId"),
 	}
 )
 

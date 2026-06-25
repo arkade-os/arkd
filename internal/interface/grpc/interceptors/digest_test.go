@@ -86,18 +86,34 @@ func TestDigestCompat(t *testing.T) {
 			wantGot:        "abc123",
 		},
 
-		// --- Guard disabled: every request passes regardless of the header ---
+		// --- Guard disabled: a missing header passes, but a present digest is
+		// still validated against the expected one ---
 		{
-			description:    "disabled guard passes despite mismatch",
+			description:    "disabled guard rejects present mismatching digest",
 			guardEnabled:   false,
 			expectedDigest: "abc123",
 			ctx:            ctxWithDigest("deadbeef"),
+			wantReject:     true,
+			wantExpected:   "abc123",
+			wantGot:        "deadbeef",
+		},
+		{
+			description:    "disabled guard passes with matching digest",
+			guardEnabled:   false,
+			expectedDigest: "abc123",
+			ctx:            ctxWithDigest("abc123"),
 		},
 		{
 			description:    "disabled guard passes with no header",
 			guardEnabled:   false,
 			expectedDigest: "abc123",
 			ctx:            context.Background(),
+		},
+		{
+			description:    "disabled guard passes with empty header value",
+			guardEnabled:   false,
+			expectedDigest: "abc123",
+			ctx:            ctxWithDigest(""),
 		},
 	}
 

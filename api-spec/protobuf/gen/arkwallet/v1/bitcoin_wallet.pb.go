@@ -1967,10 +1967,10 @@ func (x *FeeRateResponse) GetSatPerKvbyte() uint64 {
 }
 
 type ListConnectorUtxosRequest struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	ConnectorAddress string                 `protobuf:"bytes,1,opt,name=connector_address,json=connectorAddress,proto3" json:"connector_address,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ConnectorAddresses []string               `protobuf:"bytes,1,rep,name=connector_addresses,json=connectorAddresses,proto3" json:"connector_addresses,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ListConnectorUtxosRequest) Reset() {
@@ -2003,11 +2003,11 @@ func (*ListConnectorUtxosRequest) Descriptor() ([]byte, []int) {
 	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{44}
 }
 
-func (x *ListConnectorUtxosRequest) GetConnectorAddress() string {
+func (x *ListConnectorUtxosRequest) GetConnectorAddresses() []string {
 	if x != nil {
-		return x.ConnectorAddress
+		return x.ConnectorAddresses
 	}
-	return ""
+	return nil
 }
 
 type ListConnectorUtxosResponse struct {
@@ -3608,9 +3608,9 @@ const file_arkwallet_v1_bitcoin_wallet_proto_rawDesc = "" +
 	"\x03fee\x18\x01 \x01(\x04R\x03fee\"\x10\n" +
 	"\x0eFeeRateRequest\"7\n" +
 	"\x0fFeeRateResponse\x12$\n" +
-	"\x0esat_per_kvbyte\x18\x01 \x01(\x04R\fsatPerKvbyte\"H\n" +
-	"\x19ListConnectorUtxosRequest\x12+\n" +
-	"\x11connector_address\x18\x01 \x01(\tR\x10connectorAddress\"I\n" +
+	"\x0esat_per_kvbyte\x18\x01 \x01(\x04R\fsatPerKvbyte\"L\n" +
+	"\x19ListConnectorUtxosRequest\x12/\n" +
+	"\x13connector_addresses\x18\x01 \x03(\tR\x12connectorAddresses\"I\n" +
 	"\x1aListConnectorUtxosResponse\x12+\n" +
 	"\x05utxos\x18\x01 \x03(\v2\x15.arkwallet.v1.TxInputR\x05utxos\"\x1c\n" +
 	"\x1aGetMainAccountUtxosRequest\"M\n" +
