@@ -3745,19 +3745,12 @@ func (s *service) restoreWatchingVtxos() error {
 	}
 
 	if len(tapKeys) > 0 {
-		// Fetch the finalized checkpoint txs that spent these sweepable
-		// vtxos and watch their first output's pkscript too, so the
-		// scanner resumes detecting onchain broadcast of those
-		// checkpoints. Soft-fail: a DB error here must not block startup,
-		// the next offchain tx event re-adds any missing checkpoint
-		// scripts via the inline handler at registerEventHandlers.
+		// Also watch finalized checkpoint txs' first output so we detect
+		// onchain broadcast. Soft-fail: a DB error must not block startup
 		checkpointTxs, err := s.repoManager.Vtxos().
 			GetCheckpointTxsByVtxoPubKeys(ctx, tapKeys)
 		if err != nil {
-			log.WithError(err).Warn(
-				"failed to fetch checkpoint txs for restore; " +
-					"checkpoint scripts re-added on next offchain tx event",
-			)
+			log.WithError(err).Warn("failed to fetch checkpoint txs for restore")
 		} else {
 			scripts = append(scripts, checkpointOutputScripts(checkpointTxs)...)
 		}
@@ -3786,11 +3779,8 @@ func (s *service) stopWatchingVtxos(tapkeys []string) {
 	}
 
 	if len(tapkeys) > 0 {
-		// Mirror restoreWatchingVtxos: also unwatch the first output of
-		// every finalized checkpoint tx that spent these sweepable
-		// vtxos. Soft-fail so a DB glitch on shutdown does not spin the
-		// retry loop forever; the wallet keeps watching those scripts
-		// until the next restart's restoreWatchingVtxos re-syncs.
+		// Also unwatch finalized checkpoint txs' first output. Soft-fail:
+		// a DB glitch on shutdown leaves the scanner watching
 		checkpointTxs, err := s.repoManager.Vtxos().
 			GetCheckpointTxsByVtxoPubKeys(context.Background(), tapkeys)
 		if err != nil {
