@@ -155,6 +155,13 @@ func New(message string, inputs []Input, outputs []*wire.TxOut) (*Proof, error) 
 		return nil, err
 	}
 
+	// BIP-322: PSBT_GLOBAL_GENERIC_SIGNED_MESSAGE (0x09) lets a co-signer
+	// recompute the to_spend commitment from PSBT-internal data alone.
+	toSign.Unknowns = append(toSign.Unknowns, &psbt.Unknown{
+		Key:   []byte{0x09},
+		Value: []byte(message),
+	})
+
 	return &Proof{Packet: *toSign}, nil
 }
 
