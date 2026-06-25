@@ -264,7 +264,7 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc clientlib.Explor
 	return hex.EncodeToString(serializedTx.Bytes())
 }
 
-func setupClientWallet(t *testing.T) wallet.Wallet {
+func setupClientWallet(t *testing.T, prvkey ...string) wallet.Wallet {
 	appDataStore, err := store.NewStore(wallet.InMemoryStore, "")
 	require.NoError(t, err)
 
@@ -273,8 +273,10 @@ func setupClientWallet(t *testing.T) wallet.Wallet {
 
 	privkey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
+	if len(prvkey) > 0 {
+		privkeyHex = prvkey[0]
+	}
 
 	err = client.Init(t.Context(), wallet.InitArgs{
 		ServerUrl:   serverUrl,

@@ -46,7 +46,6 @@ type storeData struct {
 	CheckpointTapscript string                 `json:"checkpoint_tapscript"`
 	Fees                feeData                `json:"fees"`
 	DeprecatedSigners   []deprecatedSignerData `json:"deprecated_signers"`
-	Digest              string                 `json:"digest"`
 }
 
 func (d storeData) isEmpty() bool {
@@ -130,7 +129,6 @@ func (d storeData) decode() clientlib.ServerParams {
 		CheckpointTapscript: d.CheckpointTapscript,
 		Fees:                fees,
 		DeprecatedSigners:   deprecatedSigners,
-		Digest:              d.Digest,
 	}
 }
 
@@ -161,6 +159,5 @@ func (d storeData) asMap() map[string]any {
 			},
 		},
 		"deprecated_signers": d.DeprecatedSigners,
-		"digest":             d.Digest,
 	}
 }

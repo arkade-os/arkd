@@ -18,11 +18,6 @@ func (w *wallet) Settle(
 	w.txLock.Lock()
 	defer w.txLock.Unlock()
 
-	serverParams, err := w.getServerParams(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get server params: %w", err)
-	}
-
 	vtxos, err := w.getSpendableVtxos(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -44,7 +39,7 @@ func (w *wallet) Settle(
 
 	return batchsession.Settle(ctx, batchsession.SettleArgs{
 		Client:        w.client,
-		ServerParams:  *serverParams,
+		ServerParams:  *w.ServerParams,
 		SignTx:        signTx,
 		BoardingUtxos: boardingUtxos,
 		Vtxos:         vtxos,
@@ -62,11 +57,6 @@ func (w *wallet) RedeemNotes(
 	w.txLock.Lock()
 	defer w.txLock.Unlock()
 
-	serverParams, err := w.getServerParams(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get server params: %w", err)
-	}
-
 	_, offchainAddr, _, _, err := w.getAddresses(ctx)
 	if err != nil {
 		return nil, err
@@ -78,7 +68,7 @@ func (w *wallet) RedeemNotes(
 
 	return batchsession.RedeemNotes(ctx, batchsession.RedeemNotesArgs{
 		Client:       w.client,
-		ServerParams: *serverParams,
+		ServerParams: *w.ServerParams,
 		SignTx:       signTx,
 		Notes:        notes,
 		ReceiverAddr: offchainAddr.Address,
@@ -99,17 +89,12 @@ func (w *wallet) CollaborativeExit(
 	w.txLock.Lock()
 	defer w.txLock.Unlock()
 
-	serverParams, err := w.getServerParams(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get server params: %w", err)
-	}
-
-	_, offchainAddr, _, _, err := w.getAddresses(ctx)
+	vtxos, err := w.getSpendableVtxos(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	vtxos, err := w.getSpendableVtxos(ctx, nil)
+	_, offchainAddr, _, _, err := w.getAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +106,7 @@ func (w *wallet) CollaborativeExit(
 	return batchsession.CollaborativeExit(ctx, batchsession.CollaborativeExitArgs{
 		Client:       w.client,
 		SignTx:       signTx,
-		ServerParams: *serverParams,
+		ServerParams: *w.ServerParams,
 		Vtxos:        vtxos,
 		Receiver:     clientlib.Receiver{To: addr, Amount: amount},
 		ChangeAddr:   offchainAddr.Address,

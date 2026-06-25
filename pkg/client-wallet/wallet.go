@@ -261,26 +261,6 @@ func (w *wallet) safeCheck() error {
 	return nil
 }
 
-func (w *wallet) getServerParams(ctx context.Context) (*clientlib.ServerParams, error) {
-	info, err := w.client.GetInfo(ctx)
-	if err != nil {
-		return nil, err
-	}
-	serverParams, err := info.ServerParams(w.ServerUrl, w.explorer.BaseUrl())
-	if err != nil {
-		return nil, err
-	}
-	if serverParams.Digest != w.Digest {
-		w.ServerParams = serverParams
-		go func() {
-			if err := w.store.AddData(context.Background(), *serverParams); err != nil {
-				log.WithError(err).Warn("failed to persist updated server params")
-			}
-		}()
-	}
-	return w.ServerParams, nil
-}
-
 type getVtxosFilter struct {
 	// If specified, returns only vtxos matching given outpoints
 	outpoints []clientlib.Outpoint

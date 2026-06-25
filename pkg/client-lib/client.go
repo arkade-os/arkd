@@ -146,7 +146,6 @@ func (i Info) ServerParams(serverUrl, explorerUrl string) (*ServerParams, error)
 		CheckpointTapscript: i.CheckpointTapscript,
 		Fees:                i.Fees,
 		DeprecatedSigners:   deprecatedSigners,
-		Digest:              i.Digest,
 	}, nil
 }
 

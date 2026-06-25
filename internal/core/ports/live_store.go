@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"time"
 
@@ -138,6 +139,10 @@ type Settings struct {
 }
 
 func (s Settings) Digest() (string, error) {
+	if s.SignerPubkey == nil || s.ForfeitPubkey == nil {
+		return "", fmt.Errorf("settings not initialized")
+	}
+
 	deprecatedSigners := make([]deprecatedSignerDigestData, 0, len(s.DeprecatedSignerPubkeys))
 	for _, deprecated := range s.DeprecatedSignerPubkeys {
 		deprecatedSigners = append(deprecatedSigners, deprecatedSignerDigestData{

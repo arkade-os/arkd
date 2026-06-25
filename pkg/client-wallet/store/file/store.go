@@ -85,7 +85,6 @@ func (s *configStore) AddData(ctx context.Context, data clientlib.ServerParams) 
 			},
 		},
 		DeprecatedSigners: deprecatedSigners,
-		Digest:            data.Digest,
 	}
 
 	if err := s.write(sd); err != nil {

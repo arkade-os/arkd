@@ -5283,6 +5283,17 @@ func TestCollectedFees(t *testing.T) {
 	// but no fees configured yet so collected fees stay zero).
 	faucetOnchain(t, aliceBoardingAddr.Address, 0.001)
 	faucetOffchain(t, bob, 0.001)
+
+	// Dump alice and bob seeds and restore the clients after updating the server params with
+	// batch fees.
+	aliceSeed, err := alice.Dump(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, aliceSeed)
+
+	bobSeed, err := bob.Dump(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, bobSeed)
+
 	time.Sleep(6 * time.Second)
 
 	// Configure 1% input fees so the next round generates non-zero collected fees.
@@ -5294,6 +5305,10 @@ func TestCollectedFees(t *testing.T) {
 	}
 	err = updateIntentFees(fees)
 	require.NoError(t, err)
+
+	// Restore the clients with updated service params
+	alice = setupClientWallet(t, aliceSeed)
+	bob = setupClientWallet(t, bobSeed)
 
 	// Alice (boarding / onchain input) and Bob (renewal / offchain input) settle together.
 	wg := &sync.WaitGroup{}

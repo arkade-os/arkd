@@ -36,7 +36,6 @@ type ServerParams struct {
 	CheckpointTapscript string
 	Fees                FeeInfo
 	DeprecatedSigners   []DeprecatedSigner
-	Digest              string
 }
 
 func (p ServerParams) CheckpointExitPath() []byte {

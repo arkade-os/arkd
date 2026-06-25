@@ -29,7 +29,6 @@ var (
 		ForfeitAddress:      "bcrt1qzvqj",
 		CheckpointTapscript: "abcdefghijklmnopqrtuvxyz",
 		DeprecatedSigners:   []clientlib.DeprecatedSigner{},
-		Digest:              "digest",
 	}
 )
 
