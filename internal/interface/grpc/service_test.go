@@ -2,12 +2,19 @@ package grpcservice
 
 import (
 	"context"
+	"net"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	channelzpb "google.golang.org/grpc/channelz/grpc_channelz_v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 // Mock connection object implementing grpc.ClientConnInterface
@@ -127,5 +134,52 @@ func TestSplitConnNewStream(t *testing.T) {
 			require.InDelta(t, expected, got, float64(tolerance),
 				"stream pool[%d] distribution", i)
 		}
+	})
+}
+
+// TestRegisterChannelz verifies the channelz introspection service is served
+// when (and only when) registerChannelz is called with enabled=true.
+func TestRegisterChannelz(t *testing.T) {
+	newChannelzClient := func(t *testing.T, enabled bool) channelzpb.ChannelzClient {
+		t.Helper()
+
+		lis := bufconn.Listen(1 << 20)
+		srv := grpc.NewServer()
+		registerChannelz(srv, enabled)
+		go func() { _ = srv.Serve(lis) }()
+		t.Cleanup(srv.Stop)
+
+		conn, err := grpc.NewClient(
+			"passthrough:///bufconn",
+			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+				return lis.Dial()
+			}),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = conn.Close() })
+
+		return channelzpb.NewChannelzClient(conn)
+	}
+
+	t.Run("enabled: channelz service answers queries", func(t *testing.T) {
+		client := newChannelzClient(t, true)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := client.GetTopChannels(ctx, &channelzpb.GetTopChannelsRequest{})
+		require.NoError(t, err)
+	})
+
+	t.Run("disabled: channelz is not registered", func(t *testing.T) {
+		client := newChannelzClient(t, false)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := client.GetTopChannels(ctx, &channelzpb.GetTopChannelsRequest{})
+		require.Error(t, err)
+		require.Equal(t, codes.Unimplemented, status.Code(err))
 	})
 }
