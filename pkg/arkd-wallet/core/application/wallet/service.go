@@ -669,9 +669,11 @@ func (w *wallet) SignTransaction(
 		}
 
 		if len(input.TaprootLeafScript) > 0 {
-			signingKey := w.keyMgr.forfeitPrvkey
+			var signingKey *btcec.PrivateKey
 			if signMode == application.SignModeSigner {
-				signingKey  = w.signerKeyForLeaf(input.TaprootLeafScript[0].Script)
+				signingKey = w.signerKeyForLeaf(input.TaprootLeafScript[0].Script)
+			} else {
+				signingKey = w.keyMgr.forfeitPrvkey
 			}
 
 			tapLeaf := txscript.NewBaseTapLeaf(input.TaprootLeafScript[0].Script)
@@ -808,7 +810,7 @@ func (w *wallet) signerKeyForLeaf(leafScript []byte) *btcec.PrivateKey {
 	default:
 		return w.SignerKey
 	}
-	
+
 	for _, k := range w.DeprecatedSignerKeys {
 		want := schnorr.SerializePubKey(k.Key.PubKey())
 		for _, pubkey := range leafKeys {
