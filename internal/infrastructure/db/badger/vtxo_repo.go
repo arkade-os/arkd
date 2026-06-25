@@ -17,8 +17,8 @@ import (
 const vtxoStoreDir = "vtxos"
 
 type vtxoRepository struct {
-	store     *badgerhold.Store
-	arkStore  *badgerhold.Store
+	store    *badgerhold.Store
+	arkStore *badgerhold.Store
 }
 
 type vtxoDTO struct {

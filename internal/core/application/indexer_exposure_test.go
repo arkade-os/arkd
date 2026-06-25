@@ -1287,4 +1287,3 @@ func buildExpiredToken(t *testing.T, privkey *btcec.PrivateKey, outpoints []Outp
 
 	return base64.StdEncoding.EncodeToString(append(msg, sig.Serialize()...))
 }
-
