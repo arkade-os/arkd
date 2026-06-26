@@ -33,6 +33,11 @@ type RoundRepository interface {
 	// used to lazily persist fees recomputed for rounds finalized before fee
 	// persistence was introduced (https://github.com/arkade-os/arkd/pull/933).
 	PatchCollectedFees(ctx context.Context, feesByRoundId map[string]uint64) error
+	// PatchForfeitTxs replaces the stored tx (PSBT) of the given forfeit txs,
+	// keyed by txid. Used to backfill the operator signature on forfeit txs that
+	// were persisted before collection-time signing was introduced. Signing only
+	// adds witness data, so the txid is unchanged and safely keys the update.
+	PatchForfeitTxs(ctx context.Context, txByTxid map[string]string) error
 	Close()
 }
 

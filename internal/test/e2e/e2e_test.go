@@ -6756,3 +6756,121 @@ func TestDeprecatedSignerKey(t *testing.T) {
 		require.ErrorContains(t, err, "is a deprecated key since")
 	})
 }
+
+// TestEagerForfeitSurvivesWalletRotation checks that a forfeit signed at
+// collection time stays broadcastable across a hard signer-key rotation: after
+// rotating to a new key with no deprecated key retained, the server still
+// broadcasts the pre-signed forfeit to punish a fraudulent unroll of the
+// forfeited vtxo.
+func TestEagerForfeitSurvivesWalletRotation(t *testing.T) {
+	const (
+		oldSignerKey = "afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0"
+		newSignerKey = "2222222222222222222222222222222222222222222222222222222222222222"
+	)
+	ctx := t.Context()
+
+	// restore the old signer key (no deprecated keys) for other integration tests
+	t.Cleanup(func() {
+		require.NoError(t, recreateArkdWallet(oldSignerKey, ""))
+	})
+
+	client := setupClientWallet(t)
+	indexerClient := client.Indexer()
+
+	_, arkAddr, boardingAddress, err := client.Receive(ctx)
+	require.NoError(t, err)
+
+	faucetOnchain(t, boardingAddress.Address, 0.00021)
+	time.Sleep(5 * time.Second)
+
+	// settle 1: board -> vtxo locked to the OLD signer key
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		vtxos, err := client.NotifyIncomingFunds(ctx, arkAddr.Address)
+		require.NoError(t, err)
+		require.NotNil(t, vtxos)
+	}()
+	res, err := client.Settle(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.NotEmpty(t, res.CommitmentTxid)
+	wg.Wait()
+	time.Sleep(5 * time.Second)
+
+	// settle 2: the first vtxo is forfeited. Its forfeit tx is collected AND
+	// operator-signed here, while the OLD key is still current, so the stored
+	// forfeit is broadcast-ready.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		vtxos, err := client.NotifyIncomingFunds(ctx, arkAddr.Address)
+		require.NoError(t, err)
+		require.NotNil(t, vtxos)
+	}()
+	_, err = client.Settle(ctx)
+	require.NoError(t, err)
+	wg.Wait()
+	time.Sleep(time.Second)
+
+	// the forfeited vtxo: spent, confirmed (non-preconfirmed), from commitment 1
+	_, spentVtxos, err := client.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, spentVtxos)
+
+	var vtxo types.Vtxo
+	for _, v := range spentVtxos {
+		if !v.Preconfirmed && v.CommitmentTxids[0] == res.CommitmentTxid {
+			vtxo = v
+			break
+		}
+	}
+	require.NotEmpty(t, vtxo.Txid)
+
+	// hard rotation: new signer key, NO deprecated key. The forfeit was already
+	// signed with the old key at collection time, so it must remain broadcastable.
+	require.NoError(t, recreateArkdWallet(newSignerKey, ""))
+
+	// confirm the rotation is a clean switch: no deprecated keys remain
+	info, err := client.Client().GetInfo(ctx)
+	require.NoError(t, err)
+	require.Empty(t, info.DeprecatedSignerPubKeys)
+
+	explorer, err := mempoolexplorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest,
+		mempoolexplorer.WithTracker(false),
+	)
+	require.NoError(t, err)
+
+	// fraud: unroll the already-forfeited vtxo onchain
+	branch, err := redemption.NewRedeemBranch(ctx, explorer, indexerClient, vtxo)
+	require.NoError(t, err)
+	leafTx, err := branch.NextRedeemTx()
+	require.NoError(t, err)
+	require.NotEmpty(t, leafTx)
+
+	bumpAndBroadcastTx(t, leafTx, explorer)
+	time.Sleep(5 * time.Second)
+
+	// the vtxo is now unrolled and unspent in the mempool
+	spentStatus, err := explorer.GetTxOutspends(vtxo.Txid)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(spentStatus), int(vtxo.VOut))
+	require.False(t, spentStatus[vtxo.VOut].Spent)
+
+	require.NoError(t, generateBlocks(1))
+
+	// give the server time to react to the fraud
+	time.Sleep(8 * time.Second)
+
+	// the pre-signed forfeit survives the rotation: the server broadcast it and
+	// claimed the unrolled vtxo. Fraud is punished.
+	spentStatus, err = explorer.GetTxOutspends(vtxo.Txid)
+	require.NoError(t, err)
+	require.NotEmpty(t, spentStatus)
+	require.True(t, spentStatus[vtxo.VOut].Spent,
+		"forfeit signed at collection time must stay broadcastable across a hard "+
+			"signer rotation, letting the server punish the fraud")
+	require.NotEmpty(t, spentStatus[vtxo.VOut].SpentBy)
+}
