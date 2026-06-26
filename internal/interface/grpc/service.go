@@ -380,7 +380,10 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof, withChannelz bool)
 		arkv1.RegisterWalletInitializerServiceServer(adminGrpcServer, walletInitHandler)
 		arkv1.RegisterSignerManagerServiceServer(adminGrpcServer, signerManagerHandler)
 		grpchealth.RegisterHealthServer(adminGrpcServer, healthHandler)
-		registerChannelz(adminGrpcServer, withChannelz)
+		if withChannelz {
+			channelzservice.RegisterChannelzServiceToServer(adminGrpcServer)
+			log.Debug("channelz enabled on admin port")
+		}
 	} else {
 		arkv1.RegisterAdminServiceServer(grpcServer, adminHandler)
 		arkv1.RegisterWalletServiceServer(grpcServer, walletHandler)
@@ -571,20 +574,6 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof, withChannelz bool)
 	}
 
 	return nil
-}
-
-// registerChannelz registers the gRPC channelz introspection service on srv
-// when enabled, and logs that channelz is active. channelz is exposed only on
-// the admin server (newServer passes adminGrpcServer), so it inherits the admin
-// auth interceptors and never reaches the public port. Importing
-// channelz/service also turns channelz data collection on process-wide via its
-// init(); the flag gates only exposure, not collection.
-func registerChannelz(srv grpc.ServiceRegistrar, enabled bool) {
-	if !enabled {
-		return
-	}
-	channelzservice.RegisterChannelzServiceToServer(srv)
-	log.Info("channelz enabled on admin port")
 }
 
 func (s *service) onUnlock(password string) {
