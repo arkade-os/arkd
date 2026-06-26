@@ -5,12 +5,19 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	log "github.com/sirupsen/logrus"
+)
+
+var (
+	initialBackoff = time.Second
+	maxBackoff     = 30 * time.Second
 )
 
 type scanner struct {
@@ -50,20 +57,40 @@ func (s *scanner) start(ctx context.Context) error {
 	}
 
 	go func() {
+		backoff := initialBackoff
+
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case utxos := <-notificationCh:
-				if len(s.notificationListeners) == 0 {
+			case utxos, ok := <-notificationCh:
+				if !ok {
+					log.WithFields(log.Fields{"backoff": backoff}).Warn("reconnecting to nbxplorer")
+					timer := time.NewTimer(backoff)
+					select {
+					case <-ctx.Done():
+						timer.Stop()
+						return
+					case <-timer.C:
+					}
+
+					nextCh, err := s.nbxplorer.GetAddressNotifications(ctx)
+					if err == nil {
+						log.Info("reconnected to nbxplorer")
+						notificationCh = nextCh
+					}
+
+					backoff *= 2
+					if backoff > maxBackoff {
+						backoff = maxBackoff
+					}
 					continue
 				}
 
+				backoff = initialBackoff
+
 				notificationsMap := make(map[string][]application.Utxo)
 				for _, utxo := range utxos {
-					if _, ok := notificationsMap[utxo.Script]; !ok {
-						notificationsMap[utxo.Script] = make([]application.Utxo, 0)
-					}
 					notificationsMap[utxo.Script] = append(notificationsMap[utxo.Script], application.Utxo{
 						Txid:   utxo.OutPoint.Hash.String(),
 						Index:  utxo.OutPoint.Index,
