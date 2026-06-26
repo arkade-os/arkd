@@ -63,6 +63,9 @@ func (c *Config) initServices() error {
 	if err != nil {
 		return fmt.Errorf("invalid signer secret key format, must be hex")
 	}
+	if len(buf) != 32 {
+		return fmt.Errorf("invalid signer secret key format, must be 32 bytes")
+	}
 	prvkey, _ := btcec.PrivKeyFromBytes(buf)
 
 	deprecated, err := parseDeprecatedKeys(c.DeprecatedKeys)

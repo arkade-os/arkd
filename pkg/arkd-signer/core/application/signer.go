@@ -100,6 +100,12 @@ func (s *signer) sign(
 		return "", err
 	}
 
+	for _, idx := range inputIndexes {
+		if idx < 0 || idx >= len(ptx.Inputs) {
+			return "", fmt.Errorf("input index %d out of range [0,%d)", idx, len(ptx.Inputs))
+		}
+	}
+
 	fetcher, err := txsigner.BuildPrevoutFetcher(ptx)
 	if err != nil {
 		return "", err
@@ -152,9 +158,13 @@ func (s *signer) signerKeyForLeaf(leafScript []byte) *btcec.PrivateKey {
 	switch c := closure.(type) {
 	case *script.MultisigClosure:
 		leafKeys = c.PubKeys
+	case *script.CSVMultisigClosure:
+		leafKeys = c.PubKeys
 	case *script.CLTVMultisigClosure:
 		leafKeys = c.PubKeys
 	case *script.ConditionMultisigClosure:
+		leafKeys = c.PubKeys
+	case *script.ConditionCSVMultisigClosure:
 		leafKeys = c.PubKeys
 	default:
 		return s.key
