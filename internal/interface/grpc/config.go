@@ -20,6 +20,7 @@ type Config struct {
 	TLSExtraDomains      []string
 	HeartbeatInterval    int64
 	EnablePprof          bool
+	EnableChannelz       bool
 	MaxConcurrentStreams uint32
 	StreamConnPoolSize   uint32
 }
