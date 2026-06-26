@@ -162,17 +162,28 @@ export ARKD_WALLET_NBXPLORER_URL=http://localhost:32838
 
 ### Configure signer
 
-`arkd-signer` is a standalone service that holds the operator signing key and signs `arkd`'s protocol transactions. Configure its key via environment variable:
+`arkd-signer` is a standalone service that holds the operator signing key and signs `arkd`'s protocol transactions. It is configured via the following environment variables:
+
+| Environment Variable          | Description                                                                       | Default     |
+|-------------------------------|-----------------------------------------------------------------------------------|-------------|
+| `ARKD_SIGNER_SECRET_KEY`      | Hex-encoded operator signing key (required, sensitive)                            | -           |
+| `ARKD_SIGNER_DEPRECATED_KEYS` | Comma-separated old keys still accepted for signing, for key rotation (sensitive) | -           |
+| `ARKD_SIGNER_PORT`            | Port to listen on                                                                 | `6061`      |
+| `ARKD_SIGNER_LOG_LEVEL`       | Logging level (0-6, where 6 is trace)                                             | `4` (info)  |
+
+Configure the signing key (required):
 
 ```sh
 # Make sure to use a random private key, this is just an example.
 export ARKD_SIGNER_SECRET_KEY=19422b10efd05403820ff6a3365422be2fc5f07f34a6d1603f7298328f0f80f6
 ```
 
-To rotate the signer key while still accepting coins locked to the old key, list deprecated keys as a comma-separated list of `hexkey[:cutoff_unix_timestamp]`:
+To rotate the signer key while still accepting coins locked to old keys, set `ARKD_SIGNER_DEPRECATED_KEYS` to a comma-separated list of old keys. Each entry is a hex key, optionally followed by `:` and a cutoff date, which is a Unix timestamp in **seconds** (UTC), after which clients should stop locking new funds to that key. Omit the cutoff to leave it unset:
 
 ```sh
-export ARKD_SIGNER_DEPRECATED_KEYS=<old_hex_key>:<unix_cutoff>
+# Format: <hexkey>[:<cutoff_unix_seconds>],<hexkey>[:<cutoff_unix_seconds>]
+# Example with two deprecated keys: the first retires at a cutoff date, the second has no cutoff.
+export ARKD_SIGNER_DEPRECATED_KEYS=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6:1735689600,f0e1d2c3b4a59687766554433221100ff1e2d3c4b5a69788796a5b4c3d2e1f00
 ```
 
 ### Connect to wallet
@@ -349,6 +360,8 @@ To compile the `arkd` binary from source, you can use the following Make command
    make integrationtest
    make docker-stop
    ```
+
+   `make docker-run` brings up the full stack defined in `docker-compose.regtest.yml` (postgres, redis, nbxplorer, `arkd-wallet`, `arkd-signer`, and `arkd`).
 
 ### Protobuf Breaking Change Detection
 

@@ -26,7 +26,7 @@ const (
 func startAction(_ *cli.Context) error {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		return fmt.Errorf("invalid config: %s", err)
+		return fmt.Errorf("invalid arkd config: %s", err)
 	}
 
 	log.SetLevel(log.Level(cfg.LogLevel))
@@ -53,9 +53,9 @@ func startAction(_ *cli.Context) error {
 		return err
 	}
 
-	log.Infof("ark server config: %s", cfg)
+	log.Infof("arkd server config: %s", cfg)
 
-	log.Debug("starting service...")
+	log.Debug("starting arkd service...")
 	if err := svc.Start(); err != nil {
 		return err
 	}
@@ -68,7 +68,7 @@ func startAction(_ *cli.Context) error {
 	)
 	<-sigChan
 
-	log.Debug("shutting down service...")
+	log.Debug("shutting down arkd service...")
 	log.Exit(0)
 
 	return nil

@@ -21,3 +21,19 @@ func TestLoadConfigParsesSecretKey(t *testing.T) {
 	require.NotNil(t, cfg.SignerSvc)
 	require.EqualValues(t, 6061, cfg.Port)
 }
+
+func TestConfigStringRedactsSecrets(t *testing.T) {
+	secretKey := "afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0"
+	deprecatedKey := "1111111111111111111111111111111111111111111111111111111111111111"
+	t.Setenv("ARKD_SIGNER_SECRET_KEY", secretKey)
+	t.Setenv("ARKD_SIGNER_DEPRECATED_KEYS", deprecatedKey)
+
+	cfg, err := config.LoadConfig()
+	require.NoError(t, err)
+
+	out := cfg.String()
+	require.NotContains(t, out, secretKey)
+	require.NotContains(t, out, deprecatedKey)
+	require.Contains(t, out, "***")
+	require.Contains(t, out, "6061") // non-sensitive field preserved
+}

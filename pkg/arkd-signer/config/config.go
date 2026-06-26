@@ -30,7 +30,8 @@ type Config struct {
 	SecretKey      string
 	DeprecatedKeys string
 
-	SignerSvc application.Signer
+	// never serialized: holds the live operator key; keep it out of String()/JSON
+	SignerSvc application.Signer `json:"-"`
 }
 
 func LoadConfig() (*Config, error) {
