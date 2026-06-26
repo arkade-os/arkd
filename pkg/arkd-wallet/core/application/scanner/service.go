@@ -59,13 +59,20 @@ func (s *scanner) start(ctx context.Context) error {
 	go func() {
 		backoff := initialBackoff
 
+		connected := true
+
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case utxos, ok := <-notificationCh:
 				if !ok {
-					log.WithFields(log.Fields{"backoff": backoff}).Warn("reconnecting to nbxplorer")
+					if connected {
+						log.Warn("nbxplorer disconnected")
+						connected = false
+					}
+
+					log.WithFields(log.Fields{"backoff": backoff}).Info("reconnecting to nbxplorer")
 					timer := time.NewTimer(backoff)
 					select {
 					case <-ctx.Done():
@@ -77,6 +84,7 @@ func (s *scanner) start(ctx context.Context) error {
 					nextCh, err := s.nbxplorer.GetAddressNotifications(ctx)
 					if err == nil {
 						log.Info("reconnected to nbxplorer")
+						connected = true
 						notificationCh = nextCh
 					}
 
