@@ -85,7 +85,9 @@ func (s *scanner) start(ctx context.Context) error {
 					if err == nil {
 						log.Info("reconnected to nbxplorer")
 						connected = true
+						backoff = initialBackoff
 						notificationCh = nextCh
+						continue
 					}
 
 					backoff *= 2
@@ -94,8 +96,6 @@ func (s *scanner) start(ctx context.Context) error {
 					}
 					continue
 				}
-
-				backoff = initialBackoff
 
 				notificationsMap := make(map[string][]application.Utxo)
 				for _, utxo := range utxos {
