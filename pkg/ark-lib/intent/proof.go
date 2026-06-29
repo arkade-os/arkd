@@ -165,6 +165,7 @@ func New(message string, inputs []Input, outputs []*wire.TxOut) (*Proof, error) 
 	return &Proof{Packet: *toSign}, nil
 }
 
+// Fees returns the implicit fee of the proof transaction (sum of inputs minus sum of outputs).
 func (p Proof) Fees() (int64, error) {
 	sumOfInputs := int64(0)
 	for i, input := range p.Inputs {
@@ -199,6 +200,7 @@ func (p Proof) GetOutpoints() []wire.OutPoint {
 	return outpoints
 }
 
+// IntentOutpoint wraps a wire.OutPoint with an IsSeal flag indicating whether the outpoint is a seal VTXO.
 type IntentOutpoint struct {
 	wire.OutPoint
 	IsSeal bool
@@ -215,6 +217,8 @@ func (p Proof) ContainsOutputs() bool {
 	return true
 }
 
+// FinalizeAndExtract finalizes all PSBT inputs and extracts the fully-signed wire transaction.
+// Optional signers are given fake signatures so the finalization can estimate the correct transaction weight.
 func (p Proof) FinalizeAndExtract(signers ...*btcec.PublicKey) (*wire.MsgTx, error) {
 	if len(p.Inputs) < 2 {
 		return nil, ErrInvalidTxNumberOfInputs

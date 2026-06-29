@@ -25,6 +25,7 @@ import (
 
 const noteProofMessage = "test-note-closure-parity"
 
+// TestNewIntent verifies that New constructs a valid PSBT proof for well-formed inputs and returns errors for invalid ones.
 func TestNewIntent(t *testing.T) {
 	validFixtures, invalidFixtures := parseProofFixtures(t)
 
@@ -87,6 +88,7 @@ func TestNewIntent(t *testing.T) {
 	})
 }
 
+// TestVerifyIntent verifies that Verify accepts valid signed proofs and rejects malformed or tampered ones.
 func TestVerifyIntent(t *testing.T) {
 	validFixtures, invalidFixtures := parseVerifyFixtures(t)
 
@@ -173,6 +175,7 @@ func TestVerifyIntent(t *testing.T) {
 	})
 }
 
+// TestIntentGetOutpoints checks that GetOutpoints returns the correct slice of outpoints, excluding the toSpend input.
 func TestIntentGetOutpoints(t *testing.T) {
 	t.Run("zero inputs", func(t *testing.T) {
 		ptxWithZeroInputs := psbt.Packet{
