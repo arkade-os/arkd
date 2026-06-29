@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -280,10 +281,86 @@ func (r *arkRepository) AddOrUpdateOffchainTx(
 	return r.addCheckpointTxs(ctx, *offchainTx)
 }
 
-func (r *arkRepository) GetOffchainTx(
-	ctx context.Context, txid string,
-) (*domain.OffchainTx, error) {
-	return r.getOffchainTx(ctx, txid)
+func (r *arkRepository) GetOffchainTxs(
+	ctx context.Context, filter domain.OffchainTxFilter,
+) ([]*domain.OffchainTx, error) {
+	if err := filter.Validate(); err != nil {
+		return nil, err
+	}
+
+	// NOTE: badgerhold has no per-field ordering or LIMIT push-down, so
+	// this call reads every offchain_tx row into memory before any
+	// predicate runs. Acceptable for the small-scale dev/test setups
+	// that use the badger backend; production deployments should use
+	// the SQL backends, which push the LIMIT to the DB engine.
+	var all []domain.OffchainTx
+	if ctx.Value("tx") != nil {
+		tx := ctx.Value("tx").(*badger.Txn)
+		if err := r.store.TxFind(tx, &all, nil); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := r.store.Find(&all, nil); err != nil {
+			return nil, err
+		}
+	}
+
+	wantTxids := make(map[string]struct{}, len(filter.WithTxids))
+	for _, t := range filter.WithTxids {
+		wantTxids[t] = struct{}{}
+	}
+
+	out := make([]*domain.OffchainTx, 0)
+	for i := range all {
+		off := all[i]
+		if off.Stage.Code == int(domain.OffchainTxUndefinedStage) {
+			continue
+		}
+		if off.IsFailed() {
+			continue
+		}
+		if len(wantTxids) > 0 {
+			if _, ok := wantTxids[off.ArkTxid]; !ok {
+				continue
+			}
+		}
+		if (filter.WithExtension || len(filter.WithPacket) > 0) && len(off.Packets) == 0 {
+			continue
+		}
+		if filter.WithAfterDate > 0 && off.StartingTimestamp < filter.WithAfterDate {
+			continue
+		}
+		if filter.WithBeforeDate > 0 && off.StartingTimestamp > filter.WithBeforeDate {
+			continue
+		}
+		offCopy := off
+		match, err := filter.MatchPackets(&offCopy)
+		if err != nil {
+			return nil, err
+		}
+		if !match {
+			continue
+		}
+		out = append(out, &offCopy)
+	}
+
+	// Match the SQL backends' ORDER BY starting_timestamp DESC, txid ASC
+	// so the same filter yields the same row order regardless of
+	// storage backend (important for client-side after=lastSeen
+	// pagination).
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].StartingTimestamp != out[j].StartingTimestamp {
+			return out[i].StartingTimestamp > out[j].StartingTimestamp
+		}
+		return out[i].ArkTxid < out[j].ArkTxid
+	})
+
+	// Apply the unconstrained-scan cap after sorting so the visible
+	// page is deterministic for any caller paginating in Go.
+	if len(wantTxids) == 0 && len(out) > domain.OffchainTxsScanLimit {
+		out = out[:domain.OffchainTxsScanLimit]
+	}
+	return out, nil
 }
 
 func (r *arkRepository) Close() {

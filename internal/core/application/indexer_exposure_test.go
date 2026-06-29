@@ -187,7 +187,7 @@ func TestGetVirtualTxs(t *testing.T) {
 			name       string
 			exposure   exposure
 			makeToken  func(*testing.T, *indexerService) string
-			setupMocks func(*mockedRoundRepo, *mockedVtxoRepo)
+			setupMocks func(*mockedOffchainTxRepo, *mockedRoundRepo)
 			wantTxs    int
 		}{
 			{
@@ -196,7 +196,11 @@ func TestGetVirtualTxs(t *testing.T) {
 				name:      "public, no token",
 				exposure:  exposurePublic,
 				makeToken: func(_ *testing.T, indexer *indexerService) string { return "" },
-				setupMocks: func(rounds *mockedRoundRepo, _ *mockedVtxoRepo) {
+				setupMocks: func(off *mockedOffchainTxRepo, rounds *mockedRoundRepo) {
+					off.On("GetOffchainTxs", mock.Anything, mock.Anything).
+						Return([]*domain.OffchainTx{}, nil)
+					// Pure-txid fallback into the rounds repo for txids
+					// the offchain repo didn't return.
 					rounds.On("GetTxsWithTxids", mock.Anything, testTxids).
 						Return([]string{}, nil)
 				},
@@ -209,7 +213,9 @@ func TestGetVirtualTxs(t *testing.T) {
 				name:      "public, bad token is ignored",
 				exposure:  exposurePublic,
 				makeToken: func(_ *testing.T, indexer *indexerService) string { return "badtoken" },
-				setupMocks: func(rounds *mockedRoundRepo, _ *mockedVtxoRepo) {
+				setupMocks: func(off *mockedOffchainTxRepo, rounds *mockedRoundRepo) {
+					off.On("GetOffchainTxs", mock.Anything, mock.Anything).
+						Return([]*domain.OffchainTx{}, nil)
 					rounds.On("GetTxsWithTxids", mock.Anything, testTxids).
 						Return([]string{}, nil)
 				},
@@ -221,7 +227,9 @@ func TestGetVirtualTxs(t *testing.T) {
 				name:      "withheld, no token",
 				exposure:  exposureWithheld,
 				makeToken: func(_ *testing.T, indexer *indexerService) string { return "" },
-				setupMocks: func(rounds *mockedRoundRepo, _ *mockedVtxoRepo) {
+				setupMocks: func(off *mockedOffchainTxRepo, rounds *mockedRoundRepo) {
+					off.On("GetOffchainTxs", mock.Anything, mock.Anything).
+						Return([]*domain.OffchainTx{}, nil)
 					rounds.On("GetTxsWithTxids", mock.Anything, testTxids).
 						Return([]string{}, nil)
 				},
@@ -237,7 +245,9 @@ func TestGetVirtualTxs(t *testing.T) {
 					require.NoError(t, err)
 					return token
 				},
-				setupMocks: func(rounds *mockedRoundRepo, _ *mockedVtxoRepo) {
+				setupMocks: func(off *mockedOffchainTxRepo, rounds *mockedRoundRepo) {
+					off.On("GetOffchainTxs", mock.Anything, mock.Anything).
+						Return([]*domain.OffchainTx{}, nil)
 					rounds.On("GetTxsWithTxids", mock.Anything, testTxids).
 						Return([]string{}, nil)
 				},
@@ -245,7 +255,8 @@ func TestGetVirtualTxs(t *testing.T) {
 			},
 			{
 				// private + valid token: cache hit → valid=true → signatures not stripped.
-				// Fake tx strings are returned as-is since stripping is skipped.
+				// Offchain repo returns the requested tx, so the rounds fallback
+				// doesn't fire.
 				name:     "private, valid token",
 				exposure: exposurePrivate,
 				makeToken: func(t *testing.T, i *indexerService) string {
@@ -253,9 +264,9 @@ func TestGetVirtualTxs(t *testing.T) {
 					require.NoError(t, err)
 					return token
 				},
-				setupMocks: func(rounds *mockedRoundRepo, _ *mockedVtxoRepo) {
-					rounds.On("GetTxsWithTxids", mock.Anything, testTxids).
-						Return(testTxids, nil)
+				setupMocks: func(off *mockedOffchainTxRepo, _ *mockedRoundRepo) {
+					off.On("GetOffchainTxs", mock.Anything, mock.Anything).
+						Return([]*domain.OffchainTx{{ArkTxid: testTxids[0], ArkTx: "fake"}}, nil)
 				},
 				wantTxs: 1,
 			},
@@ -263,17 +274,21 @@ func TestGetVirtualTxs(t *testing.T) {
 
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
+				off := &mockedOffchainTxRepo{}
 				rounds := &mockedRoundRepo{}
-				vtxos := &mockedVtxoRepo{}
-				tc.setupMocks(rounds, vtxos)
+				tc.setupMocks(off, rounds)
 
-				indexer := newTestIndexer(t, privkey, tc.exposure, rounds, vtxos, nil)
+				indexer := newTestIndexer(t, privkey, tc.exposure, rounds, nil, nil, off)
 				token := tc.makeToken(t, indexer)
 
-				resp, err := indexer.GetVirtualTxs(t.Context(), token, testTxids, nil)
+				resp, err := indexer.GetVirtualTxs(
+					t.Context(), token,
+					domain.OffchainTxFilter{WithTxids: testTxids}, nil,
+				)
 				require.NoError(t, err)
 				require.Len(t, resp.Txs, tc.wantTxs)
 
+				off.AssertExpectations(t)
 				rounds.AssertExpectations(t)
 			})
 		}
@@ -338,7 +353,10 @@ func TestGetVirtualTxs(t *testing.T) {
 				indexer := newTestIndexer(t, privkey, tc.exposure, nil, nil, nil)
 				token := tc.makeToken(t, indexer)
 
-				_, err := indexer.GetVirtualTxs(t.Context(), token, testTxids, nil)
+				_, err := indexer.GetVirtualTxs(
+					t.Context(), token,
+					domain.OffchainTxFilter{WithTxids: testTxids}, nil,
+				)
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.errContains)
 			})
@@ -367,7 +385,7 @@ func TestGetVirtualTxsByIntent(t *testing.T) {
 			name       string
 			exposure   exposure
 			intent     Intent
-			setupMocks func(*mockedRoundRepo, *mockedVtxoRepo, *mockedWallet)
+			setupMocks func(*mockedOffchainTxRepo, *mockedVtxoRepo, *mockedWallet)
 			wantTxs    int
 		}{
 			{
@@ -375,9 +393,9 @@ func TestGetVirtualTxsByIntent(t *testing.T) {
 				name:     "public, vtxo validation skipped",
 				exposure: exposurePublic,
 				intent:   validIntent,
-				setupMocks: func(rounds *mockedRoundRepo, _ *mockedVtxoRepo, _ *mockedWallet) {
-					rounds.On("GetTxsWithTxids", mock.Anything, []string{testVtxoTxid}).
-						Return([]string{"fakeTxData"}, nil)
+				setupMocks: func(off *mockedOffchainTxRepo, _ *mockedVtxoRepo, _ *mockedWallet) {
+					off.On("GetOffchainTxs", mock.Anything, mock.Anything).
+						Return([]*domain.OffchainTx{{ArkTxid: testVtxoTxid, ArkTx: "fakeTxData"}}, nil)
 				},
 				wantTxs: 1,
 			},
@@ -385,12 +403,12 @@ func TestGetVirtualTxsByIntent(t *testing.T) {
 				name:     "private, valid intent",
 				exposure: exposurePrivate,
 				intent:   validIntent,
-				setupMocks: func(rounds *mockedRoundRepo, vtxos *mockedVtxoRepo, _ *mockedWallet) {
+				setupMocks: func(off *mockedOffchainTxRepo, vtxos *mockedVtxoRepo, _ *mockedWallet) {
 					vtxos.On("GetVtxos", mock.Anything,
 						[]domain.Outpoint{{Txid: testVtxoTxid, VOut: testVtxoVout}}).
 						Return([]domain.Vtxo{validVtxo}, nil)
-					rounds.On("GetTxsWithTxids", mock.Anything, []string{testVtxoTxid}).
-						Return([]string{"fakeTxData"}, nil)
+					off.On("GetOffchainTxs", mock.Anything, mock.Anything).
+						Return([]*domain.OffchainTx{{ArkTxid: testVtxoTxid, ArkTx: "fakeTxData"}}, nil)
 				},
 				wantTxs: 1,
 			},
@@ -398,18 +416,20 @@ func TestGetVirtualTxsByIntent(t *testing.T) {
 
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
-				rounds := &mockedRoundRepo{}
+				off := &mockedOffchainTxRepo{}
 				vtxos := &mockedVtxoRepo{}
 				wallet := &mockedWallet{}
-				tc.setupMocks(rounds, vtxos, wallet)
+				tc.setupMocks(off, vtxos, wallet)
 
-				indexer := newTestIndexer(t, privkey, tc.exposure, rounds, vtxos, wallet)
+				indexer := newTestIndexer(t, privkey, tc.exposure, nil, vtxos, wallet, off)
 
-				resp, err := indexer.GetVirtualTxsByIntent(t.Context(), tc.intent, nil)
+				resp, err := indexer.GetVirtualTxsByIntent(
+					t.Context(), tc.intent, domain.OffchainTxFilter{}, nil,
+				)
 				require.NoError(t, err)
 				require.Len(t, resp.Txs, tc.wantTxs)
 
-				rounds.AssertExpectations(t)
+				off.AssertExpectations(t)
 				vtxos.AssertExpectations(t)
 				wallet.AssertExpectations(t)
 			})
@@ -509,7 +529,9 @@ func TestGetVirtualTxsByIntent(t *testing.T) {
 
 				indexer := newTestIndexer(t, privkey, tc.exposure, nil, vtxos, wallet)
 
-				_, err := indexer.GetVirtualTxsByIntent(t.Context(), tc.makeIntent(), nil)
+				_, err := indexer.GetVirtualTxsByIntent(
+					t.Context(), tc.makeIntent(), domain.OffchainTxFilter{}, nil,
+				)
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.errContains)
 
@@ -694,17 +716,22 @@ func TestGetVtxoChainByIntent(t *testing.T) {
 
 			rounds := &mockedRoundRepo{}
 			vtxos := &mockedVtxoRepo{}
+			off := &mockedOffchainTxRepo{}
 
 			// GetVtxos is called twice: validateIntent + buildVtxoChain.
 			vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{{Txid: leafTxid, VOut: 0}}).
 				Return([]domain.Vtxo{vtxoData}, nil)
 			rounds.On("GetRoundVtxoTree", mock.Anything, commitmentTxid).
 				Return(flatTree, nil)
-			// GetVirtualTxs fetches the txs for the leaf and root txids.
-			rounds.On("GetTxsWithTxids", mock.Anything, mock.Anything).
-				Return([]string{"fakeTx1", "fakeTx2"}, nil)
+			// GetVirtualTxs fetches both leaf and root tree tx: return them as fake
+			// offchain rows so the txid whitelist check in private mode passes.
+			off.On("GetOffchainTxs", mock.Anything, mock.Anything).
+				Return([]*domain.OffchainTx{
+					{ArkTxid: leafTxid, ArkTx: "fakeTx1"},
+					{ArkTxid: rootTxid, ArkTx: "fakeTx2"},
+				}, nil)
 
-			indexer := newTestIndexer(t, privkey, exposurePrivate, rounds, vtxos, nil)
+			indexer := newTestIndexer(t, privkey, exposurePrivate, rounds, vtxos, nil, off)
 
 			// GetVtxoChainByIntent validates the intent, builds the chain, and
 			// returns a token covering all outpoints in the chain.
@@ -716,13 +743,15 @@ func TestGetVtxoChainByIntent(t *testing.T) {
 			// The token's txid whitelist must include the leaf and the root tree tx.
 			// Verify by calling GetVirtualTxs for both txids — should succeed without error.
 			virtualResp, err := indexer.GetVirtualTxs(
-				t.Context(), chainResp.AuthToken, []string{leafTxid, rootTxid}, nil,
+				t.Context(), chainResp.AuthToken,
+				domain.OffchainTxFilter{WithTxids: []string{leafTxid, rootTxid}}, nil,
 			)
 			require.NoError(t, err)
 			require.Len(t, virtualResp.Txs, 2)
 
 			rounds.AssertExpectations(t)
 			vtxos.AssertExpectations(t)
+			off.AssertExpectations(t)
 		})
 	})
 
@@ -1122,6 +1151,7 @@ func TestRevokeTokens(t *testing.T) {
 func newTestIndexer(
 	t *testing.T, privkey *btcec.PrivateKey, exposure exposure,
 	rounds *mockedRoundRepo, vtxos *mockedVtxoRepo, wallet *mockedWallet,
+	offchainTxs ...*mockedOffchainTxRepo,
 ) *indexerService {
 	t.Helper()
 
@@ -1134,6 +1164,9 @@ func newTestIndexer(
 	}
 	if vtxos != nil {
 		repo.On("Vtxos").Return(vtxos)
+	}
+	if len(offchainTxs) > 0 && offchainTxs[0] != nil {
+		repo.On("OffchainTxs").Return(offchainTxs[0])
 	}
 
 	cache := newTokenCache(defaultAuthTokenTTL)
@@ -1341,6 +1374,28 @@ func (m *mockedRepoManager) Vtxos() domain.VtxoRepository {
 		return v.(domain.VtxoRepository)
 	}
 	return nil
+}
+
+func (m *mockedRepoManager) OffchainTxs() domain.OffchainTxRepository {
+	if v := m.Called().Get(0); v != nil {
+		return v.(domain.OffchainTxRepository)
+	}
+	return nil
+}
+
+type mockedOffchainTxRepo struct {
+	mock.Mock
+	domain.OffchainTxRepository // unimplemented methods panic on call
+}
+
+func (m *mockedOffchainTxRepo) GetOffchainTxs(
+	ctx context.Context, filter domain.OffchainTxFilter,
+) ([]*domain.OffchainTx, error) {
+	args := m.Called(ctx, filter)
+	if v := args.Get(0); v != nil {
+		return v.([]*domain.OffchainTx), args.Error(1)
+	}
+	return nil, args.Error(1)
 }
 
 type mockedWallet struct {
