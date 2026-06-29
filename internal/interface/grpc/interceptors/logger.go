@@ -13,6 +13,11 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+const (
+	maxMetadataValueSizeBytes = 100
+	invalidMetadataValue      = "arklabs/invalid"
+)
+
 // metadataOfInterest is the allowlist of incoming gRPC metadata keys we log.
 // gRPC lowercases all incoming metadata keys, so entries here must be lowercase.
 var metadataOfInterest = map[string]struct{}{
@@ -97,11 +102,23 @@ func sanitizeMetadata(ctx context.Context) (string, bool) {
 		if len(vals) == 0 {
 			continue
 		}
-		if len(vals) == 1 {
-			selected[key] = vals[0]
-			continue
+		sanitizedVals := make([]string, 0, len(vals))
+		for _, v := range vals {
+			if len(v) > maxMetadataValueSizeBytes {
+				log.WithFields(log.Fields{
+					"key": key,
+					"len": len(v),
+				}).Warn("metadata of interest value too large")
+				sanitizedVals = append(sanitizedVals, invalidMetadataValue)
+				continue
+			}
+			sanitizedVals = append(sanitizedVals, v)
 		}
-		selected[key] = vals
+		if len(sanitizedVals) == 1 {
+			selected[key] = sanitizedVals[0]
+		} else {
+			selected[key] = sanitizedVals
+		}
 	}
 
 	if len(selected) == 0 {
