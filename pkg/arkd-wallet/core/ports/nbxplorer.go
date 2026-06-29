@@ -28,6 +28,10 @@ type Utxo struct {
 	Script        string
 	Address       string
 	Confirmations uint32
+	// KeyPath is the derivation path of the script relative to its account
+	// derivation scheme (e.g. "0/5"). It may be empty for scripts that are not
+	// derived from a tracked derivation scheme (e.g. watch-only addresses).
+	KeyPath string
 }
 
 type ScriptPubKeyDetails struct {
