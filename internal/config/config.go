@@ -27,6 +27,7 @@ import (
 	fileunlocker "github.com/arkade-os/arkd/internal/infrastructure/unlocker/file"
 	walletclient "github.com/arkade-os/arkd/internal/infrastructure/wallet"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/batchtrigger"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
@@ -146,6 +147,11 @@ type Config struct {
 	MaxConcurrentStreams uint32
 	StreamConnPoolSize   uint32
 
+	// BatchTrigger is an optional CEL formula. When set, the server only
+	// starts a new batch round when the formula evaluates to true. When
+	// empty, every session starts a round (legacy behaviour).
+	BatchTrigger string
+
 	fee            ports.FeeManager
 	repo           ports.RepoManager
 	svc            application.Service
@@ -247,6 +253,9 @@ var (
 	IndexerSigningKey    = "INDEXER_SIGNING_PRIVKEY" // #nosec G101
 	MaxConcurrentStreams = "MAX_CONCURRENT_STREAMS"
 	StreamConnPoolSize   = "STREAM_CONN_POOL_SIZE"
+	// BatchTrigger is a CEL formula evaluated before every round to decide
+	// whether the server should start a new batch. Empty = always start.
+	BatchTrigger = "BATCH_TRIGGER"
 
 	// MinBuildVersionHeader is used to specify the X-Build-Version header clients should submit
 	// to not have their request eventually rejected
@@ -513,6 +522,7 @@ func LoadConfig() (*Config, error) {
 		),
 		// Default to 1 if set to 0
 		MaxOpReturnOutputs:         max(1, viper.GetUint64(MaxOpReturnOutputs)),
+		BatchTrigger:               viper.GetString(BatchTrigger),
 		BuildVersionHeaderRequired: viper.GetBool(MinBuildVersionHeaderRequired),
 		BuildVersionHeader:         viper.GetString(MinBuildVersionHeader),
 		DigestHeaderRequired:       viper.GetBool(DigestHeaderRequired),
@@ -582,6 +592,10 @@ func (c *Config) Validate() error {
 
 	if c.MaxConcurrentStreams == 0 {
 		return fmt.Errorf("max concurrent streams must be greater than 0")
+	}
+
+	if _, err := batchtrigger.New(c.BatchTrigger); err != nil {
+		return fmt.Errorf("invalid batch trigger program: %w", err)
 	}
 
 	if c.BuildVersionHeaderRequired && len(c.BuildVersionHeader) <= 0 {
@@ -1001,6 +1015,7 @@ func (c *Config) getSettings() (*domain.Settings, error) {
 		c.BoardingExitDelay, c.VtxoTreeExpiry,
 		c.MaxTxWeight, c.MaxOpReturnOutputs, c.AssetTxMaxWeightRatio, c.NoteUriPrefix,
 		c.BuildVersionHeader, c.BuildVersionHeaderRequired, c.DigestHeaderRequired,
+		c.BatchTrigger,
 	)
 	if err != nil {
 		return nil, err

@@ -6,6 +6,7 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/batchtrigger"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 )
 
@@ -62,6 +63,7 @@ type Settings struct {
 	BuildVersionHeader            string
 	BuildVersionHeaderRequired    bool
 	DigestHeaderRequired          bool
+	BatchTrigger                  string
 	UpdatedAt                     time.Time
 }
 
@@ -75,6 +77,7 @@ func NewSettings(
 	maxTxWeight, maxOpReturnOutputs uint64,
 	assetTxMaxWeightRatio float32, noteUriPrefix, minVersionAccepted string,
 	minVersionRequired, digestHeaderRequired bool,
+	batchTrigger string,
 ) (*Settings, error) {
 	settings := &Settings{
 		SessionDuration:               time.Duration(sessionDuration) * time.Second,
@@ -101,6 +104,7 @@ func NewSettings(
 		BuildVersionHeader:            minVersionAccepted,
 		BuildVersionHeaderRequired:    minVersionRequired,
 		DigestHeaderRequired:          digestHeaderRequired,
+		BatchTrigger:                  batchTrigger,
 		UpdatedAt:                     time.Now(),
 	}
 	if err := settings.Validate(); err != nil {
@@ -237,6 +241,9 @@ func (s Settings) Validate() error {
 	if s.BuildVersionHeaderRequired && len(s.BuildVersionHeader) <= 0 {
 		return fmt.Errorf("build version header is required but no version is set")
 	}
+	if _, err := batchtrigger.New(s.BatchTrigger); err != nil {
+		return fmt.Errorf("invalid batch trigger program: %w", err)
+	}
 	return nil
 }
 
@@ -267,6 +274,7 @@ type SettingsUpdate struct {
 	BuildVersionHeader            *string
 	BuildVersionHeaderRequired    *bool
 	DigestHeaderRequired          *bool
+	BatchTrigger                  *string
 }
 
 // Update updates any field of Settings but ScheduledSession and BatchFees and returns a changelog
@@ -371,6 +379,10 @@ func (s *Settings) Update(u SettingsUpdate) ([]string, error) {
 	if u.DigestHeaderRequired != nil {
 		updated.DigestHeaderRequired = *u.DigestHeaderRequired
 		changelog = append(changelog, "digest_header_required")
+	}
+	if u.BatchTrigger != nil {
+		updated.BatchTrigger = *u.BatchTrigger
+		changelog = append(changelog, "batch_trigger")
 	}
 
 	if err := updated.Validate(); err != nil {

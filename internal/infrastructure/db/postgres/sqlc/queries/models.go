@@ -245,6 +245,7 @@ type Setting struct {
 	BuildVersionHeaderRequired                bool
 	DigestHeaderRequired                      bool
 	UpdatedAt                                 int64
+	BatchTrigger                              string
 }
 
 type SettingsHistory struct {

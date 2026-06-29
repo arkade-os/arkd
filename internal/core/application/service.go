@@ -17,6 +17,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/batchtrigger"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
@@ -50,6 +51,21 @@ type service struct {
 	roundReportSvc RoundReportService
 	alerts         ports.Alerts
 	feeManager     ports.FeeManager
+
+	// batchTrigger caches the compiled CEL gate evaluated at the top of every
+	// startRound() call, together with the program text it was compiled from.
+	// The gate program lives in settings, so it can change at runtime via the
+	// admin UpdateSettings endpoint; the trigger is recompiled lazily whenever
+	// batchTriggerSrc no longer matches the configured program. A nil trigger
+	// always permits the round. startRound runs in a single goroutine, so these
+	// fields need no synchronization.
+	batchTrigger    *batchtrigger.Trigger
+	batchTriggerSrc string
+	batchTriggerSet bool
+	// lastBatchAt is the Unix timestamp of the most recently finalized
+	// batch. Set after a successful EndFinalization. Zero until the first
+	// batch is finalized after server start.
+	lastBatchAt atomic.Int64
 
 	operatorPrvkey *btcec.PrivateKey
 	operatorPubkey *btcec.PublicKey
@@ -90,6 +106,7 @@ func NewService(
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch signer pubkey: %w", err)
 	}
+
 	deprecatedSignerPubkeys, err := signer.GetDeprecatedPubkeys(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch deprecated signer pubkeys: %w", err)
@@ -2375,6 +2392,123 @@ func (s *service) start() {
 	s.startRound()
 }
 
+// aggregateIntentTriggerData computes the boarding/fee aggregates exposed to
+// the batch_trigger CEL program from a list of pending intents. The implicit
+// fee per intent is (input amounts) - (output amounts), where inputs include
+// both vtxo inputs and boarding inputs. Mirrors the formula used to compute
+// round-level CollectedFees in alert.go.
+func aggregateIntentTriggerData(
+	intents []ports.TimedIntent,
+) (boardingInputsCount int64, totalBoardingAmount, totalIntentFees uint64) {
+	for _, it := range intents {
+		var boardingAmount uint64
+		for _, bi := range it.BoardingInputs {
+			boardingAmount += bi.Amount
+			boardingInputsCount++
+		}
+		totalBoardingAmount += boardingAmount
+
+		inputAmount := it.TotalInputAmount() + boardingAmount
+		outputAmount := it.TotalOutputAmount()
+		if inputAmount > outputAmount {
+			totalIntentFees += inputAmount - outputAmount
+		}
+	}
+	return
+}
+
+// collectTriggerContext gathers a snapshot of the variables exposed to the
+// batch_trigger CEL program. Errors are logged and surfaced as zero values so
+// that a transient failure (e.g. a wallet RPC blip) cannot wedge the round
+// scheduler — the gate then falls through to the worst-case interpretation
+// (no fee/no intent/no boarding) which a sensible formula will reject.
+func (s *service) collectTriggerContext(ctx context.Context) batchtrigger.Context {
+	tc := batchtrigger.Context{}
+
+	if feerate, err := s.wallet.FeeRate(ctx); err != nil {
+		log.WithError(err).Warn("batch_trigger: failed to read fee rate")
+	} else {
+		tc.CurrentFeerate = feerate
+	}
+
+	if last := s.lastBatchAt.Load(); last > 0 {
+		now := time.Now().Unix()
+		if now > last {
+			tc.TimeSinceLastBatch = now - last
+		}
+	}
+
+	// Read intents once so IntentsCount and the boarding/fee aggregates all
+	// derive from the same snapshot — using a separate Len() call would race
+	// with concurrent intent registrations.
+	intents, err := s.cache.Intents().ViewAll(ctx, nil)
+	if err != nil {
+		log.WithError(err).Warn("batch_trigger: failed to view pending intents")
+		return tc
+	}
+	tc.IntentsCount = int64(len(intents))
+	tc.BoardingInputsCount, tc.TotalBoardingAmount, tc.TotalIntentFees =
+		aggregateIntentTriggerData(intents)
+
+	return tc
+}
+
+// resolveBatchTrigger returns the compiled CEL gate for the given program text,
+// recompiling (and caching) only when the source changed since the last call.
+// The gate program lives in settings, so operators can retune it on the fly via
+// the admin UpdateSettings endpoint without restarting the server. A nil trigger
+// means "always permit"; the empty program compiles to a nil trigger.
+func (s *service) resolveBatchTrigger(program string) (*batchtrigger.Trigger, error) {
+	if s.batchTriggerSet && s.batchTriggerSrc == program {
+		return s.batchTrigger, nil
+	}
+	tr, err := batchtrigger.New(program)
+	if err != nil {
+		return nil, err
+	}
+	s.batchTrigger = tr
+	s.batchTriggerSrc = program
+	s.batchTriggerSet = true
+	return tr, nil
+}
+
+// evalBatchTrigger evaluates the supplied trigger against the supplied context.
+// Returns true when the trigger is nil, when the program returns true, or when
+// evaluation fails (failing open is intentional — we never want a buggy formula
+// to halt rounds permanently; the misconfiguration is logged loudly).
+func evalBatchTrigger(tr *batchtrigger.Trigger, tc batchtrigger.Context) bool {
+	if tr == nil {
+		return true
+	}
+	ok, err := tr.Eval(tc)
+	if err != nil {
+		log.WithError(err).Warnf(
+			"batch_trigger: evaluation failed for program %q, starting batch as fallback",
+			tr.Source(),
+		)
+		return true
+	}
+	return ok
+}
+
+// shouldStartBatch evaluates the batch_trigger gate for the given program using
+// a freshly collected context. An empty or uncompilable program permits the
+// round (failing open); a stored program is already validated at write time, so
+// a compile error here is unexpected and logged loudly.
+func (s *service) shouldStartBatch(ctx context.Context, program string) bool {
+	tr, err := s.resolveBatchTrigger(program)
+	if err != nil {
+		log.WithError(err).Warnf(
+			"batch_trigger: failed to compile program %q, starting batch as fallback", program,
+		)
+		return true
+	}
+	if tr == nil {
+		return true
+	}
+	return evalBatchTrigger(tr, s.collectTriggerContext(ctx))
+}
+
 func (s *service) startRound() {
 	defer s.wg.Done()
 
@@ -2433,6 +2567,21 @@ func (s *service) startRound() {
 				)
 			}
 		}
+	}
+
+	if !s.shouldStartBatch(ctx, settings.BatchTrigger) {
+		// Gate denied the round. Wait one registration window then re-check
+		// without creating any round state.
+		backoff := newRoundTiming(settings.SessionDuration).registrationDuration()
+		log.Debugf("batch_trigger denied round, waiting %s before re-check", backoff)
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		s.wg.Add(1)
+		go s.startRound()
+		return
 	}
 
 	round := domain.NewRound()
@@ -3361,6 +3510,8 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming, setting
 		changes = round.Fail(errors.INTERNAL_ERROR.New("failed to finalize round: %s", err))
 		return
 	}
+
+	s.lastBatchAt.Store(time.Now().Unix())
 
 	totalOutputVtxos := len(round.VtxoTree.Leaves())
 	numOfTreeNodes := len(round.VtxoTree)
