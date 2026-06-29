@@ -15,9 +15,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var (
-	initialBackoff = time.Second
-	maxBackoff     = 30 * time.Second
+const (
+	defaultInitialBackoff = time.Second
+	defaultMaxBackoff     = 30 * time.Second
 )
 
 type scanner struct {
@@ -28,6 +28,8 @@ type scanner struct {
 
 	lock                  sync.RWMutex
 	notificationListeners []chan map[string][]application.Utxo
+	initialBackoff        time.Duration
+	maxBackoff            time.Duration
 }
 
 // New creates a new BlockchainScanner service
@@ -41,6 +43,8 @@ func New(nbxplorer ports.Nbxplorer, network string) (application.BlockchainScann
 		lock:                  sync.RWMutex{},
 		notificationListeners: make([]chan map[string][]application.Utxo, 0),
 		chainParams:           application.NetworkToChainParams(network),
+		initialBackoff:        defaultInitialBackoff,
+		maxBackoff:            defaultMaxBackoff,
 	}
 
 	if err := svc.start(ctx); err != nil {
@@ -57,7 +61,7 @@ func (s *scanner) start(ctx context.Context) error {
 	}
 
 	go func() {
-		backoff := initialBackoff
+		backoff := s.initialBackoff
 
 		connected := true
 
@@ -85,14 +89,14 @@ func (s *scanner) start(ctx context.Context) error {
 					if err == nil {
 						log.Info("reconnected to nbxplorer")
 						connected = true
-						backoff = initialBackoff
+						backoff = s.initialBackoff
 						notificationCh = nextCh
 						continue
 					}
 
 					backoff *= 2
-					if backoff > maxBackoff {
-						backoff = maxBackoff
+					if backoff > s.maxBackoff {
+						backoff = s.maxBackoff
 					}
 					continue
 				}

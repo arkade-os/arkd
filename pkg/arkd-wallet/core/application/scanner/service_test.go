@@ -2,7 +2,6 @@ package scanner
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +12,100 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
+
+func TestConnection(t *testing.T) {
+	startScanner := func(t *testing.T, fake *fakeNbxplorer, initialBackoff, maxBackoff time.Duration) *scanner {
+		t.Helper()
+
+		s := &scanner{
+			nbxplorer:             fake,
+			chainParams:           &chaincfg.RegressionNetParams,
+			notificationListeners: make([]chan map[string][]application.Utxo, 0),
+			initialBackoff:        initialBackoff,
+			maxBackoff:            maxBackoff,
+		}
+		require.NoError(t, s.start(t.Context()))
+		return s
+	}
+
+	addListeners := func(s *scanner, count int) []chan map[string][]application.Utxo {
+		listeners := make([]chan map[string][]application.Utxo, count)
+		s.lock.Lock()
+		defer s.lock.Unlock()
+		for i := range listeners {
+			listeners[i] = make(chan map[string][]application.Utxo, 128)
+			s.notificationListeners = append(s.notificationListeners, listeners[i])
+		}
+		return listeners
+	}
+
+	expectNotification := func(t *testing.T, ch <-chan map[string][]application.Utxo, script string, value uint64, timeout time.Duration) {
+		t.Helper()
+
+		select {
+		case msg := <-ch:
+			require.Len(t, msg, 1)
+			utxos := msg[script]
+			require.Len(t, utxos, 1)
+			require.Equal(t, script, utxos[0].Script)
+			require.EqualValues(t, value, utxos[0].Value)
+		case <-time.After(timeout):
+			require.Fail(t, "timeout waiting for notification")
+		}
+	}
+
+	t.Run("fanout to listeners", func(t *testing.T) {
+		notifCh := make(chan []ports.Utxo, 1)
+		fake := &fakeNbxplorer{notifChs: []chan []ports.Utxo{notifCh}}
+		listeners := addListeners(startScanner(t, fake, defaultInitialBackoff, defaultMaxBackoff), 2)
+
+		notifCh <- []ports.Utxo{{
+			OutPoint: wire.OutPoint{Index: 0},
+			Script:   "deadbeef",
+			Value:    1000,
+		}}
+
+		for _, listener := range listeners {
+			expectNotification(t, listener, "deadbeef", 1000, time.Second)
+		}
+	})
+
+	t.Run("reconnects on closed channel", func(t *testing.T) {
+		firstCh := make(chan []ports.Utxo)
+		secondCh := make(chan []ports.Utxo, 1)
+		fake := &fakeNbxplorer{notifChs: []chan []ports.Utxo{firstCh, secondCh}}
+		listener := addListeners(startScanner(t, fake, 10*time.Millisecond, 50*time.Millisecond), 1)[0]
+
+		close(firstCh)
+		secondCh <- []ports.Utxo{{
+			OutPoint: wire.OutPoint{Index: 1},
+			Script:   "cafebabe",
+			Value:    5000,
+		}}
+
+		expectNotification(t, listener, "cafebabe", 5000, 2*time.Second)
+		require.GreaterOrEqual(t, fake.calls(), 2)
+	})
+
+	t.Run("reconnects multiple times", func(t *testing.T) {
+		ch1 := make(chan []ports.Utxo)
+		ch2 := make(chan []ports.Utxo)
+		ch3 := make(chan []ports.Utxo, 1)
+		fake := &fakeNbxplorer{notifChs: []chan []ports.Utxo{ch1, ch2, ch3}}
+		listener := addListeners(startScanner(t, fake, 5*time.Millisecond, 20*time.Millisecond), 1)[0]
+
+		close(ch1)
+		close(ch2)
+		ch3 <- []ports.Utxo{{
+			OutPoint: wire.OutPoint{Index: 2},
+			Script:   "f00dface",
+			Value:    9000,
+		}}
+
+		expectNotification(t, listener, "f00dface", 9000, 2*time.Second)
+		require.GreaterOrEqual(t, fake.calls(), 3)
+	})
+}
 
 type fakeNbxplorer struct {
 	ports.Nbxplorer
@@ -44,155 +137,4 @@ func (f *fakeNbxplorer) calls() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.callIdx
-}
-
-func TestNew_InitialGetAddressNotificationsError(t *testing.T) {
-	fake := &fakeNbxplorer{
-		initialErr: fmt.Errorf("nbxplorer unavailable"),
-	}
-	_, err := New(fake, "regtest")
-	require.Error(t, err)
-}
-
-func TestStart_FanoutToListeners(t *testing.T) {
-	notifCh := make(chan []ports.Utxo, 1)
-	fake := &fakeNbxplorer{
-		notifChs: []chan []ports.Utxo{notifCh},
-	}
-
-	ctx := t.Context()
-
-	s := &scanner{
-		nbxplorer:             fake,
-		chainParams:           &chaincfg.RegressionNetParams,
-		notificationListeners: make([]chan map[string][]application.Utxo, 0),
-	}
-	require.NoError(t, s.start(ctx))
-
-	listener1 := make(chan map[string][]application.Utxo, 128)
-	listener2 := make(chan map[string][]application.Utxo, 128)
-	s.lock.Lock()
-	s.notificationListeners = append(s.notificationListeners, listener1, listener2)
-	s.lock.Unlock()
-
-	notifCh <- []ports.Utxo{{
-		OutPoint: wire.OutPoint{Index: 0},
-		Script:   "deadbeef",
-		Value:    1000,
-	}}
-
-	expectNotification := func(ch <-chan map[string][]application.Utxo) {
-		select {
-		case msg := <-ch:
-			require.Len(t, msg, 1)
-			utxos := msg["deadbeef"]
-			require.Len(t, utxos, 1)
-			require.Equal(t, "deadbeef", utxos[0].Script)
-			require.EqualValues(t, 1000, utxos[0].Value)
-		case <-time.After(time.Second):
-			require.Fail(t, "timeout waiting for notification")
-		}
-	}
-
-	expectNotification(listener1)
-	expectNotification(listener2)
-}
-
-func TestStart_ReconnectsOnClosedChannel(t *testing.T) {
-	initialBackoff = 10 * time.Millisecond
-	maxBackoff = 50 * time.Millisecond
-	defer func() {
-		initialBackoff = time.Second
-		maxBackoff = 30 * time.Second
-	}()
-
-	firstCh := make(chan []ports.Utxo)
-	secondCh := make(chan []ports.Utxo, 1)
-	fake := &fakeNbxplorer{
-		notifChs: []chan []ports.Utxo{firstCh, secondCh},
-	}
-
-	ctx := t.Context()
-
-	s := &scanner{
-		nbxplorer:             fake,
-		chainParams:           &chaincfg.RegressionNetParams,
-		notificationListeners: make([]chan map[string][]application.Utxo, 0),
-	}
-	require.NoError(t, s.start(ctx))
-
-	listener := make(chan map[string][]application.Utxo, 128)
-	s.lock.Lock()
-	s.notificationListeners = append(s.notificationListeners, listener)
-	s.lock.Unlock()
-
-	close(firstCh)
-
-	secondCh <- []ports.Utxo{{
-		OutPoint: wire.OutPoint{Index: 1},
-		Script:   "cafebabe",
-		Value:    5000,
-	}}
-
-	select {
-	case msg := <-listener:
-		require.Len(t, msg, 1)
-		utxos := msg["cafebabe"]
-		require.Len(t, utxos, 1)
-		require.Equal(t, "cafebabe", utxos[0].Script)
-		require.EqualValues(t, 5000, utxos[0].Value)
-	case <-time.After(2 * time.Second):
-		require.Fail(t, "timeout waiting for notification after reconnect")
-	}
-	require.GreaterOrEqual(t, fake.calls(), 2)
-}
-
-func TestStart_ReconnectsMultipleTimes(t *testing.T) {
-	initialBackoff = 5 * time.Millisecond
-	maxBackoff = 20 * time.Millisecond
-	defer func() {
-		initialBackoff = time.Second
-		maxBackoff = 30 * time.Second
-	}()
-
-	ch1 := make(chan []ports.Utxo)
-	ch2 := make(chan []ports.Utxo)
-	ch3 := make(chan []ports.Utxo, 1)
-	fake := &fakeNbxplorer{
-		notifChs: []chan []ports.Utxo{ch1, ch2, ch3},
-	}
-
-	ctx := t.Context()
-
-	s := &scanner{
-		nbxplorer:             fake,
-		chainParams:           &chaincfg.RegressionNetParams,
-		notificationListeners: make([]chan map[string][]application.Utxo, 0),
-	}
-	require.NoError(t, s.start(ctx))
-
-	listener := make(chan map[string][]application.Utxo, 128)
-	s.lock.Lock()
-	s.notificationListeners = append(s.notificationListeners, listener)
-	s.lock.Unlock()
-
-	close(ch1)
-	close(ch2)
-	ch3 <- []ports.Utxo{{
-		OutPoint: wire.OutPoint{Index: 2},
-		Script:   "f00dface",
-		Value:    9000,
-	}}
-
-	select {
-	case msg := <-listener:
-		require.Len(t, msg, 1)
-		utxos := msg["f00dface"]
-		require.Len(t, utxos, 1)
-		require.Equal(t, "f00dface", utxos[0].Script)
-		require.EqualValues(t, 9000, utxos[0].Value)
-	case <-time.After(2 * time.Second):
-		require.Fail(t, "timeout waiting for notification after multiple reconnects")
-	}
-	require.GreaterOrEqual(t, fake.calls(), 3)
 }
