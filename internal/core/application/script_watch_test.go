@@ -19,75 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// randomTapKey generates a valid 32-byte x-only pubkey as 64 hex chars.
-func randomTapKey(t *testing.T) string {
-	t.Helper()
-	priv, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-	return hex.EncodeToString(schnorr.SerializePubKey(priv.PubKey()))
-}
-
-// p2trScriptBytes returns the raw P2TR script bytes for a tapkey hex string.
-func p2trScriptBytes(t *testing.T, tapKeyHex string) []byte {
-	t.Helper()
-	b, err := hex.DecodeString(tapKeyHex)
-	require.NoError(t, err)
-	pk, err := schnorr.ParsePubKey(b)
-	require.NoError(t, err)
-	s, err := arkscript.P2TRScript(pk)
-	require.NoError(t, err)
-	return s
-}
-
-// checkpointPsbtB64 builds a base64 PSBT whose first (and only) output has
-// the given pkscript, matching the shape restore/stop parses from the DB.
-func checkpointPsbtB64(t *testing.T, firstOutputPkScript []byte) string {
-	t.Helper()
-	ptx, err := psbt.New(
-		[]*wire.OutPoint{{Hash: chainhash.Hash{}, Index: 0}},
-		[]*wire.TxOut{{Value: 1000, PkScript: firstOutputPkScript}},
-		3, 0,
-		[]uint32{wire.MaxTxInSequenceNum},
-	)
-	require.NoError(t, err)
-	b64, err := ptx.B64Encode()
-	require.NoError(t, err)
-	return b64
-}
-
-// arkTxPsbtB64 builds a base64 PSBT whose outputs are the given pkscripts.
-// decodeTx extracts vtxos from these outputs (PubKey = PkScript[2:]).
-func arkTxPsbtB64(t *testing.T, outputScripts [][]byte) string {
-	t.Helper()
-	outs := make([]*wire.TxOut, 0, len(outputScripts))
-	for _, s := range outputScripts {
-		outs = append(outs, &wire.TxOut{Value: 1000000, PkScript: s})
-	}
-	ptx, err := psbt.New(
-		[]*wire.OutPoint{{Hash: chainhash.Hash{}, Index: 0}},
-		outs,
-		3, 0,
-		[]uint32{wire.MaxTxInSequenceNum},
-	)
-	require.NoError(t, err)
-	b64, err := ptx.B64Encode()
-	require.NoError(t, err)
-	return b64
-}
-
-// vtxoScriptHex matches the service's fmt.Sprintf("5120%s", key) for vtxo
-// tapkeys.
-func vtxoScriptHex(tapKeyHex string) string {
-	return fmt.Sprintf("5120%s", tapKeyHex)
-}
-
-// ckptScriptHex matches the service's hex.EncodeToString(TxOut[0].PkScript)
-// for checkpoint txs.
-func ckptScriptHex(t *testing.T, tapKeyHex string) string {
-	t.Helper()
-	return hex.EncodeToString(p2trScriptBytes(t, tapKeyHex))
-}
-
 func TestRestoreWatchingVtxos(t *testing.T) {
 	t.Run("happy_path", func(t *testing.T) {
 		k1 := randomTapKey(t)
@@ -364,72 +295,6 @@ func TestStopWatchingVtxos(t *testing.T) {
 	})
 }
 
-// newFinalizedOffchainTx builds a finalized OffchainTx with the given ark tx
-// and checkpoint txs, replaying the Requested→Accepted→Finalized event chain.
-func newFinalizedOffchainTx(t *testing.T, arkTxid, arkPsbt string, checkpointTxs map[string]string) domain.OffchainTx {
-	t.Helper()
-	ckptTxids := make(map[string]string, len(checkpointTxs))
-	for txid := range checkpointTxs {
-		ckptTxids[txid] = "commitment_" + txid
-	}
-	return *domain.NewOffchainTxFromEvents([]domain.Event{
-		domain.OffchainTxRequested{
-			OffchainTxEvent: domain.OffchainTxEvent{
-				Id: arkTxid, Type: domain.EventTypeOffchainTxRequested,
-			},
-			ArkTx:                 arkPsbt,
-			UnsignedCheckpointTxs: checkpointTxs,
-			StartingTimestamp:     time.Now().Unix(),
-		},
-		domain.OffchainTxAccepted{
-			OffchainTxEvent: domain.OffchainTxEvent{
-				Id: arkTxid, Type: domain.EventTypeOffchainTxAccepted,
-			},
-			CommitmentTxids:     ckptTxids,
-			FinalArkTx:          arkPsbt,
-			SignedCheckpointTxs: checkpointTxs,
-			RootCommitmentTxid:  "root",
-			ExpiryTimestamp:     time.Now().Add(time.Hour).Unix(),
-		},
-		domain.OffchainTxFinalized{
-			OffchainTxEvent: domain.OffchainTxEvent{
-				Id: arkTxid, Type: domain.EventTypeOffchainTxFinalized,
-			},
-			FinalCheckpointTxs: checkpointTxs,
-			Timestamp:          time.Now().Unix(),
-		},
-	})
-}
-
-// newAcceptedOffchainTx builds an accepted (non-finalized) OffchainTx.
-func newAcceptedOffchainTx(t *testing.T, arkTxid, arkPsbt string, checkpointTxs map[string]string) domain.OffchainTx {
-	t.Helper()
-	ckptTxids := make(map[string]string, len(checkpointTxs))
-	for txid := range checkpointTxs {
-		ckptTxids[txid] = "commitment_" + txid
-	}
-	return *domain.NewOffchainTxFromEvents([]domain.Event{
-		domain.OffchainTxRequested{
-			OffchainTxEvent: domain.OffchainTxEvent{
-				Id: arkTxid, Type: domain.EventTypeOffchainTxRequested,
-			},
-			ArkTx:                 arkPsbt,
-			UnsignedCheckpointTxs: checkpointTxs,
-			StartingTimestamp:     time.Now().Unix(),
-		},
-		domain.OffchainTxAccepted{
-			OffchainTxEvent: domain.OffchainTxEvent{
-				Id: arkTxid, Type: domain.EventTypeOffchainTxAccepted,
-			},
-			CommitmentTxids:     ckptTxids,
-			FinalArkTx:          arkPsbt,
-			SignedCheckpointTxs: checkpointTxs,
-			RootCommitmentTxid:  "root",
-			ExpiryTimestamp:     time.Now().Add(time.Hour).Unix(),
-		},
-	})
-}
-
 func TestOffchainTxHandler_WatchesCheckpointScripts(t *testing.T) {
 	t.Run("finalized_tx_watches_checkpoint_and_vtxo_scripts", func(t *testing.T) {
 		k1 := randomTapKey(t) // vtxo owner (ark tx output)
@@ -502,5 +367,140 @@ func TestOffchainTxHandler_WatchesCheckpointScripts(t *testing.T) {
 		require.Empty(t, scn.Watched())
 		vtxos.AssertNumberOfCalls(t, "GetVtxos", 0)
 		scn.AssertNumberOfCalls(t, "WatchScripts", 0)
+	})
+}
+
+// randomTapKey generates a valid 32-byte x-only pubkey as 64 hex chars.
+func randomTapKey(t *testing.T) string {
+	t.Helper()
+	priv, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	return hex.EncodeToString(schnorr.SerializePubKey(priv.PubKey()))
+}
+
+// p2trScriptBytes returns the raw P2TR script bytes for a tapkey hex string.
+func p2trScriptBytes(t *testing.T, tapKeyHex string) []byte {
+	t.Helper()
+	b, err := hex.DecodeString(tapKeyHex)
+	require.NoError(t, err)
+	pk, err := schnorr.ParsePubKey(b)
+	require.NoError(t, err)
+	s, err := arkscript.P2TRScript(pk)
+	require.NoError(t, err)
+	return s
+}
+
+// checkpointPsbtB64 builds a base64 PSBT whose first (and only) output has
+// the given pkscript, matching the shape restore/stop parses from the DB.
+func checkpointPsbtB64(t *testing.T, firstOutputPkScript []byte) string {
+	t.Helper()
+	ptx, err := psbt.New(
+		[]*wire.OutPoint{{Hash: chainhash.Hash{}, Index: 0}},
+		[]*wire.TxOut{{Value: 1000, PkScript: firstOutputPkScript}},
+		3, 0,
+		[]uint32{wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+	b64, err := ptx.B64Encode()
+	require.NoError(t, err)
+	return b64
+}
+
+// arkTxPsbtB64 builds a base64 PSBT whose outputs are the given pkscripts.
+// decodeTx extracts vtxos from these outputs (PubKey = PkScript[2:]).
+func arkTxPsbtB64(t *testing.T, outputScripts [][]byte) string {
+	t.Helper()
+	outs := make([]*wire.TxOut, 0, len(outputScripts))
+	for _, s := range outputScripts {
+		outs = append(outs, &wire.TxOut{Value: 1000000, PkScript: s})
+	}
+	ptx, err := psbt.New(
+		[]*wire.OutPoint{{Hash: chainhash.Hash{}, Index: 0}},
+		outs,
+		3, 0,
+		[]uint32{wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+	b64, err := ptx.B64Encode()
+	require.NoError(t, err)
+	return b64
+}
+
+// vtxoScriptHex matches the service's fmt.Sprintf("5120%s", key) for vtxo
+// tapkeys.
+func vtxoScriptHex(tapKeyHex string) string {
+	return fmt.Sprintf("5120%s", tapKeyHex)
+}
+
+// ckptScriptHex matches the service's hex.EncodeToString(TxOut[0].PkScript)
+// for checkpoint txs.
+func ckptScriptHex(t *testing.T, tapKeyHex string) string {
+	t.Helper()
+	return hex.EncodeToString(p2trScriptBytes(t, tapKeyHex))
+}
+
+// newFinalizedOffchainTx builds a finalized OffchainTx with the given ark tx
+// and checkpoint txs, replaying the Requested→Accepted→Finalized event chain.
+func newFinalizedOffchainTx(t *testing.T, arkTxid, arkPsbt string, checkpointTxs map[string]string) domain.OffchainTx {
+	t.Helper()
+	ckptTxids := make(map[string]string, len(checkpointTxs))
+	for txid := range checkpointTxs {
+		ckptTxids[txid] = "commitment_" + txid
+	}
+	return *domain.NewOffchainTxFromEvents([]domain.Event{
+		domain.OffchainTxRequested{
+			OffchainTxEvent: domain.OffchainTxEvent{
+				Id: arkTxid, Type: domain.EventTypeOffchainTxRequested,
+			},
+			ArkTx:                 arkPsbt,
+			UnsignedCheckpointTxs: checkpointTxs,
+			StartingTimestamp:     time.Now().Unix(),
+		},
+		domain.OffchainTxAccepted{
+			OffchainTxEvent: domain.OffchainTxEvent{
+				Id: arkTxid, Type: domain.EventTypeOffchainTxAccepted,
+			},
+			CommitmentTxids:     ckptTxids,
+			FinalArkTx:          arkPsbt,
+			SignedCheckpointTxs: checkpointTxs,
+			RootCommitmentTxid:  "root",
+			ExpiryTimestamp:     time.Now().Add(time.Hour).Unix(),
+		},
+		domain.OffchainTxFinalized{
+			OffchainTxEvent: domain.OffchainTxEvent{
+				Id: arkTxid, Type: domain.EventTypeOffchainTxFinalized,
+			},
+			FinalCheckpointTxs: checkpointTxs,
+			Timestamp:          time.Now().Unix(),
+		},
+	})
+}
+
+// newAcceptedOffchainTx builds an accepted (non-finalized) OffchainTx.
+func newAcceptedOffchainTx(t *testing.T, arkTxid, arkPsbt string, checkpointTxs map[string]string) domain.OffchainTx {
+	t.Helper()
+	ckptTxids := make(map[string]string, len(checkpointTxs))
+	for txid := range checkpointTxs {
+		ckptTxids[txid] = "commitment_" + txid
+	}
+	return *domain.NewOffchainTxFromEvents([]domain.Event{
+		domain.OffchainTxRequested{
+			OffchainTxEvent: domain.OffchainTxEvent{
+				Id: arkTxid, Type: domain.EventTypeOffchainTxRequested,
+			},
+			ArkTx:                 arkPsbt,
+			UnsignedCheckpointTxs: checkpointTxs,
+			StartingTimestamp:     time.Now().Unix(),
+		},
+		domain.OffchainTxAccepted{
+			OffchainTxEvent: domain.OffchainTxEvent{
+				Id: arkTxid, Type: domain.EventTypeOffchainTxAccepted,
+			},
+			CommitmentTxids:     ckptTxids,
+			FinalArkTx:          arkPsbt,
+			SignedCheckpointTxs: checkpointTxs,
+			RootCommitmentTxid:  "root",
+			ExpiryTimestamp:     time.Now().Add(time.Hour).Unix(),
+		},
 	})
 }
