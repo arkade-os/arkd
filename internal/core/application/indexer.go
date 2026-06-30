@@ -542,32 +542,46 @@ func (i *indexerService) getVtxoChain(
 		return nil, nil, err
 	}
 
-	// No pagination requested: return the full chain (backward compatible).
-	if page == nil && pageToken == "" {
+	// Cursor pagination. It is fully self-contained in that the page_token carries the
+	// resume offset and the page size is fixed at maxPageSizeVtxoChain. The page
+	// struct is ignored entirely when a token is present.
+	if pageToken != "" {
+		offset, err := i.decodeChainCursor(pageToken, vtxoKey)
+		if err != nil {
+			// page_token is client-supplied input. Surface it as invalid input so
+			// the handler can map it to InvalidArgument rather than Internal.
+			return nil, nil, fmt.Errorf("%w: invalid page_token: %w", ErrInvalidInput, err)
+		}
+		return i.sliceChainPage(
+			chain,
+			offset,
+			int(maxPageSizeVtxoChain),
+			vtxoKey,
+		), allOutpoints, nil
+	}
+
+	// No pagination requested so return the full chain.
+	if page == nil {
 		return &VtxoChainResp{Chain: chain}, allOutpoints, nil
 	}
 
-	// Resolve the page size and the offset of the requested page. A page_token,
-	// when present, carries the resume offset and takes precedence over the page
-	// number; otherwise we honor a page number for offset-style callers.
+	// Offset pagination via page number (no page_token, page non-nil per the guards above).
 	pageSize := int(maxPageSizeVtxoChain)
-	if page != nil && page.PageSize > 0 {
+	if page.PageSize > 0 {
 		pageSize = int(page.PageSize)
 	}
-
 	offset := 0
-	if pageToken != "" {
-		decoded, err := i.decodeChainCursor(pageToken, vtxoKey)
-		if err != nil {
-			// page_token is client-supplied input; surface it as invalid input
-			// so the handler can map it to InvalidArgument rather than Internal.
-			return nil, nil, fmt.Errorf("%w: invalid page_token: %w", ErrInvalidInput, err)
-		}
-		offset = decoded
-	} else if page != nil && page.PageNum > 1 {
+	if page.PageNum > 1 {
 		offset = int(page.PageNum-1) * pageSize
 	}
+	return i.sliceChainPage(chain, offset, pageSize, vtxoKey), allOutpoints, nil
+}
 
+// sliceChainPage returns the page of chain at the given offset and size, plus a
+// next_page_token when more items remain after it.
+func (i *indexerService) sliceChainPage(
+	chain []ChainTx, offset, pageSize int, vtxoKey Outpoint,
+) *VtxoChainResp {
 	pageChain, pageResp, hasMore := paginateByOffset(chain, offset, pageSize)
 
 	var nextToken string
@@ -579,7 +593,7 @@ func (i *indexerService) getVtxoChain(
 		Chain:         pageChain,
 		Page:          pageResp,
 		NextPageToken: nextToken,
-	}, allOutpoints, nil
+	}
 }
 
 // buildVtxoChain builds the full chain of transactions for a given vtxo outpoint.

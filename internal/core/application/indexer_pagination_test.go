@@ -140,24 +140,62 @@ func TestGetVtxoChainPagination(t *testing.T) {
 	require.Empty(t, full.NextPageToken)
 	require.GreaterOrEqual(t, len(full.Chain), 2, "need a multi-tx chain to exercise paging")
 
-	// Page through one tx at a time and reassemble.
-	const pageSize = 1
+	// Request page 1 via the legacy page struct, then follow next_page_token with
+	// a nil page struct: the cursor path is decoupled from the legacy pagination
+	// and needs no page struct to continue.
 	var paged []ChainTx
-	token := ""
-	for iter := 0; iter <= len(full.Chain)+1; iter++ {
-		resp, err := indexer.GetVtxoChain(
-			t.Context(), "", vtxoOutpoint, &Page{PageSize: int32(pageSize)}, token,
-		)
+	resp, err := indexer.GetVtxoChain(t.Context(), "", vtxoOutpoint, &Page{PageSize: 1}, "")
+	require.NoError(t, err)
+	require.Len(t, resp.Chain, 1)
+	paged = append(paged, resp.Chain...)
+
+	token := resp.NextPageToken
+	for iter := 0; token != "" && iter <= len(full.Chain); iter++ {
+		resp, err := indexer.GetVtxoChain(t.Context(), "", vtxoOutpoint, nil, token)
 		require.NoError(t, err)
-		require.LessOrEqual(t, len(resp.Chain), pageSize)
+		require.LessOrEqual(t, len(resp.Chain), int(maxPageSizeVtxoChain))
 		paged = append(paged, resp.Chain...)
 		token = resp.NextPageToken
-		if token == "" {
-			break
-		}
 	}
 	require.Empty(t, token, "pagination did not terminate")
 	require.Equal(t, full.Chain, paged)
+
+	rounds.AssertExpectations(t)
+	vtxos.AssertExpectations(t)
+}
+
+// TestGetVtxoChainPageTokenIgnoresPageStruct proves the cursor path is fully
+// decoupled from the legacy page struct: when a page_token is present, the page
+// struct is ignored and the server-side max page size governs the slice.
+func TestGetVtxoChainPageTokenIgnoresPageStruct(t *testing.T) {
+	privkey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	_, vtxoTxid, flatTree := buildTestTreeTxs(t)
+	commitmentTxid := differentTxid
+	vtxoOutpoint := Outpoint{Txid: vtxoTxid, VOut: 0}
+	vtxoData := domain.Vtxo{Outpoint: vtxoOutpoint, RootCommitmentTxid: commitmentTxid}
+
+	rounds := &mockedRoundRepo{}
+	vtxos := &mockedVtxoRepo{}
+	vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{vtxoOutpoint}).
+		Return([]domain.Vtxo{vtxoData}, nil)
+	rounds.On("GetRoundVtxoTree", mock.Anything, commitmentTxid).
+		Return(flatTree, nil)
+
+	indexer := newTestIndexer(t, privkey, exposurePublic, rounds, vtxos, nil)
+
+	full, err := indexer.GetVtxoChain(t.Context(), "", vtxoOutpoint, nil, "")
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(full.Chain), 2, "need a multi-tx chain to exercise the test")
+
+	// A cursor at offset 0 paired with a deliberately tiny page size must still
+	// return the full first page (bounded only by maxPageSizeVtxoChain), proving
+	// page.PageSize is ignored on the cursor path.
+	token := indexer.encodeChainCursor(0, vtxoOutpoint)
+	resp, err := indexer.GetVtxoChain(t.Context(), "", vtxoOutpoint, &Page{PageSize: 1}, token)
+	require.NoError(t, err)
+	require.Equal(t, full.Chain, resp.Chain)
 
 	rounds.AssertExpectations(t)
 	vtxos.AssertExpectations(t)
