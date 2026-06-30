@@ -188,7 +188,9 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to open round store: %s", err)
 		}
-		vtxoStore, err = vtxoStoreFactory(config.DataStoreConfig...)
+		arkStore := roundStore.(badgerdb.ArkRepository).Store()
+		vtxoStoreConfig := append(config.DataStoreConfig, arkStore)
+		vtxoStore, err = vtxoStoreFactory(vtxoStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
 		}
