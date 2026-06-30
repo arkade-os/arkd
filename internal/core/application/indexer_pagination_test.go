@@ -3,9 +3,7 @@ package application
 import (
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"testing"
-	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -201,111 +199,31 @@ func TestGetVtxoChainPageTokenIgnoresPageStruct(t *testing.T) {
 	vtxos.AssertExpectations(t)
 }
 
-// TestGetVtxoChainInvalidPageTokenDoesNotExtendSession proves that a request
-// that fails cursor decoding does not extend the auth session: touch happens
-// only after a fully successful page fetch.
-func TestGetVtxoChainInvalidPageTokenDoesNotExtendSession(t *testing.T) {
-	privkey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-
-	_, vtxoTxid, flatTree := buildTestTreeTxs(t)
-	commitmentTxid := differentTxid
-	vtxoOutpoint := Outpoint{Txid: vtxoTxid, VOut: 0}
-	vtxoData := domain.Vtxo{Outpoint: vtxoOutpoint, RootCommitmentTxid: commitmentTxid}
-
-	rounds := &mockedRoundRepo{}
-	vtxos := &mockedVtxoRepo{}
-	vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{vtxoOutpoint}).
-		Return([]domain.Vtxo{vtxoData}, nil)
-	rounds.On("GetRoundVtxoTree", mock.Anything, commitmentTxid).
-		Return(flatTree, nil)
-
-	indexer := newTestIndexer(t, privkey, exposurePrivate, rounds, vtxos, nil)
-
-	_, allOutpoints, err := indexer.buildVtxoChain(t.Context(), vtxoOutpoint)
-	require.NoError(t, err)
-	token, err := indexer.createAuthToken(allOutpoints)
-	require.NoError(t, err)
-
-	hash, err := hashOutpoints(allOutpoints)
-	require.NoError(t, err)
-	hashStr := hex.EncodeToString(hash)
-
-	_, before, ok := indexer.tokenCache.getOutpoints(hashStr)
-	require.True(t, ok)
-
-	// A malformed page_token must fail without extending the session.
-	_, err = indexer.GetVtxoChain(t.Context(), token, vtxoOutpoint, &Page{PageSize: 1}, "garbage!!!")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid page_token")
-	require.ErrorIs(t, err, ErrInvalidInput)
-
-	_, after, ok := indexer.tokenCache.getOutpoints(hashStr)
-	require.True(t, ok)
-	require.Equal(t, *before, *after, "a failed request must not extend the session")
-}
-
 // TestValidateChainAuthNilKey ensures a server with no auth private key returns
 // a clean error instead of panicking on the auth path.
 func TestValidateChainAuthNilKey(t *testing.T) {
 	indexer := newTestIndexer(t, nil, exposurePrivate, nil, nil, nil)
 	op := Outpoint{Txid: testTxids[0], VOut: 0}
 
-	_, err := indexer.validateChainAuth("any-token", op, false)
+	err := indexer.validateChainAuth("any-token", op)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "auth not configured")
 }
 
-// TestValidateChainAuthPagination covers the keepalive behaviour: the first page
-// still enforces the signed-timestamp expiry, while a continuation is accepted
-// on signature alone as long as the session is still active in the token cache.
-func TestValidateChainAuthPagination(t *testing.T) {
+// TestGetVtxoChainExpiredTokenRejectedWithPageToken locks in that pagination no
+// longer outlives the auth-token TTL: an expired token is rejected even on a
+// continuation (page_token set), the case the removed session keepalive used to
+// accept.
+func TestGetVtxoChainExpiredTokenRejectedWithPageToken(t *testing.T) {
 	privkey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	op := Outpoint{Txid: testTxids[0], VOut: 0}
-	outpoints := []Outpoint{op}
+	expired := buildExpiredToken(t, privkey, []Outpoint{op})
 
-	hash, err := hashOutpoints(outpoints)
-	require.NoError(t, err)
-	hashStr := hex.EncodeToString(hash)
+	indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
 
-	expired := buildExpiredToken(t, privkey, outpoints)
-
-	t.Run("first page enforces expiry", func(t *testing.T) {
-		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
-		indexer.tokenCache.add(hashStr, outpoints, time.Now())
-
-		_, err := indexer.validateChainAuth(expired, op, false)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "expired")
-	})
-
-	t.Run("continuation accepted while session active", func(t *testing.T) {
-		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
-		indexer.tokenCache.add(hashStr, outpoints, time.Now())
-
-		_, err := indexer.validateChainAuth(expired, op, true)
-		require.NoError(t, err)
-	})
-
-	t.Run("continuation rejected when session inactive", func(t *testing.T) {
-		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
-		// no cache entry added: the session is not active
-
-		_, err := indexer.validateChainAuth(expired, op, true)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "expired")
-	})
-
-	t.Run("continuation rejects malformed token even with active session", func(t *testing.T) {
-		indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
-		indexer.tokenCache.add(hashStr, outpoints, time.Now())
-
-		// A malformed token must be rejected on signature, not accepted just
-		// because the session is still active.
-		_, err := indexer.validateChainAuth("not-a-valid-token", op, true)
-		require.Error(t, err)
-		require.NotContains(t, err.Error(), "expired")
-	})
+	_, err = indexer.GetVtxoChain(t.Context(), expired, op, nil, "some-token")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "auth token expired")
 }
