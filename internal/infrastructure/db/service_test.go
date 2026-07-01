@@ -1146,6 +1146,90 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Empty(t, bulkKeys)
 
+		t.Run("test_get_checkpoint_txs_by_vtxo_pubkeys", func(t *testing.T) {
+			ctx := t.Context()
+
+			checkpointTxid1 := randomString(32)
+			checkpointTx1 := randomTx()
+			checkpointTxid2 := randomString(32)
+			checkpointTx2 := randomTx()
+			checkpointTxid3 := randomString(32)
+			checkpointTx3 := randomTx()
+			checkpointTxid4 := randomString(32)
+			checkpointTx4 := randomTx()
+
+			finalizedArkTxid := randomString(32)
+			finalizedOffchainTx := domain.NewOffchainTxFromEvents([]domain.Event{
+				domain.OffchainTxRequested{
+					OffchainTxEvent: domain.OffchainTxEvent{Id: finalizedArkTxid, Type: domain.EventTypeOffchainTxRequested},
+					ArkTx:                 randomTx(),
+					UnsignedCheckpointTxs: map[string]string{checkpointTxid1: checkpointTx1, checkpointTxid2: checkpointTx2, checkpointTxid3: checkpointTx3},
+					StartingTimestamp:     now.Unix(),
+				},
+				domain.OffchainTxAccepted{
+					OffchainTxEvent:     domain.OffchainTxEvent{Id: finalizedArkTxid, Type: domain.EventTypeOffchainTxAccepted},
+					CommitmentTxids:     map[string]string{checkpointTxid1: randomString(32), checkpointTxid2: randomString(32), checkpointTxid3: randomString(32)},
+					FinalArkTx:          randomTx(),
+					SignedCheckpointTxs: map[string]string{checkpointTxid1: checkpointTx1, checkpointTxid2: checkpointTx2, checkpointTxid3: checkpointTx3},
+					RootCommitmentTxid:  randomString(32),
+					ExpiryTimestamp:     endTimestamp,
+				},
+				domain.OffchainTxFinalized{
+					OffchainTxEvent:    domain.OffchainTxEvent{Id: finalizedArkTxid, Type: domain.EventTypeOffchainTxFinalized},
+					FinalCheckpointTxs: map[string]string{checkpointTxid1: checkpointTx1, checkpointTxid2: checkpointTx2, checkpointTxid3: checkpointTx3},
+					Timestamp:          endTimestamp,
+				},
+			})
+			err = svc.OffchainTxs().AddOrUpdateOffchainTx(ctx, finalizedOffchainTx)
+			require.NoError(t, err)
+
+			acceptedArkTxid := randomString(32)
+			acceptedOffchainTx := domain.NewOffchainTxFromEvents([]domain.Event{
+				domain.OffchainTxRequested{
+					OffchainTxEvent: domain.OffchainTxEvent{Id: acceptedArkTxid, Type: domain.EventTypeOffchainTxRequested},
+					ArkTx:                 randomTx(),
+					UnsignedCheckpointTxs: map[string]string{checkpointTxid4: checkpointTx4},
+					StartingTimestamp:     now.Unix(),
+				},
+				domain.OffchainTxAccepted{
+					OffchainTxEvent:     domain.OffchainTxEvent{Id: acceptedArkTxid, Type: domain.EventTypeOffchainTxAccepted},
+					CommitmentTxids:     map[string]string{checkpointTxid4: randomString(32)},
+					FinalArkTx:          randomTx(),
+					SignedCheckpointTxs: map[string]string{checkpointTxid4: checkpointTx4},
+					RootCommitmentTxid:  randomString(32),
+					ExpiryTimestamp:     endTimestamp,
+				},
+			})
+			err = svc.OffchainTxs().AddOrUpdateOffchainTx(ctx, acceptedOffchainTx)
+			require.NoError(t, err)
+
+			vtxos := []domain.Vtxo{
+				{Outpoint: domain.Outpoint{Txid: randomString(32), VOut: 0}, PubKey: pubkey, Amount: 10000, Spent: true, SpentBy: checkpointTxid1, ArkTxid: finalizedArkTxid},
+				{Outpoint: domain.Outpoint{Txid: randomString(32), VOut: 0}, PubKey: pubkey, Amount: 10000, Spent: true, SpentBy: checkpointTxid2, ArkTxid: finalizedArkTxid},
+				{Outpoint: domain.Outpoint{Txid: randomString(32), VOut: 0}, PubKey: pubkey2, Amount: 10000, Spent: true, SpentBy: checkpointTxid3, ArkTxid: finalizedArkTxid},
+				{Outpoint: domain.Outpoint{Txid: randomString(32), VOut: 0}, PubKey: pubkey2, Amount: 10000, Spent: true, SpentBy: checkpointTxid4, ArkTxid: acceptedArkTxid},
+				{Outpoint: domain.Outpoint{Txid: randomString(32), VOut: 0}, PubKey: pubkey2, Amount: 10000, Spent: true, Swept: true, SpentBy: checkpointTxid3, ArkTxid: finalizedArkTxid},
+			}
+			err = svc.Vtxos().AddVtxos(ctx, vtxos)
+			require.NoError(t, err)
+
+			txs, err := svc.Vtxos().GetCheckpointTxsByVtxoPubKeys(ctx, []string{pubkey})
+			require.NoError(t, err)
+			require.ElementsMatch(t, []domain.Tx{{Txid: checkpointTxid1, Str: checkpointTx1}, {Txid: checkpointTxid2, Str: checkpointTx2}}, txs)
+
+			txs, err = svc.Vtxos().GetCheckpointTxsByVtxoPubKeys(ctx, []string{pubkey, pubkey2})
+			require.NoError(t, err)
+			require.ElementsMatch(t, []domain.Tx{{Txid: checkpointTxid1, Str: checkpointTx1}, {Txid: checkpointTxid2, Str: checkpointTx2}, {Txid: checkpointTxid3, Str: checkpointTx3}}, txs)
+
+			txs, err = svc.Vtxos().GetCheckpointTxsByVtxoPubKeys(ctx, []string{})
+			require.NoError(t, err)
+			require.Empty(t, txs)
+
+			txs, err = svc.Vtxos().GetCheckpointTxsByVtxoPubKeys(ctx, []string{randomString(32)})
+			require.NoError(t, err)
+			require.Empty(t, txs)
+		})
+
 		t.Run("test_get_pending_spent_vtxos", func(t *testing.T) {
 			ctx := t.Context()
 

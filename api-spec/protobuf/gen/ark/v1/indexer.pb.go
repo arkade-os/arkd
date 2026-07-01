@@ -859,8 +859,10 @@ type GetVtxoChainRequest struct {
 	//
 	//	*GetVtxoChainRequest_Intent
 	//	*GetVtxoChainRequest_Token
-	Auth          isGetVtxoChainRequest_Auth `protobuf_oneof:"auth"`
-	PageToken     string                     `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	Auth isGetVtxoChainRequest_Auth `protobuf_oneof:"auth"`
+	// Opaque cursor returned as next_page_token by a previous call. When set, the
+	// response resumes from where that page ended.
+	PageToken     string `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -965,7 +967,8 @@ type GetVtxoChainResponse struct {
 	Chain []*IndexerChain        `protobuf:"bytes,1,rep,name=chain,proto3" json:"chain,omitempty"`
 	Page  *IndexerPageResponse   `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	// Auth token can be used for other rpcs related to this vtxo/tx that require proof of ownership.
-	AuthToken     string `protobuf:"bytes,3,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
+	AuthToken string `protobuf:"bytes,3,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
+	// Opaque cursor for fetching the next page. Empty when there are no more pages.
 	NextPageToken string `protobuf:"bytes,4,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

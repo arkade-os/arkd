@@ -189,6 +189,12 @@ func (m *mockVtxoRepository) GetVtxos(
 // Stub implementations for unused VtxoRepository methods
 func (m *mockVtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) error { return nil }
 
+func (m *mockVtxoRepository) GetCheckpointTxsByVtxoPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]domain.Tx, error) {
+	return nil, nil
+}
+
 func (m *mockVtxoRepository) SettleVtxos(
 	ctx context.Context,
 	spentVtxos map[domain.Outpoint]string,

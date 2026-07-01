@@ -2,7 +2,6 @@ package application
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -14,7 +13,6 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	arkscript "github.com/arkade-os/arkd/pkg/ark-lib/script"
 	arktree "github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -1377,101 +1375,4 @@ func buildExpiredToken(t *testing.T, privkey *btcec.PrivateKey, outpoints []Outp
 	require.NoError(t, err)
 
 	return base64.StdEncoding.EncodeToString(append(msg, sig.Serialize()...))
-}
-
-type mockedRoundRepo struct {
-	mock.Mock
-	domain.RoundRepository // unimplemented methods panic on call
-}
-
-func (m *mockedRoundRepo) GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error) {
-	args := m.Called(ctx, txids)
-	if v := args.Get(0); v != nil {
-		return v.([]string), args.Error(1)
-	}
-	return nil, args.Error(1)
-}
-
-func (m *mockedRoundRepo) GetRoundVtxoTree(ctx context.Context, txid string) (arktree.FlatTxTree, error) {
-	args := m.Called(ctx, txid)
-	if v := args.Get(0); v != nil {
-		return v.(arktree.FlatTxTree), args.Error(1)
-	}
-	return nil, args.Error(1)
-}
-
-type mockedVtxoRepo struct {
-	mock.Mock
-	domain.VtxoRepository // unimplemented methods panic on call
-}
-
-func (m *mockedVtxoRepo) GetVtxos(ctx context.Context, outpoints []domain.Outpoint) ([]domain.Vtxo, error) {
-	args := m.Called(ctx, outpoints)
-	if v := args.Get(0); v != nil {
-		return v.([]domain.Vtxo), args.Error(1)
-	}
-	return nil, args.Error(1)
-}
-
-type mockedRepoManager struct {
-	mock.Mock
-	ports.RepoManager // unimplemented methods panic on call
-}
-
-func (m *mockedRepoManager) Rounds() domain.RoundRepository {
-	if v := m.Called().Get(0); v != nil {
-		return v.(domain.RoundRepository)
-	}
-	return nil
-}
-
-func (m *mockedRepoManager) Markers() domain.MarkerRepository {
-	return nil
-}
-
-func (m *mockedRepoManager) Vtxos() domain.VtxoRepository {
-	if v := m.Called().Get(0); v != nil {
-		return v.(domain.VtxoRepository)
-	}
-	return nil
-}
-
-func (m *mockedRepoManager) OffchainTxs() domain.OffchainTxRepository {
-	if v := m.Called().Get(0); v != nil {
-		return v.(domain.OffchainTxRepository)
-	}
-	return nil
-}
-
-type mockedOffchainTxRepo struct {
-	mock.Mock
-	domain.OffchainTxRepository // unimplemented methods panic on call
-}
-
-func (m *mockedOffchainTxRepo) GetOffchainTx(ctx context.Context, txid string) (*domain.OffchainTx, error) {
-	args := m.Called(ctx, txid)
-	if v := args.Get(0); v != nil {
-		return v.(*domain.OffchainTx), args.Error(1)
-	}
-	return nil, args.Error(1)
-}
-
-func (m *mockedOffchainTxRepo) GetOffchainTxsByTxids(
-	ctx context.Context, txids []string,
-) ([]*domain.OffchainTx, error) {
-	args := m.Called(ctx, txids)
-	if v := args.Get(0); v != nil {
-		return v.([]*domain.OffchainTx), args.Error(1)
-	}
-	return nil, args.Error(1)
-}
-
-type mockedWallet struct {
-	mock.Mock
-	ports.WalletService // unimplemented methods panic on call
-}
-
-func (m *mockedWallet) GetTransaction(ctx context.Context, txid string) (string, error) {
-	args := m.Called(ctx, txid)
-	return args.String(0), args.Error(1)
 }

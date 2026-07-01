@@ -307,6 +307,26 @@ func (v *vtxoRepository) GetLeafVtxosForBatch(
 	return readRows(rows)
 }
 
+func (v *vtxoRepository) GetCheckpointTxsByVtxoPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]domain.Tx, error) {
+	var rows []queries.SelectCheckpointTxsByVtxoPubKeysRow
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectCheckpointTxsByVtxoPubKeys(ctx, pubkeys)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+
+	txs := make([]domain.Tx, 0, len(rows))
+	for _, row := range rows {
+		txs = append(txs, domain.Tx{Txid: row.Txid, Str: row.Data})
+	}
+
+	return txs, nil
+}
+
 func (v *vtxoRepository) UnrollVtxos(ctx context.Context, vtxos []domain.Outpoint) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {

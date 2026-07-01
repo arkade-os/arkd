@@ -783,6 +783,7 @@
           {
             "name": "pageToken",
             "in": "query",
+            "description": "Opaque cursor returned as next_page_token by a previous call. When set, the\nresponse resumes from where that page ended.",
             "schema": {
               "type": "string"
             }
@@ -1225,7 +1226,8 @@
             "$ref": "#/components/schemas/IndexerPageRequest"
           },
           "pageToken": {
-            "type": "string"
+            "type": "string",
+            "description": "Opaque cursor returned as next_page_token by a previous call. When set, the\nresponse resumes from where that page ended."
           },
           "token": {
             "type": "string",
@@ -1248,7 +1250,8 @@
             }
           },
           "nextPageToken": {
-            "type": "string"
+            "type": "string",
+            "description": "Opaque cursor for fetching the next page. Empty when there are no more pages."
           },
           "page": {
             "$ref": "#/components/schemas/IndexerPageResponse"

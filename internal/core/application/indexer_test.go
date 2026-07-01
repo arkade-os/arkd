@@ -124,6 +124,12 @@ func (m *mockVtxoRepoForIndexer) GetAllChildrenVtxos(
 	return nil, nil
 }
 
+func (m *mockVtxoRepoForIndexer) GetCheckpointTxsByVtxoPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]domain.Tx, error) {
+	return nil, nil
+}
+
 func (m *mockVtxoRepoForIndexer) GetVtxoPubKeysByCommitmentTxid(
 	ctx context.Context,
 	commitmentTxid string,

@@ -22,6 +22,7 @@ type arkRepository struct {
 type ArkRepository interface {
 	domain.RoundRepository
 	domain.OffchainTxRepository
+	Store() *badgerhold.Store
 }
 
 type IntentIndex struct {
@@ -309,8 +310,12 @@ func (r *arkRepository) GetOffchainTxsByTxids(
 }
 
 func (r *arkRepository) Close() {
-	// nolint
+	// nolint:all
 	r.store.Close()
+}
+
+func (r *arkRepository) Store() *badgerhold.Store {
+	return r.store
 }
 
 func (r *arkRepository) findRound(

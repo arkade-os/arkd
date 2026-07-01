@@ -44,6 +44,7 @@ func startAction(_ *cli.Context) error {
 		TLSExtraDomains:      cfg.TLSExtraDomains,
 		HeartbeatInterval:    cfg.HeartbeatInterval,
 		EnablePprof:          cfg.EnablePprof,
+		EnableChannelz:       cfg.EnableChannelz,
 		MaxConcurrentStreams: cfg.MaxConcurrentStreams,
 		StreamConnPoolSize:   cfg.StreamConnPoolSize,
 	}
