@@ -3,10 +3,12 @@ package application
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -69,7 +71,7 @@ type IndexerService interface {
 		ctx context.Context, outpoints []Outpoint, page *Page,
 	) (*GetVtxosResp, error)
 	GetVtxoChain(
-		ctx context.Context, authToken string, vtxoKey Outpoint, page *Page,
+		ctx context.Context, authToken string, vtxoKey Outpoint, page *Page, pageToken string,
 	) (*VtxoChainResp, error)
 	GetVtxoChainByIntent(ctx context.Context, intent Intent, page *Page) (*VtxoChainResp, error)
 	GetVirtualTxs(
@@ -83,10 +85,11 @@ type IndexerService interface {
 }
 
 type indexerService struct {
-	repoManager  ports.RepoManager
-	wallet       ports.WalletService
-	authPrvkey   *btcec.PrivateKey // key used to sign auth tokens
-	signerPubkey *btcec.PublicKey  // server's signing key, used for stripping signatures from txs
+	repoManager   ports.RepoManager
+	wallet        ports.WalletService
+	authPrvkey    *btcec.PrivateKey // key used to sign auth tokens
+	cursorHMACKey []byte            // HMAC key for signing pagination cursors
+	signerPubkey  *btcec.PublicKey  // server's signing key, used for stripping signatures from txs
 	// deprecated signer pubkeys still accepted for old vtxos after a key rotation
 	deprecatedSignerPubkeys []ports.DeprecatedSignerPubkey
 	txExposure              exposure
@@ -110,18 +113,39 @@ func NewIndexerService(
 		return nil, fmt.Errorf("invalid exposure value: %q", txExposure)
 	}
 
+	// withheld and private modes require a signing key for auth tokens
+	if exposure(txExposure) != exposurePublic && privkey == nil {
+		return nil, fmt.Errorf("privkey is required for %s exposure", txExposure)
+	}
+
 	ttl := defaultAuthTokenTTL
 	if authTokenExpirySec > 0 {
 		ttl = time.Duration(authTokenExpirySec) * time.Second
 	}
 
+	// Derive an HMAC key for pagination cursors from the auth private key. This
+	// keeps page tokens opaque and prevents clients from forging cursors that
+	// point at a different outpoint.
+	//
+	// Without a private key (public-exposure deployments) cursors are left
+	// unsigned: a client can craft an arbitrary offset, which is acceptable
+	// because all chain data is already publicly accessible in that mode. In
+	// withheld/private modes a signing key is required, so the key is always set
+	// wherever cursor integrity actually matters.
+	var cursorKey []byte
+	if privkey != nil {
+		h := sha256.Sum256(append(privkey.Serialize(), []byte("cursor-hmac")...))
+		cursorKey = h[:]
+	}
+
 	svc := &indexerService{
-		repoManager:  repoManager,
-		wallet:       wallet,
-		authPrvkey:   privkey,
-		txExposure:   exposure(txExposure),
-		authTokenTTL: ttl,
-		tokenCache:   newTokenCache(ttl),
+		repoManager:   repoManager,
+		wallet:        wallet,
+		authPrvkey:    privkey,
+		cursorHMACKey: cursorKey,
+		txExposure:    exposure(txExposure),
+		authTokenTTL:  ttl,
+		tokenCache:    newTokenCache(ttl),
 	}
 
 	if signerPubkey != nil {
@@ -330,7 +354,7 @@ func (i *indexerService) GetVtxosByOutpoint(
 }
 
 func (i *indexerService) GetVtxoChain(
-	ctx context.Context, authToken string, outpoint Outpoint, page *Page,
+	ctx context.Context, authToken string, outpoint Outpoint, page *Page, pageToken string,
 ) (*VtxoChainResp, error) {
 	switch i.txExposure {
 	case exposurePublic:
@@ -338,35 +362,17 @@ func (i *indexerService) GetVtxoChain(
 	case exposureWithheld:
 		// Auth token is optional, validate it only if provided
 		if authToken != "" {
-			hash, err := i.validateAuthToken(authToken)
-			if err != nil {
+			if err := i.validateChainAuth(authToken, outpoint); err != nil {
 				return nil, err
-			}
-
-			outpoints, _, ok := i.tokenCache.getOutpoints(hash)
-			if !ok {
-				return nil, fmt.Errorf("auth token not found")
-			}
-			if _, ok := outpoints[outpoint.String()]; !ok {
-				return nil, fmt.Errorf("auth token is not for outpoint %s", outpoint)
 			}
 		}
 	case exposurePrivate:
 		// Auth token is mandatory, always validate it
-		hash, err := i.validateAuthToken(authToken)
-		if err != nil {
+		if err := i.validateChainAuth(authToken, outpoint); err != nil {
 			return nil, err
 		}
-
-		outpoints, _, ok := i.tokenCache.getOutpoints(hash)
-		if !ok {
-			return nil, fmt.Errorf("auth token not found")
-		}
-		if _, ok := outpoints[outpoint.String()]; !ok {
-			return nil, fmt.Errorf("auth token is not for outpoint %s", outpoint)
-		}
 	}
-	resp, _, err := i.getVtxoChain(ctx, outpoint, page)
+	resp, _, err := i.getVtxoChain(ctx, outpoint, page, pageToken)
 	if err != nil {
 		return nil, err
 	}
@@ -387,7 +393,7 @@ func (i *indexerService) GetVtxoChainByIntent(
 
 	switch i.txExposure {
 	case exposurePublic:
-		resp, _, err := i.getVtxoChain(ctx, outpoint, page)
+		resp, _, err := i.getVtxoChain(ctx, outpoint, page, "")
 		return resp, err
 	case exposureWithheld, exposurePrivate:
 		if err := i.validateIntent(ctx, intent); err != nil {
@@ -395,7 +401,7 @@ func (i *indexerService) GetVtxoChainByIntent(
 		}
 	}
 
-	resp, allOutpoints, err := i.getVtxoChain(ctx, outpoint, page)
+	resp, allOutpoints, err := i.getVtxoChain(ctx, outpoint, page, "")
 	if err != nil {
 		return nil, err
 	}
@@ -513,18 +519,69 @@ func (i *indexerService) GetBatchSweepTxs(
 }
 
 func (i *indexerService) getVtxoChain(
-	ctx context.Context, vtxoKey Outpoint, page *Page,
+	ctx context.Context, vtxoKey Outpoint, page *Page, pageToken string,
 ) (*VtxoChainResp, []Outpoint, error) {
+	// NOTE: the full chain is rebuilt on every page request, so paginating an
+	// N-deep chain is O(N^2) DB work overall. This is an accepted interim cost:
+	// the marker-DAG work (arkd#908) replaces this with a frontier-resume walk
+	// that makes pagination O(N) without changing this RPC's external contract.
 	chain, allOutpoints, err := i.buildVtxoChain(ctx, vtxoKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	txChain, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
+	// Cursor pagination. It is fully self-contained in that the page_token carries the
+	// resume offset and the page size is fixed at maxPageSizeVtxoChain. The page
+	// struct is ignored entirely when a token is present.
+	if pageToken != "" {
+		offset, err := i.decodeChainCursor(pageToken, vtxoKey)
+		if err != nil {
+			// page_token is client-supplied input. Surface it as invalid input so
+			// the handler can map it to InvalidArgument rather than Internal.
+			return nil, nil, fmt.Errorf("%w: invalid page_token: %w", ErrInvalidInput, err)
+		}
+		return i.sliceChainPage(
+			chain,
+			offset,
+			int(maxPageSizeVtxoChain),
+			vtxoKey,
+		), allOutpoints, nil
+	}
+
+	// No pagination requested so return the full chain.
+	if page == nil {
+		return &VtxoChainResp{Chain: chain}, allOutpoints, nil
+	}
+
+	// Offset pagination via page number (no page_token, page non-nil per the guards above).
+	pageSize := int(maxPageSizeVtxoChain)
+	if page.PageSize > 0 {
+		pageSize = int(page.PageSize)
+	}
+	offset := 0
+	if page.PageNum > 1 {
+		offset = int(page.PageNum-1) * pageSize
+	}
+	return i.sliceChainPage(chain, offset, pageSize, vtxoKey), allOutpoints, nil
+}
+
+// sliceChainPage returns the page of chain at the given offset and size, plus a
+// next_page_token when more items remain after it.
+func (i *indexerService) sliceChainPage(
+	chain []ChainTx, offset, pageSize int, vtxoKey Outpoint,
+) *VtxoChainResp {
+	pageChain, pageResp, hasMore := paginateByOffset(chain, offset, pageSize)
+
+	var nextToken string
+	if hasMore {
+		nextToken = i.encodeChainCursor(offset+len(pageChain), vtxoKey)
+	}
+
 	return &VtxoChainResp{
-		Chain: txChain,
-		Page:  pageResp,
-	}, allOutpoints, nil
+		Chain:         pageChain,
+		Page:          pageResp,
+		NextPageToken: nextToken,
+	}
 }
 
 // buildVtxoChain builds the full chain of transactions for a given vtxo outpoint.
@@ -968,6 +1025,29 @@ func (i *indexerService) validateAuthToken(authToken string) (string, error) {
 	return hex.EncodeToString(msg[:32]), nil
 }
 
+// validateChainAuth validates the auth token for GetVtxoChain: it verifies the
+// signature and the embedded-timestamp expiry and confirms the token authorizes
+// vtxoKey.
+func (i *indexerService) validateChainAuth(authToken string, vtxoKey Outpoint) error {
+	if i.authPrvkey == nil {
+		return fmt.Errorf("auth not configured")
+	}
+
+	hash, err := i.validateAuthToken(authToken)
+	if err != nil {
+		return err
+	}
+
+	outpoints, _, ok := i.tokenCache.getOutpoints(hash)
+	if !ok {
+		return fmt.Errorf("auth token not found")
+	}
+	if _, ok := outpoints[vtxoKey.String()]; !ok {
+		return fmt.Errorf("auth token is not for outpoint %s", vtxoKey)
+	}
+	return nil
+}
+
 // extractTokenHash decodes an auth token and returns the outpoints hash
 // without checking expiry. Signature is still verified.
 func (i *indexerService) extractTokenHash(authToken string) (string, error) {
@@ -1044,9 +1124,13 @@ func (i *indexerService) RevokeTokens(
 
 func (i *indexerService) allSignerPubkeys() []*btcec.PublicKey {
 	pubkeys := make([]*btcec.PublicKey, 0, len(i.deprecatedSignerPubkeys)+1)
-	pubkeys = append(pubkeys, i.signerPubkey)
+	if i.signerPubkey != nil {
+		pubkeys = append(pubkeys, i.signerPubkey)
+	}
 	for _, deprecated := range i.deprecatedSignerPubkeys {
-		pubkeys = append(pubkeys, deprecated.PubKey)
+		if deprecated.PubKey != nil {
+			pubkeys = append(pubkeys, deprecated.PubKey)
+		}
 	}
 	return pubkeys
 }
@@ -1122,4 +1206,99 @@ func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {
 	}
 
 	return items[startIndex:endIndex], resp
+}
+
+// paginateByOffset slices items starting at an absolute offset, returning the
+// page, a PageResp describing the position, and whether more items remain after
+// this page. Unlike paginate it addresses items by offset rather than page
+// number, which lets a cursor resume correctly even if the page size changes
+// between calls. When the offset is not a multiple of pageSize (i.e. the page
+// size changed mid-pagination), PageResp.Current is approximate; cursor-based
+// callers should rely on NextPageToken rather than the page number.
+func paginateByOffset[T any](items []T, offset, pageSize int) ([]T, PageResp, bool) {
+	if pageSize <= 0 {
+		pageSize = len(items)
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	total := len(items)
+	totalPages := 0
+	if pageSize > 0 {
+		totalPages = int(math.Ceil(float64(total) / float64(pageSize)))
+	}
+	current := offset/max(pageSize, 1) + 1
+	resp := PageResp{
+		Current: int32(current),
+		Next:    int32(min(current+1, totalPages)),
+		Total:   int32(totalPages),
+	}
+
+	if offset >= total {
+		return []T{}, resp, false
+	}
+
+	end := offset + pageSize
+	if end > total {
+		end = total
+	}
+	return items[offset:end], resp, end < total
+}
+
+// encodeChainCursor encodes a chain offset into an HMAC-signed opaque page token
+// bound to vtxoKey. The HMAC prevents clients from forging cursors or replaying
+// a cursor issued for one outpoint against another.
+func (i *indexerService) encodeChainCursor(offset int, vtxoKey Outpoint) string {
+	cur := vtxoChainCursor{Outpoint: vtxoKey.String(), Offset: offset}
+	payload, err := json.Marshal(cur)
+	if err != nil {
+		// Unreachable for a fixed {string, int} struct, but avoid emitting a
+		// malformed cursor: returning "" just signals "no next page".
+		return ""
+	}
+
+	if len(i.cursorHMACKey) > 0 {
+		mac := hmac.New(sha256.New, i.cursorHMACKey)
+		mac.Write(payload)
+		payload = append(payload, mac.Sum(nil)...)
+	}
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+// decodeChainCursor decodes and verifies an HMAC-signed page token, returning
+// the chain offset it carries. It errors if the signature is invalid or the
+// cursor was issued for a different outpoint.
+func (i *indexerService) decodeChainCursor(token string, vtxoKey Outpoint) (int, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return 0, fmt.Errorf("invalid base64: %w", err)
+	}
+
+	payload := raw
+	if len(i.cursorHMACKey) > 0 {
+		if len(raw) < sha256.Size {
+			return 0, fmt.Errorf("invalid cursor: too short")
+		}
+		payload = raw[:len(raw)-sha256.Size]
+		sig := raw[len(raw)-sha256.Size:]
+
+		mac := hmac.New(sha256.New, i.cursorHMACKey)
+		mac.Write(payload)
+		if !hmac.Equal(sig, mac.Sum(nil)) {
+			return 0, fmt.Errorf("invalid cursor: signature mismatch")
+		}
+	}
+
+	var cur vtxoChainCursor
+	if err := json.Unmarshal(payload, &cur); err != nil {
+		return 0, fmt.Errorf("invalid JSON: %w", err)
+	}
+	if cur.Outpoint != vtxoKey.String() {
+		return 0, fmt.Errorf("cursor does not match outpoint")
+	}
+	if cur.Offset < 0 {
+		return 0, fmt.Errorf("invalid cursor offset")
+	}
+	return cur.Offset, nil
 }

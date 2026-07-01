@@ -567,7 +567,7 @@ func TestGetVtxoChain(t *testing.T) {
 			require.NoError(t, err)
 
 			// GetVtxoChain with the token — auth check passes and chain is returned.
-			resp, err := indexer.GetVtxoChain(t.Context(), token, vtxoOutpoint, nil)
+			resp, err := indexer.GetVtxoChain(t.Context(), token, vtxoOutpoint, nil, "")
 			require.NoError(t, err)
 			require.NotEmpty(t, resp.Chain)
 
@@ -655,7 +655,7 @@ func TestGetVtxoChain(t *testing.T) {
 				indexer := newTestIndexer(t, privkey, tc.exposure, nil, nil, nil)
 				token := tc.makeToken(t, indexer)
 
-				_, err := indexer.GetVtxoChain(t.Context(), token, tc.outpoint, nil)
+				_, err := indexer.GetVtxoChain(t.Context(), token, tc.outpoint, nil, "")
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.errContains)
 			})
