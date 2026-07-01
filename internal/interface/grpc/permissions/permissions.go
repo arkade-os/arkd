@@ -269,13 +269,27 @@ func Whitelist() map[string][]bakery.Op {
 		}},
 
 		/* Channelz APIs (restricted to admin port) */
-		fmt.Sprintf("/%s/GetTopChannels", channelzgrpc.Channelz_ServiceDesc.ServiceName):   {{Entity: EntityChannelz, Action: "read"}},
-		fmt.Sprintf("/%s/GetServers", channelzgrpc.Channelz_ServiceDesc.ServiceName):       {{Entity: EntityChannelz, Action: "read"}},
-		fmt.Sprintf("/%s/GetServer", channelzgrpc.Channelz_ServiceDesc.ServiceName):        {{Entity: EntityChannelz, Action: "read"}},
-		fmt.Sprintf("/%s/GetServerSockets", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{Entity: EntityChannelz, Action: "read"}},
-		fmt.Sprintf("/%s/GetChannel", channelzgrpc.Channelz_ServiceDesc.ServiceName):       {{Entity: EntityChannelz, Action: "read"}},
-		fmt.Sprintf("/%s/GetSubchannel", channelzgrpc.Channelz_ServiceDesc.ServiceName):    {{Entity: EntityChannelz, Action: "read"}},
-		fmt.Sprintf("/%s/GetSocket", channelzgrpc.Channelz_ServiceDesc.ServiceName):        {{Entity: EntityChannelz, Action: "read"}},
+		fmt.Sprintf("/%s/GetTopChannels", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetServers", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetServer", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetServerSockets", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetChannel", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetSubchannel", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetSocket", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
 	}
 }
 
