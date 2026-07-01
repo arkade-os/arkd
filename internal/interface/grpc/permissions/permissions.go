@@ -17,6 +17,7 @@ const (
 	EntityArk               = "ark"
 	EntityIndexer           = "indexer"
 	EntityHealth            = "health"
+	EntityChannelz          = "channelz"
 	EntityAuthManager       = "authmanager"
 )
 
@@ -265,6 +266,15 @@ func Whitelist() map[string][]bakery.Op {
 			Entity: EntityIndexer,
 			Action: "read",
 		}},
+
+		/* Channelz APIs (restricted to admin port) */
+		"/grpc.channelz.v1.Channelz/GetTopChannels":   {{Entity: EntityChannelz, Action: "read"}},
+		"/grpc.channelz.v1.Channelz/GetServers":       {{Entity: EntityChannelz, Action: "read"}},
+		"/grpc.channelz.v1.Channelz/GetServer":        {{Entity: EntityChannelz, Action: "read"}},
+		"/grpc.channelz.v1.Channelz/GetServerSockets": {{Entity: EntityChannelz, Action: "read"}},
+		"/grpc.channelz.v1.Channelz/GetChannel":       {{Entity: EntityChannelz, Action: "read"}},
+		"/grpc.channelz.v1.Channelz/GetSubchannel":    {{Entity: EntityChannelz, Action: "read"}},
+		"/grpc.channelz.v1.Channelz/GetSocket":        {{Entity: EntityChannelz, Action: "read"}},
 	}
 }
 
