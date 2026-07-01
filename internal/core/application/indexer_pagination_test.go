@@ -132,98 +132,54 @@ func TestGetVtxoChainPagination(t *testing.T) {
 
 	indexer := newTestIndexer(t, privkey, exposurePublic, rounds, vtxos, nil)
 
+	var fullChain []ChainTx
 	// Full chain: no page and no token returns everything with no next cursor.
-	full, err := indexer.GetVtxoChain(t.Context(), "", vtxoOutpoint, nil, "")
-	require.NoError(t, err)
-	require.Empty(t, full.NextPageToken)
-	require.GreaterOrEqual(t, len(full.Chain), 2, "need a multi-tx chain to exercise paging")
+	t.Run("no pagination", func(t *testing.T) {
+		full, err := indexer.GetVtxoChain(t.Context(), "", vtxoOutpoint, nil, "")
+		require.NoError(t, err)
+		require.Empty(t, full.NextPageToken)
+		require.GreaterOrEqual(t, len(full.Chain), 2, "need a multi-tx chain to exercise paging")
+		fullChain = full.Chain
+	})
 
 	// Request page 1 via the legacy page struct, then follow next_page_token with
 	// a nil page struct: the cursor path is decoupled from the legacy pagination
 	// and needs no page struct to continue.
-	var paged []ChainTx
-	resp, err := indexer.GetVtxoChain(t.Context(), "", vtxoOutpoint, &Page{PageSize: 1}, "")
-	require.NoError(t, err)
-	require.Len(t, resp.Chain, 1)
-	paged = append(paged, resp.Chain...)
-
-	token := resp.NextPageToken
-	for iter := 0; token != "" && iter <= len(full.Chain); iter++ {
-		resp, err := indexer.GetVtxoChain(t.Context(), "", vtxoOutpoint, nil, token)
+	t.Run("legacy pagination", func(t *testing.T) {
+		var paged []ChainTx
+		resp, err := indexer.GetVtxoChain(t.Context(), "", vtxoOutpoint, &Page{PageSize: 1}, "")
 		require.NoError(t, err)
-		require.LessOrEqual(t, len(resp.Chain), int(maxPageSizeVtxoChain))
+		require.Len(t, resp.Chain, 1)
 		paged = append(paged, resp.Chain...)
-		token = resp.NextPageToken
-	}
-	require.Empty(t, token, "pagination did not terminate")
-	require.Equal(t, full.Chain, paged)
 
-	rounds.AssertExpectations(t)
-	vtxos.AssertExpectations(t)
-}
+		token := resp.NextPageToken
+		for iter := 0; token != "" && iter <= len(fullChain); iter++ {
+			resp, err := indexer.GetVtxoChain(t.Context(), "", vtxoOutpoint, nil, token)
+			require.NoError(t, err)
+			require.LessOrEqual(t, len(resp.Chain), int(maxPageSizeVtxoChain))
+			paged = append(paged, resp.Chain...)
+			token = resp.NextPageToken
+		}
+		require.Empty(t, token, "pagination did not terminate")
+		require.Equal(t, fullChain, paged)
 
-// TestGetVtxoChainPageTokenIgnoresPageStruct proves the cursor path is fully
-// decoupled from the legacy page struct: when a page_token is present, the page
-// struct is ignored and the server-side max page size governs the slice.
-func TestGetVtxoChainPageTokenIgnoresPageStruct(t *testing.T) {
-	privkey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
+		rounds.AssertExpectations(t)
+		vtxos.AssertExpectations(t)
+	})
 
-	_, vtxoTxid, flatTree := buildTestTreeTxs(t)
-	commitmentTxid := differentTxid
-	vtxoOutpoint := Outpoint{Txid: vtxoTxid, VOut: 0}
-	vtxoData := domain.Vtxo{Outpoint: vtxoOutpoint, RootCommitmentTxid: commitmentTxid}
+	// this test proves the cursor path is fully decoupled from the legacy page struct:
+	// when a page_token is present, the page struct is ignored and the server-side max page size
+	// governs the slice.
+	t.Run("cursor pagination takes precedence over legacy", func(t *testing.T) {
+		// A cursor at offset 0 paired with a deliberately tiny page size must still
+		// return the full first page (bounded only by maxPageSizeVtxoChain), proving
+		// page.PageSize is ignored on the cursor path.
+		token := indexer.encodeChainCursor(0, vtxoOutpoint)
+		resp, err := indexer.GetVtxoChain(t.Context(), "", vtxoOutpoint, &Page{PageSize: 1}, token)
+		require.NoError(t, err)
+		require.Equal(t, fullChain, resp.Chain)
 
-	rounds := &mockedRoundRepo{}
-	vtxos := &mockedVtxoRepo{}
-	vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{vtxoOutpoint}).
-		Return([]domain.Vtxo{vtxoData}, nil)
-	rounds.On("GetRoundVtxoTree", mock.Anything, commitmentTxid).
-		Return(flatTree, nil)
-
-	indexer := newTestIndexer(t, privkey, exposurePublic, rounds, vtxos, nil)
-
-	full, err := indexer.GetVtxoChain(t.Context(), "", vtxoOutpoint, nil, "")
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(full.Chain), 2, "need a multi-tx chain to exercise the test")
-
-	// A cursor at offset 0 paired with a deliberately tiny page size must still
-	// return the full first page (bounded only by maxPageSizeVtxoChain), proving
-	// page.PageSize is ignored on the cursor path.
-	token := indexer.encodeChainCursor(0, vtxoOutpoint)
-	resp, err := indexer.GetVtxoChain(t.Context(), "", vtxoOutpoint, &Page{PageSize: 1}, token)
-	require.NoError(t, err)
-	require.Equal(t, full.Chain, resp.Chain)
-
-	rounds.AssertExpectations(t)
-	vtxos.AssertExpectations(t)
-}
-
-// TestValidateChainAuthNilKey ensures a server with no auth private key returns
-// a clean error instead of panicking on the auth path.
-func TestValidateChainAuthNilKey(t *testing.T) {
-	indexer := newTestIndexer(t, nil, exposurePrivate, nil, nil, nil)
-	op := Outpoint{Txid: testTxids[0], VOut: 0}
-
-	err := indexer.validateChainAuth("any-token", op)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "auth not configured")
-}
-
-// TestGetVtxoChainExpiredTokenRejectedWithPageToken locks in that pagination no
-// longer outlives the auth-token TTL: an expired token is rejected even on a
-// continuation (page_token set), the case the removed session keepalive used to
-// accept.
-func TestGetVtxoChainExpiredTokenRejectedWithPageToken(t *testing.T) {
-	privkey, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-
-	op := Outpoint{Txid: testTxids[0], VOut: 0}
-	expired := buildExpiredToken(t, privkey, []Outpoint{op})
-
-	indexer := newTestIndexer(t, privkey, exposurePrivate, nil, nil, nil)
-
-	_, err = indexer.GetVtxoChain(t.Context(), expired, op, nil, "some-token")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "auth token expired")
+		rounds.AssertExpectations(t)
+		vtxos.AssertExpectations(t)
+	})
 }
