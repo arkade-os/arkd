@@ -314,9 +314,7 @@ func TestGetFeeRate(t *testing.T) {
 		t.Run("populated map on old endpoint", func(t *testing.T) {
 			ts := newTestServer(t)
 			ts.handle("/fee-estimates", ts.jsonResponse(
-				http.StatusOK, map[string]float64{
-					"fastestFee": 5.5,
-				},
+				http.StatusOK, map[string]float64{"1": 5.5},
 			))
 
 			svc := makeExplorer(t, ts.URL)
