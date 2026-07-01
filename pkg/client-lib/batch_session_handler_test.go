@@ -11,6 +11,57 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestJoinBatchSessionReplayCloseSafe is a regression test for the
+// "panic: send on closed channel" fix during a collaborative exit.
+//
+// JoinBatchSession forwards every batch event to the caller-supplied
+// WithReplay channel. The caller owns that channel and closes it once
+// JoinBatchSession returns. If the forwarding runs in detached goroutines that
+// can outlive the return, the caller's close() races an in-flight send and the
+// process panics.
+//
+// The test drives a burst of forwarded events, terminates the session, then
+// closes the replay channel exactly as a caller would. It must never panic:
+// all forwards have to happen-before JoinBatchSession returns.
+func TestJoinBatchSessionReplayCloseSafe(t *testing.T) {
+	const (
+		iterations = 50
+		burst      = 256
+	)
+
+	errStop := errors.New("stop the session")
+
+	for i := 0; i < iterations; i++ {
+		// Buffer everything up front so JoinBatchSession races through the
+		// whole burst in a tight loop, then returns — maximising the number
+		// of replay forwards in flight when the caller closes below.
+		eventsCh := make(chan client.BatchEventChannel, burst+1)
+		replayCh := make(chan any, burst)
+
+		// At the initial step, a TreeTxEvent makes the loop forward to the
+		// replay channel and then `continue` without invoking the handler.
+		// An Err event then returns from JoinBatchSession.
+		for j := 0; j < burst; j++ {
+			eventsCh <- client.BatchEventChannel{Event: client.TreeTxEvent{}}
+		}
+		eventsCh <- client.BatchEventChannel{Err: errStop}
+
+		errCh := make(chan error, 1)
+		go func() {
+			_, _, _, _, _, err := JoinBatchSession(
+				t.Context(), eventsCh, noopBatchHandler{}, WithReplay(replayCh),
+			)
+			errCh <- err
+		}()
+
+		require.ErrorIs(t, <-errCh, errStop)
+
+		// The caller closes the replay channel it owns once the session has
+		// returned. This must be safe: no forwarder may still be running.
+		close(replayCh)
+	}
+}
+
 // noopBatchHandler satisfies BatchEventsHandler so JoinBatchSession can be
 // driven directly in tests. Its methods are never reached by
 // TestJoinBatchSessionReplayCloseSafe (the events used there either continue
@@ -67,58 +118,4 @@ func (noopBatchHandler) OnStreamStarted(
 	context.Context, client.StreamStartedEvent,
 ) error {
 	return nil
-}
-
-var _ BatchEventsHandler = noopBatchHandler{}
-
-// TestJoinBatchSessionReplayCloseSafe is a regression test for the
-// "panic: send on closed channel" fix during a collaborative exit.
-//
-// JoinBatchSession forwards every batch event to the caller-supplied
-// WithReplay channel. The caller owns that channel and closes it once
-// JoinBatchSession returns. If the forwarding runs in detached goroutines that
-// can outlive the return, the caller's close() races an in-flight send and the
-// process panics.
-//
-// The test drives a burst of forwarded events, terminates the session, then
-// closes the replay channel exactly as a caller would. It must never panic:
-// all forwards have to happen-before JoinBatchSession returns.
-func TestJoinBatchSessionReplayCloseSafe(t *testing.T) {
-	const (
-		iterations = 50
-		burst      = 256
-	)
-
-	errStop := errors.New("stop the session")
-
-	for i := 0; i < iterations; i++ {
-		// Buffer everything up front so JoinBatchSession races through the
-		// whole burst in a tight loop, then returns — maximising the number
-		// of replay forwards in flight when the caller closes below.
-		eventsCh := make(chan client.BatchEventChannel, burst+1)
-		replayCh := make(chan any, burst)
-
-		// At the initial step, a TreeTxEvent makes the loop forward to the
-		// replay channel and then `continue` without invoking the handler.
-		// An Err event then returns from JoinBatchSession.
-		for j := 0; j < burst; j++ {
-			eventsCh <- client.BatchEventChannel{Event: client.TreeTxEvent{}}
-		}
-		eventsCh <- client.BatchEventChannel{Err: errStop}
-
-		errCh := make(chan error, 1)
-		go func() {
-			_, _, _, _, _, err := JoinBatchSession(
-				context.Background(), eventsCh, noopBatchHandler{},
-				WithReplay(replayCh),
-			)
-			errCh <- err
-		}()
-
-		require.ErrorIs(t, <-errCh, errStop)
-
-		// The caller closes the replay channel it owns once the session has
-		// returned. This must be safe: no forwarder may still be running.
-		close(replayCh)
-	}
 }
