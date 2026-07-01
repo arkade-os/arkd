@@ -673,16 +673,15 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 		}
 	}
 
+	if err := n.connectWebSocket(ctx); err != nil {
+		return nil, fmt.Errorf("failed to connect to WebSocket: %w", err)
+	}
+
 	// buffered channel to prevent blocking
 	notificationsChan := make(chan []ports.Utxo, 64)
 
 	go func() {
 		defer close(notificationsChan)
-
-		if err := n.connectWebSocket(ctx); err != nil {
-			log.Errorf("failed to connect to WebSocket: %s", err)
-			return
-		}
 
 		for {
 			select {
@@ -691,12 +690,8 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 			default:
 				_, message, err := n.wsConn.ReadMessage()
 				if err != nil {
-					// reconnect on error
-					if err := n.connectWebSocket(ctx); err != nil {
-						log.Errorf("failed to connect to WebSocket: %s", err)
-						return
-					}
-					continue
+					log.Errorf("failed to read WebSocket message: %s", err)
+					return
 				}
 
 				var event event

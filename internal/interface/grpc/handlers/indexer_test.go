@@ -22,133 +22,59 @@ import (
 
 // Valid P2TR scripts for testing (secp256k1 generator point multiples).
 const (
-	testScript1 = "512079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
-	testScript2 = "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
-	testScript3 = "5120f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+	testScript1   = "512079be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+	testScript2   = "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+	testScript3   = "5120f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
+	testChainTxid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 )
 
-// Compile-time check that mockGetSubscriptionServer satisfies the stream interface.
-var _ arkv1.IndexerService_GetSubscriptionServer = (*mockGetSubscriptionServer)(nil)
+func TestGetVtxoChain(t *testing.T) {
+	// Cursor pagination is continued via the auth_token, not by re-submitting the intent proof,
+	// so combining an intent with a page_token must be rejected before the request reaches the
+	// application service, as this is the entrypoint for an auth_token to be created.
+	t.Run("rejects page token with intent", func(t *testing.T) {
+		svc := newTestIndexerService(t)
 
-type mockGetSubscriptionServer struct {
-	ctx    context.Context
-	sendCh chan *arkv1.GetSubscriptionResponse
-}
+		_, err := svc.GetVtxoChain(context.Background(), &arkv1.GetVtxoChainRequest{
+			Auth:      &arkv1.GetVtxoChainRequest_Intent{Intent: &arkv1.IndexerIntent{}},
+			PageToken: "some-token",
+		})
+		require.Error(t, err)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+		require.Contains(t, err.Error(), "page_token is not supported with intent")
+	})
 
-func newMockGetSubscriptionServer(ctx context.Context) *mockGetSubscriptionServer {
-	return &mockGetSubscriptionServer{
-		ctx:    ctx,
-		sendCh: make(chan *arkv1.GetSubscriptionResponse, 100),
-	}
-}
+	// page_token must be forwarded to the app service and next_page_token propagated back.
+	t.Run("forwards page token", func(t *testing.T) {
+		mockSvc := &mockAppIndexer{resp: &application.VtxoChainResp{NextPageToken: "next-cursor"}}
+		svc := newTestIndexerService(t)
+		svc.indexerSvc = mockSvc
 
-func (m *mockGetSubscriptionServer) Send(resp *arkv1.GetSubscriptionResponse) error {
-	m.sendCh <- resp
-	return nil
-}
+		resp, err := svc.GetVtxoChain(context.Background(), &arkv1.GetVtxoChainRequest{
+			Outpoint:  &arkv1.IndexerOutpoint{Txid: testChainTxid, Vout: 0},
+			PageToken: "page-cursor",
+		})
+		require.NoError(t, err)
+		require.Equal(t, "page-cursor", mockSvc.gotPageToken)
+		require.Equal(t, "next-cursor", resp.GetNextPageToken())
+	})
 
-func (m *mockGetSubscriptionServer) Context() context.Context     { return m.ctx }
-func (m *mockGetSubscriptionServer) SetHeader(metadata.MD) error  { return nil }
-func (m *mockGetSubscriptionServer) SendHeader(metadata.MD) error { return nil }
-func (m *mockGetSubscriptionServer) SetTrailer(metadata.MD)       {}
-func (m *mockGetSubscriptionServer) SendMsg(any) error            { return nil }
-func (m *mockGetSubscriptionServer) RecvMsg(any) error            { return nil }
+	// An ErrInvalidInput from the service (e.g. a malformed page_token) must map to
+	// InvalidArgument, not Internal.
+	t.Run("maps invalid input to invalid argument", func(t *testing.T) {
+		mockSvc := &mockAppIndexer{
+			err: fmt.Errorf("%w: invalid page_token", application.ErrInvalidInput),
+		}
+		svc := newTestIndexerService(t)
+		svc.indexerSvc = mockSvc
 
-// recv waits for the next message sent via stream.Send, failing the test on timeout.
-func (m *mockGetSubscriptionServer) recv(t *testing.T, timeout time.Duration) *arkv1.GetSubscriptionResponse {
-	t.Helper()
-	select {
-	case msg := <-m.sendCh:
-		return msg
-	case <-time.After(timeout):
-		t.Fatal("timeout waiting for stream message")
-		return nil
-	}
-}
-
-func newTestIndexerService() *indexerService {
-	return &indexerService{
-		scriptSubsHandler:           newBroker[*arkv1.GetSubscriptionResponse](),
-		subscriptionTimeoutDuration: 10 * time.Second,
-		heartbeat:                   time.Second,
-	}
-}
-
-// seedTxFilters installs the given CEL expressions on a listener for test
-// fixtures. The handler's applyFilter is the production code path; this
-// helper exists so tests can populate state without going through the full
-// SubscriptionFilter plumbing.
-func seedTxFilters(
-	t *testing.T, svc *indexerService, id string, exprs ...string,
-) {
-	t.Helper()
-	filters, err := compileTxFilters(exprs)
-	require.NoError(t, err)
-	require.NoError(t, svc.scriptSubsHandler.installTxFilters(id, filters))
-}
-
-func scriptsAddFilter(scripts ...string) *arkv1.SubscriptionFilter {
-	return &arkv1.SubscriptionFilter{
-		Scripts: &arkv1.ScriptFilter{Add: scripts},
-	}
-}
-
-func txExpressionsFilter(exprs ...string) *arkv1.SubscriptionFilter {
-	return &arkv1.SubscriptionFilter{
-		Expressions: exprs,
-	}
-}
-
-// buildTxBase64WithPackets builds a tx carrying the given ARK OP_RETURN
-// extension packets and returns it as a base64-encoded PSBT, matching the
-// shape that the production producer puts in TransactionEvent.Tx for
-// commitment and ark txs.
-func buildTxBase64WithPackets(t *testing.T, pkts ...extension.Packet) string {
-	t.Helper()
-	ext, err := extension.NewExtensionFromPackets(pkts...)
-	require.NoError(t, err)
-	out, err := ext.TxOut()
-	require.NoError(t, err)
-	tx := wire.NewMsgTx(2)
-	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: 0xffffffff}})
-	tx.AddTxOut(out)
-	ptx, err := psbt.NewFromUnsignedTx(tx)
-	require.NoError(t, err)
-	b64, err := ptx.B64Encode()
-	require.NoError(t, err)
-	return b64
-}
-
-// buildTxBase64Empty builds a tx with one dummy input and no outputs,
-// base64-encoded as a PSBT.
-func buildTxBase64Empty(t *testing.T) string {
-	t.Helper()
-	tx := wire.NewMsgTx(2)
-	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: 0xffffffff}})
-	ptx, err := psbt.NewFromUnsignedTx(tx)
-	require.NoError(t, err)
-	b64, err := ptx.B64Encode()
-	require.NoError(t, err)
-	return b64
-}
-
-// buildTxHexWithPackets builds the same tx as buildTxBase64WithPackets but
-// hex-encoded as a raw signed tx, matching the shape used for sweep txs in
-// production. Retained to exercise the hex fallback path in parseTxOnce.
-// A dummy input is added because wire.MsgTx.Serialize emits the SegWit marker
-// for txs with zero inputs, making round-trip via Deserialize fail.
-func buildTxHexWithPackets(t *testing.T, pkts ...extension.Packet) string {
-	t.Helper()
-	ext, err := extension.NewExtensionFromPackets(pkts...)
-	require.NoError(t, err)
-	out, err := ext.TxOut()
-	require.NoError(t, err)
-	tx := wire.NewMsgTx(2)
-	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: 0xffffffff}})
-	tx.AddTxOut(out)
-	var buf bytes.Buffer
-	require.NoError(t, tx.Serialize(&buf))
-	return hex.EncodeToString(buf.Bytes())
+		_, err := svc.GetVtxoChain(context.Background(), &arkv1.GetVtxoChainRequest{
+			Outpoint:  &arkv1.IndexerOutpoint{Txid: testChainTxid, Vout: 0},
+			PageToken: "bad",
+		})
+		require.Error(t, err)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	})
 }
 
 func TestGetSubscription(t *testing.T) {
@@ -156,7 +82,7 @@ func TestGetSubscription(t *testing.T) {
 
 	t.Run("new flow sends SubscriptionStartedEvent", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -185,7 +111,7 @@ func TestGetSubscription(t *testing.T) {
 
 	t.Run("new flow receives events on subscribed scripts", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -234,7 +160,7 @@ func TestGetSubscription(t *testing.T) {
 
 	t.Run("new flow listener removed on stream close", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		stream := newMockGetSubscriptionServer(ctx)
@@ -268,7 +194,7 @@ func TestGetSubscription(t *testing.T) {
 
 	t.Run("new flow invalid scripts returns error", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 
 		stream := newMockGetSubscriptionServer(context.Background())
 
@@ -290,7 +216,7 @@ func TestGetSubscription(t *testing.T) {
 		// On stream creation there is nothing to remove yet. A populated (even
 		// invalid) scripts.remove must be ignored without erroring or wiping
 		// the freshly-added scripts.
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -330,7 +256,7 @@ func TestGetSubscription(t *testing.T) {
 
 	t.Run("new flow sends heartbeat when idle", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		svc.heartbeat = 50 * time.Millisecond // short heartbeat for test speed
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -363,7 +289,7 @@ func TestGetSubscription(t *testing.T) {
 
 	t.Run("new flow update scripts mid-stream", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -425,7 +351,7 @@ func TestGetSubscription(t *testing.T) {
 
 	t.Run("new flow heartbeat resets after event", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		svc.heartbeat = 80 * time.Millisecond
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -476,7 +402,7 @@ func TestGetSubscription(t *testing.T) {
 
 	t.Run("old flow listener preserved with timeout on disconnect", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		svc.subscriptionTimeoutDuration = 500 * time.Millisecond
 
 		// Create subscription via old flow.
@@ -529,7 +455,7 @@ func TestGetSubscription(t *testing.T) {
 
 	t.Run("old flow listener removed on disconnect when no scripts", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 
 		// Create subscription then unsubscribe from all scripts.
 		subResp, err := svc.SubscribeForScripts(context.Background(),
@@ -577,7 +503,7 @@ func TestGetSubscription(t *testing.T) {
 
 	t.Run("old flow existing subscription_id works", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 
 		// Create subscription via SubscribeForScripts (old flow).
 		subResp, err := svc.SubscribeForScripts(context.Background(),
@@ -635,7 +561,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("missing subscription_id", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{},
@@ -649,7 +575,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("missing filter", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
@@ -665,7 +591,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("empty SubscriptionFilter leaves scripts untouched", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse](
 			"sub-noop", []string{testScript1},
 		)
@@ -689,7 +615,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("empty ScriptFilter clears all scripts", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse](
 			"sub-clear", []string{testScript1, testScript2},
 		)
@@ -709,7 +635,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("scripts add and remove applied together", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse](
 			"test-sub", []string{testScript1, testScript2},
 		)
@@ -735,7 +661,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("invalid script in add returns InvalidArgument", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
@@ -758,7 +684,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("invalid script in remove returns InvalidArgument", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
@@ -778,7 +704,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("scripts add only", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
@@ -797,7 +723,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("scripts remove only", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse](
 			"test-sub", []string{testScript1, testScript2},
 		)
@@ -819,7 +745,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("unknown subscription_id with scripts returns NotFound", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
@@ -835,7 +761,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("unknown subscription_id with remove returns NotFound", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
@@ -853,7 +779,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("adding duplicate scripts is idempotent", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse]("test-sub", []string{testScript1})
 		svc.scriptSubsHandler.pushListener(listener)
 
@@ -872,7 +798,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("expressions and scripts.add applied in one call", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse]("combo", nil)
 		svc.scriptSubsHandler.pushListener(listener)
 
@@ -900,7 +826,7 @@ func TestUpdateSubscription(t *testing.T) {
 		// invalid script in scripts.add must not overwrite the pre-existing
 		// expressions before failing. All inputs are validated up front.
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-atom", nil)
 		svc.scriptSubsHandler.pushListener(listener)
 		seedTxFilters(t, svc, "sub-atom", "has(tx.extension)")
@@ -929,7 +855,7 @@ func TestUpdateSubscription(t *testing.T) {
 
 	t.Run("invalid scripts.remove does not mutate expressions or add", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse](
 			"sub-atom2", []string{testScript1},
 		)
@@ -971,7 +897,7 @@ func TestTxFilter(t *testing.T) {
 
 	t.Run("GetSubscription initial tx filter", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		stream := newMockGetSubscriptionServer(ctx)
@@ -1003,7 +929,7 @@ func TestTxFilter(t *testing.T) {
 
 	t.Run("GetSubscription rejects invalid CEL on init", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		stream := newMockGetSubscriptionServer(context.Background())
 
 		err := svc.GetSubscription(
@@ -1020,7 +946,7 @@ func TestTxFilter(t *testing.T) {
 
 	t.Run("UpdateSubscription overwrites tx filters", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-overwrite", nil)
 		svc.scriptSubsHandler.pushListener(listener)
 
@@ -1052,7 +978,7 @@ func TestTxFilter(t *testing.T) {
 
 	t.Run("UpdateSubscription with empty expressions wipes them", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-wipe", nil)
 		svc.scriptSubsHandler.pushListener(listener)
 		seedTxFilters(t, svc, "sub-wipe", hasExtension, hasPacket42)
@@ -1070,7 +996,7 @@ func TestTxFilter(t *testing.T) {
 
 	t.Run("UpdateSubscription rejects invalid CEL", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-bad", nil)
 		svc.scriptSubsHandler.pushListener(listener)
 
@@ -1091,7 +1017,7 @@ func TestTxFilter(t *testing.T) {
 
 	t.Run("UpdateSubscription invalid CEL leaves existing filters untouched", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-atomic", nil)
 		svc.scriptSubsHandler.pushListener(listener)
 		seedTxFilters(t, svc, "sub-atomic", hasExtension)
@@ -1114,7 +1040,7 @@ func TestTxFilter(t *testing.T) {
 		t.Parallel()
 		eventsCh := make(chan application.TransactionEvent, 1)
 		t.Cleanup(func() { close(eventsCh) })
-		svc := newTestIndexerServiceWithEvents(eventsCh)
+		svc := newTestIndexerServiceWithEvents(t, eventsCh)
 		go svc.listenToTxEvents()
 
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-tx-only", nil)
@@ -1163,7 +1089,7 @@ func TestTxFilter(t *testing.T) {
 			t.Helper()
 			eventsCh := make(chan application.TransactionEvent, 4)
 			t.Cleanup(func() { close(eventsCh) })
-			svc := newTestIndexerServiceWithEvents(eventsCh)
+			svc := newTestIndexerServiceWithEvents(t, eventsCh)
 			go svc.listenToTxEvents()
 
 			listener := newListener[*arkv1.GetSubscriptionResponse](
@@ -1252,7 +1178,7 @@ func TestTxFilter(t *testing.T) {
 
 		eventsCh := make(chan application.TransactionEvent, 1)
 		t.Cleanup(func() { close(eventsCh) })
-		svc := newTestIndexerServiceWithEvents(eventsCh)
+		svc := newTestIndexerServiceWithEvents(t, eventsCh)
 		go svc.listenToTxEvents()
 
 		listener := newListener[*arkv1.GetSubscriptionResponse](
@@ -1276,7 +1202,7 @@ func TestTxFilter(t *testing.T) {
 
 	t.Run("UpdateSubscription dedupes duplicate expressions", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-dup", nil)
 		svc.scriptSubsHandler.pushListener(listener)
 
@@ -1312,7 +1238,7 @@ func TestTxFilter(t *testing.T) {
 		// Regression for the cleanup path that previously only checked
 		// scripts: a listener with tx filters but no scripts should be put
 		// on the timeout window, not destroyed, on disconnect.
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-old-tx", nil)
 		svc.scriptSubsHandler.pushListener(listener)
 		seedTxFilters(t, svc, "sub-old-tx", hasExtension)
@@ -1348,7 +1274,7 @@ func TestTxFilter(t *testing.T) {
 
 	t.Run("UpdateSubscription Overwrite over-cap returns InvalidArgument", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-cap-grpc", nil)
 		svc.scriptSubsHandler.pushListener(listener)
 
@@ -1374,7 +1300,7 @@ func TestTxFilter(t *testing.T) {
 		// filter should not reach B.
 		eventsCh := make(chan application.TransactionEvent, 2)
 		t.Cleanup(func() { close(eventsCh) })
-		svc := newTestIndexerServiceWithEvents(eventsCh)
+		svc := newTestIndexerServiceWithEvents(t, eventsCh)
 		go svc.listenToTxEvents()
 
 		listenerA := newListener[*arkv1.GetSubscriptionResponse]("a", nil)
@@ -1415,7 +1341,7 @@ func TestTxFilter(t *testing.T) {
 		// tx filters still match sweep events.
 		eventsCh := make(chan application.TransactionEvent, 1)
 		t.Cleanup(func() { close(eventsCh) })
-		svc := newTestIndexerServiceWithEvents(eventsCh)
+		svc := newTestIndexerServiceWithEvents(t, eventsCh)
 		go svc.listenToTxEvents()
 
 		listener := newListener[*arkv1.GetSubscriptionResponse]("sub-hex", nil)
@@ -1440,7 +1366,7 @@ func TestTxFilter(t *testing.T) {
 
 	t.Run("not-found maps to gRPC NotFound via sentinel error", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		_, err := svc.UpdateSubscription(context.Background(),
 			&arkv1.UpdateSubscriptionRequest{
 				SubscriptionId: "missing",
@@ -1455,7 +1381,7 @@ func TestTxFilter(t *testing.T) {
 
 	t.Run("UnsubscribeForScripts keeps listener with tx filters", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse](
 			"sub-keep", []string{testScript1},
 		)
@@ -1478,7 +1404,7 @@ func TestTxFilter(t *testing.T) {
 
 	t.Run("UnsubscribeForScripts removes listener without tx filters", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 		listener := newListener[*arkv1.GetSubscriptionResponse](
 			"sub-drop", []string{testScript1},
 		)
@@ -1495,7 +1421,7 @@ func TestTxFilter(t *testing.T) {
 
 	t.Run("UnsubscribeForScripts unknown subscription returns NotFound", func(t *testing.T) {
 		t.Parallel()
-		svc := newTestIndexerService()
+		svc := newTestIndexerService(t)
 
 		// Empty scripts path goes through removeAllTopics.
 		_, err := svc.UnsubscribeForScripts(context.Background(),
@@ -1521,9 +1447,149 @@ func TestTxFilter(t *testing.T) {
 }
 
 func newTestIndexerServiceWithEvents(
-	eventsCh <-chan application.TransactionEvent,
+	t *testing.T, eventsCh <-chan application.TransactionEvent,
 ) *indexerService {
-	svc := newTestIndexerService()
+	t.Helper()
+	svc := newTestIndexerService(t)
 	svc.eventsCh = eventsCh
 	return svc
+}
+
+func newTestIndexerService(t *testing.T) *indexerService {
+	t.Helper()
+	return &indexerService{
+		scriptSubsHandler:           newBroker[*arkv1.GetSubscriptionResponse](),
+		subscriptionTimeoutDuration: 10 * time.Second,
+		heartbeat:                   time.Second,
+	}
+}
+
+// seedTxFilters installs the given CEL expressions on a listener for test
+// fixtures. The handler's applyFilter is the production code path; this
+// helper exists so tests can populate state without going through the full
+// SubscriptionFilter plumbing.
+func seedTxFilters(
+	t *testing.T, svc *indexerService, id string, exprs ...string,
+) {
+	t.Helper()
+	filters, err := compileTxFilters(exprs)
+	require.NoError(t, err)
+	require.NoError(t, svc.scriptSubsHandler.installTxFilters(id, filters))
+}
+
+func scriptsAddFilter(scripts ...string) *arkv1.SubscriptionFilter {
+	return &arkv1.SubscriptionFilter{
+		Scripts: &arkv1.ScriptFilter{Add: scripts},
+	}
+}
+
+func txExpressionsFilter(exprs ...string) *arkv1.SubscriptionFilter {
+	return &arkv1.SubscriptionFilter{
+		Expressions: exprs,
+	}
+}
+
+// buildTxBase64WithPackets builds a tx carrying the given ARK OP_RETURN
+// extension packets and returns it as a base64-encoded PSBT, matching the
+// shape that the production producer puts in TransactionEvent.Tx for
+// commitment and ark txs.
+func buildTxBase64WithPackets(t *testing.T, pkts ...extension.Packet) string {
+	t.Helper()
+	ext, err := extension.NewExtensionFromPackets(pkts...)
+	require.NoError(t, err)
+	out, err := ext.TxOut()
+	require.NoError(t, err)
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: 0xffffffff}})
+	tx.AddTxOut(out)
+	ptx, err := psbt.NewFromUnsignedTx(tx)
+	require.NoError(t, err)
+	b64, err := ptx.B64Encode()
+	require.NoError(t, err)
+	return b64
+}
+
+// buildTxBase64Empty builds a tx with one dummy input and no outputs,
+// base64-encoded as a PSBT.
+func buildTxBase64Empty(t *testing.T) string {
+	t.Helper()
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: 0xffffffff}})
+	ptx, err := psbt.NewFromUnsignedTx(tx)
+	require.NoError(t, err)
+	b64, err := ptx.B64Encode()
+	require.NoError(t, err)
+	return b64
+}
+
+// buildTxHexWithPackets builds the same tx as buildTxBase64WithPackets but
+// hex-encoded as a raw signed tx, matching the shape used for sweep txs in
+// production. Retained to exercise the hex fallback path in parseTxOnce.
+// A dummy input is added because wire.MsgTx.Serialize emits the SegWit marker
+// for txs with zero inputs, making round-trip via Deserialize fail.
+func buildTxHexWithPackets(t *testing.T, pkts ...extension.Packet) string {
+	t.Helper()
+	ext, err := extension.NewExtensionFromPackets(pkts...)
+	require.NoError(t, err)
+	out, err := ext.TxOut()
+	require.NoError(t, err)
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: 0xffffffff}})
+	tx.AddTxOut(out)
+	var buf bytes.Buffer
+	require.NoError(t, tx.Serialize(&buf))
+	return hex.EncodeToString(buf.Bytes())
+}
+
+type mockGetSubscriptionServer struct {
+	ctx    context.Context
+	sendCh chan *arkv1.GetSubscriptionResponse
+}
+
+func newMockGetSubscriptionServer(ctx context.Context) *mockGetSubscriptionServer {
+	return &mockGetSubscriptionServer{
+		ctx:    ctx,
+		sendCh: make(chan *arkv1.GetSubscriptionResponse, 100),
+	}
+}
+
+func (m *mockGetSubscriptionServer) Send(resp *arkv1.GetSubscriptionResponse) error {
+	m.sendCh <- resp
+	return nil
+}
+
+func (m *mockGetSubscriptionServer) Context() context.Context     { return m.ctx }
+func (m *mockGetSubscriptionServer) SetHeader(metadata.MD) error  { return nil }
+func (m *mockGetSubscriptionServer) SendHeader(metadata.MD) error { return nil }
+func (m *mockGetSubscriptionServer) SetTrailer(metadata.MD)       {}
+func (m *mockGetSubscriptionServer) SendMsg(any) error            { return nil }
+func (m *mockGetSubscriptionServer) RecvMsg(any) error            { return nil }
+
+// recv waits for the next message sent via stream.Send, failing the test on timeout.
+func (m *mockGetSubscriptionServer) recv(t *testing.T, timeout time.Duration) *arkv1.GetSubscriptionResponse {
+	t.Helper()
+	select {
+	case msg := <-m.sendCh:
+		return msg
+	case <-time.After(timeout):
+		t.Fatal("timeout waiting for stream message")
+		return nil
+	}
+}
+
+// mockAppIndexer is a minimal application.IndexerService used to assert the
+// gRPC handler's GetVtxoChain wiring. Only GetVtxoChain is implemented; any
+// other method would panic via the embedded nil interface (none are called).
+type mockAppIndexer struct {
+	application.IndexerService
+	gotPageToken string
+	resp         *application.VtxoChainResp
+	err          error
+}
+
+func (m *mockAppIndexer) GetVtxoChain(
+	_ context.Context, _ string, _ application.Outpoint, _ *application.Page, pageToken string,
+) (*application.VtxoChainResp, error) {
+	m.gotPageToken = pageToken
+	return m.resp, m.err
 }

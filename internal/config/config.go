@@ -135,6 +135,7 @@ type Config struct {
 	MaxOpReturnOutputs          uint64
 
 	EnablePprof            bool
+	EnableChannelz         bool
 	IndexerExposure        string
 	IndexerAuthTokenExpiry int64
 	// IndexerSigningKey is a hex-encoded private key used by the indexer to sign
@@ -239,6 +240,7 @@ var (
 	// Skip CSV validation for vtxos created before this date
 	VtxoNoCsvValidationCutoffDate = "VTXO_NO_CSV_VALIDATION_CUTOFF_DATE"
 	EnablePprof                   = "ENABLE_PPROF"
+	EnableChannelz                = "ENABLE_CHANNELZ"
 	IndexerExposure               = "INDEXER_EXPOSURE"
 	IndexerAuthTokenExpiry        = "INDEXER_AUTH_TOKEN_EXPIRY" // #nosec G101
 	// IndexerSigningKey is a hex-encoded private key. SENSITIVE: never log this value.
@@ -292,6 +294,7 @@ var (
 	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
 	defaultEnablePprof                   = false
+	defaultEnableChannelz                = false
 	defaultIndexerExposure               = "public"
 	defaultIndexerAuthTokenExpiry        = 300 // 5 minutes in seconds
 	defaultMaxConcurrentStreams          = uint32(1000)
@@ -346,6 +349,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
 	viper.SetDefault(VtxoNoCsvValidationCutoffDate, defaultVtxoNoCsvValidationCutoffDate)
 	viper.SetDefault(EnablePprof, defaultEnablePprof)
+	viper.SetDefault(EnableChannelz, defaultEnableChannelz)
 	viper.SetDefault(IndexerExposure, defaultIndexerExposure)
 	viper.SetDefault(IndexerAuthTokenExpiry, defaultIndexerAuthTokenExpiry)
 	viper.SetDefault(MaxConcurrentStreams, defaultMaxConcurrentStreams)
@@ -498,6 +502,7 @@ func LoadConfig() (*Config, error) {
 		AssetTxMaxWeightRatio:         float32(viper.GetFloat64(AssetTxMaxWeightRatio)),
 		VtxoNoCsvValidationCutoffDate: viper.GetInt64(VtxoNoCsvValidationCutoffDate),
 		EnablePprof:                   viper.GetBool(EnablePprof),
+		EnableChannelz:                viper.GetBool(EnableChannelz),
 		IndexerExposure:               viper.GetString(IndexerExposure),
 		IndexerAuthTokenExpiry:        viper.GetInt64(IndexerAuthTokenExpiry),
 		IndexerSigningKey:             viper.GetString(IndexerSigningKey),

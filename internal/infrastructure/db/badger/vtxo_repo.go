@@ -17,7 +17,8 @@ import (
 const vtxoStoreDir = "vtxos"
 
 type VtxoRepository struct {
-	store *badgerhold.Store
+	store    *badgerhold.Store
+	arkStore *badgerhold.Store
 }
 
 // GetStore returns the underlying badgerhold store for use by marker repository
@@ -31,7 +32,7 @@ type vtxoDTO struct {
 }
 
 func NewVtxoRepository(config ...interface{}) (domain.VtxoRepository, error) {
-	if len(config) != 2 {
+	if len(config) != 2 && len(config) != 3 {
 		return nil, fmt.Errorf("invalid config")
 	}
 	baseDir, ok := config[0].(string)
@@ -45,6 +46,13 @@ func NewVtxoRepository(config ...interface{}) (domain.VtxoRepository, error) {
 			return nil, fmt.Errorf("invalid logger")
 		}
 	}
+	var arkStore *badgerhold.Store
+	if len(config) == 3 && config[2] != nil {
+		arkStore, ok = config[2].(*badgerhold.Store)
+		if !ok {
+			return nil, fmt.Errorf("invalid ark store")
+		}
+	}
 
 	var dir string
 	if len(baseDir) > 0 {
@@ -55,7 +63,7 @@ func NewVtxoRepository(config ...interface{}) (domain.VtxoRepository, error) {
 		return nil, fmt.Errorf("failed to open round events store: %s", err)
 	}
 
-	return &VtxoRepository{store}, nil
+	return &VtxoRepository{store: store, arkStore: arkStore}, nil
 }
 
 func (r *VtxoRepository) AddVtxos(
@@ -398,6 +406,66 @@ func (r *VtxoRepository) GetVtxoPubKeysByCommitmentTxids(
 		taprootKeys = append(taprootKeys, pubkey)
 	}
 	return taprootKeys, nil
+}
+
+func (r *VtxoRepository) GetCheckpointTxsByVtxoPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]domain.Tx, error) {
+	if len(pubkeys) == 0 {
+		return nil, nil
+	}
+	if r.arkStore == nil {
+		return nil, fmt.Errorf("ark store not configured")
+	}
+
+	idxIfaces := make([]interface{}, len(pubkeys))
+	for i, pk := range pubkeys {
+		idxIfaces[i] = pk
+	}
+
+	query := badgerhold.Where("PubKey").In(idxIfaces...).And("Swept").Eq(false)
+	vtxos, err := r.findVtxos(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	// Group vtxos by ArkTxid so each offchain tx is fetched once. Skip vtxos
+	// without a SpentBy checkpoint or an ArkTxid link; they can't join to a
+	// finalized offchain tx (mirrors SQL inner-join excludes).
+	byArkTxid := make(map[string][]domain.Vtxo)
+	for _, v := range vtxos {
+		if v.SpentBy == "" || v.ArkTxid == "" {
+			continue
+		}
+		byArkTxid[v.ArkTxid] = append(byArkTxid[v.ArkTxid], v)
+	}
+
+	dedup := make(map[string]domain.Tx)
+	for arkTxid, group := range byArkTxid {
+		var offchainTx domain.OffchainTx
+		if err := r.arkStore.Get(arkTxid, &offchainTx); err != nil {
+			if err == badgerhold.ErrNotFound {
+				continue
+			}
+			return nil, err
+		}
+		if offchainTx.Stage.Code != int(domain.OffchainTxFinalizedStage) {
+			continue
+		}
+		for _, v := range group {
+			data, ok := offchainTx.CheckpointTxs[v.SpentBy]
+			if !ok {
+				continue
+			}
+			dedup[v.SpentBy] = domain.Tx{Txid: v.SpentBy, Str: data}
+		}
+	}
+
+	txs := make([]domain.Tx, 0, len(dedup))
+	for _, tx := range dedup {
+		txs = append(txs, tx)
+	}
+	return txs, nil
 }
 
 func (r *VtxoRepository) GetPendingSpentVtxosWithPubKeys(

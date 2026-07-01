@@ -459,6 +459,44 @@ func (q *Queries) SelectAssetsWithUnspentAmountsByIds(ctx context.Context, dolla
 	return items, nil
 }
 
+const selectCheckpointTxsByVtxoPubKeys = `-- name: SelectCheckpointTxsByVtxoPubKeys :many
+SELECT DISTINCT c.txid, c.tx AS data
+FROM vtxo v
+JOIN checkpoint_tx c ON c.txid = v.spent_by
+JOIN offchain_tx o ON o.txid = c.offchain_txid
+WHERE v.pubkey = ANY($1::text[])
+  AND v.swept = false
+  AND o.stage_code = 3
+`
+
+type SelectCheckpointTxsByVtxoPubKeysRow struct {
+	Txid string
+	Data string
+}
+
+func (q *Queries) SelectCheckpointTxsByVtxoPubKeys(ctx context.Context, pubkeys []string) ([]SelectCheckpointTxsByVtxoPubKeysRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectCheckpointTxsByVtxoPubKeys, pq.Array(pubkeys))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectCheckpointTxsByVtxoPubKeysRow
+	for rows.Next() {
+		var i SelectCheckpointTxsByVtxoPubKeysRow
+		if err := rows.Scan(&i.Txid, &i.Data); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectControlAssetByID = `-- name: SelectControlAssetByID :one
 SELECT control_asset_id FROM asset WHERE id = $1
 `

@@ -15,10 +15,10 @@ func UnaryInterceptor(
 		unaryPanicRecoveryInterceptor(),
 		errorConverter,
 		unaryLogger,
+		unaryReadinessHandler(readiness),
 		unaryVersionCompatHandler(getVersionGuard),
 		unaryDigestHandler(getDigest),
 		unaryMacaroonAuthHandler(svc),
-		unaryReadinessHandler(readiness),
 	))
 }
 
@@ -31,9 +31,9 @@ func StreamInterceptor(
 		streamPanicRecoveryInterceptor(),
 		streamErrorConverter,
 		streamLogger,
+		streamReadinessHandler(readiness),
 		streamVersionCompatHandler(getVersionGuard),
 		streamDigestHandler(getDigest),
 		streamMacaroonAuthHandler(svc),
-		streamReadinessHandler(readiness),
 	))
 }

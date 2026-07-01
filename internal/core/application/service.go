@@ -347,12 +347,18 @@ func (s *service) registerEventHandlers() {
 			}
 
 			checkpointTxsByOutpoint := make(map[string]TxData)
+			checkpointScripts := make([]string, 0, len(offchainTx.CheckpointTxs))
 			for txid, tx := range offchainTx.CheckpointTxs {
 				// nolint
 				ptx, _ := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 				checkpointTxsByOutpoint[ptx.UnsignedTx.TxIn[0].PreviousOutPoint.String()] = TxData{
 					Tx: tx, Txid: txid,
 				}
+				script := hex.EncodeToString(ptx.UnsignedTx.TxOut[0].PkScript)
+				checkpointScripts = append(
+					checkpointScripts,
+					script,
+				)
 			}
 
 			txEvent := TransactionEvent{
@@ -368,6 +374,14 @@ func (s *service) registerEventHandlers() {
 			go func() {
 				if err := s.startWatchingVtxos(newVtxos); err != nil {
 					log.WithError(err).Warn("failed to start watching vtxos")
+				}
+			}()
+
+			go func() {
+				if err := s.scanner.WatchScripts(
+					context.Background(), checkpointScripts,
+				); err != nil {
+					log.WithError(err).Warn("failed to start watching checkpoints")
 				}
 			}()
 		},
@@ -3725,6 +3739,21 @@ func (s *service) startWatchingVtxos(vtxos []domain.Vtxo) error {
 	return s.scanner.WatchScripts(context.Background(), scripts)
 }
 
+// checkpointOutputScripts parses each checkpoint tx PSBT and returns the
+// hex-encoded pkscript of its first output. Corrupted rows are skipped so a
+// single bad PSBT cannot abort restore/shutdown.
+func checkpointOutputScripts(txs []domain.Tx) []string {
+	scripts := make([]string, 0, len(txs))
+	for _, tx := range txs {
+		ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx.Str), true)
+		if err != nil || len(ptx.UnsignedTx.TxOut) == 0 {
+			continue
+		}
+		scripts = append(scripts, hex.EncodeToString(ptx.UnsignedTx.TxOut[0].PkScript))
+	}
+	return scripts
+}
+
 // restoreWatchingVtxos re-registers every sweepable round's vtxo pubkeys
 // with the chain scanner so we resume receiving notifications after a
 // restart. The pubkey lookup uses the bulk repo method
@@ -3764,6 +3793,18 @@ func (s *service) restoreWatchingVtxos() error {
 		scripts = append(scripts, fmt.Sprintf("5120%s", key))
 	}
 
+	if len(tapKeys) > 0 {
+		// Also watch finalized checkpoint txs' first output so we detect
+		// onchain broadcast. Soft-fail: a DB error must not block startup
+		checkpointTxs, err := s.repoManager.Vtxos().
+			GetCheckpointTxsByVtxoPubKeys(ctx, tapKeys)
+		if err != nil {
+			log.WithError(err).Warn("failed to fetch checkpoint txs for restore")
+		} else {
+			scripts = append(scripts, checkpointOutputScripts(checkpointTxs)...)
+		}
+	}
+
 	if len(scripts) == 0 {
 		return nil
 	}
@@ -3773,7 +3814,7 @@ func (s *service) restoreWatchingVtxos() error {
 	}
 
 	log.Debugf(
-		"restored watching %d vtxo scripts from %d sweepable rounds",
+		"restored watching %d scripts (vtxo + checkpoint) from %d sweepable rounds",
 		len(scripts), len(commitmentTxIds),
 	)
 	return nil
@@ -3786,6 +3827,20 @@ func (s *service) stopWatchingVtxos(tapkeys []string) {
 		scripts = append(scripts, fmt.Sprintf("5120%s", key))
 	}
 
+	if len(tapkeys) > 0 {
+		// Also unwatch finalized checkpoint txs' first output. Soft-fail:
+		// a DB glitch on shutdown leaves the scanner watching
+		checkpointTxs, err := s.repoManager.Vtxos().
+			GetCheckpointTxsByVtxoPubKeys(context.Background(), tapkeys)
+		if err != nil {
+			log.WithError(err).Warn(
+				"failed to fetch checkpoint txs for shutdown unwatch",
+			)
+		} else {
+			scripts = append(scripts, checkpointOutputScripts(checkpointTxs)...)
+		}
+	}
+
 	if len(scripts) <= 0 {
 		return
 	}
@@ -3796,7 +3851,7 @@ func (s *service) stopWatchingVtxos(tapkeys []string) {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-		log.Debugf("stopped watching %d vtxo scripts", len(tapkeys))
+		log.Debugf("stopped watching %d scripts (vtxo + checkpoint)", len(scripts))
 		break
 	}
 }
