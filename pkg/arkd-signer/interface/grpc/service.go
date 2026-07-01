@@ -6,17 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
-	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
-	"github.com/arkade-os/arkd/pkg/arkd-wallet/config"
-	"github.com/arkade-os/arkd/pkg/arkd-wallet/interface/grpc/handlers"
-	"github.com/arkade-os/arkd/pkg/arkd-wallet/interface/grpc/interceptors"
-	"github.com/arkade-os/arkd/pkg/arkd-wallet/telemetry"
+	signerv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/signer/v1"
+	"github.com/arkade-os/arkd/pkg/arkd-signer/config"
+	"github.com/arkade-os/arkd/pkg/arkd-signer/interface/grpc/handlers"
+	"github.com/arkade-os/arkd/pkg/arkd-signer/interface/grpc/interceptors"
 	"github.com/meshapi/grpc-api-gateway/gateway"
-	log "github.com/sirupsen/logrus"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
@@ -25,13 +20,10 @@ import (
 )
 
 type service struct {
-	cfg               *config.Config
-	server            *http.Server
-	grpcSrv           *grpc.Server
-	closeFn           func()
-	otelShutdown      func(context.Context) error
-	pyroscopeShutdown func() error
-	stopFn            func()
+	cfg     *config.Config
+	server  *http.Server
+	grpcSrv *grpc.Server
+	stopFn  func()
 }
 
 func NewService(cfg *config.Config) (*service, error) {
@@ -46,46 +38,11 @@ func (s *service) Start() error {
 		interceptors.UnaryInterceptor(),
 		interceptors.StreamInterceptor(),
 	}
-
-	s.closeFn = func() {
-		s.cfg.WalletSvc.Close()
-		s.cfg.ScannerSvc.Close()
-	}
-
-	if s.cfg.OtelCollectorEndpoint != "" {
-		pushInteval := time.Duration(s.cfg.OtelPushInterval) * time.Second
-		otelShutdown, err := telemetry.InitOtelSDK(
-			context.Background(),
-			s.cfg.OtelCollectorEndpoint,
-			pushInteval,
-		)
-		if err != nil {
-			return err
-		}
-
-		otelHandler := otelgrpc.NewServerHandler(
-			otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
-		)
-		grpcOpts = append(grpcOpts, grpc.StatsHandler(otelHandler))
-
-		if s.cfg.PyroscopeServerURL != "" {
-			pyroscopeShutdown, err := telemetry.InitPyroscope(
-				s.cfg.PyroscopeServerURL,
-			)
-			if err != nil {
-				log.WithError(err).Warn("failed to initialize pyroscope, continuing without profiling")
-			}
-
-			s.pyroscopeShutdown = pyroscopeShutdown
-		}
-
-		s.otelShutdown = otelShutdown
-	}
 	grpcSrv := grpc.NewServer(grpcOpts...)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	walletHandler := handlers.NewWalletServiceHandler(ctx, s.cfg.WalletSvc, s.cfg.ScannerSvc)
-	arkwalletv1.RegisterWalletServiceServer(grpcSrv, walletHandler)
+	signerHandler := handlers.NewSignerHandler(s.cfg.SignerSvc)
+	signerv1.RegisterSignerServiceServer(grpcSrv, signerHandler)
 
 	healthHandler := handlers.NewHealthHandler()
 	grpchealth.RegisterHealthServer(grpcSrv, healthHandler)
@@ -97,14 +54,14 @@ func (s *service) Start() error {
 	)
 	if err != nil {
 		cancel()
-		return fmt.Errorf("failed to connect wallet grpc-gateway: %w", err)
+		return fmt.Errorf("failed to connect signer grpc-gateway: %w", err)
 	}
 
 	gwmux := gateway.NewServeMux(
 		gateway.WithHealthzEndpoint(grpchealth.NewHealthClient(conn)),
 	)
 
-	arkwalletv1.RegisterWalletServiceHandler(ctx, gwmux, conn)
+	signerv1.RegisterSignerServiceHandler(ctx, gwmux, conn)
 
 	grpcGateway := http.Handler(gwmux)
 	handler := router(grpcSrv, grpcGateway)
@@ -117,6 +74,7 @@ func (s *service) Start() error {
 		Addr:    address(s.cfg.Port),
 		Handler: httpServerHandler,
 	}
+	s.grpcSrv = grpcSrv
 	s.stopFn = cancel
 
 	go func() {
@@ -136,20 +94,6 @@ func (s *service) Stop() {
 	}
 	if s.grpcSrv != nil {
 		s.grpcSrv.GracefulStop()
-	}
-	if s.pyroscopeShutdown != nil {
-		if err := s.pyroscopeShutdown(); err != nil {
-			log.Errorf("failed to shutdown pyroscope: %s", err)
-		}
-
-		log.Info("shutdown pyroscope")
-	}
-	if s.otelShutdown != nil {
-		if err := s.otelShutdown(context.Background()); err != nil {
-			log.Errorf("failed to shutdown otel: %s", err)
-		}
-
-		log.Infof("otel shutdown")
 	}
 }
 

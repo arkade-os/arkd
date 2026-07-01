@@ -87,9 +87,9 @@ var (
 	}
 	signerLoadCmd = &cli.Command{
 		Name:   "load",
-		Usage:  "Load the ark signer address or private key",
+		Usage:  "Load the ark signer url",
 		Action: signerLoadAction,
-		Flags:  []cli.Flag{signerKeyFlag, signerUrlFlag},
+		Flags:  []cli.Flag{signerUrlFlag},
 	}
 	noteCmd = &cli.Command{
 		Name:   "note",
@@ -447,13 +447,9 @@ func walletWithdrawAction(ctx *cli.Context) error {
 
 func signerLoadAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)
-	signerKey := ctx.String(signerKeyFlagName)
 	signerUrl := ctx.String(signerUrlFlagName)
-	if signerKey == "" && signerUrl == "" {
-		return fmt.Errorf("either private key or url must be provided")
-	}
-	if signerKey != "" && signerUrl != "" {
-		return fmt.Errorf("private key and url are mutually exclusive, only one must be provided")
+	if signerUrl == "" {
+		return fmt.Errorf("signer url must be provided")
 	}
 	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
@@ -462,9 +458,6 @@ func signerLoadAction(ctx *cli.Context) error {
 
 	url := fmt.Sprintf("%s/v1/admin/signer", baseURL)
 	body := fmt.Sprintf(`{"signerUrl": "%s"}`, signerUrl)
-	if signerKey != "" {
-		body = fmt.Sprintf(`{"signerPrivateKey": "%s"}`, signerKey)
-	}
 
 	if _, err := post[struct{}](url, body, "", macaroon, tlsConfig); err != nil {
 		return err

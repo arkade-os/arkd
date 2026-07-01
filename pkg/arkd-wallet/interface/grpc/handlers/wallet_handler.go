@@ -2,12 +2,10 @@ package handlers
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
 	application "github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/google/uuid"
@@ -489,19 +487,9 @@ func (h *walletHandler) Withdraw(
 func (h *walletHandler) LoadSignerKey(
 	ctx context.Context, req *arkwalletv1.LoadSignerKeyRequest,
 ) (*arkwalletv1.LoadSignerKeyResponse, error) {
-	key := req.GetPrivateKey()
-	if len(key) <= 0 {
-		return nil, status.Errorf(codes.InvalidArgument, "missing private key")
-	}
-	buf, err := hex.DecodeString(key)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid private key format, must be hex")
-	}
-	prvkey, _ := btcec.PrivKeyFromBytes(buf)
-	if err := h.wallet.LoadSignerKey(ctx, prvkey); err != nil {
-		return nil, err
-	}
-	return &arkwalletv1.LoadSignerKeyResponse{}, nil
+	return nil, status.Errorf(
+		codes.Unimplemented, "signer key is managed by arkd-signer, not arkd-wallet",
+	)
 }
 func (h *walletHandler) RescanUtxos(
 	ctx context.Context, req *arkwalletv1.RescanUtxosRequest,

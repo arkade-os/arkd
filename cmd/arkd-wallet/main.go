@@ -14,7 +14,7 @@ import (
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("invalid config: %s", err)
+		log.Fatalf("invalid arkd-wallet config: %s", err)
 	}
 
 	log.SetLevel(log.Level(cfg.LogLevel))
@@ -24,16 +24,16 @@ func main() {
 
 	svc, err := grpcservice.NewService(cfg)
 	if err != nil {
-		log.Fatalf("failed to create service: %s", err)
+		log.Fatalf("failed to create arkd-wallet service: %s", err)
 	}
 
-	log.Infof("arkd wallet config: %+v", cfg)
+	log.Infof("arkd-wallet config: %+v", cfg)
 
-	log.Info("starting service...")
+	log.Info("starting arkd-wallet service...")
 	if err := svc.Start(); err != nil {
 		log.Fatalf("failed to start service: %s", err)
 	}
-	log.Infof("arkd wallet listens on: %v", cfg.Port)
+	log.Infof("arkd-wallet listens on: %v", cfg.Port)
 
 	log.RegisterExitHandler(svc.Stop)
 
@@ -43,6 +43,6 @@ func main() {
 	)
 	<-sigChan
 
-	log.Info("shutting down service...")
+	log.Info("shutting down arkd-wallet service...")
 	log.Exit(0)
 }
