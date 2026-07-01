@@ -461,7 +461,7 @@ func (q *Queries) SelectAssetsWithUnspentAmountsByIds(ctx context.Context, dolla
 
 const selectCheckpointTxsByVtxoPubKeys = `-- name: SelectCheckpointTxsByVtxoPubKeys :many
 SELECT DISTINCT c.txid, c.tx AS data
-FROM vtxo v
+FROM vtxo_vw v
 JOIN checkpoint_tx c ON c.txid = v.spent_by
 JOIN offchain_tx o ON o.txid = c.offchain_txid
 WHERE v.pubkey = ANY($1::text[])
