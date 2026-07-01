@@ -520,219 +520,215 @@ func newTestSweeper() (
 	return wallet, vtxoRepo, markerRepo, builder, s
 }
 
-// TestCreateCheckpointSweepTask_SweepsVtxoOutpoints verifies that checkpoint
-// sweeps use per-outpoint sweeping (SweepVtxoOutpoints) instead of marker-based
-// sweeping. This prevents over-reach when markers are shared across independent
-// subtrees due to offchain tx consolidation.
-func TestCreateCheckpointSweepTask_SweepsVtxoOutpoints(t *testing.T) {
-	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
+func TestCreateCheckpointSweepTask(t *testing.T) {
+	// checkpoint sweeps use per-outpoint sweeping (SweepVtxoOutpoints) instead of
+	// marker-based sweeping. This prevents over-reach when markers are shared
+	// across independent subtrees due to offchain tx consolidation.
+	t.Run("sweeps vtxo outpoints", func(t *testing.T) {
+		wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
-	checkpointTxid := "checkpoint123"
-	vtxoOutpoint := domain.Outpoint{Txid: "vtxo123", VOut: 0}
+		checkpointTxid := "checkpoint123"
+		vtxoOutpoint := domain.Outpoint{Txid: "vtxo123", VOut: 0}
 
-	childOutpoints := []domain.Outpoint{
-		{Txid: "child1", VOut: 0},
-		{Txid: "child2", VOut: 0},
-		{Txid: "child3", VOut: 0},
-	}
+		childOutpoints := []domain.Outpoint{
+			{Txid: "child1", VOut: 0},
+			{Txid: "child2", VOut: 0},
+			{Txid: "child3", VOut: 0},
+		}
 
-	toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 10000}
+		toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 10000}
 
-	builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
-		Return("sweeptxid123", "sweeptx_hex", nil)
+		builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
+			Return("sweeptxid123", "sweeptx_hex", nil)
 
-	wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
-		Return("sweeptxid123", nil)
+		wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
+			Return("sweeptxid123", nil)
 
-	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
-		Return(childOutpoints, nil)
+		vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
+			Return(childOutpoints, nil)
 
-	// SweepVtxoOutpoints should be called with the exact child outpoints
-	markerRepo.On("SweepVtxoOutpoints", mock.Anything, childOutpoints, mock.AnythingOfType("int64")).
-		Return(nil)
+		// SweepVtxoOutpoints should be called with the exact child outpoints
+		markerRepo.On("SweepVtxoOutpoints", mock.Anything, childOutpoints, mock.AnythingOfType("int64")).
+			Return(nil)
 
-	task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
-	err := task()
+		task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
+		err := task()
 
-	require.NoError(t, err)
-	wallet.AssertExpectations(t)
-	vtxoRepo.AssertExpectations(t)
-	markerRepo.AssertExpectations(t)
-	builder.AssertExpectations(t)
-	// BulkSweepMarkers should NOT be called — checkpoint sweeps use per-outpoint
-	markerRepo.AssertNotCalled(t, "BulkSweepMarkers", mock.Anything, mock.Anything, mock.Anything)
-}
+		require.NoError(t, err)
+		wallet.AssertExpectations(t)
+		vtxoRepo.AssertExpectations(t)
+		markerRepo.AssertExpectations(t)
+		builder.AssertExpectations(t)
+		// BulkSweepMarkers should NOT be called — checkpoint sweeps use per-outpoint
+		markerRepo.AssertNotCalled(t, "BulkSweepMarkers", mock.Anything, mock.Anything, mock.Anything)
+	})
 
-// TestCreateCheckpointSweepTask_SweptAtTimestamp verifies that the sweptAt
-// timestamp passed to SweepVtxoOutpoints is accurate.
-func TestCreateCheckpointSweepTask_SweptAtTimestamp(t *testing.T) {
-	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
+	// the sweptAt timestamp passed to SweepVtxoOutpoints is accurate.
+	t.Run("sweptAt timestamp", func(t *testing.T) {
+		wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
-	checkpointTxid := "checkpoint_timestamp"
-	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_timestamp", VOut: 0}
+		checkpointTxid := "checkpoint_timestamp"
+		vtxoOutpoint := domain.Outpoint{Txid: "vtxo_timestamp", VOut: 0}
 
-	childOutpoints := []domain.Outpoint{{Txid: "child_ts", VOut: 0}}
+		childOutpoints := []domain.Outpoint{{Txid: "child_ts", VOut: 0}}
 
-	toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 1000}
+		toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 1000}
 
-	builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
-		Return("sweeptxid_ts", "sweeptx_hex", nil)
+		builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
+			Return("sweeptxid_ts", "sweeptx_hex", nil)
 
-	wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
-		Return("sweeptxid_ts", nil)
+		wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
+			Return("sweeptxid_ts", nil)
 
-	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
-		Return(childOutpoints, nil)
+		vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
+			Return(childOutpoints, nil)
 
-	beforeExec := time.Now().UnixMilli()
-	var capturedSweptAt int64
+		beforeExec := time.Now().UnixMilli()
+		var capturedSweptAt int64
 
-	markerRepo.On("SweepVtxoOutpoints", mock.Anything, childOutpoints, mock.MatchedBy(func(sweptAt int64) bool {
-		capturedSweptAt = sweptAt
-		return true
-	})).Return(nil)
+		markerRepo.On("SweepVtxoOutpoints", mock.Anything, childOutpoints, mock.MatchedBy(func(sweptAt int64) bool {
+			capturedSweptAt = sweptAt
+			return true
+		})).Return(nil)
 
-	task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
-	err := task()
-	afterExec := time.Now().UnixMilli()
+		task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
+		err := task()
+		afterExec := time.Now().UnixMilli()
 
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, capturedSweptAt, beforeExec)
-	require.LessOrEqual(t, capturedSweptAt, afterExec)
-}
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, capturedSweptAt, beforeExec)
+		require.LessOrEqual(t, capturedSweptAt, afterExec)
+	})
 
-// TestCreateCheckpointSweepTask_SweepVtxoOutpointsError verifies error propagation.
-func TestCreateCheckpointSweepTask_SweepVtxoOutpointsError(t *testing.T) {
-	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
+	// error propagation from SweepVtxoOutpoints.
+	t.Run("SweepVtxoOutpoints error", func(t *testing.T) {
+		wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
-	checkpointTxid := "checkpoint_error"
-	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_error", VOut: 0}
+		checkpointTxid := "checkpoint_error"
+		vtxoOutpoint := domain.Outpoint{Txid: "vtxo_error", VOut: 0}
 
-	childOutpoints := []domain.Outpoint{{Txid: "child_err", VOut: 0}}
+		childOutpoints := []domain.Outpoint{{Txid: "child_err", VOut: 0}}
 
-	toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 1000}
+		toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 1000}
 
-	builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
-		Return("sweeptxid_err", "sweeptx_hex", nil)
+		builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
+			Return("sweeptxid_err", "sweeptx_hex", nil)
 
-	wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
-		Return("sweeptxid_err", nil)
+		wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
+			Return("sweeptxid_err", nil)
 
-	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
-		Return(childOutpoints, nil)
+		vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
+			Return(childOutpoints, nil)
 
-	dbError := fmt.Errorf("database connection failed")
-	markerRepo.On("SweepVtxoOutpoints", mock.Anything, childOutpoints, mock.AnythingOfType("int64")).
-		Return(dbError)
+		dbError := fmt.Errorf("database connection failed")
+		markerRepo.On("SweepVtxoOutpoints", mock.Anything, childOutpoints, mock.AnythingOfType("int64")).
+			Return(dbError)
 
-	task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
-	err := task()
+		task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
+		err := task()
 
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "database connection failed")
-}
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "database connection failed")
+	})
 
-// TestCreateCheckpointSweepTask_GetAllChildrenVtxosError verifies that when
-// GetAllChildrenVtxos fails, the error is propagated.
-func TestCreateCheckpointSweepTask_GetAllChildrenVtxosError(t *testing.T) {
-	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
+	// when GetAllChildrenVtxos fails, the error is propagated.
+	t.Run("GetAllChildrenVtxos error", func(t *testing.T) {
+		wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
-	checkpointTxid := "checkpoint_children_err"
-	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_children_err", VOut: 0}
+		checkpointTxid := "checkpoint_children_err"
+		vtxoOutpoint := domain.Outpoint{Txid: "vtxo_children_err", VOut: 0}
 
-	toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 1000}
+		toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 1000}
 
-	builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
-		Return("sweeptxid_children_err", "sweeptx_hex", nil)
+		builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
+			Return("sweeptxid_children_err", "sweeptx_hex", nil)
 
-	wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
-		Return("sweeptxid_children_err", nil)
+		wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
+			Return("sweeptxid_children_err", nil)
 
-	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
-		Return(nil, fmt.Errorf("failed to query children vtxos"))
+		vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
+			Return(nil, fmt.Errorf("failed to query children vtxos"))
 
-	task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
-	err := task()
+		task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
+		err := task()
 
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to query children")
-	markerRepo.AssertNotCalled(t, "SweepVtxoOutpoints", mock.Anything, mock.Anything, mock.Anything)
-}
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to query children")
+		markerRepo.AssertNotCalled(t, "SweepVtxoOutpoints", mock.Anything, mock.Anything, mock.Anything)
+	})
 
-// TestCreateCheckpointSweepTask_BuildSweepTxError verifies that when BuildSweepTx
-// fails, no sweep operations are attempted.
-func TestCreateCheckpointSweepTask_BuildSweepTxError(t *testing.T) {
-	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
+	// when BuildSweepTx fails, no sweep operations are attempted.
+	t.Run("BuildSweepTx error", func(t *testing.T) {
+		wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
-	checkpointTxid := "checkpoint_build_err"
-	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_build_err", VOut: 0}
+		checkpointTxid := "checkpoint_build_err"
+		vtxoOutpoint := domain.Outpoint{Txid: "vtxo_build_err", VOut: 0}
 
-	toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 1000}
+		toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 1000}
 
-	builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
-		Return("", "", fmt.Errorf("insufficient funds for sweep"))
+		builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
+			Return("", "", fmt.Errorf("insufficient funds for sweep"))
 
-	task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
-	err := task()
+		task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
+		err := task()
 
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "insufficient funds")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "insufficient funds")
 
-	wallet.AssertNotCalled(t, "BroadcastTransaction", mock.Anything, mock.Anything)
-	vtxoRepo.AssertNotCalled(t, "GetAllChildrenVtxos", mock.Anything, mock.Anything)
-	markerRepo.AssertNotCalled(t, "SweepVtxoOutpoints", mock.Anything, mock.Anything, mock.Anything)
-}
+		wallet.AssertNotCalled(t, "BroadcastTransaction", mock.Anything, mock.Anything)
+		vtxoRepo.AssertNotCalled(t, "GetAllChildrenVtxos", mock.Anything, mock.Anything)
+		markerRepo.AssertNotCalled(t, "SweepVtxoOutpoints", mock.Anything, mock.Anything, mock.Anything)
+	})
 
-// TestCreateCheckpointSweepTask_BroadcastError verifies that when broadcast
-// fails, VTXOs are not marked as swept.
-func TestCreateCheckpointSweepTask_BroadcastError(t *testing.T) {
-	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
+	// when broadcast fails, VTXOs are not marked as swept.
+	t.Run("broadcast error", func(t *testing.T) {
+		wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
-	checkpointTxid := "checkpoint_broadcast_err"
-	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_broadcast_err", VOut: 0}
+		checkpointTxid := "checkpoint_broadcast_err"
+		vtxoOutpoint := domain.Outpoint{Txid: "vtxo_broadcast_err", VOut: 0}
 
-	toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 1000}
+		toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 1000}
 
-	builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
-		Return("sweeptxid_broadcast_err", "sweeptx_hex", nil)
+		builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
+			Return("sweeptxid_broadcast_err", "sweeptx_hex", nil)
 
-	wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
-		Return("", fmt.Errorf("network timeout"))
+		wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
+			Return("", fmt.Errorf("network timeout"))
 
-	task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
-	err := task()
+		task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
+		err := task()
 
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "network timeout")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "network timeout")
 
-	vtxoRepo.AssertNotCalled(t, "GetAllChildrenVtxos", mock.Anything, mock.Anything)
-	markerRepo.AssertNotCalled(t, "SweepVtxoOutpoints", mock.Anything, mock.Anything, mock.Anything)
-}
+		vtxoRepo.AssertNotCalled(t, "GetAllChildrenVtxos", mock.Anything, mock.Anything)
+		markerRepo.AssertNotCalled(t, "SweepVtxoOutpoints", mock.Anything, mock.Anything, mock.Anything)
+	})
 
-// TestCreateCheckpointSweepTask_NoChildrenVtxos verifies that an empty
-// children list results in no sweep operations.
-func TestCreateCheckpointSweepTask_NoChildrenVtxos(t *testing.T) {
-	wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
+	// an empty children list results in no sweep operations.
+	t.Run("no children vtxos", func(t *testing.T) {
+		wallet, vtxoRepo, markerRepo, builder, s := newTestSweeper()
 
-	checkpointTxid := "checkpoint_no_children"
-	vtxoOutpoint := domain.Outpoint{Txid: "vtxo_no_children", VOut: 0}
+		checkpointTxid := "checkpoint_no_children"
+		vtxoOutpoint := domain.Outpoint{Txid: "vtxo_no_children", VOut: 0}
 
-	toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 5000}
+		toSweep := ports.TxInput{Txid: checkpointTxid, Index: 0, Value: 5000}
 
-	builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
-		Return("sweeptxid_nc", "sweeptx_hex", nil)
+		builder.On("BuildSweepTx", []ports.TxInput{toSweep}).
+			Return("sweeptxid_nc", "sweeptx_hex", nil)
 
-	wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
-		Return("sweeptxid_nc", nil)
+		wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
+			Return("sweeptxid_nc", nil)
 
-	vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
-		Return([]domain.Outpoint{}, nil)
+		vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
+			Return([]domain.Outpoint{}, nil)
 
-	task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
-	err := task()
+		task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
+		err := task()
 
-	require.NoError(t, err)
-	wallet.AssertExpectations(t)
-	vtxoRepo.AssertExpectations(t)
-	markerRepo.AssertNotCalled(t, "SweepVtxoOutpoints", mock.Anything, mock.Anything, mock.Anything)
+		require.NoError(t, err)
+		wallet.AssertExpectations(t)
+		vtxoRepo.AssertExpectations(t)
+		markerRepo.AssertNotCalled(t, "SweepVtxoOutpoints", mock.Anything, mock.Anything, mock.Anything)
+	})
 }

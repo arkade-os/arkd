@@ -431,396 +431,327 @@ func makeCheckpointPSBT(t *testing.T, inputTxid string, inputVout uint32) string
 	return b64
 }
 
-// TestEncodeDecodeChainCursor_RoundTrip verifies that encoding then decoding
-// a frontier of outpoints returns the same outpoints.
-func TestEncodeDecodeChainCursor_RoundTrip(t *testing.T) {
-	svc := &indexerService{}
-	frontier := []domain.Outpoint{
-		{Txid: "abc123", VOut: 0},
-		{Txid: "def456", VOut: 2},
-		{Txid: "ghi789", VOut: 1},
-	}
+func TestChainCursor(t *testing.T) {
+	// encoding then decoding a frontier of outpoints returns the same outpoints.
+	t.Run("round trip", func(t *testing.T) {
+		svc := &indexerService{}
+		frontier := []domain.Outpoint{
+			{Txid: "abc123", VOut: 0},
+			{Txid: "def456", VOut: 2},
+			{Txid: "ghi789", VOut: 1},
+		}
 
-	token := svc.encodeChainCursor(frontier)
-	require.NotEmpty(t, token)
+		token := svc.encodeChainCursor(frontier)
+		require.NotEmpty(t, token)
 
-	decoded, err := svc.decodeChainCursor(token)
-	require.NoError(t, err)
-	require.Equal(t, frontier, decoded)
-}
-
-// TestEncodeDecodeChainCursor_EmptyFrontier verifies that an empty frontier
-// encodes to an empty string.
-func TestEncodeDecodeChainCursor_EmptyFrontier(t *testing.T) {
-	svc := &indexerService{}
-	token := svc.encodeChainCursor(nil)
-	require.Empty(t, token)
-
-	token = svc.encodeChainCursor([]domain.Outpoint{})
-	require.Empty(t, token)
-}
-
-// TestDecodeChainCursor_InvalidBase64 verifies that invalid base64 returns an error.
-func TestDecodeChainCursor_InvalidBase64(t *testing.T) {
-	svc := &indexerService{}
-	_, err := svc.decodeChainCursor("not-valid-base64!!!")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid base64")
-}
-
-// TestDecodeChainCursor_InvalidJSON verifies that valid base64 but invalid JSON
-// returns an error.
-func TestDecodeChainCursor_InvalidJSON(t *testing.T) {
-	svc := &indexerService{}
-	// Encode something that is not valid JSON
-	token := "bm90LWpzb24" // base64url of "not-json"
-	_, err := svc.decodeChainCursor(token)
-	require.Error(t, err)
-}
-
-// TestDecodeChainCursor_HMACRejectsForgery verifies that a cursor signed with
-// one key is rejected by a service with a different key.
-func TestDecodeChainCursor_HMACRejectsForgery(t *testing.T) {
-	svc := &indexerService{cursorHMACKey: []byte("server-secret-key")}
-	frontier := []domain.Outpoint{{Txid: "abc123", VOut: 0}}
-
-	token := svc.encodeChainCursor(frontier)
-	require.NotEmpty(t, token)
-
-	// Valid decode with same key works.
-	decoded, err := svc.decodeChainCursor(token)
-	require.NoError(t, err)
-	require.Equal(t, frontier, decoded)
-
-	// Forge a cursor with a different key — should be rejected.
-	forger := &indexerService{cursorHMACKey: []byte("attacker-key")}
-	forgedToken := forger.encodeChainCursor([]domain.Outpoint{{Txid: "victim-vtxo", VOut: 0}})
-	_, err = svc.decodeChainCursor(forgedToken)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "signature mismatch")
-
-	// Tampered cursor — modify one byte of a valid token.
-	rawToken, _ := base64.RawURLEncoding.DecodeString(token)
-	rawToken[0] ^= 0xff
-	tampered := base64.RawURLEncoding.EncodeToString(rawToken)
-	_, err = svc.decodeChainCursor(tampered)
-	require.Error(t, err)
-}
-
-// TestDecodeChainCursor_HMACEdgeCases covers malicious and accidental misuse of
-// the cursor field: truncated tokens, empty strings, unsigned cursors sent to a
-// signing server, replaying a valid cursor after the HMAC portion is stripped, etc.
-func TestDecodeChainCursor_HMACEdgeCases(t *testing.T) {
-	svc := &indexerService{cursorHMACKey: []byte("server-secret-key")}
-	frontier := []domain.Outpoint{{Txid: "abc123", VOut: 0}}
-	validToken := svc.encodeChainCursor(frontier)
-
-	t.Run("empty string", func(t *testing.T) {
-		_, err := svc.decodeChainCursor("")
-		require.Error(t, err)
-	})
-
-	t.Run("truncated token missing HMAC bytes", func(t *testing.T) {
-		raw, err := base64.RawURLEncoding.DecodeString(validToken)
+		decoded, err := svc.decodeChainCursor(token)
 		require.NoError(t, err)
-		// Strip the 32-byte HMAC, leaving only the JSON payload.
-		truncated := base64.RawURLEncoding.EncodeToString(raw[:len(raw)-32])
-		_, err = svc.decodeChainCursor(truncated)
+		require.Equal(t, frontier, decoded)
+	})
+
+	// an empty frontier encodes to an empty string.
+	t.Run("empty frontier", func(t *testing.T) {
+		svc := &indexerService{}
+		token := svc.encodeChainCursor(nil)
+		require.Empty(t, token)
+
+		token = svc.encodeChainCursor([]domain.Outpoint{})
+		require.Empty(t, token)
+	})
+
+	// invalid base64 returns an error.
+	t.Run("invalid base64", func(t *testing.T) {
+		svc := &indexerService{}
+		_, err := svc.decodeChainCursor("not-valid-base64!!!")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid base64")
+	})
+
+	// valid base64 but invalid JSON returns an error.
+	t.Run("invalid json", func(t *testing.T) {
+		svc := &indexerService{}
+		// Encode something that is not valid JSON
+		token := "bm90LWpzb24" // base64url of "not-json"
+		_, err := svc.decodeChainCursor(token)
 		require.Error(t, err)
 	})
 
-	t.Run("unsigned cursor rejected by signing server", func(t *testing.T) {
-		// A server with no HMAC key produces unsigned cursors.
-		noKey := &indexerService{}
-		unsigned := noKey.encodeChainCursor(frontier)
-		// A server WITH an HMAC key must reject it.
-		_, err := svc.decodeChainCursor(unsigned)
-		require.Error(t, err)
-	})
+	// a cursor signed with one key is rejected by a service with a different key.
+	t.Run("HMAC rejects forgery", func(t *testing.T) {
+		svc := &indexerService{cursorHMACKey: []byte("server-secret-key")}
+		frontier := []domain.Outpoint{{Txid: "abc123", VOut: 0}}
 
-	t.Run("hand-crafted JSON without HMAC", func(t *testing.T) {
-		// Attacker builds raw JSON and base64-encodes it, no HMAC.
-		raw := []byte(`{"frontier":[{"txid":"victim","vout":0}]}`)
-		crafted := base64.RawURLEncoding.EncodeToString(raw)
-		_, err := svc.decodeChainCursor(crafted)
-		require.Error(t, err)
-	})
+		token := svc.encodeChainCursor(frontier)
+		require.NotEmpty(t, token)
 
-	t.Run("cursor from restarted server with new key", func(t *testing.T) {
-		oldServer := &indexerService{cursorHMACKey: []byte("old-key")}
-		oldToken := oldServer.encodeChainCursor(frontier)
-		newServer := &indexerService{cursorHMACKey: []byte("new-key-after-restart")}
-		_, err := newServer.decodeChainCursor(oldToken)
+		// Valid decode with same key works.
+		decoded, err := svc.decodeChainCursor(token)
+		require.NoError(t, err)
+		require.Equal(t, frontier, decoded)
+
+		// Forge a cursor with a different key — should be rejected.
+		forger := &indexerService{cursorHMACKey: []byte("attacker-key")}
+		forgedToken := forger.encodeChainCursor([]domain.Outpoint{{Txid: "victim-vtxo", VOut: 0}})
+		_, err = svc.decodeChainCursor(forgedToken)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "signature mismatch")
-	})
 
-	t.Run("swapped payload same length", func(t *testing.T) {
-		// Take a valid token, replace the JSON payload but keep the
-		// original HMAC — should fail because HMAC won't match.
-		raw, err := base64.RawURLEncoding.DecodeString(validToken)
-		require.NoError(t, err)
-		origHMAC := raw[len(raw)-32:]
-		newPayload := []byte(`{"frontier":[{"txid":"other","vout":0}]}`)
-		tampered := append(newPayload, origHMAC...)
-		token := base64.RawURLEncoding.EncodeToString(tampered)
-		_, err = svc.decodeChainCursor(token)
+		// Tampered cursor — modify one byte of a valid token.
+		rawToken, _ := base64.RawURLEncoding.DecodeString(token)
+		rawToken[0] ^= 0xff
+		tampered := base64.RawURLEncoding.EncodeToString(rawToken)
+		_, err = svc.decodeChainCursor(tampered)
 		require.Error(t, err)
 	})
+
+	// malicious and accidental misuse of the cursor field: truncated tokens, empty
+	// strings, unsigned cursors sent to a signing server, replaying a valid cursor
+	// after the HMAC portion is stripped, etc.
+	t.Run("HMAC edge cases", func(t *testing.T) {
+		svc := &indexerService{cursorHMACKey: []byte("server-secret-key")}
+		frontier := []domain.Outpoint{{Txid: "abc123", VOut: 0}}
+		validToken := svc.encodeChainCursor(frontier)
+
+		t.Run("empty string", func(t *testing.T) {
+			_, err := svc.decodeChainCursor("")
+			require.Error(t, err)
+		})
+
+		t.Run("truncated token missing HMAC bytes", func(t *testing.T) {
+			raw, err := base64.RawURLEncoding.DecodeString(validToken)
+			require.NoError(t, err)
+			// Strip the 32-byte HMAC, leaving only the JSON payload.
+			truncated := base64.RawURLEncoding.EncodeToString(raw[:len(raw)-32])
+			_, err = svc.decodeChainCursor(truncated)
+			require.Error(t, err)
+		})
+
+		t.Run("unsigned cursor rejected by signing server", func(t *testing.T) {
+			// A server with no HMAC key produces unsigned cursors.
+			noKey := &indexerService{}
+			unsigned := noKey.encodeChainCursor(frontier)
+			// A server WITH an HMAC key must reject it.
+			_, err := svc.decodeChainCursor(unsigned)
+			require.Error(t, err)
+		})
+
+		t.Run("hand-crafted JSON without HMAC", func(t *testing.T) {
+			// Attacker builds raw JSON and base64-encodes it, no HMAC.
+			raw := []byte(`{"frontier":[{"txid":"victim","vout":0}]}`)
+			crafted := base64.RawURLEncoding.EncodeToString(raw)
+			_, err := svc.decodeChainCursor(crafted)
+			require.Error(t, err)
+		})
+
+		t.Run("cursor from restarted server with new key", func(t *testing.T) {
+			oldServer := &indexerService{cursorHMACKey: []byte("old-key")}
+			oldToken := oldServer.encodeChainCursor(frontier)
+			newServer := &indexerService{cursorHMACKey: []byte("new-key-after-restart")}
+			_, err := newServer.decodeChainCursor(oldToken)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "signature mismatch")
+		})
+
+		t.Run("swapped payload same length", func(t *testing.T) {
+			// Take a valid token, replace the JSON payload but keep the
+			// original HMAC — should fail because HMAC won't match.
+			raw, err := base64.RawURLEncoding.DecodeString(validToken)
+			require.NoError(t, err)
+			origHMAC := raw[len(raw)-32:]
+			newPayload := []byte(`{"frontier":[{"txid":"other","vout":0}]}`)
+			tampered := append(newPayload, origHMAC...)
+			token := base64.RawURLEncoding.EncodeToString(tampered)
+			_, err = svc.decodeChainCursor(token)
+			require.Error(t, err)
+		})
+	})
 }
 
-// TestEnsureVtxosCached_AllCacheHits verifies that when all outpoints are already
-// in the cache, no DB call is made.
-func TestEnsureVtxosCached_AllCacheHits(t *testing.T) {
-	vtxoRepo, _, indexer := newChainTestIndexer()
-
-	ctx := context.Background()
-	cache := map[string]domain.Vtxo{
-		"vtxo-1:0": {Outpoint: domain.Outpoint{Txid: "vtxo-1", VOut: 0}, Amount: 100},
-		"vtxo-2:0": {Outpoint: domain.Outpoint{Txid: "vtxo-2", VOut: 0}, Amount: 200},
-	}
-	loadedMarkers := make(map[string]bool)
-
-	outpoints := []domain.Outpoint{
-		{Txid: "vtxo-1", VOut: 0},
-		{Txid: "vtxo-2", VOut: 0},
-	}
-
-	err := indexer.ensureVtxosCached(ctx, outpoints, cache, loadedMarkers)
-	require.NoError(t, err)
-
-	// No DB call should be made
-	vtxoRepo.AssertNotCalled(t, "GetVtxos", mock.Anything, mock.Anything)
-}
-
-// TestEnsureVtxosCached_CacheMissLoadsFromDBAndMarkerWindow verifies that cache
-// misses trigger a DB lookup and marker window prefetch.
-func TestEnsureVtxosCached_CacheMissLoadsFromDBAndMarkerWindow(t *testing.T) {
-	vtxoRepo, markerRepo, indexer := newChainTestIndexer()
-
-	ctx := context.Background()
-	cache := make(map[string]domain.Vtxo)
-	loadedMarkers := make(map[string]bool)
-
-	outpoints := []domain.Outpoint{{Txid: "vtxo-miss", VOut: 0}}
-
-	// DB returns VTXO with a marker
-	dbVtxo := domain.Vtxo{
-		Outpoint:  domain.Outpoint{Txid: "vtxo-miss", VOut: 0},
-		Amount:    500,
-		MarkerIDs: []string{"marker-100"},
-	}
-	vtxoRepo.On("GetVtxos", ctx, outpoints).Return([]domain.Vtxo{dbVtxo}, nil)
-
-	// Marker window returns additional VTXOs
-	windowVtxos := []domain.Vtxo{
-		{Outpoint: domain.Outpoint{Txid: "window-vtxo-1", VOut: 0}, Amount: 300},
-		{Outpoint: domain.Outpoint{Txid: "window-vtxo-2", VOut: 0}, Amount: 400},
-	}
-	markerRepo.On("GetVtxosByMarker", ctx, "marker-100").Return(windowVtxos, nil)
-
-	err := indexer.ensureVtxosCached(ctx, outpoints, cache, loadedMarkers)
-	require.NoError(t, err)
-
-	// Cache should contain the original VTXO plus window VTXOs
-	require.Contains(t, cache, "vtxo-miss:0")
-	require.Contains(t, cache, "window-vtxo-1:0")
-	require.Contains(t, cache, "window-vtxo-2:0")
-
-	// Marker should be marked as loaded
-	require.True(t, loadedMarkers["marker-100"])
-}
-
-// TestEnsureVtxosCached_NilMarkerRepo verifies that when the marker repository
-// is nil, ensureVtxosCached falls back to direct DB lookup without window prefetch.
-func TestEnsureVtxosCached_NilMarkerRepo(t *testing.T) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: nil}
-	indexer := &indexerService{repoManager: repoManager}
-
-	ctx := context.Background()
-	cache := make(map[string]domain.Vtxo)
-	loadedMarkers := make(map[string]bool)
-
-	outpoints := []domain.Outpoint{{Txid: "vtxo-no-markers", VOut: 0}}
-	dbVtxo := domain.Vtxo{
-		Outpoint:  domain.Outpoint{Txid: "vtxo-no-markers", VOut: 0},
-		Amount:    100,
-		MarkerIDs: []string{"marker-X"},
-	}
-	vtxoRepo.On("GetVtxos", ctx, outpoints).Return([]domain.Vtxo{dbVtxo}, nil)
-
-	err := indexer.ensureVtxosCached(ctx, outpoints, cache, loadedMarkers)
-	require.NoError(t, err)
-
-	// VTXO should be cached even without marker window loading
-	require.Contains(t, cache, "vtxo-no-markers:0")
-}
-
-// TestEnsureVtxosCached_DBErrorPropagated verifies that database errors
-// are properly propagated.
-func TestEnsureVtxosCached_DBErrorPropagated(t *testing.T) {
-	vtxoRepo, _, indexer := newChainTestIndexer()
-
-	ctx := context.Background()
-	cache := make(map[string]domain.Vtxo)
-	loadedMarkers := make(map[string]bool)
-
-	outpoints := []domain.Outpoint{{Txid: "vtxo-err", VOut: 0}}
-	vtxoRepo.On("GetVtxos", ctx, outpoints).
-		Return(nil, fmt.Errorf("database error"))
-
-	err := indexer.ensureVtxosCached(ctx, outpoints, cache, loadedMarkers)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "database error")
-}
-
-// TestEnsureVtxosCached_MarkerDedupAvoidsDuplicateLoad verifies that
-// loadedMarkers prevents redundant GetVtxosByMarker calls when the same
-// marker is encountered across multiple ensureVtxosCached invocations.
-func TestEnsureVtxosCached_MarkerDedupAvoidsDuplicateLoad(t *testing.T) {
-	vtxoRepo, markerRepo, indexer := newChainTestIndexer()
-
-	ctx := context.Background()
-	cache := make(map[string]domain.Vtxo)
-	loadedMarkers := make(map[string]bool)
-
-	// First call: vtxo-1 has marker-A
-	vtxo1 := domain.Vtxo{
-		Outpoint:  domain.Outpoint{Txid: "vtxo-1", VOut: 0},
-		Amount:    100,
-		MarkerIDs: []string{"marker-A"},
-	}
-	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: "vtxo-1", VOut: 0}}).
-		Return([]domain.Vtxo{vtxo1}, nil)
-	markerRepo.On("GetVtxosByMarker", ctx, "marker-A").
-		Return([]domain.Vtxo{
-			{Outpoint: domain.Outpoint{Txid: "window-1", VOut: 0}, Amount: 200},
-		}, nil).Once() // Expect exactly one call
-
-	err := indexer.ensureVtxosCached(
-		ctx,
-		[]domain.Outpoint{{Txid: "vtxo-1", VOut: 0}},
-		cache,
-		loadedMarkers,
-	)
-	require.NoError(t, err)
-	require.True(t, loadedMarkers["marker-A"])
-
-	// Second call: vtxo-2 also has marker-A
-	vtxo2 := domain.Vtxo{
-		Outpoint:  domain.Outpoint{Txid: "vtxo-2", VOut: 0},
-		Amount:    300,
-		MarkerIDs: []string{"marker-A"},
-	}
-	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: "vtxo-2", VOut: 0}}).
-		Return([]domain.Vtxo{vtxo2}, nil)
-
-	err = indexer.ensureVtxosCached(
-		ctx,
-		[]domain.Outpoint{{Txid: "vtxo-2", VOut: 0}},
-		cache,
-		loadedMarkers,
-	)
-	require.NoError(t, err)
-
-	// GetVtxosByMarker for marker-A should have been called only once
-	markerRepo.AssertNumberOfCalls(t, "GetVtxosByMarker", 1)
-}
-
-// TestEnsureVtxosCached_GetVtxosByMarkerErrorSwallowed verifies that an error
-// from GetVtxosByMarker is gracefully swallowed — the VTXO itself is still
-// cached and the function returns no error.
-func TestEnsureVtxosCached_GetVtxosByMarkerErrorSwallowed(t *testing.T) {
-	vtxoRepo, markerRepo, indexer := newChainTestIndexer()
-
-	ctx := context.Background()
-	cache := make(map[string]domain.Vtxo)
-	loadedMarkers := make(map[string]bool)
-
-	vtxo := domain.Vtxo{
-		Outpoint:  domain.Outpoint{Txid: "vtxo-ok", VOut: 0},
-		Amount:    500,
-		MarkerIDs: []string{"marker-bad"},
-	}
-	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: "vtxo-ok", VOut: 0}}).
-		Return([]domain.Vtxo{vtxo}, nil)
-	markerRepo.On("GetVtxosByMarker", ctx, "marker-bad").
-		Return(nil, fmt.Errorf("marker window load failed"))
-
-	err := indexer.ensureVtxosCached(
-		ctx,
-		[]domain.Outpoint{{Txid: "vtxo-ok", VOut: 0}},
-		cache,
-		loadedMarkers,
-	)
-
-	// No error propagated
-	require.NoError(t, err)
-	// The VTXO itself is still in cache
-	require.Contains(t, cache, "vtxo-ok:0")
-	// Marker is marked as loaded (won't retry)
-	require.True(t, loadedMarkers["marker-bad"])
-}
-
-// TestGetVtxoChain_DefaultPageSizeWithTokenOnly verifies that when page is nil
-// but a pageToken is provided, the default page size (maxPageSizeVtxoChain=100)
-// is used instead of returning the full chain.
-func TestGetVtxoChain_DefaultPageSizeWithTokenOnly(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
+func TestEnsureVtxosCached(t *testing.T) {
 	ctx := context.Background()
 
-	vtxoKey := setupPreconfirmedChain(t, ctx, vtxoRepo, markerRepo, offchainTxRepo)
+	// when all outpoints are already in the cache, no DB call is made.
+	t.Run("all cache hits", func(t *testing.T) {
+		vtxoRepo, _, indexer := newChainTestIndexer()
 
-	// Get the first page with an explicit page size to obtain a token
-	page := &Page{PageSize: 2}
-	resp1, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
-	require.NoError(t, err)
-	require.NotEmpty(t, resp1.NextPageToken)
+		cache := map[string]domain.Vtxo{
+			"vtxo-1:0": {Outpoint: domain.Outpoint{Txid: "vtxo-1", VOut: 0}, Amount: 100},
+			"vtxo-2:0": {Outpoint: domain.Outpoint{Txid: "vtxo-2", VOut: 0}, Amount: 200},
+		}
+		loadedMarkers := make(map[string]bool)
 
-	// Resume with token but nil page — should use default page size (100),
-	// which is large enough to return the remaining chain in one shot.
-	resp2, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, resp1.NextPageToken)
-	require.NoError(t, err)
-	// Remaining chain: B(ark+cp) + C(ark) = 3 items, all fit in default page
-	require.Equal(t, 3, len(resp2.Chain))
-	require.Empty(t, resp2.NextPageToken)
-}
+		outpoints := []domain.Outpoint{
+			{Txid: "vtxo-1", VOut: 0},
+			{Txid: "vtxo-2", VOut: 0},
+		}
 
-// TestGetVtxoChain_InvalidPageToken verifies that an invalid page_token
-// returns an error.
-func TestGetVtxoChain_InvalidPageToken(t *testing.T) {
-	_, _, indexer := newChainTestIndexer()
+		err := indexer.ensureVtxosCached(ctx, outpoints, cache, loadedMarkers)
+		require.NoError(t, err)
 
-	ctx := context.Background()
-	vtxoKey := Outpoint{Txid: "abc123", VOut: 0}
+		// No DB call should be made
+		vtxoRepo.AssertNotCalled(t, "GetVtxos", mock.Anything, mock.Anything)
+	})
 
-	_, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, "invalid-token!!!")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid page_token")
-}
+	// cache misses trigger a DB lookup and marker window prefetch.
+	t.Run("cache miss loads from DB and marker window", func(t *testing.T) {
+		vtxoRepo, markerRepo, indexer := newChainTestIndexer()
 
-// TestGetVtxoChain_BackwardCompat_NilPageEmptyToken verifies that when
-// page is nil and pageToken is empty, the VTXO not found error comes from
-// the DB lookup (not from pagination parsing), confirming backward compat.
-func TestGetVtxoChain_BackwardCompat_NilPageEmptyToken(t *testing.T) {
-	vtxoRepo, markerRepo, indexer := newChainTestIndexer()
+		cache := make(map[string]domain.Vtxo)
+		loadedMarkers := make(map[string]bool)
 
-	ctx := context.Background()
-	vtxoKey := Outpoint{Txid: "root-vtxo", VOut: 0}
+		outpoints := []domain.Outpoint{{Txid: "vtxo-miss", VOut: 0}}
 
-	// Return no VTXOs so the chain walk fails with "vtxo not found"
-	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{vtxoKey}).
-		Return([]domain.Vtxo{}, nil)
-	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
-		Return([]domain.Vtxo{}, nil).Maybe()
+		// DB returns VTXO with a marker
+		dbVtxo := domain.Vtxo{
+			Outpoint:  domain.Outpoint{Txid: "vtxo-miss", VOut: 0},
+			Amount:    500,
+			MarkerIDs: []string{"marker-100"},
+		}
+		vtxoRepo.On("GetVtxos", ctx, outpoints).Return([]domain.Vtxo{dbVtxo}, nil)
 
-	_, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, "")
+		// Marker window returns additional VTXOs
+		windowVtxos := []domain.Vtxo{
+			{Outpoint: domain.Outpoint{Txid: "window-vtxo-1", VOut: 0}, Amount: 300},
+			{Outpoint: domain.Outpoint{Txid: "window-vtxo-2", VOut: 0}, Amount: 400},
+		}
+		markerRepo.On("GetVtxosByMarker", ctx, "marker-100").Return(windowVtxos, nil)
 
-	// Error should be from the chain walk, not from pagination setup
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "vtxo not found")
-	require.NotContains(t, err.Error(), "invalid page_token")
+		err := indexer.ensureVtxosCached(ctx, outpoints, cache, loadedMarkers)
+		require.NoError(t, err)
+
+		// Cache should contain the original VTXO plus window VTXOs
+		require.Contains(t, cache, "vtxo-miss:0")
+		require.Contains(t, cache, "window-vtxo-1:0")
+		require.Contains(t, cache, "window-vtxo-2:0")
+
+		// Marker should be marked as loaded
+		require.True(t, loadedMarkers["marker-100"])
+	})
+
+	// when the marker repository is nil, ensureVtxosCached falls back to direct DB
+	// lookup without window prefetch.
+	t.Run("nil marker repo", func(t *testing.T) {
+		vtxoRepo := &mockVtxoRepoForIndexer{}
+		repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: nil}
+		indexer := &indexerService{repoManager: repoManager}
+
+		cache := make(map[string]domain.Vtxo)
+		loadedMarkers := make(map[string]bool)
+
+		outpoints := []domain.Outpoint{{Txid: "vtxo-no-markers", VOut: 0}}
+		dbVtxo := domain.Vtxo{
+			Outpoint:  domain.Outpoint{Txid: "vtxo-no-markers", VOut: 0},
+			Amount:    100,
+			MarkerIDs: []string{"marker-X"},
+		}
+		vtxoRepo.On("GetVtxos", ctx, outpoints).Return([]domain.Vtxo{dbVtxo}, nil)
+
+		err := indexer.ensureVtxosCached(ctx, outpoints, cache, loadedMarkers)
+		require.NoError(t, err)
+
+		// VTXO should be cached even without marker window loading
+		require.Contains(t, cache, "vtxo-no-markers:0")
+	})
+
+	// database errors are properly propagated.
+	t.Run("DB error propagated", func(t *testing.T) {
+		vtxoRepo, _, indexer := newChainTestIndexer()
+
+		cache := make(map[string]domain.Vtxo)
+		loadedMarkers := make(map[string]bool)
+
+		outpoints := []domain.Outpoint{{Txid: "vtxo-err", VOut: 0}}
+		vtxoRepo.On("GetVtxos", ctx, outpoints).
+			Return(nil, fmt.Errorf("database error"))
+
+		err := indexer.ensureVtxosCached(ctx, outpoints, cache, loadedMarkers)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "database error")
+	})
+
+	// loadedMarkers prevents redundant GetVtxosByMarker calls when the same marker
+	// is encountered across multiple ensureVtxosCached invocations.
+	t.Run("marker dedup avoids duplicate load", func(t *testing.T) {
+		vtxoRepo, markerRepo, indexer := newChainTestIndexer()
+
+		cache := make(map[string]domain.Vtxo)
+		loadedMarkers := make(map[string]bool)
+
+		// First call: vtxo-1 has marker-A
+		vtxo1 := domain.Vtxo{
+			Outpoint:  domain.Outpoint{Txid: "vtxo-1", VOut: 0},
+			Amount:    100,
+			MarkerIDs: []string{"marker-A"},
+		}
+		vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: "vtxo-1", VOut: 0}}).
+			Return([]domain.Vtxo{vtxo1}, nil)
+		markerRepo.On("GetVtxosByMarker", ctx, "marker-A").
+			Return([]domain.Vtxo{
+				{Outpoint: domain.Outpoint{Txid: "window-1", VOut: 0}, Amount: 200},
+			}, nil).Once() // Expect exactly one call
+
+		err := indexer.ensureVtxosCached(
+			ctx,
+			[]domain.Outpoint{{Txid: "vtxo-1", VOut: 0}},
+			cache,
+			loadedMarkers,
+		)
+		require.NoError(t, err)
+		require.True(t, loadedMarkers["marker-A"])
+
+		// Second call: vtxo-2 also has marker-A
+		vtxo2 := domain.Vtxo{
+			Outpoint:  domain.Outpoint{Txid: "vtxo-2", VOut: 0},
+			Amount:    300,
+			MarkerIDs: []string{"marker-A"},
+		}
+		vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: "vtxo-2", VOut: 0}}).
+			Return([]domain.Vtxo{vtxo2}, nil)
+
+		err = indexer.ensureVtxosCached(
+			ctx,
+			[]domain.Outpoint{{Txid: "vtxo-2", VOut: 0}},
+			cache,
+			loadedMarkers,
+		)
+		require.NoError(t, err)
+
+		// GetVtxosByMarker for marker-A should have been called only once
+		markerRepo.AssertNumberOfCalls(t, "GetVtxosByMarker", 1)
+	})
+
+	// an error from GetVtxosByMarker is gracefully swallowed — the VTXO itself is
+	// still cached and the function returns no error.
+	t.Run("GetVtxosByMarker error swallowed", func(t *testing.T) {
+		vtxoRepo, markerRepo, indexer := newChainTestIndexer()
+
+		cache := make(map[string]domain.Vtxo)
+		loadedMarkers := make(map[string]bool)
+
+		vtxo := domain.Vtxo{
+			Outpoint:  domain.Outpoint{Txid: "vtxo-ok", VOut: 0},
+			Amount:    500,
+			MarkerIDs: []string{"marker-bad"},
+		}
+		vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: "vtxo-ok", VOut: 0}}).
+			Return([]domain.Vtxo{vtxo}, nil)
+		markerRepo.On("GetVtxosByMarker", ctx, "marker-bad").
+			Return(nil, fmt.Errorf("marker window load failed"))
+
+		err := indexer.ensureVtxosCached(
+			ctx,
+			[]domain.Outpoint{{Txid: "vtxo-ok", VOut: 0}},
+			cache,
+			loadedMarkers,
+		)
+
+		// No error propagated
+		require.NoError(t, err)
+		// The VTXO itself is still in cache
+		require.Contains(t, cache, "vtxo-ok:0")
+		// Marker is marked as loaded (won't retry)
+		require.True(t, loadedMarkers["marker-bad"])
+	})
 }
 
 // setupPreconfirmedChain sets up a chain of preconfirmed VTXOs for pagination tests.
@@ -892,120 +823,163 @@ func setupPreconfirmedChain(
 	return Outpoint{Txid: txidA, VOut: 0}
 }
 
-// TestGetVtxoChain_PaginationFirstPage verifies that the first page returns
-// the expected number of items and a non-empty next_page_token when the chain
-// exceeds the page size.
-func TestGetVtxoChain_PaginationFirstPage(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
+func TestGetVtxoChainPagination(t *testing.T) {
 	ctx := context.Background()
 
-	vtxoKey := setupPreconfirmedChain(t, ctx, vtxoRepo, markerRepo, offchainTxRepo)
+	// Subtests that share the same preconfirmed A -> B -> C chain. GetVtxoChain
+	// keeps no cross-call state, so one indexer and mock setup is reused across
+	// these read-only cases instead of rebuilt per case.
+	t.Run("preconfirmed chain", func(t *testing.T) {
+		vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
+		vtxoKey := setupPreconfirmedChain(t, ctx, vtxoRepo, markerRepo, offchainTxRepo)
 
-	// Page size 2: vtxo-A produces 2 chain items (ark + checkpoint),
-	// then vtxo-B triggers early termination.
-	page := &Page{PageSize: 2}
-	resp, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
+		// when page is nil but a pageToken is provided, the default page size
+		// (maxPageSizeVtxoChain=100) is used instead of returning the full chain.
+		t.Run("default page size with token only", func(t *testing.T) {
+			// Get the first page with an explicit page size to obtain a token
+			page := &Page{PageSize: 2}
+			resp1, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
+			require.NoError(t, err)
+			require.NotEmpty(t, resp1.NextPageToken)
 
-	require.NoError(t, err)
-	require.Len(t, resp.Chain, 2)
-	require.Equal(t, IndexerChainedTxTypeArk, resp.Chain[0].Type)
-	require.Equal(t, IndexerChainedTxTypeCheckpoint, resp.Chain[1].Type)
-	require.NotEmpty(t, resp.NextPageToken, "should have next page token")
-}
+			// Resume with token but nil page — should use default page size (100),
+			// which is large enough to return the remaining chain in one shot.
+			resp2, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, resp1.NextPageToken)
+			require.NoError(t, err)
+			// Remaining chain: B(ark+cp) + C(ark) = 3 items, all fit in default page
+			require.Equal(t, 3, len(resp2.Chain))
+			require.Empty(t, resp2.NextPageToken)
+		})
 
-// TestGetVtxoChain_PaginationResumeWithToken verifies that resuming with a
-// page token continues the chain from where the previous page left off,
-// eventually exhausting the chain with an empty token.
-func TestGetVtxoChain_PaginationResumeWithToken(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
-	ctx := context.Background()
+		// the first page returns the expected number of items and a non-empty
+		// next_page_token when the chain exceeds the page size.
+		t.Run("first page", func(t *testing.T) {
+			// Page size 2: vtxo-A produces 2 chain items (ark + checkpoint),
+			// then vtxo-B triggers early termination.
+			page := &Page{PageSize: 2}
+			resp, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
 
-	vtxoKey := setupPreconfirmedChain(t, ctx, vtxoRepo, markerRepo, offchainTxRepo)
+			require.NoError(t, err)
+			require.Len(t, resp.Chain, 2)
+			require.Equal(t, IndexerChainedTxTypeArk, resp.Chain[0].Type)
+			require.Equal(t, IndexerChainedTxTypeCheckpoint, resp.Chain[1].Type)
+			require.NotEmpty(t, resp.NextPageToken, "should have next page token")
+		})
 
-	// Chain: A(ark+cp) -> B(ark+cp) -> C(ark) = 5 items total
-	// Page size 2: page1=2, page2=2, page3=1
-	page := &Page{PageSize: 2}
+		// resuming with a page token continues the chain from where the previous
+		// page left off, eventually exhausting the chain with an empty token.
+		t.Run("resume with token", func(t *testing.T) {
+			// Chain: A(ark+cp) -> B(ark+cp) -> C(ark) = 5 items total
+			// Page size 2: page1=2, page2=2, page3=1
+			page := &Page{PageSize: 2}
 
-	// Page 1
-	resp1, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
-	require.NoError(t, err)
-	require.Len(t, resp1.Chain, 2)
-	require.NotEmpty(t, resp1.NextPageToken)
+			// Page 1
+			resp1, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
+			require.NoError(t, err)
+			require.Len(t, resp1.Chain, 2)
+			require.NotEmpty(t, resp1.NextPageToken)
 
-	// Page 2: resume with token from page 1
-	resp2, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, resp1.NextPageToken)
-	require.NoError(t, err)
-	require.Len(t, resp2.Chain, 2)
-	require.NotEmpty(t, resp2.NextPageToken)
+			// Page 2: resume with token from page 1
+			resp2, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, resp1.NextPageToken)
+			require.NoError(t, err)
+			require.Len(t, resp2.Chain, 2)
+			require.NotEmpty(t, resp2.NextPageToken)
 
-	// Page 3: resume with token from page 2
-	resp3, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, resp2.NextPageToken)
-	require.NoError(t, err)
-	require.Len(t, resp3.Chain, 1)
-	require.Empty(t, resp3.NextPageToken, "last page should have empty token")
+			// Page 3: resume with token from page 2
+			resp3, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, resp2.NextPageToken)
+			require.NoError(t, err)
+			require.Len(t, resp3.Chain, 1)
+			require.Empty(t, resp3.NextPageToken, "last page should have empty token")
 
-	// Verify total items across all pages
-	totalItems := len(resp1.Chain) + len(resp2.Chain) + len(resp3.Chain)
-	require.Equal(t, 5, totalItems)
+			// Verify total items across all pages
+			totalItems := len(resp1.Chain) + len(resp2.Chain) + len(resp3.Chain)
+			require.Equal(t, 5, totalItems)
 
-	// Verify chain types: each vtxo with checkpoints produces ark+checkpoint,
-	// terminal vtxo (C) produces only ark.
-	require.Equal(t, IndexerChainedTxTypeArk, resp3.Chain[0].Type)
-}
+			// Verify chain types: each vtxo with checkpoints produces ark+checkpoint,
+			// terminal vtxo (C) produces only ark.
+			require.Equal(t, IndexerChainedTxTypeArk, resp3.Chain[0].Type)
+		})
 
-// TestGetVtxoChain_ShortChainNoToken verifies that when the chain is shorter
-// than the page size, all items are returned with an empty next_page_token.
-func TestGetVtxoChain_ShortChainNoToken(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
-	ctx := context.Background()
+		// each page never exceeds the page size (with allowance for grouped items
+		// from a single VTXO).
+		t.Run("page size respected", func(t *testing.T) {
+			// Use page size 1 — each VTXO produces 2 items (ark+checkpoint) for A and
+			// B, so pages will slightly overflow since items for one VTXO are emitted
+			// together.
+			page := &Page{PageSize: 1}
 
-	txidA := strings.Repeat("a", 64)
+			resp, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
+			require.NoError(t, err)
 
-	// Single terminal preconfirmed VTXO (no checkpoints)
-	vtxo := domain.Vtxo{
-		Outpoint:     domain.Outpoint{Txid: txidA, VOut: 0},
-		Preconfirmed: true,
-		ExpiresAt:    1000,
-	}
-	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: txidA, VOut: 0}}).
-		Return([]domain.Vtxo{vtxo}, nil)
-	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
-		Return([]domain.Vtxo{}, nil).Maybe()
-	offchainTxA := &domain.OffchainTx{ArkTxid: txidA, CheckpointTxs: map[string]string{}}
-	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidA}).
-		Return([]*domain.OffchainTx{offchainTxA}, nil)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-		Return(offchainTxA, nil).Maybe()
+			// vtxo-A emits 2 items (ark + checkpoint) even though pageSize=1,
+			// because all items for a VTXO are emitted together.
+			require.Equal(t, 2, len(resp.Chain))
+			require.NotEmpty(t, resp.NextPageToken)
+		})
+	})
 
-	// Page size larger than chain
-	page := &Page{PageSize: 100}
-	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, page, "")
+	// an invalid page_token returns an error.
+	t.Run("invalid page token", func(t *testing.T) {
+		_, _, indexer := newChainTestIndexer()
+		vtxoKey := Outpoint{Txid: "abc123", VOut: 0}
 
-	require.NoError(t, err)
-	require.Len(t, resp.Chain, 1) // Just the ark tx
-	require.Empty(t, resp.NextPageToken, "short chain should have empty token")
-	require.Equal(t, IndexerChainedTxTypeArk, resp.Chain[0].Type)
-}
+		_, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, "invalid-token!!!")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid page_token")
+	})
 
-// TestGetVtxoChain_PageSizeRespected verifies that each page never exceeds the
-// page size (with allowance for grouped items from a single VTXO).
-func TestGetVtxoChain_PageSizeRespected(t *testing.T) {
-	vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
-	ctx := context.Background()
+	// when page is nil and pageToken is empty, the VTXO not found error comes from
+	// the DB lookup (not from pagination parsing), confirming backward compat.
+	t.Run("backward compat nil page empty token", func(t *testing.T) {
+		vtxoRepo, markerRepo, indexer := newChainTestIndexer()
+		vtxoKey := Outpoint{Txid: "root-vtxo", VOut: 0}
 
-	vtxoKey := setupPreconfirmedChain(t, ctx, vtxoRepo, markerRepo, offchainTxRepo)
+		// Return no VTXOs so the chain walk fails with "vtxo not found"
+		vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{vtxoKey}).
+			Return([]domain.Vtxo{}, nil)
+		markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
+			Return([]domain.Vtxo{}, nil).Maybe()
 
-	// Use page size 1 — each VTXO produces 2 items (ark+checkpoint) for A and B,
-	// so pages will slightly overflow since items for one VTXO are emitted together.
-	page := &Page{PageSize: 1}
+		_, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, "")
 
-	resp, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
-	require.NoError(t, err)
+		// Error should be from the chain walk, not from pagination setup
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "vtxo not found")
+		require.NotContains(t, err.Error(), "invalid page_token")
+	})
 
-	// vtxo-A emits 2 items (ark + checkpoint) even though pageSize=1,
-	// because all items for a VTXO are emitted together.
-	require.Equal(t, 2, len(resp.Chain))
-	require.NotEmpty(t, resp.NextPageToken)
+	// when the chain is shorter than the page size, all items are returned with an
+	// empty next_page_token.
+	t.Run("short chain no token", func(t *testing.T) {
+		vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
+
+		txidA := strings.Repeat("a", 64)
+
+		// Single terminal preconfirmed VTXO (no checkpoints)
+		vtxo := domain.Vtxo{
+			Outpoint:     domain.Outpoint{Txid: txidA, VOut: 0},
+			Preconfirmed: true,
+			ExpiresAt:    1000,
+		}
+		vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: txidA, VOut: 0}}).
+			Return([]domain.Vtxo{vtxo}, nil)
+		markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
+			Return([]domain.Vtxo{}, nil).Maybe()
+		offchainTxA := &domain.OffchainTx{ArkTxid: txidA, CheckpointTxs: map[string]string{}}
+		offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidA}).
+			Return([]*domain.OffchainTx{offchainTxA}, nil)
+		offchainTxRepo.On("GetOffchainTx", ctx, txidA).
+			Return(offchainTxA, nil).Maybe()
+
+		// Page size larger than chain
+		page := &Page{PageSize: 100}
+		resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, page, "")
+
+		require.NoError(t, err)
+		require.Len(t, resp.Chain, 1) // Just the ark tx
+		require.Empty(t, resp.NextPageToken, "short chain should have empty token")
+		require.Equal(t, IndexerChainedTxTypeArk, resp.Chain[0].Type)
+	})
 }
 
 // matchOutpoints returns a mock.MatchedBy matcher that matches a []domain.Outpoint
