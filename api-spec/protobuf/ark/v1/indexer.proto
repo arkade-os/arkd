@@ -327,6 +327,7 @@ message IndexerVtxo {
   string settled_by = 12;
   string ark_txid = 13;
   repeated IndexerAsset assets = 14;
+  uint32 depth = 15;
 }
 
 message IndexerAsset {
