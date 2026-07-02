@@ -24,6 +24,18 @@ type markerRepository struct {
 	ownsVtxoStore    bool // whether this repo owns the vtxo store (for Close())
 }
 
+// MarkerStoreAccessor exposes the underlying markers badgerhold store to the
+// startup marker backfill (badger has no SQL migration path). The marker repo
+// is returned as domain.MarkerRepository, so the call site asserts to this.
+type MarkerStoreAccessor interface {
+	GetMarkerStore() *badgerhold.Store
+}
+
+// GetMarkerStore returns the underlying markers badgerhold store.
+func (r *markerRepository) GetMarkerStore() *badgerhold.Store {
+	return r.markerStore
+}
+
 type markerDTO struct {
 	ID              string
 	Depth           uint32

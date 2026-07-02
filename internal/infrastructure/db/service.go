@@ -251,6 +251,20 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create marker store: %w", err)
 		}
+		// Badger has no SQL migration path, so rebuild the vtxo marker DAG here
+		// on startup. The internal completion-latch guard makes this a cheap
+		// no-op after the first successful run.
+		markerAccessor, ok := markerStore.(badgerdb.MarkerStoreAccessor)
+		if !ok {
+			return nil, fmt.Errorf("failed to get badger marker store accessor")
+		}
+		if err := badgerdb.BackfillVtxoMarkers(
+			context.Background(),
+			badgerVtxoRepo.GetStore(),
+			markerAccessor.GetMarkerStore(),
+		); err != nil {
+			return nil, fmt.Errorf("failed to backfill vtxo markers: %w", err)
+		}
 
 	case "postgres":
 		if len(config.DataStoreConfig) != 3 {
