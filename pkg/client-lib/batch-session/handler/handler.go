@@ -56,6 +56,12 @@ func JoinBatchSession(
 				continue
 			}
 
+			// Forward to the caller's replay channel inline and non-blocking.
+			// This must NOT run in a detached goroutine: the caller owns replayEventsCh and closes
+			// it once JoinBatchSession returns, so a goroutine outliving the return would race
+			// that close and panic ("send on closed channel").
+			// An inline non-blocking send keeps the loop responsive (a slow/unread consumer just
+			// drops the event) while guaranteeing every send happens-before the return.
 			if options.replayEventsCh != nil {
 				select {
 				case options.replayEventsCh <- notify.Event:

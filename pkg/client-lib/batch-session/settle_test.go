@@ -1,4 +1,4 @@
-package batchsession
+package batchsession_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	batchsession "github.com/arkade-os/arkd/pkg/client-lib/batch-session"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -24,22 +25,22 @@ func TestSettle(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		tests := []struct {
 			name      string
-			mutate    func(*SettleArgs)
+			mutate    func(*batchsession.SettleArgs)
 			errSubstr string
 		}{
 			{
 				name:      "missing client",
-				mutate:    func(a *SettleArgs) { a.Client = nil },
+				mutate:    func(a *batchsession.SettleArgs) { a.Client = nil },
 				errSubstr: "missing client",
 			},
 			{
 				name:      "missing sign tx",
-				mutate:    func(a *SettleArgs) { a.SignTx = nil },
+				mutate:    func(a *batchsession.SettleArgs) { a.SignTx = nil },
 				errSubstr: "missing sign tx function",
 			},
 			{
 				name: "missing funds to settle",
-				mutate: func(a *SettleArgs) {
+				mutate: func(a *batchsession.SettleArgs) {
 					a.Vtxos = nil
 					a.BoardingUtxos = nil
 				},
@@ -47,12 +48,12 @@ func TestSettle(t *testing.T) {
 			},
 			{
 				name:      "missing receiver",
-				mutate:    func(a *SettleArgs) { a.ReceiverAddr = "" },
+				mutate:    func(a *batchsession.SettleArgs) { a.ReceiverAddr = "" },
 				errSubstr: "missing receiver",
 			},
 			{
 				name:      "missing server info",
-				mutate:    func(a *SettleArgs) { a.ServerParams.Dust = 0 },
+				mutate:    func(a *batchsession.SettleArgs) { a.ServerParams.Dust = 0 },
 				errSubstr: "missing server info",
 			},
 		}
@@ -62,7 +63,7 @@ func TestSettle(t *testing.T) {
 				args := newTestSettleArgs(t)
 				tc.mutate(&args)
 
-				_, err := Settle(context.Background(), args)
+				_, err := batchsession.Settle(t.Context(), args)
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.errSubstr)
 			})
@@ -82,10 +83,10 @@ func mockSignTx(context.Context, string) (string, error) { return "", nil }
 // newTestSettleArgs returns a valid baseline SettleArgs. Tests in this file
 // mutate a single field on the returned value to exercise the corresponding
 // validation error from Settle's validator.
-func newTestSettleArgs(t *testing.T) SettleArgs {
+func newTestSettleArgs(t *testing.T) batchsession.SettleArgs {
 	t.Helper()
 
-	return SettleArgs{
+	return batchsession.SettleArgs{
 		Client:       mockClient{},
 		ServerParams: clientlib.ServerParams{Dust: 1000, Network: arklib.BitcoinRegTest},
 		SignTx:       clientlib.SignFn(mockSignTx),

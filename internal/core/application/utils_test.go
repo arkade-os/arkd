@@ -335,4 +335,3 @@ func mustEncodePSBTB64(t *testing.T, tx *wire.MsgTx) string {
 	require.NoError(t, err)
 	return b64
 }
-

@@ -1,11 +1,11 @@
-package batchsession
+package batchsession_test
 
 import (
-	"context"
 	"testing"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	batchsession "github.com/arkade-os/arkd/pkg/client-lib/batch-session"
 	"github.com/stretchr/testify/require"
 )
 
@@ -13,37 +13,37 @@ func TestCollaborativeExit(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		tests := []struct {
 			name      string
-			mutate    func(*CollaborativeExitArgs)
+			mutate    func(*batchsession.CollaborativeExitArgs)
 			errSubstr string
 		}{
 			{
 				name:      "missing client",
-				mutate:    func(a *CollaborativeExitArgs) { a.Client = nil },
+				mutate:    func(a *batchsession.CollaborativeExitArgs) { a.Client = nil },
 				errSubstr: "missing client",
 			},
 			{
 				name:      "missing sign tx",
-				mutate:    func(a *CollaborativeExitArgs) { a.SignTx = nil },
+				mutate:    func(a *batchsession.CollaborativeExitArgs) { a.SignTx = nil },
 				errSubstr: "missing sign tx function",
 			},
 			{
 				name:      "missing funds",
-				mutate:    func(a *CollaborativeExitArgs) { a.Vtxos = nil },
+				mutate:    func(a *batchsession.CollaborativeExitArgs) { a.Vtxos = nil },
 				errSubstr: "missing funds for collaborative exit",
 			},
 			{
 				name:      "missing receiver address",
-				mutate:    func(a *CollaborativeExitArgs) { a.Receiver.To = "" },
+				mutate:    func(a *batchsession.CollaborativeExitArgs) { a.Receiver.To = "" },
 				errSubstr: "missing receiver address",
 			},
 			{
 				name:      "missing server info",
-				mutate:    func(a *CollaborativeExitArgs) { a.ServerParams.Network = arklib.Network{} },
+				mutate:    func(a *batchsession.CollaborativeExitArgs) { a.ServerParams.Network = arklib.Network{} },
 				errSubstr: "missing server info",
 			},
 			{
 				name:      "invalid receiver address",
-				mutate:    func(a *CollaborativeExitArgs) { a.Receiver.To = "not-a-real-address" },
+				mutate:    func(a *batchsession.CollaborativeExitArgs) { a.Receiver.To = "not-a-real-address" },
 				errSubstr: "invalid receiver address",
 			},
 		}
@@ -53,7 +53,7 @@ func TestCollaborativeExit(t *testing.T) {
 				args := newTestCollaborativeExitArgs(t)
 				tc.mutate(&args)
 
-				_, err := CollaborativeExit(context.Background(), args)
+				_, err := batchsession.CollaborativeExit(t.Context(), args)
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.errSubstr)
 			})
@@ -64,10 +64,10 @@ func TestCollaborativeExit(t *testing.T) {
 // newTestCollaborativeExitArgs returns a valid baseline CollaborativeExitArgs.
 // Tests in this file mutate a single field on the returned value to exercise
 // the corresponding validation error.
-func newTestCollaborativeExitArgs(t *testing.T) CollaborativeExitArgs {
+func newTestCollaborativeExitArgs(t *testing.T) batchsession.CollaborativeExitArgs {
 	t.Helper()
 
-	return CollaborativeExitArgs{
+	return batchsession.CollaborativeExitArgs{
 		Client:       mockClient{},
 		ServerParams: clientlib.ServerParams{Dust: 1000, Network: arklib.BitcoinRegTest},
 		SignTx:       clientlib.SignFn(mockSignTx),

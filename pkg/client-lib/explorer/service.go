@@ -228,33 +228,23 @@ func (e *explorerSvc) GetNetwork() arklib.Network {
 }
 
 func (e *explorerSvc) GetFeeRate() (float64, error) {
-	endpoint, err := url.JoinPath(e.baseUrl, "fee-estimates")
-	if err != nil {
-		return 0, err
-	}
-
-	resp, err := http.Get(endpoint)
-	if err != nil {
-		return 0, err
-	}
-	// nolint:all
-	defer resp.Body.Close()
-
 	var response map[string]float64
-
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return 0, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("failed to get fee rate: %s", resp.Status)
+	status, err := e.get("v1/fees/recommended", &response)
+	if err != nil {
+		// If the new v1/fees/recommended endpoint is not found, we try the old /fee-estimates to
+		// keep backward compatibility in case the environment does not make use of the latest
+		// mempool backend version.
+		if status == http.StatusNotFound {
+			return e.getLegacyFeeRate()
+		}
+		return 0, fmt.Errorf("failed to get fee rate: %w", err)
 	}
 
 	if len(response) == 0 {
 		return 1, nil
 	}
 
-	return response["1"], nil
+	return response["fastestFee"], nil
 }
 
 func (e *explorerSvc) GetConnectionCount() int {
@@ -1037,4 +1027,56 @@ func (e *explorerSvc) broadcastPackage(txs ...string) (string, error) {
 	}
 
 	return string(bodyResponse), nil
+}
+
+func (e *explorerSvc) getLegacyFeeRate() (float64, error) {
+	var response map[string]float64
+	if _, err := e.get("fee-estimates", &response); err != nil {
+		return 0, fmt.Errorf("failed to get legacy fee rate: %w", err)
+	}
+
+	if len(response) == 0 {
+		return 1, nil
+	}
+
+	return response["1"], nil
+}
+
+// get reads from an endpoint with the given path into the target (which
+// must be a pointer to a struct or map) and returns the HTTP status and error
+// if it fails (or http.StatusOK and nil if it succeeds).
+func (e *explorerSvc) get(path string, target any) (int, error) {
+	endpoint, err := url.JoinPath(e.baseUrl, path)
+	if err != nil {
+		return 0, err
+	}
+
+	resp, err := http.Get(endpoint)
+	if err != nil {
+		return 0, err
+	}
+	// nolint:all
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+
+	// Check the status BEFORE decoding. An explorer that answers with a
+	// non-JSON error body (e.g. a transient non-200, or one that doesn't
+	// serve this endpoint) would otherwise fail the Decode below with a
+	// misleading "invalid character ..." parse error instead of surfacing
+	// the real response — which callers can't retry on intelligently.
+	if resp.StatusCode != http.StatusOK {
+		return resp.StatusCode, fmt.Errorf(
+			"got unexpected status %d: %s", resp.StatusCode, string(body),
+		)
+	}
+
+	if err := json.Unmarshal(body, target); err != nil {
+		return 0, fmt.Errorf("failed to parse response %q: %w", string(body), err)
+	}
+
+	return http.StatusOK, nil
 }

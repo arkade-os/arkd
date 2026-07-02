@@ -1,10 +1,11 @@
-package batchsession
+package batchsession_test
 
 import (
 	"context"
 	"testing"
 
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	batchsession "github.com/arkade-os/arkd/pkg/client-lib/batch-session"
 	"github.com/stretchr/testify/require"
 )
 
@@ -12,12 +13,12 @@ func TestBuildAndSignRegisterIntent(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		tests := []struct {
 			name      string
-			mutate    func(*IntentArgs)
+			mutate    func(*batchsession.IntentArgs)
 			errSubstr string
 		}{
 			{
 				name: "missing funds",
-				mutate: func(a *IntentArgs) {
+				mutate: func(a *batchsession.IntentArgs) {
 					a.Vtxos = nil
 					a.BoardingUtxos = nil
 					a.Notes = nil
@@ -26,17 +27,17 @@ func TestBuildAndSignRegisterIntent(t *testing.T) {
 			},
 			{
 				name:      "missing outputs",
-				mutate:    func(a *IntentArgs) { a.Outputs = nil },
+				mutate:    func(a *batchsession.IntentArgs) { a.Outputs = nil },
 				errSubstr: "missing outputs",
 			},
 			{
 				name:      "missing cosigners",
-				mutate:    func(a *IntentArgs) { a.Cosigners = nil },
+				mutate:    func(a *batchsession.IntentArgs) { a.Cosigners = nil },
 				errSubstr: "missing cosigners",
 			},
 			{
 				name:      "missing sign tx",
-				mutate:    func(a *IntentArgs) { a.SignTx = nil },
+				mutate:    func(a *batchsession.IntentArgs) { a.SignTx = nil },
 				errSubstr: "missing sign tx",
 			},
 		}
@@ -46,7 +47,7 @@ func TestBuildAndSignRegisterIntent(t *testing.T) {
 				args := newTestIntentArgs()
 				tc.mutate(&args)
 
-				_, _, _, err := BuildAndSignRegisterIntent(context.Background(), args)
+				_, _, _, err := batchsession.BuildAndSignRegisterIntent(context.Background(), args)
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.errSubstr)
 			})
@@ -58,15 +59,15 @@ func TestBuildAndSignDeleteIntent(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		tests := []struct {
 			name      string
-			mutate    func(*IntentArgs)
+			mutate    func(*batchsession.IntentArgs)
 			errSubstr string
 		}{
-			{"missing funds", func(a *IntentArgs) {
+			{"missing funds", func(a *batchsession.IntentArgs) {
 				a.Vtxos = nil
 				a.BoardingUtxos = nil
 				a.Notes = nil
 			}, "missing funds"},
-			{"missing sign tx", func(a *IntentArgs) { a.SignTx = nil }, "missing sign tx"},
+			{"missing sign tx", func(a *batchsession.IntentArgs) { a.SignTx = nil }, "missing sign tx"},
 		}
 
 		for _, tc := range tests {
@@ -74,7 +75,7 @@ func TestBuildAndSignDeleteIntent(t *testing.T) {
 				args := newTestIntentArgs()
 				tc.mutate(&args)
 
-				_, _, err := BuildAndSignDeleteIntent(context.Background(), args)
+				_, _, err := batchsession.BuildAndSignDeleteIntent(t.Context(), args)
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.errSubstr)
 			})
@@ -86,11 +87,11 @@ func TestBuildAndSignGetPendingTxIntent(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		tests := []struct {
 			name      string
-			mutate    func(*IntentArgs)
+			mutate    func(*batchsession.IntentArgs)
 			errSubstr string
 		}{
-			{"missing funds", func(a *IntentArgs) { a.Vtxos = nil }, "missing funds"},
-			{"missing sign tx", func(a *IntentArgs) { a.SignTx = nil }, "missing sign tx"},
+			{"missing funds", func(a *batchsession.IntentArgs) { a.Vtxos = nil }, "missing funds"},
+			{"missing sign tx", func(a *batchsession.IntentArgs) { a.SignTx = nil }, "missing sign tx"},
 		}
 
 		for _, tc := range tests {
@@ -98,7 +99,7 @@ func TestBuildAndSignGetPendingTxIntent(t *testing.T) {
 				args := newTestIntentArgs()
 				tc.mutate(&args)
 
-				_, _, err := BuildAndSignGetPendingTxIntent(context.Background(), args)
+				_, _, err := batchsession.BuildAndSignGetPendingTxIntent(t.Context(), args)
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.errSubstr)
 			})
@@ -110,9 +111,9 @@ func TestBuildAndSignGetPendingTxIntent(t *testing.T) {
 // BuildAndSignRegisterIntent (the strictest validator). Delete and
 // GetPendingTx tests override or use a subset of the same baseline because
 // their validators are looser.
-func newTestIntentArgs() IntentArgs {
-	return IntentArgs{
-		BaseArgs: BaseArgs{
+func newTestIntentArgs() batchsession.IntentArgs {
+	return batchsession.IntentArgs{
+		BaseArgs: batchsession.BaseArgs{
 			Vtxos: []clientlib.Vtxo{{
 				Outpoint: clientlib.Outpoint{Txid: "deadbeef", VOut: 0},
 				Amount:   10000,

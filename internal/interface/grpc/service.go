@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
+	channelzservice "google.golang.org/grpc/channelz/service"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -149,7 +150,7 @@ func (s *service) start() error {
 		return err
 	}
 
-	if err := s.newServer(tlsConfig, s.config.EnablePprof); err != nil {
+	if err := s.newServer(tlsConfig, s.config.EnablePprof, s.config.EnableChannelz); err != nil {
 		return err
 	}
 
@@ -247,7 +248,7 @@ func (s *service) startAppServices() error {
 	return nil
 }
 
-func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
+func (s *service) newServer(tlsConfig *tls.Config, withPprof, withChannelz bool) error {
 	ctx := context.Background()
 	if s.appConfig.OtelCollectorEndpoint != "" {
 		pushInteval := time.Duration(s.appConfig.OtelPushInterval) * time.Second
@@ -379,11 +380,18 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		arkv1.RegisterWalletInitializerServiceServer(adminGrpcServer, walletInitHandler)
 		arkv1.RegisterSignerManagerServiceServer(adminGrpcServer, signerManagerHandler)
 		grpchealth.RegisterHealthServer(adminGrpcServer, healthHandler)
+		if withChannelz {
+			channelzservice.RegisterChannelzServiceToServer(adminGrpcServer)
+			log.Debug("channelz enabled on admin port")
+		}
 	} else {
 		arkv1.RegisterAdminServiceServer(grpcServer, adminHandler)
 		arkv1.RegisterWalletServiceServer(grpcServer, walletHandler)
 		arkv1.RegisterWalletInitializerServiceServer(grpcServer, walletInitHandler)
 		arkv1.RegisterSignerManagerServiceServer(grpcServer, signerManagerHandler)
+		if withChannelz {
+			log.Warn("channelz enabled but no admin port configured; channelz will not be exposed")
+		}
 	}
 	grpchealth.RegisterHealthServer(grpcServer, healthHandler)
 

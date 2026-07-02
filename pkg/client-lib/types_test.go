@@ -1,9 +1,10 @@
-package clientlib
+package clientlib_test
 
 import (
 	"encoding/hex"
 	"testing"
 
+	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/stretchr/testify/require"
@@ -15,9 +16,9 @@ func TestServerParamsAllSigners(t *testing.T) {
 	deprecated, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
-	cfg := ServerParams{
+	cfg := clientlib.ServerParams{
 		SignerPubKey: current.PubKey(),
-		DeprecatedSigners: []DeprecatedSigner{
+		DeprecatedSigners: []clientlib.DeprecatedSigner{
 			{PubKey: deprecated.PubKey()},
 			{PubKey: current.PubKey()},
 		},

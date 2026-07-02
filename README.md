@@ -64,6 +64,7 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_DATADIR`                      | Directory to store data                                                         | App data directory             |
 | `ARKD_PORT`                         | Port (public) to listen on                                                      | `7070`                         |
 | `ARKD_ADMIN_PORT`                   | Admin port (private) to listen on, fallback to service port if 0                | `7071`                         |
+| `ARKD_ENABLE_CHANNELZ`              | Expose gRPC channelz introspection; query via `grpc_cli` on the admin port      | `false`                        |
 | `ARKD_LOG_LEVEL`                    | Logging level (0-6, where 6 is trace)                                           | `4` (info)                     |
 | `ARKD_SESSION_DURATION`             | How long a batch session lasts (in seconds) before timing out once it started   | `30`                           |
 | `ARKD_DB_TYPE`                      | Database type (postgres, sqlite, badger)                                        | `postgres`                     |
