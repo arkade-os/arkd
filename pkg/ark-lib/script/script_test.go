@@ -784,6 +784,30 @@ func TestCSVMultisigClosure(t *testing.T) {
 		require.True(t, valid)
 		require.Equal(t, uint32(arklib.SECONDS_MAX), decodedCSV.Locktime.Value)
 	})
+
+	t.Run("all block locktimes", func(t *testing.T) {
+		for value := uint32(0); value <= arklib.SEQUENCE_LOCKTIME_MASK; value++ {
+			csvSig := &script.CSVMultisigClosure{
+				MultisigClosure: script.MultisigClosure{
+					PubKeys: []*btcec.PublicKey{pubkey1},
+				},
+				Locktime: arklib.RelativeLocktime{
+					Type:  arklib.LocktimeTypeBlock,
+					Value: value,
+				},
+			}
+
+			scriptBytes, err := csvSig.Script()
+			require.NoError(t, err)
+
+			decodedCSV := &script.CSVMultisigClosure{}
+			valid, err := decodedCSV.Decode(scriptBytes)
+			require.NoError(t, err)
+			require.True(t, valid)
+			require.Equal(t, arklib.LocktimeTypeBlock, decodedCSV.Locktime.Type)
+			require.Equal(t, value, decodedCSV.Locktime.Value)
+		}
+	})
 }
 
 func TestMultisigClosureWitness(t *testing.T) {

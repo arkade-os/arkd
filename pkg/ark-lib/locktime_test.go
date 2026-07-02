@@ -116,6 +116,21 @@ func TestBIP68Sequence(t *testing.T) {
 				require.Equal(t, tt.expected, got)
 			})
 		}
+
+		t.Run("block locktimes roundtrip", func(t *testing.T) {
+			for value := uint32(0); value <= arklib.SEQUENCE_LOCKTIME_MASK; value++ {
+				loctime := arklib.RelativeLocktime{
+					Type:  arklib.LocktimeTypeBlock,
+					Value: value,
+				}
+				val, err := arklib.BIP68Sequence(loctime)
+				require.NoError(t, err)
+
+				gotLocktime, disabled := arklib.BIP68DecodeSequence(val)
+				require.False(t, disabled)
+				require.Equal(t, loctime, *gotLocktime)
+			}
+		})
 	})
 
 	t.Run("invalid", func(t *testing.T) {
