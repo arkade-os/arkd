@@ -269,13 +269,13 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE updated_at >= :after
     AND (CAST(:before AS INTEGER) = 0 OR updated_at <= CAST(:before AS INTEGER))
     AND pubkey IN (sqlc.slice('pubkeys'));
 
+-- Reads swept-ness from vtxo_vw.swept (single source of truth: swept_marker OR
+-- swept_vtxo) so the accounting stays correct after the marker backfill empties
+-- swept_marker and moves that state into swept_vtxo.
 -- name: SelectExpiringLiquidityAmount :one
 SELECT COALESCE(SUM(v.amount), 0) AS amount
-FROM vtxo v
-WHERE NOT EXISTS (
-        SELECT 1 FROM swept_marker sm
-        JOIN json_each(v.markers) j ON j.value = sm.marker_id
-    )
+FROM vtxo_vw v
+WHERE v.swept = false
   AND v.spent = false
   AND v.unrolled = false
   AND v.expires_at > sqlc.arg('after')
@@ -283,11 +283,8 @@ WHERE NOT EXISTS (
 
 -- name: SelectRecoverableLiquidityAmount :one
 SELECT COALESCE(SUM(v.amount), 0) AS amount
-FROM vtxo v
-WHERE EXISTS (
-        SELECT 1 FROM swept_marker sm
-        JOIN json_each(v.markers) j ON j.value = sm.marker_id
-    )
+FROM vtxo_vw v
+WHERE v.swept = true
   AND v.spent = false;
 
 -- Returns only accepted or finalized txs

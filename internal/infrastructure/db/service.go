@@ -297,6 +297,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to handle intent txid migration: %w", err)
 		}
 
+		err = handleVtxoMarkersMigration(m, db, config.DataStoreType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to handle vtxo markers migration: %w", err)
+		}
+
 		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 			return nil, fmt.Errorf("failed to run postgres migrations: %s", err)
 		}
@@ -376,6 +381,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		err = handleIntentTxidMigration(m, db.Write(), config.DataStoreType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to handle intent txid migration: %w", err)
+		}
+
+		err = handleVtxoMarkersMigration(m, db.Write(), config.DataStoreType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to handle vtxo markers migration: %w", err)
 		}
 
 		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
@@ -987,6 +997,46 @@ func handleIntentTxidMigration(m *migrate.Migrate, db *sql.DB, dbType string) er
 		default:
 			return fmt.Errorf("unsupported db type for intent txid migration: %s", dbType)
 		}
+	}
+
+	return nil
+}
+
+// stepwise migration for the vtxo marker DAG backfill (real BFS depths +
+// boundary markers). Gated at sentinel 20260702000000. Unlike the intent-txid
+// precedent, the backfill dispatch runs on every startup (outside the version
+// gate): its internal data guard makes it a cheap no-op once topology exists
+// and re-runs an interrupted (rolled-back) backfill that left the version
+// advanced but no data written.
+func handleVtxoMarkersMigration(m *migrate.Migrate, db *sql.DB, dbType string) error {
+	vtxoMarkersMigrationBegin := uint(20260702000000)
+	version, dirty, verr := m.Version()
+	if verr != nil && !errors.Is(verr, migrate.ErrNilVersion) {
+		return fmt.Errorf("failed to read migration version: %w", verr)
+	}
+	if dirty {
+		return fmt.Errorf(
+			"database is in a dirty migration state; manual intervention required",
+		)
+	}
+	if version < vtxoMarkersMigrationBegin {
+		if err := m.Migrate(vtxoMarkersMigrationBegin); err != nil &&
+			!errors.Is(err, migrate.ErrNoChange) {
+			return fmt.Errorf("failed to run migrations: %s", err)
+		}
+	}
+
+	switch dbType {
+	case "postgres":
+		if err := pgdb.BackfillVtxoMarkers(context.Background(), db); err != nil {
+			return fmt.Errorf("failed to backfill vtxo markers: %w", err)
+		}
+	case "sqlite":
+		if err := sqlitedb.BackfillVtxoMarkers(context.Background(), db); err != nil {
+			return fmt.Errorf("failed to backfill vtxo markers: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported db type for vtxo markers migration: %s", dbType)
 	}
 
 	return nil
