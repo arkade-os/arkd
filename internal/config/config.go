@@ -704,15 +704,9 @@ func (c *Config) IndexerService() (application.IndexerService, error) {
 		return nil, fmt.Errorf("failed to get deprecated server signing pubkeys: %w", err)
 	}
 
-	var offchainTxCache ports.OffChainTxStore
-	if c.liveStore != nil {
-		offchainTxCache = c.liveStore.OffchainTxs()
-	}
-
 	return application.NewIndexerService(
 		c.repo, c.wallet, privkey, signerPubkey, deprecatedSignerPubkeys,
 		c.IndexerExposure, c.IndexerAuthTokenExpiry,
-		offchainTxCache,
 	)
 }
 

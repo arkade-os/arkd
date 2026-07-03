@@ -101,7 +101,6 @@ type indexerService struct {
 	txExposure              exposure
 	authTokenTTL            time.Duration
 	tokenCache              *tokenCache
-	offchainTxCache         ports.OffChainTxStore
 }
 
 func NewIndexerService(
@@ -112,7 +111,6 @@ func NewIndexerService(
 	deprecatedSignerPubkeys []ports.DeprecatedSignerPubkey,
 	txExposure string,
 	authTokenExpirySec int64,
-	offchainTxCache ports.OffChainTxStore,
 ) (IndexerService, error) {
 	// validate txExposure
 	switch exposure(txExposure) {
@@ -135,14 +133,13 @@ func NewIndexerService(
 	}
 
 	svc := &indexerService{
-		repoManager:     repoManager,
-		wallet:          wallet,
-		authPrvkey:      privkey,
-		cursorHMACKey:   cursorKey,
-		txExposure:      exposure(txExposure),
-		authTokenTTL:    ttl,
-		tokenCache:      newTokenCache(ttl),
-		offchainTxCache: offchainTxCache,
+		repoManager:   repoManager,
+		wallet:        wallet,
+		authPrvkey:    privkey,
+		cursorHMACKey: cursorKey,
+		txExposure:    exposure(txExposure),
+		authTokenTTL:  ttl,
+		tokenCache:    newTokenCache(ttl),
 	}
 
 	if signerPubkey != nil {
@@ -297,20 +294,6 @@ func (i *indexerService) GetVtxos(
 		allVtxos, err = i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, pubkeys, after, before)
 		if err != nil {
 			return nil, err
-		}
-
-		// Mark vtxos that are pending-spent in the offchain tx cache.
-		// The DB projection updates asynchronously, so without this check
-		// clients can see stale spendable vtxos and build duplicate txs.
-		if i.offchainTxCache != nil {
-			for idx := range allVtxos {
-				if allVtxos[idx].Spent {
-					continue
-				}
-				if spent, _ := i.offchainTxCache.Includes(ctx, allVtxos[idx].Outpoint); spent {
-					allVtxos[idx].Spent = true
-				}
-			}
 		}
 
 		if spendableOnly {
