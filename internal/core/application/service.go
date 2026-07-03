@@ -2382,7 +2382,9 @@ func (s *service) start() {
 // that a transient failure (e.g. a wallet RPC blip) cannot wedge the round
 // scheduler — the gate then falls through to the worst-case interpretation
 // (no fee/no intent/no boarding) which a sensible formula will reject.
-func (s *service) collectTriggerContext(ctx context.Context, lastBatchAt time.Time) batchtrigger.Context {
+func (s *service) collectTriggerContext(
+	ctx context.Context, lastBatchAt time.Time,
+) batchtrigger.Context {
 	feeRate, err := s.wallet.FeeRate(ctx)
 	if err != nil {
 		log.WithError(err).Warn("batch_trigger: failed to read fee rate")
@@ -2491,7 +2493,9 @@ func (s *service) startRound() {
 		}
 	}
 
-	shouldStart, err := settings.ShouldStartBatch(s.collectTriggerContext(ctx, settings.LastBatchAt))
+	shouldStart, err := settings.ShouldStartBatch(
+		s.collectTriggerContext(ctx, settings.LastBatchAt),
+	)
 	if err != nil {
 		log.WithError(err).Error(
 			"failed to evaluate batch trigger from context, fallback to start",
