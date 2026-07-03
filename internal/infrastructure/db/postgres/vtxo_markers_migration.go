@@ -69,8 +69,9 @@ func BackfillVtxoMarkers(ctx context.Context, dbh *sql.DB) (err error) {
 		SELECT v.txid, v.vout, (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 		FROM vtxo v
 		WHERE EXISTS (
-			SELECT 1 FROM swept_marker sm
-			WHERE v.markers @> jsonb_build_array(sm.marker_id)
+			SELECT 1
+			FROM jsonb_array_elements_text(v.markers) AS m(marker_id)
+			JOIN swept_marker sm ON sm.marker_id = m.marker_id
 		)
 		ON CONFLICT (txid, vout) DO NOTHING
 	`); err != nil {

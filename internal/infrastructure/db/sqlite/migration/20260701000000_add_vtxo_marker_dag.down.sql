@@ -1,9 +1,28 @@
--- SQLite doesn't support DROP COLUMN directly, so we need to recreate the table
+-- Reverses the combined marker-DAG + swept migration.
 
+-- Guard against silently resurrecting swept VTXOs. swept_vtxo holds per-outpoint
+-- checkpoint-sweep state; dropping it would flip swept back to false for every
+-- outpoint tracked only there. SQLite has no RAISE outside triggers, so route
+-- through a trigger on a throwaway temp table: the conditional INSERT fires only
+-- when swept_vtxo has at least one row; otherwise it is a no-op and we fall through.
+CREATE TEMP TABLE __abort_swept_vtxo_down (x INTEGER);
+CREATE TEMP TRIGGER __abort_swept_vtxo_down_trigger BEFORE INSERT ON __abort_swept_vtxo_down
+BEGIN
+    SELECT RAISE(ABORT, 'irreversible migration: swept_vtxo contains entries; rolling back would resurrect swept VTXOs. Truncate swept_vtxo manually if you accept the data loss, then re-run.');
+END;
+INSERT INTO __abort_swept_vtxo_down SELECT 1 FROM swept_vtxo LIMIT 1;
+DROP TRIGGER __abort_swept_vtxo_down_trigger;
+DROP TABLE __abort_swept_vtxo_down;
+
+DROP TABLE IF EXISTS swept_vtxo;
+
+-- SQLite doesn't support DROP COLUMN directly, so recreate the table to restore the
+-- swept column and drop depth/markers. Compute swept from swept_marker (before the
+-- marker tables are dropped) so sweep state survives the rollback. swept_vtxo is
+-- empty per the guard above, so it contributes nothing here.
 DROP VIEW IF EXISTS intent_with_inputs_vw;
 DROP VIEW IF EXISTS vtxo_vw;
 
--- Create temp table without depth and markers columns
 CREATE TABLE vtxo_temp (
     txid TEXT NOT NULL,
     vout INTEGER NOT NULL,
@@ -41,8 +60,11 @@ FROM vtxo v;
 DROP TABLE vtxo;
 ALTER TABLE vtxo_temp RENAME TO vtxo;
 
--- Recreate indexes
+-- Recreate indexes. Restore idx_vtxo_pubkey_updated_at too: this migration runs after
+-- 20260318074028_vtxo_indexes, so the rollback must not leave the DB missing that index.
 CREATE INDEX IF NOT EXISTS fk_vtxo_intent_id ON vtxo(intent_id);
+CREATE INDEX IF NOT EXISTS idx_vtxo_pubkey_updated_at
+    ON vtxo (pubkey, updated_at);
 
 -- Drop marker tables
 DROP TABLE IF EXISTS swept_marker;

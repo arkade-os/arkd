@@ -16,10 +16,10 @@ import (
 //go:embed sqlite/migration/*
 var sweptVtxoTestMigrations embed.FS
 
-const sweptVtxoMigrationVersion = 20260416120000
+const sweptVtxoMigrationVersion = 20260701000000
 
 // TestSweptVtxoDownMigration_Guard verifies that the sqlite down migration
-// for 20260416120000_add_swept_vtxo aborts when swept_vtxo has data (to
+// for 20260701000000_add_vtxo_marker_dag aborts when swept_vtxo has data (to
 // prevent silently resurrecting swept VTXOs) but proceeds cleanly when the
 // table is empty.
 func TestSweptVtxoDownMigration_Guard(t *testing.T) {

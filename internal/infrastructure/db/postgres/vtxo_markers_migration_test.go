@@ -20,7 +20,7 @@ var vtxoMarkerPgMigrations embed.FS
 
 const (
 	vtxoMarkerPgDSN          = "postgres://root:secret@localhost:5432/event?sslmode=disable"
-	vtxoMarkerPgBaseVersion  = 20260416120000
+	vtxoMarkerPgBaseVersion  = 20260701000000
 	vtxoMarkerBackfillDoneID = "__vtxo_markers_backfill_done__"
 )
 

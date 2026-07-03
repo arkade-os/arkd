@@ -19,7 +19,7 @@ var vtxoMarkerTestMigrations embed.FS
 
 // baseline schema version that establishes vtxo, marker, swept_marker,
 // swept_vtxo, and vtxo_vw. The backfill runs against this legacy shape.
-const vtxoMarkerBaselineVersion = 20260416120000
+const vtxoMarkerBaselineVersion = 20260701000000
 
 // newMarkerMigratedDB returns a fresh in-memory sqlite DB migrated to the
 // swept_vtxo baseline via the real embedded migration source.
@@ -45,7 +45,7 @@ func newMarkerMigratedDB(t *testing.T) sqlitedb.SQLiteDB {
 
 // insertLegacyVtxo inserts a vtxo carrying only a legacy self-marker (bare
 // "txid:vout" at the given depth, parent_markers='[]'), mirroring the state the
-// 20260210000000 migration leaves. If swept is true, its self-marker is copied
+// 20260701000000 migration leaves. If swept is true, its self-marker is copied
 // into swept_marker so the pre-backfill vtxo_vw.swept is true.
 func insertLegacyVtxo(t *testing.T, db *sql.DB, txid string, vout int, arkTxid string, swept bool) {
 	t.Helper()
