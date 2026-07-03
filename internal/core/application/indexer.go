@@ -402,29 +402,6 @@ func (i *indexerService) GetVtxoChain(
 	}, nil
 }
 
-// validateChainAuth validates the auth token for GetVtxoChain: it verifies the
-// signature and the embedded-timestamp expiry and confirms the token authorizes
-// vtxoKey.
-func (i *indexerService) validateChainAuth(authToken string, vtxoKey Outpoint) error {
-	if i.authPrvkey == nil {
-		return fmt.Errorf("auth not configured")
-	}
-
-	hash, err := i.validateAuthToken(authToken)
-	if err != nil {
-		return err
-	}
-
-	outpoints, _, ok := i.tokenCache.getOutpoints(hash)
-	if !ok {
-		return fmt.Errorf("auth token not found")
-	}
-	if _, ok := outpoints[vtxoKey.String()]; !ok {
-		return fmt.Errorf("auth token is not for outpoint %s", vtxoKey)
-	}
-	return nil
-}
-
 func (i *indexerService) GetVtxoChainByIntent(
 	ctx context.Context, intent Intent, page *Page,
 ) (*VtxoChainResp, error) {
@@ -809,60 +786,6 @@ func (i *indexerService) walkVtxoChain(
 	}
 
 	return chain, allOutpoints, "", nil
-}
-
-// encodeChainCursor encodes a frontier of outpoints into an HMAC-signed opaque
-// page token. The HMAC prevents clients from forging cursors with arbitrary
-// outpoints, which would bypass auth validation in exposurePrivate mode.
-func (i *indexerService) encodeChainCursor(frontier []domain.Outpoint) string {
-	if len(frontier) == 0 {
-		return ""
-	}
-	cur := vtxoChainCursor{Frontier: make([]Outpoint, len(frontier))}
-	for idx, op := range frontier {
-		cur.Frontier[idx] = Outpoint(op)
-	}
-	payload, _ := json.Marshal(cur)
-
-	if len(i.cursorHMACKey) > 0 {
-		mac := hmac.New(sha256.New, i.cursorHMACKey)
-		mac.Write(payload)
-		payload = append(payload, mac.Sum(nil)...)
-	}
-	return base64.RawURLEncoding.EncodeToString(payload)
-}
-
-// decodeChainCursor decodes and verifies an HMAC-signed page token.
-func (i *indexerService) decodeChainCursor(token string) ([]domain.Outpoint, error) {
-	raw, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil {
-		return nil, fmt.Errorf("invalid base64: %w", err)
-	}
-
-	payload := raw
-	if len(i.cursorHMACKey) > 0 {
-		if len(raw) < sha256.Size {
-			return nil, fmt.Errorf("invalid cursor: too short")
-		}
-		payload = raw[:len(raw)-sha256.Size]
-		sig := raw[len(raw)-sha256.Size:]
-
-		mac := hmac.New(sha256.New, i.cursorHMACKey)
-		mac.Write(payload)
-		if !hmac.Equal(sig, mac.Sum(nil)) {
-			return nil, fmt.Errorf("invalid cursor: signature mismatch")
-		}
-	}
-
-	var cur vtxoChainCursor
-	if err := json.Unmarshal(payload, &cur); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
-	}
-	outpoints := make([]domain.Outpoint, len(cur.Frontier))
-	for idx, op := range cur.Frontier {
-		outpoints[idx] = domain.Outpoint(op)
-	}
-	return outpoints, nil
 }
 
 // preloadByMarkers bulk-fetches VTXOs and their offchain txs by walking the
@@ -1311,6 +1234,29 @@ func (i *indexerService) validateAuthToken(authToken string) (string, error) {
 	return hex.EncodeToString(msg[:32]), nil
 }
 
+// validateChainAuth validates the auth token for GetVtxoChain: it verifies the
+// signature and the embedded-timestamp expiry and confirms the token authorizes
+// vtxoKey.
+func (i *indexerService) validateChainAuth(authToken string, vtxoKey Outpoint) error {
+	if i.authPrvkey == nil {
+		return fmt.Errorf("auth not configured")
+	}
+
+	hash, err := i.validateAuthToken(authToken)
+	if err != nil {
+		return err
+	}
+
+	outpoints, _, ok := i.tokenCache.getOutpoints(hash)
+	if !ok {
+		return fmt.Errorf("auth token not found")
+	}
+	if _, ok := outpoints[vtxoKey.String()]; !ok {
+		return fmt.Errorf("auth token is not for outpoint %s", vtxoKey)
+	}
+	return nil
+}
+
 // extractTokenHash decodes an auth token and returns the outpoints hash
 // without checking expiry. Signature is still verified.
 func (i *indexerService) extractTokenHash(authToken string) (string, error) {
@@ -1465,4 +1411,58 @@ func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {
 	}
 
 	return items[startIndex:endIndex], resp
+}
+
+// encodeChainCursor encodes a frontier of outpoints into an HMAC-signed opaque
+// page token. The HMAC prevents clients from forging cursors with arbitrary
+// outpoints, which would bypass auth validation in exposurePrivate mode.
+func (i *indexerService) encodeChainCursor(frontier []domain.Outpoint) string {
+	if len(frontier) == 0 {
+		return ""
+	}
+	cur := vtxoChainCursor{Frontier: make([]Outpoint, len(frontier))}
+	for idx, op := range frontier {
+		cur.Frontier[idx] = Outpoint(op)
+	}
+	payload, _ := json.Marshal(cur)
+
+	if len(i.cursorHMACKey) > 0 {
+		mac := hmac.New(sha256.New, i.cursorHMACKey)
+		mac.Write(payload)
+		payload = append(payload, mac.Sum(nil)...)
+	}
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+// decodeChainCursor decodes and verifies an HMAC-signed page token.
+func (i *indexerService) decodeChainCursor(token string) ([]domain.Outpoint, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base64: %w", err)
+	}
+
+	payload := raw
+	if len(i.cursorHMACKey) > 0 {
+		if len(raw) < sha256.Size {
+			return nil, fmt.Errorf("invalid cursor: too short")
+		}
+		payload = raw[:len(raw)-sha256.Size]
+		sig := raw[len(raw)-sha256.Size:]
+
+		mac := hmac.New(sha256.New, i.cursorHMACKey)
+		mac.Write(payload)
+		if !hmac.Equal(sig, mac.Sum(nil)) {
+			return nil, fmt.Errorf("invalid cursor: signature mismatch")
+		}
+	}
+
+	var cur vtxoChainCursor
+	if err := json.Unmarshal(payload, &cur); err != nil {
+		return nil, fmt.Errorf("invalid JSON: %w", err)
+	}
+	outpoints := make([]domain.Outpoint, len(cur.Frontier))
+	for idx, op := range cur.Frontier {
+		outpoints[idx] = domain.Outpoint(op)
+	}
+	return outpoints, nil
 }
