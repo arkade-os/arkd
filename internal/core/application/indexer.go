@@ -348,7 +348,7 @@ func (i *indexerService) GetVtxosByOutpoint(
 }
 
 func (i *indexerService) GetVtxoChain(
-	ctx context.Context, authToken string, vtxoKey Outpoint, page *Page, pageToken string,
+	ctx context.Context, authToken string, outpoint Outpoint, page *Page, pageToken string,
 ) (*VtxoChainResp, error) {
 	switch i.txExposure {
 	case exposurePublic:
@@ -356,13 +356,13 @@ func (i *indexerService) GetVtxoChain(
 	case exposureWithheld:
 		// Auth token is optional, validate it only if provided
 		if authToken != "" {
-			if err := i.validateChainAuth(authToken, vtxoKey); err != nil {
+			if err := i.validateChainAuth(authToken, outpoint); err != nil {
 				return nil, err
 			}
 		}
 	case exposurePrivate:
 		// Auth token is mandatory, always validate it
-		if err := i.validateChainAuth(authToken, vtxoKey); err != nil {
+		if err := i.validateChainAuth(authToken, outpoint); err != nil {
 			return nil, err
 		}
 	}
@@ -388,7 +388,7 @@ func (i *indexerService) GetVtxoChain(
 		}
 		frontier = decoded
 	} else {
-		frontier = []domain.Outpoint{vtxoKey}
+		frontier = []domain.Outpoint{outpoint}
 	}
 
 	chain, _, nextToken, err := i.walkVtxoChain(ctx, frontier, pageSize)
