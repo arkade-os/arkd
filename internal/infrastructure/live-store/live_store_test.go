@@ -764,6 +764,57 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 		require.Empty(t, gotSigs)
 	})
+
+	t.Run("SettingsStore", func(t *testing.T) {
+		ctx := t.Context()
+
+		// Get on an unset store returns nil, nil for both backends.
+		got, err := store.Settings().Get(ctx)
+		require.NoError(t, err)
+		require.Nil(t, got)
+
+		baseline := ports.Settings{
+			Settings: domain.Settings{
+				SessionDuration: 60 * time.Second,
+				VtxoMinAmount:   1000,
+				VtxoMaxAmount:   1_000_000,
+			},
+			Network:    arklib.BitcoinRegTest,
+			DustAmount: 1000,
+		}
+
+		// Upsert then Get round-trips the settings.
+		err = store.Settings().Upsert(ctx, baseline)
+		require.NoError(t, err)
+
+		afterUpsert, err := store.Settings().Get(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, afterUpsert)
+		require.EqualValues(t, 60*time.Second, afterUpsert.SessionDuration)
+		require.Equal(t, arklib.BitcoinRegTest, afterUpsert.Network)
+		require.True(t, afterUpsert.LastBatchAt.IsZero())
+		require.Empty(t, afterUpsert.LastBatchId)
+
+		// UpdateLastBatch sets only LastBatchAt/LastBatchId. A whole-second time
+		// is used so the value survives the redis DTO's Unix-seconds encoding and
+		// compares equal for both backends.
+		at := time.Unix(1700000000, 0)
+		roundId := "round-123"
+		err = store.Settings().UpdateLastBatch(ctx, at, roundId)
+		require.NoError(t, err)
+
+		afterUpdate, err := store.Settings().Get(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, afterUpdate)
+		require.True(t, afterUpdate.LastBatchAt.Equal(at))
+		require.Equal(t, roundId, afterUpdate.LastBatchId)
+
+		// Everything except the last-batch fields is preserved: normalise those
+		// two fields on the pre-update snapshot and the two must be identical.
+		afterUpsert.LastBatchAt = afterUpdate.LastBatchAt
+		afterUpsert.LastBatchId = afterUpdate.LastBatchId
+		require.Equal(t, afterUpsert, afterUpdate)
+	})
 }
 
 type intentPushFixture struct {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
@@ -90,6 +91,7 @@ func NewService(
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch signer pubkey: %w", err)
 	}
+
 	deprecatedSignerPubkeys, err := signer.GetDeprecatedPubkeys(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch deprecated signer pubkeys: %w", err)
@@ -2389,6 +2391,62 @@ func (s *service) start() {
 	s.startRound()
 }
 
+// collectTriggerContext gathers a snapshot of the variables exposed to the
+// batch_trigger CEL program. Errors are logged and surfaced as zero values so
+// that a transient failure (e.g. a wallet RPC blip) cannot wedge the round
+// scheduler — the gate then falls through to the worst-case interpretation
+// (no fee/no intent/no boarding) which a sensible formula will reject.
+func (s *service) collectTriggerContext(
+	ctx context.Context, lastBatchAt time.Time,
+) batchtrigger.Context {
+	feeRate, err := s.wallet.FeeRate(ctx)
+	if err != nil {
+		log.WithError(err).Warn("batch_trigger: failed to read fee rate")
+	}
+
+	var timeSinceLastBatch int64
+	if !lastBatchAt.IsZero() {
+		now := time.Now()
+		if now.After(lastBatchAt) {
+			timeSinceLastBatch = now.Unix() - lastBatchAt.Unix()
+		}
+	}
+
+	// Read intents once so IntentsCount and the boarding/fee aggregates all
+	// derive from the same snapshot — using a separate Len() call would race
+	// with concurrent intent registrations.
+	var intentsCount, boardingInputsCount int64
+	var totalBoardingAmount, totalIntentFees uint64
+	if intents, err := s.cache.Intents().ViewAll(ctx, nil); err == nil {
+		intentsCount = int64(len(intents))
+		for _, it := range intents {
+			var boardingAmount uint64
+			for _, bi := range it.BoardingInputs {
+				boardingAmount += bi.Amount
+				boardingInputsCount++
+			}
+			totalBoardingAmount += boardingAmount
+
+			inputAmount := it.TotalInputAmount() + boardingAmount
+			outputAmount := it.TotalOutputAmount()
+			if inputAmount > outputAmount {
+				totalIntentFees += inputAmount - outputAmount
+			}
+		}
+	} else {
+		log.WithError(err).Warn("batch_trigger: failed to view pending intents")
+	}
+
+	return batchtrigger.Context{
+		IntentsCount:        intentsCount,
+		CurrentFeerate:      feeRate,
+		TimeSinceLastBatch:  timeSinceLastBatch,
+		BoardingInputsCount: boardingInputsCount,
+		TotalBoardingAmount: totalBoardingAmount,
+		TotalIntentFees:     totalIntentFees,
+	}
+}
+
 func (s *service) startRound() {
 	defer s.wg.Done()
 
@@ -2447,6 +2505,29 @@ func (s *service) startRound() {
 				)
 			}
 		}
+	}
+
+	shouldStart, err := settings.ShouldStartBatch(
+		s.collectTriggerContext(ctx, settings.LastBatchAt),
+	)
+	if err != nil {
+		log.WithError(err).Error(
+			"failed to evaluate batch trigger from context, fallback to start",
+		)
+	}
+	if !shouldStart {
+		// Gate denied the round. Wait one registration window then re-check
+		// without creating any round state.
+		backoff := newRoundTiming(settings.SessionDuration).registrationDuration()
+		log.Debugf("batch_trigger denied round, waiting %s before re-check", backoff)
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		s.wg.Add(1)
+		go s.startRound()
+		return
 	}
 
 	round := domain.NewRound()
@@ -3374,6 +3455,10 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming, setting
 	}); err != nil {
 		changes = round.Fail(errors.INTERNAL_ERROR.New("failed to finalize round: %s", err))
 		return
+	}
+
+	if err := s.cache.Settings().UpdateLastBatch(ctx, time.Now(), roundId); err != nil {
+		log.WithError(err).Warn("failed to update last batch time and id in cache")
 	}
 
 	totalOutputVtxos := len(round.VtxoTree.Leaves())

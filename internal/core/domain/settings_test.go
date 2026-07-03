@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/stretchr/testify/require"
 )
@@ -52,6 +53,8 @@ func TestSettings(t *testing.T) {
 	testSettingsScheduledSession(t)
 
 	testSettingsBatchFees(t)
+
+	testSettingsBatchTrigger(t)
 }
 
 func testValidateSettings(t *testing.T) {
@@ -363,6 +366,7 @@ func testNewSettings(t *testing.T) {
 		noteUriPrefix := "testNote"
 		buildVersionHeader, buildVersionHeaderRequired := "v1.0.0", true
 		digestHeaderRequired := true
+		batchTrigger := "intents_count >= 5.0"
 
 		t.Run("valid", func(t *testing.T) {
 			settings, err := domain.NewSettings(
@@ -374,6 +378,7 @@ func testNewSettings(t *testing.T) {
 				boardingExitDelay, vtxoTreeExpiry,
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				batchTrigger,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, settings)
@@ -383,6 +388,7 @@ func testNewSettings(t *testing.T) {
 			require.Equal(t, buildVersionHeader, settings.BuildVersionHeader)
 			require.Equal(t, buildVersionHeaderRequired, settings.BuildVersionHeaderRequired)
 			require.Equal(t, digestHeaderRequired, settings.DigestHeaderRequired)
+			require.Equal(t, batchTrigger, settings.BatchTrigger)
 			require.False(t, settings.UpdatedAt.IsZero())
 		})
 
@@ -396,6 +402,7 @@ func testNewSettings(t *testing.T) {
 				boardingExitDelay, vtxoTreeExpiry,
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				batchTrigger,
 			)
 			require.ErrorContains(t, err, "invalid session duration")
 			require.Nil(t, settings)
@@ -411,8 +418,25 @@ func testNewSettings(t *testing.T) {
 				boardingExitDelay, vtxoTreeExpiry,
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				"", true, true,
+				batchTrigger,
 			)
 			require.ErrorContains(t, err, "build version header is required but no version is set")
+			require.Nil(t, settings)
+		})
+
+		t.Run("invalid batch trigger", func(t *testing.T) {
+			settings, err := domain.NewSettings(
+				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
+				batchMinParticipants, batchMaxParticipants,
+				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
+				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
+				boardingExitDelay, vtxoTreeExpiry,
+				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				"this is not (valid cel",
+			)
+			require.ErrorContains(t, err, "invalid batch trigger program")
 			require.Nil(t, settings)
 		})
 	})
@@ -514,5 +538,97 @@ func testSettingsBatchFees(t *testing.T) {
 
 		require.Equal(t, []string{"batch_fees"}, settings.ClearBatchFees())
 		require.Equal(t, domain.BatchFees{}, settings.BatchFees)
+	})
+}
+
+func testSettingsBatchTrigger(t *testing.T) {
+	t.Run("ShouldStartBatch", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			program string
+			ctx     batchtrigger.Context
+			want    bool
+		}{
+			{
+				name:    "nil trigger permits with empty context",
+				program: "",
+				want:    true,
+			},
+			{
+				name:    "nil trigger permits with context",
+				program: "",
+				ctx:     batchtrigger.Context{IntentsCount: 0},
+				want:    true,
+			},
+			{
+				name:    "true literal permits",
+				program: "true",
+				want:    true,
+			},
+			{
+				name:    "false literal denies",
+				program: "false",
+				want:    false,
+			},
+			{
+				name:    "intent count gate satisfied",
+				program: "intents_count >= 2.0",
+				ctx:     batchtrigger.Context{IntentsCount: 5},
+				want:    true,
+			},
+			{
+				name:    "intent count gate unsatisfied",
+				program: "intents_count >= 2.0",
+				ctx:     batchtrigger.Context{IntentsCount: 1},
+				want:    false,
+			},
+			{
+				name:    "fee revenue gate satisfied",
+				program: "total_intent_fees >= 500.0",
+				ctx:     batchtrigger.Context{TotalIntentFees: 1000},
+				want:    true,
+			},
+			{
+				name: "issue 1045 example: many intents, low fees",
+				program: "intents_count > 1.0 && " +
+					"(current_feerate <= 2.0 || time_since_last_batch >= 3600.0)",
+				ctx: batchtrigger.Context{
+					IntentsCount:   3,
+					CurrentFeerate: 1,
+				},
+				want: true,
+			},
+			{
+				name: "issue 1045 example: many intents, high fees, but stale",
+				program: "intents_count > 1.0 && " +
+					"(current_feerate <= 2.0 || time_since_last_batch >= 3600.0)",
+				ctx: batchtrigger.Context{
+					IntentsCount:       3,
+					CurrentFeerate:     50,
+					TimeSinceLastBatch: 7200,
+				},
+				want: true,
+			},
+			{
+				name: "issue 1045 example: many intents, high fees, recent",
+				program: "intents_count > 1.0 && " +
+					"(current_feerate <= 2.0 || time_since_last_batch >= 3600.0)",
+				ctx: batchtrigger.Context{
+					IntentsCount:       3,
+					CurrentFeerate:     50,
+					TimeSinceLastBatch: 60,
+				},
+				want: false,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				settings := domain.Settings{BatchTrigger: tt.program}
+				got, err := settings.ShouldStartBatch(tt.ctx)
+				require.NoError(t, err)
+				require.Equal(t, tt.want, got)
+			})
+		}
 	})
 }
