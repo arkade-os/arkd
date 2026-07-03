@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/arkade-os/arkd/pkg/ark-lib/batchtrigger/celenv"
+	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger/celenv"
 	"github.com/google/cel-go/cel"
 )
 
@@ -28,13 +28,13 @@ func New(program string) (*Trigger, error) {
 	if program == "" {
 		return nil, nil
 	}
-	return Parse(program)
+	return parse(program)
 }
 
 // Parse compiles a batch_trigger CEL program. It enforces that the program's
 // output type is bool — anything else is rejected at compile time so operators
 // catch mistakes before the server boots.
-func Parse(txt string) (*Trigger, error) {
+func parse(txt string) (*Trigger, error) {
 	ast, issues := celenv.BatchTriggerEnv.Compile(txt)
 	if issues != nil && issues.Err() != nil {
 		return nil, issues.Err()
@@ -62,9 +62,6 @@ func (t *Trigger) Source() string {
 // Eval evaluates the program against the supplied context. A nil receiver
 // returns true so that an unconfigured trigger never blocks a batch.
 func (t *Trigger) Eval(ctx Context) (bool, error) {
-	if t == nil {
-		return true, nil
-	}
 	result, _, err := t.program.Eval(ctx.toArgs())
 	if err != nil {
 		return false, err

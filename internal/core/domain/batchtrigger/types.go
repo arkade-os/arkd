@@ -1,7 +1,7 @@
 package batchtrigger
 
 import (
-	"github.com/arkade-os/arkd/pkg/ark-lib/batchtrigger/celenv"
+	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger/celenv"
 )
 
 // Context is the snapshot of state passed to a batch_trigger program when it is

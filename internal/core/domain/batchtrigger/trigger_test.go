@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/arkade-os/arkd/pkg/ark-lib/batchtrigger"
+	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger"
 	"github.com/stretchr/testify/require"
 )
 
@@ -60,14 +60,6 @@ func TestNewEmpty(t *testing.T) {
 	tr, err := batchtrigger.New("")
 	require.NoError(t, err)
 	require.Nil(t, tr)
-}
-
-func TestNilTriggerAlwaysAllows(t *testing.T) {
-	var tr *batchtrigger.Trigger
-	ok, err := tr.Eval(batchtrigger.Context{})
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Empty(t, tr.Source())
 }
 
 func TestSource(t *testing.T) {

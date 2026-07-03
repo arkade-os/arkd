@@ -77,6 +77,56 @@ func (s *settingsStore) Get(ctx context.Context) (*ports.Settings, error) {
 	return settings, nil
 }
 
+func (s *settingsStore) UpdateLastBatch(ctx context.Context, at time.Time, id string) error {
+	var lastBatchAt int64
+	if !at.IsZero() {
+		lastBatchAt = at.Unix()
+	}
+
+	// LastBatchAt/LastBatchId are stored inside the single settings blob, so we
+	// read-modify-write it under a WATCH to update just those two fields while
+	// preserving everything else, retrying on optimistic-lock contention.
+	var err error
+	for range s.numOfRetries {
+		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			data, err := tx.Get(ctx, settingsKey).Bytes()
+			if err != nil {
+				// No settings cached yet: there is nothing to attach the
+				// last-batch metadata to, so skip rather than persist an
+				// otherwise zero-value settings blob.
+				if errors.Is(err, redis.Nil) {
+					return nil
+				}
+				return fmt.Errorf("failed to get settings: %v", err)
+			}
+
+			var dto settingsDTO
+			if err := json.Unmarshal(data, &dto); err != nil {
+				return fmt.Errorf(
+					"malformed settings in storage (out=%s): %s", string(data), err,
+				)
+			}
+			dto.LastBatchAt = lastBatchAt
+			dto.LastBatchId = id
+
+			val, err := json.Marshal(dto)
+			if err != nil {
+				return err
+			}
+
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Set(ctx, settingsKey, val, 0)
+				return nil
+			})
+			return err
+		}, settingsKey); err == nil {
+			return nil
+		}
+		time.Sleep(s.retryDelay)
+	}
+	return fmt.Errorf("failed to update last batch after max number of retries: %v", err)
+}
+
 type scheduledSessionDTO struct {
 	StartTime                 int64
 	EndTime                   int64
@@ -158,6 +208,8 @@ type settingsDTO struct {
 	ForfeitPubkey                 string
 	ForfeitAddress                string
 	CheckpointTapscript           string
+	LastBatchAt                   int64
+	LastBatchId                   string
 }
 
 func newSettingsDTO(settings ports.Settings) settingsDTO {
@@ -187,6 +239,11 @@ func newSettingsDTO(settings ports.Settings) settingsDTO {
 			PubKey:     hex.EncodeToString(deprecated.PubKey.SerializeCompressed()),
 			CutoffDate: cutoffDate,
 		})
+	}
+
+	var lastBatchAt int64
+	if !settings.LastBatchAt.IsZero() {
+		lastBatchAt = settings.LastBatchAt.Unix()
 	}
 
 	return settingsDTO{
@@ -223,6 +280,8 @@ func newSettingsDTO(settings ports.Settings) settingsDTO {
 		ForfeitAddress:                settings.ForfeitAddress,
 		CheckpointTapscript:           hex.EncodeToString(settings.CheckpointTapscript),
 		ScheduledSession:              newScheduledSessionDTO(settings.ScheduledSession),
+		LastBatchAt:                   lastBatchAt,
+		LastBatchId:                   settings.LastBatchId,
 	}
 }
 
@@ -270,6 +329,10 @@ func (s settingsDTO) parse() (*ports.Settings, error) {
 	boardingExitDelay, _ := arklib.ParseRelativeLocktime(uint32(s.BoardingExitDelay))
 	vtxoTreeExpiry, _ := arklib.ParseRelativeLocktime(uint32(s.VtxoTreeExpiry))
 	unrolledVtxoMinExpiryMargin := time.Duration(s.UnrolledVtxoMinExpiryMargin) * time.Second
+	var lastBatchAt time.Time
+	if s.LastBatchAt > 0 {
+		lastBatchAt = time.Unix(s.LastBatchAt, 0)
+	}
 	return &ports.Settings{
 		Settings: domain.Settings{
 			SessionDuration:               time.Duration(s.SessionDuration) * time.Second,
@@ -306,6 +369,8 @@ func (s settingsDTO) parse() (*ports.Settings, error) {
 		ForfeitPubkey:           forfeitPubkey,
 		ForfeitAddress:          s.ForfeitAddress,
 		CheckpointTapscript:     checkpointTapscript,
+		LastBatchAt:             lastBatchAt,
+		LastBatchId:             s.LastBatchId,
 	}, nil
 }
 

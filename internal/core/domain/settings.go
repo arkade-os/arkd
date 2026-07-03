@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
-	"github.com/arkade-os/arkd/pkg/ark-lib/batchtrigger"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 )
 
@@ -446,4 +446,15 @@ func (s Settings) MaxAssetsPerVtxo() int {
 
 func (s Settings) AllowCSVBlockType() bool {
 	return s.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock
+}
+
+func (s Settings) ShouldStartBatch(ctx batchtrigger.Context) (bool, error) {
+	trigger, err := batchtrigger.New(s.BatchTrigger)
+	if err != nil {
+		return false, err
+	}
+	if trigger == nil {
+		return true, nil
+	}
+	return trigger.Eval(ctx)
 }

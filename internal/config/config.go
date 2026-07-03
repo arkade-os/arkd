@@ -27,7 +27,6 @@ import (
 	fileunlocker "github.com/arkade-os/arkd/internal/infrastructure/unlocker/file"
 	walletclient "github.com/arkade-os/arkd/internal/infrastructure/wallet"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/arkade-os/arkd/pkg/ark-lib/batchtrigger"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
@@ -587,10 +586,6 @@ func (c *Config) Validate() error {
 
 	if c.MaxConcurrentStreams == 0 {
 		return fmt.Errorf("max concurrent streams must be greater than 0")
-	}
-
-	if _, err := batchtrigger.New(c.BatchTrigger); err != nil {
-		return fmt.Errorf("invalid batch trigger program: %w", err)
 	}
 
 	if c.BuildVersionHeaderRequired && len(c.BuildVersionHeader) <= 0 {
