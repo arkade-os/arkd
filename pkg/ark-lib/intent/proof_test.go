@@ -25,6 +25,7 @@ import (
 
 const noteProofMessage = "test-note-closure-parity"
 
+// TestNewIntent verifies that New constructs a valid PSBT proof for well-formed inputs and returns errors for invalid ones.
 func TestNewIntent(t *testing.T) {
 	validFixtures, invalidFixtures := parseProofFixtures(t)
 
@@ -64,8 +65,30 @@ func TestNewIntent(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("BIP-322 global 0x09 field", func(t *testing.T) {
+		validFixtures, _ := parseProofFixtures(t)
+		for _, fixture := range validFixtures {
+			t.Run(fixture.Name, func(t *testing.T) {
+				proof, err := intent.New(fixture.Message, fixture.Inputs, fixture.Outputs)
+				require.NoError(t, err)
+
+				var found *psbt.Unknown
+				for _, u := range proof.Unknowns {
+					if len(u.Key) == 1 && u.Key[0] == 0x09 {
+						found = u
+						break
+					}
+				}
+				require.NotNil(t, found, "PSBT global 0x09 field must be present")
+				require.Equal(t, []byte(fixture.Message), found.Value,
+					"0x09 value must equal the intent message")
+			})
+		}
+	})
 }
 
+// TestVerifyIntent verifies that Verify accepts valid signed proofs and rejects malformed or tampered ones.
 func TestVerifyIntent(t *testing.T) {
 	validFixtures, invalidFixtures := parseVerifyFixtures(t)
 
@@ -152,6 +175,7 @@ func TestVerifyIntent(t *testing.T) {
 	})
 }
 
+// TestIntentGetOutpoints checks that GetOutpoints returns the correct slice of outpoints, excluding the toSpend input.
 func TestIntentGetOutpoints(t *testing.T) {
 	t.Run("zero inputs", func(t *testing.T) {
 		ptxWithZeroInputs := psbt.Packet{
