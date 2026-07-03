@@ -201,6 +201,7 @@ type settingsDTO struct {
 	DigestHeaderRequired          bool
 	ScheduledSession              scheduledSessionDTO
 	BatchFees                     batchFeesDTO
+	BatchTrigger                  string
 	Network                       string
 	DustAmount                    uint64
 	SignerPubkey                  string
@@ -272,6 +273,7 @@ func newSettingsDTO(settings ports.Settings) settingsDTO {
 		BuildVersionHeaderRequired:    settings.BuildVersionHeaderRequired,
 		DigestHeaderRequired:          settings.DigestHeaderRequired,
 		BatchFees:                     settings.BatchFees,
+		BatchTrigger:                  settings.BatchTrigger,
 		Network:                       settings.Network.Name,
 		DustAmount:                    settings.DustAmount,
 		SignerPubkey:                  signerPubkey,
@@ -361,6 +363,7 @@ func (s settingsDTO) parse() (*ports.Settings, error) {
 			DigestHeaderRequired:          s.DigestHeaderRequired,
 			ScheduledSession:              s.ScheduledSession.parse(),
 			BatchFees:                     s.BatchFees,
+			BatchTrigger:                  s.BatchTrigger,
 		},
 		Network:                 networkFromString(s.Network),
 		DustAmount:              s.DustAmount,
