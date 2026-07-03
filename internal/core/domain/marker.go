@@ -6,6 +6,15 @@ import "fmt"
 // VTXOs at depth 0, 100, 200, etc. create new markers.
 const MarkerInterval = 100
 
+// SweptMarker records when a marker (and all VTXOs it covers) was swept.
+// This is an append-only table that enables efficient bulk sweep operations.
+type SweptMarker struct {
+	// MarkerID is the ID of the marker that was swept
+	MarkerID string
+	// SweptAt is the Unix timestamp (milliseconds) when the marker was swept
+	SweptAt int64
+}
+
 // Marker represents a DAG traversal checkpoint created at regular depth intervals.
 // Markers enable compressed traversal of the VTXO chain by allowing jumps of
 // MarkerInterval depths instead of traversing each VTXO individually.
@@ -16,11 +25,6 @@ type Marker struct {
 	Depth uint32
 	// ParentMarkerIDs is a list of marker IDs that this marker descends from
 	ParentMarkerIDs []string
-}
-
-// isAtMarkerBoundary returns true if the given depth is at a marker boundary.
-func isAtMarkerBoundary(depth uint32) bool {
-	return depth%MarkerInterval == 0
 }
 
 // NewMarker computes marker information for a new offchain transaction.
@@ -43,11 +47,7 @@ func NewMarker(txid string, depth uint32, parentMarkerIDs []string) (*Marker, []
 	return nil, nil
 }
 
-// SweptMarker records when a marker (and all VTXOs it covers) was swept.
-// This is an append-only table that enables efficient bulk sweep operations.
-type SweptMarker struct {
-	// MarkerID is the ID of the marker that was swept
-	MarkerID string
-	// SweptAt is the Unix timestamp (milliseconds) when the marker was swept
-	SweptAt int64
+// isAtMarkerBoundary returns true if the given depth is at a marker boundary.
+func isAtMarkerBoundary(depth uint32) bool {
+	return depth%MarkerInterval == 0
 }
