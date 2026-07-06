@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS marker (
 CREATE INDEX IF NOT EXISTS idx_marker_depth ON marker(depth);
 CREATE INDEX IF NOT EXISTS idx_marker_parent_markers ON marker USING GIN (parent_markers);
 
--- Create swept_marker table (append-only; written with self-markers by the
+-- Create swept_marker table (append-only, written with self-markers by the
 -- legacy-swept migration below and by dust-vtxo sweeps)
 CREATE TABLE IF NOT EXISTS swept_marker (
     marker_id TEXT PRIMARY KEY REFERENCES marker(id),

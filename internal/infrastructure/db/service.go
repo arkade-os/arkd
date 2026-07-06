@@ -696,6 +696,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// thus, we can create the new vtxos in the db.
 		newVtxos := make([]domain.Vtxo, 0, len(outs))
 		createdDustMarkerIDs := make([]string, 0)
+		sweptOutpoints := make([]domain.Outpoint, 0)
 		for outIndex, out := range outs {
 			// ignore anchor and extension
 			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
@@ -720,6 +721,13 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 
 			vtxoMarkerIDs := markerIDs
 			isDust := script.IsSubDustScript(out.PkScript)
+			if txSwept && !isDust {
+				// The swept column no longer exists, so the Swept flag set on
+				// the vtxo struct below is not persisted by AddVtxos. Collect
+				// non-dust outpoints to sweep them after insert. Dust outputs
+				// are covered by their swept dust markers.
+				sweptOutpoints = append(sweptOutpoints, outpoint)
+			}
 			if isDust {
 				// Dust VTXOs get their own outpoint-based marker so they can be
 				// swept individually without affecting sibling non-dust VTXOs
@@ -790,6 +798,16 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			); err != nil {
 				log.WithError(err).
 					Warnf("failed to sweep %d dust vtxo markers", len(createdDustMarkerIDs))
+			}
+		}
+
+		// Persist swept status for non-dust outputs of a swept/expired tx,
+		// per-outpoint like the batch and checkpoint sweep paths.
+		if len(sweptOutpoints) > 0 {
+			sweptAt := time.Now().UnixMilli()
+			if err := s.markerStore.SweepVtxoOutpoints(ctx, sweptOutpoints, sweptAt); err != nil {
+				log.WithError(err).
+					Warnf("failed to sweep %d vtxo outpoints of swept tx", len(sweptOutpoints))
 			}
 		}
 	}
