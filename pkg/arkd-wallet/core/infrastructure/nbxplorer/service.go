@@ -417,7 +417,8 @@ func (n *nbxplorer) GetNewUnusedAddress(ctx context.Context, derivationScheme st
 // EstimateFeeRate retrieves fee rate from /v1/cryptos/{cryptoCode}/fees/{blockCount} endpoint.
 func (n *nbxplorer) EstimateFeeRate(ctx context.Context) (chainfee.SatPerKVByte, error) {
 	blockCount := 1
-	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/fees/%d", btcCryptoCode, blockCount), nil)
+	fallback := float64(n.minRelayTxFee) / 1000
+	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/fees/%d?fallbackFeeRate=%f", btcCryptoCode, blockCount, fallback), nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to estimate fee rate: %w", err)
 	}
