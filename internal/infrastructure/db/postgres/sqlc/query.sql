@@ -447,9 +447,6 @@ INSERT INTO swept_marker (marker_id, swept_at)
 SELECT unnest(@marker_ids::text[]), @swept_at
 ON CONFLICT(marker_id) DO NOTHING;
 
--- name: SelectSweptMarker :one
-SELECT * FROM swept_marker WHERE marker_id = @marker_id;
-
 -- name: SelectSweptMarkersByIds :many
 SELECT * FROM swept_marker WHERE marker_id = ANY(@marker_ids::text[]);
 
@@ -544,11 +541,6 @@ SELECT control_asset_id FROM asset WHERE id = $1;
 
 -- name: SelectAssetExists :one
 SELECT 1 FROM asset WHERE id = $1 LIMIT 1;
-
--- name: InsertSweptVtxo :exec
-INSERT INTO swept_vtxo (txid, vout, swept_at)
-VALUES (@txid, @vout, @swept_at)
-ON CONFLICT(txid, vout) DO NOTHING;
 
 -- name: BulkInsertSweptVtxos :exec
 INSERT INTO swept_vtxo (txid, vout, swept_at)

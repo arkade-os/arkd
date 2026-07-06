@@ -1899,17 +1899,6 @@ func (q *Queries) SelectSweepableVtxoOutpointsByCommitmentTxid(ctx context.Conte
 	return items, nil
 }
 
-const selectSweptMarker = `-- name: SelectSweptMarker :one
-SELECT marker_id, swept_at FROM swept_marker WHERE marker_id = ?1
-`
-
-func (q *Queries) SelectSweptMarker(ctx context.Context, markerID string) (SweptMarker, error) {
-	row := q.db.QueryRowContext(ctx, selectSweptMarker, markerID)
-	var i SweptMarker
-	err := row.Scan(&i.MarkerID, &i.SweptAt)
-	return i, err
-}
-
 const selectSweptMarkersByIds = `-- name: SelectSweptMarkersByIds :many
 SELECT marker_id, swept_at FROM swept_marker WHERE marker_id IN (/*SLICE:marker_ids*/?)
 `

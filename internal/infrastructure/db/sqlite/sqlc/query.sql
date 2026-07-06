@@ -454,9 +454,6 @@ VALUES (@marker_id, @swept_at)
 ON CONFLICT(marker_id) DO NOTHING;
 
 
--- name: SelectSweptMarker :one
-SELECT * FROM swept_marker WHERE marker_id = @marker_id;
-
 -- name: SelectSweptMarkersByIds :many
 SELECT * FROM swept_marker WHERE marker_id IN (sqlc.slice('marker_ids'));
 

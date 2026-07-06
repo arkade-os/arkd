@@ -153,23 +153,6 @@ func (q *Queries) InsertSweptMarker(ctx context.Context, arg InsertSweptMarkerPa
 	return err
 }
 
-const insertSweptVtxo = `-- name: InsertSweptVtxo :exec
-INSERT INTO swept_vtxo (txid, vout, swept_at)
-VALUES ($1, $2, $3)
-ON CONFLICT(txid, vout) DO NOTHING
-`
-
-type InsertSweptVtxoParams struct {
-	Txid    string
-	Vout    int32
-	SweptAt int64
-}
-
-func (q *Queries) InsertSweptVtxo(ctx context.Context, arg InsertSweptVtxoParams) error {
-	_, err := q.db.ExecContext(ctx, insertSweptVtxo, arg.Txid, arg.Vout, arg.SweptAt)
-	return err
-}
-
 const insertVtxoAssetProjection = `-- name: InsertVtxoAssetProjection :exec
 INSERT INTO asset_projection (asset_id, txid, vout, amount)
 VALUES ($1, $2, $3, $4)
@@ -1891,17 +1874,6 @@ func (q *Queries) SelectSweepableVtxoOutpointsByCommitmentTxid(ctx context.Conte
 		return nil, err
 	}
 	return items, nil
-}
-
-const selectSweptMarker = `-- name: SelectSweptMarker :one
-SELECT marker_id, swept_at FROM swept_marker WHERE marker_id = $1
-`
-
-func (q *Queries) SelectSweptMarker(ctx context.Context, markerID string) (SweptMarker, error) {
-	row := q.db.QueryRowContext(ctx, selectSweptMarker, markerID)
-	var i SweptMarker
-	err := row.Scan(&i.MarkerID, &i.SweptAt)
-	return i, err
 }
 
 const selectSweptMarkersByIds = `-- name: SelectSweptMarkersByIds :many
