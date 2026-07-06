@@ -384,7 +384,9 @@ func (i *indexerService) GetVtxoChain(
 	if pageToken != "" {
 		decoded, err := i.decodeChainCursor(pageToken)
 		if err != nil {
-			return nil, fmt.Errorf("invalid page_token: %w", err)
+			// page_token is client-supplied input. Surface it as invalid input so
+			// the handler can map it to InvalidArgument rather than Internal.
+			return nil, fmt.Errorf("%w: invalid page_token: %w", ErrInvalidInput, err)
 		}
 		frontier = decoded
 	} else {
