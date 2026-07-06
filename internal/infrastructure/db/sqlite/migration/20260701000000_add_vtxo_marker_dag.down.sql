@@ -1,8 +1,8 @@
 -- Reverses the combined marker-DAG + swept migration.
 
 -- Guard against silently resurrecting swept VTXOs. swept_vtxo holds per-outpoint
--- checkpoint-sweep state; dropping it would flip swept back to false for every
--- outpoint tracked only there. SQLite has no RAISE outside triggers, so route
+-- sweep state for batch and checkpoint sweeps; dropping it would flip swept back
+-- to false for every outpoint tracked only there. SQLite has no RAISE outside triggers, so route
 -- through a trigger on a throwaway temp table: the conditional INSERT fires only
 -- when swept_vtxo has at least one row; otherwise it is a no-op and we fall through.
 CREATE TEMP TABLE __abort_swept_vtxo_down (x INTEGER);

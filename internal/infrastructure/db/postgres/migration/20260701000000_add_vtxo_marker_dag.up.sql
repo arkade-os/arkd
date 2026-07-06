@@ -23,13 +23,14 @@ CREATE TABLE IF NOT EXISTS marker (
 CREATE INDEX IF NOT EXISTS idx_marker_depth ON marker(depth);
 CREATE INDEX IF NOT EXISTS idx_marker_parent_markers ON marker USING GIN (parent_markers);
 
--- Create swept_marker table (append-only, populated by batch/round sweeps)
+-- Create swept_marker table (append-only; written with self-markers by the
+-- legacy-swept migration below and by dust-vtxo sweeps)
 CREATE TABLE IF NOT EXISTS swept_marker (
     marker_id TEXT PRIMARY KEY REFERENCES marker(id),
     swept_at BIGINT NOT NULL
 );
 
--- Create swept_vtxo table (per-outpoint sweep tracking for checkpoint sweeps)
+-- Create swept_vtxo table (per-outpoint sweep tracking for batch and checkpoint sweeps)
 CREATE TABLE IF NOT EXISTS swept_vtxo (
     txid TEXT NOT NULL,
     vout INTEGER NOT NULL,
@@ -72,8 +73,8 @@ DROP VIEW IF EXISTS vtxo_vw;
 ALTER TABLE vtxo DROP COLUMN IF EXISTS swept;
 
 -- Build the final views. swept is OR'd across two sources on purpose:
---   * swept_marker — batch/round sweeps. Coarse: one marker can cover many VTXOs.
---   * swept_vtxo   — checkpoint sweeps. Fine: one row per (txid, vout).
+--   * swept_marker — self-marker records (legacy migrated sweeps, dust vtxos).
+--   * swept_vtxo   — batch and checkpoint sweeps. One row per (txid, vout).
 -- The swept lookup unnests v.markers and probes swept_marker_pkey per marker_id.
 -- The earlier `markers @> jsonb_build_array(sm.marker_id)` form forced a seq scan
 -- of swept_marker per outer row (the GIN index on vtxo.markers is on the wrong side

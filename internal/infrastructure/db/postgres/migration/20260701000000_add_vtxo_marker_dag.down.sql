@@ -1,8 +1,9 @@
 -- Reverses the combined marker-DAG + swept migration.
 
 -- Guard against silently resurrecting swept VTXOs. swept_vtxo holds per-outpoint
--- checkpoint-sweep state; dropping it would flip vtxo_vw.swept back to false for
--- every outpoint tracked only there. Fail loudly when it has data.
+-- sweep state for batch and checkpoint sweeps; dropping it would flip
+-- vtxo_vw.swept back to false for every outpoint tracked only there. Fail loudly
+-- when it has data.
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM swept_vtxo) THEN
