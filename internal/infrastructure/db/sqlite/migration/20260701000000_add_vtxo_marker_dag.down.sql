@@ -66,6 +66,9 @@ CREATE INDEX IF NOT EXISTS fk_vtxo_intent_id ON vtxo(intent_id);
 CREATE INDEX IF NOT EXISTS idx_vtxo_pubkey_updated_at
     ON vtxo (pubkey, updated_at);
 
+-- Drop the checkpoint_tx index added by the up migration
+DROP INDEX IF EXISTS idx_checkpoint_tx_offchain_txid;
+
 -- Drop marker tables
 DROP TABLE IF EXISTS swept_marker;
 DROP TABLE IF EXISTS marker;

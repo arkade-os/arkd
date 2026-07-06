@@ -1017,13 +1017,13 @@ func handleIntentTxidMigration(m *migrate.Migrate, db *sql.DB, dbType string) er
 }
 
 // stepwise migration for the vtxo marker DAG backfill (real BFS depths +
-// boundary markers). Gated at sentinel 20260702000000. Unlike the intent-txid
-// precedent, the backfill dispatch runs on every startup (outside the version
-// gate): its internal data guard makes it a cheap no-op once topology exists
-// and re-runs an interrupted (rolled-back) backfill that left the version
-// advanced but no data written.
+// boundary markers). Gated at 20260701000000, the marker-DAG schema migration.
+// Unlike the intent-txid precedent, the backfill dispatch runs on every startup
+// (outside the version gate): its internal data guard makes it a cheap no-op
+// once topology exists and re-runs an interrupted (rolled-back) backfill that
+// left the version advanced but no data written.
 func handleVtxoMarkersMigration(m *migrate.Migrate, db *sql.DB, dbType string) error {
-	vtxoMarkersMigrationBegin := uint(20260702000000)
+	vtxoMarkersMigrationBegin := uint(20260701000000)
 	version, dirty, verr := m.Version()
 	if verr != nil && !errors.Is(verr, migrate.ErrNilVersion) {
 		return fmt.Errorf("failed to read migration version: %w", verr)

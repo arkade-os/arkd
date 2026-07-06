@@ -4,8 +4,9 @@
 -- rebuilding them twice.
 --
 -- Adds vtxo.depth / vtxo.markers, the marker / swept_marker / swept_vtxo tables,
--- gives every existing vtxo a self-marker, migrates the old swept column into
--- swept_marker, drops the column, and computes swept dynamically in the views.
+-- the checkpoint_tx(offchain_txid) index, gives every existing vtxo a self-marker,
+-- migrates the old swept column into swept_marker, drops the column, and computes
+-- swept dynamically in the views.
 
 -- Add depth and markers columns to vtxo
 ALTER TABLE vtxo
@@ -35,6 +36,10 @@ CREATE TABLE IF NOT EXISTS swept_vtxo (
     swept_at BIGINT NOT NULL,
     PRIMARY KEY (txid, vout)
 );
+
+-- Index to accelerate the bulk offchain tx query's join on checkpoint_tx
+CREATE INDEX IF NOT EXISTS idx_checkpoint_tx_offchain_txid
+    ON checkpoint_tx (offchain_txid);
 
 -- Backfill: create a marker for every existing VTXO using its outpoint as marker ID
 -- so every VTXO has at least one marker.

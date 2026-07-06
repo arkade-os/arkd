@@ -28,6 +28,10 @@ CREATE TABLE IF NOT EXISTS swept_vtxo (
     PRIMARY KEY (txid, vout)
 );
 
+-- Index to accelerate the bulk offchain tx query's join on checkpoint_tx
+CREATE INDEX IF NOT EXISTS idx_checkpoint_tx_offchain_txid
+    ON checkpoint_tx (offchain_txid);
+
 -- Add markers column (JSON array, not single marker_id)
 ALTER TABLE vtxo ADD COLUMN markers TEXT NOT NULL DEFAULT '[]';
 CREATE INDEX IF NOT EXISTS idx_vtxo_markers ON vtxo(markers);

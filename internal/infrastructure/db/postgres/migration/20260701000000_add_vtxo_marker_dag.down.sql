@@ -32,6 +32,9 @@ WHERE EXISTS (
 -- Drop swept_vtxo (guaranteed empty by the guard above)
 DROP TABLE IF EXISTS swept_vtxo;
 
+-- Drop the checkpoint_tx index added by the up migration
+DROP INDEX IF EXISTS idx_checkpoint_tx_offchain_txid;
+
 -- Drop markers index and columns from vtxo
 DROP INDEX IF EXISTS idx_vtxo_markers;
 ALTER TABLE vtxo DROP COLUMN IF EXISTS markers;
