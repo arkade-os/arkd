@@ -252,16 +252,9 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof, withChannelz bool)
 	ctx := context.Background()
 	if s.appConfig.OtelCollectorEndpoint != "" {
 		pushInteval := time.Duration(s.appConfig.OtelPushInterval) * time.Second
-		rrsc, err := s.appConfig.RoundReportService()
-		if err != nil {
-			return err
-		}
 
 		otelShutdown, err := telemetry.InitOtelSDK(
-			ctx,
-			s.appConfig.OtelCollectorEndpoint,
-			pushInteval,
-			rrsc,
+			ctx, s.appConfig.OtelCollectorEndpoint, pushInteval,
 		)
 		if err != nil {
 			return err
