@@ -1525,6 +1525,7 @@ func (s *service) RegisterIntent(
 	dustAmount := settings.DustAmount
 	network := settings.Network
 	maxAssetsPerVtxo := settings.MaxAssetsPerVtxo()
+	settlementWarranted := false
 
 	for i, outpoint := range outpoints {
 		if _, seen := seenOutpoints[outpoint]; seen {
@@ -1614,6 +1615,9 @@ func (s *service) RegisterIntent(
 				witnessUtxo:      psbtInput.WitnessUtxo,
 			})
 
+			// a boarding utxo is a real onchain entry, it always warrants a round
+			settlementWarranted = true
+
 			continue
 		}
 
@@ -1646,6 +1650,9 @@ func (s *service) RegisterIntent(
 				assetInputs[i+1] = vtxo.Assets
 			}
 
+			// an unrolled vtxo rejoining the batch warrants a round
+			settlementWarranted = true
+
 			continue
 		}
 
@@ -1653,14 +1660,8 @@ func (s *service) RegisterIntent(
 			// reject if expires after now + settlementMinExpiryGap
 			expiresAt := time.Unix(vtxo.ExpiresAt, 0)
 			limit := time.Now().Add(settlementMinExpiryGap)
-			if expiresAt.After(limit) {
-				return "", errors.INVALID_PSBT_INPUT.New(
-					"vtxo %s expires after %s (minExpiryGap: %s)",
-					vtxo.Outpoint.String(), limit, settlementMinExpiryGap,
-				).WithMetadata(errors.InputMetadata{
-					Txid:       proofTxid,
-					InputIndex: int(outpoint.Index),
-				})
+			if !expiresAt.After(limit) {
+				settlementWarranted = true
 			}
 		}
 
@@ -1735,6 +1736,16 @@ func (s *service) RegisterIntent(
 		if len(vtxo.Assets) > 0 {
 			assetInputs[i+1] = vtxo.Assets
 		}
+	}
+	if settlementMinExpiryGap > 0 && !settlementWarranted {
+		return "", errors.INVALID_INTENT_PROOF.New(
+			"intent deferred: no input warrants a settlement now "+
+				"(all inputs are sub-dust or expire after now + minExpiryGap: %s)",
+			settlementMinExpiryGap,
+		).WithMetadata(errors.InvalidIntentProofMetadata{
+			Proof:   encodedProof,
+			Message: encodedMessage,
+		})
 	}
 
 	if err := intent.Verify(
