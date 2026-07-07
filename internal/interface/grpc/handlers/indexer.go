@@ -446,15 +446,47 @@ func (h *indexerService) GetSubscription(
 ) error {
 	subscriptionId := request.GetSubscriptionId()
 
-	var scriptCh chan *arkv1.GetSubscriptionResponse
-
-	if len(subscriptionId) == 0 {
+	isNew := len(subscriptionId) == 0
+	if isNew {
 		// New single-connection flow: create subscription inline.
 		subscriptionId = uuid.NewString()
-		listener := newListener[*arkv1.GetSubscriptionResponse](subscriptionId, nil)
-		h.scriptSubsHandler.pushListener(listener)
-		defer h.scriptSubsHandler.removeListener(subscriptionId)
+		h.scriptSubsHandler.pushListener(
+			newListener[*arkv1.GetSubscriptionResponse](subscriptionId, nil),
+		)
+	}
 
+	// Attach as the subscription's sole consumer. Reconnecting with the same
+	// subscription id displaces the previous stream: an abandoned stream whose
+	// disconnect the server never observed (e.g. behind a load balancer that
+	// keeps the connection alive) is terminated instead of competing with the
+	// new stream for events forever.
+	listener, attachment, err := h.scriptSubsHandler.attach(subscriptionId)
+	if err != nil {
+		return subscriptionErr(subscriptionId, err)
+	}
+	defer func() {
+		if !h.scriptSubsHandler.detach(subscriptionId, attachment) {
+			// Displaced by a newer stream: the successor owns the
+			// subscription's lifecycle now.
+			return
+		}
+		if isNew {
+			h.scriptSubsHandler.removeListener(subscriptionId)
+			return
+		}
+		// Keep the listener alive on disconnect if either filter type is
+		// non-empty, so the client can reconnect within the timeout window
+		// without losing scripts or tx filters.
+		topics := h.scriptSubsHandler.getTopics(subscriptionId)
+		txFilters := h.scriptSubsHandler.getTxFilters(subscriptionId)
+		if len(topics) > 0 || len(txFilters) > 0 {
+			h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
+		} else {
+			h.scriptSubsHandler.removeListener(subscriptionId)
+		}
+	}()
+
+	if isNew {
 		// Apply initial filter, if any, through the same machinery used by
 		// UpdateSubscription. `scripts.remove` is ignored on creation
 		// because the subscription has no scripts to remove yet.
@@ -463,8 +495,6 @@ func (h *indexerService) GetSubscription(
 				return err
 			}
 		}
-
-		scriptCh = listener.ch
 
 		// Send SubscriptionStartedEvent as first message.
 		startedEvt := &arkv1.GetSubscriptionResponse{
@@ -476,27 +506,6 @@ func (h *indexerService) GetSubscription(
 		}
 		if err := stream.Send(startedEvt); err != nil {
 			return err
-		}
-	} else {
-		// Old flow: subscription_id provided, use existing listener.
-		h.scriptSubsHandler.stopTimeout(subscriptionId)
-		defer func() {
-			// Keep the listener alive on disconnect if either filter type is
-			// non-empty, so the client can reconnect within the timeout window
-			// without losing scripts or tx filters.
-			topics := h.scriptSubsHandler.getTopics(subscriptionId)
-			txFilters := h.scriptSubsHandler.getTxFilters(subscriptionId)
-			if len(topics) > 0 || len(txFilters) > 0 {
-				h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
-			} else {
-				h.scriptSubsHandler.removeListener(subscriptionId)
-			}
-		}()
-
-		var err error
-		scriptCh, err = h.scriptSubsHandler.getListenerChannel(subscriptionId)
-		if err != nil {
-			return subscriptionErr(subscriptionId, err)
 		}
 	}
 
@@ -520,7 +529,15 @@ func (h *indexerService) GetSubscription(
 		select {
 		case <-stream.Context().Done():
 			return nil
-		case ev := <-scriptCh:
+		case <-listener.done:
+			// Subscription removed (unsubscribed, or reaped after the
+			// reconnect window expired).
+			return nil
+		case <-attachment.displaced:
+			// The client reconnected with the same subscription id on a new
+			// stream; this stream is abandoned.
+			return nil
+		case ev := <-listener.ch:
 			if err := stream.Send(ev); err != nil {
 				return err
 			}

@@ -35,7 +35,17 @@ type listener[T any] struct {
 	done         chan struct{}
 	closeDoneMux sync.Once
 	timeoutTimer *time.Timer
-	lock         *sync.RWMutex
+	// attached tracks the stream currently consuming ch, if any. Like
+	// timeoutTimer it is guarded by the owning broker's lock.
+	attached *attachment
+	lock     *sync.RWMutex
+}
+
+// attachment represents a stream's exclusive hold on a listener. It is
+// created by attach and released by detach; a newer attach displaces the
+// previous holder by closing its displaced channel.
+type attachment struct {
+	displaced chan struct{}
 }
 
 func newListener[T any](id string, topics []string) *listener[T] {
@@ -210,14 +220,43 @@ func (h *broker[T]) removeListener(id string) {
 	delete(h.listeners, id)
 }
 
-func (h *broker[T]) getListenerChannel(id string) (chan T, error) {
-	h.lock.RLock()
-	listener, ok := h.listeners[id]
-	h.lock.RUnlock()
+// attach registers the calling stream as the listener's sole consumer and
+// cancels any pending removal timeout. If another stream is already attached
+// it is displaced: its attachment's displaced channel is closed and ownership
+// of the listener's lifecycle moves to the new attachment.
+func (h *broker[T]) attach(id string) (*listener[T], *attachment, error) {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
+	l, ok := h.listeners[id]
 	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
+		return nil, nil, fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
 	}
-	return listener.ch, nil
+	if l.timeoutTimer != nil {
+		l.timeoutTimer.Stop()
+		l.timeoutTimer = nil
+	}
+	if l.attached != nil {
+		close(l.attached.displaced)
+	}
+	l.attached = &attachment{displaced: make(chan struct{})}
+	return l, l.attached, nil
+}
+
+// detach releases an attachment taken with attach and reports whether the
+// caller was still the listener's active consumer. A false return means the
+// stream was displaced (or the listener is already gone) and must not touch
+// the listener's lifecycle: cleanup belongs to the current holder.
+func (h *broker[T]) detach(id string, att *attachment) bool {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
+	l, ok := h.listeners[id]
+	if !ok || l.attached != att {
+		return false
+	}
+	l.attached = nil
+	return true
 }
 
 func (h *broker[T]) getTopics(id string) []string {
@@ -315,22 +354,34 @@ func compileTxFilters(exprs []string) (map[string]txfilter.Filter, error) {
 }
 
 func (h *broker[T]) startTimeout(id string, timeout time.Duration) {
-	// stop any existing timeout on this listener
-	h.stopTimeout(id)
-
 	h.lock.Lock()
 	defer h.lock.Unlock()
-	_, ok := h.listeners[id]
+
+	l, ok := h.listeners[id]
 	if !ok {
 		return
 	}
+	// The timeout reaps a listener no stream is consuming; while one is
+	// attached it must not be armed (attach cancels it on takeover).
+	if l.attached != nil {
+		return
+	}
+	// stop any existing timeout on this listener
+	if l.timeoutTimer != nil {
+		l.timeoutTimer.Stop()
+	}
 
-	h.listeners[id].timeoutTimer = time.AfterFunc(timeout, func() {
+	l.timeoutTimer = time.AfterFunc(timeout, func() {
 		h.lock.Lock()
 		defer h.lock.Unlock()
 
 		listener, ok := h.listeners[id]
 		if !ok {
+			return
+		}
+		// A stream attached between this timer firing and this callback
+		// taking the lock; the listener is in use again.
+		if listener.attached != nil {
 			return
 		}
 		if listener.timeoutTimer != nil {
@@ -339,20 +390,6 @@ func (h *broker[T]) startTimeout(id string, timeout time.Duration) {
 		listener.closeDone()
 		delete(h.listeners, id)
 	})
-}
-
-func (h *broker[T]) stopTimeout(id string) {
-	h.lock.Lock()
-	defer h.lock.Unlock()
-
-	if _, ok := h.listeners[id]; !ok {
-		return
-	}
-
-	if h.listeners[id].timeoutTimer != nil {
-		h.listeners[id].timeoutTimer.Stop()
-		h.listeners[id].timeoutTimer = nil
-	}
 }
 
 func (h *broker[T]) getListenersCopy() map[string]*listener[T] {

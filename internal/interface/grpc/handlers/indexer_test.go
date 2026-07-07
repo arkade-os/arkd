@@ -556,6 +556,270 @@ func TestGetSubscription(t *testing.T) {
 			t.Fatal("GetSubscription did not return")
 		}
 	})
+
+	t.Run("old flow reconnect displaces previous stream", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService(t)
+
+		subResp, err := svc.SubscribeForScripts(context.Background(),
+			&arkv1.SubscribeForScriptsRequest{Scripts: []string{testScript1}},
+		)
+		require.NoError(t, err)
+		subId := subResp.GetSubscriptionId()
+
+		// First stream. Its context is never cancelled, simulating a client
+		// that vanished behind an intermediary that keeps the connection open,
+		// so the server never observes the disconnect.
+		ctx1, cancel1 := context.WithCancel(context.Background())
+		defer cancel1()
+		stream1 := newMockGetSubscriptionServer(ctx1)
+
+		errCh1 := make(chan error, 1)
+		go func() {
+			errCh1 <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{SubscriptionId: subId},
+				stream1,
+			)
+		}()
+
+		// Prove stream1 is attached before reconnecting: it must consume an
+		// event from the listener channel.
+		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
+		require.NoError(t, err)
+		ch <- &arkv1.GetSubscriptionResponse{
+			Data: &arkv1.GetSubscriptionResponse_Event{
+				Event: &arkv1.IndexerSubscriptionEvent{Txid: "warmup"},
+			},
+		}
+		stream1.recv(t, time.Second)
+
+		// The client reconnects with the same subscription id on a new stream.
+		ctx2, cancel2 := context.WithCancel(context.Background())
+		defer cancel2()
+		stream2 := newMockGetSubscriptionServer(ctx2)
+
+		errCh2 := make(chan error, 1)
+		go func() {
+			errCh2 <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{SubscriptionId: subId},
+				stream2,
+			)
+		}()
+
+		// The reconnect must terminate the previous stream; otherwise it stays
+		// attached forever, competing for events and leaking its goroutines.
+		select {
+		case err := <-errCh1:
+			require.NoError(t, err)
+		case <-time.After(2 * time.Second):
+			t.Fatal("previous stream still running after reconnect with same subscription id")
+		}
+
+		// Events must now reach the new stream only.
+		ch <- &arkv1.GetSubscriptionResponse{
+			Data: &arkv1.GetSubscriptionResponse_Event{
+				Event: &arkv1.IndexerSubscriptionEvent{Txid: "after-reconnect"},
+			},
+		}
+		got := stream2.recv(t, time.Second)
+		require.Equal(t, "after-reconnect", got.GetEvent().GetTxid())
+
+		cancel2()
+		select {
+		case err := <-errCh2:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("GetSubscription did not return")
+		}
+	})
+
+	t.Run("old flow stream ends when subscription removed", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService(t)
+
+		subResp, err := svc.SubscribeForScripts(context.Background(),
+			&arkv1.SubscribeForScriptsRequest{Scripts: []string{testScript1}},
+		)
+		require.NoError(t, err)
+		subId := subResp.GetSubscriptionId()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		stream := newMockGetSubscriptionServer(ctx)
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{SubscriptionId: subId},
+				stream,
+			)
+		}()
+
+		// Prove the stream is attached before removing the subscription.
+		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
+		require.NoError(t, err)
+		ch <- &arkv1.GetSubscriptionResponse{
+			Data: &arkv1.GetSubscriptionResponse_Event{
+				Event: &arkv1.IndexerSubscriptionEvent{Txid: "warmup"},
+			},
+		}
+		stream.recv(t, time.Second)
+
+		// Unsubscribing from all scripts removes the listener; the stream must
+		// terminate rather than keep heartbeating with no listener behind it.
+		_, err = svc.UnsubscribeForScripts(context.Background(),
+			&arkv1.UnsubscribeForScriptsRequest{SubscriptionId: subId},
+		)
+		require.NoError(t, err)
+
+		select {
+		case err := <-errCh:
+			require.NoError(t, err)
+		case <-time.After(2 * time.Second):
+			t.Fatal("stream still running after its subscription was removed")
+		}
+	})
+
+	t.Run("old flow displaced stream leaves subscription to successor", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService(t)
+		svc.subscriptionTimeoutDuration = 200 * time.Millisecond
+
+		subResp, err := svc.SubscribeForScripts(context.Background(),
+			&arkv1.SubscribeForScriptsRequest{Scripts: []string{testScript1}},
+		)
+		require.NoError(t, err)
+		subId := subResp.GetSubscriptionId()
+
+		ctx1, cancel1 := context.WithCancel(context.Background())
+		defer cancel1()
+		stream1 := newMockGetSubscriptionServer(ctx1)
+
+		errCh1 := make(chan error, 1)
+		go func() {
+			errCh1 <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{SubscriptionId: subId},
+				stream1,
+			)
+		}()
+
+		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
+		require.NoError(t, err)
+		ch <- &arkv1.GetSubscriptionResponse{
+			Data: &arkv1.GetSubscriptionResponse_Event{
+				Event: &arkv1.IndexerSubscriptionEvent{Txid: "warmup"},
+			},
+		}
+		stream1.recv(t, time.Second)
+
+		ctx2, cancel2 := context.WithCancel(context.Background())
+		defer cancel2()
+		stream2 := newMockGetSubscriptionServer(ctx2)
+
+		errCh2 := make(chan error, 1)
+		go func() {
+			errCh2 <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{SubscriptionId: subId},
+				stream2,
+			)
+		}()
+
+		select {
+		case err := <-errCh1:
+			require.NoError(t, err)
+		case <-time.After(2 * time.Second):
+			t.Fatal("previous stream still running after reconnect with same subscription id")
+		}
+
+		// The displaced stream's exit must not arm the reconnect timeout while
+		// the successor is attached: well past the timeout, the subscription
+		// must still exist and serve the new stream.
+		time.Sleep(500 * time.Millisecond)
+		_, err = svc.scriptSubsHandler.getListenerChannel(subId)
+		require.NoError(t, err, "subscription reaped while a live stream was attached")
+
+		ch <- &arkv1.GetSubscriptionResponse{
+			Data: &arkv1.GetSubscriptionResponse_Event{
+				Event: &arkv1.IndexerSubscriptionEvent{Txid: "still-alive"},
+			},
+		}
+		got := stream2.recv(t, time.Second)
+		require.Equal(t, "still-alive", got.GetEvent().GetTxid())
+
+		cancel2()
+		select {
+		case err := <-errCh2:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("GetSubscription did not return")
+		}
+	})
+
+	t.Run("new flow stream displaced by reconnect with announced id", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService(t)
+
+		// New flow announces the subscription id in SubscriptionStartedEvent.
+		ctx1, cancel1 := context.WithCancel(context.Background())
+		defer cancel1()
+		stream1 := newMockGetSubscriptionServer(ctx1)
+
+		errCh1 := make(chan error, 1)
+		go func() {
+			errCh1 <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{
+					Filter: scriptsAddFilter(testScript1),
+				},
+				stream1,
+			)
+		}()
+
+		msg := stream1.recv(t, time.Second)
+		subId := msg.GetSubscriptionStarted().GetSubscriptionId()
+		require.NotEmpty(t, subId)
+
+		// The client reconnects with the announced id while the server still
+		// considers the first stream alive.
+		ctx2, cancel2 := context.WithCancel(context.Background())
+		defer cancel2()
+		stream2 := newMockGetSubscriptionServer(ctx2)
+
+		errCh2 := make(chan error, 1)
+		go func() {
+			errCh2 <- svc.GetSubscription(
+				&arkv1.GetSubscriptionRequest{SubscriptionId: subId},
+				stream2,
+			)
+		}()
+
+		select {
+		case err := <-errCh1:
+			require.NoError(t, err)
+		case <-time.After(2 * time.Second):
+			t.Fatal("previous stream still running after reconnect with same subscription id")
+		}
+
+		// The displaced stream's exit must not remove the listener out from
+		// under the stream that took over.
+		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
+		require.NoError(t, err, "listener removed by displaced stream while successor attached")
+
+		ch <- &arkv1.GetSubscriptionResponse{
+			Data: &arkv1.GetSubscriptionResponse_Event{
+				Event: &arkv1.IndexerSubscriptionEvent{Txid: "after-takeover"},
+			},
+		}
+		got := stream2.recv(t, time.Second)
+		require.Equal(t, "after-takeover", got.GetEvent().GetTxid())
+
+		cancel2()
+		select {
+		case err := <-errCh2:
+			require.NoError(t, err)
+		case <-time.After(time.Second):
+			t.Fatal("GetSubscription did not return")
+		}
+	})
 }
 
 func TestUpdateSubscription(t *testing.T) {

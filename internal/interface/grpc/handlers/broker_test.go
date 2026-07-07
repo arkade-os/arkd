@@ -9,6 +9,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// getListenerChannel is a test fixture: production code reaches a listener's
+// channel through attach, but tests push events onto (and inspect) listeners
+// without attaching to them.
+func (h *broker[T]) getListenerChannel(id string) (chan T, error) {
+	h.lock.RLock()
+	listener, ok := h.listeners[id]
+	h.lock.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
+	}
+	return listener.ch, nil
+}
+
 func TestBroker(t *testing.T) {
 	t.Parallel()
 
@@ -415,20 +428,6 @@ func TestBroker(t *testing.T) {
 			require.Len(t, listeners, 0)
 		})
 
-		t.Run("stopTimeout", func(t *testing.T) {
-			broker := newBroker[string]()
-			listener := newListener[string]("test-id", []string{"topic1"})
-			broker.pushListener(listener)
-
-			broker.startTimeout("test-id", 100*time.Millisecond)
-			broker.stopTimeout("test-id")
-
-			// wait to ensure timeout doesn't trigger
-			time.Sleep(150 * time.Millisecond)
-			listeners := broker.getListenersCopy()
-			require.Len(t, listeners, 1) // should still exist
-		})
-
 		t.Run("concurrent timeout with several listeners", func(t *testing.T) {
 			const nbListeners = 10
 			broker := newBroker[string]()
@@ -456,6 +455,95 @@ func TestBroker(t *testing.T) {
 			// all listeners should be removed
 			listeners := broker.getListenersCopy()
 			require.Len(t, listeners, 0)
+		})
+	})
+
+	t.Run("attachment management", func(t *testing.T) {
+		t.Run("attach unknown id returns not found", func(t *testing.T) {
+			broker := newBroker[string]()
+
+			_, _, err := broker.attach("missing")
+			require.ErrorIs(t, err, ErrSubscriptionNotFound)
+		})
+
+		t.Run("attach displaces previous attachment", func(t *testing.T) {
+			broker := newBroker[string]()
+			listener := newListener[string]("test-id", []string{"topic1"})
+			broker.pushListener(listener)
+
+			_, att1, err := broker.attach("test-id")
+			require.NoError(t, err)
+
+			_, att2, err := broker.attach("test-id")
+			require.NoError(t, err)
+
+			// The first attachment must be displaced, the second must not.
+			select {
+			case <-att1.displaced:
+			case <-time.After(time.Second):
+				require.Fail(t, "first attachment not displaced by second attach")
+			}
+			select {
+			case <-att2.displaced:
+				require.Fail(t, "second attachment displaced unexpectedly")
+			default:
+			}
+
+			// Ownership moved to the second attachment.
+			require.False(t, broker.detach("test-id", att1))
+			require.True(t, broker.detach("test-id", att2))
+		})
+
+		t.Run("detach is idempotent and rejects non-owner", func(t *testing.T) {
+			broker := newBroker[string]()
+			listener := newListener[string]("test-id", []string{"topic1"})
+			broker.pushListener(listener)
+
+			_, att, err := broker.attach("test-id")
+			require.NoError(t, err)
+
+			require.True(t, broker.detach("test-id", att))
+			require.False(t, broker.detach("test-id", att))
+			require.False(t, broker.detach("missing", att))
+		})
+
+		t.Run("attach cancels pending timeout", func(t *testing.T) {
+			broker := newBroker[string]()
+			listener := newListener[string]("test-id", []string{"topic1"})
+			broker.pushListener(listener)
+
+			broker.startTimeout("test-id", 50*time.Millisecond)
+			_, _, err := broker.attach("test-id")
+			require.NoError(t, err)
+
+			// wait well past the timeout: the listener must survive because a
+			// stream attached before it fired
+			time.Sleep(150 * time.Millisecond)
+			require.Len(t, broker.getListenersCopy(), 1)
+			select {
+			case <-listener.done:
+				require.Fail(t, "done closed while a stream was attached")
+			default:
+			}
+		})
+
+		t.Run("startTimeout is a no-op while attached", func(t *testing.T) {
+			broker := newBroker[string]()
+			listener := newListener[string]("test-id", []string{"topic1"})
+			broker.pushListener(listener)
+
+			_, att, err := broker.attach("test-id")
+			require.NoError(t, err)
+
+			broker.startTimeout("test-id", 50*time.Millisecond)
+			time.Sleep(150 * time.Millisecond)
+			require.Len(t, broker.getListenersCopy(), 1)
+
+			// Once the attachment is released the timeout may be armed again.
+			require.True(t, broker.detach("test-id", att))
+			broker.startTimeout("test-id", 50*time.Millisecond)
+			time.Sleep(150 * time.Millisecond)
+			require.Len(t, broker.getListenersCopy(), 0)
 		})
 	})
 
