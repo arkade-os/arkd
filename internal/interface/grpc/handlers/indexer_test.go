@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	stderrors "errors"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -1287,6 +1288,13 @@ func TestTxFilter(t *testing.T) {
 		// The pre-existing "tx filters per subscription limit" phrasing must
 		// survive for clients that match on the message.
 		require.Contains(t, arkErr.Error(), "tx filters per subscription limit")
+		require.Equal(t, "sub-cap-grpc", arkErr.Metadata()["subscription_id"])
+		require.Equal(
+			t, strconv.Itoa(MaxTxFiltersPerListener), arkErr.Metadata()["max_tx_filters"],
+		)
+		require.Equal(
+			t, strconv.Itoa(MaxTxFiltersPerListener+1), arkErr.Metadata()["got_tx_filters"],
+		)
 		require.Empty(t, svc.scriptSubsHandler.getTxFilters("sub-cap-grpc"))
 	})
 
