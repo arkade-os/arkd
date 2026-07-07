@@ -439,9 +439,6 @@ ON CONFLICT(id) DO UPDATE SET
 -- name: SelectMarker :one
 SELECT * FROM marker WHERE id = @id;
 
--- name: SelectMarkersByDepth :many
-SELECT * FROM marker WHERE depth = @depth;
-
 -- name: SelectMarkersByDepthRange :many
 SELECT * FROM marker WHERE depth >= @min_depth AND depth <= @max_depth ORDER BY depth;
 
@@ -460,25 +457,6 @@ SELECT * FROM swept_marker WHERE marker_id IN (sqlc.slice('marker_ids'));
 -- name: IsMarkerSwept :one
 SELECT EXISTS(SELECT 1 FROM swept_marker WHERE marker_id = @marker_id) AS is_swept;
 
--- name: GetDescendantMarkerIds :many
--- Recursively get a marker and all its descendants (markers whose parent_markers contain it)
--- Uses json_each instead of LIKE to avoid false positives with special characters (%, _).
--- Uses UNION (set semantics, not UNION ALL) so rows already produced are filtered,
--- which makes this cycle-safe. Do not convert to UNION ALL: cycles in parent_markers
--- would cause the recursion to run unbounded.
-WITH RECURSIVE descendant_markers(id) AS (
-    -- Base case: the marker being swept
-    SELECT marker.id FROM marker WHERE marker.id = @root_marker_id
-    UNION
-    -- Recursive case: find markers whose parent_markers JSON array contains any descendant
-    SELECT m.id FROM marker m
-    INNER JOIN descendant_markers dm ON EXISTS (
-        SELECT 1 FROM json_each(m.parent_markers) j WHERE j.value = dm.id
-    )
-)
-SELECT descendant_markers.id AS marker_id FROM descendant_markers
-WHERE descendant_markers.id NOT IN (SELECT sm.marker_id FROM swept_marker sm);
-
 -- name: UpdateVtxoMarkers :exec
 UPDATE vtxo SET markers = @markers WHERE txid = @txid AND vout = @vout;
 
@@ -487,12 +465,6 @@ UPDATE vtxo SET markers = @markers WHERE txid = @txid AND vout = @vout;
 -- Uses LIKE because sqlc cannot parse json_each with view columns.
 -- Safe for txid:vout format marker IDs (no special characters).
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE markers LIKE '%"' || @marker_id || '"%';
-
--- name: CountUnsweptVtxosByMarkerId :one
--- Count VTXOs whose markers JSON array contains the given marker_id and are not swept.
--- Uses LIKE because sqlc cannot parse json_each with view columns.
--- Uses DISTINCT to avoid double-counting VTXOs with multiple asset projections.
-SELECT COUNT(DISTINCT txid || ':' || CAST(vout AS TEXT)) FROM vtxo_vw WHERE markers LIKE '%"' || @marker_id || '"%' AND swept = false;
 
 -- Chain traversal queries for GetVtxoChain optimization
 

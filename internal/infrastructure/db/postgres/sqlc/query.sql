@@ -428,19 +428,11 @@ ON CONFLICT(id) DO UPDATE SET
 -- name: SelectMarker :one
 SELECT * FROM marker WHERE id = @id;
 
--- name: SelectMarkersByDepth :many
-SELECT * FROM marker WHERE depth = @depth;
-
 -- name: SelectMarkersByDepthRange :many
 SELECT * FROM marker WHERE depth >= @min_depth AND depth <= @max_depth ORDER BY depth;
 
 -- name: SelectMarkersByIds :many
 SELECT * FROM marker WHERE id = ANY(@ids::text[]);
-
--- name: InsertSweptMarker :exec
-INSERT INTO swept_marker (marker_id, swept_at)
-VALUES (@marker_id, @swept_at)
-ON CONFLICT(marker_id) DO NOTHING;
 
 -- name: BulkInsertSweptMarkers :exec
 INSERT INTO swept_marker (marker_id, swept_at)
@@ -453,34 +445,12 @@ SELECT * FROM swept_marker WHERE marker_id = ANY(@marker_ids::text[]);
 -- name: IsMarkerSwept :one
 SELECT EXISTS(SELECT 1 FROM swept_marker WHERE marker_id = @marker_id) AS is_swept;
 
--- name: GetDescendantMarkerIds :many
--- Recursively get a marker and all its descendants (markers whose parent_markers contain it).
--- Uses UNION (set semantics, not UNION ALL) so rows already produced are filtered,
--- which makes this cycle-safe. Do not convert to UNION ALL: cycles in parent_markers
--- would cause the recursion to run unbounded.
-WITH RECURSIVE descendant_markers(id) AS (
-    -- Base case: the marker being swept
-    SELECT marker.id FROM marker WHERE marker.id = @root_marker_id
-    UNION
-    -- Recursive case: find markers whose parent_markers jsonb array contains any descendant
-    SELECT m.id FROM marker m
-    INNER JOIN descendant_markers dm ON (
-        m.parent_markers @> jsonb_build_array(dm.id)
-    )
-)
-SELECT descendant_markers.id AS marker_id FROM descendant_markers
-WHERE descendant_markers.id NOT IN (SELECT sm.marker_id FROM swept_marker sm);
-
 -- name: UpdateVtxoMarkers :exec
 UPDATE vtxo SET markers = @markers::jsonb WHERE txid = @txid AND vout = @vout;
 
 -- name: SelectVtxosByMarkerId :many
 -- Find VTXOs whose markers JSONB array contains the given marker_id
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE markers @> jsonb_build_array(@marker_id::TEXT);
-
--- name: CountUnsweptVtxosByMarkerId :one
--- Count VTXOs whose markers JSONB array contains the given marker_id and are not swept
-SELECT COUNT(DISTINCT (txid, vout)) FROM vtxo_vw WHERE markers @> jsonb_build_array(@marker_id::TEXT) AND swept = false;
 
 -- Chain traversal queries for GetVtxoChain optimization
 

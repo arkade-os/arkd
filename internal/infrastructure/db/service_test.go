@@ -193,7 +193,6 @@ func TestService(t *testing.T) {
 			testMarkerBasicOperations(t, svc)
 			testMarkerSweep(t, svc)
 			testVtxoMarkerAssociation(t, svc)
-			testSweepVtxosByMarker(t, svc)
 			testMarkerDepthRangeQueries(t, svc)
 			testMarkerChainTraversal(t, svc)
 			testGetVtxoChainWithMarkerOptimization(t, svc)
@@ -217,7 +216,6 @@ func TestService(t *testing.T) {
 			testSweepVtxoOutpointsEdgeCases(t, svc)
 			testGetAllChildrenVtxosSiblingIsolation(t, svc)
 			testConvergentMultiParentMarkerDAG(t, svc)
-			testSweepMarkerWithDescendantsDeepChain(t, svc)
 			testAssetRepositorySpentOnlySupply(t, svc)
 			testConvictionRepository(t, svc)
 			testSettingsRepository(t, svc)
@@ -1520,7 +1518,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				UpdateVtxoMarkers(ctx, expiringVtxoToSweep.Outpoint, []string{markerID})
 			require.NoError(t, err)
 			sweptAt := time.Now().Unix()
-			err = svc.Markers().SweepMarker(ctx, markerID, sweptAt)
+			err = svc.Markers().BulkSweepMarkers(ctx, []string{markerID}, sweptAt)
 			require.NoError(t, err)
 		}
 
@@ -1591,9 +1589,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 				UpdateVtxoMarkers(ctx, recoverableVtxo2.Outpoint, []string{marker2ID})
 			require.NoError(t, err)
 			sweptAt := time.Now().Unix()
-			err = svc.Markers().SweepMarker(ctx, marker1ID, sweptAt)
-			require.NoError(t, err)
-			err = svc.Markers().SweepMarker(ctx, marker2ID, sweptAt)
+			err = svc.Markers().BulkSweepMarkers(ctx, []string{marker1ID, marker2ID}, sweptAt)
 			require.NoError(t, err)
 		}
 
@@ -1681,10 +1677,10 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
-// testMarkerBasicOperations exercises AddMarker, GetMarker, GetMarkersByDepth, and
-// GetMarkersByIds. Creates a 4-marker DAG (root, two at depth 100, one at depth 200
-// with two parents), verifies field round-trips including ParentMarkerIDs, and tests
-// edge cases: non-existent ID, empty ID slice, and mixed valid/invalid ID queries.
+// testMarkerBasicOperations exercises AddMarker, GetMarker, and GetMarkersByIds.
+// Creates a 4-marker DAG (root, two at depth 100, one at depth 200 with two parents),
+// verifies field round-trips including ParentMarkerIDs, and tests edge cases:
+// non-existent ID, empty ID slice, and mixed valid/invalid ID queries.
 func testMarkerBasicOperations(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_marker_basic_operations", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -1750,37 +1746,6 @@ func testMarkerBasicOperations(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Nil(t, nonExistent)
 
-		// Test GetMarkersByDepth - markers at same depth
-		markersAtDepth100, err := svc.Markers().GetMarkersByDepth(ctx, 100)
-		require.NoError(t, err)
-		require.Len(t, markersAtDepth100, 2)
-		markerIdsAtDepth100 := []string{markersAtDepth100[0].ID, markersAtDepth100[1].ID}
-		require.ElementsMatch(t, []string{marker2.ID, marker3.ID}, markerIdsAtDepth100)
-
-		markersAtDepth0, err := svc.Markers().GetMarkersByDepth(ctx, 0)
-		require.NoError(t, err)
-		require.GreaterOrEqual(t, len(markersAtDepth0), 1)
-		var foundMarker1 bool
-		for _, m := range markersAtDepth0 {
-			if m.ID == marker1.ID {
-				foundMarker1 = true
-				break
-			}
-		}
-		require.True(t, foundMarker1)
-
-		markersAtDepth200, err := svc.Markers().GetMarkersByDepth(ctx, 200)
-		require.NoError(t, err)
-		require.GreaterOrEqual(t, len(markersAtDepth200), 1)
-		var foundMarker4 bool
-		for _, m := range markersAtDepth200 {
-			if m.ID == marker4.ID {
-				foundMarker4 = true
-				break
-			}
-		}
-		require.True(t, foundMarker4)
-
 		// Test GetMarkersByIds - batch retrieve
 		markersById, err := svc.Markers().
 			GetMarkersByIds(ctx, []string{marker1.ID, marker3.ID, marker4.ID})
@@ -1805,11 +1770,10 @@ func testMarkerBasicOperations(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
-// testMarkerSweep exercises the full marker sweep lifecycle: SweepMarker, IsMarkerSwept,
-// GetSweptMarkers, and SweepMarkerWithDescendants. Verifies idempotency (ON CONFLICT
-// DO NOTHING preserves original timestamp), multi-marker retrieval, empty-slice edge
-// cases, non-existent marker handling, and recursive descendant sweeping with hierarchy
-// (root→child1→grandchild1, root→child2).
+// testMarkerSweep exercises the marker sweep lifecycle: BulkSweepMarkers, IsMarkerSwept,
+// and GetSweptMarkers. Verifies idempotency (ON CONFLICT DO NOTHING preserves original
+// timestamp), multi-marker retrieval, empty-slice edge cases, and non-existent marker
+// handling.
 func testMarkerSweep(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_marker_sweep", func(t *testing.T) {
 		if svc.Markers() == nil {
@@ -1833,7 +1797,7 @@ func testMarkerSweep(t *testing.T, svc ports.RepoManager) {
 
 		// Sweep the marker
 		sweptAt := time.Now().UnixMilli()
-		err = svc.Markers().SweepMarker(ctx, marker.ID, sweptAt)
+		err = svc.Markers().BulkSweepMarkers(ctx, []string{marker.ID}, sweptAt)
 		require.NoError(t, err)
 
 		// Verify IsMarkerSwept returns true
@@ -1849,7 +1813,7 @@ func testMarkerSweep(t *testing.T, svc ports.RepoManager) {
 		require.Equal(t, sweptAt, sweptMarkers[0].SweptAt)
 
 		// Test idempotency - sweeping again should not error (ON CONFLICT DO NOTHING)
-		err = svc.Markers().SweepMarker(ctx, marker.ID, sweptAt+1000)
+		err = svc.Markers().BulkSweepMarkers(ctx, []string{marker.ID}, sweptAt+1000)
 		require.NoError(t, err)
 
 		// Verify the original swept_at is preserved (not updated)
@@ -1868,7 +1832,7 @@ func testMarkerSweep(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 
 		sweptAt2 := time.Now().UnixMilli()
-		err = svc.Markers().SweepMarker(ctx, marker2.ID, sweptAt2)
+		err = svc.Markers().BulkSweepMarkers(ctx, []string{marker2.ID}, sweptAt2)
 		require.NoError(t, err)
 
 		sweptMarkers, err = svc.Markers().GetSweptMarkers(ctx, []string{marker.ID, marker2.ID})
@@ -1884,87 +1848,6 @@ func testMarkerSweep(t *testing.T, svc ports.RepoManager) {
 		isSwept, err = svc.Markers().IsMarkerSwept(ctx, "nonexistent")
 		require.NoError(t, err)
 		require.False(t, isSwept)
-	})
-
-	t.Run("test_sweep_marker_with_descendants", func(t *testing.T) {
-		if svc.Markers() == nil {
-			t.Skip("marker repository not available for this data store")
-		}
-		ctx := context.Background()
-
-		// Create a marker hierarchy:
-		// root -> child1 -> grandchild1
-		//      -> child2
-		root := domain.Marker{
-			ID:              "sweep_desc_root_" + randomString(16),
-			Depth:           0,
-			ParentMarkerIDs: nil,
-		}
-		child1 := domain.Marker{
-			ID:              "sweep_desc_child1_" + randomString(16),
-			Depth:           100,
-			ParentMarkerIDs: []string{root.ID},
-		}
-		child2 := domain.Marker{
-			ID:              "sweep_desc_child2_" + randomString(16),
-			Depth:           100,
-			ParentMarkerIDs: []string{root.ID},
-		}
-		grandchild1 := domain.Marker{
-			ID:              "sweep_desc_grandchild1_" + randomString(16),
-			Depth:           200,
-			ParentMarkerIDs: []string{child1.ID},
-		}
-
-		err := svc.Markers().AddMarker(ctx, root)
-		require.NoError(t, err)
-		err = svc.Markers().AddMarker(ctx, child1)
-		require.NoError(t, err)
-		err = svc.Markers().AddMarker(ctx, child2)
-		require.NoError(t, err)
-		err = svc.Markers().AddMarker(ctx, grandchild1)
-		require.NoError(t, err)
-
-		// Verify none are swept initially
-		isSwept, err := svc.Markers().IsMarkerSwept(ctx, root.ID)
-		require.NoError(t, err)
-		require.False(t, isSwept)
-
-		// Sweep root with descendants
-		sweptAt := time.Now().UnixMilli()
-		count, err := svc.Markers().SweepMarkerWithDescendants(ctx, root.ID, sweptAt)
-		require.NoError(t, err)
-		require.Equal(t, int64(4), count) // root + child1 + child2 + grandchild1
-
-		// Verify all markers are now swept
-		for _, m := range []domain.Marker{root, child1, child2, grandchild1} {
-			isSwept, err := svc.Markers().IsMarkerSwept(ctx, m.ID)
-			require.NoError(t, err)
-			require.True(t, isSwept, "Marker %s should be swept", m.ID)
-		}
-
-		// Test idempotency - calling again should return 0
-		count, err = svc.Markers().SweepMarkerWithDescendants(ctx, root.ID, sweptAt+1000)
-		require.NoError(t, err)
-		require.Equal(t, int64(0), count)
-
-		// Test sweeping a leaf node (no descendants)
-		leaf := domain.Marker{
-			ID:              "sweep_desc_leaf_" + randomString(16),
-			Depth:           300,
-			ParentMarkerIDs: []string{grandchild1.ID},
-		}
-		err = svc.Markers().AddMarker(ctx, leaf)
-		require.NoError(t, err)
-
-		count, err = svc.Markers().SweepMarkerWithDescendants(ctx, leaf.ID, sweptAt)
-		require.NoError(t, err)
-		require.Equal(t, int64(1), count) // Just the leaf itself
-
-		// Test with non-existent marker (should return 0)
-		count, err = svc.Markers().SweepMarkerWithDescendants(ctx, "nonexistent", sweptAt)
-		require.NoError(t, err)
-		require.Equal(t, int64(0), count)
 	})
 }
 
@@ -2063,107 +1946,6 @@ func testVtxoMarkerAssociation(t *testing.T, svc ports.RepoManager) {
 		vtxosByNonExistent, err := svc.Markers().GetVtxosByMarker(ctx, "nonexistent")
 		require.NoError(t, err)
 		require.Empty(t, vtxosByNonExistent)
-	})
-}
-
-// testSweepVtxosByMarker creates 5 VTXOs sharing a marker, pre-sweeps 2 via individual
-// markers, then calls SweepVtxosByMarker on the shared marker. Verifies only the 3
-// previously-unswept VTXOs are newly swept, tests idempotency (second call returns 0),
-// and checks the non-existent marker edge case.
-func testSweepVtxosByMarker(t *testing.T, svc ports.RepoManager) {
-	t.Run("test_sweep_vtxos_by_marker", func(t *testing.T) {
-		if svc.Markers() == nil {
-			t.Skip("marker repository not available for this data store")
-		}
-		ctx := context.Background()
-		commitmentTxid := randomString(32)
-
-		// Create a marker
-		markerID := randomString(32)
-		marker := domain.Marker{
-			ID:              markerID,
-			Depth:           0,
-			ParentMarkerIDs: nil,
-		}
-		err := svc.Markers().AddMarker(ctx, marker)
-		require.NoError(t, err)
-
-		// Add 5 VTXOs - all start as unswept
-		vtxos := make([]domain.Vtxo, 5)
-		for i := 0; i < 5; i++ {
-			vtxos[i] = domain.Vtxo{
-				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
-				PubKey:             pubkey,
-				Amount:             uint64(1000 * (i + 1)),
-				RootCommitmentTxid: commitmentTxid,
-				CommitmentTxids:    []string{commitmentTxid},
-				Depth:              uint32(i * 10),
-				Swept:              false,
-			}
-		}
-
-		err = svc.Vtxos().AddVtxos(ctx, vtxos)
-		require.NoError(t, err)
-
-		// Associate all VTXOs with the marker
-		for _, v := range vtxos {
-			err = svc.Markers().UpdateVtxoMarkers(ctx, v.Outpoint, []string{markerID})
-			require.NoError(t, err)
-		}
-
-		// Mark vtxos[3] and vtxos[4] as swept via individual markers
-		// Create individual markers for these VTXOs and sweep them
-		marker3ID := vtxos[3].Outpoint.String()
-		marker4ID := vtxos[4].Outpoint.String()
-		err = svc.Markers().AddMarker(ctx, domain.Marker{ID: marker3ID, Depth: vtxos[3].Depth})
-		require.NoError(t, err)
-		err = svc.Markers().AddMarker(ctx, domain.Marker{ID: marker4ID, Depth: vtxos[4].Depth})
-		require.NoError(t, err)
-		err = svc.Markers().UpdateVtxoMarkers(ctx, vtxos[3].Outpoint, []string{markerID, marker3ID})
-		require.NoError(t, err)
-		err = svc.Markers().UpdateVtxoMarkers(ctx, vtxos[4].Outpoint, []string{markerID, marker4ID})
-		require.NoError(t, err)
-		sweptAt := time.Now().Unix()
-		err = svc.Markers().SweepMarker(ctx, marker3ID, sweptAt)
-		require.NoError(t, err)
-		err = svc.Markers().SweepMarker(ctx, marker4ID, sweptAt)
-		require.NoError(t, err)
-
-		// Verify initial state - vtxos[3] and vtxos[4] should be swept
-		vtxosByMarker, err := svc.Markers().GetVtxosByMarker(ctx, markerID)
-		require.NoError(t, err)
-		require.Len(t, vtxosByMarker, 5)
-
-		sweptCount := 0
-		for _, v := range vtxosByMarker {
-			if v.Swept {
-				sweptCount++
-			}
-		}
-		require.Equal(t, 2, sweptCount)
-
-		// Call SweepVtxosByMarker - this sweeps by marking the marker itself as swept
-		count, err := svc.Markers().SweepVtxosByMarker(ctx, markerID)
-		require.NoError(t, err)
-		require.Equal(t, int64(3), count) // Only 3 were newly swept
-
-		// Verify all 5 VTXOs now have swept=true
-		vtxosByMarker, err = svc.Markers().GetVtxosByMarker(ctx, markerID)
-		require.NoError(t, err)
-		require.Len(t, vtxosByMarker, 5)
-		for _, v := range vtxosByMarker {
-			require.True(t, v.Swept, "VTXO %s should be swept", v.Outpoint.String())
-		}
-
-		// Call SweepVtxosByMarker again - should return 0 (all already swept)
-		count, err = svc.Markers().SweepVtxosByMarker(ctx, markerID)
-		require.NoError(t, err)
-		require.Equal(t, int64(0), count)
-
-		// Test with non-existent marker
-		count, err = svc.Markers().SweepVtxosByMarker(ctx, "nonexistent")
-		require.NoError(t, err)
-		require.Equal(t, int64(0), count)
 	})
 }
 
@@ -5641,67 +5423,6 @@ func testConvergentMultiParentMarkerDAG(t *testing.T, svc ports.RepoManager) {
 				require.False(t, v.Swept, "vtxo %s should NOT be swept", v.Txid)
 			}
 		}
-	})
-}
-
-// testSweepMarkerWithDescendantsDeepChain builds a 201-marker linear chain (depth 0
-// to 20000) and calls SweepMarkerWithDescendants from the root. Verifies all 201
-// markers are swept in a single recursive operation and that a second call is
-// idempotent (returns 0).
-func testSweepMarkerWithDescendantsDeepChain(t *testing.T, svc ports.RepoManager) {
-	t.Run("test_sweep_marker_with_descendants_deep_chain", func(t *testing.T) {
-		if svc.Markers() == nil {
-			t.Skip("marker repository not available for this data store")
-		}
-		ctx := context.Background()
-		suffix := randomString(16)
-
-		const maxDepth = 20000
-		const markerInterval = 100
-		const numMarkers = maxDepth/markerInterval + 1 // 201
-
-		// Build linear chain: marker-0 → marker-100 → ... → marker-20000
-		allMarkerIDs := make([]string, 0, numMarkers)
-
-		for depth := uint32(0); depth <= maxDepth; depth += markerInterval {
-			markerID := fmt.Sprintf("descdep-%s-m%d", suffix, depth)
-			allMarkerIDs = append(allMarkerIDs, markerID)
-
-			var parentMarkerIDs []string
-			if depth > 0 {
-				parentMarkerIDs = []string{
-					fmt.Sprintf("descdep-%s-m%d", suffix, depth-markerInterval),
-				}
-			}
-
-			require.NoError(t, svc.Markers().AddMarker(ctx, domain.Marker{
-				ID:              markerID,
-				Depth:           depth,
-				ParentMarkerIDs: parentMarkerIDs,
-			}))
-		}
-		require.Len(t, allMarkerIDs, numMarkers)
-		rootID := allMarkerIDs[0]
-
-		// SweepMarkerWithDescendants from root
-		sweptAt := time.Now().Unix()
-		count, err := svc.Markers().SweepMarkerWithDescendants(ctx, rootID, sweptAt)
-		require.NoError(t, err)
-		require.Equal(t, int64(numMarkers), count,
-			"should sweep all %d markers", numMarkers)
-
-		// Spot-check: root (0), middle (10000), leaf (20000) → all true
-		for _, depth := range []uint32{0, 10000, 20000} {
-			markerID := fmt.Sprintf("descdep-%s-m%d", suffix, depth)
-			isSwept, err := svc.Markers().IsMarkerSwept(ctx, markerID)
-			require.NoError(t, err)
-			require.True(t, isSwept, "marker at depth %d should be swept", depth)
-		}
-
-		// Idempotency: second call returns 0
-		count, err = svc.Markers().SweepMarkerWithDescendants(ctx, rootID, sweptAt)
-		require.NoError(t, err)
-		require.Equal(t, int64(0), count, "second call should be idempotent (0 new sweeps)")
 	})
 }
 

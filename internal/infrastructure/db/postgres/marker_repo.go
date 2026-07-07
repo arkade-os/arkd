@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
@@ -73,26 +72,6 @@ func (m *markerRepository) GetMarker(ctx context.Context, id string) (*domain.Ma
 	return &marker, nil
 }
 
-func (m *markerRepository) GetMarkersByDepth(
-	ctx context.Context,
-	depth uint32,
-) ([]domain.Marker, error) {
-	rows, err := m.querier.SelectMarkersByDepth(ctx, int32(depth))
-	if err != nil {
-		return nil, err
-	}
-
-	markers := make([]domain.Marker, 0, len(rows))
-	for _, row := range rows {
-		marker, err := rowToMarker(row)
-		if err != nil {
-			return nil, err
-		}
-		markers = append(markers, marker)
-	}
-	return markers, nil
-}
-
 func (m *markerRepository) GetMarkersByDepthRange(
 	ctx context.Context,
 	minDepth, maxDepth uint32,
@@ -140,13 +119,6 @@ func (m *markerRepository) GetMarkersByIds(
 	return markers, nil
 }
 
-func (m *markerRepository) SweepMarker(ctx context.Context, markerID string, sweptAt int64) error {
-	return m.querier.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
-		MarkerID: markerID,
-		SweptAt:  sweptAt,
-	})
-}
-
 func (m *markerRepository) BulkSweepMarkers(
 	ctx context.Context,
 	markerIDs []string,
@@ -180,45 +152,6 @@ func (m *markerRepository) SweepVtxoOutpoints(
 		Vouts:   vouts,
 		SweptAt: sweptAt,
 	})
-}
-
-func (m *markerRepository) SweepMarkerWithDescendants(
-	ctx context.Context,
-	markerID string,
-	sweptAt int64,
-) (int64, error) {
-	tx, err := m.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck
-
-	txQuerier := m.querier.WithTx(tx)
-
-	// Get all descendant marker IDs (including the root marker) that are not already swept
-	descendantIDs, err := txQuerier.GetDescendantMarkerIds(ctx, markerID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get descendant markers: %w", err)
-	}
-
-	// Insert each descendant into swept_marker
-	var count int64
-	for _, id := range descendantIDs {
-		err := txQuerier.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
-			MarkerID: id,
-			SweptAt:  sweptAt,
-		})
-		if err != nil {
-			return 0, fmt.Errorf("failed to sweep marker %s: %w", id, err)
-		}
-		count++
-	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	return count, nil
 }
 
 func (m *markerRepository) IsMarkerSwept(ctx context.Context, markerID string) (bool, error) {
@@ -285,39 +218,6 @@ func (m *markerRepository) GetVtxosByMarker(
 		vtxos = append(vtxos, rowToVtxoFromMarkerQuery(row))
 	}
 	return vtxos, nil
-}
-
-func (m *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID string) (int64, error) {
-	var count int64
-	txBody := func(qtx *queries.Queries) error {
-		// First check if the marker exists (foreign key constraint on swept_marker)
-		if _, err := qtx.SelectMarker(ctx, markerID); err != nil {
-			if err == sql.ErrNoRows {
-				return nil // Marker doesn't exist, nothing to sweep
-			}
-			return fmt.Errorf("failed to check marker existence: %w", err)
-		}
-
-		// Count unswept VTXOs with this marker before inserting to swept_marker
-		c, err := qtx.CountUnsweptVtxosByMarkerId(ctx, markerID)
-		if err != nil {
-			return fmt.Errorf("failed to count unswept vtxos: %w", err)
-		}
-
-		// Insert the marker into swept_marker (sweep state is computed via view)
-		if err := qtx.InsertSweptMarker(ctx, queries.InsertSweptMarkerParams{
-			MarkerID: markerID,
-			SweptAt:  time.Now().UnixMilli(),
-		}); err != nil {
-			return fmt.Errorf("failed to insert swept marker: %w", err)
-		}
-		count = c
-		return nil
-	}
-	if err := execTx(ctx, m.db, txBody); err != nil {
-		return 0, err
-	}
-	return count, nil
 }
 
 func (m *markerRepository) CreateRootMarkersForVtxos(

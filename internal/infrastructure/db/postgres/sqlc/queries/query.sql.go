@@ -47,60 +47,6 @@ func (q *Queries) BulkInsertSweptVtxos(ctx context.Context, arg BulkInsertSweptV
 	return err
 }
 
-const countUnsweptVtxosByMarkerId = `-- name: CountUnsweptVtxosByMarkerId :one
-SELECT COUNT(DISTINCT (txid, vout)) FROM vtxo_vw WHERE markers @> jsonb_build_array($1::TEXT) AND swept = false
-`
-
-// Count VTXOs whose markers JSONB array contains the given marker_id and are not swept
-func (q *Queries) CountUnsweptVtxosByMarkerId(ctx context.Context, markerID string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countUnsweptVtxosByMarkerId, markerID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const getDescendantMarkerIds = `-- name: GetDescendantMarkerIds :many
-WITH RECURSIVE descendant_markers(id) AS (
-    -- Base case: the marker being swept
-    SELECT marker.id FROM marker WHERE marker.id = $1
-    UNION
-    -- Recursive case: find markers whose parent_markers jsonb array contains any descendant
-    SELECT m.id FROM marker m
-    INNER JOIN descendant_markers dm ON (
-        m.parent_markers @> jsonb_build_array(dm.id)
-    )
-)
-SELECT descendant_markers.id AS marker_id FROM descendant_markers
-WHERE descendant_markers.id NOT IN (SELECT sm.marker_id FROM swept_marker sm)
-`
-
-// Recursively get a marker and all its descendants (markers whose parent_markers contain it).
-// Uses UNION (set semantics, not UNION ALL) so rows already produced are filtered,
-// which makes this cycle-safe. Do not convert to UNION ALL: cycles in parent_markers
-// would cause the recursion to run unbounded.
-func (q *Queries) GetDescendantMarkerIds(ctx context.Context, rootMarkerID string) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, getDescendantMarkerIds, rootMarkerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var marker_id string
-		if err := rows.Scan(&marker_id); err != nil {
-			return nil, err
-		}
-		items = append(items, marker_id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const insertAsset = `-- name: InsertAsset :exec
 INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
 VALUES ($1, $2, $3, $4, $5)
@@ -134,22 +80,6 @@ WHERE s.id = 1
 
 func (q *Queries) InsertSettingsHistory(ctx context.Context, changedFields []string) error {
 	_, err := q.db.ExecContext(ctx, insertSettingsHistory, pq.Array(changedFields))
-	return err
-}
-
-const insertSweptMarker = `-- name: InsertSweptMarker :exec
-INSERT INTO swept_marker (marker_id, swept_at)
-VALUES ($1, $2)
-ON CONFLICT(marker_id) DO NOTHING
-`
-
-type InsertSweptMarkerParams struct {
-	MarkerID string
-	SweptAt  int64
-}
-
-func (q *Queries) InsertSweptMarker(ctx context.Context, arg InsertSweptMarkerParams) error {
-	_, err := q.db.ExecContext(ctx, insertSweptMarker, arg.MarkerID, arg.SweptAt)
 	return err
 }
 
@@ -693,33 +623,6 @@ func (q *Queries) SelectMarker(ctx context.Context, id string) (Marker, error) {
 	var i Marker
 	err := row.Scan(&i.ID, &i.Depth, &i.ParentMarkers)
 	return i, err
-}
-
-const selectMarkersByDepth = `-- name: SelectMarkersByDepth :many
-SELECT id, depth, parent_markers FROM marker WHERE depth = $1
-`
-
-func (q *Queries) SelectMarkersByDepth(ctx context.Context, depth int32) ([]Marker, error) {
-	rows, err := q.db.QueryContext(ctx, selectMarkersByDepth, depth)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Marker
-	for rows.Next() {
-		var i Marker
-		if err := rows.Scan(&i.ID, &i.Depth, &i.ParentMarkers); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const selectMarkersByDepthRange = `-- name: SelectMarkersByDepthRange :many

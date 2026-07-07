@@ -193,13 +193,6 @@ func (m *mockMarkerRepoForIndexer) AddMarker(ctx context.Context, marker domain.
 	return nil
 }
 
-func (m *mockMarkerRepoForIndexer) GetMarkersByDepth(
-	ctx context.Context,
-	depth uint32,
-) ([]domain.Marker, error) {
-	return nil, nil
-}
-
 func (m *mockMarkerRepoForIndexer) GetMarkersByDepthRange(
 	ctx context.Context,
 	minDepth, maxDepth uint32,
@@ -218,28 +211,12 @@ func (m *mockMarkerRepoForIndexer) GetMarkersByIds(
 	return args.Get(0).([]domain.Marker), args.Error(1)
 }
 
-func (m *mockMarkerRepoForIndexer) SweepMarker(
-	ctx context.Context,
-	markerID string,
-	sweptAt int64,
-) error {
-	return nil
-}
-
 func (m *mockMarkerRepoForIndexer) BulkSweepMarkers(
 	ctx context.Context,
 	markerIDs []string,
 	sweptAt int64,
 ) error {
 	return nil
-}
-
-func (m *mockMarkerRepoForIndexer) SweepMarkerWithDescendants(
-	ctx context.Context,
-	markerID string,
-	sweptAt int64,
-) (int64, error) {
-	return 0, nil
 }
 
 func (m *mockMarkerRepoForIndexer) IsMarkerSwept(
@@ -273,13 +250,6 @@ func (m *mockMarkerRepoForIndexer) GetVtxosByMarker(
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]domain.Vtxo), args.Error(1)
-}
-
-func (m *mockMarkerRepoForIndexer) SweepVtxosByMarker(
-	ctx context.Context,
-	markerID string,
-) (int64, error) {
-	return 0, nil
 }
 
 func (m *mockMarkerRepoForIndexer) CreateRootMarkersForVtxos(

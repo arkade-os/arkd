@@ -164,27 +164,6 @@ func (r *markerRepository) GetMarker(ctx context.Context, id string) (*domain.Ma
 	}, nil
 }
 
-func (r *markerRepository) GetMarkersByDepth(
-	ctx context.Context,
-	depth uint32,
-) ([]domain.Marker, error) {
-	var dtos []markerDTO
-	err := r.markerStore.Find(&dtos, badgerhold.Where("Depth").Eq(depth))
-	if err != nil {
-		return nil, err
-	}
-
-	markers := make([]domain.Marker, 0, len(dtos))
-	for _, dto := range dtos {
-		markers = append(markers, domain.Marker{
-			ID:              dto.ID,
-			Depth:           dto.Depth,
-			ParentMarkerIDs: dto.ParentMarkerIDs,
-		})
-	}
-	return markers, nil
-}
-
 func (r *markerRepository) GetMarkersByDepthRange(
 	ctx context.Context,
 	minDepth, maxDepth uint32,
@@ -228,7 +207,9 @@ func (r *markerRepository) GetMarkersByIds(
 	return markers, nil
 }
 
-func (r *markerRepository) SweepMarker(ctx context.Context, markerID string, sweptAt int64) error {
+// sweepMarker marks a single marker as swept and syncs the Swept field on
+// affected VTXOs. Used by BulkSweepMarkers.
+func (r *markerRepository) sweepMarker(ctx context.Context, markerID string, sweptAt int64) error {
 	// Check if already swept - if so, preserve original swept_at (ON CONFLICT DO NOTHING behavior)
 	var existing sweptMarkerDTO
 	err := r.sweptMarkerStore.Get(markerID, &existing)
@@ -304,7 +285,7 @@ func (r *markerRepository) BulkSweepMarkers(
 	sweptAt int64,
 ) error {
 	for _, markerID := range markerIDs {
-		if err := r.SweepMarker(ctx, markerID, sweptAt); err != nil {
+		if err := r.sweepMarker(ctx, markerID, sweptAt); err != nil {
 			return err
 		}
 	}
@@ -330,82 +311,6 @@ func (r *markerRepository) SweepVtxoOutpoints(
 		}
 	}
 	return nil
-}
-
-func (r *markerRepository) SweepMarkerWithDescendants(
-	ctx context.Context,
-	markerID string,
-	sweptAt int64,
-) (int64, error) {
-	// Find all descendant markers using BFS
-	descendantIDs, err := r.getDescendantMarkerIds(ctx, markerID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get descendant markers: %w", err)
-	}
-
-	var count int64
-	for _, id := range descendantIDs {
-		// Check if already swept
-		isSwept, err := r.IsMarkerSwept(ctx, id)
-		if err != nil {
-			return count, err
-		}
-		if isSwept {
-			continue
-		}
-
-		if err := r.SweepMarker(ctx, id, sweptAt); err != nil {
-			return count, fmt.Errorf("failed to sweep marker %s: %w", id, err)
-		}
-		count++
-	}
-
-	return count, nil
-}
-
-// getDescendantMarkerIds finds all markers that descend from the given marker ID
-// using BFS traversal of the parent_marker_ids relationship.
-// Returns empty slice if the root marker doesn't exist.
-func (r *markerRepository) getDescendantMarkerIds(
-	ctx context.Context,
-	rootMarkerID string,
-) ([]string, error) {
-	// First check if the root marker exists
-	var rootDTO markerDTO
-	err := r.markerStore.Get(rootMarkerID, &rootDTO)
-	if err != nil {
-		if err == badgerhold.ErrNotFound {
-			return []string{}, nil // Root doesn't exist, return empty
-		}
-		return nil, err
-	}
-
-	descendantIDs := []string{rootMarkerID}
-	visited := map[string]bool{rootMarkerID: true}
-	queue := []string{rootMarkerID}
-
-	for len(queue) > 0 {
-		currentID := queue[0]
-		queue = queue[1:]
-
-		// Find all markers that have currentID in their ParentMarkerIDs
-		var dtos []markerDTO
-		err := r.markerStore.Find(&dtos,
-			badgerhold.Where("ParentMarkerIDs").Contains(currentID))
-		if err != nil {
-			return nil, err
-		}
-
-		for _, dto := range dtos {
-			if !visited[dto.ID] {
-				visited[dto.ID] = true
-				descendantIDs = append(descendantIDs, dto.ID)
-				queue = append(queue, dto.ID)
-			}
-		}
-	}
-
-	return descendantIDs, nil
 }
 
 func (r *markerRepository) IsMarkerSwept(ctx context.Context, markerID string) (bool, error) {
@@ -493,27 +398,6 @@ func (r *markerRepository) GetVtxosByMarker(
 		vtxos = append(vtxos, dto.Vtxo)
 	}
 	return vtxos, nil
-}
-
-func (r *markerRepository) SweepVtxosByMarker(ctx context.Context, markerID string) (int64, error) {
-	// Count unswept VTXOs before marking to match Postgres/SQLite behaviour.
-	var dtos []vtxoDTO
-	if err := r.vtxoStore.Find(&dtos,
-		badgerhold.Where("MarkerIDs").Contains(markerID)); err != nil {
-		return 0, err
-	}
-	var unsweptCount int64
-	for _, dto := range dtos {
-		if !dto.Swept {
-			unsweptCount++
-		}
-	}
-
-	if err := r.SweepMarker(ctx, markerID, time.Now().UnixMilli()); err != nil {
-		return 0, err
-	}
-
-	return unsweptCount, nil
 }
 
 func (r *markerRepository) CreateRootMarkersForVtxos(
