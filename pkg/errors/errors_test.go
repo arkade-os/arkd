@@ -36,8 +36,7 @@ func TestSubscriptionNotFoundContract(t *testing.T) {
 }
 
 // legacyFiltersLimitRe is the message pattern clients could match on before
-// the structured code existed. The TX_FILTERS_LIMIT_EXCEEDED message must
-// keep matching it so those clients keep working.
+// the structured code existed.
 var legacyFiltersLimitRe = regexp.MustCompile(`tx filters per subscription limit \(\d+\) exceeded`)
 
 func TestTxFiltersLimitExceededContract(t *testing.T) {

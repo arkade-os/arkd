@@ -308,8 +308,6 @@ func compileTxFilters(exprs []string) (map[string]txfilter.Filter, error) {
 	for _, expr := range exprs {
 		f, err := txfilter.Parse(expr)
 		if err != nil {
-			// Structured so clients can detect the failure and the offending
-			// expression without parsing the message.
 			return nil, arkdErrors.INVALID_TX_FILTER.
 				New("invalid tx filter %q: %s", expr, err).
 				WithMetadata(arkdErrors.TxFilterMetadata{Expression: expr})

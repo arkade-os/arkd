@@ -603,8 +603,6 @@ func (h *indexerService) applyFilter(
 	// Mutate: expressions first (literal overwrite), then scripts.
 	if err := h.scriptSubsHandler.installTxFilters(subscriptionID, compiledExprs); err != nil {
 		if errors.Is(err, ErrTxFiltersLimitExceeded) {
-			// Keep the legacy message so clients matching on the string keep
-			// working. The structured code lets them detect it without parsing.
 			return arkdErrors.TX_FILTERS_LIMIT_EXCEEDED.
 				New("%s", err.Error()).
 				WithMetadata(arkdErrors.TxFiltersLimitMetadata{

@@ -1285,8 +1285,6 @@ func TestTxFilter(t *testing.T) {
 		)
 		require.Equal(t, arkdErrors.TX_FILTERS_LIMIT_EXCEEDED.Name, arkErr.CodeName())
 		require.Equal(t, codes.InvalidArgument, arkErr.GrpcCode())
-		// The pre-existing "tx filters per subscription limit" phrasing must
-		// survive for clients that match on the message.
 		require.Contains(t, arkErr.Error(), "tx filters per subscription limit")
 		require.Equal(t, "sub-cap-grpc", arkErr.Metadata()["subscription_id"])
 		require.Equal(
@@ -1484,9 +1482,6 @@ func requireSubscriptionNotFound(t *testing.T, err error) {
 	require.Regexp(t, `(?i)subscription\s+\S+\s+not\s+found`, arkErr.Error())
 }
 
-// requireInvalidTxFilter asserts err is the structured INVALID_TX_FILTER
-// error with the InvalidArgument gRPC code and the offending expression in
-// the metadata.
 func requireInvalidTxFilter(t *testing.T, err error) {
 	t.Helper()
 	require.Error(t, err)
