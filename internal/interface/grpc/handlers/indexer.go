@@ -15,6 +15,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
+	arkdErrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
@@ -495,10 +496,7 @@ func (h *indexerService) GetSubscription(
 		var err error
 		scriptCh, err = h.scriptSubsHandler.getListenerChannel(subscriptionId)
 		if err != nil {
-			if errors.Is(err, ErrSubscriptionNotFound) {
-				return status.Error(codes.NotFound, err.Error())
-			}
-			return status.Error(codes.Internal, err.Error())
+			return subscriptionErr(subscriptionId, err)
 		}
 	}
 
@@ -603,22 +601,15 @@ func (h *indexerService) applyFilter(
 
 	// Mutate: expressions first (literal overwrite), then scripts.
 	if err := h.scriptSubsHandler.installTxFilters(subscriptionID, compiledExprs); err != nil {
-		switch {
-		case errors.Is(err, ErrSubscriptionNotFound):
-			return status.Error(codes.NotFound, err.Error())
-		case errors.Is(err, ErrTxFiltersLimitExceeded):
+		if errors.Is(err, ErrTxFiltersLimitExceeded) {
 			return status.Error(codes.InvalidArgument, err.Error())
-		default:
-			return status.Error(codes.Internal, err.Error())
 		}
+		return subscriptionErr(subscriptionID, err)
 	}
 
 	if len(parsedAdd) > 0 {
 		if err := h.scriptSubsHandler.addTopics(subscriptionID, parsedAdd); err != nil {
-			if errors.Is(err, ErrSubscriptionNotFound) {
-				return status.Error(codes.NotFound, err.Error())
-			}
-			return status.Error(codes.Internal, err.Error())
+			return subscriptionErr(subscriptionID, err)
 		}
 	}
 
@@ -629,18 +620,12 @@ func (h *indexerService) applyFilter(
 	switch {
 	case len(parsedRemove) > 0:
 		if err := h.scriptSubsHandler.removeTopics(subscriptionID, parsedRemove); err != nil {
-			if errors.Is(err, ErrSubscriptionNotFound) {
-				return status.Error(codes.NotFound, err.Error())
-			}
-			return status.Error(codes.Internal, err.Error())
+			return subscriptionErr(subscriptionID, err)
 		}
 	case len(parsedAdd) == 0:
 		// Both add and remove empty: mirror UnsubscribeForScripts and clear all.
 		if err := h.scriptSubsHandler.removeAllTopics(subscriptionID); err != nil {
-			if errors.Is(err, ErrSubscriptionNotFound) {
-				return status.Error(codes.NotFound, err.Error())
-			}
-			return status.Error(codes.Internal, err.Error())
+			return subscriptionErr(subscriptionID, err)
 		}
 	}
 
@@ -659,10 +644,7 @@ func (h *indexerService) UnsubscribeForScripts(
 	if len(scripts) == 0 {
 		// remove all topics
 		if err := h.scriptSubsHandler.removeAllTopics(subscriptionId); err != nil {
-			if errors.Is(err, ErrSubscriptionNotFound) {
-				return nil, status.Error(codes.NotFound, err.Error())
-			}
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, subscriptionErr(subscriptionId, err)
 		}
 		// Only tear down the listener if no tx filters remain on it, otherwise
 		// tx-only subscriptions would be silently dropped.
@@ -673,13 +655,26 @@ func (h *indexerService) UnsubscribeForScripts(
 	}
 
 	if err := h.scriptSubsHandler.removeTopics(subscriptionId, scripts); err != nil {
-		if errors.Is(err, ErrSubscriptionNotFound) {
-			return nil, status.Error(codes.NotFound, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, subscriptionErr(subscriptionId, err)
 	}
 
 	return &arkv1.UnsubscribeForScriptsResponse{}, nil
+}
+
+// subscriptionErr maps an error returned by the script-subscription broker
+// onto the error surfaced to the client. A missing subscription becomes the
+// structured SUBSCRIPTION_NOT_FOUND code (gRPC NotFound); any other error is
+// reported as Internal. The message keeps the legacy
+// "subscription <id> not found" phrasing so SDKs that still match on the error
+// string keep detecting stale subscriptions (see ts-sdk#600), while the
+// structured code lets clients detect it without parsing the message.
+func subscriptionErr(id string, err error) error {
+	if errors.Is(err, ErrSubscriptionNotFound) {
+		return arkdErrors.SUBSCRIPTION_NOT_FOUND.
+			New("subscription %s not found", id).
+			WithMetadata(arkdErrors.SubscriptionMetadata{SubscriptionId: id})
+	}
+	return status.Error(codes.Internal, err.Error())
 }
 
 func (h *indexerService) SubscribeForScripts(
@@ -702,7 +697,7 @@ func (h *indexerService) SubscribeForScripts(
 	} else {
 		// update listener topic
 		if err := h.scriptSubsHandler.addTopics(subscriptionId, scripts); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, subscriptionErr(subscriptionId, err)
 		}
 	}
 	return &arkv1.SubscribeForScriptsResponse{

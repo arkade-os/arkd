@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	stderrors "errors"
 	"fmt"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	arkdErrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
@@ -753,10 +755,7 @@ func TestUpdateSubscription(t *testing.T) {
 				Filter:         scriptsAddFilter(testScript1),
 			},
 		)
-		require.Error(t, err)
-		st, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.NotFound, st.Code())
+		requireSubscriptionNotFound(t, err)
 	})
 
 	t.Run("unknown subscription_id with remove returns NotFound", func(t *testing.T) {
@@ -771,10 +770,7 @@ func TestUpdateSubscription(t *testing.T) {
 				},
 			},
 		)
-		require.Error(t, err)
-		st, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.NotFound, st.Code())
+		requireSubscriptionNotFound(t, err)
 	})
 
 	t.Run("adding duplicate scripts is idempotent", func(t *testing.T) {
@@ -1364,7 +1360,7 @@ func TestTxFilter(t *testing.T) {
 		}
 	})
 
-	t.Run("not-found maps to gRPC NotFound via sentinel error", func(t *testing.T) {
+	t.Run("not-found maps to structured SUBSCRIPTION_NOT_FOUND", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService(t)
 		_, err := svc.UpdateSubscription(context.Background(),
@@ -1373,10 +1369,7 @@ func TestTxFilter(t *testing.T) {
 				Filter:         txExpressionsFilter(hasExtension),
 			},
 		)
-		require.Error(t, err)
-		st, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.NotFound, st.Code())
+		requireSubscriptionNotFound(t, err)
 	})
 
 	t.Run("UnsubscribeForScripts keeps listener with tx filters", func(t *testing.T) {
@@ -1427,10 +1420,7 @@ func TestTxFilter(t *testing.T) {
 		_, err := svc.UnsubscribeForScripts(context.Background(),
 			&arkv1.UnsubscribeForScriptsRequest{SubscriptionId: "missing"},
 		)
-		require.Error(t, err)
-		st, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.NotFound, st.Code())
+		requireSubscriptionNotFound(t, err)
 
 		// Non-empty scripts path goes through removeTopics.
 		_, err = svc.UnsubscribeForScripts(context.Background(),
@@ -1439,11 +1429,51 @@ func TestTxFilter(t *testing.T) {
 				Scripts:        []string{testScript1},
 			},
 		)
-		require.Error(t, err)
-		st, ok = status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.NotFound, st.Code())
+		requireSubscriptionNotFound(t, err)
 	})
+}
+
+func TestSubscribeForScripts(t *testing.T) {
+	t.Parallel()
+
+	// Reconnecting with a subscription id the server has already dropped (its
+	// listener timed out) must return the structured SUBSCRIPTION_NOT_FOUND
+	// error rather than a generic Internal error. This is the exact path an SDK
+	// hits when it retries with a stale id; it previously regressed to
+	// codes.Internal with a message the SDK could no longer classify
+	// (see ts-sdk#600).
+	t.Run("stale subscription id returns SUBSCRIPTION_NOT_FOUND", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestIndexerService(t)
+
+		_, err := svc.SubscribeForScripts(context.Background(),
+			&arkv1.SubscribeForScriptsRequest{
+				SubscriptionId: "stale-id",
+				Scripts:        []string{testScript1},
+			},
+		)
+		requireSubscriptionNotFound(t, err)
+		require.Contains(t, err.Error(), "subscription stale-id not found")
+	})
+}
+
+// requireSubscriptionNotFound asserts err is the structured
+// SUBSCRIPTION_NOT_FOUND error: it exposes the NotFound gRPC code and the
+// SUBSCRIPTION_NOT_FOUND structured code, and preserves the legacy
+// "subscription <id> not found" phrasing that some SDKs still match on.
+func requireSubscriptionNotFound(t *testing.T, err error) {
+	t.Helper()
+	require.Error(t, err)
+	var arkErr arkdErrors.Error
+	require.True(
+		t, stderrors.As(err, &arkErr),
+		"expected a structured arkerrors.Error, got %T: %v", err, err,
+	)
+	require.Equal(t, arkdErrors.SUBSCRIPTION_NOT_FOUND.Name, arkErr.CodeName())
+	require.Equal(t, codes.NotFound, arkErr.GrpcCode())
+	// The pre-#1074 "subscription <id> not found" phrasing must survive so SDKs
+	// that still match on the message keep detecting stale subscriptions.
+	require.Regexp(t, `(?i)subscription\s+\S+\s+not\s+found`, arkErr.Error())
 }
 
 func newTestIndexerServiceWithEvents(

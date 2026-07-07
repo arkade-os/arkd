@@ -477,3 +477,13 @@ var DIGEST_MISMATCH = Code[DigestMetadata]{
 	"DIGEST_MISMATCH",
 	grpccodes.FailedPrecondition,
 }
+
+type SubscriptionMetadata struct {
+	SubscriptionId string `json:"subscription_id"`
+}
+
+var SUBSCRIPTION_NOT_FOUND = Code[SubscriptionMetadata]{
+	50,
+	"SUBSCRIPTION_NOT_FOUND",
+	grpccodes.NotFound,
+}
