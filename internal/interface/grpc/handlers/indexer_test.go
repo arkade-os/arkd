@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	stderrors "errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -630,6 +631,76 @@ func TestGetSubscription(t *testing.T) {
 			require.NoError(t, err)
 		case <-time.After(time.Second):
 			t.Fatal("GetSubscription did not return")
+		}
+	})
+
+	t.Run("old flow displaced stream does not consume buffered events", func(t *testing.T) {
+		t.Parallel()
+		// A stream displaced by a reconnect must stop draining the listener
+		// channel, so an event buffered around the moment of displacement stays
+		// for the successor instead of being delivered to (and lost by) the
+		// abandoned stream. The select picks randomly among ready cases, so
+		// without the exit-before-receive priority a regression only shows up
+		// ~half the time; repeat the scenario to make it decisive.
+		const trials = 20
+		for i := 0; i < trials; i++ {
+			svc := newTestIndexerService(t)
+			svc.heartbeat = 10 * time.Second // keep heartbeats out of the ordering
+
+			subResp, err := svc.SubscribeForScripts(context.Background(),
+				&arkv1.SubscribeForScriptsRequest{Scripts: []string{testScript1}},
+			)
+			require.NoError(t, err)
+			subId := subResp.GetSubscriptionId()
+
+			ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
+			require.NoError(t, err)
+
+			pred := newGatedSubscriptionServer(context.Background())
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- svc.GetSubscription(
+					&arkv1.GetSubscriptionRequest{SubscriptionId: subId},
+					pred,
+				)
+			}()
+
+			// The predecessor consumes this event and parks in its first Send,
+			// so it is out of the select loop while we set up the race.
+			ch <- &arkv1.GetSubscriptionResponse{
+				Data: &arkv1.GetSubscriptionResponse_Event{
+					Event: &arkv1.IndexerSubscriptionEvent{Txid: "warmup"},
+				},
+			}
+			select {
+			case <-pred.entered:
+			case <-time.After(time.Second):
+				t.Fatal("predecessor did not reach its first Send")
+			}
+
+			// Buffer an event, then displace the predecessor while it is still
+			// parked in Send. attach here stands in for a reconnecting client.
+			ch <- &arkv1.GetSubscriptionResponse{
+				Data: &arkv1.GetSubscriptionResponse_Event{
+					Event: &arkv1.IndexerSubscriptionEvent{Txid: "for-successor"},
+				},
+			}
+			if _, _, err := svc.scriptSubsHandler.attach(subId); err != nil {
+				t.Fatalf("attach (simulated reconnect) failed: %v", err)
+			}
+
+			// Release the predecessor. It resumes displaced and must return
+			// without touching the buffered event.
+			close(pred.release)
+			select {
+			case err := <-errCh:
+				require.NoError(t, err)
+			case <-time.After(2 * time.Second):
+				t.Fatal("displaced predecessor did not return")
+			}
+
+			require.Len(t, ch, 1,
+				"displaced stream consumed an event meant for the successor")
 		}
 	})
 
@@ -1870,6 +1941,44 @@ func (m *mockGetSubscriptionServer) recv(t *testing.T, timeout time.Duration) *a
 		return nil
 	}
 }
+
+// gatedSubscriptionServer blocks in its first Send until release is closed,
+// signalling entered when it gets there. It lets a test park the handler
+// inside Send — out of its select loop — so the test can set up a precise
+// ordering (buffer an event, then displace the stream) before the handler
+// resumes and re-enters the loop.
+type gatedSubscriptionServer struct {
+	ctx     context.Context
+	sendCh  chan *arkv1.GetSubscriptionResponse
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func newGatedSubscriptionServer(ctx context.Context) *gatedSubscriptionServer {
+	return &gatedSubscriptionServer{
+		ctx:     ctx,
+		sendCh:  make(chan *arkv1.GetSubscriptionResponse, 100),
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+}
+
+func (m *gatedSubscriptionServer) Send(resp *arkv1.GetSubscriptionResponse) error {
+	m.once.Do(func() {
+		close(m.entered)
+		<-m.release
+	})
+	m.sendCh <- resp
+	return nil
+}
+
+func (m *gatedSubscriptionServer) Context() context.Context     { return m.ctx }
+func (m *gatedSubscriptionServer) SetHeader(metadata.MD) error  { return nil }
+func (m *gatedSubscriptionServer) SendHeader(metadata.MD) error { return nil }
+func (m *gatedSubscriptionServer) SetTrailer(metadata.MD)       {}
+func (m *gatedSubscriptionServer) SendMsg(any) error            { return nil }
+func (m *gatedSubscriptionServer) RecvMsg(any) error            { return nil }
 
 // mockAppIndexer is a minimal application.IndexerService used to assert the
 // gRPC handler's GetVtxoChain wiring. Only GetVtxoChain is implemented; any

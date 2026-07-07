@@ -526,6 +526,21 @@ func (h *indexerService) GetSubscription(
 	}
 
 	for {
+		// Give termination priority over event delivery. select picks a ready
+		// case at random, so without this a stream that has just been displaced
+		// (or whose subscription was removed) could still win the receive below
+		// and drain an event that belongs to its successor. Checking the exit
+		// signals first leaves those buffered events on the channel.
+		select {
+		case <-stream.Context().Done():
+			return nil
+		case <-listener.done:
+			return nil
+		case <-attachment.displaced:
+			return nil
+		default:
+		}
+
 		select {
 		case <-stream.Context().Done():
 			return nil
