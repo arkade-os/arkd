@@ -43,6 +43,7 @@ func startAction(_ *cli.Context) error {
 		TLSExtraIPs:          cfg.TLSExtraIPs,
 		TLSExtraDomains:      cfg.TLSExtraDomains,
 		HeartbeatInterval:    cfg.HeartbeatInterval,
+		StreamMaxLifetime:    cfg.StreamMaxLifetime,
 		EnablePprof:          cfg.EnablePprof,
 		EnableChannelz:       cfg.EnableChannelz,
 		MaxConcurrentStreams: cfg.MaxConcurrentStreams,
