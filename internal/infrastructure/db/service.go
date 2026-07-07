@@ -757,6 +757,9 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
 				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
 				// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
+				// Only badger persists this field directly. Postgres and sqlite
+				// have no swept column, so for them it is persisted via the dust
+				// marker sweep and the swept outpoints insert below.
 				Swept:     outputSwept,
 				Depth:     newDepth,
 				MarkerIDs: vtxoMarkerIDs,
