@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	stderrors "errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -1253,10 +1254,7 @@ func TestTxFilter(t *testing.T) {
 			},
 			stream,
 		)
-		require.Error(t, err)
-		st, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.InvalidArgument, st.Code())
+		requireInvalidTxFilter(t, err)
 	})
 
 	t.Run("UpdateSubscription overwrites tx filters", func(t *testing.T) {
@@ -1321,10 +1319,7 @@ func TestTxFilter(t *testing.T) {
 				Filter:         txExpressionsFilter("&&&"),
 			},
 		)
-		require.Error(t, err)
-		st, ok := status.FromError(err)
-		require.True(t, ok)
-		require.Equal(t, codes.InvalidArgument, st.Code())
+		requireInvalidTxFilter(t, err)
 
 		// Invalid expr must not mutate listener state.
 		require.Empty(t, svc.scriptSubsHandler.getTxFilters("sub-bad"))
@@ -1343,9 +1338,7 @@ func TestTxFilter(t *testing.T) {
 				Filter:         txExpressionsFilter(hasPacket42, "&&& invalid"),
 			},
 		)
-		require.Error(t, err)
-		st, _ := status.FromError(err)
-		require.Equal(t, codes.InvalidArgument, st.Code())
+		requireInvalidTxFilter(t, err)
 		require.ElementsMatch(
 			t, []string{hasExtension}, svc.scriptSubsHandler.getTxFilters("sub-atomic"),
 		)
@@ -1603,8 +1596,21 @@ func TestTxFilter(t *testing.T) {
 			},
 		)
 		require.Error(t, err)
-		st, _ := status.FromError(err)
-		require.Equal(t, codes.InvalidArgument, st.Code())
+		var arkErr arkdErrors.Error
+		require.True(
+			t, stderrors.As(err, &arkErr),
+			"expected a structured arkerrors.Error, got %T: %v", err, err,
+		)
+		require.Equal(t, arkdErrors.TX_FILTERS_LIMIT_EXCEEDED.Name, arkErr.CodeName())
+		require.Equal(t, codes.InvalidArgument, arkErr.GrpcCode())
+		require.Contains(t, arkErr.Error(), "tx filters per subscription limit")
+		require.Equal(t, "sub-cap-grpc", arkErr.Metadata()["subscription_id"])
+		require.Equal(
+			t, strconv.Itoa(MaxTxFiltersPerListener), arkErr.Metadata()["max_tx_filters"],
+		)
+		require.Equal(
+			t, strconv.Itoa(MaxTxFiltersPerListener+1), arkErr.Metadata()["got_tx_filters"],
+		)
 		require.Empty(t, svc.scriptSubsHandler.getTxFilters("sub-cap-grpc"))
 	})
 
@@ -1790,6 +1796,19 @@ func requireSubscriptionNotFound(t *testing.T, err error) {
 	// The pre-#1074 "subscription <id> not found" phrasing must survive so SDKs
 	// that still match on the message keep detecting stale subscriptions.
 	require.Regexp(t, `(?i)subscription\s+\S+\s+not\s+found`, arkErr.Error())
+}
+
+func requireInvalidTxFilter(t *testing.T, err error) {
+	t.Helper()
+	require.Error(t, err)
+	var arkErr arkdErrors.Error
+	require.True(
+		t, stderrors.As(err, &arkErr),
+		"expected a structured arkerrors.Error, got %T: %v", err, err,
+	)
+	require.Equal(t, arkdErrors.INVALID_TX_FILTER.Name, arkErr.CodeName())
+	require.Equal(t, codes.InvalidArgument, arkErr.GrpcCode())
+	require.NotEmpty(t, arkErr.Metadata()["expression"])
 }
 
 func newTestIndexerServiceWithEvents(

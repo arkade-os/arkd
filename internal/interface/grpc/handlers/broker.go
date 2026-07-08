@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/interface/grpc/handlers/txfilter"
+	arkdErrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/wire"
 )
 
@@ -350,7 +351,9 @@ func compileTxFilters(exprs []string) (map[string]txfilter.Filter, error) {
 	for _, expr := range exprs {
 		f, err := txfilter.Parse(expr)
 		if err != nil {
-			return nil, err
+			return nil, arkdErrors.INVALID_TX_FILTER.
+				New("invalid tx filter %q: %s", expr, err).
+				WithMetadata(arkdErrors.TxFilterMetadata{Expression: expr})
 		}
 		filters[expr] = *f
 	}

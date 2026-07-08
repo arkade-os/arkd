@@ -594,12 +594,13 @@ func (h *indexerService) applyFilter(
 	exprs := filter.GetExpressions()
 	scripts := filter.GetScripts()
 
-	// Validate all inputs upfront before any mutation. Cap enforcement on
+	// Validate all inputs upfront before any mutation. A bad expression is
+	// returned as the structured INVALID_TX_FILTER code. Cap enforcement on
 	// the compiled set is the broker's responsibility (see installTxFilters
-	// below); we still surface it as InvalidArgument when it fires.
+	// below) and surfaces as the structured TX_FILTERS_LIMIT_EXCEEDED code.
 	compiledExprs, err := compileTxFilters(exprs)
 	if err != nil {
-		return status.Error(codes.InvalidArgument, err.Error())
+		return err
 	}
 
 	var parsedAdd, parsedRemove []string
@@ -621,7 +622,13 @@ func (h *indexerService) applyFilter(
 	// Mutate: expressions first (literal overwrite), then scripts.
 	if err := h.scriptSubsHandler.installTxFilters(subscriptionID, compiledExprs); err != nil {
 		if errors.Is(err, ErrTxFiltersLimitExceeded) {
-			return status.Error(codes.InvalidArgument, err.Error())
+			return arkdErrors.TX_FILTERS_LIMIT_EXCEEDED.
+				New("%s", err.Error()).
+				WithMetadata(arkdErrors.TxFiltersLimitMetadata{
+					SubscriptionId: subscriptionID,
+					MaxTxFilters:   MaxTxFiltersPerListener,
+					GotTxFilters:   len(compiledExprs),
+				})
 		}
 		return subscriptionErr(subscriptionID, err)
 	}

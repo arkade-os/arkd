@@ -487,3 +487,25 @@ var SUBSCRIPTION_NOT_FOUND = Code[SubscriptionMetadata]{
 	"SUBSCRIPTION_NOT_FOUND",
 	grpccodes.NotFound,
 }
+
+type TxFiltersLimitMetadata struct {
+	SubscriptionId string `json:"subscription_id"`
+	MaxTxFilters   int    `json:"max_tx_filters"`
+	GotTxFilters   int    `json:"got_tx_filters"`
+}
+
+var TX_FILTERS_LIMIT_EXCEEDED = Code[TxFiltersLimitMetadata]{
+	51,
+	"TX_FILTERS_LIMIT_EXCEEDED",
+	grpccodes.InvalidArgument,
+}
+
+type TxFilterMetadata struct {
+	Expression string `json:"expression"`
+}
+
+var INVALID_TX_FILTER = Code[TxFilterMetadata]{
+	52,
+	"INVALID_TX_FILTER",
+	grpccodes.InvalidArgument,
+}
