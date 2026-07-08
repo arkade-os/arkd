@@ -460,12 +460,17 @@ func (h *indexerService) GetSubscription(
 	// disconnect the server never observed (e.g. behind a load balancer that
 	// keeps the connection alive) is terminated instead of competing with the
 	// new stream for events forever.
-	listener, attachment, err := h.scriptSubsHandler.attach(subscriptionId)
+	listener, att, err := h.scriptSubsHandler.attach(subscriptionId)
 	if err != nil {
+		if isNew {
+			// The listener we just pushed has no other owner; remove it so a
+			// failed attach cannot leak it.
+			h.scriptSubsHandler.removeListener(subscriptionId)
+		}
 		return subscriptionErr(subscriptionId, err)
 	}
 	defer func() {
-		if !h.scriptSubsHandler.detach(subscriptionId, attachment) {
+		if !h.scriptSubsHandler.detach(subscriptionId, att) {
 			// Displaced by a newer stream: the successor owns the
 			// subscription's lifecycle now.
 			return
@@ -526,21 +531,31 @@ func (h *indexerService) GetSubscription(
 	}
 
 	for {
-		// Give termination priority over event delivery. select picks a ready
-		// case at random, so without this a stream that has just been displaced
-		// (or whose subscription was removed) could still win the receive below
-		// and drain an event that belongs to its successor. Checking the exit
-		// signals first leaves those buffered events on the channel.
+		// Two selects on purpose. A single select cannot express priority: Go
+		// picks among ready cases at random, so with one combined select a
+		// stream that was just displaced (or whose subscription was removed)
+		// could still win `ev := <-listener.ch` and drain an event meant for
+		// its successor, or push it to a client that is already gone.
+		//
+		// This first select is non-blocking (note the default): it returns
+		// early when an exit signal is ALREADY pending, before the receive
+		// below can run, leaving buffered events on the channel for the
+		// successor.
 		select {
 		case <-stream.Context().Done():
 			return nil
 		case <-listener.done:
 			return nil
-		case <-attachment.displaced:
+		case <-att.displaced:
 			return nil
 		default:
 		}
 
+		// The blocking select does the actual work: it parks until an event, a
+		// heartbeat, or an exit signal arrives. The exit cases are repeated here
+		// (not only in the priority check above) so that a signal arriving WHILE
+		// this select is blocked wakes the stream immediately, instead of
+		// stalling until the next event or heartbeat.
 		select {
 		case <-stream.Context().Done():
 			return nil
@@ -548,7 +563,7 @@ func (h *indexerService) GetSubscription(
 			// Subscription removed (unsubscribed, or reaped after the
 			// reconnect window expired).
 			return nil
-		case <-attachment.displaced:
+		case <-att.displaced:
 			// The client reconnected with the same subscription id on a new
 			// stream; this stream is abandoned.
 			return nil

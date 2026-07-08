@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -544,6 +545,52 @@ func TestBroker(t *testing.T) {
 			broker.startTimeout("test-id", 50*time.Millisecond)
 			time.Sleep(150 * time.Millisecond)
 			require.Len(t, broker.getListenersCopy(), 0)
+		})
+
+		t.Run("concurrent attach and detach on the same id", func(t *testing.T) {
+			// Many goroutines racing attach/detach on one listener must keep the
+			// broker's internal state consistent (run with -race) and never let
+			// a detach succeed twice for the same attachment. require is not
+			// goroutine-safe, so goroutines only record violations; the
+			// assertions run on the test goroutine after they finish.
+			broker := newBroker[string]()
+			listener := newListener[string]("test-id", []string{"topic1"})
+			broker.pushListener(listener)
+
+			const goroutines = 50
+			var doubleDetach int32
+			var wg sync.WaitGroup
+			wg.Add(goroutines)
+			for i := 0; i < goroutines; i++ {
+				go func() {
+					defer wg.Done()
+					_, att, err := broker.attach("test-id")
+					if err != nil {
+						return
+					}
+					// An attacher may still own the listener when it detaches or
+					// may have been displaced by a later attach; either way a
+					// second detach of the same attachment must be a no-op.
+					broker.detach("test-id", att)
+					if broker.detach("test-id", att) {
+						atomic.AddInt32(&doubleDetach, 1)
+					}
+				}()
+			}
+			wg.Wait()
+
+			require.Zero(t, atomic.LoadInt32(&doubleDetach),
+				"detach returned true twice for the same attachment")
+
+			// After the storm settles the listener still exists and at most one
+			// attachment is live. Detaching it (if present) is the final owner
+			// handoff; a second detach of the same attachment must be a no-op.
+			listeners := broker.getListenersCopy()
+			require.Len(t, listeners, 1)
+			if att := listeners["test-id"].attached; att != nil {
+				require.True(t, broker.detach("test-id", att))
+				require.False(t, broker.detach("test-id", att))
+			}
 		})
 	})
 
