@@ -35,7 +35,7 @@ type listener[T any] struct {
 	done         chan struct{}
 	closeDoneMux sync.Once
 	timeoutTimer *time.Timer
-	
+
 	attached *attachment
 	lock     *sync.RWMutex
 }
