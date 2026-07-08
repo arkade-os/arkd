@@ -2867,7 +2867,7 @@ func (s *service) startFinalization(
 	log.Debugf("building tx for round %s", roundId)
 
 	commitmentTx, vtxoTree, connectorAddress, connectors, err := s.builder.BuildCommitmentTx(
-		forfeitPubkey, intents, boardingInputs, cosignersPublicKeys,
+		forfeitPubkey, intents, boardingInputs, cosignersPublicKeys, settings.VtxoTreeExpiry,
 	)
 	if err != nil {
 		round.Fail(errors.INTERNAL_ERROR.New("failed to create commitment tx: %s", err))

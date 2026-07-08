@@ -834,9 +834,7 @@ func (c *Config) txBuilderService() error {
 	var err error
 	switch c.TxBuilderType {
 	case "covenantless":
-		svc = txbuilder.NewTxBuilder(
-			c.wallet, c.signer, *c.network, c.VtxoTreeExpiry, c.BoardingExitDelay,
-		)
+		svc = txbuilder.NewTxBuilder(c.wallet, c.signer, *c.network)
 	default:
 		err = fmt.Errorf("unknown tx builder type")
 	}
