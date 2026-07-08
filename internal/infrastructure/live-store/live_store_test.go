@@ -869,13 +869,13 @@ func (m *mockedTxBuilder) VerifyForfeitTxs(
 }
 
 func (m *mockedTxBuilder) BuildCommitmentTx(
-	signerPubkey *btcec.PublicKey, intents domain.Intents,
-	boardingInputs []ports.BoardingInput, cosignerPubkeys [][]string,
+	signerPubkey *btcec.PublicKey, intents domain.Intents, boardingInputs []ports.BoardingInput,
+	cosignerPubkeys [][]string, vtxoTreeExpiry arklib.RelativeLocktime,
 ) (
 	commitmentTx string, vtxoTree *tree.TxTree,
 	connectorAddress string, connectors *tree.TxTree, err error,
 ) {
-	args := m.Called(signerPubkey, intents, boardingInputs, cosignerPubkeys)
+	args := m.Called(signerPubkey, intents, boardingInputs, cosignerPubkeys, vtxoTreeExpiry)
 	res0 := args.Get(0).(string)
 	res1 := args.Get(1).(*tree.TxTree)
 	res2 := args.Get(2).(string)

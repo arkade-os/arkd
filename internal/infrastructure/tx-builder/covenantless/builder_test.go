@@ -57,9 +57,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestBuildCommitmentTx(t *testing.T) {
-	builder := txbuilder.NewTxBuilder(
-		wallet, nil, arklib.Bitcoin, vtxoTreeExpiry, boardingExitDelay,
-	)
+	builder := txbuilder.NewTxBuilder(wallet, nil, arklib.Bitcoin)
 
 	fixtures, err := parseCommitmentTxFixtures()
 	require.NoError(t, err)
@@ -80,7 +78,7 @@ func TestBuildCommitmentTx(t *testing.T) {
 				}
 
 				commitmentTx, vtxoTree, connAddr, _, err := builder.BuildCommitmentTx(
-					pubkey, f.Intents, []ports.BoardingInput{}, cosignersPublicKeys,
+					pubkey, f.Intents, []ports.BoardingInput{}, cosignersPublicKeys, vtxoTreeExpiry,
 				)
 				require.NoError(t, err)
 				require.NotEmpty(t, commitmentTx)
@@ -112,6 +110,7 @@ func TestBuildCommitmentTx(t *testing.T) {
 
 				commitmentTx, vtxoTree, connAddr, _, err := builder.BuildCommitmentTx(
 					pubkey, f.Intents, []ports.BoardingInput{}, cosignersPublicKeys,
+					vtxoTreeExpiry,
 				)
 				require.EqualError(t, err, f.ExpectedErr)
 				require.Empty(t, commitmentTx)
@@ -127,8 +126,7 @@ func TestVerifyVtxoTapscriptSigs(t *testing.T) {
 	require.NoError(t, err)
 
 	builder := txbuilder.NewTxBuilder(
-		wallet, &staticSigner{pubkey: signerKey.PubKey()},
-		arklib.Bitcoin, vtxoTreeExpiry, boardingExitDelay,
+		wallet, &staticSigner{pubkey: signerKey.PubKey()}, arklib.Bitcoin,
 	)
 
 	t.Run("valid", func(t *testing.T) {
