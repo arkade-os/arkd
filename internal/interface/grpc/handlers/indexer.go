@@ -445,16 +445,28 @@ func (h *indexerService) GetSubscription(
 	request *arkv1.GetSubscriptionRequest, stream arkv1.IndexerService_GetSubscriptionServer,
 ) error {
 	subscriptionId := request.GetSubscriptionId()
+	reconnectWindow := h.subscriptionTimeoutDuration
 
-	var scriptCh chan *arkv1.GetSubscriptionResponse
-
-	if len(subscriptionId) == 0 {
+	isNew := len(subscriptionId) == 0
+	if isNew {
 		// New single-connection flow: create subscription inline.
 		subscriptionId = uuid.NewString()
-		listener := newListener[*arkv1.GetSubscriptionResponse](subscriptionId, nil)
-		h.scriptSubsHandler.pushListener(listener)
-		defer h.scriptSubsHandler.removeListener(subscriptionId)
+		h.scriptSubsHandler.pushListener(
+			newListener[*arkv1.GetSubscriptionResponse](subscriptionId, nil),
+		)
+		reconnectWindow = 0
+	}
 
+	// Attach as the subscription's sole consumer
+	// it forces any previous streams attached to the same subscriptinId to be closed
+	listener, att, err := h.scriptSubsHandler.attach(subscriptionId)
+	if err != nil {
+		return subscriptionErr(subscriptionId, err)
+	}
+	// On exit, release our hold: the subscription survives for reconnectWindow.
+	defer h.scriptSubsHandler.release(subscriptionId, att, reconnectWindow)
+
+	if isNew {
 		// Apply initial filter, if any, through the same machinery used by
 		// UpdateSubscription. `scripts.remove` is ignored on creation
 		// because the subscription has no scripts to remove yet.
@@ -463,8 +475,6 @@ func (h *indexerService) GetSubscription(
 				return err
 			}
 		}
-
-		scriptCh = listener.ch
 
 		// Send SubscriptionStartedEvent as first message.
 		startedEvt := &arkv1.GetSubscriptionResponse{
@@ -476,27 +486,6 @@ func (h *indexerService) GetSubscription(
 		}
 		if err := stream.Send(startedEvt); err != nil {
 			return err
-		}
-	} else {
-		// Old flow: subscription_id provided, use existing listener.
-		h.scriptSubsHandler.stopTimeout(subscriptionId)
-		defer func() {
-			// Keep the listener alive on disconnect if either filter type is
-			// non-empty, so the client can reconnect within the timeout window
-			// without losing scripts or tx filters.
-			topics := h.scriptSubsHandler.getTopics(subscriptionId)
-			txFilters := h.scriptSubsHandler.getTxFilters(subscriptionId)
-			if len(topics) > 0 || len(txFilters) > 0 {
-				h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
-			} else {
-				h.scriptSubsHandler.removeListener(subscriptionId)
-			}
-		}()
-
-		var err error
-		scriptCh, err = h.scriptSubsHandler.getListenerChannel(subscriptionId)
-		if err != nil {
-			return subscriptionErr(subscriptionId, err)
 		}
 	}
 
@@ -517,10 +506,40 @@ func (h *indexerService) GetSubscription(
 	}
 
 	for {
+		// Two selects are intentional. A single select cannot express
+		// priority: if both an exit signal and listener.ch are ready, Go
+		// chooses randomly. That could let a displaced or removed stream
+		// consume an event intended for its replacement.
+		//
+		// The first select is non-blocking. If an exit signal is already
+		// pending, it returns immediately without draining listener.ch,
+		// leaving buffered events for the successor.
 		select {
 		case <-stream.Context().Done():
 			return nil
-		case ev := <-scriptCh:
+		case <-listener.done:
+			return nil
+		case <-att.displaced:
+			return nil
+		default:
+		}
+
+		// The second select blocks waiting for work or shutdown. The exit
+		// cases are repeated so that a signal arriving while blocked wakes
+		// the goroutine immediately instead of waiting for the next event or
+		// heartbeat.
+		select {
+		case <-stream.Context().Done():
+			return nil
+		case <-listener.done:
+			// Subscription removed (unsubscribed, or reaped after the
+			// reconnect window expired).
+			return nil
+		case <-att.displaced:
+			// The client reconnected with the same subscription id on a new
+			// stream; this stream is abandoned.
+			return nil
+		case ev := <-listener.ch:
 			if err := stream.Send(ev); err != nil {
 				return err
 			}

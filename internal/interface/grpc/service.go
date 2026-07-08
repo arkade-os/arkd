@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 )
 
@@ -328,6 +329,11 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof, withChannelz bool)
 			s.macaroonSvc, s.readinessSvc, getVersionGuard, getDigestGuard,
 		),
 		grpc.StatsHandler(otelHandler),
+		// ping clients, close dead ones
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    30 * time.Second,
+			Timeout: 20 * time.Second,
+		}),
 	}
 	creds := insecure.NewCredentials()
 	if !s.config.insecure() {
