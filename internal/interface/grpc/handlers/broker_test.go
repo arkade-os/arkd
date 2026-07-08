@@ -550,6 +550,7 @@ func TestBroker(t *testing.T) {
 					if err != nil {
 						return
 					}
+					// release twice 
 					broker.release("test-id", att, time.Hour)
 					if broker.release("test-id", att, time.Hour) {
 						releaseTrue.Add(1)
@@ -558,7 +559,7 @@ func TestBroker(t *testing.T) {
 			}
 			wg.Wait()
 
-			// only 1 release should return true
+			// every second release should return false
 			require.Zero(t, releaseTrue.Load())
 
 			listeners := broker.getListenersCopy()
