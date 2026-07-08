@@ -512,14 +512,14 @@ func (h *indexerService) GetSubscription(
 	}
 
 	for {
-	// Two selects are intentional. A single select cannot express
-	// priority: if both an exit signal and listener.ch are ready, Go
-	// chooses randomly. That could let a displaced or removed stream
-	// consume an event intended for its replacement.
-	//
-	// The first select is non-blocking. If an exit signal is already
-	// pending, it returns immediately without draining listener.ch,
-	// leaving buffered events for the successor.
+		// Two selects are intentional. A single select cannot express
+		// priority: if both an exit signal and listener.ch are ready, Go
+		// chooses randomly. That could let a displaced or removed stream
+		// consume an event intended for its replacement.
+		//
+		// The first select is non-blocking. If an exit signal is already
+		// pending, it returns immediately without draining listener.ch,
+		// leaving buffered events for the successor.
 		select {
 		case <-stream.Context().Done():
 			return nil
@@ -530,10 +530,10 @@ func (h *indexerService) GetSubscription(
 		default:
 		}
 
-	// The second select blocks waiting for work or shutdown. The exit
-	// cases are repeated so that a signal arriving while blocked wakes
-	// the goroutine immediately instead of waiting for the next event or
-	// heartbeat.
+		// The second select blocks waiting for work or shutdown. The exit
+		// cases are repeated so that a signal arriving while blocked wakes
+		// the goroutine immediately instead of waiting for the next event or
+		// heartbeat.
 		select {
 		case <-stream.Context().Done():
 			return nil
