@@ -1684,6 +1684,59 @@ func TestTxFilter(t *testing.T) {
 		}
 	})
 
+	t.Run("listenToTxEvents topic iteration is race-free under concurrent updates", func(t *testing.T) {
+		t.Parallel()
+		// The dispatch loop iterates each listener's topics for every event.
+		// That read must be synchronized with the Subscribe/Update/Unsubscribe
+		// RPCs that mutate the same map under the listener lock: an
+		// unsynchronized read is a concurrent map iteration and write, a fatal
+		// runtime error that crashes the process. Under -race this fails on the
+		// unsynchronized read and passes once the read is snapshotted under the
+		// lock.
+		eventsCh := make(chan application.TransactionEvent, 8)
+		t.Cleanup(func() { close(eventsCh) })
+		svc := newTestIndexerServiceWithEvents(t, eventsCh)
+		go svc.listenToTxEvents()
+
+		listener := newListener[*arkv1.GetSubscriptionResponse](
+			"sub-race", []string{testScript1},
+		)
+		svc.scriptSubsHandler.pushListener(listener)
+
+		done := make(chan struct{})
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		// Writer: churn the listener's topics under its lock, the way the
+		// Subscribe/Update/Unsubscribe RPCs do, until the reader is finished.
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					listener.addTopics([]string{testScript2})
+					listener.removeTopics([]string{testScript2})
+				}
+			}
+		}()
+
+		// Reader: drive the dispatch loop, which iterates listener.topics once
+		// per event regardless of whether the event matches.
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 3000; i++ {
+				eventsCh <- application.TransactionEvent{
+					TxData: application.TxData{Txid: "race-evt"},
+				}
+			}
+			close(done)
+		}()
+
+		wg.Wait()
+	})
+
 	t.Run("not-found maps to structured SUBSCRIPTION_NOT_FOUND", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestIndexerService(t)
