@@ -110,10 +110,9 @@ type Config struct {
 
 	VtxoNoCsvValidationCutoffDate int64
 
-	OtelCollectorEndpoint     string
-	OtelPushInterval          int64
-	PyroscopeServerURL        string
-	RoundReportServiceEnabled bool
+	OtelCollectorEndpoint string
+	OtelPushInterval      int64
+	PyroscopeServerURL    string
 
 	EsploraURL        string
 	AlertManagerURL   string
@@ -152,21 +151,20 @@ type Config struct {
 	// empty, every session starts a round (legacy behaviour).
 	BatchTrigger string
 
-	fee            ports.FeeManager
-	repo           ports.RepoManager
-	svc            application.Service
-	adminSvc       application.AdminService
-	wallet         ports.WalletService
-	signer         ports.SignerService
-	txBuilder      ports.TxBuilder
-	scanner        ports.BlockchainScanner
-	scheduler      ports.SchedulerService
-	unlocker       ports.Unlocker
-	liveStore      ports.LiveStore
-	network        *arklib.Network
-	roundReportSvc application.RoundReportService
-	alerts         ports.Alerts
-	settings       *domain.Settings
+	fee       ports.FeeManager
+	repo      ports.RepoManager
+	svc       application.Service
+	adminSvc  application.AdminService
+	wallet    ports.WalletService
+	signer    ports.SignerService
+	txBuilder ports.TxBuilder
+	scanner   ports.BlockchainScanner
+	scheduler ports.SchedulerService
+	unlocker  ports.Unlocker
+	liveStore ports.LiveStore
+	network   *arklib.Network
+	alerts    ports.Alerts
+	settings  *domain.Settings
 }
 
 func (c *Config) String() string {
@@ -508,7 +506,6 @@ func LoadConfig() (*Config, error) {
 		UtxoMinAmount:                 viper.GetInt64(UtxoMinAmount),
 		VtxoMaxAmount:                 viper.GetInt64(VtxoMaxAmount),
 		VtxoMinAmount:                 viper.GetInt64(VtxoMinAmount),
-		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		UnrolledVtxoMinExpiryMargin:   viper.GetInt64(UnrolledVtxoMinExpiryMargin),
 		MaxTxWeight:                   viper.GetUint64(MaxTxWeight),
@@ -735,15 +732,6 @@ func (c *Config) CacheService() ports.LiveStore {
 	return c.liveStore
 }
 
-func (c *Config) RoundReportService() (application.RoundReportService, error) {
-	if c.roundReportSvc == nil {
-		if err := c.roundReportService(); err != nil {
-			return nil, err
-		}
-	}
-	return c.roundReportSvc, nil
-}
-
 func (c *Config) feeManager() (err error) {
 	c.fee, err = feemanager.NewArkFeeManager(c.repo.Settings())
 	if err != nil {
@@ -854,9 +842,7 @@ func (c *Config) txBuilderService() error {
 	var err error
 	switch c.TxBuilderType {
 	case "covenantless":
-		svc = txbuilder.NewTxBuilder(
-			c.wallet, c.signer, *c.network, c.VtxoTreeExpiry, c.BoardingExitDelay,
-		)
+		svc = txbuilder.NewTxBuilder(c.wallet, c.signer, *c.network)
 	default:
 		err = fmt.Errorf("unknown tx builder type")
 	}
@@ -928,14 +914,10 @@ func (c *Config) appService() error {
 	if err := c.txBuilderService(); err != nil {
 		return err
 	}
-	roundReportSvc, err := c.RoundReportService()
-	if err != nil {
-		return err
-	}
 
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
-		c.scheduler, c.liveStore, roundReportSvc, c.alerts, c.fee,
+		c.scheduler, c.liveStore, c.alerts, c.fee,
 	)
 	if err != nil {
 		return err
@@ -976,15 +958,6 @@ func (c *Config) unlockerService() error {
 		return err
 	}
 	c.unlocker = svc
-	return nil
-}
-
-func (c *Config) roundReportService() error {
-	if !c.RoundReportServiceEnabled {
-		return nil
-	}
-
-	c.roundReportSvc = application.NewRoundReportService()
 	return nil
 }
 
