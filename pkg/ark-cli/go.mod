@@ -10,11 +10,14 @@ replace github.com/arkade-os/arkd/pkg/errors => ../errors
 
 replace github.com/arkade-os/arkd/pkg/client-lib => ../client-lib
 
+replace github.com/arkade-os/arkd/pkg/client-wallet => ../client-wallet
+
 replace github.com/arkade-os/arkd/api-spec => ../../api-spec
 
 require (
 	github.com/arkade-os/arkd/pkg/ark-lib v0.7.2-0.20251020193908-f401a905e83f
 	github.com/arkade-os/arkd/pkg/client-lib v0.0.0-00010101000000-000000000000
+	github.com/arkade-os/arkd/pkg/client-wallet v0.0.0-00010101000000-000000000000
 	github.com/urfave/cli/v2 v2.27.4
 	golang.org/x/term v0.43.0
 )
@@ -39,7 +42,6 @@ require (
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.3 // indirect
 	github.com/btcsuite/go-socks v0.0.0-20170105172521-4720035b7bfd // indirect
 	github.com/btcsuite/websocket v0.0.0-20150119174127-31079b680792 // indirect
-	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
@@ -50,7 +52,6 @@ require (
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/kkdai/bstream v1.0.0 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/neutrino v0.16.1-0.20240425105051-602843d34ffd // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.2 // indirect
@@ -62,9 +63,7 @@ require (
 	github.com/lightningnetwork/lnd/tlv v1.2.6 // indirect
 	github.com/ltcsuite/ltcd/chaincfg/chainhash v1.0.2 // indirect
 	github.com/meshapi/grpc-api-gateway v0.1.0 // indirect
-	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
@@ -72,9 +71,7 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
-	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
-	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
 	golang.org/x/net v0.55.0 // indirect

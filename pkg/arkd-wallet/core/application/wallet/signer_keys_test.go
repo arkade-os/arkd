@@ -1,7 +1,6 @@
 package wallet
 
 import (
-	"context"
 	"encoding/hex"
 	"strings"
 	"testing"
@@ -69,7 +68,8 @@ func TestSignTransaction(t *testing.T) {
 			b64 := signablePacket(t, owner, tt.leafSigner)
 
 			signed, err := tt.w.SignTransaction(
-				context.Background(), application.SignModeSigner, b64, false, nil)
+				t.Context(), application.SignModeSigner, b64, false, nil,
+			)
 			require.NoError(t, err)
 
 			out, err := psbt.NewFromRawBytes(strings.NewReader(signed), true)

@@ -1,4 +1,4 @@
-package utils
+package utils_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/arkade-os/arkd/pkg/client-lib/internal/utils"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -33,12 +34,12 @@ func TestStartReconnectingStream(t *testing.T) {
 			},
 		)
 
-		ch, closeFn, err := StartReconnectingStream(ctx, cfg)
+		ch, closeFn, err := utils.StartReconnectingStream(ctx, cfg)
 		require.NoError(t, err)
 		defer closeFn()
 
 		evs := collectEvents(t, ctx, ch, 1)
-		require.Equal(t, ReconnectingStreamStateReady, evs[0].state)
+		require.Equal(t, utils.ReconnectingStreamStateReady, evs[0].state)
 	})
 
 	// Verifies that READY is emitted after the 2-second timedOutRecv timeout when the stream
@@ -56,14 +57,14 @@ func TestStartReconnectingStream(t *testing.T) {
 			},
 		)
 
-		ch, closeFn, err := StartReconnectingStream(ctx, cfg)
+		ch, closeFn, err := utils.StartReconnectingStream(ctx, cfg)
 		require.NoError(t, err)
 		defer closeFn()
 
 		start := time.Now()
 		evs := collectEvents(t, ctx, ch, 1)
 
-		require.Equal(t, ReconnectingStreamStateReady, evs[0].state)
+		require.Equal(t, utils.ReconnectingStreamStateReady, evs[0].state)
 		require.GreaterOrEqual(t, time.Since(start), 2*time.Second,
 			"READY for a quiet stream should arrive after the ~2s timedOutRecv timeout")
 	})
@@ -71,9 +72,9 @@ func TestStartReconnectingStream(t *testing.T) {
 	// Verifies that DISCONNECTED is emitted and OnDisconnect is called when Recv returns a
 	// retryable error after READY.
 	t.Run("emits DISCONNECTED and triggers OnDisconnect", func(t *testing.T) {
-		saved := GrpcReconnectConfig
-		GrpcReconnectConfig.InitialDelay = 0
-		defer func() { GrpcReconnectConfig = saved }()
+		saved := utils.GrpcReconnectConfig
+		utils.GrpcReconnectConfig.InitialDelay = 0
+		defer func() { utils.GrpcReconnectConfig = saved }()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -99,13 +100,13 @@ func TestStartReconnectingStream(t *testing.T) {
 		)
 		cfg.OnDisconnect = func(err error) { disconnectCh <- err }
 
-		ch, closeFn, err := StartReconnectingStream(ctx, cfg)
+		ch, closeFn, err := utils.StartReconnectingStream(ctx, cfg)
 		require.NoError(t, err)
 		defer closeFn()
 
 		evs := collectEvents(t, ctx, ch, 2)
-		require.Equal(t, ReconnectingStreamStateReady, evs[0].state, "event[0]")
-		require.Equal(t, ReconnectingStreamStateDisconnected, evs[1].state, "event[1]")
+		require.Equal(t, utils.ReconnectingStreamStateReady, evs[0].state, "event[0]")
+		require.Equal(t, utils.ReconnectingStreamStateDisconnected, evs[1].state, "event[1]")
 
 		select {
 		case callErr := <-disconnectCh:
@@ -118,9 +119,9 @@ func TestStartReconnectingStream(t *testing.T) {
 	// Verifies that DISCONNECTED and OnDisconnect are NOT emitted when the error contains
 	// "service not ready".
 	t.Run("suppresses DISCONNECTED for notReady error", func(t *testing.T) {
-		saved := GrpcReconnectConfig
-		GrpcReconnectConfig.InitialDelay = 0
-		defer func() { GrpcReconnectConfig = saved }()
+		saved := utils.GrpcReconnectConfig
+		utils.GrpcReconnectConfig.InitialDelay = 0
+		defer func() { utils.GrpcReconnectConfig = saved }()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -146,16 +147,16 @@ func TestStartReconnectingStream(t *testing.T) {
 		)
 		cfg.OnDisconnect = func(err error) { disconnectCalled <- struct{}{} }
 
-		ch, closeFn, err := StartReconnectingStream(ctx, cfg)
+		ch, closeFn, err := utils.StartReconnectingStream(ctx, cfg)
 		require.NoError(t, err)
 		defer closeFn()
 
 		evs := collectEvents(t, ctx, ch, 1)
-		require.Equal(t, ReconnectingStreamStateReady, evs[0].state)
+		require.Equal(t, utils.ReconnectingStreamStateReady, evs[0].state)
 
 		select {
 		case ev := <-ch:
-			require.NotEqual(t, ReconnectingStreamStateDisconnected, ev.state,
+			require.NotEqual(t, utils.ReconnectingStreamStateDisconnected, ev.state,
 				"DISCONNECTED must not be emitted for 'service not ready'")
 		case <-disconnectCalled:
 			t.Error("OnDisconnect must not be called for 'service not ready'")
@@ -171,9 +172,9 @@ func TestStartReconnectingStream(t *testing.T) {
 	// (the old broken stream) instead of newStream, producing a spurious extra
 	// READY between DISCONNECTED and RECONNECTED.
 	t.Run("emits correct Connection event sequence after reconnection", func(t *testing.T) {
-		saved := GrpcReconnectConfig
-		GrpcReconnectConfig.InitialDelay = 0
-		defer func() { GrpcReconnectConfig = saved }()
+		saved := utils.GrpcReconnectConfig
+		utils.GrpcReconnectConfig.InitialDelay = 0
+		defer func() { utils.GrpcReconnectConfig = saved }()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -204,23 +205,23 @@ func TestStartReconnectingStream(t *testing.T) {
 			},
 		)
 
-		ch, closeFn, err := StartReconnectingStream(ctx, cfg)
+		ch, closeFn, err := utils.StartReconnectingStream(ctx, cfg)
 		require.NoError(t, err)
 		defer closeFn()
 
 		evs := collectEvents(t, ctx, ch, 4)
-		require.Equal(t, ReconnectingStreamStateReady, evs[0].state, "event[0]")
-		require.Equal(t, ReconnectingStreamStateDisconnected, evs[1].state, "event[1]")
-		require.Equal(t, ReconnectingStreamStateReconnected, evs[2].state, "event[2]")
-		require.Equal(t, ReconnectingStreamStateReady, evs[3].state, "event[3]")
+		require.Equal(t, utils.ReconnectingStreamStateReady, evs[0].state, "event[0]")
+		require.Equal(t, utils.ReconnectingStreamStateDisconnected, evs[1].state, "event[1]")
+		require.Equal(t, utils.ReconnectingStreamStateReconnected, evs[2].state, "event[2]")
+		require.Equal(t, utils.ReconnectingStreamStateReady, evs[3].state, "event[3]")
 	})
 
 	// Verifies that OnReconnectSuccess is called with the first message from the new
 	// stream after a successful reconnect.
 	t.Run("triggers OnReconnectSuccess after reconnection", func(t *testing.T) {
-		saved := GrpcReconnectConfig
-		GrpcReconnectConfig.InitialDelay = 0
-		defer func() { GrpcReconnectConfig = saved }()
+		saved := utils.GrpcReconnectConfig
+		utils.GrpcReconnectConfig.InitialDelay = 0
+		defer func() { utils.GrpcReconnectConfig = saved }()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -252,7 +253,7 @@ func TestStartReconnectingStream(t *testing.T) {
 		)
 		cfg.OnReconnectSuccess = func(r string) { reconnectSuccessCh <- r }
 
-		ch, closeFn, err := StartReconnectingStream(ctx, cfg)
+		ch, closeFn, err := utils.StartReconnectingStream(ctx, cfg)
 		require.NoError(t, err)
 		defer closeFn()
 
@@ -278,9 +279,9 @@ func TestStartReconnectingStream(t *testing.T) {
 	// RED: currently panics at L276 — cfg.OnReconnectSuccess(*recvResp) with
 	// recvResp == nil when timedOutRecv returns (nil, nil) on timeout.
 	t.Run("no panic when probe timeout", func(t *testing.T) {
-		saved := GrpcReconnectConfig
-		GrpcReconnectConfig.InitialDelay = 0
-		defer func() { GrpcReconnectConfig = saved }()
+		saved := utils.GrpcReconnectConfig
+		utils.GrpcReconnectConfig.InitialDelay = 0
+		defer func() { utils.GrpcReconnectConfig = saved }()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
@@ -307,7 +308,7 @@ func TestStartReconnectingStream(t *testing.T) {
 		)
 		cfg.OnReconnectSuccess = func(r string) {}
 
-		ch, closeFn, err := StartReconnectingStream(ctx, cfg)
+		ch, closeFn, err := utils.StartReconnectingStream(ctx, cfg)
 		require.NoError(t, err)
 		defer closeFn()
 
@@ -343,7 +344,7 @@ func TestStartReconnectingStream(t *testing.T) {
 			},
 		)
 
-		ch, closeFn, err := StartReconnectingStream(ctx, cfg)
+		ch, closeFn, err := utils.StartReconnectingStream(ctx, cfg)
 		require.NoError(t, err)
 		defer closeFn()
 
@@ -385,7 +386,7 @@ func TestStartReconnectingStream(t *testing.T) {
 			},
 		)
 
-		ch, closeFn, err := StartReconnectingStream(ctx, cfg)
+		ch, closeFn, err := utils.StartReconnectingStream(ctx, cfg)
 		require.NoError(t, err)
 
 		collectEvents(t, ctx, ch, 1) // wait for READY (after 2s timedOutRecv timeout)
@@ -414,9 +415,9 @@ func TestStartReconnectingStream(t *testing.T) {
 	// reconnect loop: a failed Reconnect must not return to the outer loop with
 	// a dead recvCh.
 	t.Run("reconnects after repeated Reconnect failures", func(t *testing.T) {
-		saved := GrpcReconnectConfig
-		GrpcReconnectConfig.InitialDelay = 0
-		defer func() { GrpcReconnectConfig = saved }()
+		saved := utils.GrpcReconnectConfig
+		utils.GrpcReconnectConfig.InitialDelay = 0
+		defer func() { utils.GrpcReconnectConfig = saved }()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -452,15 +453,15 @@ func TestStartReconnectingStream(t *testing.T) {
 			},
 		)
 
-		ch, closeFn, err := StartReconnectingStream(ctx, cfg)
+		ch, closeFn, err := utils.StartReconnectingStream(ctx, cfg)
 		require.NoError(t, err)
 		defer closeFn()
 
 		evs := collectEvents(t, ctx, ch, 4)
-		require.Equal(t, ReconnectingStreamStateReady, evs[0].state, "event[0]")
-		require.Equal(t, ReconnectingStreamStateDisconnected, evs[1].state, "event[1]")
-		require.Equal(t, ReconnectingStreamStateReconnected, evs[2].state, "event[2]")
-		require.Equal(t, ReconnectingStreamStateReady, evs[3].state, "event[3]")
+		require.Equal(t, utils.ReconnectingStreamStateReady, evs[0].state, "event[0]")
+		require.Equal(t, utils.ReconnectingStreamStateDisconnected, evs[1].state, "event[1]")
+		require.Equal(t, utils.ReconnectingStreamStateReconnected, evs[2].state, "event[2]")
+		require.Equal(t, utils.ReconnectingStreamStateReady, evs[3].state, "event[3]")
 		require.GreaterOrEqual(t, reconnectAttempts.Load(), int32(3),
 			"Reconnect must have been retried at least 3 times")
 	})
@@ -468,9 +469,9 @@ func TestStartReconnectingStream(t *testing.T) {
 	// Verifies that a non-retryable error from Reconnect emits a terminal error
 	// event and closes the channel.
 	t.Run("terminates on non-retryable Reconnect error", func(t *testing.T) {
-		saved := GrpcReconnectConfig
-		GrpcReconnectConfig.InitialDelay = 0
-		defer func() { GrpcReconnectConfig = saved }()
+		saved := utils.GrpcReconnectConfig
+		utils.GrpcReconnectConfig.InitialDelay = 0
+		defer func() { utils.GrpcReconnectConfig = saved }()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -489,7 +490,7 @@ func TestStartReconnectingStream(t *testing.T) {
 			},
 		)
 
-		ch, closeFn, err := StartReconnectingStream(ctx, cfg)
+		ch, closeFn, err := utils.StartReconnectingStream(ctx, cfg)
 		require.NoError(t, err)
 		defer closeFn()
 
@@ -520,7 +521,7 @@ func TestStartReconnectingStream(t *testing.T) {
 
 		msg := "hello"
 
-		cfg := ReconnectingStreamConfig[*mockStream, string, testEvent]{
+		cfg := utils.ReconnectingStreamConfig[*mockStream, string, testEvent]{
 			Connect:   func(ctx context.Context) (*mockStream, error) { return newMockStream(), nil },
 			Reconnect: func(ctx context.Context) (string, *mockStream, error) { return "", newMockStream(), nil },
 			Recv:      func(ms *mockStream) (*string, error) { return &msg, nil },
@@ -528,12 +529,12 @@ func TestStartReconnectingStream(t *testing.T) {
 				return fatalErr()
 			},
 			ErrorEvent: func(err error) testEvent { return testEvent{err: err} },
-			ConnectionEvent: func(e ReconnectingStreamStateEvent) testEvent {
+			ConnectionEvent: func(e utils.ReconnectingStreamStateEvent) testEvent {
 				return testEvent{state: e.State}
 			},
 		}
 
-		ch, closeFn, err := StartReconnectingStream(ctx, cfg)
+		ch, closeFn, err := utils.StartReconnectingStream(ctx, cfg)
 		require.NoError(t, err)
 		defer closeFn()
 
@@ -575,7 +576,7 @@ func newMockStream() *mockStream {
 
 // testEvent is the concrete domain event type used in tests.
 type testEvent struct {
-	state ReconnectingStreamState
+	state utils.ReconnectingStreamState
 	err   error
 }
 
@@ -604,8 +605,8 @@ func makeConfig(
 	connect func(context.Context) (*mockStream, error),
 	reconnect func(context.Context) (*mockStream, error),
 	recv func(*mockStream) (*string, error),
-) ReconnectingStreamConfig[*mockStream, string, testEvent] {
-	return ReconnectingStreamConfig[*mockStream, string, testEvent]{
+) utils.ReconnectingStreamConfig[*mockStream, string, testEvent] {
+	return utils.ReconnectingStreamConfig[*mockStream, string, testEvent]{
 		Connect: connect,
 		Reconnect: func(ctx context.Context) (string, *mockStream, error) {
 			stream, err := reconnect(ctx)
@@ -614,7 +615,7 @@ func makeConfig(
 		Recv:       recv,
 		HandleResp: func(_ context.Context, _ chan<- testEvent, _ string) error { return nil },
 		ErrorEvent: func(err error) testEvent { return testEvent{err: err} },
-		ConnectionEvent: func(e ReconnectingStreamStateEvent) testEvent {
+		ConnectionEvent: func(e utils.ReconnectingStreamStateEvent) testEvent {
 			return testEvent{state: e.State}
 		},
 	}
