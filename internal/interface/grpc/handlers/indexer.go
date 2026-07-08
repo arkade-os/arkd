@@ -462,34 +462,15 @@ func (h *indexerService) GetSubscription(
 	// new stream for events forever.
 	listener, att, err := h.scriptSubsHandler.attach(subscriptionId)
 	if err != nil {
-		if isNew {
-			// The listener we just pushed has no other owner; remove it so a
-			// failed attach cannot leak it.
-			h.scriptSubsHandler.removeListener(subscriptionId)
-		}
 		return subscriptionErr(subscriptionId, err)
 	}
-	defer func() {
-		if !h.scriptSubsHandler.detach(subscriptionId, att) {
-			// Displaced by a newer stream: the successor owns the
-			// subscription's lifecycle now.
-			return
-		}
-		if isNew {
-			h.scriptSubsHandler.removeListener(subscriptionId)
-			return
-		}
-		// Keep the listener alive on disconnect if either filter type is
-		// non-empty, so the client can reconnect within the timeout window
-		// without losing scripts or tx filters.
-		topics := h.scriptSubsHandler.getTopics(subscriptionId)
-		txFilters := h.scriptSubsHandler.getTxFilters(subscriptionId)
-		if len(topics) > 0 || len(txFilters) > 0 {
-			h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
-		} else {
-			h.scriptSubsHandler.removeListener(subscriptionId)
-		}
-	}()
+	// Atomically end this stream's hold on the subscription and settle its
+	// closing lifecycle
+	reconnectWindow := h.subscriptionTimeoutDuration
+	if isNew {
+		reconnectWindow = 0
+	}
+	defer h.scriptSubsHandler.release(subscriptionId, att, reconnectWindow)
 
 	if isNew {
 		// Apply initial filter, if any, through the same machinery used by

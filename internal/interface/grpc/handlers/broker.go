@@ -243,11 +243,10 @@ func (h *broker[T]) attach(id string) (*listener[T], *attachment, error) {
 	return l, l.attached, nil
 }
 
-// detach releases an attachment taken with attach and reports whether the
-// caller was still the listener's active consumer. A false return means the
-// stream was displaced (or the listener is already gone) and must not touch
-// the listener's lifecycle: cleanup belongs to the current holder.
-func (h *broker[T]) detach(id string, att *attachment) bool {
+// release ends att's hold on the listener and settles its lifecycle atomically:
+// kept for reconnectWindow if it still has filters, removed otherwise. Returns
+// false if att was displaced — the successor owns the lifecycle.
+func (h *broker[T]) release(id string, att *attachment, reconnectWindow time.Duration) bool {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
@@ -256,6 +255,16 @@ func (h *broker[T]) detach(id string, att *attachment) bool {
 		return false
 	}
 	l.attached = nil
+
+	l.lock.RLock()
+	hasFilters := len(l.topics) > 0 || len(l.txFilters) > 0
+	l.lock.RUnlock()
+	if reconnectWindow > 0 && hasFilters {
+		h.scheduleExpiryLocked(l, reconnectWindow)
+		return true
+	}
+	l.closeDone()
+	delete(h.listeners, id)
 	return true
 }
 
@@ -366,30 +375,27 @@ func (h *broker[T]) startTimeout(id string, timeout time.Duration) {
 	if l.attached != nil {
 		return
 	}
-	// stop any existing timeout on this listener
+	h.scheduleExpiryLocked(l, timeout)
+}
+
+// scheduleExpiryLocked (re)arms the expiry timer on l; broker lock must be held, and only the current timer may remove the listener.
+func (h *broker[T]) scheduleExpiryLocked(l *listener[T], timeout time.Duration) {
 	if l.timeoutTimer != nil {
 		l.timeoutTimer.Stop()
 	}
-
-	l.timeoutTimer = time.AfterFunc(timeout, func() {
+	var timer *time.Timer
+	timer = time.AfterFunc(timeout, func() {
 		h.lock.Lock()
 		defer h.lock.Unlock()
 
-		listener, ok := h.listeners[id]
-		if !ok {
+		listener, ok := h.listeners[l.id]
+		if !ok || listener.timeoutTimer != timer {
 			return
-		}
-		// A stream attached between this timer firing and this callback
-		// taking the lock; the listener is in use again.
-		if listener.attached != nil {
-			return
-		}
-		if listener.timeoutTimer != nil {
-			listener.timeoutTimer.Stop()
 		}
 		listener.closeDone()
-		delete(h.listeners, id)
+		delete(h.listeners, l.id)
 	})
+	l.timeoutTimer = timer
 }
 
 func (h *broker[T]) getListenersCopy() map[string]*listener[T] {

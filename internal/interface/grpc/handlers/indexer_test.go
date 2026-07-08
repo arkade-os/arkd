@@ -137,8 +137,7 @@ func TestGetSubscription(t *testing.T) {
 		require.NotEmpty(t, subId)
 
 		// Push an event via the broker channel.
-		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
-		require.NoError(t, err)
+		ch := svc.scriptSubsHandler.getListenersCopy()[subId].ch
 
 		ch <- &arkv1.GetSubscriptionResponse{
 			Data: &arkv1.GetSubscriptionResponse_Event{
@@ -178,8 +177,7 @@ func TestGetSubscription(t *testing.T) {
 		require.NotEmpty(t, subId)
 
 		// Listener should be present while the stream is open.
-		_, err := svc.scriptSubsHandler.getListenerChannel(subId)
-		require.NoError(t, err)
+		require.Contains(t, svc.scriptSubsHandler.getListenersCopy(), subId)
 
 		cancel()
 
@@ -191,8 +189,7 @@ func TestGetSubscription(t *testing.T) {
 		}
 
 		// After handler returns, listener must be removed (defer removeListener).
-		_, err = svc.scriptSubsHandler.getListenerChannel(subId)
-		require.Error(t, err)
+		require.NotContains(t, svc.scriptSubsHandler.getListenersCopy(), subId)
 	})
 
 	t.Run("new flow invalid scripts returns error", func(t *testing.T) {
@@ -328,8 +325,7 @@ func TestGetSubscription(t *testing.T) {
 		)
 
 		// Push an event via the broker channel.
-		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
-		require.NoError(t, err)
+		ch := svc.scriptSubsHandler.getListenersCopy()[subId].ch
 
 		ch <- &arkv1.GetSubscriptionResponse{
 			Data: &arkv1.GetSubscriptionResponse_Event{
@@ -376,8 +372,7 @@ func TestGetSubscription(t *testing.T) {
 		subId := msg.GetSubscriptionStarted().GetSubscriptionId()
 		require.NotEmpty(t, subId)
 
-		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
-		require.NoError(t, err)
+		ch := svc.scriptSubsHandler.getListenersCopy()[subId].ch
 
 		// Send an event before the heartbeat fires.
 		ch <- &arkv1.GetSubscriptionResponse{
@@ -418,8 +413,7 @@ func TestGetSubscription(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		stream := newMockGetSubscriptionServer(ctx)
 
-		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
-		require.NoError(t, err)
+		ch := svc.scriptSubsHandler.getListenersCopy()[subId].ch
 
 		errCh := make(chan error, 1)
 		go func() {
@@ -446,13 +440,12 @@ func TestGetSubscription(t *testing.T) {
 		}
 
 		// Listener should still exist (timeout not yet expired).
-		_, err = svc.scriptSubsHandler.getListenerChannel(subId)
-		require.NoError(t, err)
+		require.Contains(t, svc.scriptSubsHandler.getListenersCopy(), subId)
 
 		// After the timeout fires, listener should be cleaned up.
 		require.Eventually(t, func() bool {
-			_, err := svc.scriptSubsHandler.getListenerChannel(subId)
-			return err != nil
+			_, ok := svc.scriptSubsHandler.getListenersCopy()[subId]
+			return !ok
 		}, 2*time.Second, 50*time.Millisecond)
 	})
 
@@ -500,8 +493,7 @@ func TestGetSubscription(t *testing.T) {
 		}
 
 		// Listener should be removed immediately (no scripts → no timeout).
-		_, err = svc.scriptSubsHandler.getListenerChannel(subId)
-		require.Error(t, err)
+		require.NotContains(t, svc.scriptSubsHandler.getListenersCopy(), subId)
 	})
 
 	t.Run("old flow existing subscription_id works", func(t *testing.T) {
@@ -525,8 +517,7 @@ func TestGetSubscription(t *testing.T) {
 
 		// Grab the channel before starting GetSubscription; it is the same
 		// channel the handler will read from.
-		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
-		require.NoError(t, err)
+		ch := svc.scriptSubsHandler.getListenersCopy()[subId].ch
 
 		errCh := make(chan error, 1)
 		go func() {
@@ -585,8 +576,7 @@ func TestGetSubscription(t *testing.T) {
 
 		// Prove stream1 is attached before reconnecting: it must consume an
 		// event from the listener channel.
-		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
-		require.NoError(t, err)
+		ch := svc.scriptSubsHandler.getListenersCopy()[subId].ch
 		ch <- &arkv1.GetSubscriptionResponse{
 			Data: &arkv1.GetSubscriptionResponse_Event{
 				Event: &arkv1.IndexerSubscriptionEvent{Txid: "warmup"},
@@ -636,14 +626,9 @@ func TestGetSubscription(t *testing.T) {
 
 	t.Run("old flow displaced stream does not consume buffered events", func(t *testing.T) {
 		t.Parallel()
-		// A stream displaced by a reconnect must stop draining the listener
-		// channel, so an event buffered around the moment of displacement stays
-		// for the successor instead of being delivered to (and lost by) the
-		// abandoned stream. The select picks randomly among ready cases, so
-		// without the exit-before-receive priority a regression only shows up
-		// ~half the time; repeat the scenario to make it decisive.
-		const trials = 20
-		for i := 0; i < trials; i++ {
+		// a displaced stream must leave buffered events to its successor; the
+		// select picks randomly among ready cases so repeat to make it decisive
+		for range 20 {
 			svc := newTestIndexerService(t)
 			svc.heartbeat = 10 * time.Second // keep heartbeats out of the ordering
 
@@ -653,8 +638,7 @@ func TestGetSubscription(t *testing.T) {
 			require.NoError(t, err)
 			subId := subResp.GetSubscriptionId()
 
-			ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
-			require.NoError(t, err)
+			ch := svc.scriptSubsHandler.getListenersCopy()[subId].ch
 
 			pred := newGatedSubscriptionServer(context.Background())
 			errCh := make(chan error, 1)
@@ -727,8 +711,7 @@ func TestGetSubscription(t *testing.T) {
 		}()
 
 		// Prove the stream is attached before removing the subscription.
-		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
-		require.NoError(t, err)
+		ch := svc.scriptSubsHandler.getListenersCopy()[subId].ch
 		ch <- &arkv1.GetSubscriptionResponse{
 			Data: &arkv1.GetSubscriptionResponse_Event{
 				Event: &arkv1.IndexerSubscriptionEvent{Txid: "warmup"},
@@ -774,8 +757,7 @@ func TestGetSubscription(t *testing.T) {
 			)
 		}()
 
-		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
-		require.NoError(t, err)
+		ch := svc.scriptSubsHandler.getListenersCopy()[subId].ch
 		ch <- &arkv1.GetSubscriptionResponse{
 			Data: &arkv1.GetSubscriptionResponse_Event{
 				Event: &arkv1.IndexerSubscriptionEvent{Txid: "warmup"},
@@ -806,8 +788,8 @@ func TestGetSubscription(t *testing.T) {
 		// the successor is attached: well past the timeout, the subscription
 		// must still exist and serve the new stream.
 		time.Sleep(500 * time.Millisecond)
-		_, err = svc.scriptSubsHandler.getListenerChannel(subId)
-		require.NoError(t, err, "subscription reaped while a live stream was attached")
+		require.Contains(t, svc.scriptSubsHandler.getListenersCopy(), subId,
+			"subscription reaped while a live stream was attached")
 
 		ch <- &arkv1.GetSubscriptionResponse{
 			Data: &arkv1.GetSubscriptionResponse_Event{
@@ -872,8 +854,10 @@ func TestGetSubscription(t *testing.T) {
 
 		// The displaced stream's exit must not remove the listener out from
 		// under the stream that took over.
-		ch, err := svc.scriptSubsHandler.getListenerChannel(subId)
-		require.NoError(t, err, "listener removed by displaced stream while successor attached")
+		listeners := svc.scriptSubsHandler.getListenersCopy()
+		require.Contains(t, listeners, subId,
+			"listener removed by displaced stream while successor attached")
+		ch := listeners[subId].ch
 
 		ch <- &arkv1.GetSubscriptionResponse{
 			Data: &arkv1.GetSubscriptionResponse_Event{
@@ -1595,8 +1579,7 @@ func TestTxFilter(t *testing.T) {
 		}
 
 		// Listener should still be present (timeout-scheduled), not removed.
-		_, err := svc.scriptSubsHandler.getListenerChannel("sub-old-tx")
-		require.NoError(t, err)
+		require.Contains(t, svc.scriptSubsHandler.getListenersCopy(), "sub-old-tx")
 		require.ElementsMatch(
 			t, []string{hasExtension},
 			svc.scriptSubsHandler.getTxFilters("sub-old-tx"),
@@ -1726,8 +1709,7 @@ func TestTxFilter(t *testing.T) {
 		require.ElementsMatch(
 			t, []string{hasExtension}, svc.scriptSubsHandler.getTxFilters("sub-keep"),
 		)
-		_, err = svc.scriptSubsHandler.getListenerChannel("sub-keep")
-		require.NoError(t, err)
+		require.Contains(t, svc.scriptSubsHandler.getListenersCopy(), "sub-keep")
 	})
 
 	t.Run("UnsubscribeForScripts removes listener without tx filters", func(t *testing.T) {
@@ -1743,8 +1725,7 @@ func TestTxFilter(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		_, err = svc.scriptSubsHandler.getListenerChannel("sub-drop")
-		require.ErrorIs(t, err, ErrSubscriptionNotFound)
+		require.NotContains(t, svc.scriptSubsHandler.getListenersCopy(), "sub-drop")
 	})
 
 	t.Run("UnsubscribeForScripts unknown subscription returns NotFound", func(t *testing.T) {
@@ -1943,10 +1924,8 @@ func (m *mockGetSubscriptionServer) recv(t *testing.T, timeout time.Duration) *a
 }
 
 // gatedSubscriptionServer blocks in its first Send until release is closed,
-// signalling entered when it gets there. It lets a test park the handler
-// inside Send — out of its select loop — so the test can set up a precise
-// ordering (buffer an event, then displace the stream) before the handler
-// resumes and re-enters the loop.
+// signalling entered when it gets there. It lets a test park the handler out
+// of its select loop to set up a precise ordering before it resumes.
 type gatedSubscriptionServer struct {
 	ctx     context.Context
 	sendCh  chan *arkv1.GetSubscriptionResponse

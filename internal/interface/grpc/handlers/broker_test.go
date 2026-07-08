@@ -10,19 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// getListenerChannel is a test fixture: production code reaches a listener's
-// channel through attach, but tests push events onto (and inspect) listeners
-// without attaching to them.
-func (h *broker[T]) getListenerChannel(id string) (chan T, error) {
-	h.lock.RLock()
-	listener, ok := h.listeners[id]
-	h.lock.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
-	}
-	return listener.ch, nil
-}
-
 func TestBroker(t *testing.T) {
 	t.Parallel()
 
@@ -246,21 +233,6 @@ func TestBroker(t *testing.T) {
 		default:
 			require.Fail(t, "listener done channel should be closed")
 		}
-	})
-
-	t.Run("getListenerChannel", func(t *testing.T) {
-		broker := newBroker[string]()
-		listener := newListener[string]("test-id", []string{"topic1"})
-		broker.pushListener(listener)
-
-		ch, err := broker.getListenerChannel("test-id")
-		require.NoError(t, err)
-		require.Equal(t, listener.ch, ch)
-
-		ch, err = broker.getListenerChannel("non-existent")
-		require.Error(t, err)
-		require.Nil(t, ch)
-		require.ErrorIs(t, err, ErrSubscriptionNotFound)
 	})
 
 	t.Run("getTopics", func(t *testing.T) {
@@ -491,21 +463,40 @@ func TestBroker(t *testing.T) {
 			}
 
 			// Ownership moved to the second attachment.
-			require.False(t, broker.detach("test-id", att1))
-			require.True(t, broker.detach("test-id", att2))
+			require.False(t, broker.release("test-id", att1, time.Hour))
+			require.True(t, broker.release("test-id", att2, time.Hour))
 		})
 
-		t.Run("detach is idempotent and rejects non-owner", func(t *testing.T) {
-			broker := newBroker[string]()
-			listener := newListener[string]("test-id", []string{"topic1"})
-			broker.pushListener(listener)
+		t.Run("release and concurrent attach are atomic", func(t *testing.T) {
+			// a racing attach either wins (listener survives, successor owns
+			// it) or gets a clean not-found — never a destroyed listener
+			for range 200 {
+				broker := newBroker[string]()
+				listener := newListener[string]("test-id", nil)
+				broker.pushListener(listener)
 
-			_, att, err := broker.attach("test-id")
-			require.NoError(t, err)
+				_, att1, err := broker.attach("test-id")
+				require.NoError(t, err)
 
-			require.True(t, broker.detach("test-id", att))
-			require.False(t, broker.detach("test-id", att))
-			require.False(t, broker.detach("missing", att))
+				attached := make(chan error, 1)
+				go func() {
+					_, _, err := broker.attach("test-id")
+					attached <- err
+				}()
+				broker.release("test-id", att1, 0)
+
+				if err := <-attached; err != nil {
+					require.ErrorIs(t, err, ErrSubscriptionNotFound)
+					require.Empty(t, broker.getListenersCopy())
+					continue
+				}
+				require.Len(t, broker.getListenersCopy(), 1)
+				select {
+				case <-listener.done:
+					t.Fatal("listener destroyed under the attached successor")
+				default:
+				}
+			}
 		})
 
 		t.Run("attach cancels pending timeout", func(t *testing.T) {
@@ -540,56 +531,41 @@ func TestBroker(t *testing.T) {
 			time.Sleep(150 * time.Millisecond)
 			require.Len(t, broker.getListenersCopy(), 1)
 
-			// Once the attachment is released the timeout may be armed again.
-			require.True(t, broker.detach("test-id", att))
-			broker.startTimeout("test-id", 50*time.Millisecond)
+			require.True(t, broker.release("test-id", att, 50*time.Millisecond))
 			time.Sleep(150 * time.Millisecond)
 			require.Len(t, broker.getListenersCopy(), 0)
 		})
 
-		t.Run("concurrent attach and detach on the same id", func(t *testing.T) {
-			// Many goroutines racing attach/detach on one listener must keep the
-			// broker's internal state consistent (run with -race) and never let
-			// a detach succeed twice for the same attachment. require is not
-			// goroutine-safe, so goroutines only record violations; the
-			// assertions run on the test goroutine after they finish.
+		t.Run("concurrent attach and release on the same id", func(t *testing.T) {
 			broker := newBroker[string]()
 			listener := newListener[string]("test-id", []string{"topic1"})
 			broker.pushListener(listener)
 
 			const goroutines = 50
-			var doubleDetach int32
+			var releaseTrue atomic.Int32
 			var wg sync.WaitGroup
-			wg.Add(goroutines)
-			for i := 0; i < goroutines; i++ {
-				go func() {
-					defer wg.Done()
+			for range goroutines {
+				wg.Go(func() {
 					_, att, err := broker.attach("test-id")
 					if err != nil {
 						return
 					}
-					// An attacher may still own the listener when it detaches or
-					// may have been displaced by a later attach; either way a
-					// second detach of the same attachment must be a no-op.
-					broker.detach("test-id", att)
-					if broker.detach("test-id", att) {
-						atomic.AddInt32(&doubleDetach, 1)
+					broker.release("test-id", att, time.Hour)
+					if broker.release("test-id", att, time.Hour) {
+						releaseTrue.Add(1)
 					}
-				}()
+				})
 			}
 			wg.Wait()
 
-			require.Zero(t, atomic.LoadInt32(&doubleDetach),
-				"detach returned true twice for the same attachment")
+			// only 1 release should return true
+			require.Zero(t, releaseTrue.Load())
 
-			// After the storm settles the listener still exists and at most one
-			// attachment is live. Detaching it (if present) is the final owner
-			// handoff; a second detach of the same attachment must be a no-op.
 			listeners := broker.getListenersCopy()
 			require.Len(t, listeners, 1)
 			if att := listeners["test-id"].attached; att != nil {
-				require.True(t, broker.detach("test-id", att))
-				require.False(t, broker.detach("test-id", att))
+				require.True(t, broker.release("test-id", att, time.Hour))
+				require.False(t, broker.release("test-id", att, time.Hour))
 			}
 		})
 	})
@@ -643,8 +619,7 @@ func TestBroker(t *testing.T) {
 		listener := newListener[string]("test-id", []string{"topic1"})
 		broker.pushListener(listener)
 
-		ch, err := broker.getListenerChannel("test-id")
-		require.NoError(t, err)
+		ch := listener.ch
 
 		// test sending to channel
 		go func() {
