@@ -445,6 +445,7 @@ func (h *indexerService) GetSubscription(
 	request *arkv1.GetSubscriptionRequest, stream arkv1.IndexerService_GetSubscriptionServer,
 ) error {
 	subscriptionId := request.GetSubscriptionId()
+	reconnectWindow := h.subscriptionTimeoutDuration
 
 	isNew := len(subscriptionId) == 0
 	if isNew {
@@ -453,23 +454,16 @@ func (h *indexerService) GetSubscription(
 		h.scriptSubsHandler.pushListener(
 			newListener[*arkv1.GetSubscriptionResponse](subscriptionId, nil),
 		)
+		reconnectWindow = 0
 	}
 
-	// Attach as the subscription's sole consumer. Reconnecting with the same
-	// subscription id displaces the previous stream: an abandoned stream whose
-	// disconnect the server never observed (e.g. behind a load balancer that
-	// keeps the connection alive) is terminated instead of competing with the
-	// new stream for events forever.
+	// Attach as the subscription's sole consumer
+	// it forces any previous streams attached to the same subscriptinId to be closed
 	listener, att, err := h.scriptSubsHandler.attach(subscriptionId)
 	if err != nil {
 		return subscriptionErr(subscriptionId, err)
 	}
-	// Atomically end this stream's hold on the subscription and settle its
-	// closing lifecycle
-	reconnectWindow := h.subscriptionTimeoutDuration
-	if isNew {
-		reconnectWindow = 0
-	}
+	// On exit, release our hold: the subscription survives for reconnectWindow.
 	defer h.scriptSubsHandler.release(subscriptionId, att, reconnectWindow)
 
 	if isNew {

@@ -35,15 +35,13 @@ type listener[T any] struct {
 	done         chan struct{}
 	closeDoneMux sync.Once
 	timeoutTimer *time.Timer
-	// attached tracks the stream currently consuming ch, if any. Like
-	// timeoutTimer it is guarded by the owning broker's lock.
+	
 	attached *attachment
 	lock     *sync.RWMutex
 }
 
-// attachment represents a stream's exclusive hold on a listener. It is
-// created by attach and released by detach; a newer attach displaces the
-// previous holder by closing its displaced channel.
+// attachment represents a stream's exclusive hold on a listener. Its displaced
+// channel is closed when another stream takes over, telling the old stream to exit.
 type attachment struct {
 	displaced chan struct{}
 }
@@ -220,10 +218,8 @@ func (h *broker[T]) removeListener(id string) {
 	delete(h.listeners, id)
 }
 
-// attach registers the calling stream as the listener's sole consumer and
-// cancels any pending removal timeout. If another stream is already attached
-// it is displaced: its attachment's displaced channel is closed and ownership
-// of the listener's lifecycle moves to the new attachment.
+// attach makes the calling stream the listener's sole consumer, cancelling any
+// pending removal timeout and displacing the currently attached stream, if any.
 func (h *broker[T]) attach(id string) (*listener[T], *attachment, error) {
 	h.lock.Lock()
 	defer h.lock.Unlock()
@@ -243,9 +239,8 @@ func (h *broker[T]) attach(id string) (*listener[T], *attachment, error) {
 	return l, l.attached, nil
 }
 
-// release ends att's hold on the listener and settles its lifecycle atomically:
-// kept for reconnectWindow if it still has filters, removed otherwise. Returns
-// false if att was displaced — the successor owns the lifecycle.
+// release ends att's hold on the listener: kept for reconnectWindow if it still
+// has filters, removed otherwise. Returns false if att was displaced.
 func (h *broker[T]) release(id string, att *attachment, reconnectWindow time.Duration) bool {
 	h.lock.Lock()
 	defer h.lock.Unlock()
