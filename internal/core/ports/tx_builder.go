@@ -49,8 +49,8 @@ type TxBuilder interface {
 	// utxos as inputs of the transaction.
 	// Returns the commitment tx, the vtxo tree, the connector tree and its root address.
 	BuildCommitmentTx(
-		signerPubkey *btcec.PublicKey, intents domain.Intents,
-		boardingInputs []BoardingInput, cosigners [][]string,
+		signerPubkey *btcec.PublicKey, intents domain.Intents, boardingInputs []BoardingInput,
+		cosigners [][]string, vtxoTreeExpiry arklib.RelativeLocktime,
 	) (
 		commitmentTx string, vtxoTree *tree.TxTree,
 		connectorAddress string, connectors *tree.TxTree, err error,

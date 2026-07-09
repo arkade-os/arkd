@@ -1998,6 +1998,12 @@
             ],
             "format": "int64"
           },
+          "batchTrigger": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "boardingExitDelay": {
             "type": [
               "integer",

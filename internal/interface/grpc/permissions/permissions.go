@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
+	channelzgrpc "google.golang.org/grpc/channelz/grpc_channelz_v1"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/macaroon-bakery.v2/bakery"
 )
@@ -17,6 +18,7 @@ const (
 	EntityArk               = "ark"
 	EntityIndexer           = "indexer"
 	EntityHealth            = "health"
+	EntityChannelz          = "channelz"
 	EntityAuthManager       = "authmanager"
 )
 
@@ -264,6 +266,29 @@ func Whitelist() map[string][]bakery.Op {
 		fmt.Sprintf("/%s/GetAsset", arkv1.IndexerService_ServiceDesc.ServiceName): {{
 			Entity: EntityIndexer,
 			Action: "read",
+		}},
+
+		/* Channelz APIs (restricted to admin port) */
+		fmt.Sprintf("/%s/GetTopChannels", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetServers", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetServer", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetServerSockets", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetChannel", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetSubchannel", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetSocket", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
 		}},
 	}
 }

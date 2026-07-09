@@ -725,6 +725,7 @@ func (a *adminHandler) GetSettings(
 			BuildVersionHeader:            &settings.BuildVersionHeader,
 			BuildVersionHeaderRequired:    &settings.BuildVersionHeaderRequired,
 			DigestHeaderRequired:          &settings.DigestHeaderRequired,
+			BatchTrigger:                  &settings.BatchTrigger,
 			UpdatedAt:                     formatTime(settings.UpdatedAt),
 		}
 	}
@@ -864,6 +865,7 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		noteUriPrefix                                    *string
 		buildVersionHeader                               *string
 		buildVersionHeaderRequired, digestHeaderRequired *bool
+		batchTrigger                                     *string
 	)
 	if settings.BanThreshold != nil {
 		t := uint64(settings.GetBanThreshold())
@@ -921,6 +923,10 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		t := settings.GetDigestHeaderRequired()
 		digestHeaderRequired = &t
 	}
+	if settings.BatchTrigger != nil {
+		t := settings.GetBatchTrigger()
+		batchTrigger = &t
+	}
 
 	return &domain.SettingsUpdate{
 		SessionDuration:               parseDuration(settings.SessionDuration),
@@ -947,6 +953,7 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		BuildVersionHeader:            buildVersionHeader,
 		BuildVersionHeaderRequired:    buildVersionHeaderRequired,
 		DigestHeaderRequired:          digestHeaderRequired,
+		BatchTrigger:                  batchTrigger,
 	}, nil
 }
 

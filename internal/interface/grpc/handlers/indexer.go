@@ -15,6 +15,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
+	arkdErrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
@@ -444,16 +445,28 @@ func (h *indexerService) GetSubscription(
 	request *arkv1.GetSubscriptionRequest, stream arkv1.IndexerService_GetSubscriptionServer,
 ) error {
 	subscriptionId := request.GetSubscriptionId()
+	reconnectWindow := h.subscriptionTimeoutDuration
 
-	var scriptCh chan *arkv1.GetSubscriptionResponse
-
-	if len(subscriptionId) == 0 {
+	isNew := len(subscriptionId) == 0
+	if isNew {
 		// New single-connection flow: create subscription inline.
 		subscriptionId = uuid.NewString()
-		listener := newListener[*arkv1.GetSubscriptionResponse](subscriptionId, nil)
-		h.scriptSubsHandler.pushListener(listener)
-		defer h.scriptSubsHandler.removeListener(subscriptionId)
+		h.scriptSubsHandler.pushListener(
+			newListener[*arkv1.GetSubscriptionResponse](subscriptionId, nil),
+		)
+		reconnectWindow = 0
+	}
 
+	// Attach as the subscription's sole consumer
+	// it forces any previous streams attached to the same subscriptinId to be closed
+	listener, att, err := h.scriptSubsHandler.attach(subscriptionId)
+	if err != nil {
+		return subscriptionErr(subscriptionId, err)
+	}
+	// On exit, release our hold: the subscription survives for reconnectWindow.
+	defer h.scriptSubsHandler.release(subscriptionId, att, reconnectWindow)
+
+	if isNew {
 		// Apply initial filter, if any, through the same machinery used by
 		// UpdateSubscription. `scripts.remove` is ignored on creation
 		// because the subscription has no scripts to remove yet.
@@ -462,8 +475,6 @@ func (h *indexerService) GetSubscription(
 				return err
 			}
 		}
-
-		scriptCh = listener.ch
 
 		// Send SubscriptionStartedEvent as first message.
 		startedEvt := &arkv1.GetSubscriptionResponse{
@@ -475,30 +486,6 @@ func (h *indexerService) GetSubscription(
 		}
 		if err := stream.Send(startedEvt); err != nil {
 			return err
-		}
-	} else {
-		// Old flow: subscription_id provided, use existing listener.
-		h.scriptSubsHandler.stopTimeout(subscriptionId)
-		defer func() {
-			// Keep the listener alive on disconnect if either filter type is
-			// non-empty, so the client can reconnect within the timeout window
-			// without losing scripts or tx filters.
-			topics := h.scriptSubsHandler.getTopics(subscriptionId)
-			txFilters := h.scriptSubsHandler.getTxFilters(subscriptionId)
-			if len(topics) > 0 || len(txFilters) > 0 {
-				h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
-			} else {
-				h.scriptSubsHandler.removeListener(subscriptionId)
-			}
-		}()
-
-		var err error
-		scriptCh, err = h.scriptSubsHandler.getListenerChannel(subscriptionId)
-		if err != nil {
-			if errors.Is(err, ErrSubscriptionNotFound) {
-				return status.Error(codes.NotFound, err.Error())
-			}
-			return status.Error(codes.Internal, err.Error())
 		}
 	}
 
@@ -519,10 +506,40 @@ func (h *indexerService) GetSubscription(
 	}
 
 	for {
+		// Two selects are intentional. A single select cannot express
+		// priority: if both an exit signal and listener.ch are ready, Go
+		// chooses randomly. That could let a displaced or removed stream
+		// consume an event intended for its replacement.
+		//
+		// The first select is non-blocking. If an exit signal is already
+		// pending, it returns immediately without draining listener.ch,
+		// leaving buffered events for the successor.
 		select {
 		case <-stream.Context().Done():
 			return nil
-		case ev := <-scriptCh:
+		case <-listener.done:
+			return nil
+		case <-att.displaced:
+			return nil
+		default:
+		}
+
+		// The second select blocks waiting for work or shutdown. The exit
+		// cases are repeated so that a signal arriving while blocked wakes
+		// the goroutine immediately instead of waiting for the next event or
+		// heartbeat.
+		select {
+		case <-stream.Context().Done():
+			return nil
+		case <-listener.done:
+			// Subscription removed (unsubscribed, or reaped after the
+			// reconnect window expired).
+			return nil
+		case <-att.displaced:
+			// The client reconnected with the same subscription id on a new
+			// stream; this stream is abandoned.
+			return nil
+		case ev := <-listener.ch:
 			if err := stream.Send(ev); err != nil {
 				return err
 			}
@@ -577,12 +594,13 @@ func (h *indexerService) applyFilter(
 	exprs := filter.GetExpressions()
 	scripts := filter.GetScripts()
 
-	// Validate all inputs upfront before any mutation. Cap enforcement on
+	// Validate all inputs upfront before any mutation. A bad expression is
+	// returned as the structured INVALID_TX_FILTER code. Cap enforcement on
 	// the compiled set is the broker's responsibility (see installTxFilters
-	// below); we still surface it as InvalidArgument when it fires.
+	// below) and surfaces as the structured TX_FILTERS_LIMIT_EXCEEDED code.
 	compiledExprs, err := compileTxFilters(exprs)
 	if err != nil {
-		return status.Error(codes.InvalidArgument, err.Error())
+		return err
 	}
 
 	var parsedAdd, parsedRemove []string
@@ -603,22 +621,21 @@ func (h *indexerService) applyFilter(
 
 	// Mutate: expressions first (literal overwrite), then scripts.
 	if err := h.scriptSubsHandler.installTxFilters(subscriptionID, compiledExprs); err != nil {
-		switch {
-		case errors.Is(err, ErrSubscriptionNotFound):
-			return status.Error(codes.NotFound, err.Error())
-		case errors.Is(err, ErrTxFiltersLimitExceeded):
-			return status.Error(codes.InvalidArgument, err.Error())
-		default:
-			return status.Error(codes.Internal, err.Error())
+		if errors.Is(err, ErrTxFiltersLimitExceeded) {
+			return arkdErrors.TX_FILTERS_LIMIT_EXCEEDED.
+				New("%s", err.Error()).
+				WithMetadata(arkdErrors.TxFiltersLimitMetadata{
+					SubscriptionId: subscriptionID,
+					MaxTxFilters:   MaxTxFiltersPerListener,
+					GotTxFilters:   len(compiledExprs),
+				})
 		}
+		return subscriptionErr(subscriptionID, err)
 	}
 
 	if len(parsedAdd) > 0 {
 		if err := h.scriptSubsHandler.addTopics(subscriptionID, parsedAdd); err != nil {
-			if errors.Is(err, ErrSubscriptionNotFound) {
-				return status.Error(codes.NotFound, err.Error())
-			}
-			return status.Error(codes.Internal, err.Error())
+			return subscriptionErr(subscriptionID, err)
 		}
 	}
 
@@ -629,18 +646,12 @@ func (h *indexerService) applyFilter(
 	switch {
 	case len(parsedRemove) > 0:
 		if err := h.scriptSubsHandler.removeTopics(subscriptionID, parsedRemove); err != nil {
-			if errors.Is(err, ErrSubscriptionNotFound) {
-				return status.Error(codes.NotFound, err.Error())
-			}
-			return status.Error(codes.Internal, err.Error())
+			return subscriptionErr(subscriptionID, err)
 		}
 	case len(parsedAdd) == 0:
 		// Both add and remove empty: mirror UnsubscribeForScripts and clear all.
 		if err := h.scriptSubsHandler.removeAllTopics(subscriptionID); err != nil {
-			if errors.Is(err, ErrSubscriptionNotFound) {
-				return status.Error(codes.NotFound, err.Error())
-			}
-			return status.Error(codes.Internal, err.Error())
+			return subscriptionErr(subscriptionID, err)
 		}
 	}
 
@@ -659,10 +670,7 @@ func (h *indexerService) UnsubscribeForScripts(
 	if len(scripts) == 0 {
 		// remove all topics
 		if err := h.scriptSubsHandler.removeAllTopics(subscriptionId); err != nil {
-			if errors.Is(err, ErrSubscriptionNotFound) {
-				return nil, status.Error(codes.NotFound, err.Error())
-			}
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, subscriptionErr(subscriptionId, err)
 		}
 		// Only tear down the listener if no tx filters remain on it, otherwise
 		// tx-only subscriptions would be silently dropped.
@@ -673,13 +681,26 @@ func (h *indexerService) UnsubscribeForScripts(
 	}
 
 	if err := h.scriptSubsHandler.removeTopics(subscriptionId, scripts); err != nil {
-		if errors.Is(err, ErrSubscriptionNotFound) {
-			return nil, status.Error(codes.NotFound, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, subscriptionErr(subscriptionId, err)
 	}
 
 	return &arkv1.UnsubscribeForScriptsResponse{}, nil
+}
+
+// subscriptionErr maps an error returned by the script-subscription broker
+// onto the error surfaced to the client. A missing subscription becomes the
+// structured SUBSCRIPTION_NOT_FOUND code (gRPC NotFound); any other error is
+// reported as Internal. The message keeps the legacy
+// "subscription <id> not found" phrasing so SDKs that still match on the error
+// string keep detecting stale subscriptions (see ts-sdk#600), while the
+// structured code lets clients detect it without parsing the message.
+func subscriptionErr(id string, err error) error {
+	if errors.Is(err, ErrSubscriptionNotFound) {
+		return arkdErrors.SUBSCRIPTION_NOT_FOUND.
+			New("subscription %s not found", id).
+			WithMetadata(arkdErrors.SubscriptionMetadata{SubscriptionId: id})
+	}
+	return status.Error(codes.Internal, err.Error())
 }
 
 func (h *indexerService) SubscribeForScripts(
@@ -702,7 +723,7 @@ func (h *indexerService) SubscribeForScripts(
 	} else {
 		// update listener topic
 		if err := h.scriptSubsHandler.addTopics(subscriptionId, scripts); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, subscriptionErr(subscriptionId, err)
 		}
 	}
 	return &arkv1.SubscribeForScriptsResponse{
@@ -791,7 +812,13 @@ func (h *indexerService) listenToTxEvents() {
 			spentVtxos := make([]*arkv1.IndexerVtxo, 0)
 			involvedScripts := make([]string, 0)
 
-			for vtxoScript := range l.topics {
+			// Snapshot the topics under the listener's lock. Ranging l.topics
+			// directly races with addTopics/removeTopics/overwriteTopics, which
+			// the Subscribe/Update/Unsubscribe RPCs call under the lock. A
+			// concurrent map iteration and write is a fatal, unrecoverable
+			// runtime error that would crash the whole process. getTopics copies
+			// the keys under the lock, the same way matchesTx does for filters.
+			for _, vtxoScript := range l.getTopics() {
 				spendableVtxosForScript := allSpendableVtxos[vtxoScript]
 				spentVtxosForScript := allSpentVtxos[vtxoScript]
 				spendableVtxos = append(spendableVtxos, spendableVtxosForScript...)

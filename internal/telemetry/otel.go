@@ -9,8 +9,6 @@ import (
 
 	"go.opentelemetry.io/otel/propagation"
 
-	"github.com/arkade-os/arkd/internal/core/application"
-
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -50,10 +48,7 @@ var arkRuntimeMetrics = []string{
 }
 
 func InitOtelSDK(
-	ctx context.Context,
-	otelCollectorUrl string,
-	pushInterval time.Duration,
-	rrsvc application.RoundReportService,
+	ctx context.Context, otelCollectorUrl string, pushInterval time.Duration,
 ) (func(context.Context) error, error) {
 	// TODO: support secure connection in the future
 	otelCollectorUrl = strings.TrimSuffix(otelCollectorUrl, "/")
@@ -118,20 +113,7 @@ func InitOtelSDK(
 
 	go collectGoRuntimeMetrics(ctx)
 
-	var rrExporter *RoundReportLogExporter
-	if rrsvc != nil {
-		rrExporter, err = newRoundReportLogExporter(ctx, rrsvc)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	shutdown := func(ctx context.Context) error {
-		if rrExporter != nil {
-			if err := rrExporter.Close(ctx); err != nil {
-				return err
-			}
-		}
 		err3 := lp.Shutdown(ctx)
 		err1 := tp.Shutdown(ctx)
 		err2 := mp.Shutdown(ctx)

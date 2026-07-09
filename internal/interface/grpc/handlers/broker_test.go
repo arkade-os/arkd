@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -234,21 +235,6 @@ func TestBroker(t *testing.T) {
 		}
 	})
 
-	t.Run("getListenerChannel", func(t *testing.T) {
-		broker := newBroker[string]()
-		listener := newListener[string]("test-id", []string{"topic1"})
-		broker.pushListener(listener)
-
-		ch, err := broker.getListenerChannel("test-id")
-		require.NoError(t, err)
-		require.Equal(t, listener.ch, ch)
-
-		ch, err = broker.getListenerChannel("non-existent")
-		require.Error(t, err)
-		require.Nil(t, ch)
-		require.ErrorIs(t, err, ErrSubscriptionNotFound)
-	})
-
 	t.Run("getTopics", func(t *testing.T) {
 		broker := newBroker[string]()
 		topics := []string{"topic1", "topic2", "TOPIC3"}
@@ -415,20 +401,6 @@ func TestBroker(t *testing.T) {
 			require.Len(t, listeners, 0)
 		})
 
-		t.Run("stopTimeout", func(t *testing.T) {
-			broker := newBroker[string]()
-			listener := newListener[string]("test-id", []string{"topic1"})
-			broker.pushListener(listener)
-
-			broker.startTimeout("test-id", 100*time.Millisecond)
-			broker.stopTimeout("test-id")
-
-			// wait to ensure timeout doesn't trigger
-			time.Sleep(150 * time.Millisecond)
-			listeners := broker.getListenersCopy()
-			require.Len(t, listeners, 1) // should still exist
-		})
-
 		t.Run("concurrent timeout with several listeners", func(t *testing.T) {
 			const nbListeners = 10
 			broker := newBroker[string]()
@@ -456,6 +428,146 @@ func TestBroker(t *testing.T) {
 			// all listeners should be removed
 			listeners := broker.getListenersCopy()
 			require.Len(t, listeners, 0)
+		})
+	})
+
+	t.Run("attachment management", func(t *testing.T) {
+		t.Run("attach unknown id returns not found", func(t *testing.T) {
+			broker := newBroker[string]()
+
+			_, _, err := broker.attach("missing")
+			require.ErrorIs(t, err, ErrSubscriptionNotFound)
+		})
+
+		t.Run("attach displaces previous attachment", func(t *testing.T) {
+			broker := newBroker[string]()
+			listener := newListener[string]("test-id", []string{"topic1"})
+			broker.pushListener(listener)
+
+			_, att1, err := broker.attach("test-id")
+			require.NoError(t, err)
+
+			_, att2, err := broker.attach("test-id")
+			require.NoError(t, err)
+
+			// The first attachment must be displaced, the second must not.
+			select {
+			case <-att1.displaced:
+			case <-time.After(time.Second):
+				require.Fail(t, "first attachment not displaced by second attach")
+			}
+			select {
+			case <-att2.displaced:
+				require.Fail(t, "second attachment displaced unexpectedly")
+			default:
+			}
+
+			// Ownership moved to the second attachment.
+			require.False(t, broker.release("test-id", att1, time.Hour))
+			require.True(t, broker.release("test-id", att2, time.Hour))
+		})
+
+		t.Run("release and concurrent attach are atomic", func(t *testing.T) {
+			// a racing attach either wins (listener survives, successor owns
+			// it) or gets a clean not-found — never a destroyed listener
+			for range 200 {
+				broker := newBroker[string]()
+				listener := newListener[string]("test-id", nil)
+				broker.pushListener(listener)
+
+				_, att1, err := broker.attach("test-id")
+				require.NoError(t, err)
+
+				attached := make(chan error, 1)
+				go func() {
+					_, _, err := broker.attach("test-id")
+					attached <- err
+				}()
+				broker.release("test-id", att1, 0)
+
+				if err := <-attached; err != nil {
+					require.ErrorIs(t, err, ErrSubscriptionNotFound)
+					require.Empty(t, broker.getListenersCopy())
+					continue
+				}
+				require.Len(t, broker.getListenersCopy(), 1)
+				select {
+				case <-listener.done:
+					t.Fatal("listener destroyed under the attached successor")
+				default:
+				}
+			}
+		})
+
+		t.Run("attach cancels pending timeout", func(t *testing.T) {
+			broker := newBroker[string]()
+			listener := newListener[string]("test-id", []string{"topic1"})
+			broker.pushListener(listener)
+
+			broker.startTimeout("test-id", 50*time.Millisecond)
+			_, _, err := broker.attach("test-id")
+			require.NoError(t, err)
+
+			// wait well past the timeout: the listener must survive because a
+			// stream attached before it fired
+			time.Sleep(150 * time.Millisecond)
+			require.Len(t, broker.getListenersCopy(), 1)
+			select {
+			case <-listener.done:
+				require.Fail(t, "done closed while a stream was attached")
+			default:
+			}
+		})
+
+		t.Run("startTimeout is a no-op while attached", func(t *testing.T) {
+			broker := newBroker[string]()
+			listener := newListener[string]("test-id", []string{"topic1"})
+			broker.pushListener(listener)
+
+			_, att, err := broker.attach("test-id")
+			require.NoError(t, err)
+
+			broker.startTimeout("test-id", 50*time.Millisecond)
+			time.Sleep(150 * time.Millisecond)
+			require.Len(t, broker.getListenersCopy(), 1)
+
+			require.True(t, broker.release("test-id", att, 50*time.Millisecond))
+			time.Sleep(150 * time.Millisecond)
+			require.Len(t, broker.getListenersCopy(), 0)
+		})
+
+		t.Run("concurrent attach and release on the same id", func(t *testing.T) {
+			broker := newBroker[string]()
+			listener := newListener[string]("test-id", []string{"topic1"})
+			broker.pushListener(listener)
+
+			const goroutines = 50
+			var releaseTrue atomic.Int32
+			var wg sync.WaitGroup
+			for range goroutines {
+				wg.Go(func() {
+					_, att, err := broker.attach("test-id")
+					if err != nil {
+						return
+					}
+					// release twice 
+					broker.release("test-id", att, time.Hour)
+					if broker.release("test-id", att, time.Hour) {
+						releaseTrue.Add(1)
+					}
+				})
+			}
+			wg.Wait()
+
+			// every second release should return false
+			require.Zero(t, releaseTrue.Load())
+
+			listeners := broker.getListenersCopy()
+			require.Len(t, listeners, 1)
+			if att := listeners["test-id"].attached; att != nil {
+				require.True(t, broker.release("test-id", att, time.Hour))
+				require.False(t, broker.release("test-id", att, time.Hour))
+			}
 		})
 	})
 
@@ -508,8 +620,7 @@ func TestBroker(t *testing.T) {
 		listener := newListener[string]("test-id", []string{"topic1"})
 		broker.pushListener(listener)
 
-		ch, err := broker.getListenerChannel("test-id")
-		require.NoError(t, err)
+		ch := listener.ch
 
 		// test sending to channel
 		go func() {
