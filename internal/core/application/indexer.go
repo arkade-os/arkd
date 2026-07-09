@@ -802,80 +802,88 @@ func (i *indexerService) preloadByMarkers(
 	markerRepo := i.repoManager.Markers()
 	offchainTxRepo := i.repoManager.OffchainTxs()
 
-	// Seed cache and collect initial marker IDs.
-	currentMarkerIDs := make(map[string]bool)
+	// Seed the traversal with the markers of the start VTXOs, caching the
+	// VTXOs themselves along the way. markerIds accumulates every marker
+	// discovered during the traversal below.
+	markerIds := make([]string, 0)
 	for _, v := range startVtxos {
 		vtxoCache[v.Outpoint.String()] = v
 		for _, mid := range v.MarkerIDs {
-			currentMarkerIDs[mid] = true
+			markerIds = append(markerIds, mid)
 		}
 	}
 
-	visited := make(map[string]bool)
+	// BFS up the marker DAG: currentMarkerIds holds the frontier of the
+	// current level, one bulk DB fetch per level.
+	currentMarkerIds := make([]string, len(markerIds))
+	copy(currentMarkerIds, markerIds)
 
-	for len(currentMarkerIDs) > 0 {
-		ids := make([]string, 0, len(currentMarkerIDs))
-		for id := range currentMarkerIDs {
-			ids = append(ids, id)
+	visited := make(map[string]bool)
+	for len(currentMarkerIds) > 0 {
+		// Get marker objects to find parent markers.
+		markers, err := markerRepo.GetMarkersByIds(ctx, currentMarkerIds)
+		if err != nil {
+			return err
+		}
+
+		for _, id := range currentMarkerIds {
 			visited[id] = true
 		}
 
-		// Bulk-fetch all VTXOs tagged with these markers.
-		vtxos, err := markerRepo.GetVtxoChainByMarkers(ctx, ids)
-		if err != nil {
-			return err
-		}
-		for _, v := range vtxos {
-			if _, ok := vtxoCache[v.Outpoint.String()]; !ok {
-				vtxoCache[v.Outpoint.String()] = v
-			}
-		}
-
-		// Piggyback: bulk-fetch the offchain txs for the preconfirmed VTXOs
-		// in this window, so the walk loop never has to hit the DB per-hop.
-		missingTxids := make([]string, 0, len(vtxos))
-		seen := make(map[string]bool, len(vtxos))
-		for _, v := range vtxos {
-			if !v.Preconfirmed {
-				continue
-			}
-			if seen[v.Txid] {
-				continue
-			}
-			seen[v.Txid] = true
-			if _, ok := offchainTxCache[v.Txid]; ok {
-				continue
-			}
-			missingTxids = append(missingTxids, v.Txid)
-		}
-		// offchainTxRepo may be nil in test helpers that do not wire up the
-		// offchain-tx repo. Skip the piggyback in that case — the walk loop
-		// will fall back to its own in-loop bulk fetch for any cache misses.
-		if len(missingTxids) > 0 && offchainTxRepo != nil {
-			offchainTxs, err := offchainTxRepo.GetOffchainTxsByTxids(ctx, missingTxids)
-			if err != nil {
-				return err
-			}
-			for _, tx := range offchainTxs {
-				offchainTxCache[tx.ArkTxid] = tx
-			}
-		}
-
-		// Get marker objects to find parent markers.
-		markers, err := markerRepo.GetMarkersByIds(ctx, ids)
-		if err != nil {
-			return err
-		}
-
-		nextMarkerIDs := make(map[string]bool)
+		// Expand the frontier to the not-yet-visited parents. Markers may
+		// share parents, so the visited set guards against re-fetching and
+		// against cycles.
+		nextMarkers := make([]string, 0)
 		for _, m := range markers {
 			for _, pid := range m.ParentMarkerIDs {
 				if !visited[pid] {
-					nextMarkerIDs[pid] = true
+					nextMarkers = append(nextMarkers, pid)
+					markerIds = append(markerIds, pid)
 				}
 			}
 		}
-		currentMarkerIDs = nextMarkerIDs
+		currentMarkerIds = nextMarkers
+	}
+
+	// Bulk-fetch all VTXOs tagged with these markers.
+	vtxos, err := markerRepo.GetVtxoChainByMarkers(ctx, markerIds)
+	if err != nil {
+		return err
+	}
+	for _, v := range vtxos {
+		if _, ok := vtxoCache[v.Outpoint.String()]; !ok {
+			vtxoCache[v.Outpoint.String()] = v
+		}
+	}
+
+	// Piggyback: bulk-fetch the offchain txs for the preconfirmed VTXOs
+	// in this window, so the walk loop never has to hit the DB per-hop.
+	missingTxids := make([]string, 0, len(vtxos))
+	seen := make(map[string]bool, len(vtxos))
+	for _, v := range vtxos {
+		if !v.Preconfirmed {
+			continue
+		}
+		if seen[v.Txid] {
+			continue
+		}
+		seen[v.Txid] = true
+		if _, ok := offchainTxCache[v.Txid]; ok {
+			continue
+		}
+		missingTxids = append(missingTxids, v.Txid)
+	}
+	// offchainTxRepo may be nil in test helpers that do not wire up the
+	// offchain-tx repo. Skip the piggyback in that case — the walk loop
+	// will fall back to its own in-loop bulk fetch for any cache misses.
+	if len(missingTxids) > 0 && offchainTxRepo != nil {
+		offchainTxs, err := offchainTxRepo.GetOffchainTxsByTxids(ctx, missingTxids)
+		if err != nil {
+			return err
+		}
+		for _, tx := range offchainTxs {
+			offchainTxCache[tx.ArkTxid] = tx
+		}
 	}
 
 	return nil
