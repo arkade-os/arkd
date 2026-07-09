@@ -808,9 +808,7 @@ func (i *indexerService) preloadByMarkers(
 	markerIds := make([]string, 0)
 	for _, v := range startVtxos {
 		vtxoCache[v.Outpoint.String()] = v
-		for _, mid := range v.MarkerIDs {
-			markerIds = append(markerIds, mid)
-		}
+		markerIds = append(markerIds, v.MarkerIDs...)
 	}
 
 	// BFS up the marker DAG: currentMarkerIds holds the frontier of the
