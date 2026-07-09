@@ -811,6 +811,11 @@ func (i *indexerService) preloadByMarkers(
 		markerIds = append(markerIds, v.MarkerIDs...)
 	}
 
+	// Legacy VTXOs may carry no markers, leaving nothing to walk or bulk-fetch.
+	if len(markerIds) == 0 {
+		return nil
+	}
+
 	// BFS up the marker DAG: currentMarkerIds holds the frontier of the
 	// current level, one bulk DB fetch per level.
 	currentMarkerIds := make([]string, len(markerIds))

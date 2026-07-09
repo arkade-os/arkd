@@ -1014,18 +1014,12 @@ func TestPreloadVtxosByMarkers_WalksMarkerChain(t *testing.T) {
 		MarkerIDs: []string{"marker-200"},
 	}
 
-	// GetVtxoChainByMarkers returns VTXOs for each marker level.
-	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-200")).
+	// GetVtxoChainByMarkers is called once, with every marker of the walked DAG.
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-200", "marker-100", "marker-0")).
 		Return([]domain.Vtxo{
 			{Outpoint: domain.Outpoint{Txid: "vtxo-200a", VOut: 0}, Amount: 200},
 			{Outpoint: domain.Outpoint{Txid: "vtxo-200b", VOut: 0}, Amount: 201},
-		}, nil)
-	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-100")).
-		Return([]domain.Vtxo{
 			{Outpoint: domain.Outpoint{Txid: "vtxo-100a", VOut: 0}, Amount: 300},
-		}, nil)
-	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-0")).
-		Return([]domain.Vtxo{
 			{Outpoint: domain.Outpoint{Txid: "vtxo-0a", VOut: 0}, Amount: 400},
 		}, nil)
 
@@ -1056,7 +1050,7 @@ func TestPreloadVtxosByMarkers_WalksMarkerChain(t *testing.T) {
 	require.Contains(t, cache, "vtxo-0a:0")
 	require.Len(t, cache, 5)
 
-	markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", 3)
+	markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", 1)
 	markerRepo.AssertNumberOfCalls(t, "GetMarkersByIds", 3)
 }
 
@@ -1073,12 +1067,9 @@ func TestPreloadVtxosByMarkers_NoCycleLoop(t *testing.T) {
 	}
 
 	// marker-A -> marker-B -> marker-A (cycle)
-	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-A")).
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-A", "marker-B")).
 		Return([]domain.Vtxo{
 			{Outpoint: domain.Outpoint{Txid: "vtxo-a", VOut: 0}, Amount: 100},
-		}, nil)
-	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-B")).
-		Return([]domain.Vtxo{
 			{Outpoint: domain.Outpoint{Txid: "vtxo-b", VOut: 0}, Amount: 200},
 		}, nil)
 
@@ -1101,8 +1092,8 @@ func TestPreloadVtxosByMarkers_NoCycleLoop(t *testing.T) {
 	require.Contains(t, cache, "vtxo-a:0")
 	require.Contains(t, cache, "vtxo-b:0")
 
-	// Each marker queried exactly once.
-	markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", 2)
+	// Each marker queried exactly once: one bulk vtxo fetch, one lookup per level.
+	markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", 1)
 	markerRepo.AssertNumberOfCalls(t, "GetMarkersByIds", 2)
 }
 
@@ -1140,18 +1131,16 @@ func TestGetVtxoChain_WithMarkers_UsesPreload(t *testing.T) {
 		Return([]domain.Vtxo{vtxoA}, nil)
 
 	// Preload via marker chain: marker-200 -> marker-100 -> marker-0 (no parent).
-	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-200")).
-		Return([]domain.Vtxo{vtxoA, vtxoB}, nil)
 	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-200")).
 		Return([]domain.Marker{
 			{ID: "marker-200", Depth: 200, ParentMarkerIDs: []string{"marker-100"}},
 		}, nil)
-	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-100")).
-		Return([]domain.Vtxo{vtxoB, vtxoC}, nil)
 	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-100")).
 		Return([]domain.Marker{
 			{ID: "marker-100", Depth: 100, ParentMarkerIDs: nil},
 		}, nil)
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-200", "marker-100")).
+		Return([]domain.Vtxo{vtxoA, vtxoB, vtxoC}, nil)
 
 	// ensureVtxosCached will find cache hits for B and C (preloaded),
 	// so no additional GetVtxos calls for them.
@@ -1175,8 +1164,7 @@ func TestGetVtxoChain_WithMarkers_UsesPreload(t *testing.T) {
 	require.Equal(t, 5, len(resp.Chain)) // A(ark+cp) + B(ark+cp) + C(ark)
 
 	// GetVtxoChainByMarkers should have been called (preload path used).
-	markerRepo.AssertCalled(t, "GetVtxoChainByMarkers", ctx, matchIDs("marker-200"))
-	markerRepo.AssertCalled(t, "GetVtxoChainByMarkers", ctx, matchIDs("marker-100"))
+	markerRepo.AssertCalled(t, "GetVtxoChainByMarkers", ctx, matchIDs("marker-200", "marker-100"))
 
 	// GetVtxos should only be called once (for the initial preload fetch),
 	// not for B or C individually — they were already in the cache.
@@ -1212,12 +1200,10 @@ func TestGetVtxoChain_PreloadReducesDBCalls(t *testing.T) {
 		Return([]domain.Vtxo{vtxos[0]}, nil)
 
 	// Preload: marker chain m-0 → m-1 → m-2 → m-3 → m-4.
+	allMarkerIDs := make([]string, markersCount)
 	for m := 0; m < markersCount; m++ {
 		mid := fmt.Sprintf("m-%d", m)
-		batch := vtxos[m*int(domain.MarkerInterval) : (m+1)*int(domain.MarkerInterval)]
-
-		markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs(mid)).
-			Return(batch, nil)
+		allMarkerIDs[m] = mid
 
 		var parentIDs []string
 		if m+1 < markersCount {
@@ -1228,6 +1214,10 @@ func TestGetVtxoChain_PreloadReducesDBCalls(t *testing.T) {
 				{ID: mid, Depth: uint32(m * int(domain.MarkerInterval)), ParentMarkerIDs: parentIDs},
 			}, nil)
 	}
+
+	// The whole walked DAG is fetched in a single bulk call.
+	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs(allMarkerIDs...)).
+		Return(vtxos, nil)
 
 	// Marker window (won't be called — all cache hits from preload).
 	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
@@ -1256,8 +1246,8 @@ func TestGetVtxoChain_PreloadReducesDBCalls(t *testing.T) {
 	// Without preloading this would be ~500 individual DB calls.
 	vtxoRepo.AssertNumberOfCalls(t, "GetVtxos", 1)
 
-	// Marker-based preload: 5 bulk fetches + 5 marker lookups = 10 total queries.
-	markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", markersCount)
+	// Marker-based preload: 1 bulk fetch + 5 marker lookups = 6 total queries.
+	markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", 1)
 	markerRepo.AssertNumberOfCalls(t, "GetMarkersByIds", markersCount)
 }
 
@@ -1296,8 +1286,10 @@ func TestGetVtxoChain_PreloadMarkerErrorFallback(t *testing.T) {
 	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: txidA, VOut: 0}}).
 		Return([]domain.Vtxo{vtxoA}, nil)
 
-	// Preload's first marker lookup fails — this is the fault we're injecting.
-	// Per-hop fallback should take over from here.
+	// The marker DAG walk succeeds, but the bulk vtxo fetch that follows it
+	// fails — this is the fault we're injecting. Per-hop fallback takes over.
+	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-A")).
+		Return([]domain.Marker{{ID: "marker-A", Depth: 0}}, nil)
 	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-A")).
 		Return(nil, fmt.Errorf("transient marker repo failure"))
 

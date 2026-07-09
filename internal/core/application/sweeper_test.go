@@ -414,6 +414,7 @@ func (m *mockTxBuilder) BuildSweepTx(inputs []ports.TxInput) (string, string, er
 func (m *mockTxBuilder) BuildCommitmentTx(
 	signerPubkey *btcec.PublicKey, intents domain.Intents,
 	boardingInputs []ports.BoardingInput, cosigners [][]string,
+	vtxoTreeExpiry arklib.RelativeLocktime,
 ) (string, *tree.TxTree, string, *tree.TxTree, error) {
 	return "", nil, "", nil, nil
 }
