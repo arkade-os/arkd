@@ -812,7 +812,13 @@ func (h *indexerService) listenToTxEvents() {
 			spentVtxos := make([]*arkv1.IndexerVtxo, 0)
 			involvedScripts := make([]string, 0)
 
-			for vtxoScript := range l.topics {
+			// Snapshot the topics under the listener's lock. Ranging l.topics
+			// directly races with addTopics/removeTopics/overwriteTopics, which
+			// the Subscribe/Update/Unsubscribe RPCs call under the lock. A
+			// concurrent map iteration and write is a fatal, unrecoverable
+			// runtime error that would crash the whole process. getTopics copies
+			// the keys under the lock, the same way matchesTx does for filters.
+			for _, vtxoScript := range l.getTopics() {
 				spendableVtxosForScript := allSpendableVtxos[vtxoScript]
 				spentVtxosForScript := allSpentVtxos[vtxoScript]
 				spendableVtxos = append(spendableVtxos, spendableVtxosForScript...)
