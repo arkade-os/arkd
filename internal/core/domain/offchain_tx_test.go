@@ -563,6 +563,89 @@ func testReplayOffchainTxEvents(t *testing.T) {
 					Failed: false,
 				},
 			},
+			{
+				name: "request retry after fail",
+				events: []domain.Event{
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+					domain.OffchainTxFailed{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFailed,
+						},
+						Reason:    "fail",
+						Timestamp: 1735689601,
+					},
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+					domain.OffchainTxAccepted{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxAccepted,
+						},
+					},
+					domain.OffchainTxFinalized{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFinalized,
+						},
+					},
+				},
+				expectedVersion: 5,
+				expectedStage: domain.Stage{
+					Code:   int(domain.OffchainTxFinalizedStage),
+					Ended:  true,
+					Failed: false,
+				},
+			},
+			{
+				// An accepted tx already spent its input vtxos: a new request
+				// must never reset it, even if it failed afterwards.
+				name: "request retry after accepted tx failed",
+				events: []domain.Event{
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+					domain.OffchainTxAccepted{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxAccepted,
+						},
+					},
+					domain.OffchainTxFailed{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFailed,
+						},
+						Reason:    "fail",
+						Timestamp: 1735689601,
+					},
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+				},
+				expectedVersion: 3,
+				expectedStage: domain.Stage{
+					Code:   int(domain.OffchainTxAcceptedStage),
+					Ended:  false,
+					Failed: true,
+				},
+				expectedFailReason: "fail",
+			},
 		}
 		for _, f := range fixtures {
 			offchainTx := domain.NewOffchainTxFromEvents(f.events)
