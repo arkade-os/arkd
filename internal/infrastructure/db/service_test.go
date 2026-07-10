@@ -410,8 +410,11 @@ func testEventRepository(t *testing.T, svc ports.RepoManager) {
 
 			for _, handler := range f.handlers {
 				svc.Events().RegisterEventsHandler(f.topic, func(events []domain.Event) {
+					// defer so a failed require inside the handler (which calls
+					// runtime.Goexit) still releases the WaitGroup — otherwise
+					// the test hangs at wg.Wait instead of reporting the failure.
+					defer wg.Done()
 					handler(events)
-					wg.Done()
 				})
 			}
 
@@ -1159,7 +1162,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			finalizedArkTxid := randomString(32)
 			finalizedOffchainTx := domain.NewOffchainTxFromEvents([]domain.Event{
 				domain.OffchainTxRequested{
-					OffchainTxEvent: domain.OffchainTxEvent{Id: finalizedArkTxid, Type: domain.EventTypeOffchainTxRequested},
+					OffchainTxEvent:       domain.OffchainTxEvent{Id: finalizedArkTxid, Type: domain.EventTypeOffchainTxRequested},
 					ArkTx:                 randomTx(),
 					UnsignedCheckpointTxs: map[string]string{checkpointTxid1: checkpointTx1, checkpointTxid2: checkpointTx2, checkpointTxid3: checkpointTx3},
 					StartingTimestamp:     now.Unix(),
@@ -1184,7 +1187,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			acceptedArkTxid := randomString(32)
 			acceptedOffchainTx := domain.NewOffchainTxFromEvents([]domain.Event{
 				domain.OffchainTxRequested{
-					OffchainTxEvent: domain.OffchainTxEvent{Id: acceptedArkTxid, Type: domain.EventTypeOffchainTxRequested},
+					OffchainTxEvent:       domain.OffchainTxEvent{Id: acceptedArkTxid, Type: domain.EventTypeOffchainTxRequested},
 					ArkTx:                 randomTx(),
 					UnsignedCheckpointTxs: map[string]string{checkpointTxid4: checkpointTx4},
 					StartingTimestamp:     now.Unix(),

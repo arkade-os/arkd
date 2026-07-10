@@ -547,7 +547,7 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		// across independent subtrees when offchain txs consolidate inputs from
 		// different lineages. Sweeping by marker would incorrectly mark unrelated
 		// VTXOs as swept (same reason the checkpoint path uses SweepVtxoOutpoints).
-		sweptAt := time.Now().UnixMilli()
+		sweptAt := time.Now().Unix()
 		if err := s.markerStore.SweepVtxoOutpoints(ctx, allSweptVtxos, sweptAt); err != nil {
 			log.WithError(err).Warn("failed to sweep vtxo outpoints for batch")
 		} else if len(allSweptVtxos) > 0 {
@@ -683,14 +683,13 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			return
 		}
 
-		txSwept := false
-		batch, err := s.roundStore.GetRoundWithCommitmentTxid(ctx, offchainTx.RootCommitmentTxId)
+		sweepTxs, err := s.roundStore.GetSweepTxs(ctx, offchainTx.RootCommitmentTxId)
 		// We consider the tx swept if:
-		// - there is an error fetching the batch (this is just fallback, should never happen)
+		// - there is an error fetching the sweep txs (this is just fallback, should never happen)
 		// - the batch is swept
 		// - the tx expired (meaning one or all its inputs expired and are already swept or about
 		// to be swept)
-		txSwept = err != nil || (batch != nil && len(batch.SweepTxs) > 0) ||
+		txSwept := err != nil || len(sweepTxs) > 0 ||
 			time.Now().After(time.Unix(offchainTx.ExpiryTimestamp, 0))
 		// once the offchain tx is finalized, the user signed the checkpoint txs
 		// thus, we can create the new vtxos in the db.
@@ -793,7 +792,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// Dust vtxos are below dust limit and can't be spent again in future offchain tx
 		// Because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited
 		if len(createdDustMarkerIDs) > 0 {
-			sweptAt := time.Now().UnixMilli()
+			sweptAt := time.Now().Unix()
 			if err := s.markerStore.BulkSweepMarkers(
 				ctx,
 				createdDustMarkerIDs,
@@ -807,7 +806,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		// Persist swept status for non-dust outputs of a swept/expired tx,
 		// per-outpoint like the batch and checkpoint sweep paths.
 		if len(sweptOutpoints) > 0 {
-			sweptAt := time.Now().UnixMilli()
+			sweptAt := time.Now().Unix()
 			if err := s.markerStore.SweepVtxoOutpoints(ctx, sweptOutpoints, sweptAt); err != nil {
 				log.WithError(err).
 					Warnf("failed to sweep %d vtxo outpoints of swept tx", len(sweptOutpoints))

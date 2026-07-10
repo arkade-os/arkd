@@ -62,7 +62,7 @@ func BackfillVtxoMarkers(ctx context.Context, dbh *sql.DB) (err error) {
 	// OR IGNORE preserves any pre-existing swept_vtxo.swept_at.
 	if _, err = tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO swept_vtxo (txid, vout, swept_at)
-		SELECT v.txid, v.vout, strftime('%s','now') * 1000
+		SELECT v.txid, v.vout, strftime('%s','now')
 		FROM vtxo v
 		WHERE EXISTS (
 			SELECT 1 FROM swept_marker sm

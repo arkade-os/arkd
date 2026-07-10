@@ -24,161 +24,6 @@ const (
 	vtxoMarkerBackfillDoneID = "__vtxo_markers_backfill_done__"
 )
 
-// newMarkerMigratedPgDB opens the pg test DB, drops any prior schema, and
-// migrates to the swept_vtxo baseline via the real embedded migration source.
-func newMarkerMigratedPgDB(t *testing.T) *sql.DB {
-	t.Helper()
-	db, err := sql.Open("postgres", vtxoMarkerPgDSN)
-	require.NoError(t, err)
-	if perr := db.Ping(); perr != nil {
-		//nolint:errcheck
-		db.Close()
-		t.Skipf("postgres not reachable at %s: %v", vtxoMarkerPgDSN, perr)
-	}
-
-	// start from a clean public schema so migration state is deterministic.
-	_, err = db.Exec(`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`)
-	require.NoError(t, err)
-
-	driver, err := migratepg.WithInstance(db, &migratepg.Config{})
-	require.NoError(t, err)
-	source, err := iofs.New(vtxoMarkerPgMigrations, "migration")
-	require.NoError(t, err)
-	m, err := migrate.NewWithInstance("iofs", source, "postgres", driver)
-	require.NoError(t, err)
-
-	require.NoError(t, m.Migrate(vtxoMarkerPgBaseVersion))
-
-	t.Cleanup(func() {
-		_, _ = db.Exec(`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`)
-		//nolint:errcheck
-		db.Close()
-	})
-	return db
-}
-
-func pgInsertLegacyVtxo(t *testing.T, db *sql.DB, txid string, vout int, arkTxid string, swept bool) {
-	t.Helper()
-	op := fmt.Sprintf("%s:%d", txid, vout)
-	_, err := db.Exec(
-		`INSERT INTO marker (id, depth, parent_markers) VALUES ($1, 0, '[]'::jsonb)
-		 ON CONFLICT (id) DO NOTHING`, op,
-	)
-	require.NoError(t, err)
-
-	var ark any
-	if arkTxid != "" {
-		ark = arkTxid
-	}
-	_, err = db.Exec(`
-		INSERT INTO vtxo (
-			txid, vout, pubkey, amount, expires_at, created_at, commitment_txid,
-			spent, unrolled, preconfirmed, ark_txid, depth, markers
-		) VALUES ($1, $2, 'pk', 1000, 0, 0, 'commit', false, false, false, $3, 0, $4::jsonb)`,
-		txid, vout, ark, fmt.Sprintf(`["%s"]`, op),
-	)
-	require.NoError(t, err)
-
-	if swept {
-		_, err = db.Exec(
-			`INSERT INTO swept_marker (marker_id, swept_at) VALUES ($1, $2)
-			 ON CONFLICT (marker_id) DO NOTHING`, op, 111,
-		)
-		require.NoError(t, err)
-	}
-}
-
-func pgSeedFixtures(t *testing.T, db *sql.DB) []string {
-	t.Helper()
-	const n = 205
-	main := make([]string, n+1)
-	for k := 0; k <= n; k++ {
-		main[k] = fmt.Sprintf("main%04d", k)
-	}
-	for k := 0; k <= n; k++ {
-		ark := ""
-		if k < n {
-			ark = main[k+1]
-		}
-		pgInsertLegacyVtxo(t, db, main[k], 0, ark, false)
-	}
-
-	swp := []string{"swp0", "swp1", "swp2"}
-	for i, txid := range swp {
-		ark := ""
-		if i < len(swp)-1 {
-			ark = swp[i+1]
-		}
-		pgInsertLegacyVtxo(t, db, txid, 0, ark, true)
-	}
-
-	uns := []string{"uns0", "uns1"}
-	for i, txid := range uns {
-		ark := ""
-		if i < len(uns)-1 {
-			ark = uns[i+1]
-		}
-		pgInsertLegacyVtxo(t, db, txid, 0, ark, false)
-	}
-
-	pgInsertLegacyVtxo(t, db, "ckpt0", 0, "", false)
-	_, err := db.Exec(`INSERT INTO swept_vtxo (txid, vout, swept_at) VALUES ('ckpt0', 0, 999)`)
-	require.NoError(t, err)
-
-	pgInsertLegacyVtxo(t, db, "orph0", 0, "prunedparent", false)
-	return main
-}
-
-func pgMarkersOf(t *testing.T, db *sql.DB, txid string, vout int) []string {
-	t.Helper()
-	rows, err := db.Query(
-		`SELECT j.value FROM vtxo v, jsonb_array_elements_text(v.markers) j
-		 WHERE v.txid = $1 AND v.vout = $2`, txid, vout,
-	)
-	require.NoError(t, err)
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var s string
-		require.NoError(t, rows.Scan(&s))
-		out = append(out, s)
-	}
-	require.NoError(t, rows.Err())
-	return out
-}
-
-func pgDepthOf(t *testing.T, db *sql.DB, txid string, vout int) int {
-	t.Helper()
-	var d int
-	require.NoError(t, db.QueryRow(
-		`SELECT depth FROM vtxo WHERE txid = $1 AND vout = $2`, txid, vout,
-	).Scan(&d))
-	return d
-}
-
-func pgSweptOf(t *testing.T, db *sql.DB, txid string, vout int) bool {
-	t.Helper()
-	var s bool
-	require.NoError(t, db.QueryRow(
-		`SELECT swept FROM vtxo_vw WHERE txid = $1 AND vout = $2`, txid, vout,
-	).Scan(&s))
-	return s
-}
-
-func pgCountSwept(t *testing.T, db *sql.DB) int {
-	t.Helper()
-	var c int
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM vtxo_vw WHERE swept = true`).Scan(&c))
-	return c
-}
-
-func pgMarkerExists(t *testing.T, db *sql.DB, id string) bool {
-	t.Helper()
-	var c int
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM marker WHERE id = $1`, id).Scan(&c))
-	return c > 0
-}
-
 func TestVtxoMarkerMigration_Topology(t *testing.T) {
 	ctx := context.Background()
 	db := newMarkerMigratedPgDB(t)
@@ -389,6 +234,161 @@ func TestVtxoMarkerMigration_Wiring(t *testing.T) {
 	first := pgDumpTable(t, db, `SELECT id, depth, parent_markers::text FROM marker ORDER BY id`)
 	require.NoError(t, pgdb.BackfillVtxoMarkers(ctx, db))
 	require.Equal(t, first, pgDumpTable(t, db, `SELECT id, depth, parent_markers::text FROM marker ORDER BY id`))
+}
+
+// newMarkerMigratedPgDB opens the pg test DB, drops any prior schema, and
+// migrates to the swept_vtxo baseline via the real embedded migration source.
+func newMarkerMigratedPgDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("postgres", vtxoMarkerPgDSN)
+	require.NoError(t, err)
+	if perr := db.Ping(); perr != nil {
+		//nolint:errcheck
+		db.Close()
+		t.Skipf("postgres not reachable at %s: %v", vtxoMarkerPgDSN, perr)
+	}
+
+	// start from a clean public schema so migration state is deterministic.
+	_, err = db.Exec(`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`)
+	require.NoError(t, err)
+
+	driver, err := migratepg.WithInstance(db, &migratepg.Config{})
+	require.NoError(t, err)
+	source, err := iofs.New(vtxoMarkerPgMigrations, "migration")
+	require.NoError(t, err)
+	m, err := migrate.NewWithInstance("iofs", source, "postgres", driver)
+	require.NoError(t, err)
+
+	require.NoError(t, m.Migrate(vtxoMarkerPgBaseVersion))
+
+	t.Cleanup(func() {
+		_, _ = db.Exec(`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`)
+		//nolint:errcheck
+		db.Close()
+	})
+	return db
+}
+
+func pgInsertLegacyVtxo(t *testing.T, db *sql.DB, txid string, vout int, arkTxid string, swept bool) {
+	t.Helper()
+	op := fmt.Sprintf("%s:%d", txid, vout)
+	_, err := db.Exec(
+		`INSERT INTO marker (id, depth, parent_markers) VALUES ($1, 0, '[]'::jsonb)
+		 ON CONFLICT (id) DO NOTHING`, op,
+	)
+	require.NoError(t, err)
+
+	var ark any
+	if arkTxid != "" {
+		ark = arkTxid
+	}
+	_, err = db.Exec(`
+		INSERT INTO vtxo (
+			txid, vout, pubkey, amount, expires_at, created_at, commitment_txid,
+			spent, unrolled, preconfirmed, ark_txid, depth, markers
+		) VALUES ($1, $2, 'pk', 1000, 0, 0, 'commit', false, false, false, $3, 0, $4::jsonb)`,
+		txid, vout, ark, fmt.Sprintf(`["%s"]`, op),
+	)
+	require.NoError(t, err)
+
+	if swept {
+		_, err = db.Exec(
+			`INSERT INTO swept_marker (marker_id, swept_at) VALUES ($1, $2)
+			 ON CONFLICT (marker_id) DO NOTHING`, op, 111,
+		)
+		require.NoError(t, err)
+	}
+}
+
+func pgSeedFixtures(t *testing.T, db *sql.DB) []string {
+	t.Helper()
+	const n = 205
+	main := make([]string, n+1)
+	for k := 0; k <= n; k++ {
+		main[k] = fmt.Sprintf("main%04d", k)
+	}
+	for k := 0; k <= n; k++ {
+		ark := ""
+		if k < n {
+			ark = main[k+1]
+		}
+		pgInsertLegacyVtxo(t, db, main[k], 0, ark, false)
+	}
+
+	swp := []string{"swp0", "swp1", "swp2"}
+	for i, txid := range swp {
+		ark := ""
+		if i < len(swp)-1 {
+			ark = swp[i+1]
+		}
+		pgInsertLegacyVtxo(t, db, txid, 0, ark, true)
+	}
+
+	uns := []string{"uns0", "uns1"}
+	for i, txid := range uns {
+		ark := ""
+		if i < len(uns)-1 {
+			ark = uns[i+1]
+		}
+		pgInsertLegacyVtxo(t, db, txid, 0, ark, false)
+	}
+
+	pgInsertLegacyVtxo(t, db, "ckpt0", 0, "", false)
+	_, err := db.Exec(`INSERT INTO swept_vtxo (txid, vout, swept_at) VALUES ('ckpt0', 0, 999)`)
+	require.NoError(t, err)
+
+	pgInsertLegacyVtxo(t, db, "orph0", 0, "prunedparent", false)
+	return main
+}
+
+func pgMarkersOf(t *testing.T, db *sql.DB, txid string, vout int) []string {
+	t.Helper()
+	rows, err := db.Query(
+		`SELECT j.value FROM vtxo v, jsonb_array_elements_text(v.markers) j
+		 WHERE v.txid = $1 AND v.vout = $2`, txid, vout,
+	)
+	require.NoError(t, err)
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		require.NoError(t, rows.Scan(&s))
+		out = append(out, s)
+	}
+	require.NoError(t, rows.Err())
+	return out
+}
+
+func pgDepthOf(t *testing.T, db *sql.DB, txid string, vout int) int {
+	t.Helper()
+	var d int
+	require.NoError(t, db.QueryRow(
+		`SELECT depth FROM vtxo WHERE txid = $1 AND vout = $2`, txid, vout,
+	).Scan(&d))
+	return d
+}
+
+func pgSweptOf(t *testing.T, db *sql.DB, txid string, vout int) bool {
+	t.Helper()
+	var s bool
+	require.NoError(t, db.QueryRow(
+		`SELECT swept FROM vtxo_vw WHERE txid = $1 AND vout = $2`, txid, vout,
+	).Scan(&s))
+	return s
+}
+
+func pgCountSwept(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	var c int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM vtxo_vw WHERE swept = true`).Scan(&c))
+	return c
+}
+
+func pgMarkerExists(t *testing.T, db *sql.DB, id string) bool {
+	t.Helper()
+	var c int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM marker WHERE id = $1`, id).Scan(&c))
+	return c > 0
 }
 
 func pgDumpTable(t *testing.T, db *sql.DB, query string) string {

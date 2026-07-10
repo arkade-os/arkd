@@ -139,6 +139,12 @@ func ComputeMarkers(
 
 	for _, e := range ordered {
 		vtxos := vtxosByTxid[e.txid]
+		// Depths can include phantom txids that have no vtxo rows (an ark_txid
+		// pointing at a pruned tx). Skip them: minting a boundary marker for a
+		// phantom would leave a dangling marker row nothing references.
+		if len(vtxos) == 0 {
+			continue
+		}
 		switch {
 		case e.depth == 0:
 			for _, v := range vtxos {

@@ -66,7 +66,7 @@ func BackfillVtxoMarkers(ctx context.Context, dbh *sql.DB) (err error) {
 	// ON CONFLICT DO NOTHING preserves any pre-existing swept_vtxo.swept_at.
 	if _, err = tx.ExecContext(ctx, `
 		INSERT INTO swept_vtxo (txid, vout, swept_at)
-		SELECT v.txid, v.vout, (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+		SELECT v.txid, v.vout, EXTRACT(EPOCH FROM NOW())::BIGINT
 		FROM vtxo v
 		WHERE EXISTS (
 			SELECT 1

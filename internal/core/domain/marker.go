@@ -11,7 +11,7 @@ const MarkerInterval = 100
 type SweptMarker struct {
 	// MarkerID is the ID of the marker that was swept
 	MarkerID string
-	// SweptAt is the Unix timestamp (milliseconds) when the marker was swept
+	// SweptAt is the Unix timestamp (seconds) when the marker was swept
 	SweptAt int64
 }
 

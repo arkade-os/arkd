@@ -83,7 +83,7 @@ func TestCreateCheckpointSweepTask(t *testing.T) {
 		vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
 			Return(childOutpoints, nil)
 
-		beforeExec := time.Now().UnixMilli()
+		beforeExec := time.Now().Unix()
 		var capturedSweptAt int64
 
 		markerRepo.On(
@@ -96,7 +96,7 @@ func TestCreateCheckpointSweepTask(t *testing.T) {
 
 		task := s.createCheckpointSweepTask(toSweep, vtxoOutpoint)
 		err := task()
-		afterExec := time.Now().UnixMilli()
+		afterExec := time.Now().Unix()
 
 		require.NoError(t, err)
 		require.GreaterOrEqual(t, capturedSweptAt, beforeExec)

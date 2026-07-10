@@ -57,7 +57,7 @@ UPDATE vtxo SET markers = jsonb_build_array(txid || ':' || vout);
 INSERT INTO swept_marker (marker_id, swept_at)
 SELECT
     v.txid || ':' || v.vout,
-    (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+    EXTRACT(EPOCH FROM NOW())::BIGINT
 FROM vtxo v
 WHERE v.swept = true
 ON CONFLICT (marker_id) DO NOTHING;
