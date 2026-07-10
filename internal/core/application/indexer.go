@@ -64,7 +64,7 @@ type IndexerService interface {
 	GetConnectors(ctx context.Context, txid string, page *Page) (*TreeTxResp, error)
 	GetVtxos(
 		ctx context.Context, pubkeys []string,
-		spendableOnly, spendOnly, recoverableOnly, pendingOnly, renewableOnly bool,
+		spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly bool,
 		after, before int64, page *Page,
 	) (*GetVtxosResp, error)
 	GetVtxosByOutpoint(
@@ -275,7 +275,7 @@ func (i *indexerService) GetVtxos(
 	if err := validateTimeRange(after, before); err != nil {
 		return nil, err
 	}
-	options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly}
+	options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly}
 	count := 0
 	for _, v := range options {
 		if v {
@@ -284,7 +284,7 @@ func (i *indexerService) GetVtxos(
 	}
 	if count > 1 {
 		return nil, fmt.Errorf(
-			"spendable, spent, recoverable and pending filters are mutually exclusive",
+			"spendable, spent, recoverable, pending and renewable filters are mutually exclusive",
 		)
 	}
 
@@ -330,6 +330,9 @@ func (i *indexerService) GetVtxos(
 			allVtxos = recoverableVtxos
 		}
 		if renewableOnly {
+			// Renewable is the union of the spendable and recoverable sets: an
+			// unspent, non-unrolled vtxo is spendable when not swept, and
+			// recoverable otherwise (RequiresForfeit is false once swept).
 			renewableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
 			for _, vtxo := range allVtxos {
 				if !vtxo.Spent && !vtxo.Unrolled {

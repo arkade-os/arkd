@@ -880,7 +880,7 @@
           {
             "name": "spendableOnly",
             "in": "query",
-            "description": "Retrieve only spendable vtxos",
+            "description": "The spendable_only, spent_only, recoverable_only, pending_only and\nrenewable_only filters are mutually exclusive, and are applied only when\nthe scripts filter is used. They are ignored when querying by outpoints.\nRetrieve only spendable vtxos",
             "schema": {
               "type": "boolean"
             }
@@ -896,7 +896,7 @@
           {
             "name": "recoverableOnly",
             "in": "query",
-            "description": "Retrieve only recoverable vtxos (notes, subdust or swept vtxos).\nThe 3 filters are mutually exclusive,",
+            "description": "Retrieve only recoverable vtxos (notes, subdust or swept vtxos).",
             "schema": {
               "type": "boolean"
             }
@@ -930,7 +930,7 @@
           {
             "name": "renewableOnly",
             "in": "query",
-            "description": "Retrieve spendable and recoverable vtxos",
+            "description": "Retrieve the union of the spendable and recoverable vtxos.",
             "schema": {
               "type": "boolean"
             }
@@ -1350,11 +1350,11 @@
           },
           "recoverableOnly": {
             "type": "boolean",
-            "description": "Retrieve only recoverable vtxos (notes, subdust or swept vtxos).\nThe 3 filters are mutually exclusive,"
+            "description": "Retrieve only recoverable vtxos (notes, subdust or swept vtxos)."
           },
           "renewableOnly": {
             "type": "boolean",
-            "description": "Retrieve spendable and recoverable vtxos"
+            "description": "Retrieve the union of the spendable and recoverable vtxos."
           },
           "scripts": {
             "type": "array",
@@ -1365,7 +1365,7 @@
           },
           "spendableOnly": {
             "type": "boolean",
-            "description": "Retrieve only spendable vtxos"
+            "description": "The spendable_only, spent_only, recoverable_only, pending_only and\nrenewable_only filters are mutually exclusive, and are applied only when\nthe scripts filter is used. They are ignored when querying by outpoints.\nRetrieve only spendable vtxos"
           },
           "spentOnly": {
             "type": "boolean",

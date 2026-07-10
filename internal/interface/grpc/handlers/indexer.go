@@ -285,7 +285,7 @@ func (e *indexerService) GetVtxos(
 		if count > 1 {
 			return nil, status.Error(
 				codes.InvalidArgument,
-				"spendable, spent, recoverable and pending filters are mutually exclusive",
+				"spendable, spent, recoverable, pending and renewable filters are mutually exclusive",
 			)
 		}
 

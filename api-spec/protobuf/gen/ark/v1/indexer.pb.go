@@ -684,12 +684,14 @@ type GetVtxosRequest struct {
 	Scripts []string `protobuf:"bytes,1,rep,name=scripts,proto3" json:"scripts,omitempty"`
 	// Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.
 	Outpoints []string `protobuf:"bytes,2,rep,name=outpoints,proto3" json:"outpoints,omitempty"`
+	// The spendable_only, spent_only, recoverable_only, pending_only and
+	// renewable_only filters are mutually exclusive, and are applied only when
+	// the scripts filter is used. They are ignored when querying by outpoints.
 	// Retrieve only spendable vtxos
 	SpendableOnly bool `protobuf:"varint,3,opt,name=spendable_only,json=spendableOnly,proto3" json:"spendable_only,omitempty"`
 	// Retrieve only spent vtxos.
 	SpentOnly bool `protobuf:"varint,4,opt,name=spent_only,json=spentOnly,proto3" json:"spent_only,omitempty"`
 	// Retrieve only recoverable vtxos (notes, subdust or swept vtxos).
-	// The 3 filters are mutually exclusive,
 	RecoverableOnly bool                `protobuf:"varint,5,opt,name=recoverable_only,json=recoverableOnly,proto3" json:"recoverable_only,omitempty"`
 	Page            *IndexerPageRequest `protobuf:"bytes,6,opt,name=page,proto3" json:"page,omitempty"`
 	// Include only spent vtxos that are not finalized.
@@ -700,7 +702,7 @@ type GetVtxosRequest struct {
 	// Include only vtxos with last update before the given unix time in milliseconds,
 	// greater value than the after when specified. A value of 0 means no upper bound.
 	Before int64 `protobuf:"varint,9,opt,name=before,proto3" json:"before,omitempty"`
-	// Retrieve spendable and recoverable vtxos
+	// Retrieve the union of the spendable and recoverable vtxos.
 	RenewableOnly bool `protobuf:"varint,10,opt,name=renewable_only,json=renewableOnly,proto3" json:"renewable_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
