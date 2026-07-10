@@ -31,10 +31,14 @@ var (
 // TestVtxoChain creates a long VTXO chain by repeatedly self-sending.
 // Run with:
 //
-//	go test -v -run TestVtxoChain -args -chain-length=50 -initial-amount=10000
+//	go test -v -run TestVtxoChain -args -smoke -chain-length=50 -initial-amount=10000
 func TestVtxoChain(t *testing.T) {
 	if !flag.Parsed() {
 		flag.Parse()
+	}
+
+	if !*runSmoke {
+		t.Skip("skip vtxo chain smoke test")
 	}
 
 	ctx := t.Context()
