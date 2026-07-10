@@ -770,7 +770,7 @@ func (s *sweeper) createCheckpointSweepTask(
 			log.Debugf("sweeper: checkpoint %s swept by: %s", checkpointTxid, txid)
 		}
 
-		// Mark all vtxos linked to the unrolled vtxo as swept.
+		// Mark all vtxos descending from this checkpoint output as swept.
 		// Use per-outpoint sweeping instead of marker-based sweeping here
 		// because markers can be shared across independent subtrees when
 		// offchain txs consolidate inputs from different lineages. Sweeping
@@ -784,10 +784,10 @@ func (s *sweeper) createCheckpointSweepTask(
 			return nil
 		}
 
-		sweptAt := time.Now().UnixMilli()
-		if err := s.repoManager.Markers().
-			SweepVtxoOutpoints(ctx, childrenVtxos, sweptAt); err != nil {
-			log.WithError(err).Warn("failed to sweep vtxo outpoints")
+		sweptAt := time.Now().Unix()
+		if err := s.repoManager.Markers().SweepVtxoOutpoints(
+			ctx, childrenVtxos, sweptAt,
+		); err != nil {
 			return err
 		}
 

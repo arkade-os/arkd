@@ -1,11 +1,8 @@
--- Marker-DAG + swept tracking schema. This migration merges what were previously
--- two migrations (add_depth_and_markers then add_swept_vtxo); they were only ever
--- deployed together, so combining them builds the final views once instead of
--- rebuilding them twice.
+-- Marker-DAG + swept tracking schema. 
 --
 -- Adds vtxo.depth / vtxo.markers, the marker / swept_marker / swept_vtxo tables,
 -- the checkpoint_tx(offchain_txid) index, gives every existing vtxo a self-marker,
--- migrates the old swept column into swept_marker, drops the column, and computes
+-- migrates the old vtxo.swept column into swept_marker, drops the column, and computes
 -- swept dynamically in the views.
 
 -- Add depth and markers columns to vtxo

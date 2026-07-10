@@ -1,8 +1,3 @@
--- Marker-DAG + swept tracking schema. This migration merges what were previously
--- two migrations (add_depth_and_markers then add_swept_vtxo); they were only ever
--- deployed together, so combining them builds the final views once instead of
--- rebuilding them twice.
-
 -- Add depth column
 ALTER TABLE vtxo ADD COLUMN depth INTEGER NOT NULL DEFAULT 0;
 
