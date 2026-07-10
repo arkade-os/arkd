@@ -267,13 +267,14 @@ func (e *indexerService) GetVtxos(
 	spentOnly := request.GetSpentOnly()
 	recoverableOnly := request.GetRecoverableOnly()
 	pendingOnly := request.GetPendingOnly()
+	renewableOnly := request.GetRenewableOnly()
 
 	var resp *application.GetVtxosResp
 
 	if len(pubkeys) > 0 {
 		// Validate filters
 		// TODO: get rid of this and move to oneof in the protos
-		options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly}
+		options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly}
 
 		count := 0
 		for _, v := range options {
@@ -294,8 +295,8 @@ func (e *indexerService) GetVtxos(
 		}
 
 		resp, err = e.indexerSvc.GetVtxos(
-			ctx, pubkeys,
-			spendableOnly, spentOnly, recoverableOnly, pendingOnly, after, before, page,
+			ctx, pubkeys, spendableOnly, spentOnly, recoverableOnly,
+			pendingOnly, renewableOnly, after, before, page,
 		)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "%s", err.Error())

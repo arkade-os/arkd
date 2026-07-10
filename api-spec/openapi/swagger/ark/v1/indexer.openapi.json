@@ -928,6 +928,14 @@
             }
           },
           {
+            "name": "renewableOnly",
+            "in": "query",
+            "description": "Retrieve spendable and recoverable vtxos",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "page.size",
             "in": "query",
             "schema": {
@@ -1343,6 +1351,10 @@
           "recoverableOnly": {
             "type": "boolean",
             "description": "Retrieve only recoverable vtxos (notes, subdust or swept vtxos).\nThe 3 filters are mutually exclusive,"
+          },
+          "renewableOnly": {
+            "type": "boolean",
+            "description": "Retrieve spendable and recoverable vtxos"
           },
           "scripts": {
             "type": "array",

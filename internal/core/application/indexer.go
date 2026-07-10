@@ -63,8 +63,8 @@ type IndexerService interface {
 	GetForfeitTxs(ctx context.Context, txid string, page *Page) (*ForfeitTxsResp, error)
 	GetConnectors(ctx context.Context, txid string, page *Page) (*TreeTxResp, error)
 	GetVtxos(
-		ctx context.Context,
-		pubkeys []string, spendableOnly, spendOnly, recoverableOnly, pendingOnly bool,
+		ctx context.Context, pubkeys []string,
+		spendableOnly, spendOnly, recoverableOnly, pendingOnly, renewableOnly bool,
 		after, before int64, page *Page,
 	) (*GetVtxosResp, error)
 	GetVtxosByOutpoint(
@@ -268,7 +268,7 @@ func (i *indexerService) GetConnectors(
 func (i *indexerService) GetVtxos(
 	ctx context.Context,
 	pubkeys []string,
-	spendableOnly, spentOnly, recoverableOnly, pendingOnly bool,
+	spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly bool,
 	after, before int64,
 	page *Page,
 ) (*GetVtxosResp, error) {
@@ -328,6 +328,15 @@ func (i *indexerService) GetVtxos(
 				}
 			}
 			allVtxos = recoverableVtxos
+		}
+		if renewableOnly {
+			renewableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
+			for _, vtxo := range allVtxos {
+				if !vtxo.Spent && !vtxo.Unrolled {
+					renewableVtxos = append(renewableVtxos, vtxo)
+				}
+			}
+			allVtxos = renewableVtxos
 		}
 	}
 

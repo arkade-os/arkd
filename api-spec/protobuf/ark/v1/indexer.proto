@@ -220,6 +220,8 @@ message GetVtxosRequest {
   // Include only vtxos with last update before the given unix time in milliseconds,
   // greater value than the after when specified. A value of 0 means no upper bound.
   int64 before = 9; 
+  // Retrieve spendable and recoverable vtxos
+  bool renewable_only = 10; 
 }
 message GetVtxosResponse {
   repeated IndexerVtxo vtxos = 1;
