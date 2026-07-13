@@ -402,37 +402,44 @@ func makeCheckpointPSBT(t *testing.T, inputTxid string, inputVout uint32) string
 }
 
 func TestChainCursor(t *testing.T) {
-	// encoding then decoding a frontier of outpoints returns the same outpoints.
+	outpoint := Outpoint{Txid: "abc123", VOut: 0}
+
+	// encoding then decoding an offset for the same outpoint returns the offset.
 	t.Run("round trip", func(t *testing.T) {
 		svc := &indexerService{}
-		frontier := []domain.Outpoint{
-			{Txid: "abc123", VOut: 0},
-			{Txid: "def456", VOut: 2},
-			{Txid: "ghi789", VOut: 1},
-		}
 
-		token := svc.encodeChainCursor(frontier)
+		token := svc.encodeChainCursor(42, outpoint)
 		require.NotEmpty(t, token)
 
-		decoded, err := svc.decodeChainCursor(token)
+		decoded, err := svc.decodeChainCursor(token, outpoint)
 		require.NoError(t, err)
-		require.Equal(t, frontier, decoded)
+		require.Equal(t, 42, decoded)
 	})
 
-	// an empty frontier encodes to an empty string.
-	t.Run("empty frontier", func(t *testing.T) {
-		svc := &indexerService{}
-		token := svc.encodeChainCursor(nil)
-		require.Empty(t, token)
+	// a cursor issued for one outpoint must be rejected when decoded for another
+	// (prevents replaying a page token against a different chain — #1146).
+	t.Run("rejects cursor issued for another outpoint", func(t *testing.T) {
+		svc := &indexerService{cursorHMACKey: []byte("server-secret-key")}
 
-		token = svc.encodeChainCursor([]domain.Outpoint{})
-		require.Empty(t, token)
+		token := svc.encodeChainCursor(10, outpoint)
+		_, err := svc.decodeChainCursor(token, Outpoint{Txid: "other", VOut: 1})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "does not match outpoint")
+	})
+
+	// a negative offset is rejected.
+	t.Run("rejects negative offset", func(t *testing.T) {
+		svc := &indexerService{}
+		token := svc.encodeChainCursor(-1, outpoint)
+		_, err := svc.decodeChainCursor(token, outpoint)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid cursor offset")
 	})
 
 	// invalid base64 returns an error.
 	t.Run("invalid base64", func(t *testing.T) {
 		svc := &indexerService{}
-		_, err := svc.decodeChainCursor("not-valid-base64!!!")
+		_, err := svc.decodeChainCursor("not-valid-base64!!!", outpoint)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid base64")
 	})
@@ -442,27 +449,26 @@ func TestChainCursor(t *testing.T) {
 		svc := &indexerService{}
 		// Encode something that is not valid JSON
 		token := "bm90LWpzb24" // base64url of "not-json"
-		_, err := svc.decodeChainCursor(token)
+		_, err := svc.decodeChainCursor(token, outpoint)
 		require.Error(t, err)
 	})
 
 	// a cursor signed with one key is rejected by a service with a different key.
 	t.Run("HMAC rejects forgery", func(t *testing.T) {
 		svc := &indexerService{cursorHMACKey: []byte("server-secret-key")}
-		frontier := []domain.Outpoint{{Txid: "abc123", VOut: 0}}
 
-		token := svc.encodeChainCursor(frontier)
+		token := svc.encodeChainCursor(7, outpoint)
 		require.NotEmpty(t, token)
 
 		// Valid decode with same key works.
-		decoded, err := svc.decodeChainCursor(token)
+		decoded, err := svc.decodeChainCursor(token, outpoint)
 		require.NoError(t, err)
-		require.Equal(t, frontier, decoded)
+		require.Equal(t, 7, decoded)
 
 		// Forge a cursor with a different key — should be rejected.
 		forger := &indexerService{cursorHMACKey: []byte("attacker-key")}
-		forgedToken := forger.encodeChainCursor([]domain.Outpoint{{Txid: "victim-vtxo", VOut: 0}})
-		_, err = svc.decodeChainCursor(forgedToken)
+		forgedToken := forger.encodeChainCursor(7, outpoint)
+		_, err = svc.decodeChainCursor(forgedToken, outpoint)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "signature mismatch")
 
@@ -470,7 +476,7 @@ func TestChainCursor(t *testing.T) {
 		rawToken, _ := base64.RawURLEncoding.DecodeString(token)
 		rawToken[0] ^= 0xff
 		tampered := base64.RawURLEncoding.EncodeToString(rawToken)
-		_, err = svc.decodeChainCursor(tampered)
+		_, err = svc.decodeChainCursor(tampered, outpoint)
 		require.Error(t, err)
 	})
 
@@ -479,11 +485,10 @@ func TestChainCursor(t *testing.T) {
 	// after the HMAC portion is stripped, etc.
 	t.Run("HMAC edge cases", func(t *testing.T) {
 		svc := &indexerService{cursorHMACKey: []byte("server-secret-key")}
-		frontier := []domain.Outpoint{{Txid: "abc123", VOut: 0}}
-		validToken := svc.encodeChainCursor(frontier)
+		validToken := svc.encodeChainCursor(3, outpoint)
 
 		t.Run("empty string", func(t *testing.T) {
-			_, err := svc.decodeChainCursor("")
+			_, err := svc.decodeChainCursor("", outpoint)
 			require.Error(t, err)
 		})
 
@@ -492,32 +497,32 @@ func TestChainCursor(t *testing.T) {
 			require.NoError(t, err)
 			// Strip the 32-byte HMAC, leaving only the JSON payload.
 			truncated := base64.RawURLEncoding.EncodeToString(raw[:len(raw)-32])
-			_, err = svc.decodeChainCursor(truncated)
+			_, err = svc.decodeChainCursor(truncated, outpoint)
 			require.Error(t, err)
 		})
 
 		t.Run("unsigned cursor rejected by signing server", func(t *testing.T) {
 			// A server with no HMAC key produces unsigned cursors.
 			noKey := &indexerService{}
-			unsigned := noKey.encodeChainCursor(frontier)
+			unsigned := noKey.encodeChainCursor(3, outpoint)
 			// A server WITH an HMAC key must reject it.
-			_, err := svc.decodeChainCursor(unsigned)
+			_, err := svc.decodeChainCursor(unsigned, outpoint)
 			require.Error(t, err)
 		})
 
 		t.Run("hand-crafted JSON without HMAC", func(t *testing.T) {
 			// Attacker builds raw JSON and base64-encodes it, no HMAC.
-			raw := []byte(`{"frontier":[{"txid":"victim","vout":0}]}`)
+			raw := []byte(`{"o":"abc123:0","n":0}`)
 			crafted := base64.RawURLEncoding.EncodeToString(raw)
-			_, err := svc.decodeChainCursor(crafted)
+			_, err := svc.decodeChainCursor(crafted, outpoint)
 			require.Error(t, err)
 		})
 
 		t.Run("cursor from restarted server with new key", func(t *testing.T) {
 			oldServer := &indexerService{cursorHMACKey: []byte("old-key")}
-			oldToken := oldServer.encodeChainCursor(frontier)
+			oldToken := oldServer.encodeChainCursor(3, outpoint)
 			newServer := &indexerService{cursorHMACKey: []byte("new-key-after-restart")}
-			_, err := newServer.decodeChainCursor(oldToken)
+			_, err := newServer.decodeChainCursor(oldToken, outpoint)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "signature mismatch")
 		})
@@ -528,10 +533,10 @@ func TestChainCursor(t *testing.T) {
 			raw, err := base64.RawURLEncoding.DecodeString(validToken)
 			require.NoError(t, err)
 			origHMAC := raw[len(raw)-32:]
-			newPayload := []byte(`{"frontier":[{"txid":"other","vout":0}]}`)
+			newPayload := []byte(`{"o":"other:0","n":0}`)
 			tampered := append(newPayload, origHMAC...)
 			token := base64.RawURLEncoding.EncodeToString(tampered)
-			_, err = svc.decodeChainCursor(token)
+			_, err = svc.decodeChainCursor(token, outpoint)
 			require.Error(t, err)
 		})
 	})
@@ -799,92 +804,74 @@ func TestGetVtxoChainPagination(t *testing.T) {
 	// Subtests that share the same preconfirmed A -> B -> C chain. GetVtxoChain
 	// keeps no cross-call state, so one indexer and mock setup is reused across
 	// these read-only cases instead of rebuilt per case.
+	// Chain: A(ark+cp) -> B(ark+cp) -> C(ark) = 5 items total. It fits well under
+	// the fixed cursor page size (maxVtxoChainWalkSize), so cursor calls return
+	// it in a single page; legacy page-number calls slice it by PageNum/PageSize.
 	t.Run("preconfirmed chain", func(t *testing.T) {
 		vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
 		vtxoKey := setupPreconfirmedChain(t, ctx, vtxoRepo, markerRepo, offchainTxRepo)
 
-		// when page is nil but a pageToken is provided, the default page size
-		// (maxPageSizeVtxoChain=100) is used instead of returning the full chain.
-		t.Run("default page size with token only", func(t *testing.T) {
-			// Get the first page with an explicit page size to obtain a token
-			page := &Page{PageSize: 2}
-			resp1, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
+		// Cursor session with no page and no token: the whole chain (< page size)
+		// comes back in one page with no next token.
+		t.Run("cursor returns full chain in one page", func(t *testing.T) {
+			resp, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, "")
 			require.NoError(t, err)
-			require.NotEmpty(t, resp1.NextPageToken)
-
-			// Resume with token but nil page — should use default page size (100),
-			// which is large enough to return the remaining chain in one shot.
-			resp2, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, resp1.NextPageToken)
-			require.NoError(t, err)
-			// Remaining chain: B(ark+cp) + C(ark) = 3 items, all fit in default page
-			require.Equal(t, 3, len(resp2.Chain))
-			require.Empty(t, resp2.NextPageToken)
-		})
-
-		// the first page returns the expected number of items and a non-empty
-		// next_page_token when the chain exceeds the page size.
-		t.Run("first page", func(t *testing.T) {
-			// Page size 2: vtxo-A produces 2 chain items (ark + checkpoint),
-			// then vtxo-B triggers early termination.
-			page := &Page{PageSize: 2}
-			resp, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
-
-			require.NoError(t, err)
-			require.Len(t, resp.Chain, 2)
+			require.Len(t, resp.Chain, 5)
+			require.Empty(t, resp.NextPageToken)
 			require.Equal(t, IndexerChainedTxTypeArk, resp.Chain[0].Type)
 			require.Equal(t, IndexerChainedTxTypeCheckpoint, resp.Chain[1].Type)
-			require.NotEmpty(t, resp.NextPageToken, "should have next page token")
 		})
 
-		// resuming with a page token continues the chain from where the previous
-		// page left off, eventually exhausting the chain with an empty token.
-		t.Run("resume with token", func(t *testing.T) {
-			// Chain: A(ark+cp) -> B(ark+cp) -> C(ark) = 5 items total
-			// Page size 2: page1=2, page2=2, page3=1
-			page := &Page{PageSize: 2}
-
-			// Page 1
-			resp1, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
+		// A cursor token resumes the deterministic chain from its encoded offset.
+		t.Run("cursor resumes from offset token", func(t *testing.T) {
+			token := indexer.encodeChainCursor(2, vtxoKey)
+			resp, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, token)
 			require.NoError(t, err)
-			require.Len(t, resp1.Chain, 2)
-			require.NotEmpty(t, resp1.NextPageToken)
-
-			// Page 2: resume with token from page 1
-			resp2, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, resp1.NextPageToken)
-			require.NoError(t, err)
-			require.Len(t, resp2.Chain, 2)
-			require.NotEmpty(t, resp2.NextPageToken)
-
-			// Page 3: resume with token from page 2
-			resp3, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, resp2.NextPageToken)
-			require.NoError(t, err)
-			require.Len(t, resp3.Chain, 1)
-			require.Empty(t, resp3.NextPageToken, "last page should have empty token")
-
-			// Verify total items across all pages
-			totalItems := len(resp1.Chain) + len(resp2.Chain) + len(resp3.Chain)
-			require.Equal(t, 5, totalItems)
-
-			// Verify chain types: each vtxo with checkpoints produces ark+checkpoint,
-			// terminal vtxo (C) produces only ark.
-			require.Equal(t, IndexerChainedTxTypeArk, resp3.Chain[0].Type)
+			// items [2:5] = B(ark+cp) + C(ark)
+			require.Len(t, resp.Chain, 3)
+			require.Empty(t, resp.NextPageToken)
 		})
 
-		// each page never exceeds the page size (with allowance for grouped items
-		// from a single VTXO).
-		t.Run("page size respected", func(t *testing.T) {
-			// Use page size 1 — each VTXO produces 2 items (ark+checkpoint) for A and
-			// B, so pages will slightly overflow since items for one VTXO are emitted
-			// together.
-			page := &Page{PageSize: 1}
-
-			resp, err := indexer.GetVtxoChain(ctx, "", vtxoKey, page, "")
+		// An offset at/after the end of the chain yields an empty page.
+		t.Run("cursor offset past end returns empty", func(t *testing.T) {
+			token := indexer.encodeChainCursor(5, vtxoKey)
+			resp, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, token)
 			require.NoError(t, err)
+			require.Empty(t, resp.Chain)
+			require.Empty(t, resp.NextPageToken)
+		})
 
-			// vtxo-A emits 2 items (ark + checkpoint) even though pageSize=1,
-			// because all items for a VTXO are emitted together.
-			require.Equal(t, 2, len(resp.Chain))
-			require.NotEmpty(t, resp.NextPageToken)
+		// Legacy page-number pagination slices the full chain and reports page
+		// metadata. PageSize 2 over 5 items → pages of 2, 2, 1.
+		t.Run("legacy page-number pagination", func(t *testing.T) {
+			p1, err := indexer.GetVtxoChain(ctx, "", vtxoKey, &Page{PageNum: 1, PageSize: 2}, "")
+			require.NoError(t, err)
+			require.Len(t, p1.Chain, 2)
+			require.Equal(t, IndexerChainedTxTypeArk, p1.Chain[0].Type)
+			require.Equal(t, IndexerChainedTxTypeCheckpoint, p1.Chain[1].Type)
+			require.Equal(t, int32(1), p1.Page.Current)
+			require.Equal(t, int32(3), p1.Page.Total)
+
+			p2, err := indexer.GetVtxoChain(ctx, "", vtxoKey, &Page{PageNum: 2, PageSize: 2}, "")
+			require.NoError(t, err)
+			require.Len(t, p2.Chain, 2)
+			require.Equal(t, int32(2), p2.Page.Current)
+
+			p3, err := indexer.GetVtxoChain(ctx, "", vtxoKey, &Page{PageNum: 3, PageSize: 2}, "")
+			require.NoError(t, err)
+			require.Len(t, p3.Chain, 1)
+			require.Equal(t, int32(3), p3.Page.Current)
+			require.Equal(t, IndexerChainedTxTypeArk, p3.Chain[0].Type)
+
+			require.Equal(t, 5, len(p1.Chain)+len(p2.Chain)+len(p3.Chain))
+		})
+
+		// Legacy pagination slices at exact item boundaries (unlike the old
+		// whole-VTXO-group behavior): PageSize 1 returns exactly 1 item.
+		t.Run("legacy page size is exact", func(t *testing.T) {
+			resp, err := indexer.GetVtxoChain(ctx, "", vtxoKey, &Page{PageNum: 1, PageSize: 1}, "")
+			require.NoError(t, err)
+			require.Len(t, resp.Chain, 1)
 		})
 	})
 

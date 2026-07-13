@@ -344,7 +344,8 @@ func (e *indexerService) GetVtxoChain(
 		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
-		resp, err = e.indexerSvc.GetVtxoChainByIntent(ctx, *intent, page)
+		// Intent is cursor-only; page-number pagination is not supported here.
+		resp, err = e.indexerSvc.GetVtxoChainByIntent(ctx, *intent)
 	} else {
 		outpoint, parseErr := parseOutpoint(request.GetOutpoint())
 		if parseErr != nil {

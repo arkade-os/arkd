@@ -772,7 +772,7 @@ func TestGetVtxoChainByIntent(t *testing.T) {
 
 			// GetVtxoChainByIntent validates the intent, builds the chain, and
 			// returns a token covering all outpoints in the chain.
-			chainResp, err := indexer.GetVtxoChainByIntent(t.Context(), vtxoIntent, nil)
+			chainResp, err := indexer.GetVtxoChainByIntent(t.Context(), vtxoIntent)
 			require.NoError(t, err)
 			require.NotEmpty(t, chainResp.Chain)
 			require.NotEmpty(t, chainResp.AuthToken)
@@ -868,7 +868,7 @@ func TestGetVtxoChainByIntent(t *testing.T) {
 
 				indexer := newTestIndexer(t, privkey, tc.exposure, nil, vtxos, wallet)
 
-				_, err := indexer.GetVtxoChainByIntent(t.Context(), tc.makeIntent(), nil)
+				_, err := indexer.GetVtxoChainByIntent(t.Context(), tc.makeIntent())
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.errContains)
 

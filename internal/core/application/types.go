@@ -146,7 +146,8 @@ type VtxoChainResp struct {
 }
 
 type vtxoChainCursor struct {
-	Frontier []Outpoint `json:"frontier"`
+	Outpoint string `json:"o"`
+	Offset   int    `json:"n"`
 }
 
 type VOut int
