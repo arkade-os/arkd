@@ -80,10 +80,7 @@ var (
 	}
 )
 
-const (
-	sqliteDbFile       = "sqlite.db"
-	maxProjectionRetry = 5
-)
+const sqliteDbFile = "sqlite.db"
 
 type ServiceConfig struct {
 	EventStoreType string
@@ -524,297 +521,306 @@ func (s *service) Close() {
 func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 	ctx := context.Background()
 	round := domain.NewRoundFromEvents(events)
+	updateFn := func() bool {
+		if err := s.roundStore.AddOrUpdateRound(ctx, *round); err != nil {
+			log.WithError(err).Errorf("failed to add or update round %s", round.Id)
+			return false
+		}
+		log.Debugf("added or updated round %s", round.Id)
 
-	if err := s.roundStore.AddOrUpdateRound(ctx, *round); err != nil {
-		log.WithError(err).Errorf("failed to add or update round %s", round.Id)
-		return
-	}
-	log.Debugf("added or updated round %s", round.Id)
+		if !round.IsEnded() {
+			return true
+		}
 
-	if !round.IsEnded() {
-		go s.batchEventHandler.dispatch(*round)
-		return
-	}
+		repo := s.vtxoStore
 
-	repo := s.vtxoStore
-
-	lastEvent := events[len(events)-1]
-	if lastEvent.GetType() == domain.EventTypeBatchSwept {
-		event := lastEvent.(domain.BatchSwept)
-		allSweptVtxos := append(event.LeafVtxos, event.PreconfirmedVtxos...)
-
-		// Per-outpoint sweeping avoids marker over-reach: markers can be shared
-		// across independent subtrees when offchain txs consolidate inputs from
-		// different lineages. Sweeping by marker would incorrectly mark unrelated
-		// VTXOs as swept (same reason the checkpoint path uses SweepVtxoOutpoints).
-		sweptAt := time.Now().Unix()
-		if err := s.markerStore.SweepVtxoOutpoints(ctx, allSweptVtxos, sweptAt); err != nil {
-			log.WithError(err).Warn("failed to sweep vtxo outpoints for batch")
-		} else if len(allSweptVtxos) > 0 {
+		lastEvent := events[len(events)-1]
+		if lastEvent.GetType() == domain.EventTypeBatchSwept {
+			event := lastEvent.(domain.BatchSwept)
+			allSweptVtxos := append(event.LeafVtxos, event.PreconfirmedVtxos...)
+			// Per-outpoint sweeping avoids marker over-reach: markers can be shared
+			// across independent subtrees when offchain txs consolidate inputs from
+			// different lineages. Sweeping by marker would incorrectly mark unrelated
+			// VTXOs as swept (same reason the checkpoint path uses SweepVtxoOutpoints).
+			sweptAt := time.Now().Unix()
+			if err := s.markerStore.SweepVtxoOutpoints(ctx, allSweptVtxos, sweptAt); err != nil {
+				log.WithError(err).Warn("failed to sweep vtxo outpoints for batch, retrying...")
+				return false
+			}
 			log.Debugf("swept %d vtxo outpoints for batch", len(allSweptVtxos))
-		}
 
-		if event.FullySwept {
-			log.WithField("commitment_txid", round.CommitmentTxid).Debugf(
-				"round %s fully swept", round.Id,
-			)
-		}
-		go s.batchEventHandler.dispatch(*round)
-		return
-	}
-
-	spentVtxos := getSpentVtxoKeysFromRound(*round, s.txDecoder)
-	newVtxos := getNewVtxosFromRound(*round, s.txDecoder)
-
-	if len(spentVtxos) > 0 {
-		for attempt := range maxProjectionRetry {
-			if err := repo.SettleVtxos(ctx, spentVtxos, round.CommitmentTxid); err != nil {
-				log.WithError(err).Warnf(
-					"failed to spend vtxos (attempt %d/%d)", attempt+1, maxProjectionRetry,
+			if event.FullySwept {
+				log.WithField("commitment_txid", round.CommitmentTxid).Debugf(
+					"round %s fully swept", round.Id,
 				)
-				time.Sleep(100 * time.Millisecond)
-				continue
+			}
+			return true
+		}
+
+		spentVtxos := getSpentVtxoKeysFromRound(*round, s.txDecoder)
+		newVtxos := getNewVtxosFromRound(*round, s.txDecoder)
+
+		if len(spentVtxos) > 0 {
+			if err := repo.SettleVtxos(ctx, spentVtxos, round.CommitmentTxid); err != nil {
+				log.WithError(err).Warn("failed to spend vtxos, retrying...")
+				return false
 			}
 			log.Debugf("spent %d vtxos", len(spentVtxos))
-			break
 		}
-	}
 
-	if len(newVtxos) > 0 {
-		for attempt := range maxProjectionRetry {
+		if len(newVtxos) > 0 {
 			// this will take care of updating asset projections as well
 			if err := repo.AddVtxos(ctx, newVtxos); err != nil {
-				log.WithError(err).Warnf(
-					"failed to add new vtxos (attempt %d/%d)", attempt+1, maxProjectionRetry,
-				)
-				time.Sleep(100 * time.Millisecond)
-				continue
+				log.WithError(err).Warn("failed to add new vtxos, retrying soon")
+				return false
 			}
-
 			log.Debugf("added %d new vtxos", len(newVtxos))
-			break
-		}
 
-		// Create root markers for batch VTXOs (depth 0 is always at marker boundary)
-		for attempt := range maxProjectionRetry {
+			// Create root markers for batch VTXOs (depth 0 is always at marker boundary).
 			if err := s.markerStore.CreateRootMarkersForVtxos(ctx, newVtxos); err != nil {
 				log.WithError(err).Warnf(
-					"failed to create root markers for %d vtxos (attempt %d/%d)",
-					len(newVtxos), attempt+1, maxProjectionRetry,
+					"failed to create root markers for %d vtxos", len(newVtxos),
 				)
-				time.Sleep(100 * time.Millisecond)
-				continue
+				return false
 			}
 			log.Debugf("created root markers for %d vtxos", len(newVtxos))
-			break
 		}
+		return true
 	}
 
-	go s.batchEventHandler.dispatch(*round)
+	dispatch := updateFn()
+	if dispatch {
+		go s.batchEventHandler.dispatch(*round)
+	}
 }
 
 func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) {
 	ctx := context.Background()
 	offchainTx := domain.NewOffchainTxFromEvents(events)
-
-	if err := s.offchainTxStore.AddOrUpdateOffchainTx(ctx, offchainTx); err != nil {
-		log.WithError(err).Errorf("failed to add or update offchain tx %s", offchainTx.ArkTxid)
-		return
-	}
-	log.Debugf("added or updated offchain tx %s", offchainTx.ArkTxid)
-
-	switch {
-	case offchainTx.IsAccepted():
-		spentVtxos := make(map[domain.Outpoint]string)
-		for _, tx := range offchainTx.CheckpointTxs {
-			txid, ins, _, err := s.txDecoder.DecodeTx(tx)
-			if err != nil {
-				log.WithError(err).Warn("failed to decode checkpoint tx")
-				continue
-			}
-			for _, in := range ins {
-				spentVtxos[in] = txid
-			}
+	updateFn := func() bool {
+		if err := s.offchainTxStore.AddOrUpdateOffchainTx(ctx, offchainTx); err != nil {
+			log.WithError(err).Errorf("failed to add or update offchain tx %s", offchainTx.ArkTxid)
+			return false
 		}
+		log.Debugf("added or updated offchain tx %s", offchainTx.ArkTxid)
 
-		// as soon as the checkpoint txs are signed by the signer,
-		// we must mark the vtxos as spent to prevent double spending.
-		if err := s.vtxoStore.SpendVtxos(ctx, spentVtxos, offchainTx.ArkTxid); err != nil {
-			log.WithError(err).Warn("failed to spend vtxos")
-			return
-		}
-		log.Debugf("spent %d vtxos", len(spentVtxos))
-	case offchainTx.IsFinalized():
-		txid, _, outs, err := s.txDecoder.DecodeTx(offchainTx.ArkTx)
-		if err != nil {
-			log.WithError(err).Warn("failed to decode ark tx")
-			return
-		}
-
-		// Depth and parent marker IDs are carried by the OffchainTxAccepted event,
-		// computed in SubmitOffchainTx from the spent VTXOs.
-		newDepth := offchainTx.Depth
-		parentMarkerIDs := offchainTx.ParentMarkerIDs
-
-		// Create marker if at boundary depth, or inherit parent markers
-		var markerIDs []string
-		marker, ids := domain.NewMarker(txid, newDepth, parentMarkerIDs)
-		if marker != nil {
-			if err := s.markerStore.AddMarker(ctx, *marker); err != nil {
-				log.WithError(err).
-					Warn("failed to create marker for chained vtxo, falling back to parent markers")
-				// Fall back to parent markers so VTXOs are still sweepable.
-				// Without this, markerIDs stays nil and the VTXOs become
-				// permanently unsweepable — the swept column was removed and
-				// swept status is now derived from whether any of a VTXO's
-				// markers appear in the swept_marker table.
-				markerIDs = parentMarkerIDs
-			} else {
-				log.Debugf("created marker %s at depth %d", marker.ID, newDepth)
-				markerIDs = ids
-			}
-		} else {
-			markerIDs = ids
-		}
-
-		issuances, assets, err := getAssetsFromTxOuts(txid, outs)
-		if err != nil {
-			log.WithError(err).Warn("failed to get assets from tx")
-			return
-		}
-
-		sweepTxs, err := s.roundStore.GetSweepTxs(ctx, offchainTx.RootCommitmentTxId)
-		// We consider the tx swept if:
-		// - there is an error fetching the sweep txs (this is just fallback, should never happen)
-		// - the batch is swept
-		// - the tx expired (meaning one or all its inputs expired and are already swept or about
-		// to be swept)
-		txSwept := err != nil || len(sweepTxs) > 0 ||
-			time.Now().After(time.Unix(offchainTx.ExpiryTimestamp, 0))
-		// once the offchain tx is finalized, the user signed the checkpoint txs
-		// thus, we can create the new vtxos in the db.
-		newVtxos := make([]domain.Vtxo, 0, len(outs))
-		createdDustMarkerIDs := make([]string, 0)
-		sweptOutpoints := make([]domain.Outpoint, 0)
-		for outIndex, out := range outs {
-			// ignore anchor and extension
-			if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
-				extension.IsExtension(out.PkScript) {
-				continue
-			}
-
-			// at that point, we should only have valid taproot script
-			if len(out.PkScript) != 34 {
-				continue
-			}
-
-			outputSwept := txSwept
-			if !outputSwept {
-				outputSwept = script.IsSubDustScript(out.PkScript)
-			}
-
-			outpoint := domain.Outpoint{
-				Txid: txid,
-				VOut: uint32(outIndex),
-			}
-
-			vtxoMarkerIDs := markerIDs
-			isDust := script.IsSubDustScript(out.PkScript)
-			if txSwept && !isDust {
-				// The swept column no longer exists, so the Swept flag set on
-				// the vtxo struct below is not persisted by AddVtxos. Collect
-				// non-dust outpoints to sweep them after insert. Dust outputs
-				// are covered by their swept dust markers.
-				sweptOutpoints = append(sweptOutpoints, outpoint)
-			}
-			if isDust {
-				// Dust VTXOs get their own outpoint-based marker so they can be
-				// swept individually without affecting sibling non-dust VTXOs
-				// that share the same inherited parent markers.
-				dustMarkerID := outpoint.String()
-				if err := s.markerStore.AddMarker(ctx, domain.Marker{
-					ID:              dustMarkerID,
-					Depth:           newDepth,
-					ParentMarkerIDs: markerIDs,
-				}); err != nil {
-					log.WithError(err).Warnf("failed to create dust marker %s", dustMarkerID)
-				} else {
-					createdDustMarkerIDs = append(createdDustMarkerIDs, dustMarkerID)
-					vtxoMarkerIDs = append(append([]string{}, markerIDs...), dustMarkerID)
+		switch {
+		case offchainTx.IsAccepted():
+			spentVtxos := make(map[domain.Outpoint]string)
+			for _, tx := range offchainTx.CheckpointTxs {
+				txid, ins, _, err := s.txDecoder.DecodeTx(tx)
+				if err != nil {
+					log.WithError(err).Warn("failed to decode checkpoint tx")
+					continue
+				}
+				for _, in := range ins {
+					spentVtxos[in] = txid
 				}
 			}
 
-			newVtxos = append(newVtxos, domain.Vtxo{
-				Outpoint:           outpoint,
-				PubKey:             hex.EncodeToString(out.PkScript[2:]),
-				Amount:             uint64(out.Amount),
-				ExpiresAt:          offchainTx.ExpiryTimestamp,
-				CommitmentTxids:    offchainTx.CommitmentTxidsList(),
-				RootCommitmentTxid: offchainTx.RootCommitmentTxId,
-				Preconfirmed:       true,
-				CreatedAt:          offchainTx.StartingTimestamp,
-				// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
-				// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
-				// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
-				// Only badger persists this field directly. Postgres and sqlite
-				// have no swept column, so for them it is persisted via the dust
-				// marker sweep and the swept outpoints insert below.
-				Swept:     outputSwept,
-				Depth:     newDepth,
-				MarkerIDs: vtxoMarkerIDs,
-				Assets:    assets[uint32(outIndex)],
-			})
-		}
-
-		if len(issuances) > 0 {
-			assetsByTx := map[string][]domain.Asset{
-				offchainTx.ArkTxid: issuances,
+			// as soon as the checkpoint txs are signed by the signer,
+			// we must mark the vtxos as spent to prevent double spending.
+			if err := s.vtxoStore.SpendVtxos(ctx, spentVtxos, offchainTx.ArkTxid); err != nil {
+				log.WithError(err).Warn("failed to spend vtxos")
+				return false
 			}
-			count, err := s.assetStore.AddAssets(ctx, assetsByTx)
+			log.Debugf("spent %d vtxos", len(spentVtxos))
+		case offchainTx.IsFinalized():
+			txid, _, outs, err := s.txDecoder.DecodeTx(offchainTx.ArkTx)
 			if err != nil {
-				log.WithError(err).Warnf(
-					"failed to add issued assets in offchain tx %s", offchainTx.ArkTxid,
-				)
-				return
+				log.WithError(err).Warn("failed to decode ark tx")
+				return false
 			}
-			if count > 0 {
-				log.Infof("added %d issued assets", count)
-			}
-		}
 
-		if err := s.vtxoStore.AddVtxos(ctx, newVtxos); err != nil {
-			log.WithError(err).Warn("failed to add vtxos")
-			return
-		}
-		log.Debugf("added %d vtxos at depth %d", len(newVtxos), newDepth)
+			// Depth and parent marker IDs are carried by the OffchainTxAccepted event,
+			// computed in SubmitOffchainTx from the spent VTXOs.
+			newDepth := offchainTx.Depth
+			parentMarkerIDs := offchainTx.ParentMarkerIDs
 
-		// Mark dust VTXOs as swept via their markers
-		// Dust vtxos are below dust limit and can't be spent again in future offchain tx
-		// Because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited
-		if len(createdDustMarkerIDs) > 0 {
-			sweptAt := time.Now().Unix()
-			if err := s.markerStore.BulkSweepMarkers(
-				ctx,
-				createdDustMarkerIDs,
-				sweptAt,
-			); err != nil {
-				log.WithError(err).
-					Warnf("failed to sweep %d dust vtxo markers", len(createdDustMarkerIDs))
+			// Create marker if at boundary depth, or inherit parent markers
+			var markerIDs []string
+			marker, ids := domain.NewMarker(txid, newDepth, parentMarkerIDs)
+			if marker != nil {
+				if err := s.markerStore.AddMarker(ctx, *marker); err != nil {
+					log.WithError(err).
+						Warn("failed to create marker for chained vtxo, falling back to parent markers")
+					// Fall back to parent markers so VTXOs are still sweepable.
+					// Without this, markerIDs stays nil and the VTXOs become
+					// permanently unsweepable — the swept column was removed and
+					// swept status is now derived from whether any of a VTXO's
+					// markers appear in the swept_marker table.
+					markerIDs = parentMarkerIDs
+				} else {
+					log.Debugf("created marker %s at depth %d", marker.ID, newDepth)
+					markerIDs = ids
+				}
+			} else {
+				markerIDs = ids
 			}
-		}
 
-		// Persist swept status for non-dust outputs of a swept/expired tx,
-		// per-outpoint like the batch and checkpoint sweep paths.
-		if len(sweptOutpoints) > 0 {
-			sweptAt := time.Now().Unix()
-			if err := s.markerStore.SweepVtxoOutpoints(ctx, sweptOutpoints, sweptAt); err != nil {
-				log.WithError(err).
-					Warnf("failed to sweep %d vtxo outpoints of swept tx", len(sweptOutpoints))
+			issuances, assets, err := getAssetsFromTxOuts(txid, outs)
+			if err != nil {
+				log.WithError(err).Warn("failed to get assets from tx")
+				return false
 			}
+
+			sweepTxs, err := s.roundStore.GetSweepTxs(ctx, offchainTx.RootCommitmentTxId)
+			// We consider the tx swept if:
+			// - there is an error fetching the sweep txs (this is just fallback, should never happen)
+			// - the batch is swept
+			// - the tx expired (meaning one or all its inputs expired and are already swept or about
+			// to be swept)
+			txSwept := err != nil || len(sweepTxs) > 0 ||
+				time.Now().After(time.Unix(offchainTx.ExpiryTimestamp, 0))
+			// once the offchain tx is finalized, the user signed the checkpoint txs
+			// thus, we can create the new vtxos in the db.
+			newVtxos := make([]domain.Vtxo, 0, len(outs))
+			createdDustMarkerIDs := make([]string, 0)
+			sweptOutpoints := make([]domain.Outpoint, 0)
+			for outIndex, out := range outs {
+				// ignore anchor and extension
+				if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
+					extension.IsExtension(out.PkScript) {
+					continue
+				}
+
+				// at that point, we should only have valid taproot script
+				if len(out.PkScript) != 34 {
+					continue
+				}
+
+				outputSwept := txSwept
+				if !outputSwept {
+					outputSwept = script.IsSubDustScript(out.PkScript)
+				}
+
+				outpoint := domain.Outpoint{
+					Txid: txid,
+					VOut: uint32(outIndex),
+				}
+
+				vtxoMarkerIDs := markerIDs
+				isDust := script.IsSubDustScript(out.PkScript)
+				if txSwept && !isDust {
+					// The swept column no longer exists, so the Swept flag set on
+					// the vtxo struct below is not persisted by AddVtxos. Collect
+					// non-dust outpoints to sweep them (via swept_vtxo) before insert.
+					// Dust outputs are covered by their swept dust markers.
+					sweptOutpoints = append(sweptOutpoints, outpoint)
+				}
+				if isDust {
+					// Dust VTXOs get their own outpoint-based marker so they can be
+					// swept individually without affecting sibling non-dust VTXOs
+					// that share the same inherited parent markers.
+					dustMarkerID := outpoint.String()
+					if err := s.markerStore.AddMarker(ctx, domain.Marker{
+						ID:              dustMarkerID,
+						Depth:           newDepth,
+						ParentMarkerIDs: markerIDs,
+					}); err != nil {
+						// Sub-dust vtxos can't be spent offchain (OP_RETURN outputs):
+						// they can only be collected until they sum to a non-sub-dust
+						// amount (> 330 sats) and settled into a batch. We mark them
+						// swept so they fall in the same bucket as expired (swept)
+						// vtxos, the only other vtxos with that same "not spendable
+						// offchain" trait. If the dust marker can't be persisted the
+						// vtxo would instead look like a normal spendable vtxo
+						// (postgres/sqlite have no swept column), so we abort the
+						// projection rather than store a mis-categorized vtxo; the
+						// event is not dispatched.
+						log.WithError(err).Warnf("failed to create dust marker %s", dustMarkerID)
+						return false
+					}
+					createdDustMarkerIDs = append(createdDustMarkerIDs, dustMarkerID)
+					vtxoMarkerIDs = append(append([]string{}, markerIDs...), dustMarkerID)
+				}
+
+				newVtxos = append(newVtxos, domain.Vtxo{
+					Outpoint:           outpoint,
+					PubKey:             hex.EncodeToString(out.PkScript[2:]),
+					Amount:             uint64(out.Amount),
+					ExpiresAt:          offchainTx.ExpiryTimestamp,
+					CommitmentTxids:    offchainTx.CommitmentTxidsList(),
+					RootCommitmentTxid: offchainTx.RootCommitmentTxId,
+					Preconfirmed:       true,
+					CreatedAt:          offchainTx.StartingTimestamp,
+					// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
+					// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
+					// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
+					// Only badger persists this field directly. Postgres and sqlite
+					// have no swept column, so for them it is persisted via the dust
+					// marker sweep and the swept outpoints insert below.
+					Swept:     outputSwept,
+					Depth:     newDepth,
+					MarkerIDs: vtxoMarkerIDs,
+					Assets:    assets[uint32(outIndex)],
+				})
+			}
+
+			if len(issuances) > 0 {
+				assetsByTx := map[string][]domain.Asset{
+					offchainTx.ArkTxid: issuances,
+				}
+				count, err := s.assetStore.AddAssets(ctx, assetsByTx)
+				if err != nil {
+					log.WithError(err).Warnf(
+						"failed to add issued assets in offchain tx %s", offchainTx.ArkTxid,
+					)
+					return false
+				}
+				if count > 0 {
+					log.Infof("added %d issued assets", count)
+				}
+			}
+
+			// Persist swept state BEFORE creating the vtxos, so a failed swept write
+			// aborts the projection instead of leaving a spendable vtxo behind. Both
+			// tables are independent of the vtxo row: swept_marker references the dust
+			// markers created above, and swept_vtxo is keyed by outpoint — neither
+			// needs the vtxo to exist yet.
+
+			// Mark dust VTXOs as swept via their markers.
+			// Dust vtxos are below dust limit and can't be spent again in future offchain tx.
+			// Because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
+			if len(createdDustMarkerIDs) > 0 {
+				sweptAt := time.Now().Unix()
+				if err := s.markerStore.BulkSweepMarkers(
+					ctx,
+					createdDustMarkerIDs,
+					sweptAt,
+				); err != nil {
+					log.WithError(err).
+						Warnf("failed to sweep %d dust vtxo markers", len(createdDustMarkerIDs))
+					return false
+				}
+			}
+
+			// Persist swept status for non-dust outputs of a swept/expired tx,
+			// per-outpoint like the batch and checkpoint sweep paths.
+			if len(sweptOutpoints) > 0 {
+				sweptAt := time.Now().Unix()
+				if err := s.markerStore.SweepVtxoOutpoints(
+					ctx, sweptOutpoints, sweptAt,
+				); err != nil {
+					log.WithError(err).
+						Warnf("failed to sweep %d vtxo outpoints of swept tx", len(sweptOutpoints))
+					return false
+				}
+			}
+
+			if err := s.vtxoStore.AddVtxos(ctx, newVtxos); err != nil {
+				log.WithError(err).Warn("failed to add vtxos")
+				return false
+			}
+			log.Debugf("added %d vtxos at depth %d", len(newVtxos), newDepth)
 		}
+		return true
 	}
 
-	go s.offchainTxEventHandler.dispatch(*offchainTx)
+	dispatch := updateFn()
+	if dispatch {
+		go s.offchainTxEventHandler.dispatch(*offchainTx)
+	}
 }
 
 func getSpentVtxoKeysFromRound(

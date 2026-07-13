@@ -684,7 +684,9 @@ func (i *indexerService) walkVtxoChain(
 					var err error
 					offchainTx, err = i.repoManager.OffchainTxs().GetOffchainTx(ctx, vtxo.Txid)
 					if err != nil {
-						return nil, nil, false, fmt.Errorf("failed to retrieve offchain tx: %s", err)
+						return nil, nil, false, fmt.Errorf(
+							"failed to retrieve offchain tx: %s", err,
+						)
 					}
 					offchainTxCache[vtxo.Txid] = offchainTx
 				}
