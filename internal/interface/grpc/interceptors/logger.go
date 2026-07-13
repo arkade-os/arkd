@@ -39,9 +39,12 @@ func streamLogger(
 	srv any, stream grpc.ServerStream,
 	info *grpc.StreamServerInfo, handler grpc.StreamHandler,
 ) error {
-	start := time.Now()
+	logStreamCall(info.FullMethod, stream.Context())
 	err := handler(srv, stream)
-	logStreamCall(info.FullMethod, stream.Context(), time.Since(start), err)
+	if err != nil {
+		logStructuredError(err)
+		log.WithError(err).Warnf("method=%s", info.FullMethod)
+	}
 	return err
 }
 
@@ -63,19 +66,13 @@ func logUnaryCall(method string, req any, ctx context.Context, dur time.Duration
 	log.Debug(str)
 }
 
-func logStreamCall(method string, ctx context.Context, dur time.Duration, err error) {
-	str := fmt.Sprintf("method=%s duration=%dms", method, dur.Milliseconds())
+func logStreamCall(method string, ctx context.Context) {
+	str := fmt.Sprintf("method=%s", method)
 
 	if log.IsLevelEnabled(log.DebugLevel) {
 		if md, ok := sanitizeMetadata(ctx); ok {
 			str += fmt.Sprintf(" metadata=%s", md)
 		}
-	}
-
-	if err != nil {
-		logStructuredError(err)
-		log.WithError(err).Warn(str)
-		return
 	}
 
 	log.Debug(str)
