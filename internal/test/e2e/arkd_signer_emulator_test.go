@@ -197,7 +197,7 @@ func TestArkdSignerEmulatorOnchainSigning(t *testing.T) {
 
 // addEmulatorPacketE2E embeds an emulator packet into the PSBT's OP_RETURN
 // extension output. It is a local copy of the same helper in the unit test
-// suite (emulator_signing_onchain_test.go) and utils_test.go.
+// suite (emulator_signing_onchain_test.go).
 func addEmulatorPacketE2E(t *testing.T, ptx *psbt.Packet, entries []arkade.EmulatorEntry) {
 	t.Helper()
 

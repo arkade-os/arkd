@@ -55,7 +55,7 @@ func LoadConfig() (*Config, error) {
 	}
 
 	if err := cfg.initServices(); err != nil {
-		return nil, fmt.Errorf("error while initializing services: %s", err)
+		return nil, fmt.Errorf("error while initializing services: %w", err)
 	}
 
 	return cfg, nil
