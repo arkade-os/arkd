@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUpdateProjectionStoreAfterOffchainTx(t *testing.T) {
+func TestUpdateProjectionsAfterOffchainTxEvents(t *testing.T) {
 	ctx := t.Context()
 
 	// Covers the finalized-offchain-tx projection's swept/dust persistence. The swept state is
