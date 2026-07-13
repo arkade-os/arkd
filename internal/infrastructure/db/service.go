@@ -544,7 +544,10 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 			// VTXOs as swept (same reason the checkpoint path uses SweepVtxoOutpoints).
 			sweptAt := time.Now().Unix()
 			if err := s.markerStore.SweepVtxoOutpoints(ctx, allSweptVtxos, sweptAt); err != nil {
-				log.WithError(err).Warn("failed to sweep vtxo outpoints for batch, retrying...")
+				log.WithError(err).Warn(
+					"failed to sweep vtxo outpoints for batch, aborting round projection " +
+						"(update not dispatched, not retried)",
+				)
 				return false
 			}
 			log.Debugf("swept %d vtxo outpoints for batch", len(allSweptVtxos))
@@ -562,7 +565,10 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 
 		if len(spentVtxos) > 0 {
 			if err := repo.SettleVtxos(ctx, spentVtxos, round.CommitmentTxid); err != nil {
-				log.WithError(err).Warn("failed to spend vtxos, retrying...")
+				log.WithError(err).Warn(
+					"failed to spend vtxos, aborting round projection " +
+						"(update not dispatched, not retried)",
+				)
 				return false
 			}
 			log.Debugf("spent %d vtxos", len(spentVtxos))
@@ -571,7 +577,10 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		if len(newVtxos) > 0 {
 			// this will take care of updating asset projections as well
 			if err := repo.AddVtxos(ctx, newVtxos); err != nil {
-				log.WithError(err).Warn("failed to add new vtxos, retrying soon")
+				log.WithError(err).Warn(
+					"failed to add new vtxos, aborting round projection " +
+						"(update not dispatched, not retried)",
+				)
 				return false
 			}
 			log.Debugf("added %d new vtxos", len(newVtxos))
