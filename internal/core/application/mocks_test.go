@@ -53,6 +53,16 @@ func (m *mockedVtxoRepo) GetVtxos(ctx context.Context, outpoints []domain.Outpoi
 	return nil, args.Error(1)
 }
 
+func (m *mockedVtxoRepo) GetAllVtxosWithPubKeys(
+	ctx context.Context, pubkeys []string, after, before int64,
+) ([]domain.Vtxo, error) {
+	args := m.Called(ctx, pubkeys, after, before)
+	if v := args.Get(0); v != nil {
+		return v.([]domain.Vtxo), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
 func (m *mockedVtxoRepo) GetVtxoPubKeysByCommitmentTxids(
 	ctx context.Context, commitmentTxids []string, withMinimumAmount uint64,
 ) ([]string, error) {

@@ -232,9 +232,14 @@ func (s *OffchainTx) CheckpointTxsList() []string {
 func (s *OffchainTx) on(event Event, replayed bool) {
 	switch e := event.(type) {
 	case OffchainTxRequested:
-		if s.Stage.Code != int(OffchainTxUndefinedStage) || s.Stage.Failed {
+		// Just like an accepted tx can be retried if it failed to finalize in first place,
+		// a requested tx can be retried to bring the flow to finalization.
+		canRetry := s.Stage.Failed && s.Stage.Code == int(OffchainTxRequestedStage)
+		if s.Stage.Code != int(OffchainTxUndefinedStage) && !canRetry {
 			return
 		}
+		s.Stage.Failed = false
+		s.FailReason = ""
 		s.Stage.Code = int(OffchainTxRequestedStage)
 		s.ArkTxid = e.Id
 		s.ArkTx = e.ArkTx
