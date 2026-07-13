@@ -38,10 +38,9 @@ const (
 	maxPageSizeVtxoChain      = 100
 	maxPageSizeVirtualTxs     = 100
 
-	// maxVtxoChainWalkSize is the cursor pagination page size (fixed, not client-customizable)
-	// and the upper bound for legacy page-number pagination:
-	// GetVtxoChain rejects page-number requests on chains longer than this to force clients onto
-	// the cursor API.
+	// maxVtxoChainWalkSize is the cursor pagination page size (fixed, not
+	// client-customizable). It does not cap the no-token path: GetVtxoChain builds
+	// and returns the full chain when no page_token is provided.
 	maxVtxoChainWalkSize = 50_000
 
 	defaultAuthTokenTTL = 5 * time.Minute
@@ -381,20 +380,18 @@ func (i *indexerService) GetVtxoChain(
 		}
 	}
 
-	// Cursor pagination: a page_token resumes from a saved offset; with no page and no token
-	// we start a fresh cursor session at offset 0. The cursor page size is fixed at
-	// maxVtxoChainWalkSize and is not client-customizable — only the chain prefix up to
-	// offset+pageSize is loaded, then sliced.
-	if len(pageToken) > 0 || page == nil {
-		offset := 0
-		if len(pageToken) > 0 {
-			var err error
-			offset, err = i.decodeChainCursor(pageToken, outpoint)
-			if err != nil {
-				// page_token is client-supplied input. Surface it as invalid input
-				// so the handler maps it to InvalidArgument rather than Internal.
-				return nil, fmt.Errorf("%w: invalid page_token: %w", ErrInvalidInput, err)
-			}
+	// Cursor pagination is entered ONLY via an explicit page_token (issued by
+	// GetVtxoChainByIntent). GetVtxoChain never defaults to cursor pagination on
+	// its own, so legacy clients that pass no page — or page-number pagination —
+	// keep their existing behavior and are never forced onto the cursor API.
+	// The cursor page size is fixed at maxVtxoChainWalkSize (not client-
+	// customizable): only the chain prefix up to offset+pageSize is loaded.
+	if len(pageToken) > 0 {
+		offset, err := i.decodeChainCursor(pageToken, outpoint)
+		if err != nil {
+			// page_token is client-supplied input. Surface it as invalid input
+			// so the handler maps it to InvalidArgument rather than Internal.
+			return nil, fmt.Errorf("%w: invalid page_token: %w", ErrInvalidInput, err)
 		}
 		chain, _, truncated, err := i.walkVtxoChain(
 			ctx, []domain.Outpoint{outpoint}, offset+maxVtxoChainWalkSize,
@@ -405,21 +402,20 @@ func (i *indexerService) GetVtxoChain(
 		return i.chainCursorPage(chain, offset, maxVtxoChainWalkSize, truncated, outpoint), nil
 	}
 
-	// Legacy page-number pagination: build the full chain (capped at maxVtxoChainWalkSize,
-	// erroring on longer chains to force clients onto the cursor API), then slice by page number
-	// with page metadata.
-	chain, _, truncated, err := i.walkVtxoChain(
-		ctx, []domain.Outpoint{outpoint}, maxVtxoChainWalkSize+1,
-	)
+	// No token: build the full chain (uncapped, preserving legacy behavior) so a
+	// no-page request returns the whole chain and page-number pagination slices
+	// it, exactly as before the cursor API was added.
+	chain, _, _, err := i.walkVtxoChain(ctx, []domain.Outpoint{outpoint}, math.MaxInt32)
 	if err != nil {
 		return nil, err
 	}
-	if truncated {
-		return nil, fmt.Errorf(
-			"chain exceeds maximum size of %d for page-number pagination; "+
-				"use cursor pagination (page_token) instead", maxVtxoChainWalkSize,
-		)
+
+	// No page requested: return the whole chain.
+	if page == nil {
+		return &VtxoChainResp{Chain: chain}, nil
 	}
+
+	// Legacy page-number pagination: slice the full chain by page number.
 	txChain, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
 	return &VtxoChainResp{Chain: txChain, Page: pageResp}, nil
 }

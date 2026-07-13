@@ -811,9 +811,9 @@ func TestGetVtxoChainPagination(t *testing.T) {
 		vtxoRepo, markerRepo, offchainTxRepo, indexer := newChainTestIndexerWithOffchain()
 		vtxoKey := setupPreconfirmedChain(t, ctx, vtxoRepo, markerRepo, offchainTxRepo)
 
-		// Cursor session with no page and no token: the whole chain (< page size)
-		// comes back in one page with no next token.
-		t.Run("cursor returns full chain in one page", func(t *testing.T) {
+		// No page and no token preserves legacy behavior: the whole chain is
+		// returned in one shot with no next token (never defaults to cursor).
+		t.Run("no page returns full chain", func(t *testing.T) {
 			resp, err := indexer.GetVtxoChain(ctx, "", vtxoKey, nil, "")
 			require.NoError(t, err)
 			require.Len(t, resp.Chain, 5)
