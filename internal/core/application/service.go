@@ -2116,6 +2116,31 @@ func (s *service) ConfirmRegistration(ctx context.Context, intentId string) erro
 	return nil
 }
 
+// signForfeitTxs adds the operator signature to each collected forfeit tx and
+// returns them as domain.ForfeitTx ready to be persisted. Signing only adds
+// witness data, so the txid is read from the signed psbt's unsigned tx and is
+// identical to the txid of the user-submitted forfeit tx.
+func (s *service) signForfeitTxs(
+	ctx context.Context, forfeitTxs []string,
+) ([]domain.ForfeitTx, error) {
+	signed := make([]domain.ForfeitTx, 0, len(forfeitTxs))
+	for _, tx := range forfeitTxs {
+		signedTx, err := s.signer.SignTransactionTapscript(ctx, tx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to sign forfeit tx: %w", err)
+		}
+		ptx, err := psbt.NewFromRawBytes(strings.NewReader(signedTx), true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse signed forfeit tx: %w", err)
+		}
+		signed = append(signed, domain.ForfeitTx{
+			Txid: ptx.UnsignedTx.TxID(),
+			Tx:   signedTx,
+		})
+	}
+	return signed, nil
+}
+
 func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) errors.Error {
 	if len(forfeitTxs) <= 0 {
 		return nil
@@ -3368,14 +3393,15 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming, setting
 			}
 		}
 
-		for _, tx := range forfeitTxList {
-			// nolint
-			ptx, _ := psbt.NewFromRawBytes(strings.NewReader(tx), true)
-			forfeitTxid := ptx.UnsignedTx.TxID()
-			forfeitTxs = append(forfeitTxs, domain.ForfeitTx{
-				Txid: forfeitTxid,
-				Tx:   tx,
-			})
+		// Add the operator signature to each forfeit tx at collection time, so the
+		// stored forfeit tx is broadcast-ready without needing to be signed later
+		// at fraud-reaction time.
+		forfeitTxs, err = s.signForfeitTxs(ctx, forfeitTxList)
+		if err != nil {
+			changes = round.Fail(errors.INTERNAL_ERROR.New(
+				"failed to sign forfeit txs: %s", err,
+			))
+			return
 		}
 	}
 

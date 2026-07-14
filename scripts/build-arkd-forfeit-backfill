@@ -1,0 +1,32 @@
+#!/bin/bash
+set -e
+
+# Get the parent directory path
+PARENT_PATH=$(dirname $(
+  cd $(dirname $0)
+  pwd -P
+))
+
+# Set VERSION (you can modify this to get the version from a file or environment variable)
+VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "unknown")
+
+# Get OS and ARCH
+OS=$(go env GOOS)
+ARCH=$(go env GOARCH)
+
+echo "Building arkd-forfeit-backfill for $OS $ARCH"
+echo "Version: $VERSION"
+
+# Change to the parent directory
+pushd $PARENT_PATH
+
+# Create build directory if it doesn't exist
+mkdir -p build
+
+# Build the binary
+go build -ldflags="-s -w" -o build/arkd-forfeit-backfill-$OS-$ARCH ./cmd/arkd-forfeit-backfill
+
+echo "Build complete: build/arkd-forfeit-backfill-$OS-$ARCH"
+
+# Return to the original directory
+popd

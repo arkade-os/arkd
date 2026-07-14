@@ -11,6 +11,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -164,9 +165,40 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 		return fmt.Errorf("failed to encode forfeit tx: %s", err)
 	}
 
-	signedForfeitTx, err := s.signer.SignTransactionTapscript(ctx, forfeitTxB64, nil)
+	// Forfeit txs are signed by the operator at collection time, so the stored tx
+	// is usually already broadcast-ready. Re-signing would append a duplicate
+	// operator signature and produce an invalid PSBT (duplicate key), so we only
+	// sign here when the operator signature is still missing (e.g. forfeit txs
+	// collected before collection-time signing was introduced).
+	//
+	// The operator key set is read from the cached settings, not the live signer:
+	// a pre-signed forfeit must stay broadcastable even when the signer is down,
+	// which is the whole point of signing at collection time. Deprecated keys are
+	// included so a forfeit signed before a key rotation is still recognized as
+	// signed and not re-signed with the current (wrong-for-its-tapscript) key.
+	settings, err := s.cache.Settings().Get(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to sign forfeit tx: %s", err)
+		return fmt.Errorf("failed to get settings: %s", err)
+	}
+	if settings == nil {
+		return fmt.Errorf("settings not available")
+	}
+	operatorKeys := make([][]byte, 0, 1+len(settings.DeprecatedSignerPubkeys))
+	if settings.SignerPubkey != nil {
+		operatorKeys = append(operatorKeys, schnorr.SerializePubKey(settings.SignerPubkey))
+	}
+	for _, deprecated := range settings.DeprecatedSignerPubkeys {
+		if deprecated.PubKey != nil {
+			operatorKeys = append(operatorKeys, schnorr.SerializePubKey(deprecated.PubKey))
+		}
+	}
+
+	signedForfeitTx := forfeitTxB64
+	if !forfeitTxOperatorSigned(forfeitTx, operatorKeys) {
+		signedForfeitTx, err = s.signer.SignTransactionTapscript(ctx, forfeitTxB64, nil)
+		if err != nil {
+			return fmt.Errorf("failed to sign forfeit tx: %s", err)
+		}
 	}
 
 	forfeitTxHex, err := s.builder.FinalizeAndExtract(signedForfeitTx)
@@ -415,6 +447,25 @@ func findForfeitTx(
 	}
 
 	return nil, domain.Outpoint{}, fmt.Errorf("forfeit tx not found")
+}
+
+// forfeitTxOperatorSigned reports whether the forfeit tx already carries a
+// tapscript signature from one of the operator's signer keys (the current key or
+// any deprecated one), i.e. it was signed at collection time and must not be
+// signed again. Deprecated keys are included because a forfeit signed before a
+// key rotation is still valid for its own (old-key) tapscript and must not be
+// re-signed with the current key.
+func forfeitTxOperatorSigned(ptx *psbt.Packet, operatorXOnlyKeys [][]byte) bool {
+	for _, in := range ptx.Inputs {
+		for _, sig := range in.TaprootScriptSpendSig {
+			for _, key := range operatorXOnlyKeys {
+				if bytes.Equal(sig.XOnlyPubKey, key) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // computeVSize calculates the virtual size (vsize) of a Bitcoin transaction
