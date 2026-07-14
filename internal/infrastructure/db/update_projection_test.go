@@ -12,6 +12,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	bitcointxdecoder "github.com/arkade-os/arkd/internal/infrastructure/tx-decoder/bitcoin"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -146,6 +147,7 @@ func newProjectionTestService(t *testing.T) ports.RepoManager {
 		DataStoreType:    "sqlite",
 		EventStoreConfig: []interface{}{"", nil},
 		DataStoreConfig:  []interface{}{t.TempDir()},
+		Settings:         validSettings(t),
 	}, bitcointxdecoder.NewService())
 	require.NoError(t, err)
 	require.NotNil(t, svc)
@@ -260,4 +262,39 @@ func randomTx(t *testing.T) string {
 	b64, err := ptx.B64Encode()
 	require.NoError(t, err)
 	return b64
+}
+
+func validSettings(t *testing.T) domain.Settings {
+	t.Helper()
+
+	delay := func(v uint32) arklib.RelativeLocktime {
+		lt, _ := arklib.ParseRelativeLocktime(v)
+		return lt
+	}
+	return domain.Settings{
+		SessionDuration:               30 * time.Second,
+		UnrolledVtxoMinExpiryMargin:   30 * time.Second,
+		BanThreshold:                  3,
+		BanDuration:                   3600 * time.Second,
+		UnilateralExitDelay:           delay(512),
+		PublicUnilateralExitDelay:     delay(512),
+		CheckpointExitDelay:           delay(1024),
+		BoardingExitDelay:             delay(1536),
+		VtxoTreeExpiry:                delay(1024),
+		RoundMinParticipantsCount:     2,
+		RoundMaxParticipantsCount:     128,
+		VtxoMinAmount:                 1000,
+		VtxoMaxAmount:                 100000000,
+		UtxoMinAmount:                 5000,
+		UtxoMaxAmount:                 500000000,
+		SettlementMinExpiryGap:        7200 * time.Second,
+		VtxoNoCsvValidationCutoffDate: time.Unix(1700000000, 0),
+		MaxTxWeight:                   400000,
+		MaxOpReturnOutputs:            3,
+		AssetTxMaxWeightRatio:         0.5,
+		BuildVersionHeader:            "v1.0.0",
+		BuildVersionHeaderRequired:    true,
+		DigestHeaderRequired:          true,
+		UpdatedAt:                     time.Unix(1700000000, 0),
+	}
 }
