@@ -650,6 +650,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			var markerIDs []string
 			marker, ids := domain.NewMarker(txid, newDepth, parentMarkerIDs)
 			if marker != nil {
+				marker.CreatedAt = time.Now().Unix()
 				if err := s.markerStore.AddMarker(ctx, *marker); err != nil {
 					log.WithError(err).
 						Warn("failed to create marker for chained vtxo, falling back to parent markers")
@@ -726,6 +727,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 						ID:              dustMarkerID,
 						Depth:           newDepth,
 						ParentMarkerIDs: markerIDs,
+						CreatedAt:       time.Now().Unix(),
 					}); err != nil {
 						// Sub-dust vtxos can't be spent offchain (OP_RETURN outputs):
 						// they can only be collected until they sum to a non-sub-dust

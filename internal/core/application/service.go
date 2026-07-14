@@ -565,6 +565,10 @@ func (s *service) SubmitOffchainTx(
 			})
 	}
 
+	if rateLimitErr := s.checkRateLimit(ctx, spentVtxos); rateLimitErr != nil {
+		return nil, rateLimitErr
+	}
+
 	for _, vtxo := range spentVtxos {
 		// check if banned
 		if err := s.checkIfBanned(ctx, banThreshold, vtxo); err != nil {
@@ -2213,6 +2217,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 	network := settings.Network.Name
 	maxTxWeight := settings.MaxTxWeight
 	maxOpReturnOutputs := settings.MaxOpReturnOutputs
+	rateLimitEnabled := settings.RateLimitEnabled
 	signerPubkey := hex.EncodeToString(settings.SignerPubkey.SerializeCompressed())
 	forfeitPubkey := hex.EncodeToString(settings.ForfeitPubkey.SerializeCompressed())
 	forfeitAddress := settings.ForfeitAddress
@@ -2262,6 +2267,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		CheckpointTapscript:  checkpointTapscript,
 		MaxTxWeight:          int64(maxTxWeight),
 		MaxOpReturnOutputs:   int64(maxOpReturnOutputs),
+		RateLimitEnabled:     rateLimitEnabled,
 		Fees: FeeInfo{
 			IntentFees: batchFees,
 		},

@@ -85,6 +85,7 @@ type ServiceInfo struct {
 	Fees                 FeeInfo
 	MaxTxWeight          int64
 	MaxOpReturnOutputs   int64
+	RateLimitEnabled     bool
 	Digest               string
 }
 

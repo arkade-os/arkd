@@ -379,6 +379,7 @@ func testNewSettings(t *testing.T) {
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
 				batchTrigger,
+				true, 0.28, 3600,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, settings)
@@ -389,6 +390,9 @@ func testNewSettings(t *testing.T) {
 			require.Equal(t, buildVersionHeaderRequired, settings.BuildVersionHeaderRequired)
 			require.Equal(t, digestHeaderRequired, settings.DigestHeaderRequired)
 			require.Equal(t, batchTrigger, settings.BatchTrigger)
+			require.True(t, settings.RateLimitEnabled)
+			require.Equal(t, 0.28, settings.RateLimitMaxVelocity)
+			require.Equal(t, int64(3600), settings.RateLimitMaxCooldownSecs)
 			require.False(t, settings.UpdatedAt.IsZero())
 		})
 
@@ -403,6 +407,7 @@ func testNewSettings(t *testing.T) {
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
 				batchTrigger,
+				true, 0.28, 3600,
 			)
 			require.ErrorContains(t, err, "invalid session duration")
 			require.Nil(t, settings)
@@ -419,6 +424,7 @@ func testNewSettings(t *testing.T) {
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				"", true, true,
 				batchTrigger,
+				true, 0.28, 3600,
 			)
 			require.ErrorContains(t, err, "build version header is required but no version is set")
 			require.Nil(t, settings)
@@ -435,6 +441,7 @@ func testNewSettings(t *testing.T) {
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
 				"this is not (valid cel",
+				true, 0.28, 3600,
 			)
 			require.ErrorContains(t, err, "invalid batch trigger program")
 			require.Nil(t, settings)

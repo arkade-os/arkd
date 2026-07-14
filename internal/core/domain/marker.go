@@ -25,6 +25,9 @@ type Marker struct {
 	Depth uint32
 	// ParentMarkerIDs is a list of marker IDs that this marker descends from
 	ParentMarkerIDs []string
+	// CreatedAt is the Unix timestamp (seconds) when this marker was created.
+	// Used by the velocity rate limiter to measure how fast a chain is growing.
+	CreatedAt int64
 }
 
 // NewMarker computes marker information for a new offchain transaction.

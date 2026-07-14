@@ -108,6 +108,7 @@ type Marker struct {
 	ID            string
 	Depth         int32
 	ParentMarkers pqtype.NullRawMessage
+	CreatedAt     int64
 }
 
 type MarketHour struct {
@@ -254,6 +255,9 @@ type Setting struct {
 	DigestHeaderRequired                      bool
 	UpdatedAt                                 int64
 	BatchTrigger                              string
+	RateLimitEnabled                          bool
+	RateLimitMaxVelocity                      float64
+	RateLimitMaxCooldownSecs                  int64
 }
 
 type SettingsHistory struct {

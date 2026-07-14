@@ -64,6 +64,9 @@ type Settings struct {
 	BuildVersionHeaderRequired    bool
 	DigestHeaderRequired          bool
 	BatchTrigger                  string
+	RateLimitEnabled              bool
+	RateLimitMaxVelocity          float64
+	RateLimitMaxCooldownSecs      int64
 	UpdatedAt                     time.Time
 }
 
@@ -78,6 +81,7 @@ func NewSettings(
 	assetTxMaxWeightRatio float32, noteUriPrefix, minVersionAccepted string,
 	minVersionRequired, digestHeaderRequired bool,
 	batchTrigger string,
+	rateLimitEnabled bool, rateLimitMaxVelocity float64, rateLimitMaxCooldownSecs int64,
 ) (*Settings, error) {
 	settings := &Settings{
 		SessionDuration:               time.Duration(sessionDuration) * time.Second,
@@ -105,6 +109,9 @@ func NewSettings(
 		BuildVersionHeaderRequired:    minVersionRequired,
 		DigestHeaderRequired:          digestHeaderRequired,
 		BatchTrigger:                  batchTrigger,
+		RateLimitEnabled:              rateLimitEnabled,
+		RateLimitMaxVelocity:          rateLimitMaxVelocity,
+		RateLimitMaxCooldownSecs:      rateLimitMaxCooldownSecs,
 		UpdatedAt:                     time.Now(),
 	}
 	if err := settings.Validate(); err != nil {
@@ -275,6 +282,9 @@ type SettingsUpdate struct {
 	BuildVersionHeaderRequired    *bool
 	DigestHeaderRequired          *bool
 	BatchTrigger                  *string
+	RateLimitEnabled              *bool
+	RateLimitMaxVelocity          *float64
+	RateLimitMaxCooldownSecs      *int64
 }
 
 // Update updates any field of Settings but ScheduledSession and BatchFees and returns a changelog
@@ -383,6 +393,18 @@ func (s *Settings) Update(u SettingsUpdate) ([]string, error) {
 	if u.BatchTrigger != nil {
 		updated.BatchTrigger = *u.BatchTrigger
 		changelog = append(changelog, "batch_trigger")
+	}
+	if u.RateLimitEnabled != nil {
+		updated.RateLimitEnabled = *u.RateLimitEnabled
+		changelog = append(changelog, "rate_limit_enabled")
+	}
+	if u.RateLimitMaxVelocity != nil {
+		updated.RateLimitMaxVelocity = *u.RateLimitMaxVelocity
+		changelog = append(changelog, "rate_limit_max_velocity")
+	}
+	if u.RateLimitMaxCooldownSecs != nil {
+		updated.RateLimitMaxCooldownSecs = *u.RateLimitMaxCooldownSecs
+		changelog = append(changelog, "rate_limit_max_cooldown_secs")
 	}
 
 	if err := updated.Validate(); err != nil {
