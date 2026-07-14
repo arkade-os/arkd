@@ -101,7 +101,7 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_OTEL_COLLECTOR_ENDPOINT`     | OpenTelemetry collector endpoint                                                | -                              |
 | `ARKD_OTEL_PUSH_INTERVAL`          | OpenTelemetry push interval in seconds                                          | `10`                           |
 | `ARKD_HEARTBEAT_INTERVAL`          | Heartbeat interval in seconds                                                   | `60`                           |
-| `ARKD_STREAM_MAX_LIFETIME`         | Max lifetime of a server-streaming RPC in seconds (`0` disables) | `1800`                                        |
+| `ARKD_STREAM_MAX_LIFETIME`         | Max lifetime of a server-streaming RPC in seconds (`0` disables)                | `1800`                         |
 | `ARKD_INDEXER_EXPOSURE`.           | Require intent for getting vtxo chain (public, private, withheld)               | `public`                       |
 | `ARKD_INDEXER_SIGNING_PRIVKEY`     | Hex-encoded private key for indexer auth token signing (sensitive)              | -                              |
 | `ARKD_INDEXER_AUTH_TOKEN_EXPIRY`   | Auth token TTL in seconds                                                       | `300` (5 minutes)              |
