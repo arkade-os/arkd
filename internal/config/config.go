@@ -232,7 +232,6 @@ var (
 	VtxoMinAmount             = "VTXO_MIN_AMOUNT"
 	HeartbeatInterval         = "HEARTBEAT_INTERVAL"
 	StreamMaxLifetime         = "STREAM_MAX_LIFETIME"
-	RoundReportServiceEnabled = "ROUND_REPORT_ENABLED"
 	SettlementMinExpiryGap    = "SETTLEMENT_MIN_EXPIRY_GAP"
 	// Minimum remaining CSV time (in seconds) for an unrolled VTXO to be accepted into a batch.
 	// 0 means fallback to session duration.
@@ -296,7 +295,6 @@ var (
 	defaultOtelPushInterval              = 10   // seconds
 	defaultHeartbeatInterval             = 60   // seconds
 	defaultStreamMaxLifetime             = 1800 // 30 minutes in seconds
-	defaultRoundReportServiceEnabled     = false
 	defaultSettlementMinExpiryGap        = 0   // disabled by default
 	defaultUnrolledVtxoMinExpiryMargin   = 300 // 5 minutes in seconds
 	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
@@ -352,7 +350,6 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(StreamMaxLifetime, defaultStreamMaxLifetime)
-	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(UnrolledVtxoMinExpiryMargin, defaultUnrolledVtxoMinExpiryMargin)
 	viper.SetDefault(MaxTxWeight, defaultMaxTxWeight)
