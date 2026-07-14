@@ -669,9 +669,17 @@ func (w *wallet) SignTransaction(
 		}
 
 		if len(input.TaprootLeafScript) > 0 {
-			signingKey := w.keyMgr.forfeitPrvkey
+			var signingKey *btcec.PrivateKey
 			if signMode == application.SignModeSigner {
-				signingKey  = w.signerKeyForLeaf(input.TaprootLeafScript[0].Script)
+				leafKey, err := w.signerKeyForLeaf(
+					input.TaprootLeafScript[0].Script, len(inputIndexes) > 0,
+				)
+				if err != nil {
+					return "", err
+				}
+				signingKey = leafKey
+			} else {
+				signingKey = w.keyMgr.forfeitPrvkey
 			}
 
 			tapLeaf := txscript.NewBaseTapLeaf(input.TaprootLeafScript[0].Script)
@@ -786,38 +794,68 @@ func (w *wallet) SignTransaction(
 	return ptx.B64Encode()
 }
 
-// signerKeyForLeaf returns the deprecated signer key referenced by the leaf, or the current SignerKey.
-func (w *wallet) signerKeyForLeaf(leafScript []byte) *btcec.PrivateKey {
-	if len(w.DeprecatedSignerKeys) == 0 {
-		return w.SignerKey
+// signerKeyForLeaf returns the wallet key that signs the given tapscript leaf:
+// the current SignerKey or a deprecated one, whichever the leaf's multisig closure
+// references. When the leaf references none of the wallet's keys, a required input
+// (caller passed explicit indexes) is a hard error rather than a silent wrong-key
+// signature, while a best-effort one falls back to the current key. Non-multisig
+// leaves also fall back to the current key.
+func (w *wallet) signerKeyForLeaf(leafScript []byte, required bool) (*btcec.PrivateKey, error) {
+	leafKeys, ok := multisigClosureKeys(leafScript)
+	if !ok {
+		return w.SignerKey, nil
 	}
 
-	closure, err := script.DecodeClosure(leafScript)
-	if err != nil {
-		return w.SignerKey
+	if keyInLeaf(w.SignerKey, leafKeys) {
+		return w.SignerKey, nil
 	}
-
-	leafKeys := make([]*btcec.PublicKey, 0)
-	switch c := closure.(type) {
-	case *script.MultisigClosure:
-		leafKeys = c.PubKeys
-	case *script.CLTVMultisigClosure:
-		leafKeys = c.PubKeys
-	case *script.ConditionMultisigClosure:
-		leafKeys = c.PubKeys
-	default:
-		return w.SignerKey
-	}
-	
 	for _, k := range w.DeprecatedSignerKeys {
-		want := schnorr.SerializePubKey(k.Key.PubKey())
-		for _, pubkey := range leafKeys {
-			if bytes.Equal(schnorr.SerializePubKey(pubkey), want) {
-				return k.Key
-			}
+		if keyInLeaf(k.Key, leafKeys) {
+			return k.Key, nil
 		}
 	}
-	return w.SignerKey
+
+	if required {
+		return nil, fmt.Errorf(
+			"no signer key for tapscript leaf: it references none of the wallet's keys " +
+				"(current or deprecated); a rotated signer key may not have been retained " +
+				"as a deprecated key",
+		)
+	}
+	return w.SignerKey, nil
+}
+
+// multisigClosureKeys returns the public keys of a multisig-bearing closure and
+// whether the leaf could be decoded as one.
+func multisigClosureKeys(leafScript []byte) ([]*btcec.PublicKey, bool) {
+	closure, err := script.DecodeClosure(leafScript)
+	if err != nil {
+		return nil, false
+	}
+	switch c := closure.(type) {
+	case *script.MultisigClosure:
+		return c.PubKeys, true
+	case *script.CLTVMultisigClosure:
+		return c.PubKeys, true
+	case *script.ConditionMultisigClosure:
+		return c.PubKeys, true
+	default:
+		return nil, false
+	}
+}
+
+// keyInLeaf reports whether key is one of the leaf's multisig public keys.
+func keyInLeaf(key *btcec.PrivateKey, leafKeys []*btcec.PublicKey) bool {
+	if key == nil {
+		return false
+	}
+	want := schnorr.SerializePubKey(key.PubKey())
+	for _, pubkey := range leafKeys {
+		if bytes.Equal(schnorr.SerializePubKey(pubkey), want) {
+			return true
+		}
+	}
+	return false
 }
 
 // WithdrawAll withdraws all available balance including connectors account funds
