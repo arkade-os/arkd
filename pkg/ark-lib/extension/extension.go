@@ -9,6 +9,7 @@ import (
 	"reflect"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
+	"github.com/arkade-os/arkd/pkg/ark-lib/internal/varint"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 )
@@ -113,6 +114,21 @@ func opReturnScript(data []byte) []byte {
 	return append(script, data...)
 }
 
+// minimalPushOpcode returns the canonical opcode used to push n data bytes,
+// matching the encoding produced by opReturnScript.
+func minimalPushOpcode(n int) byte {
+	switch {
+	case n <= 75:
+		return byte(n)
+	case n <= 255:
+		return byte(txscript.OP_PUSHDATA1)
+	case n <= 65535:
+		return byte(txscript.OP_PUSHDATA2)
+	default:
+		return byte(txscript.OP_PUSHDATA4)
+	}
+}
+
 // TxOut serializes the extension and returns it as an unspendable OP_RETURN transaction output.
 func (e Extension) TxOut() (*wire.TxOut, error) {
 	script, err := e.Serialize()
@@ -190,6 +206,23 @@ func NewExtensionFromBytes(data []byte) (Extension, error) {
 	}
 
 	payload := tokenizer.Data()
+	pushOpcode := tokenizer.Opcode()
+
+	// Canonical framing (narrow checks): the payload must use the minimal
+	// data-push opcode and there must be no trailing bytes after it, so an
+	// accepted script re-serializes to exactly the same bytes.
+	if tokenizer.Next() {
+		return nil, fmt.Errorf("non-canonical extension: trailing data after payload")
+	}
+	if err := tokenizer.Err(); err != nil {
+		return nil, fmt.Errorf("non-canonical extension: invalid script: %w", err)
+	}
+	if pushOpcode != minimalPushOpcode(len(payload)) {
+		return nil, fmt.Errorf(
+			"non-canonical extension: non-minimal data push opcode 0x%02x", pushOpcode,
+		)
+	}
+
 	pr := bytes.NewReader(payload)
 
 	// read magic prefix
@@ -248,7 +281,7 @@ func parsePacket(packetType uint8, packetData []byte) (Packet, error) {
 
 // deserializeVarSlice reads a varint length prefix followed by that many bytes from the reader.
 func deserializeVarSlice(r *bytes.Reader) ([]byte, error) {
-	l, err := binary.ReadUvarint(r)
+	l, err := varint.ReadCanonical(r)
 	if err != nil {
 		return nil, err
 	}
