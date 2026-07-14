@@ -9,12 +9,143 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
+
+// TestGetNewVtxosFromRound verifies that getNewVtxosFromRound turns the leaves of a VTXO tree into
+// VTXOs:
+// assigning Depth=0 and a self-referencing MarkerID to each, propagating commitment references,
+// amounts, pubkeys and sequential VOut indices, and returning nil when there is no tree.
+func TestGetNewVtxosFromRound(t *testing.T) {
+	privKey1, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	privKey2, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	multiOutputLeaf := makeP2TRLeafTx(t, []testOutput{
+		{pubkey: privKey1.PubKey(), amount: 50000},
+		{pubkey: privKey2.PubKey(), amount: 30000},
+	})
+
+	singleOutputLeaf := makeP2TRLeafTx(t, []testOutput{
+		{pubkey: privKey1.PubKey(), amount: 100000},
+	})
+
+	tests := []struct {
+		name   string
+		round  domain.Round
+		assert func(t *testing.T, vtxos []domain.Vtxo)
+	}{
+		{
+			name: "leaf with many outputs",
+			round: domain.Round{
+				CommitmentTxid:     "test-commitment-txid",
+				VtxoTreeExpiration: 3600,
+				EndingTimestamp:    1700000000,
+				Stage:              domain.Stage{Code: int(domain.RoundFinalizationStage), Ended: true},
+				VtxoTree: tree.FlatTxTree{
+					{Txid: "leaf-tx-id", Tx: multiOutputLeaf, Children: nil},
+				},
+			},
+			assert: func(t *testing.T, vtxos []domain.Vtxo) {
+				require.Len(t, vtxos, 2)
+
+				for i, vtxo := range vtxos {
+					// All batch VTXOs must have Depth = 0.
+					require.Equal(t, uint32(0), vtxo.Depth, "vtxo %d should have depth 0", i)
+					// MarkerIDs must be exactly []string{outpoint.String()}.
+					require.Equal(t, []string{vtxo.Outpoint.String()}, vtxo.MarkerIDs,
+						"vtxo %d MarkerIDs should be [outpoint.String()]", i)
+					// CommitmentTxids should reference the round's commitment.
+					require.Equal(t, []string{"test-commitment-txid"}, vtxo.CommitmentTxids)
+					require.Equal(t, "test-commitment-txid", vtxo.RootCommitmentTxid)
+					require.NotEmpty(t, vtxo.PubKey)
+				}
+
+				// Amounts match, VOut is sequential, both share the PSBT's txid.
+				require.Equal(t, uint64(50000), vtxos[0].Amount)
+				require.Equal(t, uint64(30000), vtxos[1].Amount)
+				require.Equal(t, uint32(0), vtxos[0].VOut)
+				require.Equal(t, uint32(1), vtxos[1].VOut)
+				require.Equal(t, vtxos[0].Txid, vtxos[1].Txid)
+			},
+		},
+		{
+			name: "leaf with single output",
+			round: domain.Round{
+				CommitmentTxid:     "single-output-commitment",
+				VtxoTreeExpiration: 7200,
+				EndingTimestamp:    1700000000,
+				Stage:              domain.Stage{Code: int(domain.RoundFinalizationStage), Ended: true},
+				VtxoTree: tree.FlatTxTree{
+					{Txid: "single-leaf", Tx: singleOutputLeaf, Children: nil},
+				},
+			},
+			assert: func(t *testing.T, vtxos []domain.Vtxo) {
+				require.Len(t, vtxos, 1)
+
+				vtxo := vtxos[0]
+				require.Equal(t, uint32(0), vtxo.Depth)
+				require.Equal(t, []string{vtxo.Outpoint.String()}, vtxo.MarkerIDs)
+				require.Equal(t, uint64(100000), vtxo.Amount)
+				require.Equal(t, uint32(0), vtxo.VOut)
+			},
+		},
+		{
+			name: "empty vtxo tree",
+			round: domain.Round{
+				CommitmentTxid: "empty-round",
+				VtxoTree:       nil,
+			},
+			assert: func(t *testing.T, vtxos []domain.Vtxo) {
+				require.Empty(t, vtxos)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			vtxos := getNewVtxosFromRound(tc.round)
+			tc.assert(t, vtxos)
+		})
+	}
+}
+
+const bitcoinBlockWeight = 4_000_000
+
+func TestMaxAssetsPerVtxo(t *testing.T) {
+	tests := []struct {
+		maxTxWeight uint64
+		threshold   float32
+		expected    int
+	}{
+		{maxTxWeight: 0.01 * bitcoinBlockWeight, threshold: 0.5, expected: 110},
+		{maxTxWeight: 0.1 * bitcoinBlockWeight, threshold: 0.5, expected: 1110},
+		{maxTxWeight: 0.5 * bitcoinBlockWeight, threshold: 0.5, expected: 5555},
+		{maxTxWeight: bitcoinBlockWeight, threshold: 0.5, expected: 11110},
+		{maxTxWeight: 0.01 * bitcoinBlockWeight, threshold: 0.25, expected: 55},
+		{maxTxWeight: 0, threshold: 0.5, expected: 0},
+	}
+
+	for _, test := range tests {
+		t.Run(
+			fmt.Sprintf("maxTxWeight_%d_threshold_%.2f", test.maxTxWeight, test.threshold),
+			func(t *testing.T) {
+				s := domain.Settings{
+					MaxTxWeight:           test.maxTxWeight,
+					AssetTxMaxWeightRatio: test.threshold,
+				}
+				require.Equal(t, test.expected, s.MaxAssetsPerVtxo())
+			},
+		)
+	}
+}
 
 func TestDecodeTx(t *testing.T) {
 	zeroHash := chainhash.Hash{}
@@ -332,6 +463,43 @@ func mustEncodePSBTB64(t *testing.T, tx *wire.MsgTx) string {
 	p, err := psbt.NewFromUnsignedTx(tx)
 	require.NoError(t, err)
 	b64, err := p.B64Encode()
+	require.NoError(t, err)
+	return b64
+}
+
+type testOutput struct {
+	pubkey *btcec.PublicKey
+	amount int64
+}
+
+// makeP2TRLeafTx creates a valid base64-encoded PSBT with P2TR outputs for the given schnorr
+// public keys and amounts.
+func makeP2TRLeafTx(t *testing.T, outputs []testOutput) string {
+	t.Helper()
+	hash, err := chainhash.NewHashFromStr(
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	)
+	require.NoError(t, err)
+
+	txOuts := make([]*wire.TxOut, 0, len(outputs))
+	for _, out := range outputs {
+		pkScript := make([]byte, 34)
+		pkScript[0] = 0x51 // OP_1
+		pkScript[1] = 0x20 // 32-byte push
+		copy(pkScript[2:], schnorr.SerializePubKey(out.pubkey))
+
+		txOuts = append(txOuts, &wire.TxOut{
+			Value:    out.amount,
+			PkScript: pkScript,
+		})
+	}
+
+	ins := []*wire.OutPoint{{Hash: *hash, Index: 0}}
+	sequences := []uint32{wire.MaxTxInSequenceNum}
+	ptx, err := psbt.New(ins, txOuts, 3, 0, sequences)
+	require.NoError(t, err)
+
+	b64, err := ptx.B64Encode()
 	require.NoError(t, err)
 	return b64
 }

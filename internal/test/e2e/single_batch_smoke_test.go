@@ -33,7 +33,7 @@ var (
 // Round participant limits are configured via the admin settings API.
 //
 // To specify the number of clients via command line:
-// go test -v -run TestBatchSettleMultipleClients -args -num-clients=8
+// go test -v -run TestBatchSettleMultipleClients -args -smoke -num-clients=8
 func TestBatchSettleMultipleClients(t *testing.T) {
 	// Parse command-line flags if they haven't been parsed yet
 	if !flag.Parsed() {
@@ -41,7 +41,7 @@ func TestBatchSettleMultipleClients(t *testing.T) {
 	}
 
 	if !*runSmoke {
-		t.Skip("skip simulation")
+		t.Skip("skip batch session smoke test")
 	}
 
 	// Configuration - adjust these values as needed

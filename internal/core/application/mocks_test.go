@@ -106,6 +106,17 @@ func (m *mockedRepoManager) Vtxos() domain.VtxoRepository {
 	return nil
 }
 
+func (m *mockedRepoManager) Markers() domain.MarkerRepository {
+	return nil
+}
+
+func (m *mockedRepoManager) OffchainTxs() domain.OffchainTxRepository {
+	if v := m.Called().Get(0); v != nil {
+		return v.(domain.OffchainTxRepository)
+	}
+	return nil
+}
+
 func (m *mockedRepoManager) RegisterOffchainTxUpdateHandler(h func(domain.OffchainTx)) {
 	m.offchainTxHandler = h
 }
@@ -113,6 +124,29 @@ func (m *mockedRepoManager) RegisterOffchainTxUpdateHandler(h func(domain.Offcha
 func (m *mockedRepoManager) RegisterBatchUpdateHandler(func(domain.Round)) {}
 
 func (m *mockedRepoManager) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {
+}
+
+type mockedOffchainTxRepo struct {
+	mock.Mock
+	domain.OffchainTxRepository // unimplemented methods panic on call
+}
+
+func (m *mockedOffchainTxRepo) GetOffchainTx(ctx context.Context, txid string) (*domain.OffchainTx, error) {
+	args := m.Called(ctx, txid)
+	if v := args.Get(0); v != nil {
+		return v.(*domain.OffchainTx), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+func (m *mockedOffchainTxRepo) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	args := m.Called(ctx, txids)
+	if v := args.Get(0); v != nil {
+		return v.([]*domain.OffchainTx), args.Error(1)
+	}
+	return nil, args.Error(1)
 }
 
 type mockedWallet struct {

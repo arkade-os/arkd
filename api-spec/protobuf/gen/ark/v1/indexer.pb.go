@@ -1648,6 +1648,7 @@ type IndexerVtxo struct {
 	SettledBy       string                 `protobuf:"bytes,12,opt,name=settled_by,json=settledBy,proto3" json:"settled_by,omitempty"`
 	ArkTxid         string                 `protobuf:"bytes,13,opt,name=ark_txid,json=arkTxid,proto3" json:"ark_txid,omitempty"`
 	Assets          []*IndexerAsset        `protobuf:"bytes,14,rep,name=assets,proto3" json:"assets,omitempty"`
+	Depth           uint32                 `protobuf:"varint,15,opt,name=depth,proto3" json:"depth,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1778,6 +1779,13 @@ func (x *IndexerVtxo) GetAssets() []*IndexerAsset {
 		return x.Assets
 	}
 	return nil
+}
+
+func (x *IndexerVtxo) GetDepth() uint32 {
+	if x != nil {
+		return x.Depth
+	}
+	return 0
 }
 
 type IndexerAsset struct {
@@ -3118,7 +3126,7 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\bchildren\x18\x02 \x03(\v2!.ark.v1.IndexerNode.ChildrenEntryR\bchildren\x1a;\n" +
 	"\rChildrenEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\rR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xde\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf4\x03\n" +
 	"\vIndexerVtxo\x123\n" +
 	"\boutpoint\x18\x01 \x01(\v2\x17.ark.v1.IndexerOutpointR\boutpoint\x12\x1d\n" +
 	"\n" +
@@ -3138,7 +3146,8 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\n" +
 	"settled_by\x18\f \x01(\tR\tsettledBy\x12\x19\n" +
 	"\bark_txid\x18\r \x01(\tR\aarkTxid\x12,\n" +
-	"\x06assets\x18\x0e \x03(\v2\x14.ark.v1.IndexerAssetR\x06assets\"A\n" +
+	"\x06assets\x18\x0e \x03(\v2\x14.ark.v1.IndexerAssetR\x06assets\x12\x14\n" +
+	"\x05depth\x18\x0f \x01(\rR\x05depth\"A\n" +
 	"\fIndexerAsset\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\tR\aassetId\x12\x16\n" +
 	"\x06amount\x18\x02 \x01(\x04R\x06amount\"\x8b\x01\n" +
