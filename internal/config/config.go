@@ -295,8 +295,8 @@ var (
 	defaultOtelPushInterval              = 10   // seconds
 	defaultHeartbeatInterval             = 60   // seconds
 	defaultStreamMaxLifetime             = 1800 // 30 minutes in seconds
-	defaultSettlementMinExpiryGap        = 0   // disabled by default
-	defaultUnrolledVtxoMinExpiryMargin   = 300 // 5 minutes in seconds
+	defaultSettlementMinExpiryGap        = 0    // disabled by default
+	defaultUnrolledVtxoMinExpiryMargin   = 300  // 5 minutes in seconds
 	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
 	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
