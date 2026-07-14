@@ -204,12 +204,14 @@ message GetVtxosRequest {
   repeated string scripts = 1;
   // Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.
   repeated string outpoints = 2;
+  // The spendable_only, spent_only, recoverable_only, pending_only and
+  // renewable_only filters are mutually exclusive, and are applied only when
+  // the scripts filter is used. They are ignored when querying by outpoints.
   // Retrieve only spendable vtxos
   bool spendable_only = 3;
   // Retrieve only spent vtxos.
   bool spent_only = 4;
   // Retrieve only recoverable vtxos (notes, subdust or swept vtxos).
-  // The 3 filters are mutually exclusive,
   bool recoverable_only = 5;
   IndexerPageRequest page = 6;
   // Include only spent vtxos that are not finalized.
@@ -219,7 +221,9 @@ message GetVtxosRequest {
   int64 after = 8;
   // Include only vtxos with last update before the given unix time in milliseconds,
   // greater value than the after when specified. A value of 0 means no upper bound.
-  int64 before = 9; 
+  int64 before = 9;
+  // Retrieve the union of the spendable and recoverable vtxos.
+  bool renewable_only = 10;
 }
 message GetVtxosResponse {
   repeated IndexerVtxo vtxos = 1;
@@ -327,6 +331,7 @@ message IndexerVtxo {
   string settled_by = 12;
   string ark_txid = 13;
   repeated IndexerAsset assets = 14;
+  uint32 depth = 15;
 }
 
 message IndexerAsset {

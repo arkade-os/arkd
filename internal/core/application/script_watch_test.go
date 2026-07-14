@@ -313,8 +313,14 @@ func TestOffchainTxHandler_WatchesCheckpointScripts(t *testing.T) {
 		scn := &mockedScanner{}
 		wallet := &mockedWallet{}
 
+		// The finalized tx spends one checkpoint input, so the handler resolves
+		// one spent parent vtxo. A finalized tx always has a resolvable parent in
+		// production; return one so the incomplete-parent-read guard does not trip.
 		vtxos.On("GetVtxos", mock.Anything, mock.Anything).
-			Return([]domain.Vtxo{}, nil)
+			Return([]domain.Vtxo{{
+				Outpoint:  domain.Outpoint{Txid: "parent_txid", VOut: 0},
+				ExpiresAt: time.Now().Add(time.Hour).Unix(),
+			}}, nil)
 		wallet.On("GetDustAmount", mock.Anything).Return(uint64(330), nil)
 		scn.On("WatchScripts", mock.Anything, mock.Anything).Return(nil)
 		rm.On("Vtxos").Return(vtxos)

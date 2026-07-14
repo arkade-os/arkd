@@ -16,15 +16,18 @@ type TapTree []string
 func (t TapTree) Encode() ([]byte, error) {
 	var tapscriptsBytes bytes.Buffer
 
-	for _, tapscript := range t {
+	size := len(t)
+	for i, tapscript := range t {
 		scriptBytes, err := hex.DecodeString(tapscript)
 		if err != nil {
 			return nil, err
 		}
 
-		// write depth (always 1)
-		// TODO: allow multiple depth
-		if err := tapscriptsBytes.WriteByte(1); err != nil {
+		// write depth as a DFS-ordered left caterpillar so the sequence
+		// forms a valid binary tree (leaf i at depth i+1, last leaf shares
+		// its parent; a lone leaf is at depth 0). 
+		depth := min(i+1, size-1)
+		if err := tapscriptsBytes.WriteByte(byte(depth)); err != nil {
 			return nil, err
 		}
 

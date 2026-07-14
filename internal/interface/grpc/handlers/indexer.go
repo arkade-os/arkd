@@ -273,13 +273,14 @@ func (e *indexerService) GetVtxos(
 	spentOnly := request.GetSpentOnly()
 	recoverableOnly := request.GetRecoverableOnly()
 	pendingOnly := request.GetPendingOnly()
+	renewableOnly := request.GetRenewableOnly()
 
 	var resp *application.GetVtxosResp
 
 	if len(pubkeys) > 0 {
 		// Validate filters
 		// TODO: get rid of this and move to oneof in the protos
-		options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly}
+		options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly}
 
 		count := 0
 		for _, v := range options {
@@ -290,7 +291,7 @@ func (e *indexerService) GetVtxos(
 		if count > 1 {
 			return nil, status.Error(
 				codes.InvalidArgument,
-				"spendable, spent, recoverable and pending filters are mutually exclusive",
+				"spendable, spent, recoverable, pending and renewable filters are mutually exclusive",
 			)
 		}
 
@@ -300,8 +301,8 @@ func (e *indexerService) GetVtxos(
 		}
 
 		resp, err = e.indexerSvc.GetVtxos(
-			ctx, pubkeys,
-			spendableOnly, spentOnly, recoverableOnly, pendingOnly, after, before, page,
+			ctx, pubkeys, spendableOnly, spentOnly, recoverableOnly,
+			pendingOnly, renewableOnly, after, before, page,
 		)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "%s", err.Error())
@@ -350,7 +351,8 @@ func (e *indexerService) GetVtxoChain(
 		if parseErr != nil {
 			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
 		}
-		resp, err = e.indexerSvc.GetVtxoChainByIntent(ctx, *intent, page)
+		// Intent is cursor-only; page-number pagination is not supported here.
+		resp, err = e.indexerSvc.GetVtxoChainByIntent(ctx, *intent)
 	} else {
 		outpoint, parseErr := parseOutpoint(request.GetOutpoint())
 		if parseErr != nil {
@@ -824,7 +826,13 @@ func (h *indexerService) listenToTxEvents() {
 			spentVtxos := make([]*arkv1.IndexerVtxo, 0)
 			involvedScripts := make([]string, 0)
 
-			for vtxoScript := range l.topics {
+			// Snapshot the topics under the listener's lock. Ranging l.topics
+			// directly races with addTopics/removeTopics/overwriteTopics, which
+			// the Subscribe/Update/Unsubscribe RPCs call under the lock. A
+			// concurrent map iteration and write is a fatal, unrecoverable
+			// runtime error that would crash the whole process. getTopics copies
+			// the keys under the lock, the same way matchesTx does for filters.
+			for _, vtxoScript := range l.getTopics() {
 				spendableVtxosForScript := allSpendableVtxos[vtxoScript]
 				spentVtxosForScript := allSpentVtxos[vtxoScript]
 				spendableVtxos = append(spendableVtxos, spendableVtxosForScript...)
@@ -1019,6 +1027,7 @@ func newIndexerVtxo(vtxo domain.Vtxo) *arkv1.IndexerVtxo {
 		CommitmentTxids: vtxo.CommitmentTxids,
 		SettledBy:       vtxo.SettledBy,
 		ArkTxid:         vtxo.ArkTxid,
+		Depth:           vtxo.Depth,
 		Assets:          assets,
 	}
 }

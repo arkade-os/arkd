@@ -144,6 +144,7 @@ func testAcceptOffchainTx(t *testing.T) {
 				commitmentTxsByCheckpointTxid,
 				rootCommitmentTxid,
 				expiryTimestamp,
+				1, []string{"parent-marker"},
 			)
 			require.NoError(t, err)
 			require.NotNil(t, event)
@@ -156,6 +157,8 @@ func testAcceptOffchainTx(t *testing.T) {
 			require.Equal(t, signedCheckpointTxs, offchainTx.CheckpointTxs)
 			require.Equal(t, commitmentTxsByCheckpointTxid, offchainTx.CommitmentTxids)
 			require.Equal(t, rootCommitmentTxid, offchainTx.RootCommitmentTxId)
+			require.Equal(t, uint32(1), offchainTx.Depth)
+			require.Equal(t, []string{"parent-marker"}, offchainTx.ParentMarkerIDs)
 
 			events := offchainTx.Events()
 			require.Len(t, events, 2)
@@ -251,6 +254,7 @@ func testAcceptOffchainTx(t *testing.T) {
 				event, err := f.offchainTx.Accept(
 					f.finalArkTx, f.signedCheckpointTxs,
 					f.commitmentTxids, rootCommitmentTxid, f.expiryTimestamp,
+					0, nil,
 				)
 				require.EqualError(t, err, f.expectedErr)
 				require.Nil(t, event)
@@ -270,6 +274,7 @@ func testFinalizeOffchainTx(t *testing.T) {
 			event, err = offchainTx.Accept(
 				finalArkTx, signedCheckpointTxs,
 				commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiryTimestamp,
+				0, nil,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, event)
@@ -349,6 +354,7 @@ func testFailOffchainTx(t *testing.T) {
 			event, err = offchainTx.Accept(
 				finalArkTx, signedCheckpointTxs,
 				commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiryTimestamp,
+				0, nil,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, event)
@@ -562,6 +568,89 @@ func testReplayOffchainTxEvents(t *testing.T) {
 					Ended:  true,
 					Failed: false,
 				},
+			},
+			{
+				name: "request retry after fail",
+				events: []domain.Event{
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+					domain.OffchainTxFailed{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFailed,
+						},
+						Reason:    "fail",
+						Timestamp: 1735689601,
+					},
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+					domain.OffchainTxAccepted{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxAccepted,
+						},
+					},
+					domain.OffchainTxFinalized{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFinalized,
+						},
+					},
+				},
+				expectedVersion: 5,
+				expectedStage: domain.Stage{
+					Code:   int(domain.OffchainTxFinalizedStage),
+					Ended:  true,
+					Failed: false,
+				},
+			},
+			{
+				// An accepted tx already spent its input vtxos: a new request
+				// must never reset it, even if it failed afterwards.
+				name: "request retry after accepted tx failed",
+				events: []domain.Event{
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+					domain.OffchainTxAccepted{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxAccepted,
+						},
+					},
+					domain.OffchainTxFailed{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxFailed,
+						},
+						Reason:    "fail",
+						Timestamp: 1735689601,
+					},
+					domain.OffchainTxRequested{
+						OffchainTxEvent: domain.OffchainTxEvent{
+							Id:   "1",
+							Type: domain.EventTypeOffchainTxRequested,
+						},
+					},
+				},
+				expectedVersion: 3,
+				expectedStage: domain.Stage{
+					Code:   int(domain.OffchainTxAcceptedStage),
+					Ended:  false,
+					Failed: true,
+				},
+				expectedFailReason: "fail",
 			},
 		}
 		for _, f := range fixtures {
