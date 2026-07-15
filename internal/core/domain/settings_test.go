@@ -446,6 +446,57 @@ func testNewSettings(t *testing.T) {
 			require.ErrorContains(t, err, "invalid batch trigger program")
 			require.Nil(t, settings)
 		})
+
+		t.Run("rate limit velocity must be positive when enabled", func(t *testing.T) {
+			settings, err := domain.NewSettings(
+				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
+				batchMinParticipants, batchMaxParticipants,
+				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
+				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
+				boardingExitDelay, vtxoTreeExpiry,
+				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				batchTrigger,
+				true, 0, 3600,
+			)
+			require.ErrorContains(t, err, "rate limit max velocity must be greater than 0")
+			require.Nil(t, settings)
+		})
+
+		t.Run("rate limit cooldown must not be negative when enabled", func(t *testing.T) {
+			settings, err := domain.NewSettings(
+				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
+				batchMinParticipants, batchMaxParticipants,
+				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
+				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
+				boardingExitDelay, vtxoTreeExpiry,
+				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				batchTrigger,
+				true, 0.28, -1,
+			)
+			require.ErrorContains(t, err, "rate limit max cooldown secs must not be negative")
+			require.Nil(t, settings)
+		})
+
+		t.Run("disabled rate limit skips value validation", func(t *testing.T) {
+			settings, err := domain.NewSettings(
+				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
+				batchMinParticipants, batchMaxParticipants,
+				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
+				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
+				boardingExitDelay, vtxoTreeExpiry,
+				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				batchTrigger,
+				false, 0, 0,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, settings)
+		})
 	})
 }
 

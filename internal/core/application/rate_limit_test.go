@@ -178,6 +178,74 @@ func TestCheckRateLimit(t *testing.T) {
 				// velocity = 100/500 = 0.2 < 0.28 -> allowed
 				expectError: false,
 			},
+			{
+				// Markers backfilled by the migration default to created_at 0
+				// (the unix epoch), which the limiter reads as ~decades old, so
+				// timeDelta is huge and velocity ~0: existing chains are never
+				// limited right after migrating. See the add_marker_created_at
+				// migration.
+				name:                 "legacy marker with created_at 0 is not limited",
+				rateLimitEnabled:     true,
+				rateLimitMaxVelocity: 0.28,
+				rateLimitMaxCooldown: 3600,
+				vtxos: []domain.Vtxo{
+					{
+						Outpoint:  domain.Outpoint{Txid: "tx1", VOut: 0},
+						Depth:     5000,
+						MarkerIDs: []string{"m1"},
+					},
+				},
+				markers: map[string]domain.Marker{
+					// depthDelta = 5000, timeDelta = now (~epoch), velocity ~= 0.
+					"m1": {ID: "m1", Depth: 0, CreatedAt: 0},
+				},
+				expectError: false,
+			},
+			{
+				// timeDelta == 0 must not divide by zero: the guard clamps it to 1s,
+				// so a marker stamped this same second reads as maximal velocity.
+				name:                 "marker created_at equal to now triggers the timeDelta guard",
+				rateLimitEnabled:     true,
+				rateLimitMaxVelocity: 0.28,
+				rateLimitMaxCooldown: 3600,
+				vtxos: []domain.Vtxo{
+					{
+						Outpoint:  domain.Outpoint{Txid: "tx1", VOut: 0},
+						Depth:     200,
+						MarkerIDs: []string{"m1"},
+					},
+				},
+				markers: map[string]domain.Marker{
+					// timeDelta = 0 -> clamped to 1, velocity = 100/1 = 100 > 0.28.
+					"m1": {ID: "m1", Depth: 100, CreatedAt: now},
+				},
+				expectError:      true,
+				expectCode:       errors.RATE_LIMITED.Code,
+				expectInputCount: 1,
+			},
+			{
+				// A future marker timestamp (clock skew between nodes) makes
+				// timeDelta negative; the guard clamps it to 1s rather than
+				// producing a negative/garbage velocity.
+				name:                 "marker created_at in the future (clock skew) triggers the timeDelta guard",
+				rateLimitEnabled:     true,
+				rateLimitMaxVelocity: 0.28,
+				rateLimitMaxCooldown: 3600,
+				vtxos: []domain.Vtxo{
+					{
+						Outpoint:  domain.Outpoint{Txid: "tx1", VOut: 0},
+						Depth:     200,
+						MarkerIDs: []string{"m1"},
+					},
+				},
+				markers: map[string]domain.Marker{
+					// timeDelta = now-(now+100) = -100 -> clamped to 1, velocity = 100 > 0.28.
+					"m1": {ID: "m1", Depth: 100, CreatedAt: now + 100},
+				},
+				expectError:      true,
+				expectCode:       errors.RATE_LIMITED.Code,
+				expectInputCount: 1,
+			},
 		}
 
 		for _, tt := range tests {
@@ -567,6 +635,62 @@ func TestCheckRateLimit(t *testing.T) {
 		// Verify the error is RATE_LIMITED
 		var rateLimitErr errors.TypedError[errors.RateLimitMetadata]
 		require.ErrorAs(t, err, &rateLimitErr)
+	})
+
+	// rejection metadata asserts the client-visible error metadata (the flattened
+	// form clients actually receive from Error.Metadata()) carries the right
+	// per-input detail, not just that some "inputs" key exists.
+	t.Run("rejection metadata", func(t *testing.T) {
+		t.Run("reports the computed cooldown for the rejected input", func(t *testing.T) {
+			// depth 200, marker depth 100 created 100s ago:
+			// depthDelta=100, timeDelta=100, velocity=1.0 > 0.28.
+			// cooldown = ceil(100/0.28 - 100) = ceil(257.14) = 258 (below the 3600 cap).
+			svc := newRateLimitTestService(true, 0.28, 3600, map[string]domain.Marker{
+				"m1": {ID: "m1", Depth: 100, CreatedAt: now - 100},
+			})
+
+			err := svc.checkRateLimit(context.Background(), []domain.Vtxo{
+				{Outpoint: domain.Outpoint{Txid: "tx1", VOut: 0}, Depth: 200, MarkerIDs: []string{"m1"}},
+			})
+			require.NotNil(t, err)
+
+			inputs := err.Metadata()["inputs"]
+			require.Contains(t, inputs, "tx1:0")
+			require.Contains(t, inputs, "cooldown_secs:258")
+		})
+
+		t.Run("cooldown is capped in the reported metadata", func(t *testing.T) {
+			// velocity is enormous (marker 1s ago), so the raw cooldown far exceeds
+			// the 100s cap and must be reported as exactly 100.
+			svc := newRateLimitTestService(true, 0.28, 100, map[string]domain.Marker{
+				"m1": {ID: "m1", Depth: 100, CreatedAt: now - 1},
+			})
+
+			err := svc.checkRateLimit(context.Background(), []domain.Vtxo{
+				{Outpoint: domain.Outpoint{Txid: "tx1", VOut: 0}, Depth: 200, MarkerIDs: []string{"m1"}},
+			})
+			require.NotNil(t, err)
+			require.Contains(t, err.Metadata()["inputs"], "cooldown_secs:100")
+		})
+
+		t.Run("only the rate-limited input of a batch is reported", func(t *testing.T) {
+			// tx1 grows fast (velocity 1.0, rejected); tx2 grows slowly
+			// (velocity 0.01, allowed), so only tx1 appears in the metadata.
+			svc := newRateLimitTestService(true, 0.28, 3600, map[string]domain.Marker{
+				"m1": {ID: "m1", Depth: 100, CreatedAt: now - 100},
+				"m2": {ID: "m2", Depth: 100, CreatedAt: now - 1000},
+			})
+
+			err := svc.checkRateLimit(context.Background(), []domain.Vtxo{
+				{Outpoint: domain.Outpoint{Txid: "tx1", VOut: 0}, Depth: 200, MarkerIDs: []string{"m1"}},
+				{Outpoint: domain.Outpoint{Txid: "tx2", VOut: 0}, Depth: 110, MarkerIDs: []string{"m2"}},
+			})
+			require.NotNil(t, err)
+
+			inputs := err.Metadata()["inputs"]
+			require.Contains(t, inputs, "tx1:0")
+			require.NotContains(t, inputs, "tx2:0")
+		})
 	})
 }
 

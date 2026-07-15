@@ -251,6 +251,20 @@ func (s Settings) Validate() error {
 	if _, err := batchtrigger.New(s.BatchTrigger); err != nil {
 		return fmt.Errorf("invalid batch trigger program: %w", err)
 	}
+	if s.RateLimitEnabled {
+		if s.RateLimitMaxVelocity <= 0 {
+			return fmt.Errorf(
+				"rate limit max velocity must be greater than 0 when rate limiting is enabled, got %f",
+				s.RateLimitMaxVelocity,
+			)
+		}
+		if s.RateLimitMaxCooldownSecs < 0 {
+			return fmt.Errorf(
+				"rate limit max cooldown secs must not be negative, got %d",
+				s.RateLimitMaxCooldownSecs,
+			)
+		}
+	}
 	return nil
 }
 

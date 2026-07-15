@@ -2063,6 +2063,26 @@
             ],
             "format": "int64"
           },
+          "rateLimitEnabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "rateLimitMaxCooldownSecs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "rateLimitMaxVelocity": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
           "roundMaxParticipantsCount": {
             "type": [
               "integer",
