@@ -13,23 +13,23 @@ import (
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("invalid config: %s", err)
+		log.Fatalf("invalid arkd-signer config: %s", err)
 	}
 
 	log.SetLevel(log.Level(cfg.LogLevel))
 
 	svc, err := grpcservice.NewService(cfg)
 	if err != nil {
-		log.Fatalf("failed to create service: %s", err)
+		log.Fatalf("failed to create arkd-signer service: %s", err)
 	}
 
-	log.Infof("arkd signer config: %s", cfg)
+	log.Infof("arkd-signer config: %s", cfg)
 
-	log.Info("starting service...")
+	log.Info("starting arkd-signer service...")
 	if err := svc.Start(); err != nil {
-		log.Fatalf("failed to start service: %s", err)
+		log.Fatalf("failed to start arkd-signer service: %s", err)
 	}
-	log.Infof("arkd signer listens on: %v", cfg.Port)
+	log.Infof("arkd-signer listens on: %v", cfg.Port)
 
 	log.RegisterExitHandler(svc.Stop)
 
@@ -39,6 +39,6 @@ func main() {
 	)
 	<-sigChan
 
-	log.Info("shutting down service...")
+	log.Info("shutting down arkd-signer service...")
 	log.Exit(0)
 }

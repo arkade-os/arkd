@@ -4,7 +4,7 @@
 	help integrationtest lint migrate pg pgmigrate pgsqlc pgtest \
 	pprof proto proto-lint psql \
 	redis-down redis-test-down redis-test-up redis-up \
-	run run-light run-signer run-simulation run-wallet run-wallet-nosigner \
+	run run-light run-signer run-simulation run-wallet \
 	sqlc test test-pkg vet
 
 define setup_env
@@ -206,18 +206,30 @@ run-simulation:
 	@echo "Test completed. Docker environment will remain running."
 	@echo "Run 'make docker-stop' to shut down the environment when finished."
 
-## run-wallet: run arkd wallet based on nbxplorer in dev mode on regtest with a pre-loaded signer private key
-run-wallet:
-	@echo "Running arkd wallet in dev mode with NBXplorer on regtest with pre-loaded signer private key..."
-	@docker compose -f docker-compose.regtest.yml up -d pg nbxplorer
-	$(call setup_env, envs/arkd-wallet.regtest.env)
-	@go run ./cmd/arkd-wallet
+## run-vtxo-chain-simulation: run the vtxo chain smoke test
+## Usage: make run-vtxo-chain-simulation [CHAIN_LENGTH=n]
+# Examples:
+#   make run-vtxo-chain-simulation                  # Default: 50 chained offchain txs
+#   make run-vtxo-chain-simulation CHAIN_LENGTH=100       # 100 chained offchain txs
+run-vtxo-chain-simulation:
+	@echo "Stopping any existing Docker environment..."
+	@docker compose -f docker-compose.regtest.yml down -v 2>/dev/null || true
+	@echo "Starting Docker environment..."
+	@ARKD_VTXO_TREE_EXPIRY=500 docker compose -f docker-compose.regtest.yml up --build -d
+	@echo "Waiting for services to start..."
+	@sleep 30
+	@bash -c '\
+		CHAIN_LENGTH=$${CHAIN_LENGTH:-50}; \
+		echo "Creating a chain of $$CHAIN_LENGTH offchain offchain txs and testing GetVtxoChain performance..."; \
+		go test -v -count=1 -timeout 20m github.com/arkade-os/arkd/internal/test/e2e -run TestVtxoChain -args -smoke -chain-length=$$CHAIN_LENGTH; \
+	'
+	@echo "Test completed."
 
-## run-wallet-nosigner: run arkd wallet based on nbxplorer in dev mode on regtest without a pre-loaded signer private key
-run-wallet-nosigner:
+## run-wallet: run arkd wallet based on nbxplorer in dev mode on regtest
+run-wallet:
 	@echo "Running arkd wallet in dev mode with NBXplorer on regtest..."
 	@docker compose -f docker-compose.regtest.yml up -d pg nbxplorer
-	$(call setup_env, envs/arkd-wallet-nosigner.regtest.env)
+	$(call setup_env, envs/arkd-wallet.regtest.env)
 	@go run ./cmd/arkd-wallet
 
 ## sqlc: compile sql queries for sqlite

@@ -106,7 +106,7 @@ services:
       # First-boot seed overrides so the DB-backed settings are short enough
       # for the e2e harness. Only consulted when the settings table is empty.
       # Values match master's regtest defaults (all block-based, same type).
-      - ARKD_VTXO_TREE_EXPIRY=40
+      - ARKD_VTXO_TREE_EXPIRY=${ARKD_VTXO_TREE_EXPIRY:-40}
       - ARKD_UNILATERAL_EXIT_DELAY=20
       - ARKD_PUBLIC_UNILATERAL_EXIT_DELAY=20
       - ARKD_BOARDING_EXIT_DELAY=30
@@ -127,7 +127,6 @@ services:
       - ARKD_LIVE_STORE_TYPE=${ARKD_LIVE_STORE_TYPE:-inmemory}
       - ARKD_REDIS_URL=${ARKD_REDIS_URL:-}
       - ARKD_SESSION_DURATION=${ARKD_SESSION_DURATION:-10}
-      - ARKD_ROUND_REPORT_ENABLED=${ARKD_ROUND_REPORT_ENABLED:-true}
       - ARKD_BAN_THRESHOLD=1
       - ARKD_UNROLLED_VTXO_MIN_EXPIRY_MARGIN=10
 

@@ -298,6 +298,21 @@ func TestGetFeeRate(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		t.Run("populated map", func(t *testing.T) {
 			ts := newTestServer(t)
+			ts.handle("/v1/fees/recommended", ts.jsonResponse(
+				http.StatusOK, map[string]float64{
+					"fastestFee": 5.5,
+				},
+			))
+
+			svc := makeExplorer(t, ts.URL)
+
+			fee, err := svc.GetFeeRate()
+			require.NoError(t, err)
+			require.Equal(t, 5.5, fee)
+		})
+
+		t.Run("populated map on old endpoint", func(t *testing.T) {
+			ts := newTestServer(t)
 			ts.handle("/fee-estimates", ts.jsonResponse(
 				http.StatusOK, map[string]float64{"1": 5.5},
 			))
@@ -311,7 +326,9 @@ func TestGetFeeRate(t *testing.T) {
 
 		t.Run("empty map returns 1", func(t *testing.T) {
 			ts := newTestServer(t)
-			ts.handle("/fee-estimates", ts.jsonResponse(http.StatusOK, map[string]float64{}))
+			ts.handle("/v1/fees/recommended", ts.jsonResponse(
+				http.StatusOK, map[string]float64{},
+			))
 
 			svc := makeExplorer(t, ts.URL)
 
@@ -322,9 +339,27 @@ func TestGetFeeRate(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
-		t.Run("non-200", func(t *testing.T) {
+		t.Run("non-200-unavialable", func(t *testing.T) {
 			ts := newTestServer(t)
-			ts.handle("/fee-estimates", ts.textResponse(http.StatusInternalServerError, "error"))
+			ts.handle("/v1/fees/recommended", ts.textResponse(
+				http.StatusServiceUnavailable,
+				"electrs is warming up",
+			))
+
+			svc := makeExplorer(t, ts.URL)
+
+			_, err := svc.GetFeeRate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "503")
+			require.Contains(t, err.Error(), "electrs")
+			require.NotContains(t, err.Error(), "invalid character")
+		})
+
+		t.Run("non-200-internal-server-error", func(t *testing.T) {
+			ts := newTestServer(t)
+			ts.handle("/v1/fees/recommended", ts.textResponse(
+				http.StatusInternalServerError, "error",
+			))
 
 			svc := makeExplorer(t, ts.URL)
 
@@ -334,7 +369,9 @@ func TestGetFeeRate(t *testing.T) {
 
 		t.Run("malformed json", func(t *testing.T) {
 			ts := newTestServer(t)
-			ts.handle("/fee-estimates", ts.textResponse(http.StatusOK, "not-json"))
+			ts.handle("/v1/fees/recommended", ts.textResponse(
+				http.StatusOK, "not-json",
+			))
 
 			svc := makeExplorer(t, ts.URL)
 

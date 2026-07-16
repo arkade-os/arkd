@@ -34,8 +34,10 @@ type Config struct {
 	SecretKey      string
 	DeprecatedKeys string
 
-	SignerSvc     application.Signer
-	EmulatorSvc   emulator.Service
+	// never serialized: these hold the live operator key; keep them out of String()/JSON
+	SignerSvc   application.Signer `json:"-"`
+	EmulatorSvc emulator.Service   `json:"-"`
+
 	ComputeLimits arkade.ComputeLimits
 }
 
@@ -68,6 +70,9 @@ func (c *Config) initServices() error {
 	buf, err := hex.DecodeString(c.SecretKey)
 	if err != nil {
 		return fmt.Errorf("invalid signer secret key format, must be hex")
+	}
+	if len(buf) != 32 {
+		return fmt.Errorf("invalid signer secret key format, must be 32 bytes")
 	}
 	prvkey, _ := btcec.PrivKeyFromBytes(buf)
 

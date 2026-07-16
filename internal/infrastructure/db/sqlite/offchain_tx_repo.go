@@ -9,6 +9,11 @@ import (
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
 )
 
+// sqliteMaxBulkTxids caps the per-query batch for GetOffchainTxsByTxids to stay
+// well under SQLITE_MAX_VARIABLE_NUMBER (default 999 on SQLite < 3.32). The
+// SLICE expansion in the generated query emits one bound parameter per txid.
+const sqliteMaxBulkTxids = 500
+
 type offchainTxRepository struct {
 	db SQLiteDB
 }
@@ -114,6 +119,71 @@ func (v *offchainTxRepository) GetOffchainTx(
 		CommitmentTxids:    commitmentTxids,
 		RootCommitmentTxId: rootCommitmentTxId,
 	}, nil
+}
+
+func (v *offchainTxRepository) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	if len(txids) == 0 {
+		return []*domain.OffchainTx{}, nil
+	}
+
+	grouped := make(map[string][]queries.OffchainTxVw)
+	for start := 0; start < len(txids); start += sqliteMaxBulkTxids {
+		end := min(start+sqliteMaxBulkTxids, len(txids))
+		var rows []queries.SelectOffchainTxsByTxidsRow
+		if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+			var err error
+			rows, err = q.SelectOffchainTxsByTxids(ctx, txids[start:end])
+			return err
+		}); err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			grouped[row.OffchainTxVw.Txid] = append(
+				grouped[row.OffchainTxVw.Txid],
+				row.OffchainTxVw,
+			)
+		}
+	}
+
+	txs := make([]*domain.OffchainTx, 0, len(grouped))
+	for _, vws := range grouped {
+		vt := vws[0]
+		checkpointTxs := make(map[string]string)
+		commitmentTxids := make(map[string]string)
+		rootCommitmentTxId := ""
+		for _, vw := range vws {
+			if vw.CheckpointTxid != "" && vw.CheckpointTx != "" {
+				checkpointTxs[vw.CheckpointTxid] = vw.CheckpointTx
+				commitmentTxids[vw.CheckpointTxid] = vw.CommitmentTxid.String
+				if vw.IsRootCommitmentTxid.Bool {
+					rootCommitmentTxId = vw.CommitmentTxid.String
+				}
+			}
+		}
+		stage := domain.Stage{Code: int(vt.StageCode)}
+		if vt.FailReason.String != "" {
+			stage.Failed = true
+		}
+		if domain.OffchainTxStage(vt.StageCode) == domain.OffchainTxFinalizedStage {
+			stage.Ended = true
+		}
+		txs = append(txs, &domain.OffchainTx{
+			ArkTxid:            vt.Txid,
+			ArkTx:              vt.Tx,
+			StartingTimestamp:  vt.StartingTimestamp,
+			EndingTimestamp:    vt.EndingTimestamp,
+			ExpiryTimestamp:    vt.ExpiryTimestamp,
+			FailReason:         vt.FailReason.String,
+			Stage:              stage,
+			CheckpointTxs:      checkpointTxs,
+			CommitmentTxids:    commitmentTxids,
+			RootCommitmentTxId: rootCommitmentTxId,
+		})
+	}
+
+	return txs, nil
 }
 
 func (v *offchainTxRepository) Close() {
