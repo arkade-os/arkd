@@ -225,6 +225,7 @@ CREATE TABLE IF NOT EXISTS settings (
     build_version_header TEXT NOT NULL DEFAULT '',
     build_version_header_required BOOLEAN NOT NULL DEFAULT FALSE,
     digest_header_required BOOLEAN NOT NULL DEFAULT FALSE,
+    batch_trigger TEXT NOT NULL DEFAULT '',
     updated_at BIGINT NOT NULL
 );`)
 	require.NoError(t, err)

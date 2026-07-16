@@ -23,13 +23,13 @@ import (
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
+	channelzservice "google.golang.org/grpc/channelz/service"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 )
 
@@ -151,7 +151,7 @@ func (s *service) start() error {
 		return err
 	}
 
-	if err := s.newServer(tlsConfig, s.config.EnablePprof); err != nil {
+	if err := s.newServer(tlsConfig, s.config.EnablePprof, s.config.EnableChannelz); err != nil {
 		return err
 	}
 
@@ -249,20 +249,13 @@ func (s *service) startAppServices() error {
 	return nil
 }
 
-func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
+func (s *service) newServer(tlsConfig *tls.Config, withPprof, withChannelz bool) error {
 	ctx := context.Background()
 	if s.appConfig.OtelCollectorEndpoint != "" {
 		pushInteval := time.Duration(s.appConfig.OtelPushInterval) * time.Second
-		rrsc, err := s.appConfig.RoundReportService()
-		if err != nil {
-			return err
-		}
 
 		otelShutdown, err := telemetry.InitOtelSDK(
-			ctx,
-			s.appConfig.OtelCollectorEndpoint,
-			pushInteval,
-			rrsc,
+			ctx, s.appConfig.OtelCollectorEndpoint, pushInteval,
 		)
 		if err != nil {
 			return err
@@ -329,6 +322,11 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 			s.macaroonSvc, s.readinessSvc, getVersionGuard, getDigestGuard,
 		),
 		grpc.StatsHandler(otelHandler),
+		// ping clients, close dead ones
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    30 * time.Second,
+			Timeout: 20 * time.Second,
+		}),
 	}
 	creds := insecure.NewCredentials()
 	if !s.config.insecure() {
@@ -381,11 +379,18 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 		arkv1.RegisterWalletInitializerServiceServer(adminGrpcServer, walletInitHandler)
 		arkv1.RegisterSignerManagerServiceServer(adminGrpcServer, signerManagerHandler)
 		grpchealth.RegisterHealthServer(adminGrpcServer, healthHandler)
+		if withChannelz {
+			channelzservice.RegisterChannelzServiceToServer(adminGrpcServer)
+			log.Debug("channelz enabled on admin port")
+		}
 	} else {
 		arkv1.RegisterAdminServiceServer(grpcServer, adminHandler)
 		arkv1.RegisterWalletServiceServer(grpcServer, walletHandler)
 		arkv1.RegisterWalletInitializerServiceServer(grpcServer, walletInitHandler)
 		arkv1.RegisterSignerManagerServiceServer(grpcServer, signerManagerHandler)
+		if withChannelz {
+			log.Warn("channelz enabled but no admin port configured; channelz will not be exposed")
+		}
 	}
 	grpchealth.RegisterHealthServer(grpcServer, healthHandler)
 
@@ -488,26 +493,23 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 
 	mux.Handle("/", handler)
 
-	h2srv := &http2.Server{
-		MaxConcurrentStreams: s.config.MaxConcurrentStreams,
-	}
-
-	httpServerHandler := http.Handler(mux)
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
 	if s.config.insecure() {
-		httpServerHandler = h2c.NewHandler(httpServerHandler, h2srv)
+		protocols.SetUnencryptedHTTP2(true)
+	} else {
+		protocols.SetHTTP2(true)
 	}
 
 	s.grpcServer = grpcServer
 	s.server = &http.Server{
 		Addr:      s.config.address(),
-		Handler:   httpServerHandler,
+		Handler:   mux,
 		TLSConfig: tlsConfig,
-	}
-
-	if !s.config.insecure() {
-		if err := http2.ConfigureServer(s.server, h2srv); err != nil {
-			return err
-		}
+		Protocols: protocols,
+		HTTP2: &http.HTTP2Config{
+			MaxConcurrentStreams: int(s.config.MaxConcurrentStreams),
+		},
 	}
 
 	// Create separate admin server if admin port is configured
@@ -561,16 +563,12 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof bool) error {
 
 		adminMux.Handle("/", adminHandler)
 
-		adminHttpServerHandler := http.Handler(adminMux)
-		if s.config.insecure() {
-			adminHttpServerHandler = h2c.NewHandler(adminHttpServerHandler, &http2.Server{})
-		}
-
 		s.adminGrpcSrvr = adminGrpcServer
 		s.adminServer = &http.Server{
 			Addr:      s.config.adminAddress(),
-			Handler:   adminHttpServerHandler,
+			Handler:   adminMux,
 			TLSConfig: tlsConfig,
+			Protocols: protocols,
 		}
 	}
 

@@ -42,6 +42,8 @@ type OffchainTx struct {
 	CommitmentTxids    map[string]string
 	RootCommitmentTxId string
 	ExpiryTimestamp    int64
+	Depth              uint32
+	ParentMarkerIDs    []string
 	FailReason         string
 	Version            uint
 	changes            []Event
@@ -97,6 +99,7 @@ func (s *OffchainTx) Request(
 func (s *OffchainTx) Accept(
 	finalArkTx string, signedCheckpointTxs map[string]string,
 	commitmentTxsByCheckpointTxid map[string]string, rootCommitmentTx string, expiryTimestamp int64,
+	depth uint32, parentMarkerIDs []string,
 ) (Event, error) {
 	if finalArkTx == "" {
 		return nil, fmt.Errorf("missing final ark tx")
@@ -132,6 +135,8 @@ func (s *OffchainTx) Accept(
 		CommitmentTxids:     commitmentTxsByCheckpointTxid,
 		RootCommitmentTxid:  rootCommitmentTx,
 		ExpiryTimestamp:     expiryTimestamp,
+		Depth:               depth,
+		ParentMarkerIDs:     parentMarkerIDs,
 	}
 	s.raise(event)
 	return event, nil
@@ -227,9 +232,14 @@ func (s *OffchainTx) CheckpointTxsList() []string {
 func (s *OffchainTx) on(event Event, replayed bool) {
 	switch e := event.(type) {
 	case OffchainTxRequested:
-		if s.Stage.Code != int(OffchainTxUndefinedStage) || s.Stage.Failed {
+		// Just like an accepted tx can be retried if it failed to finalize in first place,
+		// a requested tx can be retried to bring the flow to finalization.
+		canRetry := s.Stage.Failed && s.Stage.Code == int(OffchainTxRequestedStage)
+		if s.Stage.Code != int(OffchainTxUndefinedStage) && !canRetry {
 			return
 		}
+		s.Stage.Failed = false
+		s.FailReason = ""
 		s.Stage.Code = int(OffchainTxRequestedStage)
 		s.ArkTxid = e.Id
 		s.ArkTx = e.ArkTx
@@ -245,6 +255,8 @@ func (s *OffchainTx) on(event Event, replayed bool) {
 		s.CommitmentTxids = e.CommitmentTxids
 		s.RootCommitmentTxId = e.RootCommitmentTxid
 		s.ExpiryTimestamp = e.ExpiryTimestamp
+		s.Depth = e.Depth
+		s.ParentMarkerIDs = e.ParentMarkerIDs
 	case OffchainTxFinalized:
 		if s.Stage.Code != int(OffchainTxAcceptedStage) {
 			return

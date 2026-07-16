@@ -1,22 +1,15 @@
 package e2e_test
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
-	"io"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/arkade-os/arkd/internal/core/application"
 	wallet "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,11 +25,6 @@ var (
 	runSmoke = flag.Bool("smoke", false, "run smoke tests")
 	// Command-line flags for test configuration
 	numClients = flag.Int("num-clients", 5, "Number of clients to participate in the batch")
-	// Regular expressions for parsing logs
-	reStats   = regexp.MustCompile(`(?m)round stats:\s*(\{[^\n]+})`)
-	reMetrics = regexp.MustCompile(`(?m)round metrics:\s*(\{[^\n]+})`)
-	reStages  = regexp.MustCompile(`(?m)round stages:\s*(map\[[^\n]+])`)
-	reOps     = regexp.MustCompile(`(?m)round ops:\s*(map\[[^\n]+])`)
 )
 
 // TestBatchSettleMultipleClients tests multiple clients registering VTXOs in a single batch
@@ -45,7 +33,7 @@ var (
 // Round participant limits are configured via the admin settings API.
 //
 // To specify the number of clients via command line:
-// go test -v -run TestBatchSettleMultipleClients -args -num-clients=8
+// go test -v -run TestBatchSettleMultipleClients -args -smoke -num-clients=8
 func TestBatchSettleMultipleClients(t *testing.T) {
 	// Parse command-line flags if they haven't been parsed yet
 	if !flag.Parsed() {
@@ -53,7 +41,7 @@ func TestBatchSettleMultipleClients(t *testing.T) {
 	}
 
 	if !*runSmoke {
-		t.Skip("skip simulation")
+		t.Skip("skip batch session smoke test")
 	}
 
 	// Configuration - adjust these values as needed
@@ -72,8 +60,9 @@ func TestBatchSettleMultipleClients(t *testing.T) {
 
 // runBatchSettleTest runs a test with multiple clients registering VTXOs in a single batch
 func runBatchSettleTest(t *testing.T, config singleBatchConfig) {
-	clientsManager := newOrchestrator(t, config)
+	t.Helper()
 
+	clientsManager := newOrchestrator(t, config)
 	clientsManager.onboard(t)
 
 	if t.Failed() {
@@ -89,16 +78,6 @@ func runBatchSettleTest(t *testing.T, config singleBatchConfig) {
 	}
 
 	t.Logf("All clients settled in batch 0 of commitment tx %s", commitmentTxid)
-	t.Logf("Generating report file...")
-
-	report := newReport(commitmentTxid)
-	err := report.parseDockerLogs()
-	require.NoError(t, err)
-
-	err = report.writeToFile("report.json")
-	require.NoError(t, err)
-
-	t.Logf("Generated report file ./report.json")
 }
 
 type orchestrator struct {
@@ -107,6 +86,8 @@ type orchestrator struct {
 }
 
 func newOrchestrator(t *testing.T, config singleBatchConfig) *orchestrator {
+	t.Helper()
+
 	chClients := make(chan struct {
 		id     int
 		client wallet.Wallet
@@ -216,145 +197,4 @@ func (o *orchestrator) settle(t *testing.T) string {
 		commitmentTxid = txid
 	}
 	return commitmentTxid
-}
-
-type report struct {
-	Name    string                             `json:"name"`
-	Tree    string                             `json:"tree"`
-	Stats   *application.RoundStats            `json:"stats,omitempty"`
-	Metrics *application.RoundMetrics          `json:"metrics,omitempty"`
-	Stages  map[string]application.StageMetric `json:"stages,omitempty"`
-	Ops     map[string]application.OpMetric    `json:"ops,omitempty"`
-}
-
-func newReport(commitmentTxid string) *report {
-	return &report{
-		Tree: fmt.Sprintf(
-			"https://tree-query-poc.netlify.app/?fetch=http://localhost:7070/v1/commitmentTx/%s",
-			commitmentTxid,
-		),
-		Stages: map[string]application.StageMetric{},
-		Ops:    map[string]application.OpMetric{},
-	}
-}
-
-func (r *report) parseDockerLogs() error {
-	logs, err := getArkdLogs(context.Background())
-	if err != nil {
-		return err
-	}
-
-	// Find stats
-	s := findNthCapture(reStats, logs, 2)
-	if s == "" {
-		return fmt.Errorf("could not find 2nd occurrence of 'round stats:'")
-	}
-	body := strings.TrimPrefix(s, "round stats:")
-	kv, _ := parseBraceKV(body)
-	r.Stats = &application.RoundStats{
-		NumIntents:       atoi(kv["NumIntents"]),
-		TotalInputVtxos:  atoi(kv["TotalInputVtxos"]),
-		TotalOutputVtxos: atoi(kv["TotalOutputVtxos"]),
-		NumTreeNodes:     atoi(kv["NumTreeNodes"]),
-		CommitmentTxID:   kv["CommitmentTxID"],
-	}
-
-	// Set name as 'batch with N clients'
-	r.Name = fmt.Sprintf("batch with %d clients", r.Stats.TotalOutputVtxos)
-
-	// Find metrics
-	s = findNthCapture(reMetrics, logs, 2)
-	if s == "" {
-		return fmt.Errorf("could not find 2nd occurrence of 'round metrics:'")
-	}
-	body = strings.TrimPrefix(s, "round metrics:")
-	kv, _ = parseBraceKV(body)
-	r.Metrics = &application.RoundMetrics{
-		Latency:            atof(kv["Latency"]),
-		CPU:                atof(kv["CPU"]),
-		CoreEq:             atof(kv["CoreEq"]),
-		UtilizedPct:        atof(kv["UtilizedPct"]),
-		MemAllocDelta:      atof(kv["MemAllocDelta"]),
-		MemSysDelta:        atof(kv["MemSysDelta"]),
-		MemTotalAllocDelta: atof(kv["MemTotalAllocDelta"]),
-		GCDelta:            uint32(atoi(kv["GCDelta"])),
-	}
-
-	// Find stages
-	s = findNthCapture(reStages, logs, 2)
-	if s == "" {
-		return fmt.Errorf("could not find 2nd occurrence of 'round stages:'")
-	}
-	body = strings.TrimPrefix(s, "round stages:")
-	m, _ := parseMapOfStructs(body)
-	for k, kv := range m {
-		r.Stages[k] = application.StageMetric{Latency: atof(kv["Latency"])}
-	}
-
-	// Find ops
-	s = findNthCapture(reOps, logs, 2)
-	if s == "" {
-		return fmt.Errorf("could not find 2nd occurrence of 'round ops:'")
-	}
-	body = strings.TrimPrefix(s, "round ops:")
-	m, _ = parseMapOfStructs(body)
-	for k, kv := range m {
-		r.Ops[k] = application.OpMetric{
-			Latency:            atof(kv["Latency"]),
-			CPU:                atof(kv["CPU"]),
-			CoreEq:             atof(kv["CoreEq"]),
-			UtilizedPct:        atof(kv["UtilizedPct"]),
-			MemAllocDelta:      atof(kv["MemAllocDelta"]),
-			MemSysDelta:        atof(kv["MemSysDelta"]),
-			MemTotalAllocDelta: atof(kv["MemTotalAllocDelta"]),
-			GCDelta:            uint32(atoi(kv["GCDelta"])),
-		}
-	}
-
-	return nil
-}
-
-func getArkdLogs(ctx context.Context) (string, error) {
-	containerName := "arkd"
-
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		return "", err
-	}
-
-	// Inspect to check if TTY is enabled (affects log format)
-	inspect, err := cli.ContainerInspect(ctx, containerName)
-	if err != nil {
-		return "", err
-	}
-	isTTY := inspect.Config != nil && inspect.Config.Tty
-
-	rc, err := cli.ContainerLogs(ctx, containerName, container.LogsOptions{
-		ShowStdout: true,
-		ShowStderr: true,
-		Follow:     false,
-		Timestamps: false,
-	})
-	if err != nil {
-		return "", err
-	}
-	// nolint
-	defer rc.Close()
-
-	var buf bytes.Buffer
-	if isTTY {
-		// Raw stream, just copy
-		_, err = io.Copy(&buf, rc)
-	} else {
-		// Non-TTY multiplexed stream, demux with stdcopy
-		_, err = stdcopy.StdCopy(&buf, &buf, rc)
-	}
-	if err != nil {
-		return "", err
-	}
-	return buf.String(), nil
-}
-
-func (r *report) writeToFile(path string) error {
-	return writeJSON(path, r)
 }

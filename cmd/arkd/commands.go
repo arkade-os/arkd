@@ -279,7 +279,7 @@ var (
 			vtxoMaxAmountFlag, utxoMinAmountFlag, utxoMaxAmountFlag, settlementMinExpiryGapFlag,
 			vtxoNoCsvValidationCutoffDateFlag, maxTxWeightFlag, maxOpReturnOutsFlag,
 			assetTxMaxWeightRatioFlag, notePrefixFlag, buildVersionHeaderFlag,
-			buildVersionHeaderRequiredFlag, digestHeaderRequiredFlag,
+			buildVersionHeaderRequiredFlag, digestHeaderRequiredFlag, batchTriggerFlag,
 		},
 		Action: updateSettingsAction,
 	}
@@ -1426,6 +1426,10 @@ func updateSettingsAction(ctx *cli.Context) error {
 			)
 		}
 		settings["digestHeaderRequired"] = required
+	}
+	if ctx.IsSet(batchTriggerFlagName) {
+		raw := ctx.String(batchTriggerFlagName)
+		settings["batchTrigger"] = raw
 	}
 
 	if len(settings) <= 0 {

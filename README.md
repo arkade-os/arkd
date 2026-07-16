@@ -64,6 +64,7 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_DATADIR`                      | Directory to store data                                                         | App data directory             |
 | `ARKD_PORT`                         | Port (public) to listen on                                                      | `7070`                         |
 | `ARKD_ADMIN_PORT`                   | Admin port (private) to listen on, fallback to service port if 0                | `7071`                         |
+| `ARKD_ENABLE_CHANNELZ`              | Expose gRPC channelz introspection; query via `grpc_cli` on the admin port      | `false`                        |
 | `ARKD_LOG_LEVEL`                    | Logging level (0-6, where 6 is trace)                                           | `4` (info)                     |
 | `ARKD_SESSION_DURATION`             | How long a batch session lasts (in seconds) before timing out once it started   | `30`                           |
 | `ARKD_DB_TYPE`                      | Database type (postgres, sqlite, badger)                                        | `postgres`                     |
@@ -100,10 +101,10 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_OTEL_COLLECTOR_ENDPOINT`     | OpenTelemetry collector endpoint                                                | -                              |
 | `ARKD_OTEL_PUSH_INTERVAL`          | OpenTelemetry push interval in seconds                                          | `10`                           |
 | `ARKD_HEARTBEAT_INTERVAL`          | Heartbeat interval in seconds                                                   | `60`                           |
-| `ARKD_ROUND_REPORT_ENABLED`        | Enable round report service                                                     | `false`                        |
 | `ARKD_INDEXER_EXPOSURE`.           | Require intent for getting vtxo chain (public, private, withheld)               | `public`                       |
 | `ARKD_INDEXER_SIGNING_PRIVKEY`     | Hex-encoded private key for indexer auth token signing (sensitive)              | -                              |
 | `ARKD_INDEXER_AUTH_TOKEN_EXPIRY`   | Auth token TTL in seconds                                                       | `300` (5 minutes)              |
+| `ARKD_BATCH_TRIGGER`               | Optional CEL formula returning `bool`. When set, the server only starts a new batch round when the formula evaluates to `true`. See [`pkg/ark-lib/batchtrigger/README.md`](pkg/ark-lib/batchtrigger/README.md) for the available variables and examples. | - (always start)               |
 
 #### Admin Settings
 

@@ -417,7 +417,8 @@ func (n *nbxplorer) GetNewUnusedAddress(ctx context.Context, derivationScheme st
 // EstimateFeeRate retrieves fee rate from /v1/cryptos/{cryptoCode}/fees/{blockCount} endpoint.
 func (n *nbxplorer) EstimateFeeRate(ctx context.Context) (chainfee.SatPerKVByte, error) {
 	blockCount := 1
-	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/fees/%d", btcCryptoCode, blockCount), nil)
+	fallback := float64(n.minRelayTxFee) / 1000
+	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/fees/%d?fallbackFeeRate=%f", btcCryptoCode, blockCount, fallback), nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to estimate fee rate: %w", err)
 	}
@@ -673,16 +674,15 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 		}
 	}
 
+	if err := n.connectWebSocket(ctx); err != nil {
+		return nil, fmt.Errorf("failed to connect to WebSocket: %w", err)
+	}
+
 	// buffered channel to prevent blocking
 	notificationsChan := make(chan []ports.Utxo, 64)
 
 	go func() {
 		defer close(notificationsChan)
-
-		if err := n.connectWebSocket(ctx); err != nil {
-			log.Errorf("failed to connect to WebSocket: %s", err)
-			return
-		}
 
 		for {
 			select {
@@ -691,12 +691,8 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 			default:
 				_, message, err := n.wsConn.ReadMessage()
 				if err != nil {
-					// reconnect on error
-					if err := n.connectWebSocket(ctx); err != nil {
-						log.Errorf("failed to connect to WebSocket: %s", err)
-						return
-					}
-					continue
+					log.Errorf("failed to read WebSocket message: %s", err)
+					return
 				}
 
 				var event event

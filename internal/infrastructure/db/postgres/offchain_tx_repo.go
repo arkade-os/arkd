@@ -114,6 +114,62 @@ func (v *offchainTxRepository) GetOffchainTx(
 	}, nil
 }
 
+func (v *offchainTxRepository) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	if len(txids) == 0 {
+		return []*domain.OffchainTx{}, nil
+	}
+
+	rows, err := v.querier.SelectOffchainTxsByTxids(ctx, txids)
+	if err != nil {
+		return nil, err
+	}
+
+	grouped := make(map[string][]queries.OffchainTxVw)
+	for _, row := range rows {
+		grouped[row.OffchainTxVw.Txid] = append(grouped[row.OffchainTxVw.Txid], row.OffchainTxVw)
+	}
+
+	txs := make([]*domain.OffchainTx, 0, len(grouped))
+	for _, vws := range grouped {
+		vt := vws[0]
+		checkpointTxs := make(map[string]string)
+		commitmentTxids := make(map[string]string)
+		rootCommitmentTxId := ""
+		for _, vw := range vws {
+			if vw.CheckpointTxid.Valid && vw.CheckpointTx.Valid {
+				checkpointTxs[vw.CheckpointTxid.String] = vw.CheckpointTx.String
+				commitmentTxids[vw.CheckpointTxid.String] = vw.CommitmentTxid.String
+				if vw.IsRootCommitmentTxid.Valid && vw.IsRootCommitmentTxid.Bool {
+					rootCommitmentTxId = vw.CommitmentTxid.String
+				}
+			}
+		}
+		stage := domain.Stage{Code: int(vt.StageCode)}
+		if vt.FailReason.String != "" {
+			stage.Failed = true
+		}
+		if domain.OffchainTxStage(vt.StageCode) == domain.OffchainTxFinalizedStage {
+			stage.Ended = true
+		}
+		txs = append(txs, &domain.OffchainTx{
+			ArkTxid:            vt.Txid,
+			ArkTx:              vt.Tx,
+			StartingTimestamp:  vt.StartingTimestamp,
+			EndingTimestamp:    vt.EndingTimestamp,
+			ExpiryTimestamp:    vt.ExpiryTimestamp,
+			FailReason:         vt.FailReason.String,
+			Stage:              stage,
+			CheckpointTxs:      checkpointTxs,
+			CommitmentTxids:    commitmentTxids,
+			RootCommitmentTxId: rootCommitmentTxId,
+		})
+	}
+
+	return txs, nil
+}
+
 func (v *offchainTxRepository) Close() {
 	_ = v.db.Close()
 }

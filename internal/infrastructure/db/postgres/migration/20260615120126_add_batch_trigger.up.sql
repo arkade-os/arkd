@@ -1,0 +1,1 @@
+ALTER TABLE settings ADD COLUMN batch_trigger TEXT NOT NULL DEFAULT '';
