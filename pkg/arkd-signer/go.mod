@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd/pkg/arkd-signer
 
-go 1.26.4
+go 1.26.5
 
 replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.3
 
