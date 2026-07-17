@@ -715,6 +715,121 @@ func TestArkdSignerEmulator(t *testing.T) {
 		require.ErrorContains(t, err, "no signed inputs found in intent proof")
 		require.Nil(t, result)
 	})
+
+	// SharedKeyNeverSignsRawOperatorKey locks the core safety of shared-key
+	// signing-only mode: with the operator key doubling as BOTH the emulator
+	// signing key and arkdPubKey (as production config.go wires it), and the vtxo
+	// closure carrying the raw operator pubkey next to the tweaked arkade key, the
+	// emulator must sign only its tweaked key and never the raw operator key
+	// (signing the raw key would forge a SignerService signature). The onchain
+	// path enforces this with an explicit reject guard; here we prove the
+	// structural guarantee on the offchain path, where the emulator only ever
+	// signs the tweaked key it derives.
+	t.Run("SharedKeyNeverSignsRawOperatorKey", func(t *testing.T) {
+		ctx := context.Background()
+
+		// One operator key: emulator signing key AND arkdPubKey (production mode).
+		operatorKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		operatorPub := operatorKey.PubKey()
+
+		arkadeScriptBytes := []byte{txscript.OP_TRUE}
+		scriptHash := arkade.ArkadeScriptHash(arkadeScriptBytes)
+		tweakedEmulatorPub := arkade.ComputeArkadeScriptPublicKey(operatorPub, scriptHash)
+
+		// closure: tweaked emulator key second-to-last, raw operator (= arkdPubKey) last.
+		closure := script.MultisigClosure{
+			PubKeys: []*btcec.PublicKey{tweakedEmulatorPub, operatorPub},
+		}
+		vtxoScript := script.TapscriptsVtxoScript{Closures: []script.Closure{&closure}}
+		vtxoTapKey, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		forfeitScript, err := vtxoScript.ForfeitClosures()[0].Script()
+		require.NoError(t, err)
+		forfeitLeaf := txscript.NewBaseTapLeaf(forfeitScript)
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(forfeitLeaf.TapHash())
+		require.NoError(t, err)
+		vtxoPkScript, err := script.P2TRScript(vtxoTapKey)
+		require.NoError(t, err)
+
+		prevArkTx := wire.NewMsgTx(2)
+		prevArkTx.AddTxIn(&wire.TxIn{
+			PreviousOutPoint: wire.OutPoint{Hash: chainhash.Hash{0xaa}, Index: 0},
+		})
+		prevArkTx.AddTxOut(&wire.TxOut{Value: 5_000, PkScript: vtxoPkScript})
+		prevArkTxHash := prevArkTx.TxHash()
+
+		checkpointTx := wire.NewMsgTx(2)
+		checkpointTx.AddTxIn(&wire.TxIn{
+			PreviousOutPoint: wire.OutPoint{Hash: prevArkTxHash, Index: 0},
+		})
+		checkpointTx.AddTxOut(&wire.TxOut{Value: 4_900, PkScript: vtxoPkScript})
+		checkpointPtx, err := psbt.NewFromUnsignedTx(checkpointTx)
+		require.NoError(t, err)
+		checkpointPtx.Inputs[0].WitnessUtxo = &wire.TxOut{Value: 5_000, PkScript: vtxoPkScript}
+		checkpointPtx.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{
+			{
+				ControlBlock: merkleProof.ControlBlock,
+				Script:       merkleProof.Script,
+				LeafVersion:  txscript.BaseLeafVersion,
+			},
+		}
+		checkpointTxID := checkpointPtx.UnsignedTx.TxHash()
+
+		arkTx := wire.NewMsgTx(2)
+		arkTx.AddTxIn(&wire.TxIn{
+			PreviousOutPoint: wire.OutPoint{Hash: checkpointTxID, Index: 0},
+		})
+		arkTx.AddTxOut(&wire.TxOut{Value: 4_800, PkScript: vtxoPkScript})
+		arkPtx, err := psbt.NewFromUnsignedTx(arkTx)
+		require.NoError(t, err)
+		arkPtx.Inputs[0].WitnessUtxo = checkpointPtx.UnsignedTx.TxOut[0]
+		arkPtx.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{
+			{
+				ControlBlock: merkleProof.ControlBlock,
+				Script:       merkleProof.Script,
+				LeafVersion:  txscript.BaseLeafVersion,
+			},
+		}
+		arkPtx.Outputs = append(arkPtx.Outputs, psbt.POutput{})
+
+		addEmulatorPacketLocal(t, arkPtx, []arkade.EmulatorEntry{{Vin: 0, Script: arkadeScriptBytes}})
+		require.NoError(t, txutils.SetArkPsbtField(arkPtx, 0, arkade.PrevArkTxField, *prevArkTx))
+
+		// shared-key: arkdPubKey = raw operator pubkey.
+		svc, err := emulator.New(ctx, operatorKey, nil, operatorPub, nil, arkade.DefaultComputeLimits())
+		require.NoError(t, err)
+		t.Cleanup(svc.Close)
+
+		out, err := svc.SubmitTx(ctx, emulator.OffchainTx{
+			ArkTx:       arkPtx,
+			Checkpoints: []*psbt.Packet{checkpointPtx},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, out)
+
+		tweakedPub := schnorr.SerializePubKey(tweakedEmulatorPub)
+		rawOperator := schnorr.SerializePubKey(operatorPub)
+
+		hasSig := func(sigs []*psbt.TaprootScriptSpendSig, want []byte) bool {
+			for _, s := range sigs {
+				if bytes.Equal(s.XOnlyPubKey, want) {
+					return true
+				}
+			}
+			return false
+		}
+
+		// signs its tweaked arkade key...
+		require.True(t, hasSig(out.Checkpoints[0].Inputs[0].TaprootScriptSpendSig, tweakedPub),
+			"emulator must sign its tweaked arkade key")
+		// ...but never the raw operator key, on any input.
+		require.False(t, hasSig(out.Checkpoints[0].Inputs[0].TaprootScriptSpendSig, rawOperator),
+			"emulator must not sign the raw operator key on the checkpoint")
+		require.False(t, hasSig(out.ArkTx.Inputs[0].TaprootScriptSpendSig, rawOperator),
+			"emulator must not sign the raw operator key on the ark tx")
+	})
 }
 
 // addEmulatorPacketLocal embeds the emulator packet into the transaction's OP_RETURN output.

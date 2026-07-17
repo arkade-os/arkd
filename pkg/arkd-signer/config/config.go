@@ -129,7 +129,9 @@ func (c *Config) String() string {
 // parseComputeLimits parses the ARKD_SIGNER_EMULATOR_COMPUTE_LIMITS env var.
 // An empty string returns DefaultComputeLimits(). Non-empty values must be a
 // comma-separated list of "OPCODE=limit" pairs, e.g. "OP_CHECKSIG=10,OP_ECMUL=5".
-// Unrecognised opcode names are silently ignored so the service stays forward-compatible.
+// Malformed entries and unrecognised opcode names are skipped (the opcode keeps
+// its default), but each skip is logged at WARN so an operator typo cannot
+// silently weaken the VM compute guard.
 func parseComputeLimits(raw string) arkade.ComputeLimits {
 	limits := arkade.DefaultComputeLimits()
 	if raw == "" {
@@ -142,16 +144,19 @@ func parseComputeLimits(raw string) arkade.ComputeLimits {
 		}
 		name, valueStr, ok := strings.Cut(entry, "=")
 		if !ok {
+			log.Warnf("ignoring compute limit %q: expected OPCODE=limit", entry)
 			continue
 		}
 		name = strings.TrimSpace(name)
 		valueStr = strings.TrimSpace(valueStr)
 		val, err := strconv.Atoi(valueStr)
 		if err != nil || val < 0 {
+			log.Warnf("ignoring compute limit %q: value must be a non-negative integer", entry)
 			continue
 		}
 		opcode, found := arkade.OpcodeByName[name]
 		if !found {
+			log.Warnf("ignoring compute limit %q: unknown opcode %q", entry, name)
 			continue
 		}
 		limits[opcode] = val

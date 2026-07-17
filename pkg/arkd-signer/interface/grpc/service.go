@@ -101,6 +101,9 @@ func (s *service) Stop() {
 	if s.grpcSrv != nil {
 		s.grpcSrv.GracefulStop()
 	}
+	if s.cfg != nil && s.cfg.EmulatorSvc != nil {
+		s.cfg.EmulatorSvc.Close()
+	}
 }
 
 func router(
