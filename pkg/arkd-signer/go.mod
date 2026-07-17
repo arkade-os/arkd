@@ -11,9 +11,9 @@ replace github.com/arkade-os/arkd/api-spec => ../../api-spec
 require (
 	github.com/arkade-os/arkd/api-spec v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260423153230-9b5d8e96256f
-	github.com/arkade-os/emulator/api-spec v0.0.0-20260620052341-17dd9d4ed168
-	github.com/arkade-os/emulator/pkg/arkade v0.0.0-20260620052341-17dd9d4ed168
-	github.com/arkade-os/emulator/pkg/emulator v0.0.0-20260620052341-17dd9d4ed168
+	github.com/arkade-os/emulator/api-spec v0.0.0-20260717180238-24936ba26918
+	github.com/arkade-os/emulator/pkg/arkade v0.0.0-20260717180238-24936ba26918
+	github.com/arkade-os/emulator/pkg/emulator v0.0.0-20260717180238-24936ba26918
 	github.com/btcsuite/btcd v0.24.3-0.20240921052913-67b8efd3ba53
 	github.com/btcsuite/btcd/btcec/v2 v2.3.5
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.9

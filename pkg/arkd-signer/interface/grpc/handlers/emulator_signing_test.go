@@ -601,7 +601,7 @@ func TestArkdSignerEmulator(t *testing.T) {
 
 		signed, err := svc.SubmitIntent(ctx, emulator.Intent{
 			Proof:   intent.Proof{Packet: *ptx},
-			Message: intent.RegisterMessage{},
+			Message: &intent.RegisterMessage{},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, signed)
@@ -705,7 +705,7 @@ func TestArkdSignerEmulator(t *testing.T) {
 		result, err := svc.SubmitFinalization(ctx, emulator.BatchFinalization{
 			Intent: emulator.Intent{
 				Proof:   intent.Proof{Packet: *ptx},
-				Message: intent.RegisterMessage{},
+				Message: &intent.RegisterMessage{},
 			},
 			Forfeits:      nil,
 			ConnectorTree: nil,
