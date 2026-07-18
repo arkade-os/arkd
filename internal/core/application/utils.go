@@ -91,6 +91,20 @@ func findSweepableOutputs(
 	return sweepableBatchOutputs, nil
 }
 
+// leafVtxoOutpoints returns all vtxo outpoints of a leaf tx, skipping anchor and extension
+func leafVtxoOutpoints(leaf *psbt.Packet) []domain.Outpoint {
+	txid := leaf.UnsignedTx.TxID()
+	outpoints := make([]domain.Outpoint, 0, len(leaf.UnsignedTx.TxOut))
+	for i, out := range leaf.UnsignedTx.TxOut {
+		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
+			extension.IsExtension(out.PkScript) {
+			continue
+		}
+		outpoints = append(outpoints, domain.Outpoint{Txid: txid, VOut: uint32(i)})
+	}
+	return outpoints
+}
+
 func getSpentVtxos(intents map[string]domain.Intent) []domain.Outpoint {
 	vtxos := make([]domain.Outpoint, 0)
 	for _, intent := range intents {

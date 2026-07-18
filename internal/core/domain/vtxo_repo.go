@@ -21,10 +21,14 @@ type VtxoRepository interface {
 	UpdateVtxosExpiration(ctx context.Context, outpoints []Outpoint, expiresAt int64) error
 	GetLeafVtxosForBatch(ctx context.Context, txid string) ([]Vtxo, error)
 	GetCheckpointTxsByVtxoPubKeys(ctx context.Context, pubkeys []string) ([]Tx, error)
-	GetSweepableVtxosByCommitmentTxid(
+	// returns only the preconfirmed vtxos of the batch, leaves are excluded
+	GetSweepablePreconfirmedVtxosByCommitmentTxid(
 		ctx context.Context, commitmentTxid string,
 	) ([]Outpoint, error)
+	// returns the vtxo of the given outpoint plus all its descendants
 	GetAllChildrenVtxos(ctx context.Context, outpoint Outpoint) ([]Outpoint, error)
+	// returns only the descendants, the vtxo of the given outpoint is excluded
+	GetDescendantVtxos(ctx context.Context, outpoint Outpoint) ([]Outpoint, error)
 	GetVtxoPubKeysByCommitmentTxid(
 		ctx context.Context, commitmentTxid string, withMinimumAmount uint64,
 	) (

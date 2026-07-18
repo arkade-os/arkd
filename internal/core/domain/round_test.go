@@ -83,6 +83,8 @@ var (
 	emptyPtx       = "cHNldP8BAgQCAAAAAQQBAAEFAQABBgEDAfsEAgAAAAA="
 	emptyTx        = "0200000000000000000000"
 	txid           = "0000000000000000000000000000000000000000000000000000000000000000"
+	leafTxid1      = "0000000000000000000000000000000000000000000000000000000000000001"
+	leafTxid2      = "0000000000000000000000000000000000000000000000000000000000000002"
 	emptyForfeitTx = domain.ForfeitTx{
 		Txid: txid,
 		Tx:   emptyPtx,
@@ -99,17 +101,17 @@ var (
 			Txid: txid,
 			Tx:   emptyPtx,
 			Children: map[uint32]string{
-				0: txid,
-				1: txid,
+				0: leafTxid1,
+				1: leafTxid2,
 			},
 		},
 		{
-			Txid:     txid,
+			Txid:     leafTxid1,
 			Tx:       emptyPtx,
 			Children: nil,
 		},
 		{
-			Txid:     txid,
+			Txid:     leafTxid2,
 			Tx:       emptyPtx,
 			Children: nil,
 		},

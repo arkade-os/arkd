@@ -546,19 +546,8 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 					}
 
 					for _, leaf := range vtxosLeaves {
-						// The VTXO is the first non-anchor output; leaf txs can
-						// carry an anchor at vout 0, so the VTXO is not always
-						// at vout 0. extractVtxoOutpoint handles that.
-						vtxo, err := extractVtxoOutpoint(leaf)
-						if err != nil {
-							log.WithError(err).Errorf(
-								"failed to extract vtxo outpoint from leaf %s",
-								leaf.UnsignedTx.TxID(),
-							)
-							continue
-						}
-
-						sweepableVtxos = append(sweepableVtxos, *vtxo)
+						// a leaf tx may pay multiple receivers, collect every vtxo outpoint it carries
+						sweepableVtxos = append(sweepableVtxos, leafVtxoOutpoints(leaf)...)
 					}
 
 					if len(sweepableVtxos) <= 0 {
@@ -698,30 +687,30 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			}
 
 			if commitmentRootSwept {
-				// get all vtxos related to the batch commitment txid
-				preconfirmedVtxos, sweepErr = vtxoRepo.GetSweepableVtxosByCommitmentTxid(
+				// get the preconfirmed vtxos related to the batch commitment txid
+				preconfirmedVtxos, sweepErr = vtxoRepo.GetSweepablePreconfirmedVtxosByCommitmentTxid(
 					ctx,
 					commitmentTxid,
 				)
 			} else {
-				// get all vtxos related to the leaf swept
+				// get the descendant vtxos of each leaf swept
 				seen := make(map[string]struct{})
 				for _, leafVtxo := range leafVtxoKeys {
-					children, childErr := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo)
-					if childErr != nil {
-						log.WithError(childErr).Error("error while getting children vtxos")
+					descendants, descendantsErr := vtxoRepo.GetDescendantVtxos(ctx, leafVtxo)
+					if descendantsErr != nil {
+						log.WithError(descendantsErr).Error("error while getting descendant vtxos")
 						continue
 					}
-					for _, child := range children {
-						if _, ok := seen[child.String()]; !ok {
-							preconfirmedVtxos = append(preconfirmedVtxos, child)
-							seen[child.String()] = struct{}{}
+					for _, descendant := range descendants {
+						if _, ok := seen[descendant.String()]; !ok {
+							preconfirmedVtxos = append(preconfirmedVtxos, descendant)
+							seen[descendant.String()] = struct{}{}
 						}
 					}
 				}
 			}
 			if sweepErr != nil {
-				log.WithError(sweepErr).Error("error while getting children vtxos")
+				log.WithError(sweepErr).Error("error while getting descendant vtxos")
 			}
 
 			events, err := round.Sweep(

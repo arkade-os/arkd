@@ -325,10 +325,11 @@ WHERE v.amount >= sqlc.arg('min_amount')
     )
   );
 
--- name: SelectSweepableVtxoOutpointsByCommitmentTxid :many
+-- name: SelectSweepablePreconfirmedVtxoOutpointsByCommitmentTxid :many
 SELECT DISTINCT v.txid AS vtxo_txid, v.vout AS vtxo_vout
 FROM vtxo_vw v
 WHERE v.swept = false
+  AND v.preconfirmed = true
   AND (v.commitment_txid = @commitment_txid
     OR (',' || COALESCE(v.commitments, '') || ',') LIKE '%,' || @commitment_txid || ',%');
 
@@ -365,6 +366,41 @@ nodes AS (
 )
 SELECT txid, vout
 FROM nodes
+ORDER BY depth, txid, vout;
+
+-- name: SelectDescendantVtxoOutpointsByArkTxid :many
+-- Same lineage walk as SelectVtxosOutpointsByArkTxidRecursive but the seed
+-- outpoint itself is excluded from the result (depth > 0), descendants only.
+WITH RECURSIVE descendants_chain AS (
+    -- seed: only the specific outpoint, not all vouts of the txid
+    SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
+           0 AS depth,
+           v.txid||':'||v.vout AS visited
+    FROM vtxo v
+    WHERE v.txid = @txid AND v.vout = @vout
+
+    UNION ALL
+
+    -- children: next vtxo(s) are those whose txid == current.ark_txid
+    SELECT c.txid, c.vout, c.preconfirmed, c.ark_txid, c.spent_by,
+           w.depth + 1,
+           w.visited || ',' || (c.txid||':'||c.vout)
+    FROM descendants_chain w
+             JOIN vtxo c
+                  ON c.txid = w.ark_txid
+    WHERE w.ark_txid IS NOT NULL
+      AND w.visited NOT LIKE '%' || (c.txid||':'||c.vout) || '%'   -- cycle/visited guard
+),
+-- keep one row per node at its MIN depth (layers)
+nodes AS (
+   SELECT txid, vout, preconfirmed, MIN(depth) as depth
+   FROM descendants_chain
+   GROUP BY txid, vout, preconfirmed
+)
+-- depth > 0 excludes the seed vtxo itself, descendants only
+SELECT txid, vout
+FROM nodes
+WHERE depth > 0
 ORDER BY depth, txid, vout;
 
 

@@ -3422,6 +3422,15 @@ func TestSweep(t *testing.T) {
 		require.NotEmpty(t, sweepEvent.Tx)
 		require.NotEmpty(t, sweepEvent.SweptVtxos)
 
+		// the swept vtxos list must not contain duplicated outpoints
+		seen := make(map[string]struct{})
+		for _, swept := range sweepEvent.SweptVtxos {
+			key := fmt.Sprintf("%s:%d", swept.Txid, swept.VOut)
+			_, duplicated := seen[key]
+			require.False(t, duplicated, "duplicated swept vtxo %s", key)
+			seen[key] = struct{}{}
+		}
+
 		// give time to indexer to update its state
 		time.Sleep(5 * time.Second)
 
