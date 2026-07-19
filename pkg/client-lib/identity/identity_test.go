@@ -62,6 +62,13 @@ func TestLockUnlock(t *testing.T) {
 	})
 }
 
+func TestGetXpub(t *testing.T) {
+	identitySvc, _ := newUnlockedTestIdentity(t)
+
+	xpub, err := identitySvc.GetXpub(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, xpub)
+}
 func TestGetKey(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		identitySvc, seed := newUnlockedTestIdentity(t)

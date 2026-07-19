@@ -144,6 +144,10 @@ func (s *service) Dump(ctx context.Context) (string, error) {
 	return hex.EncodeToString(s.privateKey.Serialize()), nil
 }
 
+func (s *service) GetXpub(_ context.Context) (string, error) {
+	return "", nil
+}
+
 func (s *service) NewKey(ctx context.Context) (*identity.KeyRef, error) {
 	if s.data == nil {
 		return nil, ErrNotInitialized
