@@ -41,6 +41,8 @@ type sweeper struct {
 	// TODO move the scheduled task map to LiveStore port
 	scheduledTasks map[string]struct{}
 	ctx            context.Context
+
+	onSweepCheckpoint func(TransactionEvent)
 }
 
 func newSweeper(
@@ -48,7 +50,7 @@ func newSweeper(
 	scheduler ports.SchedulerService,
 ) *sweeper {
 	return &sweeper{
-		wallet, repoManager, builder, scheduler, &sync.Mutex{}, make(map[string]struct{}), nil,
+		wallet, repoManager, builder, scheduler, &sync.Mutex{}, make(map[string]struct{}), nil, nil,
 	}
 }
 
@@ -756,7 +758,7 @@ func (s *sweeper) createCheckpointSweepTask(
 		checkpointTxid := toSweep.Txid
 		log.Debugf("sweeper: start sweeping checkpoint %s", checkpointTxid)
 
-		_, sweepTx, err := s.builder.BuildSweepTx([]ports.TxInput{toSweep})
+		sweepTxid, sweepTx, err := s.builder.BuildSweepTx([]ports.TxInput{toSweep})
 		if err != nil {
 			return err
 		}
@@ -792,6 +794,16 @@ func (s *sweeper) createCheckpointSweepTask(
 		}
 
 		log.Debugf("swept %d vtxo outpoints for checkpoint %s", len(childrenVtxos), checkpointTxid)
+
+		// notify clients of the checkpoint sweep tx
+		if s.onSweepCheckpoint != nil {
+			s.onSweepCheckpoint(TransactionEvent{
+				TxData:     TxData{Tx: sweepTx, Txid: sweepTxid},
+				Type:       SweepTxType,
+				SweptVtxos: childrenVtxos,
+			})
+		}
+
 		return nil
 	}
 }
