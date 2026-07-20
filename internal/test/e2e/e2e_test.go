@@ -3523,6 +3523,30 @@ func TestSweep(t *testing.T) {
 		require.NotNil(t, res2)
 		require.NotEmpty(t, res2.Txid)
 
+		// open transaction stream before triggering the sweep so we can catch
+		// the sweep event emitted when the checkpoint output is swept
+		streamCtx, streamCancel := context.WithCancel(ctx)
+		t.Cleanup(streamCancel)
+
+		txStream, closeStream, err := alice.Client().GetTransactionsStream(streamCtx)
+		require.NoError(t, err)
+		t.Cleanup(closeStream)
+
+		sweepCh := make(chan *client.TxNotification, 1)
+		go func() {
+			for ev := range txStream {
+				if ev.SweepTx == nil {
+					continue
+				}
+				for _, swept := range ev.SweepTx.SweptVtxos {
+					if swept.Txid == res1.Txid || swept.Txid == res2.Txid {
+						sweepCh <- ev.SweepTx
+						return
+					}
+				}
+			}
+		}()
+
 		// unroll the spent VTXO to put checkpoint onchain
 		explorer, err := mempoolexplorer.NewExplorer(
 			"http://localhost:3000", arklib.BitcoinRegTest,
@@ -3543,8 +3567,16 @@ func TestSweep(t *testing.T) {
 		err = generateBlocks(10)
 		require.NoError(t, err)
 
-		// give time for the server to process the sweep
-		time.Sleep(20 * time.Second)
+		// wait for the sweep tx event on the stream
+		var sweepEvent *client.TxNotification
+		select {
+		case sweepEvent = <-sweepCh:
+		case <-time.After(40 * time.Second):
+			t.Fatal("timed out waiting for checkpoint sweep tx event on stream")
+		}
+		require.NotEmpty(t, sweepEvent.Txid)
+		require.NotEmpty(t, sweepEvent.Tx)
+		require.NotEmpty(t, sweepEvent.SweptVtxos)
 
 		// verify that the checkpoint output has been put onchain
 		// and that the VTXO has been swept
