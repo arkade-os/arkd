@@ -105,6 +105,46 @@ func leafVtxoOutpoints(leaf *psbt.Packet) []domain.Outpoint {
 	return outpoints
 }
 
+// collectPreconfirmedVtxos returns the preconfirmed vtxos swept along with the given leaves,
+// the whole batch is fetched if the commitment root itself is among the swept inputs,
+// otherwise only the descendants of each swept leaf
+func collectPreconfirmedVtxos(
+	ctx context.Context,
+	vtxoRepo domain.VtxoRepository,
+	commitmentTxid string,
+	commitmentRootSwept bool,
+	leafVtxos []domain.Outpoint,
+) []domain.Outpoint {
+	preconfirmedVtxos := make([]domain.Outpoint, 0)
+	if commitmentRootSwept {
+		var err error
+		preconfirmedVtxos, err = vtxoRepo.GetSweepablePreconfirmedVtxosByCommitmentTxid(
+			ctx, commitmentTxid,
+		)
+		if err != nil {
+			log.WithError(err).
+				Error("error while getting sweepable preconfirmed vtxos by commitment txid")
+		}
+		return preconfirmedVtxos
+	}
+
+	seen := make(map[string]struct{})
+	for _, leafVtxo := range leafVtxos {
+		descendants, err := vtxoRepo.GetDescendantVtxos(ctx, leafVtxo)
+		if err != nil {
+			log.WithError(err).Error("error while getting descendant vtxos")
+			continue
+		}
+		for _, descendant := range descendants {
+			if _, ok := seen[descendant.String()]; !ok {
+				preconfirmedVtxos = append(preconfirmedVtxos, descendant)
+				seen[descendant.String()] = struct{}{}
+			}
+		}
+	}
+	return preconfirmedVtxos
+}
+
 func getSpentVtxos(intents map[string]domain.Intent) []domain.Outpoint {
 	vtxos := make([]domain.Outpoint, 0)
 	for _, intent := range intents {

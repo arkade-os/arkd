@@ -865,34 +865,9 @@ func (a *adminService) saveBatchSweptEvents(
 			}
 		}
 
-		// get preconfirmed vtxos
-		preconfirmedVtxos := make([]domain.Outpoint, 0)
-		if commitmentRootSwept {
-			var err error
-			preconfirmedVtxos, err = vtxoRepo.GetSweepablePreconfirmedVtxosByCommitmentTxid(
-				ctx,
-				commitmentTxid,
-			)
-			if err != nil {
-				log.WithError(err).
-					Error("error while getting sweepable vtxos by commitment txid")
-			}
-		} else {
-			seen := make(map[string]struct{})
-			for _, leafVtxo := range leafVtxos {
-				descendants, err := vtxoRepo.GetDescendantVtxos(ctx, leafVtxo)
-				if err != nil {
-					log.WithError(err).Error("error while getting descendant vtxos")
-					continue
-				}
-				for _, descendant := range descendants {
-					if _, ok := seen[descendant.String()]; !ok {
-						preconfirmedVtxos = append(preconfirmedVtxos, descendant)
-						seen[descendant.String()] = struct{}{}
-					}
-				}
-			}
-		}
+		preconfirmedVtxos := collectPreconfirmedVtxos(
+			ctx, vtxoRepo, commitmentTxid, commitmentRootSwept, leafVtxos,
+		)
 
 		events, err := round.Sweep(leafVtxos, preconfirmedVtxos, txid, txhex)
 		if err != nil {

@@ -675,9 +675,6 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			vtxoRepo := s.repoManager.Vtxos()
 			eventRepo := s.repoManager.Events()
 
-			preconfirmedVtxos := make([]domain.Outpoint, 0)
-			var sweepErr error
-
 			commitmentRootSwept := false
 			for _, output := range outputsToSweep {
 				if output.Txid == commitmentTxid {
@@ -686,32 +683,9 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 				}
 			}
 
-			if commitmentRootSwept {
-				// get the preconfirmed vtxos related to the batch commitment txid
-				preconfirmedVtxos, sweepErr = vtxoRepo.GetSweepablePreconfirmedVtxosByCommitmentTxid(
-					ctx,
-					commitmentTxid,
-				)
-			} else {
-				// get the descendant vtxos of each leaf swept
-				seen := make(map[string]struct{})
-				for _, leafVtxo := range leafVtxoKeys {
-					descendants, descendantsErr := vtxoRepo.GetDescendantVtxos(ctx, leafVtxo)
-					if descendantsErr != nil {
-						log.WithError(descendantsErr).Error("error while getting descendant vtxos")
-						continue
-					}
-					for _, descendant := range descendants {
-						if _, ok := seen[descendant.String()]; !ok {
-							preconfirmedVtxos = append(preconfirmedVtxos, descendant)
-							seen[descendant.String()] = struct{}{}
-						}
-					}
-				}
-			}
-			if sweepErr != nil {
-				log.WithError(sweepErr).Error("error while getting descendant vtxos")
-			}
+			preconfirmedVtxos := collectPreconfirmedVtxos(
+				ctx, vtxoRepo, commitmentTxid, commitmentRootSwept, leafVtxoKeys,
+			)
 
 			events, err := round.Sweep(
 				leafVtxoKeys,
