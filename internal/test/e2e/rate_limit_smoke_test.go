@@ -27,6 +27,9 @@ import (
 // Requires the regtest stack (same as TestVtxoChain). Run with:
 //
 //	go test -v -run TestRateLimitRejectsFastChain -args -smoke
+//
+// This mutates server-wide settings and restores them on cleanup, so it must not
+// run in parallel with other smoke tests.
 func TestRateLimitRejectsFastChain(t *testing.T) {
 	if !flag.Parsed() {
 		flag.Parse()

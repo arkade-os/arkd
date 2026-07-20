@@ -565,10 +565,6 @@ func (s *service) SubmitOffchainTx(
 			})
 	}
 
-	if rateLimitErr := s.checkRateLimit(ctx, spentVtxos); rateLimitErr != nil {
-		return nil, rateLimitErr
-	}
-
 	for _, vtxo := range spentVtxos {
 		// check if banned
 		if err := s.checkIfBanned(ctx, banThreshold, vtxo); err != nil {
@@ -593,6 +589,12 @@ func (s *service) SubmitOffchainTx(
 	if exists, vtxo := s.cache.Intents().IncludesAny(ctx, spentVtxoKeys); exists {
 		return nil, errors.VTXO_ALREADY_REGISTERED.New("%s already registered", vtxo).
 			WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo})
+	}
+
+	// last of the input checks: it hits the marker store, the ones above are
+	// in-memory or already cached.
+	if rateLimitErr := s.checkRateLimit(ctx, spentVtxos); rateLimitErr != nil {
+		return nil, rateLimitErr
 	}
 
 	indexedSpentVtxos := make(map[domain.Outpoint]domain.Vtxo)

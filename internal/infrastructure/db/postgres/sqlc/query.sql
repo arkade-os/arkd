@@ -419,6 +419,9 @@ WHERE txid = @txid;
 -- Marker queries
 
 -- name: UpsertMarker :exec
+-- created_at is deliberately left out of the update. It stamps when the marker
+-- first appeared, and the rate limiter measures elapsed time from it, so a
+-- replayed upsert must not reset the clock.
 INSERT INTO marker (id, depth, parent_markers, created_at)
 VALUES (@id, @depth, @parent_markers, @created_at)
 ON CONFLICT(id) DO UPDATE SET

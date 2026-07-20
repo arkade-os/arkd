@@ -125,6 +125,95 @@ func TestNewMarker(t *testing.T) {
 	})
 }
 
+// TestMarkerIDCollection covers collecting marker IDs from a set of VTXOs, both
+// through MarkerIDsOf directly and through the collectParentMarkers helper.
+func TestMarkerIDCollection(t *testing.T) {
+	// dedupes repeats within a single vtxo is the one dedup case the
+	// from-multiple-parents table below does not cover (it only shares markers
+	// across separate vtxos).
+	t.Run("dedupes repeats within a single vtxo", func(t *testing.T) {
+		vtxos := []Vtxo{{MarkerIDs: []string{"marker-A", "marker-A"}}}
+		require.Equal(t, []string{"marker-A"}, MarkerIDsOf(vtxos))
+	})
+
+	// from multiple parents verifies collection across parents with overlapping,
+	// distinct, and shared markers.
+	t.Run("from multiple parents", func(t *testing.T) {
+		testCases := []struct {
+			name            string
+			spentVtxos      []Vtxo
+			expectedMarkers []string
+		}{
+			{
+				name: "single parent with one marker",
+				spentVtxos: []Vtxo{
+					{MarkerIDs: []string{"marker-A"}},
+				},
+				expectedMarkers: []string{"marker-A"},
+			},
+			{
+				name: "two parents with distinct markers",
+				spentVtxos: []Vtxo{
+					{MarkerIDs: []string{"marker-A"}},
+					{MarkerIDs: []string{"marker-B"}},
+				},
+				expectedMarkers: []string{"marker-A", "marker-B"},
+			},
+			{
+				name: "three parents with overlapping markers",
+				spentVtxos: []Vtxo{
+					{MarkerIDs: []string{"marker-A", "marker-B"}},
+					{MarkerIDs: []string{"marker-B", "marker-C"}},
+					{MarkerIDs: []string{"marker-A", "marker-C"}},
+				},
+				expectedMarkers: []string{"marker-A", "marker-B", "marker-C"},
+			},
+			{
+				name: "all parents share the same marker",
+				spentVtxos: []Vtxo{
+					{MarkerIDs: []string{"root-marker"}},
+					{MarkerIDs: []string{"root-marker"}},
+					{MarkerIDs: []string{"root-marker"}},
+				},
+				expectedMarkers: []string{"root-marker"},
+			},
+			{
+				name:            "no parents",
+				spentVtxos:      []Vtxo{},
+				expectedMarkers: []string{},
+			},
+			{
+				name: "parent with no markers",
+				spentVtxos: []Vtxo{
+					{MarkerIDs: []string{}},
+				},
+				expectedMarkers: []string{},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				result := collectParentMarkers(tc.spentVtxos)
+				sort.Strings(result)
+				sort.Strings(tc.expectedMarkers)
+				require.Equal(t, tc.expectedMarkers, result)
+			})
+		}
+	})
+
+	t.Run("skips empty marker ids across vtxos", func(t *testing.T) {
+		spentVtxos := []Vtxo{
+			{MarkerIDs: []string{"marker-A", "", "marker-B"}},
+			{MarkerIDs: []string{"", ""}},
+			{MarkerIDs: []string{"marker-C", ""}},
+		}
+
+		result := collectParentMarkers(spentVtxos)
+		sort.Strings(result)
+		require.Equal(t, []string{"marker-A", "marker-B", "marker-C"}, result)
+	})
+}
+
 // calculateMaxDepth returns the maximum depth from a set of spent VTXOs.
 func calculateMaxDepth(spentVtxos []Vtxo) uint32 {
 	var maxDepth uint32
@@ -138,19 +227,7 @@ func calculateMaxDepth(spentVtxos []Vtxo) uint32 {
 
 // collectParentMarkers collects all unique, non-empty marker IDs from spent VTXOs.
 func collectParentMarkers(spentVtxos []Vtxo) []string {
-	parentMarkerSet := make(map[string]struct{})
-	for _, v := range spentVtxos {
-		for _, markerID := range v.MarkerIDs {
-			if markerID != "" {
-				parentMarkerSet[markerID] = struct{}{}
-			}
-		}
-	}
-	result := make([]string, 0, len(parentMarkerSet))
-	for id := range parentMarkerSet {
-		result = append(result, id)
-	}
-	return result
+	return MarkerIDsOf(spentVtxos)
 }
 
 func TestDepthCalculation(t *testing.T) {
@@ -285,81 +362,6 @@ func TestDepthIncrementCreatesMarkerAtBoundary(t *testing.T) {
 			require.Equal(t, tc.shouldCreateMarker, marker != nil)
 		})
 	}
-}
-
-func TestParentMarkerCollectionFromMultipleParents(t *testing.T) {
-	testCases := []struct {
-		name            string
-		spentVtxos      []Vtxo
-		expectedMarkers []string
-	}{
-		{
-			name: "single parent with one marker",
-			spentVtxos: []Vtxo{
-				{MarkerIDs: []string{"marker-A"}},
-			},
-			expectedMarkers: []string{"marker-A"},
-		},
-		{
-			name: "two parents with distinct markers",
-			spentVtxos: []Vtxo{
-				{MarkerIDs: []string{"marker-A"}},
-				{MarkerIDs: []string{"marker-B"}},
-			},
-			expectedMarkers: []string{"marker-A", "marker-B"},
-		},
-		{
-			name: "three parents with overlapping markers",
-			spentVtxos: []Vtxo{
-				{MarkerIDs: []string{"marker-A", "marker-B"}},
-				{MarkerIDs: []string{"marker-B", "marker-C"}},
-				{MarkerIDs: []string{"marker-A", "marker-C"}},
-			},
-			expectedMarkers: []string{"marker-A", "marker-B", "marker-C"},
-		},
-		{
-			name: "all parents share the same marker",
-			spentVtxos: []Vtxo{
-				{MarkerIDs: []string{"root-marker"}},
-				{MarkerIDs: []string{"root-marker"}},
-				{MarkerIDs: []string{"root-marker"}},
-			},
-			expectedMarkers: []string{"root-marker"},
-		},
-		{
-			name:            "no parents",
-			spentVtxos:      []Vtxo{},
-			expectedMarkers: []string{},
-		},
-		{
-			name: "parent with no markers",
-			spentVtxos: []Vtxo{
-				{MarkerIDs: []string{}},
-			},
-			expectedMarkers: []string{},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result := collectParentMarkers(tc.spentVtxos)
-			sort.Strings(result)
-			sort.Strings(tc.expectedMarkers)
-			require.Equal(t, tc.expectedMarkers, result)
-		})
-	}
-}
-
-func TestParentMarkerCollectionSkipsEmptyMarkerIDs(t *testing.T) {
-	spentVtxos := []Vtxo{
-		{MarkerIDs: []string{"marker-A", "", "marker-B"}},
-		{MarkerIDs: []string{"", ""}},
-		{MarkerIDs: []string{"marker-C", ""}},
-	}
-
-	result := collectParentMarkers(spentVtxos)
-	sort.Strings(result)
-	require.Equal(t, []string{"marker-A", "marker-B", "marker-C"}, result)
 }
 
 func TestMarkerInheritanceAtNonBoundary(t *testing.T) {

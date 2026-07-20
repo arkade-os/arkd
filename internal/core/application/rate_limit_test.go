@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -638,8 +639,8 @@ func TestCheckRateLimit(t *testing.T) {
 	})
 
 	// rejection metadata asserts the client-visible error metadata (the flattened
-	// form clients actually receive from Error.Metadata()) carries the right
-	// per-input detail, not just that some "inputs" key exists.
+	// form clients actually receive from Error.Metadata()) decodes back into the
+	// per-input detail a client needs to back off.
 	t.Run("rejection metadata", func(t *testing.T) {
 		t.Run("reports the computed cooldown for the rejected input", func(t *testing.T) {
 			// depth 200, marker depth 100 created 100s ago:
@@ -654,9 +655,13 @@ func TestCheckRateLimit(t *testing.T) {
 			})
 			require.NotNil(t, err)
 
-			inputs := err.Metadata()["inputs"]
-			require.Contains(t, inputs, "tx1:0")
-			require.Contains(t, inputs, "cooldown_secs:258")
+			require.Equal(t, "258", err.Metadata()["cooldown_secs"])
+
+			inputs := decodeRateLimitInputs(t, err)
+			require.Len(t, inputs, 1)
+			require.Equal(t, 200, inputs["tx1:0"].Depth)
+			require.Equal(t, 100, inputs["tx1:0"].MarkerDepth)
+			require.Equal(t, int64(258), inputs["tx1:0"].CooldownSecs)
 		})
 
 		t.Run("cooldown is capped in the reported metadata", func(t *testing.T) {
@@ -670,7 +675,9 @@ func TestCheckRateLimit(t *testing.T) {
 				{Outpoint: domain.Outpoint{Txid: "tx1", VOut: 0}, Depth: 200, MarkerIDs: []string{"m1"}},
 			})
 			require.NotNil(t, err)
-			require.Contains(t, err.Metadata()["inputs"], "cooldown_secs:100")
+
+			require.Equal(t, "100", err.Metadata()["cooldown_secs"])
+			require.Equal(t, int64(100), decodeRateLimitInputs(t, err)["tx1:0"].CooldownSecs)
 		})
 
 		t.Run("only the rate-limited input of a batch is reported", func(t *testing.T) {
@@ -687,10 +694,62 @@ func TestCheckRateLimit(t *testing.T) {
 			})
 			require.NotNil(t, err)
 
-			inputs := err.Metadata()["inputs"]
+			inputs := decodeRateLimitInputs(t, err)
 			require.Contains(t, inputs, "tx1:0")
 			require.NotContains(t, inputs, "tx2:0")
 		})
+
+		t.Run("reported cooldown is the longest across rejected inputs", func(t *testing.T) {
+			// tx1: depthDelta=100, timeDelta=100 -> cooldown 258.
+			// tx2: depthDelta=200, timeDelta=100 -> cooldown ceil(714.28-100) = 615.
+			// The top level cooldown_secs must be the larger of the two.
+			svc := newRateLimitTestService(true, 0.28, 3600, map[string]domain.Marker{
+				"m1": {ID: "m1", Depth: 100, CreatedAt: now - 100},
+				"m2": {ID: "m2", Depth: 100, CreatedAt: now - 100},
+			})
+
+			err := svc.checkRateLimit(context.Background(), []domain.Vtxo{
+				{Outpoint: domain.Outpoint{Txid: "tx1", VOut: 0}, Depth: 200, MarkerIDs: []string{"m1"}},
+				{Outpoint: domain.Outpoint{Txid: "tx2", VOut: 0}, Depth: 300, MarkerIDs: []string{"m2"}},
+			})
+			require.NotNil(t, err)
+
+			inputs := decodeRateLimitInputs(t, err)
+			require.Equal(t, int64(258), inputs["tx1:0"].CooldownSecs)
+			require.Equal(t, int64(615), inputs["tx2:0"].CooldownSecs)
+			require.Equal(t, "615", err.Metadata()["cooldown_secs"])
+		})
+	})
+
+	// marker lookup failures must not block offchain txs. The limiter fails open.
+	t.Run("marker lookup failure fails to open", func(t *testing.T) {
+		svc := newRateLimitTestService(true, 0.28, 3600, map[string]domain.Marker{
+			"m1": {ID: "m1", Depth: 100, CreatedAt: now - 1},
+		})
+		svc.repoManager.(*mockRepoManagerForRateLimit).markerRepo.err = fmt.Errorf("marker store down")
+
+		err := svc.checkRateLimit(context.Background(), []domain.Vtxo{
+			{Outpoint: domain.Outpoint{Txid: "tx1", VOut: 0}, Depth: 200, MarkerIDs: []string{"m1"}},
+		})
+		require.Nil(t, err, "a marker store error must not reject the tx")
+	})
+
+	// the limiter reads every referenced marker in one query, not one per input.
+	t.Run("markers are fetched in a single batched query", func(t *testing.T) {
+		svc := newRateLimitTestService(true, 0.28, 3600, map[string]domain.Marker{
+			"m1": {ID: "m1", Depth: 100, CreatedAt: now - 5000},
+			"m2": {ID: "m2", Depth: 200, CreatedAt: now - 5000},
+		})
+
+		err := svc.checkRateLimit(context.Background(), []domain.Vtxo{
+			{Outpoint: domain.Outpoint{Txid: "tx1", VOut: 0}, Depth: 150, MarkerIDs: []string{"m1"}},
+			{Outpoint: domain.Outpoint{Txid: "tx2", VOut: 0}, Depth: 250, MarkerIDs: []string{"m1", "m2"}},
+		})
+		require.Nil(t, err)
+
+		// One query for two inputs sharing a marker. ID deduping itself is covered
+		// by domain.TestMarkerIDCollection.
+		require.Equal(t, 1, svc.repoManager.(*mockRepoManagerForRateLimit).markerRepo.calls)
 	})
 }
 
@@ -763,14 +822,35 @@ func (s rateLimitTestSettingsStore) Get(context.Context) (*ports.Settings, error
 	return s.settings, nil
 }
 
+// decodeRateLimitInputs decodes the JSON per-input detail out of the flattened
+// metadata, which is exactly what a client has to do with the error.
+func decodeRateLimitInputs(
+	t *testing.T, err errors.Error,
+) map[string]errors.InputRateLimitInfoMeta {
+	t.Helper()
+	raw, ok := err.Metadata()["inputs"]
+	require.True(t, ok, "metadata must carry an inputs key")
+
+	var inputs map[string]errors.InputRateLimitInfoMeta
+	require.NoError(t, json.Unmarshal([]byte(raw), &inputs))
+	return inputs
+}
+
 type mockMarkerRepoForRateLimit struct {
 	domain.MarkerRepository
 	markers map[string]domain.Marker
+	err     error
+	calls   int
 }
 
 func (m *mockMarkerRepoForRateLimit) GetMarkersByIds(
 	_ context.Context, ids []string,
 ) ([]domain.Marker, error) {
+	m.calls++
+	if m.err != nil {
+		return nil, m.err
+	}
+
 	result := make([]domain.Marker, 0, len(ids))
 	for _, id := range ids {
 		if marker, ok := m.markers[id]; ok {

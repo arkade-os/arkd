@@ -464,7 +464,7 @@ func testNewSettings(t *testing.T) {
 			require.Nil(t, settings)
 		})
 
-		t.Run("rate limit cooldown must not be negative when enabled", func(t *testing.T) {
+		t.Run("rate limit cooldown must be positive when enabled", func(t *testing.T) {
 			settings, err := domain.NewSettings(
 				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
 				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
@@ -475,9 +475,9 @@ func testNewSettings(t *testing.T) {
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
 				batchTrigger,
-				true, 0.28, -1,
+				true, 0.28, 0,
 			)
-			require.ErrorContains(t, err, "rate limit max cooldown secs must not be negative")
+			require.ErrorContains(t, err, "rate limit max cooldown secs must be greater than 0")
 			require.Nil(t, settings)
 		})
 

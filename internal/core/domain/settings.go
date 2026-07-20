@@ -258,9 +258,11 @@ func (s Settings) Validate() error {
 				s.RateLimitMaxVelocity,
 			)
 		}
-		if s.RateLimitMaxCooldownSecs < 0 {
+		// A zero cap would report a zero cooldown on every rejection, which tells
+		// clients to retry immediately and never lets them clear the limit.
+		if s.RateLimitMaxCooldownSecs <= 0 {
 			return fmt.Errorf(
-				"rate limit max cooldown secs must not be negative, got %d",
+				"rate limit max cooldown secs must be greater than 0 when rate limiting is enabled, got %d",
 				s.RateLimitMaxCooldownSecs,
 			)
 		}

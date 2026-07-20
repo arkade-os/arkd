@@ -50,6 +50,28 @@ func NewMarker(txid string, depth uint32, parentMarkerIDs []string) (*Marker, []
 	return nil, nil
 }
 
+// MarkerIDsOf collects the marker IDs referenced by the given VTXOs, preserving
+// first-seen order and dropping duplicates and empty IDs. Sibling VTXOs routinely
+// inherit the same markers, so callers bulk-fetching by these IDs would otherwise
+// ask the store for the same marker several times.
+func MarkerIDsOf(vtxos []Vtxo) []string {
+	ids := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, vtxo := range vtxos {
+		for _, id := range vtxo.MarkerIDs {
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // isAtMarkerBoundary returns true if the given depth is at a marker boundary.
 func isAtMarkerBoundary(depth uint32) bool {
 	return depth%MarkerInterval == 0

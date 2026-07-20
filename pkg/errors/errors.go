@@ -511,7 +511,8 @@ var INVALID_TX_FILTER = Code[TxFilterMetadata]{
 }
 
 type RateLimitMetadata struct {
-	Inputs map[string]InputRateLimitInfoMeta `json:"inputs"`
+	CooldownSecs string `json:"cooldown_secs"`
+	Inputs string `json:"inputs"`
 }
 
 type InputRateLimitInfoMeta struct {
