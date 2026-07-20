@@ -356,7 +356,8 @@ WITH RECURSIVE descendants_chain AS (
              JOIN vtxo c
                   ON c.txid = w.ark_txid
     WHERE w.ark_txid IS NOT NULL
-      AND w.visited NOT LIKE '%' || (c.txid||':'||c.vout) || '%'   -- cycle/visited guard
+      -- delimiter-bounded match so txid:1 cannot match inside txid:12
+      AND ',' || w.visited || ',' NOT LIKE '%,' || (c.txid||':'||c.vout) || ',%'
 ),
 -- keep one row per node at its MIN depth (layers)
 nodes AS (
@@ -389,7 +390,8 @@ WITH RECURSIVE descendants_chain AS (
              JOIN vtxo c
                   ON c.txid = w.ark_txid
     WHERE w.ark_txid IS NOT NULL
-      AND w.visited NOT LIKE '%' || (c.txid||':'||c.vout) || '%'   -- cycle/visited guard
+      -- delimiter-bounded match so txid:1 cannot match inside txid:12
+      AND ',' || w.visited || ',' NOT LIKE '%,' || (c.txid||':'||c.vout) || ',%'
 ),
 -- keep one row per node at its MIN depth (layers)
 nodes AS (
