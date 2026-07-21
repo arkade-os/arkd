@@ -943,6 +943,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			Amount:             2000,
 			RootCommitmentTxid: commitmentTxid1,
 			CommitmentTxids:    []string{commitmentTxid1},
+			Preconfirmed:       true,
 			ArkTxid:            randomString(32), // Points to vtxo3
 		}
 
@@ -955,6 +956,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			Amount:             3000,
 			RootCommitmentTxid: commitmentTxid1,
 			CommitmentTxids:    []string{commitmentTxid1},
+			Preconfirmed:       true,
 			ArkTxid:            randomString(32), // Points to vtxo4
 		}
 
@@ -967,6 +969,7 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			Amount:             4000,
 			RootCommitmentTxid: commitmentTxid1,
 			CommitmentTxids:    []string{commitmentTxid1},
+			Preconfirmed:       true,
 			ArkTxid:            "", // End of chain - null ark_txid
 		}
 
@@ -976,12 +979,12 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 
 		children, err := svc.Vtxos().
-			GetSweepableVtxosByCommitmentTxid(ctx, vtxo1.RootCommitmentTxid)
+			GetSweepablePreconfirmedVtxosByCommitmentTxid(ctx, vtxo1.RootCommitmentTxid)
 		require.NoError(t, err)
-		require.Len(t, children, 4)
+		require.Len(t, children, 3)
 
+		// vtxo1 is a leaf, only the preconfirmed descendants are returned
 		expectedOutpoints := []domain.Outpoint{
-			vtxo1.Outpoint,
 			vtxo2.Outpoint,
 			vtxo3.Outpoint,
 			vtxo4.Outpoint,
@@ -997,7 +1000,8 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.Equal(t, expectedOutpoints, children)
 
 		// Test with non-existent txid
-		children, err = svc.Vtxos().GetSweepableVtxosByCommitmentTxid(ctx, randomString(32))
+		children, err = svc.Vtxos().
+			GetSweepablePreconfirmedVtxosByCommitmentTxid(ctx, randomString(32))
 		require.NoError(t, err)
 		require.Empty(t, children)
 
@@ -1006,11 +1010,36 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.Len(t, children, 4) // Should return all 4 vtxos in the chain
 
+		expectedChainOutpoints := []domain.Outpoint{
+			vtxo1.Outpoint,
+			vtxo2.Outpoint,
+			vtxo3.Outpoint,
+			vtxo4.Outpoint,
+		}
+
 		sort.Slice(children, func(i, j int) bool {
 			return children[i].Txid < children[j].Txid
 		})
+		sort.Slice(expectedChainOutpoints, func(i, j int) bool {
+			return expectedChainOutpoints[i].Txid < expectedChainOutpoints[j].Txid
+		})
 
-		require.Equal(t, expectedOutpoints, children)
+		require.Equal(t, expectedChainOutpoints, children)
+
+		// Test descendants only, the vtxo itself is excluded
+		descendants, err := svc.Vtxos().GetDescendantVtxos(ctx, vtxo1.Outpoint)
+		require.NoError(t, err)
+		require.Len(t, descendants, 3)
+
+		sort.Slice(descendants, func(i, j int) bool {
+			return descendants[i].Txid < descendants[j].Txid
+		})
+		require.Equal(t, expectedOutpoints, descendants)
+
+		// Descendants of the end of the chain must be empty
+		descendants, err = svc.Vtxos().GetDescendantVtxos(ctx, vtxo4.Outpoint)
+		require.NoError(t, err)
+		require.Empty(t, descendants)
 
 		// Test starting from middle of chain (vtxo2)
 		children, err = svc.Vtxos().GetAllChildrenVtxos(ctx, vtxo2.Outpoint)

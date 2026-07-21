@@ -548,19 +548,8 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 					}
 
 					for _, leaf := range vtxosLeaves {
-						// The VTXO is the first non-anchor output; leaf txs can
-						// carry an anchor at vout 0, so the VTXO is not always
-						// at vout 0. extractVtxoOutpoint handles that.
-						vtxo, err := extractVtxoOutpoint(leaf)
-						if err != nil {
-							log.WithError(err).Errorf(
-								"failed to extract vtxo outpoint from leaf %s",
-								leaf.UnsignedTx.TxID(),
-							)
-							continue
-						}
-
-						sweepableVtxos = append(sweepableVtxos, *vtxo)
+						// a leaf tx may pay multiple receivers, collect every vtxo outpoint it carries
+						sweepableVtxos = append(sweepableVtxos, leafVtxoOutpoints(leaf)...)
 					}
 
 					if len(sweepableVtxos) <= 0 {
@@ -688,9 +677,6 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			vtxoRepo := s.repoManager.Vtxos()
 			eventRepo := s.repoManager.Events()
 
-			preconfirmedVtxos := make([]domain.Outpoint, 0)
-			var sweepErr error
-
 			commitmentRootSwept := false
 			for _, output := range outputsToSweep {
 				if output.Txid == commitmentTxid {
@@ -699,32 +685,9 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 				}
 			}
 
-			if commitmentRootSwept {
-				// get all vtxos related to the batch commitment txid
-				preconfirmedVtxos, sweepErr = vtxoRepo.GetSweepableVtxosByCommitmentTxid(
-					ctx,
-					commitmentTxid,
-				)
-			} else {
-				// get all vtxos related to the leaf swept
-				seen := make(map[string]struct{})
-				for _, leafVtxo := range leafVtxoKeys {
-					children, childErr := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo)
-					if childErr != nil {
-						log.WithError(childErr).Error("error while getting children vtxos")
-						continue
-					}
-					for _, child := range children {
-						if _, ok := seen[child.String()]; !ok {
-							preconfirmedVtxos = append(preconfirmedVtxos, child)
-							seen[child.String()] = struct{}{}
-						}
-					}
-				}
-			}
-			if sweepErr != nil {
-				log.WithError(sweepErr).Error("error while getting children vtxos")
-			}
+			preconfirmedVtxos := collectPreconfirmedVtxos(
+				ctx, vtxoRepo, commitmentTxid, commitmentRootSwept, leafVtxoKeys,
+			)
 
 			events, err := round.Sweep(
 				leafVtxoKeys,

@@ -401,11 +401,13 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 	return vtxos, nil
 }
 
-func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
+func (v *vtxoRepository) GetSweepablePreconfirmedVtxosByCommitmentTxid(
 	ctx context.Context,
 	commitmentTxid string,
 ) ([]domain.Outpoint, error) {
-	res, err := v.querier.SelectSweepableVtxoOutpointsByCommitmentTxid(ctx, commitmentTxid)
+	res, err := v.querier.SelectSweepablePreconfirmedVtxoOutpointsByCommitmentTxid(
+		ctx, commitmentTxid,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -427,6 +429,31 @@ func (v *vtxoRepository) GetAllChildrenVtxos(
 	res, err := v.querier.SelectVtxosOutpointsByArkTxidRecursive(
 		ctx,
 		queries.SelectVtxosOutpointsByArkTxidRecursiveParams{
+			Txid: outpoint.Txid,
+			Vout: int32(outpoint.VOut),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	outpoints := make([]domain.Outpoint, 0, len(res))
+	for _, row := range res {
+		outpoints = append(outpoints, domain.Outpoint{
+			Txid: row.Txid,
+			VOut: uint32(row.Vout),
+		})
+	}
+
+	return outpoints, nil
+}
+
+func (v *vtxoRepository) GetDescendantVtxos(
+	ctx context.Context, outpoint domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	res, err := v.querier.SelectDescendantVtxoOutpointsByArkTxid(
+		ctx,
+		queries.SelectDescendantVtxoOutpointsByArkTxidParams{
 			Txid: outpoint.Txid,
 			Vout: int32(outpoint.VOut),
 		},
