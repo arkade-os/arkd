@@ -93,14 +93,17 @@ func (v *offchainTxRepository) GetOffchainTxs(
 
 	var rows []vwRow
 	if len(filter.WithTxids) > 0 {
-		raw, err := v.querier.SelectOffchainTxsByTxids(ctx, queries.SelectOffchainTxsByTxidsParams{
-			Txids:         filter.WithTxids,
-			WithExtension: filter.WithExtension || len(filter.WithPacket) > 0,
-			WithAfter:     filter.WithAfterDate > 0,
-			AfterTs:       filter.WithAfterDate,
-			WithBefore:    filter.WithBeforeDate > 0,
-			BeforeTs:      filter.WithBeforeDate,
-		})
+		raw, err := v.querier.SelectFilteredOffchainTxsByTxids(
+			ctx,
+			queries.SelectFilteredOffchainTxsByTxidsParams{
+				Txids:         filter.WithTxids,
+				WithExtension: filter.WithExtension || len(filter.WithPacket) > 0,
+				WithAfter:     filter.WithAfterDate > 0,
+				AfterTs:       filter.WithAfterDate,
+				WithBefore:    filter.WithBeforeDate > 0,
+				BeforeTs:      filter.WithBeforeDate,
+			},
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -177,6 +180,107 @@ func (v *offchainTxRepository) GetOffchainTxs(
 		out = append(out, off)
 	}
 	return out, nil
+}
+
+func (v *offchainTxRepository) GetOffchainTx(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	rows, err := v.querier.SelectOffchainTx(ctx, txid)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("offchain tx %s not found", txid)
+	}
+	vt := rows[0].OffchainTxVw
+	checkpointTxs := make(map[string]string)
+	commitmentTxids := make(map[string]string)
+	rootCommitmentTxId := ""
+	for _, row := range rows {
+		vw := row.OffchainTxVw
+		if vw.CheckpointTxid.Valid && vw.CheckpointTx.Valid {
+			checkpointTxs[vw.CheckpointTxid.String] = vw.CheckpointTx.String
+			commitmentTxids[vw.CheckpointTxid.String] = vw.CommitmentTxid.String
+			if vw.IsRootCommitmentTxid.Valid && vw.IsRootCommitmentTxid.Bool {
+				rootCommitmentTxId = vw.CommitmentTxid.String
+			}
+		}
+	}
+	stage := domain.Stage{Code: int(vt.StageCode)}
+	if vt.FailReason.String != "" {
+		stage.Failed = true
+	}
+	if domain.OffchainTxStage(vt.StageCode) == domain.OffchainTxFinalizedStage {
+		stage.Ended = true
+	}
+	return &domain.OffchainTx{
+		ArkTxid:            vt.Txid,
+		ArkTx:              vt.Tx,
+		StartingTimestamp:  vt.StartingTimestamp,
+		EndingTimestamp:    vt.EndingTimestamp,
+		ExpiryTimestamp:    vt.ExpiryTimestamp,
+		FailReason:         vt.FailReason.String,
+		Stage:              stage,
+		CheckpointTxs:      checkpointTxs,
+		CommitmentTxids:    commitmentTxids,
+		RootCommitmentTxId: rootCommitmentTxId,
+	}, nil
+}
+
+func (v *offchainTxRepository) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	if len(txids) == 0 {
+		return []*domain.OffchainTx{}, nil
+	}
+
+	rows, err := v.querier.SelectOffchainTxsByTxids(ctx, txids)
+	if err != nil {
+		return nil, err
+	}
+
+	grouped := make(map[string][]queries.OffchainTxVw)
+	for _, row := range rows {
+		grouped[row.OffchainTxVw.Txid] = append(grouped[row.OffchainTxVw.Txid], row.OffchainTxVw)
+	}
+
+	txs := make([]*domain.OffchainTx, 0, len(grouped))
+	for _, vws := range grouped {
+		vt := vws[0]
+		checkpointTxs := make(map[string]string)
+		commitmentTxids := make(map[string]string)
+		rootCommitmentTxId := ""
+		for _, vw := range vws {
+			if vw.CheckpointTxid.Valid && vw.CheckpointTx.Valid {
+				checkpointTxs[vw.CheckpointTxid.String] = vw.CheckpointTx.String
+				commitmentTxids[vw.CheckpointTxid.String] = vw.CommitmentTxid.String
+				if vw.IsRootCommitmentTxid.Valid && vw.IsRootCommitmentTxid.Bool {
+					rootCommitmentTxId = vw.CommitmentTxid.String
+				}
+			}
+		}
+		stage := domain.Stage{Code: int(vt.StageCode)}
+		if vt.FailReason.String != "" {
+			stage.Failed = true
+		}
+		if domain.OffchainTxStage(vt.StageCode) == domain.OffchainTxFinalizedStage {
+			stage.Ended = true
+		}
+		txs = append(txs, &domain.OffchainTx{
+			ArkTxid:            vt.Txid,
+			ArkTx:              vt.Tx,
+			StartingTimestamp:  vt.StartingTimestamp,
+			EndingTimestamp:    vt.EndingTimestamp,
+			ExpiryTimestamp:    vt.ExpiryTimestamp,
+			FailReason:         vt.FailReason.String,
+			Stage:              stage,
+			CheckpointTxs:      checkpointTxs,
+			CommitmentTxids:    commitmentTxids,
+			RootCommitmentTxId: rootCommitmentTxId,
+		})
+	}
+
+	return txs, nil
 }
 
 func (v *offchainTxRepository) Close() {

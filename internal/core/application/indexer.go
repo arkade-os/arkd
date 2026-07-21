@@ -3,10 +3,12 @@ package application
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -25,14 +27,21 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
+	// These constants are meant to be used only by page-number (legacy) pagination.
 	maxPageSizeVtxoTree       = 300
 	maxPageSizeForfeitTxs     = 500
 	maxPageSizeSpendableVtxos = 100
 	maxPageSizeVtxoChain      = 100
 	maxPageSizeVirtualTxs     = 100
+
+	// maxVtxoChainWalkSize is the cursor pagination page size (fixed, not
+	// client-customizable). It does not cap the no-token path: GetVtxoChain builds
+	// and returns the full chain when no page_token is provided.
+	maxVtxoChainWalkSize = 50_000
 
 	defaultAuthTokenTTL = 5 * time.Minute
 )
@@ -61,17 +70,17 @@ type IndexerService interface {
 	GetForfeitTxs(ctx context.Context, txid string, page *Page) (*ForfeitTxsResp, error)
 	GetConnectors(ctx context.Context, txid string, page *Page) (*TreeTxResp, error)
 	GetVtxos(
-		ctx context.Context,
-		pubkeys []string, spendableOnly, spendOnly, recoverableOnly, pendingOnly bool,
+		ctx context.Context, pubkeys []string,
+		spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly bool,
 		after, before int64, page *Page,
 	) (*GetVtxosResp, error)
 	GetVtxosByOutpoint(
 		ctx context.Context, outpoints []Outpoint, page *Page,
 	) (*GetVtxosResp, error)
 	GetVtxoChain(
-		ctx context.Context, authToken string, vtxoKey Outpoint, page *Page,
+		ctx context.Context, authToken string, vtxoKey Outpoint, page *Page, pageToken string,
 	) (*VtxoChainResp, error)
-	GetVtxoChainByIntent(ctx context.Context, intent Intent, page *Page) (*VtxoChainResp, error)
+	GetVtxoChainByIntent(ctx context.Context, intent Intent) (*VtxoChainResp, error)
 	GetVirtualTxs(
 		ctx context.Context, authToken string, filter domain.OffchainTxFilter, page *Page,
 	) (*VirtualTxsResp, error)
@@ -85,10 +94,11 @@ type IndexerService interface {
 }
 
 type indexerService struct {
-	repoManager  ports.RepoManager
-	wallet       ports.WalletService
-	authPrvkey   *btcec.PrivateKey // key used to sign auth tokens
-	signerPubkey *btcec.PublicKey  // server's signing key, used for stripping signatures from txs
+	repoManager   ports.RepoManager
+	wallet        ports.WalletService
+	authPrvkey    *btcec.PrivateKey // key used to sign auth tokens
+	cursorHMACKey []byte            // HMAC key for signing pagination cursors
+	signerPubkey  *btcec.PublicKey  // server's signing key, used for stripping signatures from txs
 	// deprecated signer pubkeys still accepted for old vtxos after a key rotation
 	deprecatedSignerPubkeys []ports.DeprecatedSignerPubkey
 	txExposure              exposure
@@ -117,13 +127,22 @@ func NewIndexerService(
 		ttl = time.Duration(authTokenExpirySec) * time.Second
 	}
 
+	// Derive HMAC key for pagination cursors from the auth private key.
+	// This prevents clients from forging cursors with arbitrary outpoints.
+	var cursorKey []byte
+	if privkey != nil {
+		h := sha256.Sum256(append(privkey.Serialize(), []byte("cursor-hmac")...))
+		cursorKey = h[:]
+	}
+
 	svc := &indexerService{
-		repoManager:  repoManager,
-		wallet:       wallet,
-		authPrvkey:   privkey,
-		txExposure:   exposure(txExposure),
-		authTokenTTL: ttl,
-		tokenCache:   newTokenCache(ttl),
+		repoManager:   repoManager,
+		wallet:        wallet,
+		authPrvkey:    privkey,
+		cursorHMACKey: cursorKey,
+		txExposure:    exposure(txExposure),
+		authTokenTTL:  ttl,
+		tokenCache:    newTokenCache(ttl),
 	}
 
 	if signerPubkey != nil {
@@ -246,14 +265,14 @@ func (i *indexerService) GetConnectors(
 func (i *indexerService) GetVtxos(
 	ctx context.Context,
 	pubkeys []string,
-	spendableOnly, spentOnly, recoverableOnly, pendingOnly bool,
+	spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly bool,
 	after, before int64,
 	page *Page,
 ) (*GetVtxosResp, error) {
 	if err := validateTimeRange(after, before); err != nil {
 		return nil, err
 	}
-	options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly}
+	options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly}
 	count := 0
 	for _, v := range options {
 		if v {
@@ -262,7 +281,7 @@ func (i *indexerService) GetVtxos(
 	}
 	if count > 1 {
 		return nil, fmt.Errorf(
-			"spendable, spent, recoverable and pending filters are mutually exclusive",
+			"spendable, spent, recoverable, pending and renewable filters are mutually exclusive",
 		)
 	}
 
@@ -307,6 +326,18 @@ func (i *indexerService) GetVtxos(
 			}
 			allVtxos = recoverableVtxos
 		}
+		if renewableOnly {
+			// Renewable is the union of the spendable and recoverable sets: an
+			// unspent, non-unrolled vtxo is spendable when not swept, and
+			// recoverable otherwise (RequiresForfeit is false once swept).
+			renewableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
+			for _, vtxo := range allVtxos {
+				if !vtxo.Spent && !vtxo.Unrolled {
+					renewableVtxos = append(renewableVtxos, vtxo)
+				}
+			}
+			allVtxos = renewableVtxos
+		}
 	}
 
 	vtxos, pageResp := paginate(allVtxos, page, maxPageSizeSpendableVtxos)
@@ -332,7 +363,7 @@ func (i *indexerService) GetVtxosByOutpoint(
 }
 
 func (i *indexerService) GetVtxoChain(
-	ctx context.Context, authToken string, outpoint Outpoint, page *Page,
+	ctx context.Context, authToken string, outpoint Outpoint, page *Page, pageToken string,
 ) (*VtxoChainResp, error) {
 	switch i.txExposure {
 	case exposurePublic:
@@ -340,43 +371,63 @@ func (i *indexerService) GetVtxoChain(
 	case exposureWithheld:
 		// Auth token is optional, validate it only if provided
 		if authToken != "" {
-			hash, err := i.validateAuthToken(authToken)
-			if err != nil {
+			if err := i.validateChainAuth(authToken, outpoint); err != nil {
 				return nil, err
-			}
-
-			outpoints, _, ok := i.tokenCache.getOutpoints(hash)
-			if !ok {
-				return nil, fmt.Errorf("auth token not found")
-			}
-			if _, ok := outpoints[outpoint.String()]; !ok {
-				return nil, fmt.Errorf("auth token is not for outpoint %s", outpoint)
 			}
 		}
 	case exposurePrivate:
 		// Auth token is mandatory, always validate it
-		hash, err := i.validateAuthToken(authToken)
+		if err := i.validateChainAuth(authToken, outpoint); err != nil {
+			return nil, err
+		}
+	}
+
+	// Cursor pagination is entered ONLY via an explicit page_token (issued by
+	// GetVtxoChainByIntent). GetVtxoChain never defaults to cursor pagination on
+	// its own, so legacy clients that pass no page — or page-number pagination —
+	// keep their existing behavior and are never forced onto the cursor API.
+	// The cursor page size is fixed at maxVtxoChainWalkSize (not client-
+	// customizable): only the chain prefix up to offset+pageSize is loaded.
+	if len(pageToken) > 0 {
+		offset, err := i.decodeChainCursor(pageToken, outpoint)
+		if err != nil {
+			// page_token is client-supplied input. Surface it as invalid input
+			// so the handler maps it to InvalidArgument rather than Internal.
+			return nil, fmt.Errorf("%w: invalid page_token: %w", ErrInvalidInput, err)
+		}
+		chain, _, truncated, err := i.walkVtxoChain(
+			ctx, []domain.Outpoint{outpoint}, offset+maxVtxoChainWalkSize,
+		)
 		if err != nil {
 			return nil, err
 		}
-
-		outpoints, _, ok := i.tokenCache.getOutpoints(hash)
-		if !ok {
-			return nil, fmt.Errorf("auth token not found")
-		}
-		if _, ok := outpoints[outpoint.String()]; !ok {
-			return nil, fmt.Errorf("auth token is not for outpoint %s", outpoint)
-		}
+		return i.chainCursorPage(chain, offset, maxVtxoChainWalkSize, truncated, outpoint), nil
 	}
-	resp, _, err := i.getVtxoChain(ctx, outpoint, page)
+
+	// No token: build the full chain (uncapped, preserving legacy behavior) so a
+	// no-page request returns the whole chain and page-number pagination slices
+	// it, exactly as before the cursor API was added.
+	chain, _, _, err := i.walkVtxoChain(ctx, []domain.Outpoint{outpoint}, math.MaxInt32)
 	if err != nil {
 		return nil, err
 	}
-	return resp, nil
+
+	// No page requested: return the whole chain.
+	if page == nil {
+		return &VtxoChainResp{Chain: chain}, nil
+	}
+
+	// Legacy page-number pagination: slice the full chain by page number.
+	txChain, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
+	return &VtxoChainResp{Chain: txChain, Page: pageResp}, nil
 }
 
+// GetVtxoChainByIntent is the cursor-pagination entry point: it walks the full chain to mint an
+// auth token that authorizes every outpoint the client will page through, and returns the first
+// cursor page (fixed size maxVtxoChainWalkSize) plus a next page token when the chain is longer.
+// It does not support page-number (legacy) pagination.
 func (i *indexerService) GetVtxoChainByIntent(
-	ctx context.Context, intent Intent, page *Page,
+	ctx context.Context, intent Intent,
 ) (*VtxoChainResp, error) {
 	outpoints, err := i.extractOutpointsFromIntent(intent)
 	if err != nil {
@@ -389,15 +440,24 @@ func (i *indexerService) GetVtxoChainByIntent(
 
 	switch i.txExposure {
 	case exposurePublic:
-		resp, _, err := i.getVtxoChain(ctx, outpoint, page)
-		return resp, err
+		// math.MaxInt32 limit => the walk never truncates, so the whole chain is
+		// loaded and moreBeyondChain is false. chainCursorPage still emits a next
+		// page token when the chain exceeds one page (offset+pageSize < len).
+		chain, _, _, err := i.walkVtxoChain(ctx, []domain.Outpoint{outpoint}, math.MaxInt32)
+		if err != nil {
+			return nil, err
+		}
+		return i.chainCursorPage(chain, 0, maxVtxoChainWalkSize, false, outpoint), nil
 	case exposureWithheld, exposurePrivate:
 		if err := i.validateIntent(ctx, intent); err != nil {
 			return nil, err
 		}
 	}
 
-	resp, allOutpoints, err := i.getVtxoChain(ctx, outpoint, page)
+	// The full chain must be walked (math.MaxInt32 limit, so it never truncates)
+	// so the auth token authorizes every outpoint (and every ark/checkpoint/tree
+	// txid) the client can later fetch.
+	chain, allOutpoints, _, err := i.walkVtxoChain(ctx, []domain.Outpoint{outpoint}, math.MaxInt32)
 	if err != nil {
 		return nil, err
 	}
@@ -406,6 +466,10 @@ func (i *indexerService) GetVtxoChainByIntent(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create auth token: %w", err)
 	}
+
+	// moreBeyondChain is false: the entire chain is loaded above, so a next page
+	// token (for chains longer than one page) is derived from the slice length.
+	resp := i.chainCursorPage(chain, 0, maxVtxoChainWalkSize, false, outpoint)
 	resp.AuthToken = token
 	return resp, nil
 }
@@ -527,37 +591,81 @@ func (i *indexerService) GetBatchSweepTxs(
 	return txids, nil
 }
 
-func (i *indexerService) getVtxoChain(
-	ctx context.Context, vtxoKey Outpoint, page *Page,
-) (*VtxoChainResp, []Outpoint, error) {
-	chain, allOutpoints, err := i.buildVtxoChain(ctx, vtxoKey)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	txChain, pageResp := paginate(chain, page, maxPageSizeVtxoChain)
-	return &VtxoChainResp{
-		Chain: txChain,
-		Page:  pageResp,
-	}, allOutpoints, nil
-}
-
-// buildVtxoChain builds the full chain of transactions for a given vtxo outpoint.
-func (i *indexerService) buildVtxoChain(
-	ctx context.Context, outpoint Outpoint,
-) ([]ChainTx, []Outpoint, error) {
+// walkVtxoChain walks the VTXO chain upward from the given start outpoints,
+// collecting chain transactions and all outpoints seen, in a deterministic
+// order. It stops once it has collected at least limit chain txs and reports
+// truncated=true in that case (more of the chain remains beyond what was
+// returned); callers slice the page they need out of the returned chain.
+func (i *indexerService) walkVtxoChain(
+	ctx context.Context, frontier []domain.Outpoint, limit int,
+) ([]ChainTx, []Outpoint, bool, error) {
 	chain := make([]ChainTx, 0)
-	nextVtxos := []domain.Outpoint{outpoint}
+	nextVtxos := frontier
 	visited := make(map[string]bool)
+	offchainTxCache := make(map[string]*domain.OffchainTx)
 	allOutpoints := make([]Outpoint, 0)
 
-	for len(nextVtxos) > 0 {
-		vtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, nextVtxos)
+	// Lazy cache for VTXOs loaded during this page.
+	vtxoCache := make(map[string]domain.Vtxo)
+	loadedMarkers := make(map[string]bool)
+
+	// Eagerly preload VTXOs and offchain txs by walking the marker DAG upward.
+	// Failures in the marker-driven preload are treated as optimization misses:
+	// the per-hop walk loop below falls back to Vtxos().GetVtxos + ensureVtxosCached,
+	// so we log marker-repo errors here and continue instead of aborting.
+	if i.repoManager.Markers() != nil {
+		startVtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, nextVtxos)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, false, err
+		}
+		if err := i.preloadByMarkers(ctx, startVtxos, vtxoCache, offchainTxCache); err != nil {
+			log.WithError(err).Warnf(
+				"marker-driven preload failed for frontier of %d outpoints; "+
+					"falling back to per-hop walk", len(nextVtxos),
+			)
+		}
+	}
+
+	for len(nextVtxos) > 0 {
+		if err := i.ensureVtxosCached(ctx, nextVtxos, vtxoCache, loadedMarkers); err != nil {
+			return nil, nil, false, err
+		}
+
+		vtxos := make([]domain.Vtxo, 0, len(nextVtxos))
+		for _, op := range nextVtxos {
+			if v, ok := vtxoCache[op.String()]; ok {
+				vtxos = append(vtxos, v)
+			}
 		}
 		if len(vtxos) == 0 {
-			return nil, nil, fmt.Errorf("vtxo not found for outpoint: %v", nextVtxos)
+			return nil, nil, false, fmt.Errorf("vtxo not found for outpoint: %v", nextVtxos)
+		}
+
+		missingOffchainTxids := make(map[string]struct{})
+		for _, vtxo := range vtxos {
+			if !vtxo.Preconfirmed {
+				continue
+			}
+			if _, ok := offchainTxCache[vtxo.Txid]; ok {
+				continue
+			}
+			missingOffchainTxids[vtxo.Txid] = struct{}{}
+		}
+
+		if len(missingOffchainTxids) > 0 {
+			txids := make([]string, 0, len(missingOffchainTxids))
+			for txid := range missingOffchainTxids {
+				txids = append(txids, txid)
+			}
+
+			offchainTxs, err := i.repoManager.OffchainTxs().GetOffchainTxsByTxids(ctx, txids)
+			if err != nil {
+				return nil, nil, false, fmt.Errorf("failed to retrieve offchain txs: %s", err)
+			}
+
+			for _, tx := range offchainTxs {
+				offchainTxCache[tx.ArkTxid] = tx
+			}
 		}
 
 		newNextVtxos := make([]domain.Outpoint, 0)
@@ -566,6 +674,14 @@ func (i *indexerService) buildVtxoChain(
 			if visited[key] {
 				continue
 			}
+
+			// Stop once we have collected at least limit txs. The chain built so
+			// far is a deterministic prefix; the caller slices its page out of it
+			// and knows more of the chain remains (truncated=true).
+			if len(chain) >= limit {
+				return chain, allOutpoints, true, nil
+			}
+
 			allOutpoints = append(allOutpoints, vtxo.Outpoint)
 			visited[key] = true
 
@@ -574,16 +690,17 @@ func (i *indexerService) buildVtxoChain(
 			// also, we have to populate the newNextVtxos with the checkpoints inputs
 			// in order to continue the chain in the next iteration
 			if vtxo.Preconfirmed {
-				offchainTxs, err := i.repoManager.OffchainTxs().GetOffchainTxs(
-					ctx, domain.OffchainTxFilter{WithTxids: []string{vtxo.Txid}},
-				)
-				if err != nil {
-					return nil, nil, fmt.Errorf("failed to retrieve offchain tx: %s", err)
+				offchainTx, ok := offchainTxCache[vtxo.Txid]
+				if !ok {
+					var err error
+					offchainTx, err = i.repoManager.OffchainTxs().GetOffchainTx(ctx, vtxo.Txid)
+					if err != nil {
+						return nil, nil, false, fmt.Errorf(
+							"failed to retrieve offchain tx: %s", err,
+						)
+					}
+					offchainTxCache[vtxo.Txid] = offchainTx
 				}
-				if len(offchainTxs) == 0 {
-					return nil, nil, fmt.Errorf("offchain tx %s not found", vtxo.Txid)
-				}
-				offchainTx := offchainTxs[0]
 
 				chainTx := ChainTx{
 					Txid:      vtxo.Txid,
@@ -595,7 +712,10 @@ func (i *indexerService) buildVtxoChain(
 				for _, b64 := range offchainTx.CheckpointTxs {
 					ptx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
 					if err != nil {
-						return nil, nil, fmt.Errorf("failed to deserialize checkpoint tx: %s", err)
+						return nil, nil, false, fmt.Errorf(
+							"failed to deserialize checkpoint tx: %s",
+							err,
+						)
 					}
 
 					txid := ptx.UnsignedTx.TxID()
@@ -606,6 +726,7 @@ func (i *indexerService) buildVtxoChain(
 						Spends:    []string{ptx.UnsignedTx.TxIn[0].PreviousOutPoint.String()},
 					})
 
+					allOutpoints = append(allOutpoints, Outpoint{Txid: txid, VOut: 0})
 					chainTx.Spends = append(chainTx.Spends, txid)
 
 					// populate newNextVtxos with checkpoints inputs
@@ -630,16 +751,16 @@ func (i *indexerService) buildVtxoChain(
 				Txid: vtxo.RootCommitmentTxid, VOut: 0,
 			}, nil)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, false, err
 			}
 
 			vtxoTree, err := tree.NewTxTree(flatVtxoTree.Txs)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, false, err
 			}
 			branch, err := vtxoTree.SubTree([]string{vtxo.Txid})
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, false, err
 			}
 
 			fromRootToVtxo := make([]string, 0)
@@ -647,7 +768,7 @@ func (i *indexerService) buildVtxoChain(
 				fromRootToVtxo = append(fromRootToVtxo, tx.Root.UnsignedTx.TxID())
 				return true, nil
 			}); err != nil {
-				return nil, nil, err
+				return nil, nil, false, err
 			}
 
 			// reverse fromRootToVtxo
@@ -688,7 +809,166 @@ func (i *indexerService) buildVtxoChain(
 		nextVtxos = newNextVtxos
 	}
 
-	return chain, allOutpoints, nil
+	return chain, allOutpoints, false, nil
+}
+
+// preloadByMarkers bulk-fetches VTXOs and their offchain txs by walking the
+// marker DAG upward from the markers of startVtxos. This reduces DB round-trips
+// from O(chain_length) to O(chain_length / MarkerInterval) for both layers.
+func (i *indexerService) preloadByMarkers(
+	ctx context.Context,
+	startVtxos []domain.Vtxo,
+	vtxoCache map[string]domain.Vtxo,
+	offchainTxCache map[string]*domain.OffchainTx,
+) error {
+	markerRepo := i.repoManager.Markers()
+	offchainTxRepo := i.repoManager.OffchainTxs()
+
+	// Seed the traversal with the markers of the start VTXOs, caching the
+	// VTXOs themselves along the way. markerIds accumulates every marker
+	// discovered during the traversal below.
+	markerIds := make([]string, 0)
+	for _, v := range startVtxos {
+		vtxoCache[v.Outpoint.String()] = v
+		markerIds = append(markerIds, v.MarkerIDs...)
+	}
+
+	// Legacy VTXOs may carry no markers, leaving nothing to walk or bulk-fetch.
+	if len(markerIds) == 0 {
+		return nil
+	}
+
+	// BFS up the marker DAG: currentMarkerIds holds the frontier of the
+	// current level, one bulk DB fetch per level.
+	currentMarkerIds := make([]string, len(markerIds))
+	copy(currentMarkerIds, markerIds)
+
+	visited := make(map[string]bool)
+	for len(currentMarkerIds) > 0 {
+		// Get marker objects to find parent markers.
+		markers, err := markerRepo.GetMarkersByIds(ctx, currentMarkerIds)
+		if err != nil {
+			return err
+		}
+
+		for _, id := range currentMarkerIds {
+			visited[id] = true
+		}
+
+		// Expand the frontier to the not-yet-visited parents. Markers may
+		// share parents, so the visited set guards against re-fetching and
+		// against cycles.
+		nextMarkers := make([]string, 0)
+		for _, m := range markers {
+			for _, pid := range m.ParentMarkerIDs {
+				if !visited[pid] {
+					nextMarkers = append(nextMarkers, pid)
+					markerIds = append(markerIds, pid)
+				}
+			}
+		}
+		currentMarkerIds = nextMarkers
+	}
+
+	// Bulk-fetch all VTXOs tagged with these markers.
+	vtxos, err := markerRepo.GetVtxoChainByMarkers(ctx, markerIds)
+	if err != nil {
+		return err
+	}
+	for _, v := range vtxos {
+		if _, ok := vtxoCache[v.Outpoint.String()]; !ok {
+			vtxoCache[v.Outpoint.String()] = v
+		}
+	}
+
+	// Piggyback: bulk-fetch the offchain txs for the preconfirmed VTXOs
+	// in this window, so the walk loop never has to hit the DB per-hop.
+	missingTxids := make([]string, 0, len(vtxos))
+	seen := make(map[string]bool, len(vtxos))
+	for _, v := range vtxos {
+		if !v.Preconfirmed {
+			continue
+		}
+		if seen[v.Txid] {
+			continue
+		}
+		seen[v.Txid] = true
+		if _, ok := offchainTxCache[v.Txid]; ok {
+			continue
+		}
+		missingTxids = append(missingTxids, v.Txid)
+	}
+	// offchainTxRepo may be nil in test helpers that do not wire up the
+	// offchain-tx repo. Skip the piggyback in that case — the walk loop
+	// will fall back to its own in-loop bulk fetch for any cache misses.
+	if len(missingTxids) > 0 && offchainTxRepo != nil {
+		offchainTxs, err := offchainTxRepo.GetOffchainTxsByTxids(ctx, missingTxids)
+		if err != nil {
+			return err
+		}
+		for _, tx := range offchainTxs {
+			offchainTxCache[tx.ArkTxid] = tx
+		}
+	}
+
+	return nil
+}
+
+// ensureVtxosCached loads the given outpoints into the cache if not already present.
+// For each fetched VTXO, it also loads its marker window into the cache to prefetch
+// nearby VTXOs that will likely be needed in subsequent iterations.
+func (i *indexerService) ensureVtxosCached(
+	ctx context.Context,
+	outpoints []domain.Outpoint,
+	cache map[string]domain.Vtxo,
+	loadedMarkers map[string]bool,
+) error {
+	// Collect cache misses.
+	missingOutpoints := make([]domain.Outpoint, 0)
+	for _, op := range outpoints {
+		if _, ok := cache[op.String()]; !ok {
+			missingOutpoints = append(missingOutpoints, op)
+		}
+	}
+	if len(missingOutpoints) == 0 {
+		return nil
+	}
+
+	// Fetch misses from DB.
+	dbVtxos, err := i.repoManager.Vtxos().GetVtxos(ctx, missingOutpoints)
+	if err != nil {
+		return err
+	}
+	for _, v := range dbVtxos {
+		cache[v.Outpoint.String()] = v
+	}
+
+	// For each fetched VTXO, load its marker window(s) into cache.
+	if i.repoManager.Markers() == nil {
+		return nil
+	}
+	for _, v := range dbVtxos {
+		for _, markerID := range v.MarkerIDs {
+			if loadedMarkers[markerID] {
+				continue
+			}
+			loadedMarkers[markerID] = true
+
+			windowVtxos, err := i.repoManager.Markers().GetVtxosByMarker(ctx, markerID)
+			if err != nil {
+				log.WithError(err).
+					Warnf("failed to load marker window %s, falling back to per-VTXO lookups", markerID)
+				continue
+			}
+			for _, wv := range windowVtxos {
+				if _, ok := cache[wv.Outpoint.String()]; !ok {
+					cache[wv.Outpoint.String()] = wv
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 func (i *indexerService) getVirtualTxs(
@@ -1036,6 +1316,29 @@ func (i *indexerService) validateAuthToken(authToken string) (string, error) {
 	return hex.EncodeToString(msg[:32]), nil
 }
 
+// validateChainAuth validates the auth token for GetVtxoChain: it verifies the
+// signature and the embedded-timestamp expiry and confirms the token authorizes
+// vtxoKey.
+func (i *indexerService) validateChainAuth(authToken string, vtxoKey Outpoint) error {
+	if i.authPrvkey == nil {
+		return fmt.Errorf("auth not configured")
+	}
+
+	hash, err := i.validateAuthToken(authToken)
+	if err != nil {
+		return err
+	}
+
+	outpoints, _, ok := i.tokenCache.getOutpoints(hash)
+	if !ok {
+		return fmt.Errorf("auth token not found")
+	}
+	if _, ok := outpoints[vtxoKey.String()]; !ok {
+		return fmt.Errorf("auth token is not for outpoint %s", vtxoKey)
+	}
+	return nil
+}
+
 // extractTokenHash decodes an auth token and returns the outpoints hash
 // without checking expiry. Signature is still verified.
 func (i *indexerService) extractTokenHash(authToken string) (string, error) {
@@ -1190,4 +1493,100 @@ func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {
 	}
 
 	return items[startIndex:endIndex], resp
+}
+
+// chainCursorPage slices a page of pageSize starting at offset out of chain and
+// emits the next offset cursor (bound to vtxoKey) when more of the chain
+// remains. chain is a deterministic prefix of the full chain, so each page is a
+// disjoint slice — no tx is emitted twice across pages. moreBeyondChain is set
+// when chain was truncated by the walk limit, so a next page exists even though
+// the slice reached the end of what was loaded.
+func (i *indexerService) chainCursorPage(
+	chain []ChainTx, offset, pageSize int, moreBeyondChain bool, vtxoKey Outpoint,
+) *VtxoChainResp {
+	if offset < 0 {
+		offset = 0
+	}
+	if pageSize <= 0 {
+		pageSize = int(maxPageSizeVtxoChain)
+	}
+
+	total := len(chain)
+	if offset >= total {
+		return &VtxoChainResp{Chain: []ChainTx{}}
+	}
+
+	end := offset + pageSize
+	if end > total {
+		end = total
+	}
+
+	hasMore := moreBeyondChain || end < total
+	var nextToken string
+	if hasMore {
+		nextToken = i.encodeChainCursor(end, vtxoKey)
+	}
+
+	return &VtxoChainResp{
+		Chain:         chain[offset:end],
+		NextPageToken: nextToken,
+	}
+}
+
+// encodeChainCursor encodes a chain offset into an HMAC-signed opaque page token
+// bound to vtxoKey. The HMAC prevents clients from forging cursors or replaying
+// a cursor issued for one outpoint while authenticating for another (which would
+// bypass auth validation in exposurePrivate/withheld modes).
+func (i *indexerService) encodeChainCursor(offset int, vtxoKey Outpoint) string {
+	cur := vtxoChainCursor{Outpoint: vtxoKey.String(), Offset: offset}
+	payload, err := json.Marshal(cur)
+	if err != nil {
+		// Unreachable for a fixed {string, int} struct, but avoid emitting a
+		// malformed cursor: returning "" just signals "no next page".
+		return ""
+	}
+
+	if len(i.cursorHMACKey) > 0 {
+		mac := hmac.New(sha256.New, i.cursorHMACKey)
+		mac.Write(payload)
+		payload = append(payload, mac.Sum(nil)...)
+	}
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+// decodeChainCursor decodes and verifies an HMAC-signed page token, returning
+// the resume offset. It rejects a cursor issued for a different outpoint so a
+// page token cannot be replayed against another chain in withheld/private mode.
+func (i *indexerService) decodeChainCursor(token string, vtxoKey Outpoint) (int, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return 0, fmt.Errorf("invalid base64: %w", err)
+	}
+
+	payload := raw
+	if len(i.cursorHMACKey) > 0 {
+		if len(raw) < sha256.Size {
+			return 0, fmt.Errorf("invalid cursor: too short")
+		}
+		payload = raw[:len(raw)-sha256.Size]
+		sig := raw[len(raw)-sha256.Size:]
+
+		mac := hmac.New(sha256.New, i.cursorHMACKey)
+		mac.Write(payload)
+		if !hmac.Equal(sig, mac.Sum(nil)) {
+			return 0, fmt.Errorf("invalid cursor: signature mismatch")
+		}
+	}
+
+	var cur vtxoChainCursor
+	if err := json.Unmarshal(payload, &cur); err != nil {
+		return 0, fmt.Errorf("invalid JSON: %w", err)
+	}
+	if cur.Outpoint != vtxoKey.String() {
+		return 0, fmt.Errorf("cursor does not match outpoint")
+	}
+	if cur.Offset < 0 {
+		return 0, fmt.Errorf("invalid cursor offset")
+	}
+	return cur.Offset, nil
 }

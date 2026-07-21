@@ -2497,6 +2497,36 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 
 	err = aliceClient.FinalizeTx(ctx, txid, finalCheckpoints)
 	require.NoError(t, err)
+
+	// Post-state: the finalized ark tx must have spent Bob's VTXO and created
+	// the new VTXO paying back to Alice. Poll since projections are async.
+	bobScript, err := script.P2TRScript(bobAddr.VtxoTapKey)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		// Bob's VTXO must be marked as spent...
+		resp, err := indexerClient.GetVtxos(
+			ctx,
+			indexer.WithScripts([]string{hex.EncodeToString(bobScript)}),
+			indexer.WithSpentOnly(),
+		)
+		if err != nil || resp == nil || len(resp.Vtxos) == 0 {
+			return false
+		}
+
+		// ...and the new VTXO paying to Alice must exist.
+		spendable, _, err := alice.ListVtxos(ctx)
+		if err != nil {
+			return false
+		}
+		for _, v := range spendable {
+			if v.Txid == txid {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 200*time.Millisecond,
+		"offchain tx %s reported success but its projections were never applied", txid)
 }
 
 // TestSendToConditionMultisigClosure shows how to send an ark address that includes a closure
@@ -3493,6 +3523,30 @@ func TestSweep(t *testing.T) {
 		require.NotNil(t, res2)
 		require.NotEmpty(t, res2.Txid)
 
+		// open transaction stream before triggering the sweep so we can catch
+		// the sweep event emitted when the checkpoint output is swept
+		streamCtx, streamCancel := context.WithCancel(ctx)
+		t.Cleanup(streamCancel)
+
+		txStream, closeStream, err := alice.Client().GetTransactionsStream(streamCtx)
+		require.NoError(t, err)
+		t.Cleanup(closeStream)
+
+		sweepCh := make(chan *client.TxNotification, 1)
+		go func() {
+			for ev := range txStream {
+				if ev.SweepTx == nil {
+					continue
+				}
+				for _, swept := range ev.SweepTx.SweptVtxos {
+					if swept.Txid == res1.Txid || swept.Txid == res2.Txid {
+						sweepCh <- ev.SweepTx
+						return
+					}
+				}
+			}
+		}()
+
 		// unroll the spent VTXO to put checkpoint onchain
 		explorer, err := mempoolexplorer.NewExplorer(
 			"http://localhost:3000", arklib.BitcoinRegTest,
@@ -3513,8 +3567,16 @@ func TestSweep(t *testing.T) {
 		err = generateBlocks(10)
 		require.NoError(t, err)
 
-		// give time for the server to process the sweep
-		time.Sleep(20 * time.Second)
+		// wait for the sweep tx event on the stream
+		var sweepEvent *client.TxNotification
+		select {
+		case sweepEvent = <-sweepCh:
+		case <-time.After(40 * time.Second):
+			t.Fatal("timed out waiting for checkpoint sweep tx event on stream")
+		}
+		require.NotEmpty(t, sweepEvent.Txid)
+		require.NotEmpty(t, sweepEvent.Tx)
+		require.NotEmpty(t, sweepEvent.SweptVtxos)
 
 		// verify that the checkpoint output has been put onchain
 		// and that the VTXO has been swept

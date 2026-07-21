@@ -7,7 +7,9 @@ import (
 
 type OffchainTxRepository interface {
 	AddOrUpdateOffchainTx(ctx context.Context, offchainTx *OffchainTx) error
+	GetOffchainTx(ctx context.Context, txid string) (*OffchainTx, error)
 	GetOffchainTxs(ctx context.Context, filter OffchainTxFilter) ([]*OffchainTx, error)
+	GetOffchainTxsByTxids(ctx context.Context, txids []string) ([]*OffchainTx, error)
 	Close()
 }
 

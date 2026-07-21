@@ -1,10 +1,14 @@
 package application
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger"
+	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -14,6 +18,8 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
+
+const testDust uint64 = 546
 
 func TestNextScheduledSession(t *testing.T) {
 	scheduledSessionStartTime := parseTime(t, "2023-10-10 13:00:00")
@@ -177,57 +183,6 @@ func TestCheckUnrolledVtxoExpiry(t *testing.T) {
 		})
 	}
 }
-
-func parseTime(t *testing.T, value string) time.Time {
-	tm, err := time.ParseInLocation(time.DateTime, value, time.UTC)
-	require.NoError(t, err)
-	return tm
-}
-
-func testPubkey(t *testing.T) *btcec.PublicKey {
-	t.Helper()
-	key, err := btcec.NewPrivateKey()
-	require.NoError(t, err)
-	return key.PubKey()
-}
-
-func testSubdustScript(t *testing.T) []byte {
-	t.Helper()
-	s, err := script.SubDustScript(testPubkey(t))
-	require.NoError(t, err)
-	return s
-}
-
-func testP2TRScript(t *testing.T) []byte {
-	t.Helper()
-	s, err := script.P2TRScript(testPubkey(t))
-	require.NoError(t, err)
-	return s
-}
-
-// bareOpReturn builds an OP_RETURN script with arbitrary data that is neither
-// a subdust script (which requires exactly 32-byte push) nor an asset packet.
-func bareOpReturn(t *testing.T) []byte {
-	t.Helper()
-	s, err := txscript.NewScriptBuilder().
-		AddOp(txscript.OP_RETURN).
-		AddData([]byte("not-subdust-not-asset")).
-		Script()
-	require.NoError(t, err)
-	return s
-}
-
-func testExtensionScript(t *testing.T) []byte {
-	t.Helper()
-	ext := extension.Extension{
-		extension.UnknownPacket{PacketType: 0xFF, Data: []byte("test")},
-	}
-	s, err := ext.Serialize()
-	require.NoError(t, err)
-	return s
-}
-
-const testDust uint64 = 546
 
 func TestValidateOffchainTxOutputs(t *testing.T) {
 	anchor := txutils.AnchorOutput()
@@ -654,4 +609,221 @@ func TestValidateOffchainTxOutputs(t *testing.T) {
 			require.Len(t, outputs, tc.wantOutputCount)
 		})
 	}
+}
+
+// TestCollectTriggerContext ensures collectTriggerContext returns the correct context for batch
+// trigger based on the info stored in the cache.
+func TestCollectTriggerContext(t *testing.T) {
+	tests := []struct {
+		name        string
+		intents     []ports.TimedIntent
+		feeRate     uint64
+		lastBatchAt time.Time
+		want        batchtrigger.Context
+	}{
+		{
+			name:    "empty intents",
+			intents: nil,
+			want:    batchtrigger.Context{},
+		},
+		{
+			name: "single intent with boarding inputs and positive fee",
+			intents: []ports.TimedIntent{
+				{
+					Intent: domain.Intent{
+						Inputs: []domain.Vtxo{
+							{Amount: 1000},
+							{Amount: 500},
+						},
+						Receivers: []domain.Receiver{
+							{Amount: 800},
+							{Amount: 600},
+						},
+					},
+					BoardingInputs: []ports.BoardingInput{
+						{Amount: 200},
+						{Amount: 300},
+					},
+				},
+			},
+			want: batchtrigger.Context{
+				IntentsCount:        1,
+				BoardingInputsCount: 2,
+				TotalBoardingAmount: 500,
+				// inputs: 1500 vtxo + 500 boarding = 2000; outputs: 1400; fee = 600
+				TotalIntentFees: 600,
+			},
+		},
+		{
+			name: "intent with no boarding and no fee (inputs == outputs)",
+			intents: []ports.TimedIntent{
+				{
+					Intent: domain.Intent{
+						Inputs:    []domain.Vtxo{{Amount: 1000}},
+						Receivers: []domain.Receiver{{Amount: 1000}},
+					},
+				},
+			},
+			want: batchtrigger.Context{IntentsCount: 1},
+		},
+		{
+			name: "intent where outputs exceed inputs is treated as zero fee",
+			intents: []ports.TimedIntent{
+				{
+					Intent: domain.Intent{
+						Inputs:    []domain.Vtxo{{Amount: 100}},
+						Receivers: []domain.Receiver{{Amount: 200}},
+					},
+				},
+			},
+			want: batchtrigger.Context{IntentsCount: 1},
+		},
+		{
+			name: "multiple intents are summed",
+			intents: []ports.TimedIntent{
+				{
+					Intent: domain.Intent{
+						Inputs:    []domain.Vtxo{{Amount: 1000}},
+						Receivers: []domain.Receiver{{Amount: 900}},
+					},
+					BoardingInputs: []ports.BoardingInput{{Amount: 50}},
+				},
+				{
+					Intent: domain.Intent{
+						Inputs:    []domain.Vtxo{{Amount: 2000}},
+						Receivers: []domain.Receiver{{Amount: 1800}},
+					},
+					BoardingInputs: []ports.BoardingInput{
+						{Amount: 100},
+						{Amount: 100},
+					},
+				},
+			},
+			want: batchtrigger.Context{
+				IntentsCount:        2,
+				BoardingInputsCount: 3,
+				TotalBoardingAmount: 250,
+				// intent 1: 1000+50 - 900 = 150
+				// intent 2: 2000+200 - 1800 = 400
+				TotalIntentFees: 550,
+			},
+		},
+		{
+			name: "current fee rate is captured from the wallet",
+			intents: []ports.TimedIntent{
+				{
+					Intent: domain.Intent{
+						Inputs:    []domain.Vtxo{{Amount: 1000}},
+						Receivers: []domain.Receiver{{Amount: 1000}},
+					},
+				},
+			},
+			feeRate: 42,
+			want: batchtrigger.Context{
+				IntentsCount:   1,
+				CurrentFeerate: 42,
+			},
+		},
+		{
+			name:        "time since last batch",
+			lastBatchAt: time.Now().Add(-10 * time.Minute),
+			want: batchtrigger.Context{
+				TimeSinceLastBatch: 600,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &service{
+				wallet: testWallet{feeRate: tt.feeRate},
+				cache:  testLiveStore{intents: testIntentStore{intents: tt.intents}},
+			}
+
+			got := s.collectTriggerContext(t.Context(), tt.lastBatchAt)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func parseTime(t *testing.T, value string) time.Time {
+	tm, err := time.ParseInLocation(time.DateTime, value, time.UTC)
+	require.NoError(t, err)
+	return tm
+}
+
+func testPubkey(t *testing.T) *btcec.PublicKey {
+	t.Helper()
+	key, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	return key.PubKey()
+}
+
+func testSubdustScript(t *testing.T) []byte {
+	t.Helper()
+	s, err := script.SubDustScript(testPubkey(t))
+	require.NoError(t, err)
+	return s
+}
+
+func testP2TRScript(t *testing.T) []byte {
+	t.Helper()
+	s, err := script.P2TRScript(testPubkey(t))
+	require.NoError(t, err)
+	return s
+}
+
+// bareOpReturn builds an OP_RETURN script with arbitrary data that is neither
+// a subdust script (which requires exactly 32-byte push) nor an asset packet.
+func bareOpReturn(t *testing.T) []byte {
+	t.Helper()
+	s, err := txscript.NewScriptBuilder().
+		AddOp(txscript.OP_RETURN).
+		AddData([]byte("not-subdust-not-asset")).
+		Script()
+	require.NoError(t, err)
+	return s
+}
+
+func testExtensionScript(t *testing.T) []byte {
+	t.Helper()
+	ext := extension.Extension{
+		extension.UnknownPacket{PacketType: 0xFF, Data: []byte("test")},
+	}
+	s, err := ext.Serialize()
+	require.NoError(t, err)
+	return s
+}
+
+// The stubs below embed the port interfaces so they satisfy them with nil
+// method sets, overriding only what collectTriggerContext actually calls:
+// wallet.FeeRate and cache.Intents().ViewAll.
+
+type testWallet struct {
+	ports.WalletService
+	feeRate uint64
+	feeErr  error
+}
+
+func (w testWallet) FeeRate(context.Context) (uint64, error) {
+	return w.feeRate, w.feeErr
+}
+
+type testLiveStore struct {
+	ports.LiveStore
+	intents ports.IntentStore
+}
+
+func (s testLiveStore) Intents() ports.IntentStore { return s.intents }
+
+type testIntentStore struct {
+	ports.IntentStore
+	intents []ports.TimedIntent
+	err     error
+}
+
+func (s testIntentStore) ViewAll(
+	context.Context, []string,
+) ([]ports.TimedIntent, error) {
+	return s.intents, s.err
 }

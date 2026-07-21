@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/arkade-os/arkd/internal/interface/grpc/handlers/txfilter"
+	arkdErrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/wire"
 )
 
@@ -35,7 +36,15 @@ type listener[T any] struct {
 	done         chan struct{}
 	closeDoneMux sync.Once
 	timeoutTimer *time.Timer
-	lock         *sync.RWMutex
+
+	attached *attachment
+	lock     *sync.RWMutex
+}
+
+// attachment represents a stream's exclusive hold on a listener. Its displaced
+// channel is closed when another stream takes over, telling the old stream to exit.
+type attachment struct {
+	displaced chan struct{}
 }
 
 func newListener[T any](id string, topics []string) *listener[T] {
@@ -210,14 +219,49 @@ func (h *broker[T]) removeListener(id string) {
 	delete(h.listeners, id)
 }
 
-func (h *broker[T]) getListenerChannel(id string) (chan T, error) {
-	h.lock.RLock()
-	listener, ok := h.listeners[id]
-	h.lock.RUnlock()
+// attach makes the calling stream the listener's sole consumer, cancelling any
+// pending removal timeout and displacing the currently attached stream, if any.
+func (h *broker[T]) attach(id string) (*listener[T], *attachment, error) {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
+	l, ok := h.listeners[id]
 	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
+		return nil, nil, fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
 	}
-	return listener.ch, nil
+	if l.timeoutTimer != nil {
+		l.timeoutTimer.Stop()
+		l.timeoutTimer = nil
+	}
+	if l.attached != nil {
+		close(l.attached.displaced)
+	}
+	l.attached = &attachment{displaced: make(chan struct{})}
+	return l, l.attached, nil
+}
+
+// release ends att's hold on the listener: kept for reconnectWindow if it still
+// has filters, removed otherwise. Returns false if att was displaced.
+func (h *broker[T]) release(id string, att *attachment, reconnectWindow time.Duration) bool {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
+	l, ok := h.listeners[id]
+	if !ok || l.attached != att {
+		return false
+	}
+	l.attached = nil
+
+	l.lock.RLock()
+	hasFilters := len(l.topics) > 0 || len(l.txFilters) > 0
+	l.lock.RUnlock()
+	if reconnectWindow > 0 && hasFilters {
+		h.scheduleExpiryLocked(l, reconnectWindow)
+		return true
+	}
+	l.closeDone()
+	delete(h.listeners, id)
+	return true
 }
 
 func (h *broker[T]) getTopics(id string) []string {
@@ -307,7 +351,9 @@ func compileTxFilters(exprs []string) (map[string]txfilter.Filter, error) {
 	for _, expr := range exprs {
 		f, err := txfilter.Parse(expr)
 		if err != nil {
-			return nil, err
+			return nil, arkdErrors.INVALID_TX_FILTER.
+				New("invalid tx filter %q: %s", expr, err).
+				WithMetadata(arkdErrors.TxFilterMetadata{Expression: expr})
 		}
 		filters[expr] = *f
 	}
@@ -315,44 +361,39 @@ func compileTxFilters(exprs []string) (map[string]txfilter.Filter, error) {
 }
 
 func (h *broker[T]) startTimeout(id string, timeout time.Duration) {
-	// stop any existing timeout on this listener
-	h.stopTimeout(id)
-
 	h.lock.Lock()
 	defer h.lock.Unlock()
-	_, ok := h.listeners[id]
+
+	l, ok := h.listeners[id]
 	if !ok {
 		return
 	}
+	// The timeout reaps a listener no stream is consuming; while one is
+	// attached it must not be armed (attach cancels it on takeover).
+	if l.attached != nil {
+		return
+	}
+	h.scheduleExpiryLocked(l, timeout)
+}
 
-	h.listeners[id].timeoutTimer = time.AfterFunc(timeout, func() {
+// scheduleExpiryLocked (re)arms the expiry timer on l; broker lock must be held, and only the current timer may remove the listener.
+func (h *broker[T]) scheduleExpiryLocked(l *listener[T], timeout time.Duration) {
+	if l.timeoutTimer != nil {
+		l.timeoutTimer.Stop()
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(timeout, func() {
 		h.lock.Lock()
 		defer h.lock.Unlock()
 
-		listener, ok := h.listeners[id]
-		if !ok {
+		listener, ok := h.listeners[l.id]
+		if !ok || listener.timeoutTimer != timer {
 			return
 		}
-		if listener.timeoutTimer != nil {
-			listener.timeoutTimer.Stop()
-		}
 		listener.closeDone()
-		delete(h.listeners, id)
+		delete(h.listeners, l.id)
 	})
-}
-
-func (h *broker[T]) stopTimeout(id string) {
-	h.lock.Lock()
-	defer h.lock.Unlock()
-
-	if _, ok := h.listeners[id]; !ok {
-		return
-	}
-
-	if h.listeners[id].timeoutTimer != nil {
-		h.listeners[id].timeoutTimer.Stop()
-		h.listeners[id].timeoutTimer = nil
-	}
+	l.timeoutTimer = timer
 }
 
 func (h *broker[T]) getListenersCopy() map[string]*listener[T] {

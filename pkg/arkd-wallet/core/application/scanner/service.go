@@ -5,12 +5,19 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	log "github.com/sirupsen/logrus"
+)
+
+const (
+	defaultInitialBackoff = time.Second
+	defaultMaxBackoff     = 30 * time.Second
 )
 
 type scanner struct {
@@ -21,6 +28,8 @@ type scanner struct {
 
 	lock                  sync.RWMutex
 	notificationListeners []chan map[string][]application.Utxo
+	initialBackoff        time.Duration
+	maxBackoff            time.Duration
 }
 
 // New creates a new BlockchainScanner service
@@ -34,6 +43,8 @@ func New(nbxplorer ports.Nbxplorer, network string) (application.BlockchainScann
 		lock:                  sync.RWMutex{},
 		notificationListeners: make([]chan map[string][]application.Utxo, 0),
 		chainParams:           application.NetworkToChainParams(network),
+		initialBackoff:        defaultInitialBackoff,
+		maxBackoff:            defaultMaxBackoff,
 	}
 
 	if err := svc.start(ctx); err != nil {
@@ -50,20 +61,48 @@ func (s *scanner) start(ctx context.Context) error {
 	}
 
 	go func() {
+		backoff := s.initialBackoff
+
+		connected := true
+
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case utxos := <-notificationCh:
-				if len(s.notificationListeners) == 0 {
+			case utxos, ok := <-notificationCh:
+				if !ok {
+					if connected {
+						log.Warn("nbxplorer disconnected")
+						connected = false
+					}
+
+					log.WithFields(log.Fields{"backoff": backoff}).Info("reconnecting to nbxplorer")
+					timer := time.NewTimer(backoff)
+					select {
+					case <-ctx.Done():
+						timer.Stop()
+						return
+					case <-timer.C:
+					}
+
+					nextCh, err := s.nbxplorer.GetAddressNotifications(ctx)
+					if err == nil {
+						log.Info("reconnected to nbxplorer")
+						connected = true
+						backoff = s.initialBackoff
+						notificationCh = nextCh
+						continue
+					}
+
+					backoff *= 2
+					if backoff > s.maxBackoff {
+						backoff = s.maxBackoff
+					}
 					continue
 				}
 
 				notificationsMap := make(map[string][]application.Utxo)
 				for _, utxo := range utxos {
-					if _, ok := notificationsMap[utxo.Script]; !ok {
-						notificationsMap[utxo.Script] = make([]application.Utxo, 0)
-					}
 					notificationsMap[utxo.Script] = append(notificationsMap[utxo.Script], application.Utxo{
 						Txid:   utxo.OutPoint.Hash.String(),
 						Index:  utxo.OutPoint.Index,
