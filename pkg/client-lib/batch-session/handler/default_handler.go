@@ -16,12 +16,12 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -511,7 +511,7 @@ func (h *defaultHandler) createAndSignForfeits(
 	ctx context.Context, vtxosToSign []clientlib.Vtxo, connectorsLeaves []*psbt.Packet,
 ) ([]string, error) {
 	network := clientlib.ToBitcoinNetwork(h.ServerParams.Network)
-	parsedForfeitAddr, err := btcutil.DecodeAddress(h.ServerParams.ForfeitAddress, &network)
+	parsedForfeitAddr, err := address.DecodeAddress(h.ServerParams.ForfeitAddress, &network)
 	if err != nil {
 		return nil, err
 	}

@@ -6,7 +6,7 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/address/v2"
 )
 
 // CollaborativeExitArgs configures a CollaborativeExit call: the Vtxos to spend and the on-chain
@@ -42,7 +42,7 @@ func (a CollaborativeExitArgs) validate() error {
 		return fmt.Errorf("invalid receiver amount, must be at least %d", a.ServerParams.Dust)
 	}
 	netParams := clientlib.ToBitcoinNetwork(a.ServerParams.Network)
-	if _, err := btcutil.DecodeAddress(a.Receiver.To, &netParams); err != nil {
+	if _, err := address.DecodeAddress(a.Receiver.To, &netParams); err != nil {
 		return fmt.Errorf("invalid receiver address")
 	}
 
