@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"os"
 	"testing"
 
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
@@ -23,10 +24,16 @@ const rawTxNoExtension = "010000000001e80300000000000022512000000000000000000000
 
 func TestBackfillPackets(t *testing.T) {
 	ctx := context.Background()
-	dsn := "postgres://root:secret@localhost:5432/event?sslmode=disable"
+	dsn := os.Getenv("ARKD_TEST_PG_DSN")
+	if dsn == "" {
+		dsn = "postgres://root:secret@localhost:5432/event?sslmode=disable"
+	}
 	db, err := sql.Open("postgres", dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
+	if perr := db.Ping(); perr != nil {
+		t.Skipf("postgres not reachable at %s: %v", dsn, perr)
+	}
 
 	setupOffchainTxTableForBackfill(t, db)
 	t.Cleanup(func() { _, _ = db.Exec(`DROP TABLE IF EXISTS offchain_tx;`) })

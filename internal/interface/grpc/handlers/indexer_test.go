@@ -81,6 +81,82 @@ func TestGetVtxoChain(t *testing.T) {
 	})
 }
 
+func TestGetVirtualTxs(t *testing.T) {
+	// A filtered or time-ranged request may omit txids: the "fill the gap"
+	// replay after a dropped stream re-queries by filter, not by known txids.
+	t.Run("filter without txids is accepted and reaches the service", func(t *testing.T) {
+		mockSvc := &mockAppIndexer{}
+		svc := newTestIndexerService(t)
+		svc.indexerSvc = mockSvc
+
+		_, err := svc.GetVirtualTxs(context.Background(), &arkv1.GetVirtualTxsRequest{
+			Filter: &arkv1.SubscriptionFilter{Expressions: []string{"has(tx.extension)"}},
+		})
+		require.NoError(t, err)
+		require.True(t, mockSvc.gotFilter.WithExtension)
+		require.Empty(t, mockSvc.gotFilter.WithTxids)
+	})
+
+	t.Run("time range without txids is accepted", func(t *testing.T) {
+		mockSvc := &mockAppIndexer{}
+		svc := newTestIndexerService(t)
+		svc.indexerSvc = mockSvc
+
+		_, err := svc.GetVirtualTxs(context.Background(), &arkv1.GetVirtualTxsRequest{
+			TimeRange: &arkv1.GetVirtualTxsRequest_After{
+				After: &arkv1.TimeRangeAfter{Timestamp: 1000},
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(1000), mockSvc.gotFilter.WithAfterDate)
+	})
+
+	t.Run("token without txids is accepted", func(t *testing.T) {
+		mockSvc := &mockAppIndexer{}
+		svc := newTestIndexerService(t)
+		svc.indexerSvc = mockSvc
+
+		_, err := svc.GetVirtualTxs(context.Background(), &arkv1.GetVirtualTxsRequest{
+			Auth: &arkv1.GetVirtualTxsRequest_Token{Token: "some-token"},
+		})
+		require.NoError(t, err)
+		require.Equal(t, "some-token", mockSvc.gotToken)
+	})
+
+	t.Run("no txids, filter, or token is rejected", func(t *testing.T) {
+		svc := newTestIndexerService(t)
+		svc.indexerSvc = &mockAppIndexer{}
+
+		_, err := svc.GetVirtualTxs(context.Background(), &arkv1.GetVirtualTxsRequest{})
+		require.Error(t, err)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+		require.Contains(t, err.Error(), "missing txids")
+	})
+
+	t.Run("txids are validated and forwarded", func(t *testing.T) {
+		mockSvc := &mockAppIndexer{}
+		svc := newTestIndexerService(t)
+		svc.indexerSvc = mockSvc
+
+		_, err := svc.GetVirtualTxs(context.Background(), &arkv1.GetVirtualTxsRequest{
+			Txids: []string{testChainTxid},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{testChainTxid}, mockSvc.gotFilter.WithTxids)
+	})
+
+	t.Run("malformed txid is rejected", func(t *testing.T) {
+		svc := newTestIndexerService(t)
+		svc.indexerSvc = &mockAppIndexer{}
+
+		_, err := svc.GetVirtualTxs(context.Background(), &arkv1.GetVirtualTxsRequest{
+			Txids: []string{"not-a-txid"},
+		})
+		require.Error(t, err)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	})
+}
+
 func TestGetSubscription(t *testing.T) {
 	t.Parallel()
 
@@ -2037,6 +2113,8 @@ func (m *gatedSubscriptionServer) RecvMsg(any) error            { return nil }
 type mockAppIndexer struct {
 	application.IndexerService
 	gotPageToken string
+	gotToken     string
+	gotFilter    domain.OffchainTxFilter
 	resp         *application.VtxoChainResp
 	err          error
 }
@@ -2046,4 +2124,15 @@ func (m *mockAppIndexer) GetVtxoChain(
 ) (*application.VtxoChainResp, error) {
 	m.gotPageToken = pageToken
 	return m.resp, m.err
+}
+
+func (m *mockAppIndexer) GetVirtualTxs(
+	_ context.Context, token string, filter domain.OffchainTxFilter, _ *application.Page,
+) (*application.VirtualTxsResp, error) {
+	m.gotToken = token
+	m.gotFilter = filter
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &application.VirtualTxsResp{}, nil
 }

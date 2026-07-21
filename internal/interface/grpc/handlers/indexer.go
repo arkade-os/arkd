@@ -414,11 +414,22 @@ func (e *indexerService) GetVirtualTxs(
 		}
 		resp, err = e.indexerSvc.GetVirtualTxsByIntent(ctx, *intent, filter, page)
 	} else {
-		txids, parseErr := parseTxids(request.GetTxids())
-		if parseErr != nil {
-			return nil, status.Error(codes.InvalidArgument, parseErr.Error())
+		reqTxids := request.GetTxids()
+		// A filtered/time-ranged or token-scoped request may legitimately
+		// omit txids (the "fill the gap" replay after a dropped stream, where
+		// the caller re-queries by filter rather than by known txids). Only
+		// require txids when nothing else scopes the query.
+		if len(reqTxids) == 0 &&
+			!filterHasConstraint(filter) && request.GetToken() == "" {
+			return nil, status.Error(codes.InvalidArgument, "missing txids")
 		}
-		filter.WithTxids = txids
+		if len(reqTxids) > 0 {
+			parsed, parseErr := parseTxids(reqTxids)
+			if parseErr != nil {
+				return nil, status.Error(codes.InvalidArgument, parseErr.Error())
+			}
+			filter.WithTxids = parsed
+		}
 		resp, err = e.indexerSvc.GetVirtualTxs(ctx, request.GetToken(), filter, page)
 	}
 	if err != nil {
@@ -429,6 +440,17 @@ func (e *indexerService) GetVirtualTxs(
 		Txs:  resp.Txs,
 		Page: protoPage(resp.Page),
 	}, nil
+}
+
+// filterHasConstraint reports whether the filter narrows the result set
+// by anything other than txids (a CEL predicate or a time range), meaning
+// the request can be served without a caller-supplied txids list.
+func filterHasConstraint(f domain.OffchainTxFilter) bool {
+	return f.WithExtension ||
+		len(f.WithPacket) > 0 ||
+		len(f.WithPacketContains) > 0 ||
+		f.WithAfterDate > 0 ||
+		f.WithBeforeDate > 0
 }
 
 // parseVirtualTxsFilter projects the request's CEL expression + time

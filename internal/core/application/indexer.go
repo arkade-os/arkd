@@ -1036,6 +1036,7 @@ func isPureTxidLookup(f domain.OffchainTxFilter) bool {
 	return len(f.WithTxids) > 0 &&
 		!f.WithExtension &&
 		len(f.WithPacket) == 0 &&
+		len(f.WithPacketContains) == 0 &&
 		f.WithAfterDate == 0 &&
 		f.WithBeforeDate == 0
 }
