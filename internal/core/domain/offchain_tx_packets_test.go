@@ -12,17 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// rawTxTwoPackets carries an ARK extension with packets of type 0 and
-// type 255. Copied verbatim from
-// internal/interface/grpc/handlers/txfilter/testdata/raw_txs.json so
-// the unary matcher and the streaming filter share an authoritative
-// fixture.
-const (
-	rawTxTwoPackets = "01000000000100000000000000001b6a1941524b000e01020200000001010000c0de810aff04deadbeef00000000"
-	packet0Hex      = "01020200000001010000c0de810a"
-	packet255Hex    = "deadbeef"
-)
-
 func TestOffchainTxFilterMatchPackets(t *testing.T) {
 	t.Parallel()
 
@@ -229,3 +218,14 @@ func psbtBase64FromTxHex(t *testing.T, txHex string) string {
 	require.NoError(t, p.Serialize(&buf))
 	return base64.StdEncoding.EncodeToString(buf.Bytes())
 }
+
+// rawTxTwoPackets carries an ARK extension with packets of type 0 and
+// type 255. Copied verbatim from
+// internal/interface/grpc/handlers/txfilter/testdata/raw_txs.json so
+// the unary matcher and the streaming filter share an authoritative
+// fixture.
+const (
+	rawTxTwoPackets = "01000000000100000000000000001b6a1941524b000e01020200000001010000c0de810aff04deadbeef00000000"
+	packet0Hex      = "01020200000001010000c0de810a"
+	packet255Hex    = "deadbeef"
+)
