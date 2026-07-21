@@ -11,11 +11,11 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 type ServerParams struct {
@@ -320,7 +320,7 @@ type Receiver struct {
 }
 
 func (r Receiver) IsOnchain() bool {
-	_, err := btcutil.DecodeAddress(r.To, nil)
+	_, err := address.DecodeAddress(r.To, nil)
 	return err == nil
 }
 
@@ -331,7 +331,7 @@ func (o Receiver) ToTxOut() (*wire.TxOut, bool, error) {
 	arkAddress, err := arklib.DecodeAddressV0(o.To)
 	if err != nil {
 		// Decode onchain address
-		btcAddress, err := btcutil.DecodeAddress(o.To, nil)
+		btcAddress, err := address.DecodeAddress(o.To, nil)
 		if err != nil {
 			return nil, false, err
 		}

@@ -19,9 +19,9 @@ import (
 	identityfilestore "github.com/arkade-os/arkd/pkg/client-wallet/identity/store/file"
 	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-wallet/identity/store/inmemory"
 	"github.com/arkade-os/arkd/pkg/client-wallet/types"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightningnetwork/lnd/lntypes"
 )
 
@@ -291,7 +291,7 @@ func getVtxo(usedVtxos []clientlib.Vtxo, spentByVtxos []clientlib.Vtxo) clientli
 
 func toOutputScript(onchainAddress string, network arklib.Network) ([]byte, error) {
 	netParams := clientlib.ToBitcoinNetwork(network)
-	rcvAddr, err := btcutil.DecodeAddress(onchainAddress, &netParams)
+	rcvAddr, err := address.DecodeAddress(onchainAddress, &netParams)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +319,7 @@ func validateOnchainAddress(addr string, network arklib.Network) error {
 		return fmt.Errorf("missing receiver address")
 	}
 	netParams := clientlib.ToBitcoinNetwork(network)
-	if _, err := btcutil.DecodeAddress(addr, &netParams); err != nil {
+	if _, err := address.DecodeAddress(addr, &netParams); err != nil {
 		return fmt.Errorf("invalid onchain receiver address: %w", err)
 	}
 	return nil
@@ -336,7 +336,7 @@ func validateOffchainOrOnchainAddress(addr string, network arklib.Network) error
 		return nil
 	}
 	netParams := clientlib.ToBitcoinNetwork(network)
-	if _, onErr := btcutil.DecodeAddress(addr, &netParams); onErr == nil {
+	if _, onErr := address.DecodeAddress(addr, &netParams); onErr == nil {
 		return nil
 	}
 	return fmt.Errorf(

@@ -9,10 +9,10 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/errors"
+	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
 )
 
 // NetworkFromString resolves the textual network name reported by the server (mainnet, testnet,
@@ -314,7 +314,7 @@ func CoinSelectAsset(
 func ParseBitcoinAddress(addr string, net chaincfg.Params) (
 	bool, []byte, error,
 ) {
-	btcAddr, err := btcutil.DecodeAddress(addr, &net)
+	btcAddr, err := address.DecodeAddress(addr, &net)
 	if err != nil {
 		return false, nil, nil
 	}
