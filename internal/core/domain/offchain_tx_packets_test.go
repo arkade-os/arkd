@@ -91,6 +91,74 @@ func TestOffchainTxFilterMatchPackets(t *testing.T) {
 		require.False(t, match)
 	})
 
+	t.Run("contains matches a byte-aligned substring", func(t *testing.T) {
+		// packet 255 serializes to bytes de ad be ef; "beef" is contained.
+		match, err := domain.OffchainTxFilter{
+			WithPacketContains: map[int][]string{255: {"beef"}},
+		}.MatchPackets(off)
+		require.NoError(t, err)
+		require.True(t, match)
+	})
+
+	t.Run("contains misses when substring absent", func(t *testing.T) {
+		match, err := domain.OffchainTxFilter{
+			WithPacketContains: map[int][]string{255: {"ffff"}},
+		}.MatchPackets(off)
+		require.NoError(t, err)
+		require.False(t, match)
+	})
+
+	t.Run("contains does not match across byte boundaries", func(t *testing.T) {
+		// "eadb" appears in the hex string "deadbeef" at an odd offset but
+		// is not a byte-aligned subsequence (bytes ea db are not present),
+		// so the byte-wise match must reject it. A naive hex-string
+		// strings.Contains would wrongly return true here.
+		match, err := domain.OffchainTxFilter{
+			WithPacketContains: map[int][]string{255: {"eadb"}},
+		}.MatchPackets(off)
+		require.NoError(t, err)
+		require.False(t, match)
+	})
+
+	t.Run("contains requires all listed substrings", func(t *testing.T) {
+		both, err := domain.OffchainTxFilter{
+			WithPacketContains: map[int][]string{255: {"dead", "beef"}},
+		}.MatchPackets(off)
+		require.NoError(t, err)
+		require.True(t, both)
+
+		oneMissing, err := domain.OffchainTxFilter{
+			WithPacketContains: map[int][]string{255: {"dead", "ffff"}},
+		}.MatchPackets(off)
+		require.NoError(t, err)
+		require.False(t, oneMissing)
+	})
+
+	t.Run("contains misses when packet type absent", func(t *testing.T) {
+		match, err := domain.OffchainTxFilter{
+			WithPacketContains: map[int][]string{17: {"dead"}},
+		}.MatchPackets(off)
+		require.NoError(t, err)
+		require.False(t, match)
+	})
+
+	t.Run("exact and contains constraints combine", func(t *testing.T) {
+		match, err := domain.OffchainTxFilter{
+			WithPacket:         map[int]string{0: packet0Hex},
+			WithPacketContains: map[int][]string{255: {"beef"}},
+		}.MatchPackets(off)
+		require.NoError(t, err)
+		require.True(t, match)
+	})
+
+	t.Run("out-of-range contains packet type surfaces an error", func(t *testing.T) {
+		_, err := domain.OffchainTxFilter{
+			WithPacketContains: map[int][]string{domain.MaxPacketType + 1: {"aa"}},
+		}.MatchPackets(off)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "out of range")
+	})
+
 	t.Run("malformed psbt surfaces an error", func(t *testing.T) {
 		bad := &domain.OffchainTx{
 			ArkTxid: "bad",

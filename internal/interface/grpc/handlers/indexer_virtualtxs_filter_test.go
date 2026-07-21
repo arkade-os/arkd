@@ -38,6 +38,16 @@ func TestParseVirtualTxsFilter(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("contains expression is projected", func(t *testing.T) {
+		f, err := parseVirtualTxsFilter(&arkv1.GetVirtualTxsRequest{
+			Filter: &arkv1.SubscriptionFilter{
+				Expressions: []string{"tx.extension[42].contains('deadbeef')"},
+			},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"deadbeef"}, f.WithPacketContains[42])
+	})
+
 	t.Run("after time range populates WithAfterDate", func(t *testing.T) {
 		f, err := parseVirtualTxsFilter(&arkv1.GetVirtualTxsRequest{
 			TimeRange: &arkv1.GetVirtualTxsRequest_After{

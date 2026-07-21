@@ -9,6 +9,7 @@ import (
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/ast"
 	"github.com/google/cel-go/common/operators"
+	"github.com/google/cel-go/common/overloads"
 )
 
 // ExtractOffchainTxFilter compiles a CEL expression and projects it onto
@@ -20,6 +21,7 @@ import (
 //   - has(tx.extension)
 //   - hasPacket(tx.extension, <int>)
 //   - tx.extension[<int>] == '<hex>'
+//   - tx.extension[<int>].contains('<hex>')
 //   - tx.extension[<int>] != '<hex>' is NOT supported.
 //
 // Anything else (OR, NOT, comparisons against non-literal values, etc.)
@@ -128,6 +130,31 @@ func walkOffchainTxFilter(e ast.Expr, f *domain.OffchainTxFilter) error {
 				return fmt.Errorf("conflicting payload constraints for packet %d", pt)
 			}
 			f.WithPacket[pt] = hexData
+			return nil
+
+		case overloads.Contains:
+			if !call.IsMemberFunction() {
+				return fmt.Errorf("contains must be called on tx.extension[N]")
+			}
+			pt, ok := asExtensionIndex(call.Target())
+			if !ok {
+				return fmt.Errorf("contains target must be tx.extension[N]")
+			}
+			args := call.Args()
+			if len(args) != 1 {
+				return fmt.Errorf("contains expects one argument")
+			}
+			hexData, err := asStringLiteral(args[0])
+			if err != nil {
+				return fmt.Errorf("contains argument: %w", err)
+			}
+			if _, decodeErr := hex.DecodeString(hexData); decodeErr != nil {
+				return fmt.Errorf("tx.extension[%d].contains value must be hex: %w", pt, decodeErr)
+			}
+			if f.WithPacketContains == nil {
+				f.WithPacketContains = make(map[int][]string)
+			}
+			f.WithPacketContains[pt] = append(f.WithPacketContains[pt], hexData)
 			return nil
 
 		default:

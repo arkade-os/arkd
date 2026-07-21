@@ -325,7 +325,8 @@ func (r *arkRepository) GetOffchainTxs(
 				continue
 			}
 		}
-		if (filter.WithExtension || len(filter.WithPacket) > 0) && len(off.Packets) == 0 {
+		if (filter.WithExtension || len(filter.WithPacket) > 0 || len(filter.WithPacketContains) > 0) &&
+			len(off.Packets) == 0 {
 			continue
 		}
 		if filter.WithAfterDate > 0 && off.StartingTimestamp < filter.WithAfterDate {

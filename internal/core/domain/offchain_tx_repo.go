@@ -30,12 +30,19 @@ const OffchainTxsScanLimit = 10000
 // a packet of that type whose serialized bytes, hex-encoded, equal the
 // payload exactly. This matches the SubscriptionFilter streaming
 // semantics for `tx.extension[N] == 'hex'`.
+//
+// WithPacketContains maps a packet type to hex-encoded substrings that
+// must all appear within the serialized packet bytes. This matches the
+// streaming `tx.extension[N].contains('hex')` semantics: the substring
+// is compared byte-aligned against the decoded packet, not against the
+// base64 PSBT, so there is no base64-alignment ambiguity.
 type OffchainTxFilter struct {
-	WithTxids      []string
-	WithExtension  bool
-	WithPacket     map[int]string
-	WithAfterDate  int64
-	WithBeforeDate int64
+	WithTxids          []string
+	WithExtension      bool
+	WithPacket         map[int]string
+	WithPacketContains map[int][]string
+	WithAfterDate      int64
+	WithBeforeDate     int64
 }
 
 // Validate enforces the structural invariants of the filter. The empty

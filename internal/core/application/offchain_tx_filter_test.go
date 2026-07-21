@@ -52,6 +52,46 @@ func TestExtractOffchainTxFilter(t *testing.T) {
 		require.Equal(t, "abcd", got.WithPacket[2])
 	})
 
+	t.Run("contains predicate populates substring", func(t *testing.T) {
+		got, err := application.ExtractOffchainTxFilter(
+			"tx.extension[66].contains('deadbeef')",
+		)
+		require.NoError(t, err)
+		require.Equal(t, []string{"deadbeef"}, got.WithPacketContains[66])
+	})
+
+	t.Run("multiple contains on same packet accumulate", func(t *testing.T) {
+		got, err := application.ExtractOffchainTxFilter(
+			"tx.extension[1].contains('aa') && tx.extension[1].contains('bb')",
+		)
+		require.NoError(t, err)
+		require.Equal(t, []string{"aa", "bb"}, got.WithPacketContains[1])
+	})
+
+	t.Run("contains combines with hasPacket and equality", func(t *testing.T) {
+		got, err := application.ExtractOffchainTxFilter(
+			"hasPacket(tx.extension, 1) && tx.extension[2] == 'abcd' && tx.extension[3].contains('ef')",
+		)
+		require.NoError(t, err)
+		require.Contains(t, got.WithPacket, 1)
+		require.Equal(t, "abcd", got.WithPacket[2])
+		require.Equal(t, []string{"ef"}, got.WithPacketContains[3])
+	})
+
+	t.Run("non-hex contains payload is rejected", func(t *testing.T) {
+		_, err := application.ExtractOffchainTxFilter(
+			"tx.extension[1].contains('not_hex')",
+		)
+		require.Error(t, err)
+	})
+
+	t.Run("contains on non-extension target is rejected", func(t *testing.T) {
+		_, err := application.ExtractOffchainTxFilter(
+			"'deadbeef'.contains('ad')",
+		)
+		require.Error(t, err)
+	})
+
 	t.Run("OR is rejected", func(t *testing.T) {
 		_, err := application.ExtractOffchainTxFilter(
 			"hasPacket(tx.extension, 1) || hasPacket(tx.extension, 2)",

@@ -456,6 +456,7 @@ func parseVirtualTxsFilter(
 			}
 			filter.WithExtension = extracted.WithExtension
 			filter.WithPacket = extracted.WithPacket
+			filter.WithPacketContains = extracted.WithPacketContains
 		default:
 			return filter, fmt.Errorf(
 				"GetVirtualTxs accepts at most one filter expression; got %d",

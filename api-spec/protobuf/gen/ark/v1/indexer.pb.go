@@ -1064,13 +1064,15 @@ type GetVirtualTxsRequest struct {
 	// Optional filter on tx contents. The expressions field carries CEL
 	// expressions evaluated against the tx envelope (see SubscriptionFilter).
 	// Only the structured subset of CEL is supported on this unary RPC: a
-	// flat AND of `has(tx.extension)`, `hasPacket(tx.extension, N)`, and
-	// `tx.extension[N] == 'hex'` predicates. `tx.extension[N] == 'hex'`
-	// matches exactly (same semantics as the streaming SubscriptionFilter).
-	// Unsupported shapes (OR, NOT, !=, size(), .contains(), non-bool
-	// expressions, etc.) are rejected with InvalidArgument. The scripts
-	// field must be left empty; non-empty scripts are also rejected with
-	// InvalidArgument.
+	// flat AND of `has(tx.extension)`, `hasPacket(tx.extension, N)`,
+	// `tx.extension[N] == 'hex'`, and `tx.extension[N].contains('hex')`
+	// predicates. `== 'hex'` matches the serialized packet exactly;
+	// `.contains('hex')` matches when the hex bytes appear anywhere in the
+	// serialized packet. Both mirror the streaming SubscriptionFilter
+	// semantics so the unary and stream RPCs return the same set.
+	// Unsupported shapes (OR, NOT, !=, size(), non-bool expressions, etc.)
+	// are rejected with InvalidArgument. The scripts field must be left
+	// empty; non-empty scripts are also rejected with InvalidArgument.
 	//
 	// Result-set cap: when a filter is supplied without a `txids` set,
 	// the server applies a safety LIMIT (currently 10000 rows) at the

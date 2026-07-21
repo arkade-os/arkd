@@ -102,12 +102,15 @@ func (v *offchainTxRepository) GetOffchainTxs(
 			raw, err = q.SelectFilteredOffchainTxsByTxids(
 				ctx,
 				queries.SelectFilteredOffchainTxsByTxidsParams{
-					Txids:         filter.WithTxids,
-					WithExtension: boolToInt64(filter.WithExtension || len(filter.WithPacket) > 0),
-					WithAfter:     boolToInt64(filter.WithAfterDate > 0),
-					AfterTs:       filter.WithAfterDate,
-					WithBefore:    boolToInt64(filter.WithBeforeDate > 0),
-					BeforeTs:      filter.WithBeforeDate,
+					Txids: filter.WithTxids,
+					WithExtension: boolToInt64(
+						filter.WithExtension || len(filter.WithPacket) > 0 ||
+							len(filter.WithPacketContains) > 0,
+					),
+					WithAfter:  boolToInt64(filter.WithAfterDate > 0),
+					AfterTs:    filter.WithAfterDate,
+					WithBefore: boolToInt64(filter.WithBeforeDate > 0),
+					BeforeTs:   filter.WithBeforeDate,
 				},
 			)
 			return err
@@ -123,12 +126,15 @@ func (v *offchainTxRepository) GetOffchainTxs(
 		if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
 			var err error
 			raw, err = q.SelectOffchainTxs(ctx, queries.SelectOffchainTxsParams{
-				WithExtension: boolToInt64(filter.WithExtension || len(filter.WithPacket) > 0),
-				WithAfter:     boolToInt64(filter.WithAfterDate > 0),
-				AfterTs:       filter.WithAfterDate,
-				WithBefore:    boolToInt64(filter.WithBeforeDate > 0),
-				BeforeTs:      filter.WithBeforeDate,
-				Lim:           int64(domain.OffchainTxsScanLimit),
+				WithExtension: boolToInt64(
+					filter.WithExtension || len(filter.WithPacket) > 0 ||
+						len(filter.WithPacketContains) > 0,
+				),
+				WithAfter:  boolToInt64(filter.WithAfterDate > 0),
+				AfterTs:    filter.WithAfterDate,
+				WithBefore: boolToInt64(filter.WithBeforeDate > 0),
+				BeforeTs:   filter.WithBeforeDate,
+				Lim:        int64(domain.OffchainTxsScanLimit),
 			})
 			return err
 		}); err != nil {
