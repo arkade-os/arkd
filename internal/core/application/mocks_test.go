@@ -131,14 +131,6 @@ type mockedOffchainTxRepo struct {
 	domain.OffchainTxRepository // unimplemented methods panic on call
 }
 
-func (m *mockedOffchainTxRepo) GetOffchainTx(ctx context.Context, txid string) (*domain.OffchainTx, error) {
-	args := m.Called(ctx, txid)
-	if v := args.Get(0); v != nil {
-		return v.(*domain.OffchainTx), args.Error(1)
-	}
-	return nil, args.Error(1)
-}
-
 func (m *mockedOffchainTxRepo) GetOffchainTxs(
 	ctx context.Context, filter domain.OffchainTxFilter,
 ) ([]*domain.OffchainTx, error) {

@@ -953,52 +953,6 @@ func (q *Queries) SelectNotUnrolledVtxosWithPubkey(ctx context.Context, pubkey s
 	return items, nil
 }
 
-const selectOffchainTx = `-- name: SelectOffchainTx :many
-SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.packets, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid = ?1
-    AND (stage_code = 2 OR stage_code = 3)
-`
-
-type SelectOffchainTxRow struct {
-	OffchainTxVw OffchainTxVw
-}
-
-func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOffchainTxRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectOffchainTx, txid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectOffchainTxRow
-	for rows.Next() {
-		var i SelectOffchainTxRow
-		if err := rows.Scan(
-			&i.OffchainTxVw.Txid,
-			&i.OffchainTxVw.Tx,
-			&i.OffchainTxVw.StartingTimestamp,
-			&i.OffchainTxVw.EndingTimestamp,
-			&i.OffchainTxVw.ExpiryTimestamp,
-			&i.OffchainTxVw.FailReason,
-			&i.OffchainTxVw.StageCode,
-			&i.OffchainTxVw.Packets,
-			&i.OffchainTxVw.CheckpointTxid,
-			&i.OffchainTxVw.CheckpointTx,
-			&i.OffchainTxVw.CommitmentTxid,
-			&i.OffchainTxVw.IsRootCommitmentTxid,
-			&i.OffchainTxVw.OffchainTxid,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const selectOffchainTxs = `-- name: SelectOffchainTxs :many
 WITH limited_txids AS (
     SELECT txid

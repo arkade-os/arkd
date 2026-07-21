@@ -195,55 +195,6 @@ func (v *offchainTxRepository) GetOffchainTxs(
 	return out, nil
 }
 
-func (v *offchainTxRepository) GetOffchainTx(
-	ctx context.Context, txid string,
-) (*domain.OffchainTx, error) {
-	var rows []queries.SelectOffchainTxRow
-	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
-		var err error
-		rows, err = q.SelectOffchainTx(ctx, txid)
-		return err
-	}); err != nil {
-		return nil, err
-	}
-	if len(rows) == 0 {
-		return nil, fmt.Errorf("offchain tx %s not found", txid)
-	}
-	vt := rows[0].OffchainTxVw
-	checkpointTxs := make(map[string]string)
-	commitmentTxids := make(map[string]string)
-	rootCommitmentTxId := ""
-	for _, row := range rows {
-		vw := row.OffchainTxVw
-		if vw.CheckpointTxid != "" && vw.CheckpointTx != "" {
-			checkpointTxs[vw.CheckpointTxid] = vw.CheckpointTx
-			commitmentTxids[vw.CheckpointTxid] = vw.CommitmentTxid.String
-			if vw.IsRootCommitmentTxid.Bool {
-				rootCommitmentTxId = vw.CommitmentTxid.String
-			}
-		}
-	}
-	stage := domain.Stage{Code: int(vt.StageCode)}
-	if vt.FailReason.String != "" {
-		stage.Failed = true
-	}
-	if domain.OffchainTxStage(vt.StageCode) == domain.OffchainTxFinalizedStage {
-		stage.Ended = true
-	}
-	return &domain.OffchainTx{
-		ArkTxid:            vt.Txid,
-		ArkTx:              vt.Tx,
-		StartingTimestamp:  vt.StartingTimestamp,
-		EndingTimestamp:    vt.EndingTimestamp,
-		ExpiryTimestamp:    vt.ExpiryTimestamp,
-		FailReason:         vt.FailReason.String,
-		Stage:              stage,
-		CheckpointTxs:      checkpointTxs,
-		CommitmentTxids:    commitmentTxids,
-		RootCommitmentTxId: rootCommitmentTxId,
-	}, nil
-}
-
 func (v *offchainTxRepository) GetOffchainTxsByTxids(
 	ctx context.Context, txids []string,
 ) ([]*domain.OffchainTx, error) {

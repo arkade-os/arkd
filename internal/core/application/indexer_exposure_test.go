@@ -633,7 +633,10 @@ func TestGetVtxoChain(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, chain)
 
-			offchainRepo.AssertNotCalled(t, "GetOffchainTx", mock.Anything, offchainTxid)
+			offchainRepo.AssertNotCalled(
+				t, "GetOffchainTxs", mock.Anything,
+				domain.OffchainTxFilter{WithTxids: []string{offchainTxid}},
+			)
 			offchainRepo.AssertExpectations(t)
 			vtxos.AssertExpectations(t)
 		})
@@ -653,13 +656,13 @@ func TestGetVtxoChain(t *testing.T) {
 			offchainRepo := &mockedOffchainTxRepo{}
 			offchainRepo.On("GetOffchainTxsByTxids", mock.Anything, []string{offchainTxid}).
 				Return([]*domain.OffchainTx{}, nil)
-			offchainRepo.On("GetOffchainTx", mock.Anything, offchainTxid).
-				Return(&domain.OffchainTx{
+			offchainRepo.On("GetOffchainTxs", mock.Anything, domain.OffchainTxFilter{WithTxids: []string{offchainTxid}}).
+				Return([]*domain.OffchainTx{{
 					ArkTxid: offchainTxid,
 					CheckpointTxs: map[string]string{
 						"cp": checkpointB64,
 					},
-				}, nil)
+				}}, nil)
 
 			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, vtxos, nil, offchainRepo)
 

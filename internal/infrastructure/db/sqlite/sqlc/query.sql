@@ -288,10 +288,6 @@ FROM vtxo_vw v
 WHERE v.swept = true
   AND v.spent = false;
 
--- name: SelectOffchainTx :many
-SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid
-    AND (stage_code = 2 OR stage_code = 3);
-
 -- name: SelectFilteredOffchainTxsByTxids :many
 -- Returns only accepted or finalized txs.
 -- NOTE: the slice clause must remain last so the numbered placeholders

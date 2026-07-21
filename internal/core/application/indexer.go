@@ -692,13 +692,20 @@ func (i *indexerService) walkVtxoChain(
 			if vtxo.Preconfirmed {
 				offchainTx, ok := offchainTxCache[vtxo.Txid]
 				if !ok {
-					var err error
-					offchainTx, err = i.repoManager.OffchainTxs().GetOffchainTx(ctx, vtxo.Txid)
+					offchainTxs, err := i.repoManager.OffchainTxs().GetOffchainTxs(
+						ctx, domain.OffchainTxFilter{WithTxids: []string{vtxo.Txid}},
+					)
 					if err != nil {
 						return nil, nil, false, fmt.Errorf(
 							"failed to retrieve offchain tx: %s", err,
 						)
 					}
+					if len(offchainTxs) == 0 {
+						return nil, nil, false, fmt.Errorf(
+							"offchain tx %s not found", vtxo.Txid,
+						)
+					}
+					offchainTx = offchainTxs[0]
 					offchainTxCache[vtxo.Txid] = offchainTx
 				}
 

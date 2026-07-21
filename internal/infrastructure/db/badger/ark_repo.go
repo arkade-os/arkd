@@ -364,12 +364,6 @@ func (r *arkRepository) GetOffchainTxs(
 	return out, nil
 }
 
-func (r *arkRepository) GetOffchainTx(
-	ctx context.Context, txid string,
-) (*domain.OffchainTx, error) {
-	return r.getOffchainTx(ctx, txid)
-}
-
 func (r *arkRepository) GetOffchainTxsByTxids(
 	ctx context.Context, txids []string,
 ) ([]*domain.OffchainTx, error) {
