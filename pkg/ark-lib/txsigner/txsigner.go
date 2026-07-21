@@ -9,18 +9,11 @@ import (
 	"fmt"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
-	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 )
-
-// BuildPrevoutFetcher builds a prevout fetcher from the PSBT's WitnessUtxo
-// fields. It errors if any input is missing its WitnessUtxo (no chain fallback).
-func BuildPrevoutFetcher(ptx *psbt.Packet) (txscript.PrevOutputFetcher, error) {
-	return txutils.GetPrevOutputFetcher(ptx)
-}
 
 // SignTapscriptInput signs the tapscript-path input at inputIndex with signingKey
 // and appends a TaprootScriptSpendSig. The input must carry a WitnessUtxo and at
@@ -64,9 +57,7 @@ func SignTapscriptInput(
 }
 
 // ExtractFinalizedTx finalizes every input and returns the hex-encoded raw tx.
-// Tapscript inputs are finalized by assembling their closure witness from the
-// gathered TaprootScriptSpendSig entries (plus any condition-witness PSBT field);
-// other inputs are finalized via psbt.Finalize.
+// Tapscript inputs are finalized as vtxo scripts, other inputs via psbt.Finalize.
 func ExtractFinalizedTx(ptx *psbt.Packet) (string, error) {
 	for i, in := range ptx.Inputs {
 		if in.WitnessUtxo == nil {
@@ -75,43 +66,9 @@ func ExtractFinalizedTx(ptx *psbt.Packet) (string, error) {
 
 		isTaproot := txscript.IsPayToTaproot(in.WitnessUtxo.PkScript)
 		if isTaproot && len(in.TaprootLeafScript) > 0 {
-			closure, err := script.DecodeClosure(in.TaprootLeafScript[0].Script)
-			if err != nil {
+			if err := script.FinalizeVtxoScript(ptx, i); err != nil {
 				return "", err
 			}
-
-			conditionWitnessFields, err := txutils.GetArkPsbtFields(
-				ptx, i, txutils.ConditionWitnessField,
-			)
-			if err != nil {
-				return "", err
-			}
-
-			args := make(map[string][]byte)
-			if len(conditionWitnessFields) > 0 {
-				var conditionWitnessBytes bytes.Buffer
-				if err := psbt.WriteTxWitness(
-					&conditionWitnessBytes, conditionWitnessFields[0],
-				); err != nil {
-					return "", err
-				}
-				args[string(txutils.ArkFieldConditionWitness)] = conditionWitnessBytes.Bytes()
-			}
-
-			for _, sig := range in.TaprootScriptSpendSig {
-				args[hex.EncodeToString(sig.XOnlyPubKey)] = sig.Signature
-			}
-
-			witness, err := closure.Witness(in.TaprootLeafScript[0].ControlBlock, args)
-			if err != nil {
-				return "", err
-			}
-
-			var witnessBuf bytes.Buffer
-			if err := psbt.WriteTxWitness(&witnessBuf, witness); err != nil {
-				return "", err
-			}
-			ptx.Inputs[i].FinalScriptWitness = witnessBuf.Bytes()
 			continue
 		}
 

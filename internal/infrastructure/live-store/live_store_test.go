@@ -901,12 +901,6 @@ func (m *mockedTxBuilder) GetSweepableBatchOutputs(
 	return res0, res1, args.Error(2)
 }
 
-func (m *mockedTxBuilder) FinalizeAndExtract(tx string) (txhex string, err error) {
-	args := m.Called(tx)
-	res0 := args.Get(0).(string)
-	return res0, args.Error(1)
-}
-
 func (m *mockedTxBuilder) VerifyVtxoTapscriptSigs(
 	tx string, mustIncludeSignerSig bool,
 ) (valid bool, ptx *psbt.Packet, err error) {

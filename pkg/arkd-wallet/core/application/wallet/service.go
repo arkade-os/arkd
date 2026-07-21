@@ -10,8 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arkade-os/arkd/pkg/ark-lib/script"
-	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txsigner"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -687,62 +686,7 @@ func (w *wallet) SignTransaction(
 	}
 
 	if extractRawTx {
-		for i, in := range ptx.Inputs {
-			isTaproot := txscript.IsPayToTaproot(in.WitnessUtxo.PkScript)
-			if isTaproot && len(in.TaprootLeafScript) > 0 {
-				closure, err := script.DecodeClosure(in.TaprootLeafScript[0].Script)
-				if err != nil {
-					return "", err
-				}
-
-				conditionWitnessFields, err := txutils.GetArkPsbtFields(ptx, i, txutils.ConditionWitnessField)
-				if err != nil {
-					return "", err
-				}
-
-				args := make(map[string][]byte)
-				if len(conditionWitnessFields) > 0 {
-					var conditionWitnessBytes bytes.Buffer
-					if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitnessFields[0]); err != nil {
-						return "", err
-					}
-					args[string(txutils.ArkFieldConditionWitness)] = conditionWitnessBytes.Bytes()
-				}
-
-				for _, sig := range in.TaprootScriptSpendSig {
-					args[hex.EncodeToString(sig.XOnlyPubKey)] = sig.Signature
-				}
-
-				witness, err := closure.Witness(in.TaprootLeafScript[0].ControlBlock, args)
-				if err != nil {
-					return "", err
-				}
-
-				var witnessBuf bytes.Buffer
-				if err := psbt.WriteTxWitness(&witnessBuf, witness); err != nil {
-					return "", err
-				}
-
-				ptx.Inputs[i].FinalScriptWitness = witnessBuf.Bytes()
-				continue
-			}
-
-			if err := psbt.Finalize(ptx, i); err != nil {
-				return "", fmt.Errorf("failed to finalize input %d: %w", i, err)
-			}
-		}
-
-		extracted, err := psbt.Extract(ptx)
-		if err != nil {
-			return "", err
-		}
-
-		var buf bytes.Buffer
-		if err := extracted.Serialize(&buf); err != nil {
-			return "", err
-		}
-
-		return hex.EncodeToString(buf.Bytes()), nil
+		return txsigner.ExtractFinalizedTx(ptx)
 	}
 
 	return ptx.B64Encode()

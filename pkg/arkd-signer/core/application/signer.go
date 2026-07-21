@@ -106,7 +106,7 @@ func (s *signer) sign(
 		}
 	}
 
-	fetcher, err := txsigner.BuildPrevoutFetcher(ptx)
+	fetcher, err := txutils.GetPrevOutputFetcher(ptx)
 	if err != nil {
 		return "", err
 	}

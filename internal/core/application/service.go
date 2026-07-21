@@ -24,6 +24,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txsigner"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -1034,7 +1035,15 @@ func (s *service) SubmitOffchainTx(
 			})
 	}
 
-	txHex, err := s.builder.FinalizeAndExtract(fullySignedArkTx)
+	fullySignedArkPtx, err := psbt.NewFromRawBytes(strings.NewReader(fullySignedArkTx), true)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to parse ark tx: %w", err).
+			WithMetadata(map[string]any{
+				"ark_tx": fullySignedArkTx,
+			})
+	}
+
+	txHex, err := txsigner.ExtractFinalizedTx(fullySignedArkPtx)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to finalize ark tx: %w", err).
 			WithMetadata(map[string]any{
