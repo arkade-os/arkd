@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -122,6 +123,21 @@ func TestNewMarker(t *testing.T) {
 		require.Equal(t, parentIDs, marker.ParentMarkerIDs)
 		require.Len(t, markerIDs, 1)
 		require.Equal(t, marker.ID, markerIDs[0])
+	})
+
+	// A zero CreatedAt reads as the Unix epoch, which makes the velocity rate
+	// limiter measure ~0 growth and silently stop enforcing. It is also what the
+	// migration backfills onto legacy markers, so the two cases are
+	// indistinguishable after the fact. Pin the stamp here.
+	t.Run("stamps CreatedAt", func(t *testing.T) {
+		before := time.Now().Unix()
+		marker, _ := NewMarker("stamped-tx", 100, nil)
+		after := time.Now().Unix()
+
+		require.NotNil(t, marker)
+		require.NotZero(t, marker.CreatedAt)
+		require.GreaterOrEqual(t, marker.CreatedAt, before)
+		require.LessOrEqual(t, marker.CreatedAt, after)
 	})
 }
 

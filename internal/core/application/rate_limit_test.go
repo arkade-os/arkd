@@ -159,7 +159,7 @@ func TestCheckRateLimit(t *testing.T) {
 				expectInputCount: 1,
 			},
 			{
-				name:                 "youngest marker used when multiple markers",
+				name:                 "deepest marker used when multiple markers",
 				rateLimitEnabled:     true,
 				rateLimitMaxVelocity: 0.28,
 				rateLimitMaxCooldown: 3600,
@@ -174,7 +174,7 @@ func TestCheckRateLimit(t *testing.T) {
 					"m1": {ID: "m1", Depth: 100, CreatedAt: now - 1000},
 					"m2": {ID: "m2", Depth: 200, CreatedAt: now - 500},
 				},
-				// youngest marker is m2 at depth 200
+				// deepest marker is m2 at depth 200
 				// depthDelta = 300 - 200 = 100, timeDelta = 500
 				// velocity = 100/500 = 0.2 < 0.28 -> allowed
 				expectError: false,
@@ -365,7 +365,7 @@ func TestCheckRateLimit(t *testing.T) {
 				description: "1 depth in 1s = velocity 1.0 at max depth",
 			},
 			{
-				name:                 "chain across multiple boundaries, uses youngest marker",
+				name:                 "chain across multiple boundaries, uses deepest marker",
 				rateLimitMaxVelocity: 0.28,
 				rateLimitMaxCooldown: 3600,
 				vtxoDepth:            1050,
@@ -442,9 +442,9 @@ func TestCheckRateLimit(t *testing.T) {
 
 	// merged marker chains covers VTXOs that inherit markers from multiple parent
 	// chains (DAG merge). The child's MarkerIDs is the union of all parent markers;
-	// the rate limiter should pick the youngest (highest depth) marker from the set.
+	// the rate limiter should pick the deepest (highest depth) marker from the set.
 	t.Run("merged marker chains", func(t *testing.T) {
-		t.Run("youngest marker at higher depth used for velocity calc", func(t *testing.T) {
+		t.Run("deepest marker at higher depth used for velocity calc", func(t *testing.T) {
 			// Chain A reached depth 100, chain B reached depth 200.
 			// They merge: child at depth 301 has MarkerIDs = [mA-100, mB-200].
 			// Rate limiter picks mB-200 (highest depth).
@@ -487,7 +487,7 @@ func TestCheckRateLimit(t *testing.T) {
 			}
 
 			err := svc.checkRateLimit(context.Background(), []domain.Vtxo{vtxo})
-			require.NotNil(t, err, "youngest marker (depth 300) gives velocity 5.0, should be rejected")
+			require.NotNil(t, err, "deepest marker (depth 300) gives velocity 5.0, should be rejected")
 			require.Equal(t, errors.RATE_LIMITED.Code, err.Code())
 		})
 

@@ -650,7 +650,6 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			var markerIDs []string
 			marker, ids := domain.NewMarker(txid, newDepth, parentMarkerIDs)
 			if marker != nil {
-				marker.CreatedAt = time.Now().Unix()
 				if err := s.markerStore.AddMarker(ctx, *marker); err != nil {
 					log.WithError(err).
 						Warn("failed to create marker for chained vtxo, falling back to parent markers")

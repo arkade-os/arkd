@@ -1,6 +1,9 @@
 package domain
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // MarkerInterval is the depth interval at which markers are created.
 // VTXOs at depth 0, 100, 200, etc. create new markers.
@@ -34,6 +37,13 @@ type Marker struct {
 // If the depth is at a marker boundary, it returns a new Marker and the marker IDs
 // to assign to the child VTXOs (just the new marker ID).
 // Otherwise, it returns nil and the inherited parent marker IDs.
+//
+// CreatedAt is stamped here rather than left to the caller because the velocity
+// rate limiter reads it as the start of the measurement window. A zero CreatedAt
+// puts that window at the Unix epoch, which makes the measured velocity ~0 and
+// silently disables rate limiting for the chain. Zero is also the value the
+// migration backfills onto legacy markers to mean "never limit", so a forgotten
+// stamp would be indistinguishable from that and would not surface as an error.
 func NewMarker(txid string, depth uint32, parentMarkerIDs []string) (*Marker, []string) {
 	if isAtMarkerBoundary(depth) {
 		id := fmt.Sprintf("%s:marker:%d", txid, depth)
@@ -41,6 +51,7 @@ func NewMarker(txid string, depth uint32, parentMarkerIDs []string) (*Marker, []
 			ID:              id,
 			Depth:           depth,
 			ParentMarkerIDs: parentMarkerIDs,
+			CreatedAt:       time.Now().Unix(),
 		}
 		return marker, []string{id}
 	}
