@@ -314,10 +314,15 @@ func (r *arkRepository) GetOffchainTxs(
 	out := make([]*domain.OffchainTx, 0)
 	for i := range all {
 		off := all[i]
-		if off.Stage.Code == int(domain.OffchainTxUndefinedStage) {
-			continue
-		}
-		if off.IsFailed() {
+		// Mirror the SQL backends' `stage_code = 2 OR stage_code = 3`.
+		// Requested txs stay hidden so a submission that failed before
+		// acceptance can be retried, while accepted and finalized txs stay
+		// visible even once failed, so duplicate detection in
+		// SubmitOffchainTx and the lookup in FinalizeOffchainTx still find
+		// them. Skipping on IsFailed() here instead would hide those
+		// accepted-then-failed txs from both.
+		if off.Stage.Code != int(domain.OffchainTxAcceptedStage) &&
+			off.Stage.Code != int(domain.OffchainTxFinalizedStage) {
 			continue
 		}
 		if len(wantTxids) > 0 {

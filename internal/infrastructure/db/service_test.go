@@ -148,11 +148,17 @@ func TestMain(m *testing.M) {
 
 func TestService(t *testing.T) {
 	dbDir := t.TempDir()
+	badgerDir := t.TempDir()
 	pgDns := "postgresql://root:secret@127.0.0.1:5432/projection?sslmode=disable"
 	pgEventDns := "postgresql://root:secret@127.0.0.1:5432/event?sslmode=disable"
 	tests := []struct {
 		name   string
 		config db.ServiceConfig
+		// badger fails several of the other repo suites for reasons
+		// unrelated to offchain txs, e.g. badgerhold cannot gob-encode the
+		// big.Int asset supply. Run only the offchain tx suite there, which
+		// is the one that pins the cross-backend filter semantics.
+		offchainTxOnly bool
 	}{
 		{
 			name: "repo_manager_with_sqlite_stores",
@@ -174,6 +180,17 @@ func TestService(t *testing.T) {
 				Settings:         validSettings(),
 			},
 		},
+		{
+			name: "repo_manager_with_badger_stores",
+			config: db.ServiceConfig{
+				EventStoreType:   "badger",
+				DataStoreType:    "badger",
+				EventStoreConfig: []interface{}{"", nil},
+				DataStoreConfig:  []interface{}{badgerDir, nil},
+				Settings:         validSettings(),
+			},
+			offchainTxOnly: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -181,6 +198,11 @@ func TestService(t *testing.T) {
 			svc, err := db.NewService(tt.config, nil)
 			require.NoError(t, err)
 			require.NotNil(t, svc)
+
+			if tt.offchainTxOnly {
+				testOffchainTxRepository(t, svc)
+				return
+			}
 
 			// Since we use the same db for all tests and given the constraints on the db tables,
 			// we need to run the tests in this specific order to ensure batch and offchain txs
@@ -3580,6 +3602,42 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 			require.NotContains(t, got[firstTxid].CheckpointTxs, secondCheckpointTxid)
 			require.Contains(t, got[secondTxid].CheckpointTxs, secondCheckpointTxid)
 			require.NotContains(t, got[secondTxid].CheckpointTxs, firstCheckpointTxid)
+		})
+
+		// Every backend must agree on which stages GetOffchainTxs exposes.
+		// A tx that never reached acceptance stays hidden so a submission
+		// that failed early can be retried. The "request -> accept -> fail
+		// -> finalize" subtest above pins the other half, where an accepted
+		// tx stays visible once failed, so duplicate detection in
+		// SubmitOffchainTx and the lookup in FinalizeOffchainTx still find it.
+		t.Run("requested tx is not exposed", func(t *testing.T) {
+			requestedTxid := "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+			events := []domain.Event{
+				domain.OffchainTxRequested{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   requestedTxid,
+						Type: domain.EventTypeOffchainTxRequested,
+					},
+					StartingTimestamp: now.Unix(),
+				},
+			}
+			require.NoError(
+				t, repo.AddOrUpdateOffchainTx(ctx, domain.NewOffchainTxFromEvents(events)),
+			)
+
+			byTxid, err := repo.GetOffchainTxs(
+				ctx, domain.OffchainTxFilter{WithTxids: []string{requestedTxid}},
+			)
+			require.NoError(t, err)
+			require.Empty(t, byTxid)
+
+			// The unfiltered scan shares the same predicate, so a row hidden
+			// from a txid lookup must not resurface through it.
+			scanned, err := repo.GetOffchainTxs(ctx, domain.OffchainTxFilter{})
+			require.NoError(t, err)
+			for _, tx := range scanned {
+				require.NotEqual(t, requestedTxid, tx.ArkTxid)
+			}
 		})
 	})
 }

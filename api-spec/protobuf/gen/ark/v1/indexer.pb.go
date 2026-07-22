@@ -1080,6 +1080,17 @@ type GetVirtualTxsRequest struct {
 	// dropped stream should pair the filter with a `time_range` bound
 	// to keep the scan set small and avoid silent truncation. Cursor-
 	// based pagination over the filtered set is a planned follow-up.
+	//
+	// In every predicate above N is an extension packet type (0..255),
+	// looked up by type rather than by position, so `tx.extension[3]` is
+	// "the packet whose type is 3", not "the third packet".
+	//
+	// Upgrade window: to answer these predicates without decoding every
+	// stored tx, the server keeps a `packets` column listing the packet
+	// types each tx carries. On a server booting against a database that
+	// predates the column, it is filled in by a one-off background
+	// backfill, and until that finishes filtered requests may omit older
+	// txs that do carry packets. Unfiltered txid lookups are unaffected.
 	Filter *SubscriptionFilter `protobuf:"bytes,5,opt,name=filter,proto3" json:"filter,omitempty"`
 	// Optional mutually exclusive time-range selector applied to the
 	// offchain tx starting_timestamp. Bounds are inclusive: `after`

@@ -262,6 +262,14 @@ const backfillBatchSize = 500
 // cannot be decoded, so they are not revisited on every restart). The
 // goroutine signals completion on backfillDone so Close can wait for
 // it before tearing down the DB.
+//
+// Consistency window: packet filters require a non-empty packets
+// column, so while this is still running a filtered GetOffchainTxs can
+// omit older rows that do carry packets. We accept that rather than
+// blocking startup or falling back to per-row PSBT decoding, because it
+// is bounded to the first run against a pre-existing DB and unfiltered
+// txid lookups are unaffected. The window is documented on
+// GetVirtualTxsRequest.filter for clients.
 func (v *offchainTxRepository) startBackfill(ctx context.Context) {
 	go func() {
 		defer close(v.backfillDone)
