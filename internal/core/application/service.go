@@ -430,9 +430,8 @@ func (s *service) Stop() {
 		}
 	}
 
-	// nolint
-	s.wallet.Lock(ctx)
-	log.Debug("locked wallet")
+	// arkd does not own the wallet lifecycle: leave the (possibly shared)
+	// arkd-wallet unlocked so it stays usable across restarts and by other LPs.
 	s.wallet.Close()
 	log.Debug("closed connection to wallet")
 	s.repoManager.Close()
