@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/client-lib/identity"
@@ -15,7 +16,6 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 )
@@ -47,7 +47,7 @@ func (s *service) GetType() string {
 }
 
 func (s *service) Create(
-	_ context.Context, _ chaincfg.Params, password, seed string,
+	_ context.Context, _ arklib.Network, password, seed string,
 ) (string, error) {
 	var privateKey *btcec.PrivateKey
 	if len(seed) <= 0 {
@@ -142,6 +142,10 @@ func (s *service) Dump(ctx context.Context) (string, error) {
 	}
 
 	return hex.EncodeToString(s.privateKey.Serialize()), nil
+}
+
+func (s *service) GetXpub(_ context.Context) (string, error) {
+	return "", fmt.Errorf("not implemented")
 }
 
 func (s *service) NewKey(ctx context.Context) (*identity.KeyRef, error) {

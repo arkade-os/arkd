@@ -294,6 +294,46 @@ func TestGetUtxos(t *testing.T) {
 	})
 }
 
+func TestGetBlockHeight(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		ts := newTestServer(t)
+		ts.handle("/blocks/tip/height", ts.textResponse(http.StatusOK, "850000"))
+
+		svc := makeExplorer(t, ts.URL)
+
+		height, err := svc.GetBlockHeight()
+		require.NoError(t, err)
+		require.Equal(t, int64(850000), height)
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		t.Run("non-200", func(t *testing.T) {
+			ts := newTestServer(t)
+			ts.handle("/blocks/tip/height", ts.textResponse(
+				http.StatusServiceUnavailable, "electrs is warming up",
+			))
+
+			svc := makeExplorer(t, ts.URL)
+
+			height, err := svc.GetBlockHeight()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "503")
+			require.Equal(t, int64(-1), height)
+		})
+
+		t.Run("malformed body", func(t *testing.T) {
+			ts := newTestServer(t)
+			ts.handle("/blocks/tip/height", ts.textResponse(http.StatusOK, "not-a-number"))
+
+			svc := makeExplorer(t, ts.URL)
+
+			height, err := svc.GetBlockHeight()
+			require.Error(t, err)
+			require.Equal(t, int64(-1), height)
+		})
+	})
+}
+
 func TestGetFeeRate(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		t.Run("populated map", func(t *testing.T) {

@@ -230,6 +230,14 @@ func (e *explorerSvc) GetNetwork() arklib.Network {
 	return e.net
 }
 
+func (e *explorerSvc) GetBlockHeight() (int64, error) {
+	var blockHeight int64
+	if status, err := e.get("blocks/tip/height", &blockHeight); err != nil {
+		return -1, fmt.Errorf("failed to fetch tip: status %d: %w", status, err)
+	}
+	return blockHeight, nil
+}
+
 func (e *explorerSvc) GetFeeRate() (float64, error) {
 	var response map[string]float64
 	status, err := e.get("v1/fees/recommended", &response)
@@ -240,7 +248,7 @@ func (e *explorerSvc) GetFeeRate() (float64, error) {
 		if status == http.StatusNotFound {
 			return e.getLegacyFeeRate()
 		}
-		return 0, err
+		return 0, fmt.Errorf("failed to get fee rate: status %d: %w", status, err)
 	}
 
 	if len(response) == 0 {
@@ -252,8 +260,8 @@ func (e *explorerSvc) GetFeeRate() (float64, error) {
 
 func (e *explorerSvc) getLegacyFeeRate() (float64, error) {
 	var response map[string]float64
-	if _, err := e.get("fee-estimates", &response); err != nil {
-		return 0, err
+	if status, err := e.get("fee-estimates", &response); err != nil {
+		return 0, fmt.Errorf("failed to get fee rate: status %d: %w", status, err)
 	}
 
 	if len(response) == 0 {
@@ -1069,17 +1077,11 @@ func (e *explorerSvc) get(path string, target any) (int, error) {
 	// misleading "invalid character ..." parse error instead of surfacing
 	// the real response — which callers can't retry on intelligently.
 	if resp.StatusCode != http.StatusOK {
-		return resp.StatusCode, fmt.Errorf(
-			"failed to get fee rate: status %d: %s",
-			resp.StatusCode, string(body),
-		)
+		return resp.StatusCode, fmt.Errorf("%q", body)
 	}
 
 	if err := json.Unmarshal(body, target); err != nil {
-		return 0, fmt.Errorf(
-			"failed to decode fee rate response %q: %w",
-			string(body), err,
-		)
+		return resp.StatusCode, fmt.Errorf("failed to decode response %q: %w", body, err)
 	}
 
 	return http.StatusOK, nil

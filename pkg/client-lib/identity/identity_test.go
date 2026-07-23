@@ -4,17 +4,17 @@ import (
 	"encoding/hex"
 	"testing"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/client-lib/identity"
 	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
 	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/stretchr/testify/require"
 )
 
 const testPassword = "password"
 
-var network = chaincfg.RegressionNetParams
+var network = arklib.BitcoinRegTest
 
 func TestCreate(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
@@ -62,6 +62,14 @@ func TestLockUnlock(t *testing.T) {
 	})
 }
 
+func TestGetXpub(t *testing.T) {
+	identitySvc, _ := newUnlockedTestIdentity(t)
+
+	xpub, err := identitySvc.GetXpub(t.Context())
+	require.Error(t, err)
+	require.ErrorContains(t, err, "not implemented")
+	require.Empty(t, xpub)
+}
 func TestGetKey(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		identitySvc, seed := newUnlockedTestIdentity(t)
