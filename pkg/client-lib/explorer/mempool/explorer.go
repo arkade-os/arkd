@@ -40,7 +40,6 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -1078,11 +1077,11 @@ func (e *explorerSvc) get(path string, target any) (int, error) {
 	// misleading "invalid character ..." parse error instead of surfacing
 	// the real response — which callers can't retry on intelligently.
 	if resp.StatusCode != http.StatusOK {
-		return resp.StatusCode, errors.New(string(body))
+		return resp.StatusCode, fmt.Errorf("%q", body)
 	}
 
 	if err := json.Unmarshal(body, target); err != nil {
-		return resp.StatusCode, errors.New(string(body))
+		return resp.StatusCode, fmt.Errorf("failed to decode response %q: %w", body, err)
 	}
 
 	return http.StatusOK, nil
