@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -148,6 +149,18 @@ func testValidateSettings(t *testing.T) {
 			requiredVersionWithoutHeader.BuildVersionHeaderRequired = true
 			requiredVersionWithoutHeader.BuildVersionHeader = ""
 
+			// A non-finite max velocity (NaN, or a +Inf from an overflowing env
+			// value) slips past a bare `<= 0` check but disables the limiter.
+			nanVelocity := validSettings
+			nanVelocity.RateLimitEnabled = true
+			nanVelocity.RateLimitMaxVelocity = math.NaN()
+			nanVelocity.RateLimitMaxCooldownSecs = 3600
+
+			infVelocity := validSettings
+			infVelocity.RateLimitEnabled = true
+			infVelocity.RateLimitMaxVelocity = math.Inf(1)
+			infVelocity.RateLimitMaxCooldownSecs = 3600
+
 			fixtures := []struct {
 				settings    domain.Settings
 				expectedErr string
@@ -252,6 +265,16 @@ func testValidateSettings(t *testing.T) {
 				{
 					settings:    requiredVersionWithoutHeader,
 					expectedErr: "build version header is required but no version is set",
+				},
+				{
+					settings: nanVelocity,
+					expectedErr: "rate limit max velocity must be a positive finite " +
+						"number when rate limiting is enabled, got NaN",
+				},
+				{
+					settings: infVelocity,
+					expectedErr: "rate limit max velocity must be a positive finite " +
+						"number when rate limiting is enabled, got +Inf",
 				},
 			}
 
@@ -460,7 +483,7 @@ func testNewSettings(t *testing.T) {
 				batchTrigger,
 				true, 0, 3600,
 			)
-			require.ErrorContains(t, err, "rate limit max velocity must be greater than 0")
+			require.ErrorContains(t, err, "rate limit max velocity must be a positive finite number")
 			require.Nil(t, settings)
 		})
 

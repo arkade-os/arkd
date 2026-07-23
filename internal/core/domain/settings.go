@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger"
@@ -252,9 +253,15 @@ func (s Settings) Validate() error {
 		return fmt.Errorf("invalid batch trigger program: %w", err)
 	}
 	if s.RateLimitEnabled {
-		if s.RateLimitMaxVelocity <= 0 {
+		// Reject non-finite velocities as well as non-positive ones. A NaN or
+		// +Inf (e.g. an env value that overflows float64, like 1e400) passes a
+		// bare `<= 0` check but makes `velocity > maxVelocity` always false in
+		// the limiter, silently disabling enforcement the operator asked for.
+		if s.RateLimitMaxVelocity <= 0 ||
+			math.IsNaN(s.RateLimitMaxVelocity) ||
+			math.IsInf(s.RateLimitMaxVelocity, 0) {
 			return fmt.Errorf(
-				"rate limit max velocity must be greater than 0 when rate limiting is enabled, got %f",
+				"rate limit max velocity must be a positive finite number when rate limiting is enabled, got %f",
 				s.RateLimitMaxVelocity,
 			)
 		}
