@@ -145,7 +145,7 @@ func (s *service) Dump(ctx context.Context) (string, error) {
 }
 
 func (s *service) GetXpub(_ context.Context) (string, error) {
-	return "", nil
+	return "", fmt.Errorf("not implemented")
 }
 
 func (s *service) NewKey(ctx context.Context) (*identity.KeyRef, error) {

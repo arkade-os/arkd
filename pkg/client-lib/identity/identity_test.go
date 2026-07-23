@@ -66,7 +66,8 @@ func TestGetXpub(t *testing.T) {
 	identitySvc, _ := newUnlockedTestIdentity(t)
 
 	xpub, err := identitySvc.GetXpub(t.Context())
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "not implemented")
 	require.Empty(t, xpub)
 }
 func TestGetKey(t *testing.T) {
