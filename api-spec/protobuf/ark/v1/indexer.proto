@@ -254,6 +254,13 @@ message GetVtxoChainResponse {
   string next_page_token = 4;
 }
 
+// GetVirtualTxs resolves txs by id and/or by filter. A pure-txid
+// lookup (no filter expression, no time range) preserves the
+// pre-filter behavior of resolving offchain (ark), checkpoint, and
+// round commitment txs in one call. When a `filter` or `time_range`
+// is supplied, the response is narrowed to offchain txs only, since
+// the filter predicates (`tx.extension[N]`, etc.) and the
+// `starting_timestamp` time range are only defined for offchain txs.
 message GetVirtualTxsRequest {
   repeated string txids = 1;
   IndexerPageRequest page = 2;
@@ -266,6 +273,61 @@ message GetVirtualTxsRequest {
     // A valid token obtained from GetVtxoChain rpc can be recycled for this request.
     string token = 4;
   }
+  // Optional filter on tx contents. The expressions field carries CEL
+  // expressions evaluated against the tx envelope (see SubscriptionFilter).
+  // Only the structured subset of CEL is supported on this unary RPC: a
+  // flat AND of `has(tx.extension)`, `hasPacket(tx.extension, N)`,
+  // `tx.extension[N] == 'hex'`, and `tx.extension[N].contains('hex')`
+  // predicates. `== 'hex'` matches the serialized packet exactly;
+  // `.contains('hex')` matches when the hex bytes appear anywhere in the
+  // serialized packet. Both mirror the streaming SubscriptionFilter
+  // semantics so the unary and stream RPCs return the same set.
+  // Unsupported shapes (OR, NOT, !=, size(), non-bool expressions, etc.)
+  // are rejected with InvalidArgument. The scripts field must be left
+  // empty; non-empty scripts are also rejected with InvalidArgument.
+  //
+  // Result-set cap: when a filter is supplied without a `txids` set,
+  // the server applies a safety LIMIT (currently 10000 rows) at the
+  // SQL layer. Callers using the "fill the gap" pattern after a
+  // dropped stream should pair the filter with a `time_range` bound
+  // to keep the scan set small and avoid silent truncation. Cursor-
+  // based pagination over the filtered set is a planned follow-up.
+  //
+  // In every predicate above N is an extension packet type (0..255),
+  // looked up by type rather than by position, so `tx.extension[3]` is
+  // "the packet whose type is 3", not "the third packet".
+  //
+  // Upgrade window: to answer these predicates without decoding every
+  // stored tx, the server keeps a `packets` column listing the packet
+  // types each tx carries. On a server booting against a database that
+  // predates the column, it is filled in by a one-off background
+  // backfill, and until that finishes filtered requests may omit older
+  // txs that do carry packets. Unfiltered txid lookups are unaffected.
+  SubscriptionFilter filter = 5;
+  // Optional mutually exclusive time-range selector applied to the
+  // offchain tx starting_timestamp. Bounds are inclusive: `after`
+  // matches starting_timestamp >= timestamp, `before` matches
+  // starting_timestamp <= timestamp, and `within` is equivalent to
+  // setting both. `within(t, t)` selects rows whose timestamp is
+  // exactly t.
+  oneof time_range {
+    TimeRangeAfter after = 6;
+    TimeRangeBefore before = 7;
+    TimeRangeWithin within = 8;
+  }
+}
+
+message TimeRangeAfter {
+  int64 timestamp = 1;
+}
+
+message TimeRangeBefore {
+  int64 timestamp = 1;
+}
+
+message TimeRangeWithin {
+  int64 start_timestamp = 1;
+  int64 end_timestamp = 2;
 }
 
 message GetVirtualTxsResponse {

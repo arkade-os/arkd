@@ -51,7 +51,7 @@ func testRequestOffchainTx(t *testing.T) {
 			require.False(t, offchainTx.IsFinalized())
 			require.False(t, offchainTx.IsFailed())
 
-			event, err := offchainTx.Request(txid, arkTx, unsignedCheckpointTxs)
+			event, err := offchainTx.Request(txid, arkTx, unsignedCheckpointTxs, nil)
 			require.NoError(t, err)
 			require.NotNil(t, event)
 			require.Equal(t, domain.EventTypeOffchainTxRequested, event.GetType())
@@ -121,7 +121,7 @@ func testRequestOffchainTx(t *testing.T) {
 			}
 
 			for _, f := range fixtures {
-				event, err := f.offchainTx.Request(f.txid, f.arkTx, f.unsignedCheckpointTxs)
+				event, err := f.offchainTx.Request(f.txid, f.arkTx, f.unsignedCheckpointTxs, nil)
 				require.EqualError(t, err, f.expectedErr)
 				require.Nil(t, event)
 			}
@@ -133,7 +133,7 @@ func testAcceptOffchainTx(t *testing.T) {
 	t.Run("accept", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
 			offchainTx := domain.NewOffchainTx()
-			event, err := offchainTx.Request(txid, arkTx, unsignedCheckpointTxs)
+			event, err := offchainTx.Request(txid, arkTx, unsignedCheckpointTxs, nil)
 			require.NoError(t, err)
 			require.NotNil(t, event)
 			require.Empty(t, offchainTx.RootCommitmentTxId)
@@ -267,7 +267,7 @@ func testFinalizeOffchainTx(t *testing.T) {
 	t.Run("finalize", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
 			offchainTx := domain.NewOffchainTx()
-			event, err := offchainTx.Request(txid, arkTx, unsignedCheckpointTxs)
+			event, err := offchainTx.Request(txid, arkTx, unsignedCheckpointTxs, nil)
 			require.NoError(t, err)
 			require.NotNil(t, event)
 
@@ -346,7 +346,7 @@ func testFailOffchainTx(t *testing.T) {
 	t.Run("fail", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
 			offchainTx := domain.NewOffchainTx()
-			event, err := offchainTx.Request(txid, arkTx, unsignedCheckpointTxs)
+			event, err := offchainTx.Request(txid, arkTx, unsignedCheckpointTxs, nil)
 			require.NoError(t, err)
 			require.NotNil(t, event)
 			require.Equal(t, domain.EventTypeOffchainTxRequested, event.GetType())
