@@ -11,6 +11,8 @@ import (
 	"github.com/arkade-os/arkd/pkg/arkd-signer/config"
 	"github.com/arkade-os/arkd/pkg/arkd-signer/interface/grpc/handlers"
 	"github.com/arkade-os/arkd/pkg/arkd-signer/interface/grpc/interceptors"
+	emulatorv1 "github.com/arkade-os/emulator/api-spec/protobuf/gen/emulator/v1"
+	"github.com/arkade-os/emulator/pkg/emulator/grpchandler"
 	"github.com/meshapi/grpc-api-gateway/gateway"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -44,6 +46,9 @@ func (s *service) Start() error {
 	signerHandler := handlers.NewSignerHandler(s.cfg.SignerSvc)
 	signerv1.RegisterSignerServiceServer(grpcSrv, signerHandler)
 
+	emulatorHandler := grpchandler.New("", s.cfg.EmulatorSvc)
+	emulatorv1.RegisterEmulatorServiceServer(grpcSrv, emulatorHandler)
+
 	healthHandler := handlers.NewHealthHandler()
 	grpchealth.RegisterHealthServer(grpcSrv, healthHandler)
 
@@ -62,6 +67,7 @@ func (s *service) Start() error {
 	)
 
 	signerv1.RegisterSignerServiceHandler(ctx, gwmux, conn)
+	emulatorv1.RegisterEmulatorServiceHandler(ctx, gwmux, conn)
 
 	grpcGateway := http.Handler(gwmux)
 	handler := router(grpcSrv, grpcGateway)
@@ -94,6 +100,9 @@ func (s *service) Stop() {
 	}
 	if s.grpcSrv != nil {
 		s.grpcSrv.GracefulStop()
+	}
+	if s.cfg != nil && s.cfg.EmulatorSvc != nil {
+		s.cfg.EmulatorSvc.Close()
 	}
 }
 
