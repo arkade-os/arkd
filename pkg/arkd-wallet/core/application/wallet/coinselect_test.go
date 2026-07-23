@@ -1,8 +1,8 @@
 package wallet
 
 import (
+	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,64 +25,64 @@ func TestCoinSelect(t *testing.T) {
 
 	coins := loadCoins(t, fixtures.Utxos)
 
-	for _, f := range fixtures.Cases {
-		t.Run(f.Name, func(t *testing.T) {
-			target := btcutil.Amount(f.Amount)
-			minChange := btcutil.Amount(f.MinChangeAmount)
+	selectors := map[string]func(minChange btcutil.Amount) coinset.CoinSelector {
+		"economical":       func(m btcutil.Amount) coinset.CoinSelector { return economicalCoinSelector{m} },
+		"consolidateFirst": func(m btcutil.Amount) coinset.CoinSelector { return consolidateFirstCoinSelector{m} },
+	}
 
-			selected, err := coinSelector{minChange}.CoinSelect(target, coins)
-			if f.ExpectError {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
+	for name, newSelector := range selectors {
+		t.Run(name, func(t *testing.T) {
+			for _, f := range fixtures.Cases {
+				t.Run(f.Name, func(t *testing.T) {
+					target := btcutil.Amount(f.Amount)
+					minChange := btcutil.Amount(f.MinChangeAmount)
 
-			picked := selected.Coins()
-			var total btcutil.Amount
-			for _, c := range picked {
-				total += c.Value()
-			}
+					selected, err := newSelector(minChange).CoinSelect(target, coins)
+					if f.ExpectError {
+						require.Error(t, err)
+						return
+					}
+					require.NoError(t, err)
 
-			// covers the target
-			require.GreaterOrEqual(t, total, target)
+					picked := selected.Coins()
+					var total btcutil.Amount
+					for _, c := range picked {
+						total += c.Value()
+					}
 
-			// change is either exactly zero or at least minChange
-			change := total - target
-			if change != 0 {
-				require.GreaterOrEqual(t, change, minChange)
-			}
+					// covers the target
+					require.GreaterOrEqual(t, total, target)
 
-			// never exceeds the input cap
-			require.LessOrEqual(t, len(picked), maxInputs)
+					// change is either exactly zero or at least minChange
+					change := total - target
+					if change != 0 {
+						require.GreaterOrEqual(t, change, minChange)
+					}
 
-			// no duplicate outpoints, all picks belong to the pool
-			pool := make(map[wire.OutPoint]bool, len(coins))
-			for _, c := range coins {
-				pool[wire.OutPoint{Hash: *c.Hash(), Index: c.Index()}] = true
-			}
-			seen := make(map[wire.OutPoint]bool, len(picked))
-			for _, c := range picked {
-				op := wire.OutPoint{Hash: *c.Hash(), Index: c.Index()}
-				require.True(t, pool[op], "picked utxo not in pool: %s", op)
-				require.False(t, seen[op], "duplicate utxo picked: %s", op)
-				seen[op] = true
+					// never exceeds the input cap
+					require.LessOrEqual(t, len(picked), maxInputs)
+
+					// no duplicate outpoints, all picks belong to the pool
+					pool := make(map[wire.OutPoint]bool, len(coins))
+					for _, c := range coins {
+						pool[wire.OutPoint{Hash: *c.Hash(), Index: c.Index()}] = true
+					}
+					seen := make(map[wire.OutPoint]bool, len(picked))
+					for _, c := range picked {
+						op := wire.OutPoint{Hash: *c.Hash(), Index: c.Index()}
+						require.True(t, pool[op], "picked utxo not in pool: %s", op)
+						require.False(t, seen[op], "duplicate utxo picked: %s", op)
+						seen[op] = true
+					}
+				})
 			}
 		})
 	}
 }
 
-// coinSelectFixtures is the single testdata file: a shared utxo pool plus the
-// selection cases run against it.
 type coinSelectFixtures struct {
-	Utxos []fixtureUtxo    `json:"utxos"`
+	Utxos []uint64         `json:"utxos"`
 	Cases []coinSelectCase `json:"cases"`
-}
-
-// fixtureUtxo mirrors one entry of the shared utxo pool.
-type fixtureUtxo struct {
-	Txid  string `json:"txid"`
-	Vout  uint32 `json:"vout"`
-	Value string `json:"value"`
 }
 
 type coinSelectCase struct {
@@ -92,22 +92,17 @@ type coinSelectCase struct {
 	ExpectError     bool   `json:"expectError"`
 }
 
-func loadCoins(t *testing.T, raw []fixtureUtxo) []coinset.Coin {
+func loadCoins(t *testing.T, values []uint64) []coinset.Coin {
 	t.Helper()
-	require.NotEmpty(t, raw)
+	require.NotEmpty(t, values)
 
-	coins := make([]coinset.Coin, 0, len(raw))
-	for _, u := range raw {
-		hash, err := chainhash.NewHashFromStr(u.Txid)
-		require.NoError(t, err)
-
-		var value uint64
-		_, err = fmt.Sscan(u.Value, &value)
-		require.NoError(t, err)
-
+	coins := make([]coinset.Coin, 0, len(values))
+	for i, v := range values {
+		var hash chainhash.Hash
+		binary.LittleEndian.PutUint32(hash[:], uint32(i))
 		coins = append(coins, coin{ports.Utxo{
-			OutPoint: *wire.NewOutPoint(hash, u.Vout),
-			Value:    value,
+			OutPoint: *wire.NewOutPoint(&hash, uint32(i)),
+			Value:    v,
 		}})
 	}
 	return coins

@@ -17,27 +17,60 @@ const (
 	bnbMaxTries = 100_000
 )
 
-// newCoinSelector builds a coin selector that prefers:
-// 1. changeless selection
-// 2. consolidation
-// 3. minimal inputs count
-type coinSelector struct {
+type economicalCoinSelector struct {
 	minChangeAmount btcutil.Amount
 }
 
-func (s coinSelector) CoinSelect(
+func (s economicalCoinSelector) CoinSelect(
 	targetValue btcutil.Amount, coins []coinset.Coin,
 ) (coinset.Coins, error) {
-	// 1. changeless branch-and-bound: minimize fragmentation.
+	// 1. minimal input count
+	selected, err := coinset.MinNumberCoinSelector{
+		MaxInputs:       maxInputs,
+		MinChangeAmount: s.minChangeAmount,
+	}.CoinSelect(targetValue, coins)
+	if err == nil {
+		return selected, nil
+	}
+
+	// 2. changeless branch-and-bound: minimize fragmentation.
 	if cs, ok := branchAndBound(targetValue, maxInputs, coins); ok {
 		return cs, nil
 	}
-	// 2. consolidate: sweep smallest UTXOs first, up to consolidateMaxInputs.
+
+	// 3. consolidate: sweep smallest UTXOs first, up to consolidateMaxInputs.
 	if cs, ok := consolidate(
 		targetValue, s.minChangeAmount, maxInputs, coins,
 	); ok {
 		return cs, nil
 	}
+
+	return nil, coinset.ErrCoinsNoSelectionAvailable
+}
+
+// consolidateFirst builds a coin selector that prefers:
+// 1. consolidation
+// 2. changeless
+// 3. minInputCount
+type consolidateFirstCoinSelector struct {
+	minChangeAmount btcutil.Amount
+}
+
+func (s consolidateFirstCoinSelector) CoinSelect(
+	targetValue btcutil.Amount, coins []coinset.Coin,
+) (coinset.Coins, error) {
+	// 1. consolidate: sweep smallest UTXOs first, up to consolidateMaxInputs.
+	if cs, ok := consolidate(
+		targetValue, s.minChangeAmount, maxInputs, coins,
+	); ok {
+		return cs, nil
+	}
+
+	// 2. changeless branch-and-bound: minimize fragmentation.
+	if cs, ok := branchAndBound(targetValue, maxInputs, coins); ok {
+		return cs, nil
+	}
+	
 	// 3. fallback: fewest inputs, up to fallbackMaxInputs.
 	return coinset.MinNumberCoinSelector{
 		MaxInputs:       maxInputs,
