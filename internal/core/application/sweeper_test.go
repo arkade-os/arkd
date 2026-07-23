@@ -611,7 +611,6 @@ func (m *mockTxBuilder) GetSweepableBatchOutputs(
 ) (*arklib.RelativeLocktime, *ports.TxInput, error) {
 	return nil, nil, nil
 }
-func (m *mockTxBuilder) FinalizeAndExtract(tx string) (string, error) { return "", nil }
 
 func (m *mockTxBuilder) VerifyVtxoTapscriptSigs(
 	tx string, mustIncludeSignerSig bool,

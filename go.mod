@@ -10,6 +10,8 @@ replace github.com/arkade-os/arkd/pkg/ark-lib => ./pkg/ark-lib
 
 replace github.com/arkade-os/arkd/pkg/arkd-wallet => ./pkg/arkd-wallet
 
+replace github.com/arkade-os/arkd/pkg/arkd-signer => ./pkg/arkd-signer
+
 replace github.com/arkade-os/arkd/pkg/macaroons => ./pkg/macaroons
 
 replace github.com/arkade-os/arkd/pkg/kvdb => ./pkg/kvdb
@@ -22,6 +24,7 @@ require (
 	github.com/ThreeDotsLabs/watermill-sql/v3 v3.1.0
 	github.com/arkade-os/arkd/api-spec v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260210151408-67ee91bbd639
+	github.com/arkade-os/arkd/pkg/arkd-signer v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/arkd-wallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/client-lib v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/errors v0.0.0-00010101000000-000000000000

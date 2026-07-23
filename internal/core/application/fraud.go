@@ -10,6 +10,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txsigner"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -95,7 +96,12 @@ func (s *service) broadcastCheckpointTx(
 	}
 
 	checkpointB64 := txs[0]
-	txHex, err := s.builder.FinalizeAndExtract(checkpointB64)
+	checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointB64), true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse checkpoint tx: %s", err)
+	}
+
+	txHex, err := txsigner.ExtractFinalizedTx(checkpointPtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to finalize checkpoint tx: %s", err)
 	}
@@ -164,14 +170,18 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 		return fmt.Errorf("failed to encode forfeit tx: %s", err)
 	}
 
+	// Sign the vtxo input (tapscript) with the operator signer.
 	signedForfeitTx, err := s.signer.SignTransactionTapscript(ctx, forfeitTxB64, nil)
 	if err != nil {
 		return fmt.Errorf("failed to sign forfeit tx: %s", err)
 	}
 
-	forfeitTxHex, err := s.builder.FinalizeAndExtract(signedForfeitTx)
+	// Sign the connector input (a wallet-owned key-path output) with the wallet:
+	// the operator signer holds no wallet keys, so it cannot sign it. The wallet
+	// finalizes and extracts the raw tx too.
+	forfeitTxHex, err := s.wallet.SignTransaction(ctx, signedForfeitTx, true)
 	if err != nil {
-		return fmt.Errorf("failed to finalize forfeit tx: %s", err)
+		return fmt.Errorf("failed to sign forfeit connector input: %s", err)
 	}
 
 	var forfeit wire.MsgTx

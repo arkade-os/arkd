@@ -4,35 +4,31 @@ import (
 	"context"
 
 	signerv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/signer/v1"
-	application "github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
+	"github.com/arkade-os/arkd/pkg/arkd-signer/core/application"
 )
 
 type signerHandler struct {
-	wallet  application.WalletService
-	scanner application.BlockchainScanner
+	signer application.Signer
 }
 
-func NewSignerHandler(walletSvc application.WalletService) signerv1.SignerServiceServer {
-	return &signerHandler{wallet: walletSvc}
+func NewSignerHandler(signer application.Signer) signerv1.SignerServiceServer {
+	return &signerHandler{signer: signer}
 }
 
 func (h *signerHandler) GetStatus(
 	ctx context.Context, _ *signerv1.GetStatusRequest,
 ) (*signerv1.GetStatusResponse, error) {
-	_, err := h.wallet.GetSignerPubkey(ctx)
-	return &signerv1.GetStatusResponse{
-		Ready: err == nil,
-	}, nil
+	return &signerv1.GetStatusResponse{Ready: h.signer.IsReady(ctx)}, nil
 }
 
 func (h *signerHandler) GetPubkey(
-	ctx context.Context, req *signerv1.GetPubkeyRequest,
+	ctx context.Context, _ *signerv1.GetPubkeyRequest,
 ) (*signerv1.GetPubkeyResponse, error) {
-	pubkey, err := h.wallet.GetSignerPubkey(ctx)
+	pubkey, err := h.signer.GetPubkey(ctx)
 	if err != nil {
 		return nil, err
 	}
-	deprecated, err := h.wallet.GetDeprecatedSignerPubkeys(ctx)
+	deprecated, err := h.signer.GetDeprecatedPubkeys(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -43,14 +39,16 @@ func (h *signerHandler) GetPubkey(
 			CutoffDate: d.CutoffDate,
 		})
 	}
-	return &signerv1.GetPubkeyResponse{Pubkey: pubkey, DeprecatedSigners: deprecatedSigners}, nil
+	return &signerv1.GetPubkeyResponse{
+		Pubkey:            pubkey,
+		DeprecatedSigners: deprecatedSigners,
+	}, nil
 }
 
 func (h *signerHandler) SignTransaction(
 	ctx context.Context, req *signerv1.SignTransactionRequest,
 ) (*signerv1.SignTransactionResponse, error) {
-	signMode := application.SignModeSigner
-	tx, err := h.wallet.SignTransaction(ctx, signMode, req.PartialTx, req.ExtractRawTx, nil)
+	tx, err := h.signer.SignTransaction(ctx, req.GetPartialTx(), req.GetExtractRawTx())
 	if err != nil {
 		return nil, err
 	}
@@ -60,12 +58,11 @@ func (h *signerHandler) SignTransaction(
 func (h *signerHandler) SignTransactionTapscript(
 	ctx context.Context, req *signerv1.SignTransactionTapscriptRequest,
 ) (*signerv1.SignTransactionTapscriptResponse, error) {
-	signMode := application.SignModeSigner
 	inIndexes := make([]int, 0, len(req.GetInputIndexes()))
 	for _, v := range req.GetInputIndexes() {
 		inIndexes = append(inIndexes, int(v))
 	}
-	tx, err := h.wallet.SignTransaction(ctx, signMode, req.GetPartialTx(), false, inIndexes)
+	tx, err := h.signer.SignTransactionTapscript(ctx, req.GetPartialTx(), inIndexes)
 	if err != nil {
 		return nil, err
 	}
