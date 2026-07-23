@@ -158,6 +158,7 @@ func NewService(
 		alerts:                   alerts,
 		feeManager:               feeManager,
 	}
+	svc.sweeper.onSweepCheckpoint = svc.propagateTransactionEvent
 	return svc, nil
 }
 
