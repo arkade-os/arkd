@@ -988,100 +988,162 @@ func matchIDs(expected ...string) interface{} {
 	})
 }
 
-// TestPreloadVtxosByMarkers_WalksMarkerChain verifies that preloadByMarkers
-// follows the marker DAG upward and populates the cache with all discovered VTXOs.
-func TestPreloadVtxosByMarkers_WalksMarkerChain(t *testing.T) {
-	_, markerRepo, indexer := newChainTestIndexer()
-	ctx := context.Background()
+// TestPreloadVtxosByMarkers covers preloadByMarkers walking the marker DAG,
+// deduping seed markers, and terminating on marker cycles.
+func TestPreloadVtxosByMarkers(t *testing.T) {
+	// walks marker chain verifies that preloadByMarkers follows the marker DAG
+	// upward and populates the cache with all discovered VTXOs.
+	t.Run("walks marker chain", func(t *testing.T) {
+		_, markerRepo, indexer := newChainTestIndexer()
+		ctx := context.Background()
 
-	// Chain: vtxo-leaf has marker-200, which has parent marker-100, which has parent marker-0.
-	vtxoLeaf := domain.Vtxo{
-		Outpoint:  domain.Outpoint{Txid: "vtxo-leaf", VOut: 0},
-		Amount:    100,
-		MarkerIDs: []string{"marker-200"},
-	}
+		// Chain: vtxo-leaf has marker-200, which has parent marker-100, which has parent marker-0.
+		vtxoLeaf := domain.Vtxo{
+			Outpoint:  domain.Outpoint{Txid: "vtxo-leaf", VOut: 0},
+			Amount:    100,
+			MarkerIDs: []string{"marker-200"},
+		}
 
-	// GetVtxoChainByMarkers is called once, with every marker of the walked DAG.
-	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-200", "marker-100", "marker-0")).
-		Return([]domain.Vtxo{
-			{Outpoint: domain.Outpoint{Txid: "vtxo-200a", VOut: 0}, Amount: 200},
-			{Outpoint: domain.Outpoint{Txid: "vtxo-200b", VOut: 0}, Amount: 201},
-			{Outpoint: domain.Outpoint{Txid: "vtxo-100a", VOut: 0}, Amount: 300},
-			{Outpoint: domain.Outpoint{Txid: "vtxo-0a", VOut: 0}, Amount: 400},
-		}, nil)
+		// GetVtxoChainByMarkers is called once, with every marker of the walked DAG.
+		markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-200", "marker-100", "marker-0")).
+			Return([]domain.Vtxo{
+				{Outpoint: domain.Outpoint{Txid: "vtxo-200a", VOut: 0}, Amount: 200},
+				{Outpoint: domain.Outpoint{Txid: "vtxo-200b", VOut: 0}, Amount: 201},
+				{Outpoint: domain.Outpoint{Txid: "vtxo-100a", VOut: 0}, Amount: 300},
+				{Outpoint: domain.Outpoint{Txid: "vtxo-0a", VOut: 0}, Amount: 400},
+			}, nil)
 
-	// GetMarkersByIds returns marker objects with parent pointers.
-	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-200")).
-		Return([]domain.Marker{
-			{ID: "marker-200", Depth: 200, ParentMarkerIDs: []string{"marker-100"}},
-		}, nil)
-	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-100")).
-		Return([]domain.Marker{
-			{ID: "marker-100", Depth: 100, ParentMarkerIDs: []string{"marker-0"}},
-		}, nil)
-	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-0")).
-		Return([]domain.Marker{
-			{ID: "marker-0", Depth: 0, ParentMarkerIDs: nil},
-		}, nil)
+		// GetMarkersByIds returns marker objects with parent pointers.
+		markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-200")).
+			Return([]domain.Marker{
+				{ID: "marker-200", Depth: 200, ParentMarkerIDs: []string{"marker-100"}},
+			}, nil)
+		markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-100")).
+			Return([]domain.Marker{
+				{ID: "marker-100", Depth: 100, ParentMarkerIDs: []string{"marker-0"}},
+			}, nil)
+		markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-0")).
+			Return([]domain.Marker{
+				{ID: "marker-0", Depth: 0, ParentMarkerIDs: nil},
+			}, nil)
 
-	cache := make(map[string]domain.Vtxo)
-	offchainCache := make(map[string]*domain.OffchainTx)
-	err := indexer.preloadByMarkers(ctx, []domain.Vtxo{vtxoLeaf}, cache, offchainCache)
-	require.NoError(t, err)
+		cache := make(map[string]domain.Vtxo)
+		offchainCache := make(map[string]*domain.OffchainTx)
+		err := indexer.preloadByMarkers(ctx, []domain.Vtxo{vtxoLeaf}, cache, offchainCache)
+		require.NoError(t, err)
 
-	// Cache should contain the seed vtxo plus all vtxos from all marker levels.
-	require.Contains(t, cache, "vtxo-leaf:0")
-	require.Contains(t, cache, "vtxo-200a:0")
-	require.Contains(t, cache, "vtxo-200b:0")
-	require.Contains(t, cache, "vtxo-100a:0")
-	require.Contains(t, cache, "vtxo-0a:0")
-	require.Len(t, cache, 5)
+		// Cache should contain the seed vtxo plus all vtxos from all marker levels.
+		require.Contains(t, cache, "vtxo-leaf:0")
+		require.Contains(t, cache, "vtxo-200a:0")
+		require.Contains(t, cache, "vtxo-200b:0")
+		require.Contains(t, cache, "vtxo-100a:0")
+		require.Contains(t, cache, "vtxo-0a:0")
+		require.Len(t, cache, 5)
 
-	markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", 1)
-	markerRepo.AssertNumberOfCalls(t, "GetMarkersByIds", 3)
-}
+		markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", 1)
+		markerRepo.AssertNumberOfCalls(t, "GetMarkersByIds", 3)
+	})
 
-// TestPreloadVtxosByMarkers_NoCycleLoop verifies that the visited set prevents
-// infinite loops when markers form a cycle.
-func TestPreloadVtxosByMarkers_NoCycleLoop(t *testing.T) {
-	_, markerRepo, indexer := newChainTestIndexer()
-	ctx := context.Background()
+	// dedupes seed markers verifies that markers shared by sibling seed VTXOs are
+	// only asked for once. Siblings spending off the same parent inherit the same
+	// marker, so without deduping the first level would send the same ID to the
+	// store repeatedly.
+	t.Run("dedupes seed markers", func(t *testing.T) {
+		_, markerRepo, indexer := newChainTestIndexer()
+		ctx := context.Background()
 
-	vtxo := domain.Vtxo{
-		Outpoint:  domain.Outpoint{Txid: "vtxo-cycle", VOut: 0},
-		Amount:    100,
-		MarkerIDs: []string{"marker-A"},
-	}
+		// Three siblings, all inheriting marker-100. The third also carries an empty
+		// marker ID, which must be dropped rather than sent to the store.
+		siblings := []domain.Vtxo{
+			{
+				Outpoint:  domain.Outpoint{Txid: "sib-a", VOut: 0},
+				Amount:    100,
+				MarkerIDs: []string{"marker-100"},
+			},
+			{
+				Outpoint:  domain.Outpoint{Txid: "sib-b", VOut: 0},
+				Amount:    200,
+				MarkerIDs: []string{"marker-100"},
+			},
+			{
+				Outpoint:  domain.Outpoint{Txid: "sib-c", VOut: 0},
+				Amount:    300,
+				MarkerIDs: []string{"marker-100", ""},
+			},
+		}
 
-	// marker-A -> marker-B -> marker-A (cycle)
-	markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-A", "marker-B")).
-		Return([]domain.Vtxo{
-			{Outpoint: domain.Outpoint{Txid: "vtxo-a", VOut: 0}, Amount: 100},
-			{Outpoint: domain.Outpoint{Txid: "vtxo-b", VOut: 0}, Amount: 200},
-		}, nil)
+		markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-100", "marker-0")).
+			Return([]domain.Vtxo{
+				{Outpoint: domain.Outpoint{Txid: "vtxo-100a", VOut: 0}, Amount: 400},
+			}, nil)
 
-	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-A")).
-		Return([]domain.Marker{
-			{ID: "marker-A", Depth: 0, ParentMarkerIDs: []string{"marker-B"}},
-		}, nil)
-	markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-B")).
-		Return([]domain.Marker{
-			{ID: "marker-B", Depth: 0, ParentMarkerIDs: []string{"marker-A"}},
-		}, nil)
+		// matchIDs requires an exact-length match, so a duplicated or empty seed ID
+		// would fail to match here.
+		markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-100")).
+			Return([]domain.Marker{
+				{ID: "marker-100", Depth: 100, ParentMarkerIDs: []string{"marker-0"}},
+			}, nil)
+		markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-0")).
+			Return([]domain.Marker{
+				{ID: "marker-0", Depth: 0, ParentMarkerIDs: nil},
+			}, nil)
 
-	cache := make(map[string]domain.Vtxo)
-	offchainCache := make(map[string]*domain.OffchainTx)
-	err := indexer.preloadByMarkers(ctx, []domain.Vtxo{vtxo}, cache, offchainCache)
-	require.NoError(t, err)
+		cache := make(map[string]domain.Vtxo)
+		offchainCache := make(map[string]*domain.OffchainTx)
+		require.NoError(t, indexer.preloadByMarkers(ctx, siblings, cache, offchainCache))
 
-	// Should terminate without looping forever.
-	require.Contains(t, cache, "vtxo-cycle:0")
-	require.Contains(t, cache, "vtxo-a:0")
-	require.Contains(t, cache, "vtxo-b:0")
+		require.Contains(t, cache, "sib-a:0")
+		require.Contains(t, cache, "sib-b:0")
+		require.Contains(t, cache, "sib-c:0")
+		require.Contains(t, cache, "vtxo-100a:0")
 
-	// Each marker queried exactly once: one bulk vtxo fetch, one lookup per level.
-	markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", 1)
-	markerRepo.AssertNumberOfCalls(t, "GetMarkersByIds", 2)
+		// One lookup per marker level, not one per seed VTXO.
+		markerRepo.AssertNumberOfCalls(t, "GetMarkersByIds", 2)
+		markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", 1)
+	})
+
+	// no cycle loop verifies that the visited set prevents infinite loops when
+	// markers form a cycle.
+	t.Run("no cycle loop", func(t *testing.T) {
+		_, markerRepo, indexer := newChainTestIndexer()
+		ctx := context.Background()
+
+		vtxo := domain.Vtxo{
+			Outpoint:  domain.Outpoint{Txid: "vtxo-cycle", VOut: 0},
+			Amount:    100,
+			MarkerIDs: []string{"marker-A"},
+		}
+
+		// marker-A -> marker-B -> marker-A (cycle)
+		markerRepo.On("GetVtxoChainByMarkers", ctx, matchIDs("marker-A", "marker-B")).
+			Return([]domain.Vtxo{
+				{Outpoint: domain.Outpoint{Txid: "vtxo-a", VOut: 0}, Amount: 100},
+				{Outpoint: domain.Outpoint{Txid: "vtxo-b", VOut: 0}, Amount: 200},
+			}, nil)
+
+		markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-A")).
+			Return([]domain.Marker{
+				{ID: "marker-A", Depth: 0, ParentMarkerIDs: []string{"marker-B"}},
+			}, nil)
+		markerRepo.On("GetMarkersByIds", ctx, matchIDs("marker-B")).
+			Return([]domain.Marker{
+				{ID: "marker-B", Depth: 0, ParentMarkerIDs: []string{"marker-A"}},
+			}, nil)
+
+		cache := make(map[string]domain.Vtxo)
+		offchainCache := make(map[string]*domain.OffchainTx)
+		err := indexer.preloadByMarkers(ctx, []domain.Vtxo{vtxo}, cache, offchainCache)
+		require.NoError(t, err)
+
+		// Should terminate without looping forever.
+		require.Contains(t, cache, "vtxo-cycle:0")
+		require.Contains(t, cache, "vtxo-a:0")
+		require.Contains(t, cache, "vtxo-b:0")
+
+		// Each marker queried exactly once: one bulk vtxo fetch, one lookup per level.
+		markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", 1)
+		markerRepo.AssertNumberOfCalls(t, "GetMarkersByIds", 2)
+	})
 }
 
 // TestGetVtxoChain_WithMarkers_UsesPreload verifies that GetVtxoChain uses

@@ -3026,6 +3026,9 @@ type Settings struct {
 	UpdatedAt                     *string                `protobuf:"bytes,24,opt,name=updated_at,json=updatedAt,proto3,oneof" json:"updated_at,omitempty"`
 	DigestHeaderRequired          *bool                  `protobuf:"varint,25,opt,name=digest_header_required,json=digestHeaderRequired,proto3,oneof" json:"digest_header_required,omitempty"`
 	BatchTrigger                  *string                `protobuf:"bytes,26,opt,name=batch_trigger,json=batchTrigger,proto3,oneof" json:"batch_trigger,omitempty"`
+	RateLimitEnabled              *bool                  `protobuf:"varint,27,opt,name=rate_limit_enabled,json=rateLimitEnabled,proto3,oneof" json:"rate_limit_enabled,omitempty"`
+	RateLimitMaxVelocity          *float64               `protobuf:"fixed64,28,opt,name=rate_limit_max_velocity,json=rateLimitMaxVelocity,proto3,oneof" json:"rate_limit_max_velocity,omitempty"`
+	RateLimitMaxCooldownSecs      *int64                 `protobuf:"varint,29,opt,name=rate_limit_max_cooldown_secs,json=rateLimitMaxCooldownSecs,proto3,oneof" json:"rate_limit_max_cooldown_secs,omitempty"`
 	unknownFields                 protoimpl.UnknownFields
 	sizeCache                     protoimpl.SizeCache
 }
@@ -3240,6 +3243,27 @@ func (x *Settings) GetBatchTrigger() string {
 		return *x.BatchTrigger
 	}
 	return ""
+}
+
+func (x *Settings) GetRateLimitEnabled() bool {
+	if x != nil && x.RateLimitEnabled != nil {
+		return *x.RateLimitEnabled
+	}
+	return false
+}
+
+func (x *Settings) GetRateLimitMaxVelocity() float64 {
+	if x != nil && x.RateLimitMaxVelocity != nil {
+		return *x.RateLimitMaxVelocity
+	}
+	return 0
+}
+
+func (x *Settings) GetRateLimitMaxCooldownSecs() int64 {
+	if x != nil && x.RateLimitMaxCooldownSecs != nil {
+		return *x.RateLimitMaxCooldownSecs
+	}
+	return 0
 }
 
 type GetSettingsRequest struct {
@@ -4043,7 +4067,7 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x10commitment_txids\x18\x02 \x03(\tR\x0fcommitmentTxids\"5\n" +
 	"\rSweepResponse\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x10\n" +
-	"\x03hex\x18\x02 \x01(\tR\x03hex\"\xa2\x10\n" +
+	"\x03hex\x18\x02 \x01(\tR\x03hex\"\xaa\x12\n" +
 	"\bSettings\x12.\n" +
 	"\x10session_duration\x18\x01 \x01(\x03H\x00R\x0fsessionDuration\x88\x01\x01\x12I\n" +
 	"\x1funrolled_vtxo_min_expiry_margin\x18\x02 \x01(\x03H\x01R\x1bunrolledVtxoMinExpiryMargin\x88\x01\x01\x12(\n" +
@@ -4073,7 +4097,10 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x18 \x01(\tH\x17R\tupdatedAt\x88\x01\x01\x129\n" +
 	"\x16digest_header_required\x18\x19 \x01(\bH\x18R\x14digestHeaderRequired\x88\x01\x01\x12(\n" +
-	"\rbatch_trigger\x18\x1a \x01(\tH\x19R\fbatchTrigger\x88\x01\x01B\x13\n" +
+	"\rbatch_trigger\x18\x1a \x01(\tH\x19R\fbatchTrigger\x88\x01\x01\x121\n" +
+	"\x12rate_limit_enabled\x18\x1b \x01(\bH\x1aR\x10rateLimitEnabled\x88\x01\x01\x12:\n" +
+	"\x17rate_limit_max_velocity\x18\x1c \x01(\x01H\x1bR\x14rateLimitMaxVelocity\x88\x01\x01\x12C\n" +
+	"\x1crate_limit_max_cooldown_secs\x18\x1d \x01(\x03H\x1cR\x18rateLimitMaxCooldownSecs\x88\x01\x01B\x13\n" +
 	"\x11_session_durationB\"\n" +
 	" _unrolled_vtxo_min_expiry_marginB\x10\n" +
 	"\x0e_ban_thresholdB\x0f\n" +
@@ -4099,7 +4126,10 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x1e_build_version_header_requiredB\r\n" +
 	"\v_updated_atB\x19\n" +
 	"\x17_digest_header_requiredB\x10\n" +
-	"\x0e_batch_trigger\"\x14\n" +
+	"\x0e_batch_triggerB\x15\n" +
+	"\x13_rate_limit_enabledB\x1a\n" +
+	"\x18_rate_limit_max_velocityB\x1f\n" +
+	"\x1d_rate_limit_max_cooldown_secs\"\x14\n" +
 	"\x12GetSettingsRequest\"C\n" +
 	"\x13GetSettingsResponse\x12,\n" +
 	"\bsettings\x18\x01 \x01(\v2\x10.ark.v1.SettingsR\bsettings\"E\n" +

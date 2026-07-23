@@ -105,6 +105,7 @@ type Marker struct {
 	ID            string
 	Depth         int64
 	ParentMarkers sql.NullString
+	CreatedAt     int64
 }
 
 type OffchainTx struct {
@@ -240,6 +241,9 @@ type Setting struct {
 	DigestHeaderRequired                      bool
 	UpdatedAt                                 int64
 	BatchTrigger                              string
+	RateLimitEnabled                          bool
+	RateLimitMaxVelocity                      float64
+	RateLimitMaxCooldownSecs                  int64
 }
 
 type SweptMarker struct {

@@ -80,6 +80,7 @@ func (h *handler) GetInfo(
 		CheckpointTapscript: info.CheckpointTapscript,
 		MaxTxWeight:         info.MaxTxWeight,
 		MaxOpReturnOutputs:  info.MaxOpReturnOutputs,
+		RateLimitEnabled:    info.RateLimitEnabled,
 		Fees:                fees(info.Fees).toProto(),
 		ScheduledSession:    scheduledSession{info.NextScheduledSession}.toProto(),
 		Digest:              info.Digest,

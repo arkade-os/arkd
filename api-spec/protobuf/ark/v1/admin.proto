@@ -448,6 +448,9 @@ message Settings {
   optional string updated_at = 24;
   optional bool digest_header_required = 25;
   optional string batch_trigger = 26;
+  optional bool rate_limit_enabled = 27;
+  optional double rate_limit_max_velocity = 28;
+  optional int64 rate_limit_max_cooldown_secs = 29;
 }
 
 message GetSettingsRequest {}

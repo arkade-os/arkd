@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger"
@@ -64,6 +65,9 @@ type Settings struct {
 	BuildVersionHeaderRequired    bool
 	DigestHeaderRequired          bool
 	BatchTrigger                  string
+	RateLimitEnabled              bool
+	RateLimitMaxVelocity          float64
+	RateLimitMaxCooldownSecs      int64
 	UpdatedAt                     time.Time
 }
 
@@ -78,6 +82,7 @@ func NewSettings(
 	assetTxMaxWeightRatio float32, noteUriPrefix, minVersionAccepted string,
 	minVersionRequired, digestHeaderRequired bool,
 	batchTrigger string,
+	rateLimitEnabled bool, rateLimitMaxVelocity float64, rateLimitMaxCooldownSecs int64,
 ) (*Settings, error) {
 	settings := &Settings{
 		SessionDuration:               time.Duration(sessionDuration) * time.Second,
@@ -105,6 +110,9 @@ func NewSettings(
 		BuildVersionHeaderRequired:    minVersionRequired,
 		DigestHeaderRequired:          digestHeaderRequired,
 		BatchTrigger:                  batchTrigger,
+		RateLimitEnabled:              rateLimitEnabled,
+		RateLimitMaxVelocity:          rateLimitMaxVelocity,
+		RateLimitMaxCooldownSecs:      rateLimitMaxCooldownSecs,
 		UpdatedAt:                     time.Now(),
 	}
 	if err := settings.Validate(); err != nil {
@@ -244,6 +252,28 @@ func (s Settings) Validate() error {
 	if _, err := batchtrigger.New(s.BatchTrigger); err != nil {
 		return fmt.Errorf("invalid batch trigger program: %w", err)
 	}
+	if s.RateLimitEnabled {
+		// Reject non-finite velocities as well as non-positive ones. A NaN or
+		// +Inf (e.g. an env value that overflows float64, like 1e400) passes a
+		// bare `<= 0` check but makes `velocity > maxVelocity` always false in
+		// the limiter, silently disabling enforcement the operator asked for.
+		if s.RateLimitMaxVelocity <= 0 ||
+			math.IsNaN(s.RateLimitMaxVelocity) ||
+			math.IsInf(s.RateLimitMaxVelocity, 0) {
+			return fmt.Errorf(
+				"rate limit max velocity must be a positive finite number when rate limiting is enabled, got %f",
+				s.RateLimitMaxVelocity,
+			)
+		}
+		// A zero cap would report a zero cooldown on every rejection, which tells
+		// clients to retry immediately and never lets them clear the limit.
+		if s.RateLimitMaxCooldownSecs <= 0 {
+			return fmt.Errorf(
+				"rate limit max cooldown secs must be greater than 0 when rate limiting is enabled, got %d",
+				s.RateLimitMaxCooldownSecs,
+			)
+		}
+	}
 	return nil
 }
 
@@ -275,6 +305,9 @@ type SettingsUpdate struct {
 	BuildVersionHeaderRequired    *bool
 	DigestHeaderRequired          *bool
 	BatchTrigger                  *string
+	RateLimitEnabled              *bool
+	RateLimitMaxVelocity          *float64
+	RateLimitMaxCooldownSecs      *int64
 }
 
 // Update updates any field of Settings but ScheduledSession and BatchFees and returns a changelog
@@ -383,6 +416,18 @@ func (s *Settings) Update(u SettingsUpdate) ([]string, error) {
 	if u.BatchTrigger != nil {
 		updated.BatchTrigger = *u.BatchTrigger
 		changelog = append(changelog, "batch_trigger")
+	}
+	if u.RateLimitEnabled != nil {
+		updated.RateLimitEnabled = *u.RateLimitEnabled
+		changelog = append(changelog, "rate_limit_enabled")
+	}
+	if u.RateLimitMaxVelocity != nil {
+		updated.RateLimitMaxVelocity = *u.RateLimitMaxVelocity
+		changelog = append(changelog, "rate_limit_max_velocity")
+	}
+	if u.RateLimitMaxCooldownSecs != nil {
+		updated.RateLimitMaxCooldownSecs = *u.RateLimitMaxCooldownSecs
+		changelog = append(changelog, "rate_limit_max_cooldown_secs")
 	}
 
 	if err := updated.Validate(); err != nil {

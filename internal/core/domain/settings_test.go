@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -148,6 +149,18 @@ func testValidateSettings(t *testing.T) {
 			requiredVersionWithoutHeader.BuildVersionHeaderRequired = true
 			requiredVersionWithoutHeader.BuildVersionHeader = ""
 
+			// A non-finite max velocity (NaN, or a +Inf from an overflowing env
+			// value) slips past a bare `<= 0` check but disables the limiter.
+			nanVelocity := validSettings
+			nanVelocity.RateLimitEnabled = true
+			nanVelocity.RateLimitMaxVelocity = math.NaN()
+			nanVelocity.RateLimitMaxCooldownSecs = 3600
+
+			infVelocity := validSettings
+			infVelocity.RateLimitEnabled = true
+			infVelocity.RateLimitMaxVelocity = math.Inf(1)
+			infVelocity.RateLimitMaxCooldownSecs = 3600
+
 			fixtures := []struct {
 				settings    domain.Settings
 				expectedErr string
@@ -252,6 +265,16 @@ func testValidateSettings(t *testing.T) {
 				{
 					settings:    requiredVersionWithoutHeader,
 					expectedErr: "build version header is required but no version is set",
+				},
+				{
+					settings: nanVelocity,
+					expectedErr: "rate limit max velocity must be a positive finite " +
+						"number when rate limiting is enabled, got NaN",
+				},
+				{
+					settings: infVelocity,
+					expectedErr: "rate limit max velocity must be a positive finite " +
+						"number when rate limiting is enabled, got +Inf",
 				},
 			}
 
@@ -379,6 +402,7 @@ func testNewSettings(t *testing.T) {
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
 				batchTrigger,
+				true, 0.28, 3600,
 			)
 			require.NoError(t, err)
 			require.NotNil(t, settings)
@@ -389,6 +413,9 @@ func testNewSettings(t *testing.T) {
 			require.Equal(t, buildVersionHeaderRequired, settings.BuildVersionHeaderRequired)
 			require.Equal(t, digestHeaderRequired, settings.DigestHeaderRequired)
 			require.Equal(t, batchTrigger, settings.BatchTrigger)
+			require.True(t, settings.RateLimitEnabled)
+			require.Equal(t, 0.28, settings.RateLimitMaxVelocity)
+			require.Equal(t, int64(3600), settings.RateLimitMaxCooldownSecs)
 			require.False(t, settings.UpdatedAt.IsZero())
 		})
 
@@ -403,6 +430,7 @@ func testNewSettings(t *testing.T) {
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
 				batchTrigger,
+				true, 0.28, 3600,
 			)
 			require.ErrorContains(t, err, "invalid session duration")
 			require.Nil(t, settings)
@@ -419,6 +447,7 @@ func testNewSettings(t *testing.T) {
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				"", true, true,
 				batchTrigger,
+				true, 0.28, 3600,
 			)
 			require.ErrorContains(t, err, "build version header is required but no version is set")
 			require.Nil(t, settings)
@@ -435,9 +464,61 @@ func testNewSettings(t *testing.T) {
 				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
 				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
 				"this is not (valid cel",
+				true, 0.28, 3600,
 			)
 			require.ErrorContains(t, err, "invalid batch trigger program")
 			require.Nil(t, settings)
+		})
+
+		t.Run("rate limit velocity must be positive when enabled", func(t *testing.T) {
+			settings, err := domain.NewSettings(
+				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
+				batchMinParticipants, batchMaxParticipants,
+				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
+				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
+				boardingExitDelay, vtxoTreeExpiry,
+				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				batchTrigger,
+				true, 0, 3600,
+			)
+			require.ErrorContains(t, err, "rate limit max velocity must be a positive finite number")
+			require.Nil(t, settings)
+		})
+
+		t.Run("rate limit cooldown must be positive when enabled", func(t *testing.T) {
+			settings, err := domain.NewSettings(
+				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
+				batchMinParticipants, batchMaxParticipants,
+				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
+				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
+				boardingExitDelay, vtxoTreeExpiry,
+				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				batchTrigger,
+				true, 0.28, 0,
+			)
+			require.ErrorContains(t, err, "rate limit max cooldown secs must be greater than 0")
+			require.Nil(t, settings)
+		})
+
+		t.Run("disabled rate limit skips value validation", func(t *testing.T) {
+			settings, err := domain.NewSettings(
+				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
+				batchMinParticipants, batchMaxParticipants,
+				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
+				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
+				boardingExitDelay, vtxoTreeExpiry,
+				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				batchTrigger,
+				false, 0, 0,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, settings)
 		})
 	})
 }
