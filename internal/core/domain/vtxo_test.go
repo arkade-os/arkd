@@ -66,6 +66,15 @@ func TestVtxo_IsNote(t *testing.T) {
 			},
 			isNote: false,
 		},
+		{
+			// An on-chain Arkade UTXO has no commitment txids either, so
+			// the kind discriminator must keep it from reading as a note.
+			name: "onchain kind is not a note despite empty commitments",
+			vtxo: domain.Vtxo{
+				Kind: domain.VtxoKindOnchain,
+			},
+			isNote: false,
+		},
 	}
 	for _, f := range fixtures {
 		t.Run(f.name, func(t *testing.T) {

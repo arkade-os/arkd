@@ -81,6 +81,7 @@ type IntentWithInputsVw struct {
 	UpdatedAt      sql.NullInt64
 	Depth          sql.NullInt32
 	Markers        pqtype.NullRawMessage
+	VtxoKind       sql.NullInt32
 	Commitments    []byte
 	Swept          sql.NullBool
 	AssetID        sql.NullString
@@ -301,6 +302,7 @@ type Vtxo struct {
 	UpdatedAt      int64
 	Depth          int32
 	Markers        json.RawMessage
+	VtxoKind       int32
 }
 
 type VtxoCommitmentTxid struct {
@@ -327,6 +329,7 @@ type VtxoVw struct {
 	UpdatedAt      int64
 	Depth          int32
 	Markers        json.RawMessage
+	VtxoKind       int32
 	Commitments    []byte
 	Swept          sql.NullBool
 	AssetID        string
