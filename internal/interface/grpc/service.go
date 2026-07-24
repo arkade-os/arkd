@@ -345,7 +345,9 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof, withChannelz bool)
 	if err != nil {
 		return fmt.Errorf("failed to create app service: %w", err)
 	}
-	appHandler := handlers.NewAppServiceHandler(s.version, appSvc, s.config.HeartbeatInterval)
+	appHandler := handlers.NewAppServiceHandler(
+		s.version, appSvc, s.config.HeartbeatInterval, s.config.StreamMaxLifetime,
+	)
 	eventsCh := appSvc.GetIndexerTxChannel(ctx)
 	subscriptionTimeoutDuration := time.Minute
 	indexerSvc, err := s.appConfig.IndexerService()
@@ -357,6 +359,7 @@ func (s *service) newServer(tlsConfig *tls.Config, withPprof, withChannelz bool)
 		eventsCh,
 		subscriptionTimeoutDuration,
 		s.config.HeartbeatInterval,
+		s.config.StreamMaxLifetime,
 	)
 	arkv1.RegisterArkServiceServer(grpcServer, appHandler)
 	arkv1.RegisterIndexerServiceServer(grpcServer, indexerHandler)
