@@ -1,6 +1,9 @@
 package domain
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // MarkerInterval is the depth interval at which markers are created.
 // VTXOs at depth 0, 100, 200, etc. create new markers.
@@ -25,6 +28,39 @@ type Marker struct {
 	Depth uint32
 	// ParentMarkerIDs is a list of marker IDs that this marker descends from
 	ParentMarkerIDs []string
+}
+
+// ChainDepthAndParentMarkers computes the chain depth and inherited parent
+// marker IDs for a new tx from the vtxos it spends. Depth is
+// max(parent depths) + 1, or 0 when nothing is spent. ParentMarkerIDs is the
+// deduplicated union of the spent vtxos' non-empty marker IDs, sorted so the
+// result is deterministic regardless of input order.
+//
+// This is the single source of truth for the computation recorded on the
+// OffchainTxAccepted event, so the call sites that need it cannot drift.
+func ChainDepthAndParentMarkers(spent []Vtxo) (uint32, []string) {
+	var maxDepth uint32
+	parentSet := make(map[string]struct{})
+	for _, v := range spent {
+		if v.Depth > maxDepth {
+			maxDepth = v.Depth
+		}
+		for _, id := range v.MarkerIDs {
+			if id != "" {
+				parentSet[id] = struct{}{}
+			}
+		}
+	}
+	var depth uint32
+	if len(spent) > 0 {
+		depth = maxDepth + 1
+	}
+	parents := make([]string, 0, len(parentSet))
+	for id := range parentSet {
+		parents = append(parents, id)
+	}
+	sort.Strings(parents)
+	return depth, parents
 }
 
 // NewMarker computes marker information for a new offchain transaction.
