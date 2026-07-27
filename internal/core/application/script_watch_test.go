@@ -332,7 +332,6 @@ func TestOffchainTxHandler_WatchesCheckpointScripts(t *testing.T) {
 			transactionEventsCh: make(chan TransactionEvent, 64),
 			indexerTxEventsCh:   make(chan TransactionEvent, 64),
 			wg:                  &sync.WaitGroup{},
-			offchainTxMu:        &sync.Mutex{},
 		}
 		svc.registerEventHandlers()
 		rm.offchainTxHandler(offchainTx)
@@ -365,7 +364,6 @@ func TestOffchainTxHandler_WatchesCheckpointScripts(t *testing.T) {
 			transactionEventsCh: make(chan TransactionEvent, 64),
 			indexerTxEventsCh:   make(chan TransactionEvent, 64),
 			wg:                  &sync.WaitGroup{},
-			offchainTxMu:        &sync.Mutex{},
 		}
 		svc.registerEventHandlers()
 		rm.offchainTxHandler(offchainTx)

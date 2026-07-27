@@ -7,20 +7,23 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
+	"github.com/arkade-os/arkd/internal/core/ports"
 	inmemorylivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/inmemory"
 	"github.com/stretchr/testify/require"
 )
 
 func TestOffChainTxStoreClaimOutpoints(t *testing.T) {
 	ctx := context.Background()
+	const ownerA, ownerB = "arktx-a", "arktx-b"
 
-	t.Run("disjoint claim succeeds and is visible via Includes", func(t *testing.T) {
+	t.Run("disjoint claim is fresh and visible via Includes", func(t *testing.T) {
 		store := inmemorylivestore.NewOffChainTxStore()
 		ops := []domain.Outpoint{outpoint("aa", 0), outpoint("bb", 1)}
 
-		conflict, err := store.ClaimOutpoints(ctx, ops)
+		status, conflict, err := store.ClaimOutpoints(ctx, ownerA, ops)
 		require.NoError(t, err)
 		require.Nil(t, conflict)
+		require.Equal(t, ports.ClaimFresh, status)
 
 		for _, o := range ops {
 			exists, err := store.Includes(ctx, o)
@@ -29,17 +32,32 @@ func TestOffChainTxStoreClaimOutpoints(t *testing.T) {
 		}
 	})
 
-	t.Run("conflicting claim is all-or-nothing", func(t *testing.T) {
+	t.Run("same owner re-claim is idempotent", func(t *testing.T) {
 		store := inmemorylivestore.NewOffChainTxStore()
-		x, y := outpoint("cc", 0), outpoint("dd", 0)
+		ops := []domain.Outpoint{outpoint("cc", 0)}
 
-		conflict, err := store.ClaimOutpoints(ctx, []domain.Outpoint{x})
+		status, _, err := store.ClaimOutpoints(ctx, ownerA, ops)
+		require.NoError(t, err)
+		require.Equal(t, ports.ClaimFresh, status)
+
+		status, conflict, err := store.ClaimOutpoints(ctx, ownerA, ops)
 		require.NoError(t, err)
 		require.Nil(t, conflict)
+		require.Equal(t, ports.ClaimAlreadyOwned, status)
+	})
 
-		// Claiming [x, y] must fail on x and register nothing new, so y stays free.
-		conflict, err = store.ClaimOutpoints(ctx, []domain.Outpoint{x, y})
+	t.Run("different owner conflicts, all-or-nothing", func(t *testing.T) {
+		store := inmemorylivestore.NewOffChainTxStore()
+		x, y := outpoint("dd", 0), outpoint("ee", 0)
+
+		status, _, err := store.ClaimOutpoints(ctx, ownerA, []domain.Outpoint{x})
 		require.NoError(t, err)
+		require.Equal(t, ports.ClaimFresh, status)
+
+		// ownerB claiming [x, y] must fail on x and register nothing, so y stays free.
+		status, conflict, err := store.ClaimOutpoints(ctx, ownerB, []domain.Outpoint{x, y})
+		require.NoError(t, err)
+		require.Equal(t, ports.ClaimConflict, status)
 		require.NotNil(t, conflict)
 		require.Equal(t, x.String(), conflict.String())
 
@@ -48,52 +66,85 @@ func TestOffChainTxStoreClaimOutpoints(t *testing.T) {
 		require.False(t, exists, "y must not be registered when the batch conflicts on x")
 	})
 
-	t.Run("release makes an outpoint claimable again", func(t *testing.T) {
+	t.Run("release is owner-scoped", func(t *testing.T) {
 		store := inmemorylivestore.NewOffChainTxStore()
-		x := outpoint("ee", 2)
+		x := outpoint("ff", 2)
 
-		_, err := store.ClaimOutpoints(ctx, []domain.Outpoint{x})
+		_, _, err := store.ClaimOutpoints(ctx, ownerA, []domain.Outpoint{x})
 		require.NoError(t, err)
 
-		require.NoError(t, store.ReleaseOutpoints(ctx, []domain.Outpoint{x}))
+		// A different owner cannot release ownerA's claim.
+		require.NoError(t, store.ReleaseOutpoints(ctx, ownerB, []domain.Outpoint{x}))
 		exists, err := store.Includes(ctx, x)
+		require.NoError(t, err)
+		require.True(t, exists, "ownerB must not be able to release ownerA's claim")
+
+		// The owner can, and releasing an absent outpoint is a no-op.
+		require.NoError(t, store.ReleaseOutpoints(ctx, ownerA, []domain.Outpoint{x}))
+		require.NoError(t, store.ReleaseOutpoints(ctx, ownerA, []domain.Outpoint{outpoint("99", 9)}))
+		exists, err = store.Includes(ctx, x)
 		require.NoError(t, err)
 		require.False(t, exists)
 
-		// Releasing an absent outpoint is a no-op.
-		require.NoError(t, store.ReleaseOutpoints(ctx, []domain.Outpoint{outpoint("ff", 9)}))
-
-		conflict, err := store.ClaimOutpoints(ctx, []domain.Outpoint{x})
+		// Now free, another owner can claim it.
+		status, _, err := store.ClaimOutpoints(ctx, ownerB, []domain.Outpoint{x})
 		require.NoError(t, err)
-		require.Nil(t, conflict)
+		require.Equal(t, ports.ClaimFresh, status)
 	})
 
-	// Run under -race: exactly one of N concurrent claimers of the same
-	// outpoint wins, the rest see it as a conflict.
-	t.Run("concurrent claimers, exactly one wins", func(t *testing.T) {
+	// Run under -race: exactly one of N distinct-owner claimers of the same
+	// outpoint wins fresh, the rest conflict.
+	t.Run("concurrent distinct owners, exactly one wins", func(t *testing.T) {
 		store := inmemorylivestore.NewOffChainTxStore()
 		x := outpoint("ab", 4)
 
 		const n = 64
-		var wins, conflicts int64
+		var fresh, conflicts int64
+		var wg sync.WaitGroup
+		wg.Add(n)
+		for i := 0; i < n; i++ {
+			owner := ownerA + string(rune('0'+i%10)) + string(rune('a'+i/10))
+			go func(owner string) {
+				defer wg.Done()
+				status, _, err := store.ClaimOutpoints(ctx, owner, []domain.Outpoint{x})
+				require.NoError(t, err)
+				switch status {
+				case ports.ClaimFresh:
+					atomic.AddInt64(&fresh, 1)
+				case ports.ClaimConflict:
+					atomic.AddInt64(&conflicts, 1)
+				}
+			}(owner)
+		}
+		wg.Wait()
+
+		require.Equal(t, int64(1), fresh, "exactly one distinct owner must win")
+		require.Equal(t, int64(n-1), conflicts)
+	})
+
+	// Run under -race: N same-owner claimers of the same outpoint all succeed
+	// (fresh or already-owned), never conflict.
+	t.Run("concurrent same owner, none conflict", func(t *testing.T) {
+		store := inmemorylivestore.NewOffChainTxStore()
+		x := outpoint("cd", 5)
+
+		const n = 64
+		var conflicts int64
 		var wg sync.WaitGroup
 		wg.Add(n)
 		for i := 0; i < n; i++ {
 			go func() {
 				defer wg.Done()
-				conflict, err := store.ClaimOutpoints(ctx, []domain.Outpoint{x})
+				status, _, err := store.ClaimOutpoints(ctx, ownerA, []domain.Outpoint{x})
 				require.NoError(t, err)
-				if conflict == nil {
-					atomic.AddInt64(&wins, 1)
-				} else {
+				if status == ports.ClaimConflict {
 					atomic.AddInt64(&conflicts, 1)
 				}
 			}()
 		}
 		wg.Wait()
 
-		require.Equal(t, int64(1), wins, "exactly one claimer must win")
-		require.Equal(t, int64(n-1), conflicts)
+		require.Equal(t, int64(0), conflicts, "same-owner claims must never conflict")
 	})
 }
 

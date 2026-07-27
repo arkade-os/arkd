@@ -62,10 +62,9 @@ type service struct {
 	indexerTxEventsCh        chan TransactionEvent
 
 	// stop and round-execution go routine handlers
-	stop         func()
-	ctx          context.Context
-	wg           *sync.WaitGroup
-	offchainTxMu *sync.Mutex
+	stop func()
+	ctx  context.Context
+	wg   *sync.WaitGroup
 }
 
 func NewService(
@@ -154,7 +153,6 @@ func NewService(
 		stop:                     cancel,
 		ctx:                      ctx,
 		wg:                       &sync.WaitGroup{},
-		offchainTxMu:             &sync.Mutex{},
 		alerts:                   alerts,
 		feeManager:               feeManager,
 	}
@@ -1120,43 +1118,40 @@ func (s *service) SubmitOffchainTx(
 			})
 	}
 
-	s.offchainTxMu.Lock()
-	defer s.offchainTxMu.Unlock()
-
-	// before pushing to the cache, check if any of the spent vtxos are already spent by another offchain tx
-	// we redo this check after locking the mutex to avoid race conditions between concurrent offchain tx submissions
-	for _, spentVtxo := range spentVtxos {
-		isSpent, err := s.cache.OffchainTxs().Includes(ctx, spentVtxo.Outpoint)
-		if err != nil {
-			log.WithError(err).Errorf(
-				"failed to check again spent status of inputs against tx in cache",
-			)
-			return nil, errors.INTERNAL_ERROR.New("something went wrong").
-				WithMetadata(map[string]any{"vtxo": spentVtxo.Outpoint.String()})
-		}
-		if isSpent {
-			return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", spentVtxo.Outpoint.String()).
-				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: spentVtxo.Outpoint.String()})
-		}
-	}
-	if err := s.cache.OffchainTxs().Add(ctx, *offchainTx); err != nil {
-		return nil, errors.INTERNAL_ERROR.New("something went wrong").
-			WithMetadata(map[string]any{"ark_txid": offchainTx.ArkTxid})
-	}
-
-	// apply Accepted event only after verifying the spent vtxos
-	changes = append(changes, change)
-
 	signedCheckpointTxs := make([]string, 0, len(signedCheckpointTxsMap))
 	for _, tx := range signedCheckpointTxsMap {
 		signedCheckpointTxs = append(signedCheckpointTxs, tx)
 	}
-
-	return &AcceptedOffchainTx{
+	accepted := &AcceptedOffchainTx{
 		TxId:                txid,
 		FinalArkTx:          fullySignedArkTx,
 		SignedCheckpointTxs: signedCheckpointTxs,
-	}, nil
+	}
+
+	// Atomically claim the spent inputs and store the tx in one step. The store
+	// (redis Lua / inmemory lock) is the single cross-process barrier against a
+	// concurrent spend of the same vtxos, whether off-chain or on-chain, so no
+	// separate recheck-then-add under a per-process mutex is needed.
+	status, conflict, err := s.cache.OffchainTxs().Add(ctx, *offchainTx)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithMetadata(map[string]any{"ark_txid": offchainTx.ArkTxid})
+	}
+	switch status {
+	case ports.ClaimConflict:
+		return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", conflict.String()).
+			WithMetadata(errors.VtxoMetadata{VtxoOutpoint: conflict.String()})
+	case ports.ClaimAlreadyOwned:
+		// A concurrent or retried submit of this same arkTxid already claimed
+		// these inputs and applied the acceptance. Return the accepted result
+		// and record nothing further, so no duplicate Accepted event is saved.
+		changes = nil
+		return accepted, nil
+	}
+
+	// ClaimFresh: apply the Accepted event.
+	changes = append(changes, change)
+	return accepted, nil
 }
 
 func (s *service) FinalizeOffchainTx(
