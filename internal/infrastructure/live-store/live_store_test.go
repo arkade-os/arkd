@@ -343,6 +343,37 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 		require.True(t, exists)
 
+		// ClaimOutpoints must refuse an outpoint the off-chain Add already
+		// registered: both writers share one set.
+		conflict, err := store.OffchainTxs().ClaimOutpoints(ctx, []domain.Outpoint{outpoint})
+		require.NoError(t, err)
+		require.NotNil(t, conflict)
+		require.Equal(t, outpoint.String(), conflict.String())
+
+		// A fresh outpoint claims cleanly, reads back through Includes, and
+		// re-claiming it is refused until released.
+		fresh := domain.Outpoint{
+			Txid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			VOut: 7,
+		}
+		conflict, err = store.OffchainTxs().ClaimOutpoints(ctx, []domain.Outpoint{fresh})
+		require.NoError(t, err)
+		require.Nil(t, conflict)
+		exists, err = store.OffchainTxs().Includes(ctx, fresh)
+		require.NoError(t, err)
+		require.True(t, exists)
+		conflict, err = store.OffchainTxs().ClaimOutpoints(ctx, []domain.Outpoint{fresh})
+		require.NoError(t, err)
+		require.NotNil(t, conflict)
+
+		// Release makes it claimable again.
+		require.NoError(t,
+			store.OffchainTxs().ReleaseOutpoints(ctx, []domain.Outpoint{fresh}),
+		)
+		exists, err = store.OffchainTxs().Includes(ctx, fresh)
+		require.NoError(t, err)
+		require.False(t, exists)
+
 		// Remove
 		err = store.OffchainTxs().Remove(ctx, tx.ArkTxid)
 		require.NoError(t, err)

@@ -67,6 +67,39 @@ func (m *offChainTxStore) Get(_ context.Context, arkTxid string) (*domain.Offcha
 	return &offchainTx, nil
 }
 
+func (m *offChainTxStore) ClaimOutpoints(
+	_ context.Context, outpoints []domain.Outpoint,
+) (*domain.Outpoint, error) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	// First pass: reject the whole batch if any outpoint is already claimed,
+	// without mutating, so a conflict leaves the set untouched.
+	for i := range outpoints {
+		if _, exists := m.inputs[outpoints[i].String()]; exists {
+			return &outpoints[i], nil
+		}
+	}
+	// Second pass: register all of them. Both passes run under one Lock, so the
+	// claim is atomic within the process.
+	for i := range outpoints {
+		m.inputs[outpoints[i].String()] = struct{}{}
+	}
+	return nil, nil
+}
+
+func (m *offChainTxStore) ReleaseOutpoints(
+	_ context.Context, outpoints []domain.Outpoint,
+) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	for i := range outpoints {
+		delete(m.inputs, outpoints[i].String())
+	}
+	return nil
+}
+
 func (m *offChainTxStore) Includes(_ context.Context, outpoint domain.Outpoint) (bool, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()

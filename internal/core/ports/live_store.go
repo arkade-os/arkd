@@ -58,6 +58,20 @@ type OffChainTxStore interface {
 	Remove(ctx context.Context, arkTxid string) error
 	Get(ctx context.Context, arkTxid string) (*domain.OffchainTx, error)
 	Includes(ctx context.Context, outpoint domain.Outpoint) (bool, error)
+	// ClaimOutpoints atomically registers every given outpoint in the same
+	// spent-input set that Add/Includes/Remove use, but only if none is already
+	// present. On conflict it registers nothing and returns the first
+	// already-present outpoint; on success it returns (nil, nil). It is the
+	// claim primitive for spends that do not carry checkpoint txs (on-chain
+	// Arkade cosigns, issue #1159), so Includes sees them like any other input.
+	// Note: this makes on-chain claims atomic against each other and visible to
+	// the off-chain Includes read, but the off-chain Add writer is still a
+	// non-atomic check-then-set, so cross-process mutual exclusion between the
+	// two writers is not yet guaranteed (tracked for the cosign path).
+	ClaimOutpoints(ctx context.Context, outpoints []domain.Outpoint) (*domain.Outpoint, error)
+	// ReleaseOutpoints removes the given outpoints from the shared set. It is
+	// idempotent: releasing an absent outpoint is a no-op.
+	ReleaseOutpoints(ctx context.Context, outpoints []domain.Outpoint) error
 }
 
 type CurrentRoundStore interface {

@@ -128,6 +128,66 @@ func (s *offChainTxStore) Get(ctx context.Context, arkTxid string) (*domain.Offc
 	return &offchainTx, nil
 }
 
+// claimOutpointsScript atomically registers every ARGV member in KEYS[1] only
+// if none is already present. It returns the first already-present member, or
+// an empty string on success. Running it as one Lua script closes the
+// check-then-set race the separate SIsMember + SAdd path would otherwise leave
+// open between concurrent on-chain claims.
+var claimOutpointsScript = redis.NewScript(`
+for i = 1, #ARGV do
+  if redis.call('SISMEMBER', KEYS[1], ARGV[i]) == 1 then
+    return ARGV[i]
+  end
+end
+for i = 1, #ARGV do
+  redis.call('SADD', KEYS[1], ARGV[i])
+end
+return ''
+`)
+
+func (s *offChainTxStore) ClaimOutpoints(
+	ctx context.Context, outpoints []domain.Outpoint,
+) (*domain.Outpoint, error) {
+	if len(outpoints) == 0 {
+		return nil, nil
+	}
+	args := make([]interface{}, 0, len(outpoints))
+	for _, o := range outpoints {
+		args = append(args, o.String())
+	}
+	res, err := claimOutpointsScript.Run(
+		ctx, s.rdb, []string{offChainInputsSetKey}, args...,
+	).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to claim outpoints: %v", err)
+	}
+	conflict, _ := res.(string)
+	if conflict == "" {
+		return nil, nil
+	}
+	var out domain.Outpoint
+	if err := out.FromString(conflict); err != nil {
+		return nil, fmt.Errorf("malformed conflicting outpoint %q: %v", conflict, err)
+	}
+	return &out, nil
+}
+
+func (s *offChainTxStore) ReleaseOutpoints(
+	ctx context.Context, outpoints []domain.Outpoint,
+) error {
+	if len(outpoints) == 0 {
+		return nil
+	}
+	members := make([]interface{}, 0, len(outpoints))
+	for _, o := range outpoints {
+		members = append(members, o.String())
+	}
+	if err := s.rdb.SRem(ctx, offChainInputsSetKey, members...).Err(); err != nil {
+		return fmt.Errorf("failed to release outpoints: %v", err)
+	}
+	return nil
+}
+
 func (s *offChainTxStore) Includes(ctx context.Context, outpoint domain.Outpoint) (bool, error) {
 	exists, err := s.rdb.SIsMember(ctx, offChainInputsSetKey, outpoint.String()).Result()
 	if err != nil {
