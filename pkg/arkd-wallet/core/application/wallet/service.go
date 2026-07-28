@@ -484,7 +484,7 @@ func (w *wallet) selectCoins(
 		availableUtxos = append(availableUtxos, coin{utxo})
 	}
 
-	coins, err := newCoinSelector(minChangeAmount).CoinSelect(btcutil.Amount(amount), availableUtxos)
+	coins, err := economicalCoinSelector{minChangeAmount}.CoinSelect(btcutil.Amount(amount), availableUtxos)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -547,7 +547,7 @@ func (w *wallet) selectCoinsForWithdraw(
 		})
 	}
 
-	coins, err := newCoinSelector(0).CoinSelect(btcutil.Amount(amount+base), availableUtxos)
+	coins, err := consolidateFirstCoinSelector{0}.CoinSelect(btcutil.Amount(amount+base), availableUtxos)
 	if err != nil {
 		return nil, 0, err
 	}
