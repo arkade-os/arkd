@@ -117,5 +117,12 @@ func (v Vtxo) OutputScript() ([]byte, error) {
 }
 
 func (v Vtxo) IsExpired() bool {
+	// An on-chain Arkade UTXO has no batch expiry, so ExpiresAt is not
+	// meaningful for it. Without this an on-chain vtxo (which carries a zero
+	// ExpiresAt) would read as permanently expired and be treated as
+	// unspendable by every caller.
+	if v.Kind == VtxoKindOnchain {
+		return false
+	}
 	return time.Now().After(time.Unix(v.ExpiresAt, 0))
 }

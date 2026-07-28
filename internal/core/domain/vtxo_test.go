@@ -123,6 +123,16 @@ func TestVtxo_IsExpired(t *testing.T) {
 			vtxo:      domain.Vtxo{ExpiresAt: time.Now().Add(time.Hour).Unix()},
 			isExpired: false,
 		},
+		{
+			// An on-chain Arkade UTXO has no batch expiry, so a zero ExpiresAt
+			// must not read as expired.
+			name: "onchain kind never expires",
+			vtxo: domain.Vtxo{
+				Kind:      domain.VtxoKindOnchain,
+				ExpiresAt: time.Now().Add(-time.Hour).Unix(),
+			},
+			isExpired: false,
+		},
 	}
 	for _, f := range fixtures {
 		t.Run(f.name, func(t *testing.T) {
