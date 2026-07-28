@@ -3977,6 +3977,13 @@ func (s *service) processBoardingInputs(
 	boardingTxs := make(map[string]fundingTx, 0) // txid -> funding tx
 	now := time.Now()
 
+	// Fetched once per request: block-typed exit delays are evaluated against
+	// the chain tip, and the lookup is an uncached round trip to the wallet.
+	tip, err := s.wallet.GetCurrentBlockTime(ctx)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to get chain tip: %w", err)
+	}
+
 	for _, input := range boardingUtxos {
 		if len(input.Tapscripts) == 0 {
 			return nil, errors.INVALID_PSBT_INPUT.New(
@@ -4003,7 +4010,7 @@ func (s *service) processBoardingInputs(
 		}
 
 		if err := validateBoardingInput(
-			&funding.tx, funding.blockTimestamp, input, now, settings,
+			&funding.tx, funding.blockTimestamp, tip, input, now, settings,
 		); err != nil {
 			return nil, errors.INVALID_PSBT_INPUT.New(
 				"failed to validate boarding input: %w", err,
@@ -4109,7 +4116,7 @@ func (s *service) fetchConfirmedTx(
 // spent (its tapscripts, its exit delay, its amount), so it must run for every
 // input, even when several inputs share one funding tx.
 func validateBoardingInput(
-	tx *wire.MsgTx, blockTimestamp *ports.BlockTimestamp,
+	tx *wire.MsgTx, blockTimestamp, tip *ports.BlockTimestamp,
 	input boardingIntentInput, now time.Time, settings ports.Settings,
 ) error {
 	boardingExitDelay := settings.BoardingExitDelay
@@ -4147,11 +4154,16 @@ func validateBoardingInput(
 	}
 
 	// if the exit path is available, forbid registering the boarding utxo
-	csvExpiresAt := time.Unix(blockTimestamp.Time, 0).
-		Add(time.Duration(exitDelay.Seconds()) * time.Second)
-	if csvExpiresAt.Before(now) {
+	available, err := exitPathAvailable(blockTimestamp, tip, *exitDelay, 0, now)
+	if err != nil {
+		return err
+	}
+	if available {
 		return fmt.Errorf("tx %s expired", input.Txid)
 	}
+
+	csvExpiresAt := time.Unix(blockTimestamp.Time, 0).
+		Add(time.Duration(exitDelay.Seconds()) * time.Second)
 
 	// For unrolled VTXOs, ensure the CSV is far enough from expiring so the
 	// batch has time to finalize before the exit path becomes available.

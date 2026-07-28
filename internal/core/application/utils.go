@@ -675,3 +675,42 @@ func isBoardingWitness(witness wire.TxWitness) bool {
 	}
 	return controlBlock[0]&0xfe == 0xc0
 }
+
+// exitPathAvailable reports whether a vtxo's unilateral exit path is already
+// spendable, or will be within margin of becoming so.
+//
+// For block-typed relative locktimes the answer must be computed in blocks. A
+// block-typed delay routed through RelativeLocktime.Seconds() is converted at
+// SECONDS_PER_BLOCK = 1 (pkg/ark-lib/locktime.go), which would treat a 144-block
+// exit as maturing 144 seconds after confirmation.
+//
+// Per BIP68, an input confirmed at height H with a relative locktime of N blocks
+// first becomes spendable in block H+N, so the exit is available once the next
+// block to be mined is at or past that height, i.e. tip+1 >= H+N. margin shifts
+// that threshold earlier, so a non-zero margin refuses inputs that are close to
+// maturing rather than only those that already have.
+func exitPathAvailable(
+	confirmedAt, tip *ports.BlockTimestamp,
+	delay arklib.RelativeLocktime, margin uint32, now time.Time,
+) (bool, error) {
+	if delay.Type == arklib.LocktimeTypeBlock {
+		if tip == nil {
+			return false, fmt.Errorf("missing chain tip for block-typed exit delay")
+		}
+		// Height 0 is the not-found sentinel on the confirmation lookup, never a
+		// real confirmation height for a boarding utxo.
+		if confirmedAt == nil || confirmedAt.Height == 0 {
+			return false, fmt.Errorf("missing confirmation height for block-typed exit delay")
+		}
+		nextHeight := int64(tip.Height) + 1 + int64(margin)
+		maturesAt := int64(confirmedAt.Height) + int64(delay.Value)
+		return nextHeight >= maturesAt, nil
+	}
+
+	if confirmedAt == nil {
+		return false, fmt.Errorf("missing confirmation timestamp for exit delay")
+	}
+	expiresAt := time.Unix(confirmedAt.Time, 0).
+		Add(time.Duration(delay.Seconds()) * time.Second)
+	return expiresAt.Before(now), nil
+}
