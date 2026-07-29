@@ -670,7 +670,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 				wallet.WithFunds([]types.Utxo{boardingUtxo}, nil),
 			)
 			require.Error(t, err)
-			require.ErrorContains(t, err, "expired")
+			require.ErrorContains(t, err, "expire")
 		})
 
 		// Alice unrolls a regular BTC-only VTXO and then attempts to
