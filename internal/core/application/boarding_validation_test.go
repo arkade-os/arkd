@@ -108,6 +108,39 @@ func TestValidateBoardingInput(t *testing.T) {
 		err := validateBoardingInput(tx, blockTimestamp, tip, in, now, withMargin)
 		require.ErrorContains(t, err, "expires too soon")
 	})
+
+	// The unrolled-vtxo margin used to be measured against a csvExpiresAt built
+	// from RelativeLocktime.Seconds(), so a block-typed delay was read at
+	// SECONDS_PER_BLOCK = 1: a 144-block exit looked like it matured 144 seconds
+	// after confirmation, and every unrolled vtxo on a block-typed config was
+	// rejected as "expires too soon". Regtest runs block-typed
+	// (ARKD_VTXO_TREE_EXPIRY=40 is under the 512 threshold), so this was live.
+	t.Run("unrolled vtxo with a block-typed delay is measured in blocks", func(t *testing.T) {
+		blockDelay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144}
+		blockScript := script.NewDefaultVtxoScript(owner, signer, blockDelay)
+		blockTapscripts, err := blockScript.Encode()
+		require.NoError(t, err)
+
+		blockSettings := settings
+		blockSettings.BoardingExitDelay = blockDelay
+		blockSettings.UnilateralExitDelay = blockDelay
+		blockSettings.VtxoTreeExpiry = blockDelay // makes AllowCSVBlockType() true
+		blockSettings.UnrolledVtxoMinExpiryMargin = 5 * time.Minute
+
+		in := boardingInput(0, blockTapscripts)
+		in.isUnrolledVtxo = true
+
+		// Confirmed at 100, matures at 244. A 5m margin is one block, so the
+		// threshold is tip+1+1 >= 244. At tip 200 there are ~43 blocks to go and
+		// the input must be accepted, which the seconds reading got wrong.
+		err = validateBoardingInput(tx, blockTimestamp, tip, in, now, blockSettings)
+		require.NoError(t, err)
+
+		// At tip 242 the margin block bites: 242+1+1 == 244.
+		nearTip := &ports.BlockTimestamp{Height: 242, Time: now.Unix()}
+		err = validateBoardingInput(tx, blockTimestamp, nearTip, in, now, blockSettings)
+		require.ErrorContains(t, err, "expires too soon")
+	})
 }
 
 // boardingInput builds a boarding input for the given output index, with the
@@ -154,9 +187,31 @@ func TestExitPathAvailable(t *testing.T) {
 		require.False(t, plain)
 
 		// 240+1+3 == 244, so a 3-block margin trips at a tip that is otherwise fine.
-		withMargin, err := exitPathAvailable(conf, tip, blockDelay, 3, now)
+		withMargin, err := exitPathAvailable(conf, tip, blockDelay, 3*targetBlockInterval, now)
 		require.NoError(t, err)
 		require.True(t, withMargin)
+	})
+
+	// The margin is a duration, so against a block-typed delay it has to be
+	// converted. Rounding down would silently drop every margin shorter than one
+	// block interval, which is most of them: the default is 5 minutes.
+	t.Run("duration margin converts to whole blocks, rounding up", func(t *testing.T) {
+		for _, tc := range []struct {
+			margin time.Duration
+			blocks int64
+		}{
+			{0, 0},
+			{time.Nanosecond, 1},
+			{5 * time.Minute, 1},
+			{targetBlockInterval, 1},
+			{targetBlockInterval + time.Nanosecond, 2},
+			{3 * targetBlockInterval, 3},
+			{-time.Hour, 0},
+		} {
+			require.Equalf(
+				t, tc.blocks, blocksForDuration(tc.margin), "margin=%s", tc.margin,
+			)
+		}
 	})
 
 	t.Run("block delay needs a tip and a real confirmation height", func(t *testing.T) {
@@ -181,5 +236,18 @@ func TestExitPathAvailable(t *testing.T) {
 		got, err = exitPathAvailable(conf, nil, longDelay, 0, now)
 		require.NoError(t, err)
 		require.False(t, got)
+	})
+
+	t.Run("seconds delay honours the margin", func(t *testing.T) {
+		// 7168s from an hour ago leaves ~59m of lock.
+		longDelay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 7168}
+
+		got, err := exitPathAvailable(conf, nil, longDelay, 30*time.Minute, now)
+		require.NoError(t, err)
+		require.False(t, got)
+
+		got, err = exitPathAvailable(conf, nil, longDelay, 2*time.Hour, now)
+		require.NoError(t, err)
+		require.True(t, got)
 	})
 }

@@ -654,11 +654,16 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 			}
 			require.NotZero(t, unrolledVtxo.Amount)
 
-			// Wait past the unilateral exit delay (regtest: 20 in
-			// CSV-seconds) so the exit path is open. The server should
-			// then refuse to accept the unrolled VTXO as a boarding input.
-			time.Sleep(25 * time.Second)
-			require.NoError(t, generateBlocks(1))
+			// Mine past the unilateral exit delay (regtest: 20 blocks) so the
+			// exit path is genuinely open. The server should then refuse to
+			// accept the unrolled VTXO as a boarding input.
+			//
+			// This has to be counted in blocks, not slept out. The delay is
+			// block-typed here (ARKD_VTXO_TREE_EXPIRY=40 is under BIP68's 512
+			// threshold), so no amount of wall-clock waiting opens the exit
+			// path.
+			require.NoError(t, generateBlocks(20))
+			time.Sleep(5 * time.Second)
 
 			boardingUtxo := types.Utxo{
 				Outpoint:   unrolledVtxo.Outpoint,
@@ -670,7 +675,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 				wallet.WithFunds([]types.Utxo{boardingUtxo}, nil),
 			)
 			require.Error(t, err)
-			require.ErrorContains(t, err, "expire")
+			require.ErrorContains(t, err, "expired")
 		})
 
 		// Alice unrolls a regular BTC-only VTXO and then attempts to

@@ -4153,7 +4153,9 @@ func validateBoardingInput(
 		return fmt.Errorf("failed to get exit delay: %s", err)
 	}
 
-	// if the exit path is available, forbid registering the boarding utxo
+	// if the exit path is available, forbid registering the boarding utxo.
+	// No margin here: this gate is about an exit path that is already open. The
+	// on-chain confirmation-window setting is what will supply one (#1159).
 	available, err := exitPathAvailable(blockTimestamp, tip, *exitDelay, 0, now)
 	if err != nil {
 		return err
@@ -4162,16 +4164,22 @@ func validateBoardingInput(
 		return fmt.Errorf("tx %s expired", input.Txid)
 	}
 
-	csvExpiresAt := time.Unix(blockTimestamp.Time, 0).
-		Add(time.Duration(exitDelay.Seconds()) * time.Second)
-
 	// For unrolled VTXOs, ensure the CSV is far enough from expiring so the
-	// batch has time to finalize before the exit path becomes available.
+	// batch has time to finalize before the exit path becomes available. This
+	// is the same question as above asked with a margin, so it goes through the
+	// same helper: computing it separately is what let block-typed delays be
+	// measured in seconds here.
 	if input.isUnrolledVtxo {
-		if err := checkUnrolledVtxoExpiry(
-			csvExpiresAt, now, unrolledVtxoMinExpiryMargin,
-		); err != nil {
+		expiresSoon, err := exitPathAvailable(
+			blockTimestamp, tip, *exitDelay, unrolledVtxoMinExpiryMargin, now,
+		)
+		if err != nil {
 			return err
+		}
+		if expiresSoon {
+			return fmt.Errorf(
+				"unrolled vtxo CSV expires too soon (within %s)", unrolledVtxoMinExpiryMargin,
+			)
 		}
 	}
 
@@ -4209,17 +4217,6 @@ func validateBoardingInput(
 		)
 	}
 
-	return nil
-}
-
-func checkUnrolledVtxoExpiry(
-	csvExpiresAt, now time.Time, unrolledVtxoMinExpiryMargin time.Duration,
-) error {
-	if csvExpiresAt.Before(now.Add(unrolledVtxoMinExpiryMargin)) {
-		return fmt.Errorf(
-			"unrolled vtxo CSV expires too soon (within %s)", unrolledVtxoMinExpiryMargin,
-		)
-	}
 	return nil
 }
 
