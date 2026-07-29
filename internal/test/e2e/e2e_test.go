@@ -1146,14 +1146,21 @@ func TestOffchainTx(t *testing.T) {
 		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
 		require.NoError(t, err)
 
-		destinations := []string{
-			"5120b9dfec0c7700fbdaa5379941391628e033a62dd17521cac0f9a6d83b3e54e6da",
-			"5120b9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e54e6d",
-			"5120b9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e44e6d",
-			"5120c9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e44e6d",
-			"5120c9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e44e6d",
-			"5120c9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e44e6d",
-			"5120c9dfec0c7700fbd89a5379941391628e033a62dd17531cac0f9a6d83b3e44e7d",
+		// the destinations must be distinct: the ark txid is computed over the
+		// unsigned tx, so two submissions sharing a destination are the same txid,
+		// and a same-txid resubmission is idempotent by design. That would make the
+		// success count ambiguous instead of testing distinct double spends.
+		const numDestinations = 7
+
+		destinations := make([][]byte, 0, numDestinations)
+		for range numDestinations {
+			key, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+
+			pkscript, err := script.P2TRScript(key.PubKey())
+			require.NoError(t, err)
+
+			destinations = append(destinations, pkscript)
 		}
 
 		type tx struct {
@@ -1164,10 +1171,7 @@ func TestOffchainTx(t *testing.T) {
 		txs := make([]tx, 0, len(destinations))
 
 		// for each destination, build the associated ark transaction (sending the vtxo to the destination)
-		for _, receiver := range destinations {
-			pkscript, err := hex.DecodeString(receiver)
-			require.NoError(t, err)
-
+		for _, pkscript := range destinations {
 			ptx, checkpointsPtx, err := offchain.BuildTxs(
 				[]offchain.VtxoInput{
 					{
