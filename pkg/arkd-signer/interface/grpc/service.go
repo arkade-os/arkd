@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/arkd-signer/interface/grpc/handlers"
 	"github.com/arkade-os/arkd/pkg/arkd-signer/interface/grpc/interceptors"
 	"github.com/meshapi/grpc-api-gateway/gateway"
+	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
@@ -44,7 +46,7 @@ func (s *service) Start() error {
 	signerHandler := handlers.NewSignerHandler(s.cfg.SignerSvc)
 	signerv1.RegisterSignerServiceServer(grpcSrv, signerHandler)
 
-	healthHandler := handlers.NewHealthHandler()
+	healthHandler := handlers.NewHealthHandler(s.cfg.SignerSvc)
 	grpchealth.RegisterHealthServer(grpcSrv, healthHandler)
 
 	gatewayCreds := insecure.NewCredentials()
@@ -77,9 +79,18 @@ func (s *service) Start() error {
 	s.grpcSrv = grpcSrv
 	s.stopFn = cancel
 
+	// Bind before returning so a port conflict surfaces as an error from Start
+	// rather than a panic from the serving goroutine after main has already
+	// logged that the signer is listening.
+	listener, err := net.Listen("tcp", s.server.Addr)
+	if err != nil {
+		cancel()
+		return fmt.Errorf("failed to listen on %s: %w", s.server.Addr, err)
+	}
+
 	go func() {
-		if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			panic(fmt.Sprintf("failed to start server: %v", err))
+		if err := s.server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.WithError(err).Fatal("signer server stopped unexpectedly")
 		}
 	}()
 	return nil

@@ -65,8 +65,11 @@ services:
       context: .
       dockerfile: arkdsigner.Dockerfile
     container_name: arkd-signer
-    ports:
-      - "6061:6061"
+    # Deliberately not published to the host. The signer holds the operator key
+    # and has no auth, so only arkd reaches it, over the compose network at
+    # arkd-signer:6061.
+    expose:
+      - "6061"
     environment:
       - ARKD_SIGNER_LOG_LEVEL=5
       - ARKD_SIGNER_PORT=6061
