@@ -2713,7 +2713,7 @@ func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error
 }
 
 const updateOffchainTxPackets = `-- name: UpdateOffchainTxPackets :exec
-UPDATE offchain_tx SET packets = ?1 WHERE txid = ?2
+UPDATE offchain_tx SET packets = ?1 WHERE txid = ?2 AND packets IS NULL
 `
 
 type UpdateOffchainTxPacketsParams struct {
@@ -2721,6 +2721,9 @@ type UpdateOffchainTxPacketsParams struct {
 	Txid    string
 }
 
+// Only backfills a row still marked as not-yet-decoded. Without the
+// packets IS NULL guard a concurrent AddOrUpdateOffchainTx landing
+// between the backfill's SELECT and this UPDATE would be clobbered.
 func (q *Queries) UpdateOffchainTxPackets(ctx context.Context, arg UpdateOffchainTxPacketsParams) error {
 	_, err := q.db.ExecContext(ctx, updateOffchainTxPackets, arg.Packets, arg.Txid)
 	return err

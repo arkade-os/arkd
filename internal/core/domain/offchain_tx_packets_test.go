@@ -8,6 +8,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
@@ -195,6 +196,65 @@ func TestPacketTypesFromMsgTx(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, got)
 	})
+
+	t.Run("no extension is distinct from not-yet-decoded", func(t *testing.T) {
+		// The storage layer reserves a NULL packets column for "not yet
+		// decoded", so the no-extension case must return a non-nil empty
+		// slice rather than nil.
+		const noExtHex = "010000000001e803000000000000225120000000000000000000000000000000000000000000000000000000000000000000000000"
+		got, err := domain.PacketTypesFromMsgTx(parseTx(t, noExtHex))
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		require.Len(t, got, 0)
+	})
+
+	// SubmitOffchainTx propagates these instead of silently persisting the
+	// tx as "no extension", so pin the reject boundary.
+	t.Run("malformed extension is rejected", func(t *testing.T) {
+		t.Run("truncated packet data", func(t *testing.T) {
+			// Declares a 12-byte packet but supplies only 4.
+			payload := append([]byte("ARK"), 0xff, 0x0c, 0xde, 0xad, 0xbe, 0xef)
+			_, err := domain.PacketTypesFromMsgTx(txWithExtensionPayload(t, payload))
+			require.ErrorContains(t, err, "missing packet data")
+		})
+
+		t.Run("duplicate packet type", func(t *testing.T) {
+			payload := append([]byte("ARK"),
+				0xff, 0x04, 0xde, 0xad, 0xbe, 0xef,
+				0xff, 0x04, 0xde, 0xad, 0xbe, 0xef,
+			)
+			_, err := domain.PacketTypesFromMsgTx(txWithExtensionPayload(t, payload))
+			require.ErrorContains(t, err, "duplicate packet type")
+		})
+
+		t.Run("magic prefix with no packets", func(t *testing.T) {
+			_, err := domain.PacketTypesFromMsgTx(txWithExtensionPayload(t, []byte("ARK")))
+			require.ErrorContains(t, err, "missing packets")
+		})
+	})
+
+	t.Run("unknown packet type is accepted", func(t *testing.T) {
+		// parsePacket maps any non-asset type to an UnknownPacket with a nil
+		// error, so an unrecognised type is carried through rather than
+		// rejected. Pinned because it is the surprising half of the boundary.
+		payload := append([]byte("ARK"), 0x7f, 0x04, 0xde, 0xad, 0xbe, 0xef)
+		got, err := domain.PacketTypesFromMsgTx(txWithExtensionPayload(t, payload))
+		require.NoError(t, err)
+		require.Equal(t, []int{0x7f}, got)
+	})
+}
+
+// txWithExtensionPayload wraps raw extension payload bytes (magic prefix
+// included) in an OP_RETURN output on an otherwise empty tx. Building the
+// push opcode here keeps the malformed-extension fixtures readable instead
+// of hand-computing script lengths in hex.
+func txWithExtensionPayload(t *testing.T, payload []byte) *wire.MsgTx {
+	t.Helper()
+	require.LessOrEqual(t, len(payload), 75, "fixture payload must fit a direct push")
+	script := append([]byte{txscript.OP_RETURN, byte(len(payload))}, payload...)
+	tx := wire.NewMsgTx(wire.TxVersion)
+	tx.AddTxOut(&wire.TxOut{Value: 0, PkScript: script})
+	return tx
 }
 
 func parseTx(t *testing.T, hexStr string) *wire.MsgTx {

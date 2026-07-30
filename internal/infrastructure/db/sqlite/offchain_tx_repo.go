@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -12,9 +13,12 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// sqliteMaxBulkTxids caps the per-query batch for GetOffchainTxsByTxids to stay
-// well under SQLITE_MAX_VARIABLE_NUMBER (default 999 on SQLite < 3.32). The
-// SLICE expansion in the generated query emits one bound parameter per txid.
+// sqliteMaxBulkTxids caps the per-query batch for the txid-slice queries
+// (GetOffchainTxsByTxids and the WithTxids path of GetOffchainTxs). The SLICE
+// expansion in the generated query emits one bound parameter per txid, and
+// SQLITE_MAX_VARIABLE_NUMBER bounds how many a single statement may carry:
+// 32766 on the bundled modernc.org/sqlite build, 999 on SQLite < 3.32. The cap
+// stays at the conservative end so the batching holds on either.
 const sqliteMaxBulkTxids = 500
 
 type offchainTxRepository struct {
@@ -95,31 +99,42 @@ func (v *offchainTxRepository) GetOffchainTxs(
 	}
 
 	var rows []vwRow
+	// batched is set when the txid slice was split across queries, which
+	// breaks the per-query ORDER BY and requires a re-sort after folding.
+	batched := false
 	if len(filter.WithTxids) > 0 {
-		var raw []queries.SelectFilteredOffchainTxsByTxidsRow
-		if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
-			var err error
-			raw, err = q.SelectFilteredOffchainTxsByTxids(
-				ctx,
-				queries.SelectFilteredOffchainTxsByTxidsParams{
-					Txids: filter.WithTxids,
-					WithExtension: boolToInt64(
-						filter.WithExtension || len(filter.WithPacket) > 0 ||
-							len(filter.WithPacketContains) > 0,
-					),
-					WithAfter:  boolToInt64(filter.WithAfterDate > 0),
-					AfterTs:    filter.WithAfterDate,
-					WithBefore: boolToInt64(filter.WithBeforeDate > 0),
-					BeforeTs:   filter.WithBeforeDate,
-				},
-			)
-			return err
-		}); err != nil {
-			return nil, err
-		}
-		rows = make([]vwRow, 0, len(raw))
-		for _, r := range raw {
-			rows = append(rows, vwRow{OffchainTxVw: r.OffchainTxVw})
+		txids := filter.WithTxids
+		batched = len(txids) > sqliteMaxBulkTxids
+		rows = make([]vwRow, 0, len(txids))
+		// The SLICE expansion emits one bound parameter per txid, so batch
+		// it the same way GetOffchainTxsByTxids does to stay under
+		// SQLITE_MAX_VARIABLE_NUMBER.
+		for start := 0; start < len(txids); start += sqliteMaxBulkTxids {
+			end := min(start+sqliteMaxBulkTxids, len(txids))
+			var raw []queries.SelectFilteredOffchainTxsByTxidsRow
+			if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+				var err error
+				raw, err = q.SelectFilteredOffchainTxsByTxids(
+					ctx,
+					queries.SelectFilteredOffchainTxsByTxidsParams{
+						Txids: txids[start:end],
+						WithExtension: boolToInt64(
+							filter.WithExtension || len(filter.WithPacket) > 0 ||
+								len(filter.WithPacketContains) > 0,
+						),
+						WithAfter:  boolToInt64(filter.WithAfterDate > 0),
+						AfterTs:    filter.WithAfterDate,
+						WithBefore: boolToInt64(filter.WithBeforeDate > 0),
+						BeforeTs:   filter.WithBeforeDate,
+					},
+				)
+				return err
+			}); err != nil {
+				return nil, err
+			}
+			for _, r := range raw {
+				rows = append(rows, vwRow{OffchainTxVw: r.OffchainTxVw})
+			}
 		}
 	} else {
 		var raw []queries.SelectOffchainTxsRow
@@ -184,6 +199,18 @@ func (v *offchainTxRepository) GetOffchainTxs(
 				off.RootCommitmentTxId = vw.CommitmentTxid.String
 			}
 		}
+	}
+
+	// Each batch is ordered on its own, so restore the query's global
+	// ORDER BY starting_timestamp DESC, txid ASC across batch boundaries.
+	if batched {
+		sort.SliceStable(order, func(i, j int) bool {
+			a, b := byTxid[order[i]], byTxid[order[j]]
+			if a.StartingTimestamp != b.StartingTimestamp {
+				return a.StartingTimestamp > b.StartingTimestamp
+			}
+			return a.ArkTxid < b.ArkTxid
+		})
 	}
 
 	out := make([]*domain.OffchainTx, 0, len(order))

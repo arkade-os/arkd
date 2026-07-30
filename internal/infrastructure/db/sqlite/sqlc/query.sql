@@ -331,7 +331,10 @@ ORDER BY txid ASC
 LIMIT @lim;
 
 -- name: UpdateOffchainTxPackets :exec
-UPDATE offchain_tx SET packets = @packets WHERE txid = @txid;
+-- Only backfills a row still marked as not-yet-decoded. Without the
+-- packets IS NULL guard a concurrent AddOrUpdateOffchainTx landing
+-- between the backfill's SELECT and this UPDATE would be clobbered.
+UPDATE offchain_tx SET packets = @packets WHERE txid = @txid AND packets IS NULL;
 
 -- name: SelectOffchainTxsByTxids :many
 SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid IN (sqlc.slice('txids')) AND COALESCE(fail_reason, '') = '';

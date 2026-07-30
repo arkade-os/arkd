@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -96,8 +97,11 @@ func (s *OffchainTx) Request(
 		UnsignedCheckpointTxs: unsignedCheckpointTxs,
 		StartingTimestamp:     time.Now().Unix(),
 		// Snapshot the slice so a later mutation of the caller's
-		// backing array can't alias the event payload.
-		Packets: append([]int(nil), packets...),
+		// backing array can't alias the event payload. slices.Clone
+		// preserves nil-ness: an empty (but non-nil) list means "no
+		// extension" and must stay distinct from nil ("not yet decoded"),
+		// which the storage layer persists as NULL.
+		Packets: slices.Clone(packets),
 	}
 	s.raise(event)
 	return event, nil
@@ -254,8 +258,9 @@ func (s *OffchainTx) on(event Event, replayed bool) {
 		s.StartingTimestamp = e.StartingTimestamp
 		// Snapshot the slice so future mutation of the event's backing
 		// array (e.g. by a replayer holding the same event) can't alias
-		// aggregate state.
-		s.Packets = append([]int(nil), e.Packets...)
+		// aggregate state. slices.Clone preserves the empty vs nil
+		// distinction the packets column relies on.
+		s.Packets = slices.Clone(e.Packets)
 	case OffchainTxAccepted:
 		if s.Stage.Code != int(OffchainTxRequestedStage) || s.Stage.Failed {
 			return

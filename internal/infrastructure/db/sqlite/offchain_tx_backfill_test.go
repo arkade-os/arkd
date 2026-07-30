@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	sqlitedb "github.com/arkade-os/arkd/internal/infrastructure/db/sqlite"
+	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
@@ -22,6 +23,47 @@ const rawTxTwoPackets = "01000000000100000000000000001b6a1941524b000e01020200000
 const rawTxNoExtension = "010000000001e803000000000000225120000000000000000000000000000000000000000000000000000000000000000000000000"
 
 func TestBackfillPackets(t *testing.T) {
+	t.Run("backfills pre-existing rows", func(t *testing.T) {
+		testBackfillPreExistingRows(t)
+	})
+
+	t.Run("update does not clobber an already-written row", func(t *testing.T) {
+		// The backfill's UPDATE is guarded by `AND packets IS NULL` so an
+		// AddOrUpdateOffchainTx landing between its SELECT and its UPDATE is
+		// not overwritten. Driving the generated statement directly is the
+		// only way to interleave the two: going through BackfillPackets, the
+		// SELECT would already skip a non-NULL row.
+		ctx := context.Background()
+
+		db, err := sqlitedb.OpenDb(":memory:")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = db.Close() })
+		writeDB := db.Write()
+		setupOffchainTxTableForBackfill(t, writeDB)
+
+		txid := insertRow(t, writeDB, "raced-txid", psbtBase64FromTxHex(t, rawTxTwoPackets))
+		querier := queries.New(writeDB)
+
+		// The application writes first, standing in for the concurrent
+		// AddOrUpdateOffchainTx.
+		require.NoError(t, querier.UpdateOffchainTxPackets(
+			ctx, queries.UpdateOffchainTxPacketsParams{
+				Txid: txid, Packets: sql.NullString{String: "42", Valid: true},
+			},
+		))
+
+		// The backfill's own update then arrives late and must not win.
+		require.NoError(t, querier.UpdateOffchainTxPackets(
+			ctx, queries.UpdateOffchainTxPacketsParams{
+				Txid: txid, Packets: sql.NullString{String: "0,255", Valid: true},
+			},
+		))
+
+		require.Equal(t, "42", readPackets(t, writeDB, txid))
+	})
+}
+
+func testBackfillPreExistingRows(t *testing.T) {
 	ctx := context.Background()
 
 	db, err := sqlitedb.OpenDb(":memory:")

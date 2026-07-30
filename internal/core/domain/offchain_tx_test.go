@@ -38,6 +38,50 @@ func TestOffchainTx(t *testing.T) {
 	testFailOffchainTx(t)
 
 	testReplayOffchainTxEvents(t)
+
+	testOffchainTxPacketsSnapshot(t)
+}
+
+// testOffchainTxPacketsSnapshot pins the empty vs nil distinction the
+// packets column depends on: an empty (non-nil) list means "no extension"
+// and must not collapse to nil, which the storage layer persists as NULL
+// ("not yet decoded") and re-picks on every backfill pass.
+func testOffchainTxPacketsSnapshot(t *testing.T) {
+	t.Run("packets snapshot", func(t *testing.T) {
+		t.Run("empty list stays non-nil", func(t *testing.T) {
+			offchainTx := domain.NewOffchainTx()
+			event, err := offchainTx.Request(txid, arkTx, unsignedCheckpointTxs, []int{})
+			require.NoError(t, err)
+
+			requested, ok := event.(domain.OffchainTxRequested)
+			require.True(t, ok)
+			require.NotNil(t, requested.Packets)
+			require.Len(t, requested.Packets, 0)
+			require.NotNil(t, offchainTx.Packets)
+			require.Len(t, offchainTx.Packets, 0)
+		})
+
+		t.Run("nil stays nil", func(t *testing.T) {
+			offchainTx := domain.NewOffchainTx()
+			event, err := offchainTx.Request(txid, arkTx, unsignedCheckpointTxs, nil)
+			require.NoError(t, err)
+
+			requested, ok := event.(domain.OffchainTxRequested)
+			require.True(t, ok)
+			require.Nil(t, requested.Packets)
+			require.Nil(t, offchainTx.Packets)
+		})
+
+		t.Run("values are copied, not aliased", func(t *testing.T) {
+			packets := []int{0, 255}
+			offchainTx := domain.NewOffchainTx()
+			_, err := offchainTx.Request(txid, arkTx, unsignedCheckpointTxs, packets)
+			require.NoError(t, err)
+
+			packets[0] = 7
+			require.Equal(t, []int{0, 255}, offchainTx.Packets)
+		})
+	})
 }
 
 func testRequestOffchainTx(t *testing.T) {
