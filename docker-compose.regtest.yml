@@ -93,10 +93,16 @@ services:
     container_name: arkd
     restart: unless-stopped
     depends_on:
-      - arkd-wallet
-      - arkd-signer
-      - pg
-      - redis
+      # Wait for readiness, not just container start, wherever a healthcheck
+      # exists. arkd-wallet has none, so it stays on the default.
+      arkd-wallet:
+        condition: service_started
+      arkd-signer:
+        condition: service_healthy
+      pg:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "7070:7070"
       - "7071:7071"

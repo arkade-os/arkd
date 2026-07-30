@@ -2,12 +2,19 @@ package handlers
 
 import (
 	"context"
+	"time"
 
 	"github.com/arkade-os/arkd/pkg/arkd-signer/core/application"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
 )
 
-const healthServiceName = "arkd-signer"
+const (
+	healthServiceName = "arkd-signer"
+
+	// The signer has no readiness state change to subscribe to, so Watch polls
+	// rather than being woken.
+	watchPollInterval = time.Second
+)
 
 type healthHandler struct {
 	signer application.Signer
@@ -24,11 +31,38 @@ func (h *healthHandler) Check(
 	return &grpchealth.HealthCheckResponse{Status: h.status(ctx)}, nil
 }
 
+// Watch streams the current status and then every change to it. Returning
+// immediately instead, as this did, closes the stream on a watching client
+// without ever telling it anything.
 func (h *healthHandler) Watch(
 	_ *grpchealth.HealthCheckRequest,
-	_ grpchealth.Health_WatchServer,
+	srv grpchealth.Health_WatchServer,
 ) error {
-	return nil
+	ctx := srv.Context()
+
+	last := h.status(ctx)
+	if err := srv.Send(&grpchealth.HealthCheckResponse{Status: last}); err != nil {
+		return err
+	}
+
+	ticker := time.NewTicker(watchPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			current := h.status(ctx)
+			if current == last {
+				continue
+			}
+			last = current
+			if err := srv.Send(&grpchealth.HealthCheckResponse{Status: current}); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 func (h *healthHandler) List(
