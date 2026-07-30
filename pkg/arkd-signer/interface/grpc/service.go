@@ -25,14 +25,18 @@ import (
 
 type service struct {
 	cfg     *config.Config
+	version string
 	server  *http.Server
 	grpcSrv *grpc.Server
 	stopFn  func()
 }
 
-func NewService(cfg *config.Config) (*service, error) {
+// NewService builds the signer service. version is reported by the emulator
+// handler, and is empty for builds that do not inject it via ldflags.
+func NewService(cfg *config.Config, version string) (*service, error) {
 	return &service{
-		cfg: cfg,
+		cfg:     cfg,
+		version: version,
 	}, nil
 }
 
@@ -48,7 +52,7 @@ func (s *service) Start() error {
 	signerHandler := handlers.NewSignerHandler(s.cfg.SignerSvc)
 	signerv1.RegisterSignerServiceServer(grpcSrv, signerHandler)
 
-	emulatorHandler := grpchandler.New("", s.cfg.EmulatorSvc)
+	emulatorHandler := grpchandler.New(s.version, s.cfg.EmulatorSvc)
 	emulatorv1.RegisterEmulatorServiceServer(grpcSrv, emulatorHandler)
 
 	healthHandler := handlers.NewHealthHandler(s.cfg.SignerSvc)

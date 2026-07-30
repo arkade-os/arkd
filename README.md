@@ -193,6 +193,10 @@ export ARKD_SIGNER_DEPRECATED_KEYS=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4
 export ARKD_SIGNER_EMULATOR_COMPUTE_LIMITS=OP_ECPAIRING=8,OP_MODEXP=128
 ```
 
+An unparseable entry, a negative value or an unknown opcode name fails startup
+rather than being skipped, so a typo cannot silently leave the larger default
+limit in place.
+
 For independent emulation under a separate key, run a standalone [emulator](https://github.com/arkade-os/emulator) instance alongside `arkd-signer`.
 
 ### Connect to wallet

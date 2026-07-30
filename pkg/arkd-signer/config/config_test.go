@@ -42,20 +42,37 @@ func TestComputeLimits(t *testing.T) {
 		require.Equal(t, 7, cfg.ComputeLimits[checksig])
 	})
 
-	t.Run("malformed value keeps default", func(t *testing.T) {
+	t.Run("multiple limits applied", func(t *testing.T) {
+		ecmul, ok := arkade.OpcodeByName["OP_ECMUL"]
+		require.True(t, ok)
+
 		t.Setenv("ARKD_SIGNER_SECRET_KEY", secret)
-		t.Setenv("ARKD_SIGNER_EMULATOR_COMPUTE_LIMITS", "OP_CHECKSIG=notanumber")
+		t.Setenv("ARKD_SIGNER_EMULATOR_COMPUTE_LIMITS", "OP_CHECKSIG=7,OP_ECMUL=5")
 		cfg, err := config.LoadConfig()
 		require.NoError(t, err)
-		require.Equal(t, arkade.DefaultComputeLimits()[checksig], cfg.ComputeLimits[checksig])
+		require.Equal(t, 7, cfg.ComputeLimits[checksig])
+		require.Equal(t, 5, cfg.ComputeLimits[ecmul])
 	})
 
-	t.Run("unknown opcode ignored, valid ones still applied", func(t *testing.T) {
-		t.Setenv("ARKD_SIGNER_SECRET_KEY", secret)
-		t.Setenv("ARKD_SIGNER_EMULATOR_COMPUTE_LIMITS", "OP_NOPE=3,OP_CHECKSIG=9")
-		cfg, err := config.LoadConfig()
-		require.NoError(t, err)
-		require.Equal(t, 9, cfg.ComputeLimits[checksig])
+	// This var exists only to tighten a DoS-relevant guard, so a typo must not
+	// silently leave the larger default in place.
+	t.Run("misconfiguration fails startup", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			raw  string
+		}{
+			{"non-integer value", "OP_CHECKSIG=notanumber"},
+			{"negative value", "OP_CHECKSIG=-1"},
+			{"unknown opcode", "OP_NOPE=3,OP_CHECKSIG=9"},
+			{"missing equals", "OP_CHECKSIG"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Setenv("ARKD_SIGNER_SECRET_KEY", secret)
+				t.Setenv("ARKD_SIGNER_EMULATOR_COMPUTE_LIMITS", tc.raw)
+				_, err := config.LoadConfig()
+				require.ErrorContains(t, err, "compute limit")
+			})
+		}
 	})
 }
 

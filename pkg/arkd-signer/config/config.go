@@ -48,12 +48,17 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(Port, defaultPort)
 	viper.SetDefault(LogLevel, defaultLogLevel)
 
+	computeLimits, err := parseComputeLimits(viper.GetString(EmulatorComputeLimits))
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		Port:           viper.GetUint32(Port),
 		LogLevel:       viper.GetInt(LogLevel),
 		SecretKey:      viper.GetString(SecretKey),
 		DeprecatedKeys: viper.GetString(DeprecatedKeys),
-		ComputeLimits:  parseComputeLimits(viper.GetString(EmulatorComputeLimits)),
+		ComputeLimits:  computeLimits,
 	}
 
 	if err := cfg.initServices(); err != nil {
@@ -95,7 +100,13 @@ func (c *Config) initServices() error {
 
 	c.SignerSvc = application.New(prvkey, deprecated)
 
-	// Build []*btcec.PrivateKey for the emulator (strips the cutoff metadata).
+	// Build []*btcec.PrivateKey for the emulator. The cutoff dates are dropped
+	// because emulator.New takes bare keys and the library has no cutoff concept,
+	// so a deprecated key stays usable on the ArkadeScript path after the date
+	// that retires it on the application.Signer path. Honouring cutoffs here
+	// needs the emulator API to carry them; do not "fix" this by filtering
+	// expired keys at load time, since the process would then keep whatever set
+	// it started with until restart.
 	deprecatedPrivKeys := make([]*btcec.PrivateKey, 0, len(deprecated))
 	for _, d := range deprecated {
 		deprecatedPrivKeys = append(deprecatedPrivKeys, d.Key)
@@ -106,7 +117,9 @@ func (c *Config) initServices() error {
 		prvkey,
 		deprecatedPrivKeys,
 		prvkey.PubKey(), // arkdPubKey = our own operator pubkey (signing-only mode)
-		nil,             // finalizer: nil => signing-only
+		// Untyped nil selects signing-only. Keep it untyped: emulator.New
+		// panics on a typed nil Finalizer holding a nil pointer.
+		nil,
 		c.ComputeLimits,
 	)
 	if err != nil {
@@ -132,13 +145,15 @@ func (c *Config) String() string {
 // parseComputeLimits parses the ARKD_SIGNER_EMULATOR_COMPUTE_LIMITS env var.
 // An empty string returns DefaultComputeLimits(). Non-empty values must be a
 // comma-separated list of "OPCODE=limit" pairs, e.g. "OP_CHECKSIG=10,OP_ECMUL=5".
-// Malformed entries and unrecognised opcode names are skipped (the opcode keeps
-// its default), but each skip is logged at WARN so an operator typo cannot
-// silently weaken the VM compute guard.
-func parseComputeLimits(raw string) arkade.ComputeLimits {
+//
+// Every malformed entry is a startup error rather than a warning. This var only
+// exists to tighten a DoS-relevant VM guard, so skipping a typo would leave the
+// much larger default in place, which is the opposite of what the operator
+// asked for, and a log line is far too easy to miss.
+func parseComputeLimits(raw string) (arkade.ComputeLimits, error) {
 	limits := arkade.DefaultComputeLimits()
 	if raw == "" {
-		return limits
+		return limits, nil
 	}
 	for _, entry := range strings.Split(raw, ",") {
 		entry = strings.TrimSpace(entry)
@@ -147,24 +162,23 @@ func parseComputeLimits(raw string) arkade.ComputeLimits {
 		}
 		name, valueStr, ok := strings.Cut(entry, "=")
 		if !ok {
-			log.Warnf("ignoring compute limit %q: expected OPCODE=limit", entry)
-			continue
+			return nil, fmt.Errorf("invalid compute limit %q: expected OPCODE=limit", entry)
 		}
 		name = strings.TrimSpace(name)
 		valueStr = strings.TrimSpace(valueStr)
 		val, err := strconv.Atoi(valueStr)
 		if err != nil || val < 0 {
-			log.Warnf("ignoring compute limit %q: value must be a non-negative integer", entry)
-			continue
+			return nil, fmt.Errorf(
+				"invalid compute limit %q: value must be a non-negative integer", entry,
+			)
 		}
 		opcode, found := arkade.OpcodeByName[name]
 		if !found {
-			log.Warnf("ignoring compute limit %q: unknown opcode %q", entry, name)
-			continue
+			return nil, fmt.Errorf("invalid compute limit %q: unknown opcode %q", entry, name)
 		}
 		limits[opcode] = val
 	}
-	return limits
+	return limits, nil
 }
 
 // parseDeprecatedKeys parses a comma-separated list of hex-encoded private keys,

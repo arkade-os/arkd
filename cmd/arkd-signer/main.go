@@ -10,6 +10,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// Version is injected at build time via -ldflags "-X main.Version=...", which
+// arkdsigner.Dockerfile already passes.
+var Version string
+
 func main() {
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -18,7 +22,7 @@ func main() {
 
 	log.SetLevel(log.Level(cfg.LogLevel))
 
-	svc, err := grpcservice.NewService(cfg)
+	svc, err := grpcservice.NewService(cfg, Version)
 	if err != nil {
 		log.Fatalf("failed to create arkd-signer service: %s", err)
 	}
