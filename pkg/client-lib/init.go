@@ -56,9 +56,7 @@ func (a *service) init(
 
 	network := utils.NetworkFromString(info.Network)
 
-	if _, err := a.identity.Create(
-		ctx, utils.ToBitcoinNetwork(network), args.password, args.seed,
-	); err != nil {
+	if _, err := a.identity.Create(ctx, network, args.password, args.seed); err != nil {
 		return err
 	}
 

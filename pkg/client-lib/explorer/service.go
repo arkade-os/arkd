@@ -15,6 +15,9 @@ type Explorer interface {
 	// Start must be used when using the explorer with tracking enabled.
 	Start()
 
+	// GetBlockHeight returns the latest mined block, and -1 on error case
+	GetBlockHeight() (int64, error)
+
 	// GetTxHex retrieves the raw transaction hex for a given transaction ID.
 	GetTxHex(txid string) (string, error)
 
