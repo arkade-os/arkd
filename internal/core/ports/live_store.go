@@ -99,6 +99,7 @@ type BoardingInputsStore interface {
 type SettingsStore interface {
 	Get(ctx context.Context) (*Settings, error)
 	Upsert(ctx context.Context, settings Settings) error
+	UpdateLastBatch(ctx context.Context, at time.Time, roundId string) error
 }
 
 type TimedIntent struct {
@@ -136,6 +137,8 @@ type Settings struct {
 	ForfeitPubkey           *btcec.PublicKey
 	ForfeitAddress          string
 	CheckpointTapscript     []byte
+	LastBatchAt             time.Time
+	LastBatchId             string
 }
 
 func (s Settings) Digest() (string, error) {

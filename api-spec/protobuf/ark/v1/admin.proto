@@ -447,6 +447,7 @@ message Settings {
   optional bool build_version_header_required = 23;
   optional string updated_at = 24;
   optional bool digest_header_required = 25;
+  optional string batch_trigger = 26;
 }
 
 message GetSettingsRequest {}

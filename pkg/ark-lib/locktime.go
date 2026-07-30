@@ -97,10 +97,6 @@ func BIP68DecodeSequenceFromBytes(sequence []byte) (*RelativeLocktime, error) {
 		return nil, err
 	}
 
-	if scriptNumber >= txscript.OP_1 && scriptNumber <= txscript.OP_16 {
-		scriptNumber = scriptNumber - (txscript.OP_1 - 1)
-	}
-
 	asNumber := int64(scriptNumber)
 
 	if asNumber&SEQUENCE_LOCKTIME_DISABLE_FLAG != 0 {

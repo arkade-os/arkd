@@ -227,6 +227,14 @@ func (e *explorerSvc) GetNetwork() arklib.Network {
 	return e.net
 }
 
+func (e *explorerSvc) GetBlockHeight() (int64, error) {
+	var blockHeight int64
+	if status, err := e.get("blocks/tip/height", &blockHeight); err != nil {
+		return -1, fmt.Errorf("failed to fetch tip: status %d: %w", status, err)
+	}
+	return blockHeight, nil
+}
+
 func (e *explorerSvc) GetFeeRate() (float64, error) {
 	var response map[string]float64
 	status, err := e.get("v1/fees/recommended", &response)

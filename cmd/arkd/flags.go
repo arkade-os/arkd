@@ -71,6 +71,7 @@ const (
 	buildVersionHeaderFlagName            = "build-version-header"
 	buildVersionHeaderRequiredFlagName    = "build-version-header-required"
 	digestHeaderRequiredFlagName          = "digest-header-required"
+	batchTriggerFlagName                  = "batch-trigger"
 
 	dateFormat         = time.DateOnly
 	dateWithTimeFormat = time.DateTime
@@ -374,5 +375,9 @@ var (
 		Name: digestHeaderRequiredFlagName,
 		Usage: "whether clients are required to send a valid digest header " +
 			"(true or false); omit to leave unchanged",
+	}
+	batchTriggerFlag = &cli.StringFlag{
+		Name:  batchTriggerFlagName,
+		Usage: "the formula to trigger batch execution",
 	}
 )

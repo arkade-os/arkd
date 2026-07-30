@@ -355,14 +355,17 @@ func (d *CSVMultisigClosure) Decode(script []byte) (bool, error) {
 	}
 
 	var sequence []byte
-	if txscript.IsSmallInt(tokenizer.Opcode()) {
-		if tokenizer.Opcode() == txscript.OP_0 {
-			// minimal encoding for a zero scriptnum is an empty slice
-			sequence = []byte{}
+	
+	scriptNumOpcode := tokenizer.Opcode()
+	// small int (0-16) are encoded with 1 OP_x opcode
+	if txscript.IsSmallInt(scriptNumOpcode) {
+		if scriptNumOpcode == txscript.OP_0 {
+			sequence = []byte{} // minimal encoding policy forces empty byte slice for OP_0
 		} else {
-			sequence = []byte{tokenizer.Opcode()}
+			sequence = []byte{scriptNumOpcode - (txscript.OP_1 - 1)}
 		}
 	} else {
+		// if bigger than 16, int is encoded as pushdata byte slice
 		sequence = tokenizer.Data()
 	}
 

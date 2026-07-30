@@ -109,10 +109,9 @@ type Config struct {
 
 	VtxoNoCsvValidationCutoffDate int64
 
-	OtelCollectorEndpoint     string
-	OtelPushInterval          int64
-	PyroscopeServerURL        string
-	RoundReportServiceEnabled bool
+	OtelCollectorEndpoint string
+	OtelPushInterval      int64
+	PyroscopeServerURL    string
 
 	EsploraURL        string
 	AlertManagerURL   string
@@ -146,21 +145,25 @@ type Config struct {
 	MaxConcurrentStreams uint32
 	StreamConnPoolSize   uint32
 
-	fee            ports.FeeManager
-	repo           ports.RepoManager
-	svc            application.Service
-	adminSvc       application.AdminService
-	wallet         ports.WalletService
-	signer         ports.SignerService
-	txBuilder      ports.TxBuilder
-	scanner        ports.BlockchainScanner
-	scheduler      ports.SchedulerService
-	unlocker       ports.Unlocker
-	liveStore      ports.LiveStore
-	network        *arklib.Network
-	roundReportSvc application.RoundReportService
-	alerts         ports.Alerts
-	settings       *domain.Settings
+	// BatchTrigger is an optional CEL formula. When set, the server only
+	// starts a new batch round when the formula evaluates to true. When
+	// empty, every session starts a round (legacy behaviour).
+	BatchTrigger string
+
+	fee       ports.FeeManager
+	repo      ports.RepoManager
+	svc       application.Service
+	adminSvc  application.AdminService
+	wallet    ports.WalletService
+	signer    ports.SignerService
+	txBuilder ports.TxBuilder
+	scanner   ports.BlockchainScanner
+	scheduler ports.SchedulerService
+	unlocker  ports.Unlocker
+	liveStore ports.LiveStore
+	network   *arklib.Network
+	alerts    ports.Alerts
+	settings  *domain.Settings
 }
 
 func (c *Config) String() string {
@@ -227,7 +230,6 @@ var (
 	UtxoMinAmount             = "UTXO_MIN_AMOUNT"
 	VtxoMinAmount             = "VTXO_MIN_AMOUNT"
 	HeartbeatInterval         = "HEARTBEAT_INTERVAL"
-	RoundReportServiceEnabled = "ROUND_REPORT_ENABLED"
 	SettlementMinExpiryGap    = "SETTLEMENT_MIN_EXPIRY_GAP"
 	// Minimum remaining CSV time (in seconds) for an unrolled VTXO to be accepted into a batch.
 	// 0 means fallback to session duration.
@@ -247,6 +249,9 @@ var (
 	IndexerSigningKey    = "INDEXER_SIGNING_PRIVKEY" // #nosec G101
 	MaxConcurrentStreams = "MAX_CONCURRENT_STREAMS"
 	StreamConnPoolSize   = "STREAM_CONN_POOL_SIZE"
+	// BatchTrigger is a CEL formula evaluated before every round to decide
+	// whether the server should start a new batch. Empty = always start.
+	BatchTrigger = "BATCH_TRIGGER"
 
 	// MinBuildVersionHeader is used to specify the X-Build-Version header clients should submit
 	// to not have their request eventually rejected
@@ -285,9 +290,8 @@ var (
 
 	defaultRoundMaxParticipantsCount     = 128
 	defaultRoundMinParticipantsCount     = 1
-	defaultOtelPushInterval              = 10 // seconds
-	defaultHeartbeatInterval             = 60 // seconds
-	defaultRoundReportServiceEnabled     = false
+	defaultOtelPushInterval              = 10  // seconds
+	defaultHeartbeatInterval             = 60  // seconds
 	defaultSettlementMinExpiryGap        = 0   // disabled by default
 	defaultUnrolledVtxoMinExpiryMargin   = 300 // 5 minutes in seconds
 	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
@@ -342,7 +346,6 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(RedisTxNumOfRetries, defaultRedisTxNumOfRetries)
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
-	viper.SetDefault(RoundReportServiceEnabled, defaultRoundReportServiceEnabled)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(UnrolledVtxoMinExpiryMargin, defaultUnrolledVtxoMinExpiryMargin)
 	viper.SetDefault(MaxTxWeight, defaultMaxTxWeight)
@@ -495,7 +498,6 @@ func LoadConfig() (*Config, error) {
 		UtxoMinAmount:                 viper.GetInt64(UtxoMinAmount),
 		VtxoMaxAmount:                 viper.GetInt64(VtxoMaxAmount),
 		VtxoMinAmount:                 viper.GetInt64(VtxoMinAmount),
-		RoundReportServiceEnabled:     viper.GetBool(RoundReportServiceEnabled),
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
 		UnrolledVtxoMinExpiryMargin:   viper.GetInt64(UnrolledVtxoMinExpiryMargin),
 		MaxTxWeight:                   viper.GetUint64(MaxTxWeight),
@@ -513,6 +515,7 @@ func LoadConfig() (*Config, error) {
 		),
 		// Default to 1 if set to 0
 		MaxOpReturnOutputs:         max(1, viper.GetUint64(MaxOpReturnOutputs)),
+		BatchTrigger:               viper.GetString(BatchTrigger),
 		BuildVersionHeaderRequired: viper.GetBool(MinBuildVersionHeaderRequired),
 		BuildVersionHeader:         viper.GetString(MinBuildVersionHeader),
 		DigestHeaderRequired:       viper.GetBool(DigestHeaderRequired),
@@ -721,15 +724,6 @@ func (c *Config) CacheService() ports.LiveStore {
 	return c.liveStore
 }
 
-func (c *Config) RoundReportService() (application.RoundReportService, error) {
-	if c.roundReportSvc == nil {
-		if err := c.roundReportService(); err != nil {
-			return nil, err
-		}
-	}
-	return c.roundReportSvc, nil
-}
-
 func (c *Config) feeManager() (err error) {
 	c.fee, err = feemanager.NewArkFeeManager(c.repo.Settings())
 	if err != nil {
@@ -840,9 +834,7 @@ func (c *Config) txBuilderService() error {
 	var err error
 	switch c.TxBuilderType {
 	case "covenantless":
-		svc = txbuilder.NewTxBuilder(
-			c.wallet, c.signer, *c.network, c.VtxoTreeExpiry, c.BoardingExitDelay,
-		)
+		svc = txbuilder.NewTxBuilder(c.wallet, c.signer, *c.network)
 	default:
 		err = fmt.Errorf("unknown tx builder type")
 	}
@@ -914,14 +906,10 @@ func (c *Config) appService() error {
 	if err := c.txBuilderService(); err != nil {
 		return err
 	}
-	roundReportSvc, err := c.RoundReportService()
-	if err != nil {
-		return err
-	}
 
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
-		c.scheduler, c.liveStore, roundReportSvc, c.alerts, c.fee,
+		c.scheduler, c.liveStore, c.alerts, c.fee,
 	)
 	if err != nil {
 		return err
@@ -965,15 +953,6 @@ func (c *Config) unlockerService() error {
 	return nil
 }
 
-func (c *Config) roundReportService() error {
-	if !c.RoundReportServiceEnabled {
-		return nil
-	}
-
-	c.roundReportSvc = application.NewRoundReportService()
-	return nil
-}
-
 func (c *Config) alertsService() error {
 	if c.AlertManagerURL == "" {
 		return nil
@@ -1001,6 +980,7 @@ func (c *Config) getSettings() (*domain.Settings, error) {
 		c.BoardingExitDelay, c.VtxoTreeExpiry,
 		c.MaxTxWeight, c.MaxOpReturnOutputs, c.AssetTxMaxWeightRatio, c.NoteUriPrefix,
 		c.BuildVersionHeader, c.BuildVersionHeaderRequired, c.DigestHeaderRequired,
+		c.BatchTrigger,
 	)
 	if err != nil {
 		return nil, err

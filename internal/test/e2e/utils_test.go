@@ -309,7 +309,7 @@ func setupIdentity(t *testing.T) (clientlib.Identity, *btcec.PublicKey, error) {
 
 	password := "password"
 	ctx := t.Context()
-	_, err = identity.Create(ctx, chaincfg.RegressionNetParams, password, privkeyHex)
+	_, err = identity.Create(ctx, arklib.BitcoinRegTest, password, privkeyHex)
 	require.NoError(t, err)
 
 	_, err = identity.Unlock(ctx, password)

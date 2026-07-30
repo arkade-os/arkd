@@ -31,8 +31,7 @@ var (
 	wallet *mockedWallet
 	pubkey *btcec.PublicKey
 
-	vtxoTreeExpiry    = arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 1209344}
-	boardingExitDelay = arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512}
+	vtxoTreeExpiry = arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 1209344}
 )
 
 func TestMain(m *testing.M) {
@@ -57,9 +56,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestBuildCommitmentTx(t *testing.T) {
-	builder := txbuilder.NewTxBuilder(
-		wallet, nil, arklib.Bitcoin, vtxoTreeExpiry, boardingExitDelay,
-	)
+	builder := txbuilder.NewTxBuilder(wallet, nil, arklib.Bitcoin)
 
 	fixtures, err := parseCommitmentTxFixtures()
 	require.NoError(t, err)
@@ -80,7 +77,7 @@ func TestBuildCommitmentTx(t *testing.T) {
 				}
 
 				commitmentTx, vtxoTree, connAddr, _, err := builder.BuildCommitmentTx(
-					pubkey, f.Intents, []ports.BoardingInput{}, cosignersPublicKeys,
+					pubkey, f.Intents, []ports.BoardingInput{}, cosignersPublicKeys, vtxoTreeExpiry,
 				)
 				require.NoError(t, err)
 				require.NotEmpty(t, commitmentTx)
@@ -112,6 +109,7 @@ func TestBuildCommitmentTx(t *testing.T) {
 
 				commitmentTx, vtxoTree, connAddr, _, err := builder.BuildCommitmentTx(
 					pubkey, f.Intents, []ports.BoardingInput{}, cosignersPublicKeys,
+					vtxoTreeExpiry,
 				)
 				require.EqualError(t, err, f.ExpectedErr)
 				require.Empty(t, commitmentTx)
@@ -122,13 +120,67 @@ func TestBuildCommitmentTx(t *testing.T) {
 	}
 }
 
+// TestBuildCommitmentTxUsesVtxoTreeExpiryArg pins that the vtxoTreeExpiry argument is what gets
+// baked into the vtxo tree.
+// ValidateVtxoTree derives the expected taproot output key from the expiry, so a tree built with
+// one expiry fails validation against another; if BuildCommitmentTx ignored the argument this test
+// would fail.
+func TestBuildCommitmentTxUsesVtxoTreeExpiryArg(t *testing.T) {
+	builder := txbuilder.NewTxBuilder(wallet, nil, arklib.Bitcoin)
+
+	fixtures, err := parseCommitmentTxFixtures()
+	require.NoError(t, err)
+	require.NotEmpty(t, fixtures.Valid)
+
+	// Pick a multi-leaf fixture: ValidateVtxoTree only checks the expiry-derived
+	// taproot key on nodes that have children, so a single-leaf tree would not
+	// exercise the expiry and the mismatch below would go undetected.
+	best := 0
+	for i, cand := range fixtures.Valid {
+		if cand.ExpectedNumOfLeaves > fixtures.Valid[best].ExpectedNumOfLeaves {
+			best = i
+		}
+	}
+	f := fixtures.Valid[best]
+	require.Greater(t, f.ExpectedNumOfLeaves, 1, "need a multi-leaf fixture to exercise the expiry")
+
+	cosignersPublicKeys := make([][]string, 0, len(f.Intents))
+	for range f.Intents {
+		randKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		cosignersPublicKeys = append(cosignersPublicKeys, []string{
+			hex.EncodeToString(randKey.PubKey().SerializeCompressed()),
+		})
+	}
+
+	// Use an expiry distinct from the package default, so a regression that
+	// reverted to a constructor-captured or hardcoded value would be caught.
+	usedExpiry := arklib.RelativeLocktime{
+		Type:  arklib.LocktimeTypeSecond,
+		Value: vtxoTreeExpiry.Value * 2,
+	}
+	require.NotEqual(t, vtxoTreeExpiry, usedExpiry)
+
+	commitmentTx, vtxoTree, _, _, err := builder.BuildCommitmentTx(
+		pubkey, f.Intents, []ports.BoardingInput{}, cosignersPublicKeys, usedExpiry,
+	)
+	require.NoError(t, err)
+
+	roundPtx, err := psbt.NewFromRawBytes(strings.NewReader(commitmentTx), true)
+	require.NoError(t, err)
+
+	// The tree validates against the expiry it was built with, and not against
+	// a different one, proving the argument determined the tree's timelock.
+	require.NoError(t, tree.ValidateVtxoTree(vtxoTree, roundPtx, pubkey, usedExpiry))
+	require.Error(t, tree.ValidateVtxoTree(vtxoTree, roundPtx, pubkey, vtxoTreeExpiry))
+}
+
 func TestVerifyVtxoTapscriptSigs(t *testing.T) {
 	signerKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
 	builder := txbuilder.NewTxBuilder(
-		wallet, &staticSigner{pubkey: signerKey.PubKey()},
-		arklib.Bitcoin, vtxoTreeExpiry, boardingExitDelay,
+		wallet, &staticSigner{pubkey: signerKey.PubKey()}, arklib.Bitcoin,
 	)
 
 	t.Run("valid", func(t *testing.T) {

@@ -26,18 +26,15 @@ import (
 )
 
 type txBuilder struct {
-	wallet            ports.WalletService
-	signer            ports.SignerService
-	network           arklib.Network
-	vtxoTreeExpiry    arklib.RelativeLocktime
-	boardingExitDelay arklib.RelativeLocktime
+	wallet  ports.WalletService
+	signer  ports.SignerService
+	network arklib.Network
 }
 
 func NewTxBuilder(
 	wallet ports.WalletService, signer ports.SignerService, network arklib.Network,
-	vtxoTreeExpiry, boardingExitDelay arklib.RelativeLocktime,
 ) ports.TxBuilder {
-	return &txBuilder{wallet, signer, network, vtxoTreeExpiry, boardingExitDelay}
+	return &txBuilder{wallet, signer, network}
 }
 
 func (b *txBuilder) GetTxid(tx string) (string, error) {
@@ -525,7 +522,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 func (b *txBuilder) BuildCommitmentTx(
 	signerPubkey *btcec.PublicKey, intents domain.Intents,
 	boardingInputs []ports.BoardingInput,
-	cosignersPublicKeys [][]string,
+	cosignersPublicKeys [][]string, vtxoTreeExpiry arklib.RelativeLocktime,
 ) (string, *tree.TxTree, string, *tree.TxTree, error) {
 	var batchOutputScript []byte
 	var batchOutputAmount int64
@@ -539,7 +536,7 @@ func (b *txBuilder) BuildCommitmentTx(
 		MultisigClosure: script.MultisigClosure{
 			PubKeys: []*btcec.PublicKey{signerPubkey},
 		},
-		Locktime: b.vtxoTreeExpiry,
+		Locktime: vtxoTreeExpiry,
 	}).Script()
 	if err != nil {
 		return "", nil, "", nil, err
@@ -644,7 +641,7 @@ func (b *txBuilder) BuildCommitmentTx(
 		}
 
 		vtxoTree, err = tree.BuildVtxoTree(
-			initialOutpoint, receivers, sweepTapscriptRoot[:], b.vtxoTreeExpiry,
+			initialOutpoint, receivers, sweepTapscriptRoot[:], vtxoTreeExpiry,
 		)
 		if err != nil {
 			return "", nil, "", nil, err
