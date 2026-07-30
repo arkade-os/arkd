@@ -65,8 +65,11 @@ services:
       context: .
       dockerfile: arkdsigner.Dockerfile
     container_name: arkd-signer
-    ports:
-      - "6061:6061"
+    # Deliberately not published to the host. The signer holds the operator key
+    # and has no auth, so only arkd reaches it, over the compose network at
+    # arkd-signer:6061.
+    expose:
+      - "6061"
     environment:
       - ARKD_SIGNER_LOG_LEVEL=5
       - ARKD_SIGNER_PORT=6061
@@ -91,10 +94,16 @@ services:
     container_name: arkd
     restart: unless-stopped
     depends_on:
-      - arkd-wallet
-      - arkd-signer
-      - pg
-      - redis
+      # Wait for readiness, not just container start, wherever a healthcheck
+      # exists. arkd-wallet has none, so it stays on the default.
+      arkd-wallet:
+        condition: service_started
+      arkd-signer:
+        condition: service_healthy
+      pg:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "7070:7070"
       - "7071:7071"

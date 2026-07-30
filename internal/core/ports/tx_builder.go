@@ -64,7 +64,6 @@ type TxBuilder interface {
 	GetSweepableBatchOutputs(vtxoTree *tree.TxTree) (
 		vtxoTreeExpiry *arklib.RelativeLocktime, batchOutputs *TxInput, err error,
 	)
-	FinalizeAndExtract(tx string) (txhex string, err error)
 	VerifyVtxoTapscriptSigs(
 		tx string, mustIncludeSignerSig bool,
 	) (valid bool, ptx *psbt.Packet, err error)

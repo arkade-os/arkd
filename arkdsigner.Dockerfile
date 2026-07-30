@@ -1,5 +1,5 @@
 # First stage: build the arkd-signer binary
-FROM golang:1.26.4 AS builder
+FROM golang:1.26.5 AS builder
 
 ARG VERSION
 ARG TARGETOS
@@ -21,5 +21,11 @@ WORKDIR /app
 COPY --from=builder /app/bin/arkd-signer /app/
 
 ENV PATH="/app:${PATH}"
+
+# /healthz maps a NOT_SERVING health response to 503, and the signer reports
+# NOT_SERVING until its key is usable, so this gates on readiness rather than on
+# the process having started.
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=5 \
+  CMD wget -q --spider "http://127.0.0.1:${ARKD_SIGNER_PORT:-6061}/healthz" || exit 1
 
 ENTRYPOINT [ "arkd-signer" ]
