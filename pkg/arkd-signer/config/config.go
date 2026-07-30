@@ -66,7 +66,10 @@ func (c *Config) initServices() error {
 	if len(buf) != 32 {
 		return fmt.Errorf("invalid signer secret key format, must be 32 bytes")
 	}
-	prvkey, _ := btcec.PrivKeyFromBytes(buf)
+	prvkey, err := privKeyFromBytes(buf)
+	if err != nil {
+		return fmt.Errorf("invalid signer secret key, %w", err)
+	}
 
 	deprecated, err := parseDeprecatedKeys(c.DeprecatedKeys)
 	if err != nil {
@@ -121,7 +124,10 @@ func parseDeprecatedKeys(raw string) ([]application.DeprecatedSignerKey, error) 
 		if len(buf) != 32 {
 			return nil, fmt.Errorf("invalid signer key format")
 		}
-		key, _ := btcec.PrivKeyFromBytes(buf)
+		key, err := privKeyFromBytes(buf)
+		if err != nil {
+			return nil, fmt.Errorf("invalid signer key %s, %w", keyPart, err)
+		}
 
 		var cutoffDate int64
 		if hasCutoff {
@@ -137,4 +143,17 @@ func parseDeprecatedKeys(raw string) ([]application.DeprecatedSignerKey, error) 
 		keys = append(keys, application.DeprecatedSignerKey{Key: key, CutoffDate: cutoffDate})
 	}
 	return keys, nil
+}
+
+// privKeyFromBytes rejects what btcec.PrivKeyFromBytes silently accepts. That
+// helper reduces the input mod N and cannot fail, so an all-zero key yields a
+// pubkey at infinity and an out-of-range one becomes a different key than the
+// operator configured. Either way the signer boots and every signature it
+// produces is invalid, so fail at config load instead.
+func privKeyFromBytes(buf []byte) (*btcec.PrivateKey, error) {
+	var scalar btcec.ModNScalar
+	if overflow := scalar.SetByteSlice(buf); overflow || scalar.IsZero() {
+		return nil, fmt.Errorf("must be a scalar in [1, N-1] for secp256k1")
+	}
+	return btcec.PrivKeyFromScalar(&scalar), nil
 }

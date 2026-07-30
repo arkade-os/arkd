@@ -179,6 +179,17 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 	// Sign the connector input (a wallet-owned key-path output) with the wallet:
 	// the operator signer holds no wallet keys, so it cannot sign it. The wallet
 	// finalizes and extracts the raw tx too.
+	//
+	// This pass is not scoped to the connector input, so the wallet also appends
+	// a TaprootScriptSpendSig from its forfeit key to the vtxo input the signer
+	// just signed. That is inert only because script.FinalizeVtxoScript keys the
+	// witness args by xonly pubkey and the wallet forfeit key is not among the
+	// forfeit closure's PubKeys, so closure.Witness never reads it. Put the
+	// wallet forfeit pubkey inside a vtxo closure and the finalizer would start
+	// preferring the wallet's signature over the operator signer's, silently
+	// changing which key authorized the spend. Scoping this call to the
+	// connector index needs input indexes on the wallet's SignTransaction RPC,
+	// which today only SignTransactionTapscript carries.
 	forfeitTxHex, err := s.wallet.SignTransaction(ctx, signedForfeitTx, true)
 	if err != nil {
 		return fmt.Errorf("failed to sign forfeit connector input: %s", err)
