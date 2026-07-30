@@ -108,22 +108,22 @@ func (s *service) Stop() {
 	}
 }
 
+// router deliberately sends no CORS headers. This service signs with the
+// operator key and has no auth of its own, so its only callers are arkd and
+// operator tooling, never a browser. Answering preflight with
+// Access-Control-Allow-Origin: * is what would let a page the operator happens
+// to be visiting issue signing requests to a signer it can route to, since
+// gateway JSON posts are not CORS-simple and are otherwise blocked at preflight.
 func router(
 	grpcServer *grpc.Server, grpcGateway http.Handler,
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isOptionRequest(r) {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Headers", "*")
-			w.Header().Add("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 
 		if isHttpRequest(r) {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Headers", "*")
-			w.Header().Add("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-
 			grpcGateway.ServeHTTP(w, r)
 			return
 		}
