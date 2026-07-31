@@ -48,13 +48,19 @@ func TestForfeitWitnessIsAuthorizedByOperatorKey(t *testing.T) {
 		require.Len(t, ptx.Inputs[0].TaprootScriptSpendSig, 3,
 			"the psbt should carry the stray wallet signature before finalization")
 
+		// Read the partial signatures before finalizing. A finalizer is allowed
+		// to clear them (BIP-370 says it SHOULD), so reading them afterwards
+		// would make this test depend on FinalizeVtxoScript leaving them behind.
+		operatorSig := partialSigFor(t, ptx, 0, operator.PubKey())
+		walletSig := partialSigFor(t, ptx, 0, walletForfeit.PubKey())
+
 		require.NoError(t, script.FinalizeVtxoScript(ptx, 0))
 
-		witness := ptx.Inputs[0].FinalScriptWitness
+		witness := finalWitness(t, ptx, 0)
 		require.NotEmpty(t, witness)
-		require.True(t, witnessHasSigFor(t, ptx, 0, operator.PubKey()),
+		require.True(t, witnessContains(witness, operatorSig),
 			"the operator signature must be the one that reaches the chain")
-		require.False(t, witnessHasSigFor(t, ptx, 0, walletForfeit.PubKey()),
+		require.False(t, witnessContains(witness, walletSig),
 			"the wallet forfeit signature must not reach the chain")
 	})
 
@@ -70,25 +76,30 @@ func TestForfeitWitnessIsAuthorizedByOperatorKey(t *testing.T) {
 	})
 }
 
-// witnessHasSigFor reports whether the finalized witness carries the signature
-// the given key produced for this input.
-func witnessHasSigFor(
+// partialSigFor returns the signature the given key contributed to this input.
+// Call it before finalizing: a finalizer may clear the partial-signature fields.
+func partialSigFor(
 	t *testing.T, ptx *psbt.Packet, inputIndex int, pubkey *btcec.PublicKey,
-) bool {
+) []byte {
 	t.Helper()
 	want := schnorr.SerializePubKey(pubkey)
-
-	var sig []byte
 	for _, s := range ptx.Inputs[inputIndex].TaprootScriptSpendSig {
 		if bytes.Equal(s.XOnlyPubKey, want) {
-			sig = s.Signature
-			break
+			return s.Signature
 		}
 	}
-	require.NotNil(t, sig, "no signature recorded for the requested key")
+	t.Fatalf("no partial signature recorded for %x", want)
+	return nil
+}
 
+func finalWitness(t *testing.T, ptx *psbt.Packet, inputIndex int) wire.TxWitness {
+	t.Helper()
 	witness, err := txutils.ReadTxWitness(ptx.Inputs[inputIndex].FinalScriptWitness)
 	require.NoError(t, err)
+	return witness
+}
+
+func witnessContains(witness wire.TxWitness, sig []byte) bool {
 	for _, item := range witness {
 		if bytes.Equal(item, sig) {
 			return true
