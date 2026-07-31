@@ -105,7 +105,7 @@ func NewExplorer(url string, net arklib.Network, opts ...Option) (clientlib.Expl
 	if len(baseUrl) <= 0 {
 		if !supportedExplorers.supports(net.Name) {
 			return nil, fmt.Errorf(
-				"network not supported, please chose one of %s, ", supportedExplorers.String(),
+				"network not supported, please choose one of %s", supportedExplorers.String(),
 			)
 		}
 		baseUrl = supportedExplorers[net.Name]
@@ -361,9 +361,11 @@ func (e *explorerSvc) SubscribeForAddresses(addresses []string) error {
 		return nil
 	}
 
+	// Compute the set of not-yet-subscribed addresses under the lock, then
+	// release it before establishing connections. addConnection() can block for
+	// up to a minute on DNS backoff; holding subscribedMu across it would stall
+	// trackWithPolling and every other reader that takes subscribedMu.
 	e.subscribedMu.Lock()
-	defer e.subscribedMu.Unlock()
-
 	addressesToSubscribe := make([]string, 0, len(addresses))
 	scripts := make(map[string]string)
 	for _, addr := range addresses {
@@ -372,16 +374,19 @@ func (e *explorerSvc) SubscribeForAddresses(addresses []string) error {
 		}
 		decoded, err := btcutil.DecodeAddress(addr, nil)
 		if err != nil {
+			e.subscribedMu.Unlock()
 			return fmt.Errorf("invalid address: %s", err)
 		}
 
 		outputScript, err := txscript.PayToAddrScript(decoded)
 		if err != nil {
+			e.subscribedMu.Unlock()
 			return fmt.Errorf("invalid address: %s", err)
 		}
 		addressesToSubscribe = append(addressesToSubscribe, addr)
 		scripts[addr] = hex.EncodeToString(outputScript)
 	}
+	e.subscribedMu.Unlock()
 
 	// Nothing to do if no addresses to subscribe.
 	if len(addressesToSubscribe) == 0 {
@@ -393,10 +398,12 @@ func (e *explorerSvc) SubscribeForAddresses(addresses []string) error {
 	connPool := e.connPool
 	e.connPoolMu.RUnlock()
 	if connPool != nil && connPool.getConnectionCount() > 0 {
-		if connPool.noMoreConnections {
+		if connPool.hasNoMoreConnections() {
+			e.subscribedMu.RLock()
+			maxLen := len(e.subscribedMap)
+			e.subscribedMu.RUnlock()
 			return fmt.Errorf(
-				"can't subscribe for any more addresses (max=%d)",
-				len(e.subscribedMap),
+				"can't subscribe for any more addresses (max=%d)", maxLen,
 			)
 		}
 
@@ -415,15 +422,18 @@ func (e *explorerSvc) SubscribeForAddresses(addresses []string) error {
 		}
 	}
 
-	// Add new addresses to the subscribed map
+	// Add new addresses to the subscribed map.
+	e.subscribedMu.Lock()
 	for _, addr := range addressesToSubscribe {
 		e.subscribedMap[addr] = addressData{script: scripts[addr]}
 	}
+	maxLen := len(e.subscribedMap)
+	e.subscribedMu.Unlock()
 
 	if numAddressesLeftToSubscribe > 0 {
 		return fmt.Errorf(
 			"can't subscribe for any more addresses (max=%d) (left=%d)",
-			len(e.subscribedMap), numAddressesLeftToSubscribe,
+			maxLen, numAddressesLeftToSubscribe,
 		)
 	}
 	return nil

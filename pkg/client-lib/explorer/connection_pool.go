@@ -62,6 +62,15 @@ func (cp *connectionPool) getConnectionCount() int {
 	return len(cp.connections)
 }
 
+// hasNoMoreConnections reports whether the pool has exhausted its capacity to
+// open new connections. It reads noMoreConnections under the lock, since that
+// field is written under cp.mu in addConnection/resetConnection.
+func (cp *connectionPool) hasNoMoreConnections() bool {
+	cp.mu.RLock()
+	defer cp.mu.RUnlock()
+	return cp.noMoreConnections
+}
+
 func (cp *connectionPool) addConnection() error {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
