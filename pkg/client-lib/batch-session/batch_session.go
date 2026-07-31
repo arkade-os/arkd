@@ -203,14 +203,14 @@ func joinBatchWithRetry(
 		}, opts...)
 		if err != nil {
 			if retryCount < maxRetry-1 {
-				select {
-				case <-time.After(100 * time.Millisecond):
-				case <-ctx.Done():
-					return nil, ctx.Err()
-				}
-				deleteIntent()
 				log.WithError(err).Warn("batch failed, retrying...")
 			}
+			select {
+			case <-time.After(100 * time.Millisecond):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			deleteIntent()
 			retryCount++
 			batchErr = err
 			continue
