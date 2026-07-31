@@ -12,6 +12,8 @@ import (
 	"github.com/arkade-os/arkd/pkg/arkd-signer/config"
 	"github.com/arkade-os/arkd/pkg/arkd-signer/interface/grpc/handlers"
 	"github.com/arkade-os/arkd/pkg/arkd-signer/interface/grpc/interceptors"
+	emulatorv1 "github.com/arkade-os/emulator/api-spec/protobuf/gen/emulator/v1"
+	"github.com/arkade-os/emulator/pkg/emulator/grpchandler"
 	"github.com/meshapi/grpc-api-gateway/gateway"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/http2"
@@ -23,14 +25,18 @@ import (
 
 type service struct {
 	cfg     *config.Config
+	version string
 	server  *http.Server
 	grpcSrv *grpc.Server
 	stopFn  func()
 }
 
-func NewService(cfg *config.Config) (*service, error) {
+// NewService builds the signer service. version is reported by the emulator
+// handler, and is empty for builds that do not inject it via ldflags.
+func NewService(cfg *config.Config, version string) (*service, error) {
 	return &service{
-		cfg: cfg,
+		cfg:     cfg,
+		version: version,
 	}, nil
 }
 
@@ -45,6 +51,9 @@ func (s *service) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	signerHandler := handlers.NewSignerHandler(s.cfg.SignerSvc)
 	signerv1.RegisterSignerServiceServer(grpcSrv, signerHandler)
+
+	emulatorHandler := grpchandler.New(s.version, s.cfg.EmulatorSvc)
+	emulatorv1.RegisterEmulatorServiceServer(grpcSrv, emulatorHandler)
 
 	healthHandler := handlers.NewHealthHandler(s.cfg.SignerSvc)
 	grpchealth.RegisterHealthServer(grpcSrv, healthHandler)
@@ -64,6 +73,7 @@ func (s *service) Start() error {
 	)
 
 	signerv1.RegisterSignerServiceHandler(ctx, gwmux, conn)
+	emulatorv1.RegisterEmulatorServiceHandler(ctx, gwmux, conn)
 
 	grpcGateway := http.Handler(gwmux)
 	handler := router(grpcSrv, grpcGateway)
@@ -105,6 +115,9 @@ func (s *service) Stop() {
 	}
 	if s.grpcSrv != nil {
 		s.grpcSrv.GracefulStop()
+	}
+	if s.cfg != nil && s.cfg.EmulatorSvc != nil {
+		s.cfg.EmulatorSvc.Close()
 	}
 }
 

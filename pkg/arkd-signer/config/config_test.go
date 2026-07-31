@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/pkg/arkd-signer/config"
+	"github.com/arkade-os/emulator/pkg/arkade"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,6 +21,59 @@ func TestLoadConfigParsesSecretKey(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cfg.SignerSvc)
 	require.EqualValues(t, 6061, cfg.Port)
+}
+
+func TestComputeLimits(t *testing.T) {
+	const secret = "afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0"
+	checksig := arkade.OpcodeByName["OP_CHECKSIG"]
+
+	t.Run("default when unset", func(t *testing.T) {
+		t.Setenv("ARKD_SIGNER_SECRET_KEY", secret)
+		cfg, err := config.LoadConfig()
+		require.NoError(t, err)
+		require.Equal(t, arkade.DefaultComputeLimits()[checksig], cfg.ComputeLimits[checksig])
+	})
+
+	t.Run("valid limit applied", func(t *testing.T) {
+		t.Setenv("ARKD_SIGNER_SECRET_KEY", secret)
+		t.Setenv("ARKD_SIGNER_EMULATOR_COMPUTE_LIMITS", "OP_CHECKSIG=7")
+		cfg, err := config.LoadConfig()
+		require.NoError(t, err)
+		require.Equal(t, 7, cfg.ComputeLimits[checksig])
+	})
+
+	t.Run("multiple limits applied", func(t *testing.T) {
+		ecmul, ok := arkade.OpcodeByName["OP_ECMUL"]
+		require.True(t, ok)
+
+		t.Setenv("ARKD_SIGNER_SECRET_KEY", secret)
+		t.Setenv("ARKD_SIGNER_EMULATOR_COMPUTE_LIMITS", "OP_CHECKSIG=7,OP_ECMUL=5")
+		cfg, err := config.LoadConfig()
+		require.NoError(t, err)
+		require.Equal(t, 7, cfg.ComputeLimits[checksig])
+		require.Equal(t, 5, cfg.ComputeLimits[ecmul])
+	})
+
+	// This var exists only to tighten a DoS-relevant guard, so a typo must not
+	// silently leave the larger default in place.
+	t.Run("misconfiguration fails startup", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			raw  string
+		}{
+			{"non-integer value", "OP_CHECKSIG=notanumber"},
+			{"negative value", "OP_CHECKSIG=-1"},
+			{"unknown opcode", "OP_NOPE=3,OP_CHECKSIG=9"},
+			{"missing equals", "OP_CHECKSIG"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Setenv("ARKD_SIGNER_SECRET_KEY", secret)
+				t.Setenv("ARKD_SIGNER_EMULATOR_COMPUTE_LIMITS", tc.raw)
+				_, err := config.LoadConfig()
+				require.ErrorContains(t, err, "compute limit")
+			})
+		}
+	})
 }
 
 // btcec.PrivKeyFromBytes reduces its input mod N and cannot fail, so without an
