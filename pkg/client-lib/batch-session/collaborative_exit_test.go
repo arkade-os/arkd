@@ -46,6 +46,31 @@ func TestCollaborativeExit(t *testing.T) {
 				mutate:    func(a *batchsession.CollaborativeExitArgs) { a.Receiver.To = "not-a-real-address" },
 				errSubstr: "invalid receiver address",
 			},
+			{
+				name: "receiver amount below dust",
+				mutate: func(a *batchsession.CollaborativeExitArgs) {
+					a.Receiver.Amount = a.ServerParams.Dust - 1
+				},
+				errSubstr: "invalid receiver amount",
+			},
+			{
+				// Receiver wants more than the vtxos hold.
+				name: "insufficient funds",
+				mutate: func(a *batchsession.CollaborativeExitArgs) {
+					a.Receiver.Amount = a.Vtxos[0].Amount + 1
+				},
+				errSubstr: "insufficient funds to cover amount",
+			},
+			{
+				// Exit spends only part of the vtxos, so change is produced, but
+				// no change address is provided to receive it.
+				name: "change produced without change address",
+				mutate: func(a *batchsession.CollaborativeExitArgs) {
+					a.Receiver.Amount = a.Vtxos[0].Amount - 1
+					a.ChangeAddr = ""
+				},
+				errSubstr: "missing change address",
+			},
 		}
 
 		for _, tc := range tests {

@@ -45,8 +45,17 @@ func (a CollaborativeExitArgs) validate() error {
 	if _, err := btcutil.DecodeAddress(a.Receiver.To, &netParams); err != nil {
 		return fmt.Errorf("invalid receiver address")
 	}
-	if len(a.ChangeAddr) <= 0 {
+
+	totInAmount := uint64(0)
+	for _, v := range a.Vtxos {
+		totInAmount += v.Amount
+	}
+	if totInAmount < a.Receiver.Amount {
+		return fmt.Errorf("insufficient funds to cover amount %d", a.Receiver.Amount)
+	}
+	if totInAmount > a.Receiver.Amount && len(a.ChangeAddr) <= 0 {
 		return fmt.Errorf("missing change address")
+
 	}
 	return nil
 }
