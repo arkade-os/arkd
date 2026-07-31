@@ -56,9 +56,7 @@ func (w *wallet) init(
 		return fmt.Errorf("failed to parse server params: %w", err)
 	}
 
-	if _, err := w.identity.Create(
-		ctx, clientlib.ToBitcoinNetwork(cfgData.Network), args.password, args.seed,
-	); err != nil {
+	if _, err := w.identity.Create(ctx, cfgData.Network, args.password, args.seed); err != nil {
 		return err
 	}
 

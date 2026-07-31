@@ -2568,8 +2568,8 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 		// Bob's VTXO must be marked as spent...
 		resp, err := indexerClient.GetVtxos(
 			ctx,
-			indexer.WithScripts([]string{hex.EncodeToString(bobScript)}),
-			indexer.WithSpentOnly(),
+			clientlib.WithScripts([]string{hex.EncodeToString(bobScript)}),
+			clientlib.WithSpentOnly(),
 		)
 		if err != nil || resp == nil || len(resp.Vtxos) == 0 {
 			return false
@@ -3593,7 +3593,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(closeStream)
 
-		sweepCh := make(chan *client.TxNotification, 1)
+		sweepCh := make(chan *clientlib.TxNotification, 1)
 		go func() {
 			for ev := range txStream {
 				if ev.SweepTx == nil {
@@ -3629,7 +3629,7 @@ func TestSweep(t *testing.T) {
 		require.NoError(t, err)
 
 		// wait for the sweep tx event on the stream
-		var sweepEvent *client.TxNotification
+		var sweepEvent *clientlib.TxNotification
 		select {
 		case sweepEvent = <-sweepCh:
 		case <-time.After(40 * time.Second):

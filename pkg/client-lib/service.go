@@ -22,6 +22,9 @@ type Explorer interface {
 	// Returns the transaction ID of the first transaction on success.
 	Broadcast(txs ...string) (string, error)
 
+	// GetBlockHeight returns the current block height.
+	GetBlockHeight() (int64, error)
+
 	// GetTxs retrieves all transactions associated with a given address.
 	GetTxs(addr string) ([]Tx, error)
 
