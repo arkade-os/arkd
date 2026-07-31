@@ -13,10 +13,14 @@ type OffchainTxRepository interface {
 }
 
 // OffchainTxsScanLimit caps the worst-case rows returned by a single
-// GetOffchainTxs call when the filter does not pin the result set with
-// txids. It is a safety bound to keep an unconstrained query from
-// loading the whole table into memory while pagination is still
-// applied in Go. SQL pushdown of pagination is a separate follow-up.
+// GetOffchainTxs call. It is a safety bound to keep a query from loading the
+// whole table into memory while pagination is still applied in Go. SQL
+// pushdown of pagination is a separate follow-up.
+//
+// It applies to the txid-filtered path too. A caller-supplied txid list looks
+// like it bounds the result but does not: in withheld and private exposure an
+// empty request is backfilled from the auth token's whitelist, which is built
+// by an unbounded vtxo chain walk, so the list grows with chain depth.
 const OffchainTxsScanLimit = 10000
 
 // OffchainTxFilter narrows the rows returned by

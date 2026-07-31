@@ -591,13 +591,20 @@ func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectE
 }
 
 const selectFilteredOffchainTxsByTxids = `-- name: SelectFilteredOffchainTxsByTxids :many
+WITH limited_txids AS (
+    SELECT txid
+    FROM offchain_tx
+    WHERE (stage_code = 2 OR stage_code = 3)
+      AND txid = ANY($1::varchar[])
+      AND ($2::boolean = false OR (packets IS NOT NULL AND packets <> ''))
+      AND ($3::boolean = false OR starting_timestamp >= $4::bigint)
+      AND ($5::boolean = false OR starting_timestamp <= $6::bigint)
+    ORDER BY starting_timestamp DESC, txid ASC
+    LIMIT $7
+)
 SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.packets, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw
-WHERE (stage_code = 2 OR stage_code = 3)
-  AND txid = ANY($1::varchar[])
-  AND ($2::boolean = false OR (packets IS NOT NULL AND packets <> ''))
-  AND ($3::boolean = false OR starting_timestamp >= $4::bigint)
-  AND ($5::boolean = false OR starting_timestamp <= $6::bigint)
-ORDER BY starting_timestamp DESC, txid ASC
+JOIN limited_txids USING (txid)
+ORDER BY offchain_tx_vw.starting_timestamp DESC, offchain_tx_vw.txid ASC
 `
 
 type SelectFilteredOffchainTxsByTxidsParams struct {
@@ -607,6 +614,7 @@ type SelectFilteredOffchainTxsByTxidsParams struct {
 	AfterTs       int64
 	WithBefore    bool
 	BeforeTs      int64
+	Lim           int32
 }
 
 type SelectFilteredOffchainTxsByTxidsRow struct {
@@ -614,6 +622,11 @@ type SelectFilteredOffchainTxsByTxidsRow struct {
 }
 
 // Returns only accepted or finalized offchain txs.
+// Capped the same way as SelectOffchainTxs: a caller-supplied txid list does
+// not bound the result, because in withheld/private mode an empty request is
+// backfilled from the auth token's whitelist, which comes from an unbounded
+// vtxo chain walk. The cap counts deduplicated base txids in the CTE so a tx
+// with N checkpoint rows still contributes one txid to it.
 func (q *Queries) SelectFilteredOffchainTxsByTxids(ctx context.Context, arg SelectFilteredOffchainTxsByTxidsParams) ([]SelectFilteredOffchainTxsByTxidsRow, error) {
 	rows, err := q.db.QueryContext(ctx, selectFilteredOffchainTxsByTxids,
 		pq.Array(arg.Txids),
@@ -622,6 +635,7 @@ func (q *Queries) SelectFilteredOffchainTxsByTxids(ctx context.Context, arg Sele
 		arg.AfterTs,
 		arg.WithBefore,
 		arg.BeforeTs,
+		arg.Lim,
 	)
 	if err != nil {
 		return nil, err

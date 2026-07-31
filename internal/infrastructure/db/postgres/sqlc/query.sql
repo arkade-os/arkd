@@ -284,13 +284,25 @@ WHERE v.swept = true
 
 -- name: SelectFilteredOffchainTxsByTxids :many
 -- Returns only accepted or finalized offchain txs.
+-- Capped the same way as SelectOffchainTxs: a caller-supplied txid list does
+-- not bound the result, because in withheld/private mode an empty request is
+-- backfilled from the auth token's whitelist, which comes from an unbounded
+-- vtxo chain walk. The cap counts deduplicated base txids in the CTE so a tx
+-- with N checkpoint rows still contributes one txid to it.
+WITH limited_txids AS (
+    SELECT txid
+    FROM offchain_tx
+    WHERE (stage_code = 2 OR stage_code = 3)
+      AND txid = ANY(sqlc.arg('txids')::varchar[])
+      AND (sqlc.arg('with_extension')::boolean = false OR (packets IS NOT NULL AND packets <> ''))
+      AND (sqlc.arg('with_after')::boolean = false OR starting_timestamp >= sqlc.arg('after_ts')::bigint)
+      AND (sqlc.arg('with_before')::boolean = false OR starting_timestamp <= sqlc.arg('before_ts')::bigint)
+    ORDER BY starting_timestamp DESC, txid ASC
+    LIMIT sqlc.arg('lim')
+)
 SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw
-WHERE (stage_code = 2 OR stage_code = 3)
-  AND txid = ANY(sqlc.arg('txids')::varchar[])
-  AND (sqlc.arg('with_extension')::boolean = false OR (packets IS NOT NULL AND packets <> ''))
-  AND (sqlc.arg('with_after')::boolean = false OR starting_timestamp >= sqlc.arg('after_ts')::bigint)
-  AND (sqlc.arg('with_before')::boolean = false OR starting_timestamp <= sqlc.arg('before_ts')::bigint)
-ORDER BY starting_timestamp DESC, txid ASC;
+JOIN limited_txids USING (txid)
+ORDER BY offchain_tx_vw.starting_timestamp DESC, offchain_tx_vw.txid ASC;
 
 -- name: SelectOffchainTxs :many
 -- Returns only accepted or finalized offchain txs.

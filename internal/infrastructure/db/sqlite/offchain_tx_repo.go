@@ -94,18 +94,16 @@ func (v *offchainTxRepository) GetOffchainTxs(
 		return nil, err
 	}
 
-	type vwRow struct {
-		OffchainTxVw queries.OffchainTxVw
-	}
-
-	var rows []vwRow
+	// fold (txid -> offchain tx with checkpoint maps) so that the LEFT JOIN
+	// against checkpoint_tx is collapsed correctly.
+	byTxid := make(map[string]*domain.OffchainTx)
+	order := make([]string, 0)
 	// batched is set when the txid slice was split across queries, which
 	// breaks the per-query ORDER BY and requires a re-sort after folding.
 	batched := false
 	if len(filter.WithTxids) > 0 {
 		txids := filter.WithTxids
 		batched = len(txids) > sqliteMaxBulkTxids
-		rows = make([]vwRow, 0, len(txids))
 		// The SLICE expansion emits one bound parameter per txid, so batch
 		// it the same way GetOffchainTxsByTxids does to stay under
 		// SQLITE_MAX_VARIABLE_NUMBER.
@@ -133,8 +131,15 @@ func (v *offchainTxRepository) GetOffchainTxs(
 				return nil, err
 			}
 			for _, r := range raw {
-				rows = append(rows, vwRow{OffchainTxVw: r.OffchainTxVw})
+				order = foldOffchainTxRow(byTxid, order, r.OffchainTxVw)
 			}
+			// A caller-supplied txid list does not bound the result: in
+			// withheld/private mode an empty request is backfilled from the
+			// auth token's whitelist, which comes from an unbounded vtxo chain
+			// walk. Trim the running set to the same cap the unfiltered path
+			// applies in SQL so the accumulation across batches stays bounded
+			// rather than growing with the whitelist.
+			order = trimToScanLimit(byTxid, order)
 		}
 	} else {
 		var raw []queries.SelectOffchainTxsRow
@@ -155,62 +160,15 @@ func (v *offchainTxRepository) GetOffchainTxs(
 		}); err != nil {
 			return nil, err
 		}
-		rows = make([]vwRow, 0, len(raw))
 		for _, r := range raw {
-			rows = append(rows, vwRow{OffchainTxVw: r.OffchainTxVw})
-		}
-	}
-
-	// fold (txid -> offchain tx with checkpoint maps) so that the LEFT JOIN
-	// against checkpoint_tx is collapsed correctly.
-	byTxid := make(map[string]*domain.OffchainTx)
-	order := make([]string, 0)
-	for _, row := range rows {
-		vw := row.OffchainTxVw
-		off, ok := byTxid[vw.Txid]
-		if !ok {
-			stage := domain.Stage{Code: int(vw.StageCode)}
-			if vw.FailReason.String != "" {
-				stage.Failed = true
-			}
-			if domain.OffchainTxStage(vw.StageCode) == domain.OffchainTxFinalizedStage {
-				stage.Ended = true
-			}
-			off = &domain.OffchainTx{
-				ArkTxid:            vw.Txid,
-				ArkTx:              vw.Tx,
-				StartingTimestamp:  vw.StartingTimestamp,
-				EndingTimestamp:    vw.EndingTimestamp,
-				ExpiryTimestamp:    vw.ExpiryTimestamp,
-				FailReason:         vw.FailReason.String,
-				Stage:              stage,
-				CheckpointTxs:      make(map[string]string),
-				CommitmentTxids:    make(map[string]string),
-				RootCommitmentTxId: "",
-				Packets:            decodePacketsColumn(vw.Packets),
-			}
-			byTxid[vw.Txid] = off
-			order = append(order, vw.Txid)
-		}
-		if vw.CheckpointTxid != "" && vw.CheckpointTx != "" {
-			off.CheckpointTxs[vw.CheckpointTxid] = vw.CheckpointTx
-			off.CommitmentTxids[vw.CheckpointTxid] = vw.CommitmentTxid.String
-			if vw.IsRootCommitmentTxid.Bool {
-				off.RootCommitmentTxId = vw.CommitmentTxid.String
-			}
+			order = foldOffchainTxRow(byTxid, order, r.OffchainTxVw)
 		}
 	}
 
 	// Each batch is ordered on its own, so restore the query's global
 	// ORDER BY starting_timestamp DESC, txid ASC across batch boundaries.
 	if batched {
-		sort.SliceStable(order, func(i, j int) bool {
-			a, b := byTxid[order[i]], byTxid[order[j]]
-			if a.StartingTimestamp != b.StartingTimestamp {
-				return a.StartingTimestamp > b.StartingTimestamp
-			}
-			return a.ArkTxid < b.ArkTxid
-		})
+		sortOffchainTxOrder(byTxid, order)
 	}
 
 	out := make([]*domain.OffchainTx, 0, len(order))
@@ -428,4 +386,73 @@ func decodePacketsColumn(col sql.NullString) []int {
 		out = append(out, n)
 	}
 	return out
+}
+
+// foldOffchainTxRow folds one view row into the txid-keyed accumulator so the
+// LEFT JOIN against checkpoint_tx is collapsed correctly, returning the updated
+// insertion order.
+func foldOffchainTxRow(
+	byTxid map[string]*domain.OffchainTx, order []string, vw queries.OffchainTxVw,
+) []string {
+	off, ok := byTxid[vw.Txid]
+	if !ok {
+		stage := domain.Stage{Code: int(vw.StageCode)}
+		if vw.FailReason.String != "" {
+			stage.Failed = true
+		}
+		if domain.OffchainTxStage(vw.StageCode) == domain.OffchainTxFinalizedStage {
+			stage.Ended = true
+		}
+		off = &domain.OffchainTx{
+			ArkTxid:            vw.Txid,
+			ArkTx:              vw.Tx,
+			StartingTimestamp:  vw.StartingTimestamp,
+			EndingTimestamp:    vw.EndingTimestamp,
+			ExpiryTimestamp:    vw.ExpiryTimestamp,
+			FailReason:         vw.FailReason.String,
+			Stage:              stage,
+			CheckpointTxs:      make(map[string]string),
+			CommitmentTxids:    make(map[string]string),
+			RootCommitmentTxId: "",
+			Packets:            decodePacketsColumn(vw.Packets),
+		}
+		byTxid[vw.Txid] = off
+		order = append(order, vw.Txid)
+	}
+	if vw.CheckpointTxid != "" && vw.CheckpointTx != "" {
+		off.CheckpointTxs[vw.CheckpointTxid] = vw.CheckpointTx
+		off.CommitmentTxids[vw.CheckpointTxid] = vw.CommitmentTxid.String
+		if vw.IsRootCommitmentTxid.Bool {
+			off.RootCommitmentTxId = vw.CommitmentTxid.String
+		}
+	}
+	return order
+}
+
+// sortOffchainTxOrder restores ORDER BY starting_timestamp DESC, txid ASC.
+// SliceStable rather than Slice so rows that tie on timestamp keep the order
+// the database returned them in.
+func sortOffchainTxOrder(byTxid map[string]*domain.OffchainTx, order []string) {
+	sort.SliceStable(order, func(i, j int) bool {
+		a, b := byTxid[order[i]], byTxid[order[j]]
+		if a.StartingTimestamp != b.StartingTimestamp {
+			return a.StartingTimestamp > b.StartingTimestamp
+		}
+		return a.ArkTxid < b.ArkTxid
+	})
+}
+
+// trimToScanLimit keeps the highest-ranked OffchainTxsScanLimit txids and drops
+// the rest, so batching a large txid list cannot accumulate the whole set in
+// memory. Sorting before trimming means the survivors are the global top-N so
+// far, not whichever batch happened to arrive first.
+func trimToScanLimit(byTxid map[string]*domain.OffchainTx, order []string) []string {
+	if len(order) <= domain.OffchainTxsScanLimit {
+		return order
+	}
+	sortOffchainTxOrder(byTxid, order)
+	for _, txid := range order[domain.OffchainTxsScanLimit:] {
+		delete(byTxid, txid)
+	}
+	return order[:domain.OffchainTxsScanLimit]
 }

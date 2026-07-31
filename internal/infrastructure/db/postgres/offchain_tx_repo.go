@@ -103,6 +103,14 @@ func (v *offchainTxRepository) GetOffchainTxs(
 				AfterTs:    filter.WithAfterDate,
 				WithBefore: filter.WithBeforeDate > 0,
 				BeforeTs:   filter.WithBeforeDate,
+				// A caller-supplied txid list does not bound the result: in
+				// withheld/private mode an empty request is backfilled from the
+				// auth token's whitelist, which comes from an unbounded vtxo
+				// chain walk. No batching is needed here because the txids go
+				// over as one array parameter rather than one placeholder each,
+				// so a single capped query is both bounded and correctly
+				// ordered.
+				Lim: int32(domain.OffchainTxsScanLimit),
 			},
 		)
 		if err != nil {
