@@ -364,9 +364,17 @@ func encodePacketsColumn(packets []int) sql.NullString {
 	return sql.NullString{String: strings.Join(parts, ","), Valid: true}
 }
 
+// decodePacketsColumn mirrors the nil/empty distinction the domain layer keeps:
+// NULL means the row has not been decoded yet and is what the backfill scans
+// for, while an empty string means it was decoded and carried no extensions.
+// Collapsing both to nil would make a no-extension row read back as
+// not-yet-decoded.
 func decodePacketsColumn(col sql.NullString) []int {
-	if !col.Valid || col.String == "" {
+	if !col.Valid {
 		return nil
+	}
+	if col.String == "" {
+		return []int{}
 	}
 	parts := strings.Split(col.String, ",")
 	out := make([]int, 0, len(parts))
