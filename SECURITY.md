@@ -1,6 +1,6 @@
 # Security Disclosures
 
-Security is a top priority for Ark. If you discover a security issue, please bring it to our attention right away. Please DO NOT file a public issue, instead send your report privately by sending an email to <security@arklabs.to>.
+Security is a top priority for Ark Labs. If you discover a security issue, please bring it to our attention right away. Please DO NOT file a public issue, instead send your report privately by sending an email to <security@arklabs.to>.
 
 Security reports are greatly appreciated and we will publicly thank you for it.
 
