@@ -332,7 +332,13 @@ func (h *defaultHandler) OnBatchFinalization(
 	vtxos := h.vtxosToForfeit()
 
 	// If vtxos are refreshed, we must create and sign forfeit txs.
-	if len(vtxos) > 0 && connectorTree != nil {
+	if len(vtxos) > 0 {
+		if connectorTree == nil {
+			return nil, fmt.Errorf(
+				"cannot forfeit %d vtxo(s): server did not provide connectors", len(vtxos),
+			)
+		}
+
 		signedForfeitTxs, err := h.createAndSignForfeits(
 			ctx, vtxos, connectorTree.Leaves(),
 		)
@@ -480,21 +486,21 @@ func (h *defaultHandler) validateVtxoTree(
 	vtxos := h.vtxosToForfeit()
 
 	if len(vtxos) > 0 {
-		if connectorTree != nil {
-			if err := connectorTree.Validate(); err != nil {
-				return err
-			}
+		if connectorTree == nil {
+			return fmt.Errorf("missing connector tree for %d vtxo(s) to forfeit", len(vtxos))
 		}
 
-		if connectorTree != nil {
-			connectorsLeaves := connectorTree.Leaves()
-			if len(connectorsLeaves) != len(vtxos) {
-				return fmt.Errorf(
-					"unexpected num of connectors received: expected %d, got %d",
-					len(vtxos),
-					len(connectorsLeaves),
-				)
-			}
+		if err := connectorTree.Validate(); err != nil {
+			return err
+		}
+
+		connectorsLeaves := connectorTree.Leaves()
+		if len(connectorsLeaves) != len(vtxos) {
+			return fmt.Errorf(
+				"unexpected num of connectors received: expected %d, got %d",
+				len(vtxos),
+				len(connectorsLeaves),
+			)
 		}
 	}
 
