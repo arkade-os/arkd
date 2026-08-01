@@ -4,14 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 const (
 	SignModeLiquidityProvider = "liquidity_provider"
-	SignModeSigner            = "signer"
 )
 
 type WalletService interface {
@@ -23,8 +21,6 @@ type WalletService interface {
 	Lock(ctx context.Context) error
 	Status(ctx context.Context) WalletStatus
 	GetNetwork(ctx context.Context) string
-	GetSignerPubkey(ctx context.Context) (string, error)
-	GetDeprecatedSignerPubkeys(ctx context.Context) ([]DeprecatedSignerPubkey, error)
 	GetForfeitPubkey(ctx context.Context) (string, error)
 	DeriveConnectorAddress(ctx context.Context) (string, error)
 	DeriveAddresses(ctx context.Context, num int) ([]string, error)
@@ -49,7 +45,6 @@ type WalletService interface {
 	Withdraw(ctx context.Context, destinationAddress string, amount uint64) (string, error)
 	// Withdraw both main and connectors account funds
 	WithdrawAll(ctx context.Context, destinationAddress string) (string, error)
-	LoadSignerKey(ctx context.Context, prvkey *btcec.PrivateKey) error
 	Close()
 }
 
@@ -93,12 +88,6 @@ type MainAccountUtxo struct {
 type BlockTimestamp struct {
 	Height uint32
 	Time   int64
-}
-
-type DeprecatedSignerPubkey struct {
-	Pubkey string
-	// unix timestamp after which the key is no longer accepted, 0 if unset
-	CutoffDate int64
 }
 
 var ErrTransactionNotFound = fmt.Errorf("transaction not found")

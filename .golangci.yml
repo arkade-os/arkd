@@ -3,6 +3,17 @@ version: "2"
 run:
   timeout: 5m
 
+linters:
+  exclusions:
+    rules:
+      # h2c.NewHandler is deprecated in golang.org/x/net v0.55.0 but is still
+      # required for unencrypted HTTP/2 serving; migrating to http.Server's
+      # Protocols field is tracked as a separate follow-up.
+      - path: interface/grpc/service\.go
+        linters:
+          - staticcheck
+        text: SA1019
+
 formatters:
   enable:
     - gofmt

@@ -1,10 +1,10 @@
 .PHONY: \
-	build build-all build-cli build-wallet clean cov \
+	build build-all build-cli build-signer build-wallet clean cov \
 	docker-run docker-run-light docker-stop droppg droppgtest \
 	help integrationtest lint migrate pg pgmigrate pgsqlc pgtest \
 	pprof proto proto-lint psql \
 	redis-down redis-test-down redis-test-up redis-up \
-	run run-light run-signer run-simulation run-wallet run-wallet-nosigner \
+	run run-light run-signer run-simulation run-wallet \
 	sqlc test test-pkg vet
 
 define setup_env
@@ -41,6 +41,11 @@ build-cli:
 build-wallet:
 	@echo "Building arkd wallet binary..."
 	@bash ./scripts/build-arkd-wallet
+
+## build-signer: build arkd signer for your platforms
+build-signer:
+	@echo "Building arkd signer binary..."
+	@bash ./scripts/build-arkd-signer
 
 ## clean: run go clean
 clean:
@@ -173,12 +178,11 @@ run-light: clean
 	$(call setup_env, envs/arkd.light.env)
 	@go run ./cmd/arkd
 
-## run-signer: run arkd wallet as signer without a wallet
+## run-signer: run arkd-signer in dev mode
 run-signer:
-	@echo "Running signer in dev mode"
-	@docker compose -f docker-compose.regtest.yml up -d pg nbxplorer
+	@echo "Running arkd-signer in dev mode"
 	$(call setup_env, envs/signer.dev.env)
-	@go run ./cmd/arkd-wallet
+	@go run ./cmd/arkd-signer
 
 ## run-simulation: run the multi-VTXO batch settlement test
 ## Usage: make run-simulation [CLIENTS=n]
@@ -205,7 +209,7 @@ run-simulation:
 ## run-vtxo-chain-simulation: run the vtxo chain smoke test
 ## Usage: make run-vtxo-chain-simulation [CHAIN_LENGTH=n]
 # Examples:
-#   make run-vtxo-chain-simulation                  # Default: 50 chained offchain txs 
+#   make run-vtxo-chain-simulation                  # Default: 50 chained offchain txs
 #   make run-vtxo-chain-simulation CHAIN_LENGTH=100       # 100 chained offchain txs
 run-vtxo-chain-simulation:
 	@echo "Stopping any existing Docker environment..."
@@ -221,18 +225,11 @@ run-vtxo-chain-simulation:
 	'
 	@echo "Test completed."
 
-## run-wallet: run arkd wallet based on nbxplorer in dev mode on regtest with a pre-loaded signer private key
+## run-wallet: run arkd wallet based on nbxplorer in dev mode on regtest
 run-wallet:
-	@echo "Running arkd wallet in dev mode with NBXplorer on regtest with pre-loaded signer private key..."
-	@docker compose -f docker-compose.regtest.yml up -d pg nbxplorer
-	$(call setup_env, envs/arkd-wallet.regtest.env)
-	@go run ./cmd/arkd-wallet
-
-## run-wallet-nosigner: run arkd wallet based on nbxplorer in dev mode on regtest without a pre-loaded signer private key
-run-wallet-nosigner:
 	@echo "Running arkd wallet in dev mode with NBXplorer on regtest..."
 	@docker compose -f docker-compose.regtest.yml up -d pg nbxplorer
-	$(call setup_env, envs/arkd-wallet-nosigner.regtest.env)
+	$(call setup_env, envs/arkd-wallet.regtest.env)
 	@go run ./cmd/arkd-wallet
 
 ## sqlc: compile sql queries for sqlite

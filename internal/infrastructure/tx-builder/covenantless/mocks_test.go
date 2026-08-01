@@ -382,11 +382,6 @@ func (m *mockedWallet) GetOutpointStatus(
 	return res, args.Error(1)
 }
 
-func (m *mockedWallet) LoadSignerKey(ctx context.Context, privateKey string) error {
-	args := m.Called(ctx, privateKey)
-	return args.Error(0)
-}
-
 func (m *mockedWallet) RescanUtxos(ctx context.Context, outs []wire.OutPoint) error {
 	args := m.Called(ctx, outs)
 	return args.Error(0)

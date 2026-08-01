@@ -33,7 +33,7 @@ The Operator's role is designed with strict boundaries that ensure users always 
 * mutinynet
 * mainnet
 
-and makes use of [arkd-wallet](./pkg/arkd-wallet/), an on-chain wallet based on NBXplorer, as liquidity provider and optionally also as signer.
+and makes use of [arkd-wallet](./pkg/arkd-wallet/), an on-chain wallet based on NBXplorer, as liquidity provider, and [arkd-signer](./pkg/arkd-signer/) as the transaction signer.
 
 ## Usage Documentation
 
@@ -82,7 +82,7 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_REDIS_NUM_OF_RETRIES`         | Maximum number of retries for Redis write operations in case of conflicts       | -                              |
 | `ARKD_ESPLORA_URL`                  | Esplora API URL                                                                 | `https://blockstream.info/api` |
 | `ARKD_WALLET_ADDR`                  | The arkd wallet address to connect to in the form `host:port`                   | -                              |
-| `ARKD_SIGNER_ADDR`                  | The signer address to connect to in the form `host:port`                        | value of `ARKD_WALLET_ADDR`    |
+| `ARKD_SIGNER_ADDR`                  | The signer address to connect to in the form `host:port` (required)             | -                              |
 | `ARKD_NO_MACAROONS`                 | Disable macaroon authentication                                                 | `false`                        |
 | `ARKD_NO_TLS`                       | Disable TLS                                                                     | `true`                         |
 | `ARKD_UNLOCKER_TYPE`                | Wallet unlocker type (env, file) to enable auto-unlock                          | -                              |
@@ -163,13 +163,28 @@ export ARKD_WALLET_NBXPLORER_URL=http://localhost:32838
 
 ### Configure signer
 
-`arkd-wallet` can be used also as signer.
+`arkd-signer` is a standalone service that holds the operator signing key and signs `arkd`'s protocol transactions. It is configured via the following environment variables:
 
-The configuration can be done either via env vars or via API. To enable `arkd-wallet`'s signer mode use this environment variable:
+| Environment Variable          | Description                                                                       | Default     |
+|-------------------------------|-----------------------------------------------------------------------------------|-------------|
+| `ARKD_SIGNER_SECRET_KEY`      | Hex-encoded operator signing key (required, sensitive)                            | -           |
+| `ARKD_SIGNER_DEPRECATED_KEYS` | Comma-separated old keys still accepted for signing, for key rotation (sensitive) | -           |
+| `ARKD_SIGNER_PORT`            | Port to listen on                                                                 | `6061`      |
+| `ARKD_SIGNER_LOG_LEVEL`       | Logging level (0-6, where 6 is trace)                                             | `4` (info)  |
+
+Configure the signing key (required):
 
 ```sh
 # Make sure to use a random private key, this is just an example.
-export ARKD_WALLET_SIGNER_KEY=19422b10efd05403820ff6a3365422be2fc5f07f34a6d1603f7298328f0f80f6
+export ARKD_SIGNER_SECRET_KEY=19422b10efd05403820ff6a3365422be2fc5f07f34a6d1603f7298328f0f80f6
+```
+
+To rotate the signer key while still accepting coins locked to old keys, set `ARKD_SIGNER_DEPRECATED_KEYS` to a comma-separated list of old keys. Each entry is a hex key, optionally followed by `:` and a cutoff date, which is a Unix timestamp in **seconds** (UTC), after which clients should stop locking new funds to that key. Omit the cutoff to leave it unset:
+
+```sh
+# Format: <hexkey>[:<cutoff_unix_seconds>],<hexkey>[:<cutoff_unix_seconds>]
+# Example with two deprecated keys: the first retires at a cutoff date, the second has no cutoff.
+export ARKD_SIGNER_DEPRECATED_KEYS=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6:1735689600,f0e1d2c3b4a59687766554433221100ff1e2d3c4b5a69788796a5b4c3d2e1f00
 ```
 
 ### Connect to wallet
@@ -183,15 +198,11 @@ export ARKD_WALLET_ADDR=localhost:6060
 
 ### Connect to signer
 
-By default, `arkd` makes use of the provided `arkd-wallet` also as signer, but you can customize its url either via environment variable or via API.
-
-#### Connect to custom signer
-
-To connect `arkd` to a custom signer use this environment variable:
+`arkd` connects to `arkd-signer` via this environment variable (required):
 
 ```sh
 # Make sure to use the right URL in the form host:port, this is just an example.
-export ARKD_SIGNER_ADDR=localhost:7071
+export ARKD_SIGNER_ADDR=localhost:6061
 ```
 
 ### Setup arkd
@@ -201,12 +212,17 @@ export ARKD_SIGNER_ADDR=localhost:7071
    arkd-wallet
    ```
 
-2. Start arkd:
+2. Start the signer:
+   ```sh
+   arkd-signer
+   ```
+
+3. Start arkd (requires `ARKD_WALLET_ADDR` and `ARKD_SIGNER_ADDR`):
    ```sh
    arkd
    ```
 
-3. Create a new wallet:
+4. Create a new wallet:
    ```sh
    arkd wallet create --password <password>
    ```
@@ -215,14 +231,11 @@ export ARKD_SIGNER_ADDR=localhost:7071
    ```sh
    arkd wallet create --mnemonic "your twelve word mnemonic phrase here" --password <password>
    ```
-4. Only if you didn't configure either the wallet as signer, or a custom signer, you must load the signer before unlocking the wallet, or `arkd` will fail to start:
+
+   You can repoint `arkd` at a different signer URL at runtime if needed:
    ```sh
-   # If you configured a custom signer
-   arkd signer load --signer-url localhost:7071
-   # Or, if you want to configure the wallet as signer with a private key
-   arkd signer load --signer-prvkey 19422b10efd05403820ff6a3365422be2fc5f07f34a6d1603f7298328f0f80f6
+   arkd signer load --signer-url localhost:6061
    ```
-   Remember, if you use this command, you must use it at every restart unless you export the required environment variable(s).
 
 5. Unlock the wallet:
    ```sh
@@ -256,7 +269,8 @@ For a complete list of available commands and options:
 - [`api-spec`](./api-spec/): Ark Protocol Buffer API specification.
 - [`pkg`](./pkg/): collection of reusable packages and services.
   - [`ark-lib`](./pkg/ark-lib): collection of data structures and functions reusable by arkd and sdk.
-  - [`arkd-wallet`](./pkg/arkd-wallet): bitcoin wallet service used as liquidity provider and signer.
+  - [`arkd-wallet`](./pkg/arkd-wallet): bitcoin wallet service used as liquidity provider.
+  - [`arkd-signer`](./pkg/arkd-signer): standalone service that holds the operator key and signs arkd's protocol transactions.
   - [`ark-cli`](./pkg/ark-cli): ark offchain and onchain wallet as command line interface.
 - [`internal`](./internal): arkd implementation.
   - [`core`](./internal/core): contains the core business logic of arkd.
@@ -308,14 +322,10 @@ To compile the `arkd` binary from source, you can use the following Make command
    go mod download
    ```
 
-6. Run arkd wallet in dev mode:
+6. Run arkd wallet and signer in dev mode (each in its own tab):
 
    ```sh
-   # run wallet with signer enabled
    make run-wallet
-   # or, run wallet with signer disabled...
-   make run-wallet-nosigner
-   # ... and in another tab run a custom signer
    make run-signer
    ```
 
@@ -351,6 +361,8 @@ To compile the `arkd` binary from source, you can use the following Make command
    make integrationtest
    make docker-stop
    ```
+
+   `make docker-run` brings up the full stack defined in `docker-compose.regtest.yml` (postgres, redis, nbxplorer, `arkd-wallet`, `arkd-signer`, and `arkd`).
 
 ### Protobuf Breaking Change Detection
 

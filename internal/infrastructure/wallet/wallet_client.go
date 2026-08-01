@@ -556,11 +556,6 @@ func (w *walletDaemonClient) GetOutpointStatus(
 	return resp.GetSpent(), nil
 }
 
-func (w *walletDaemonClient) LoadSignerKey(ctx context.Context, prvkey string) error {
-	_, err := w.client.LoadSignerKey(ctx, &arkwalletv1.LoadSignerKeyRequest{PrivateKey: prvkey})
-	return err
-}
-
 func (w *walletDaemonClient) RescanUtxos(ctx context.Context, outs []wire.OutPoint) error {
 	outsStr := make([]string, 0, len(outs))
 	for _, out := range outs {
