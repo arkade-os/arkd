@@ -317,6 +317,10 @@ func (t *treeSignerSession) Init(
 	t.scriptRoot = batchOutSweepClosure
 	t.prevoutFetcherFactory = prevOutFetcherFactory
 	t.txs = treeToIndexedTxs(vtxoTree, make(map[string]*psbt.Packet))
+
+	// Nonces are reset so a retry does not reuse any.
+	t.myNonces = nil
+	t.aggregateNonces = nil
 	return nil
 }
 

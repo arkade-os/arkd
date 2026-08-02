@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	wallet "github.com/arkade-os/arkd/pkg/client-lib"
+	wallet "github.com/arkade-os/arkd/pkg/client-wallet"
 	"github.com/stretchr/testify/require"
 )
 

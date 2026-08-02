@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
-	wallet "github.com/arkade-os/arkd/pkg/client-lib"
-	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer/grpc"
-	"github.com/arkade-os/arkd/pkg/client-lib/store"
-	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	grpcindexer "github.com/arkade-os/arkd/pkg/client-lib/indexer"
+	wallet "github.com/arkade-os/arkd/pkg/client-wallet"
+	"github.com/arkade-os/arkd/pkg/client-wallet/store"
+	"github.com/arkade-os/arkd/pkg/client-wallet/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -43,9 +44,7 @@ func TestVtxoChain(t *testing.T) {
 
 	ctx := t.Context()
 
-	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType: types.InMemoryStore,
-	})
+	appDataStore, err := store.NewStore(types.InMemoryStore, "")
 	require.NoError(t, err)
 
 	client, err := wallet.NewWallet(appDataStore)
@@ -135,7 +134,7 @@ func TestVtxoChain(t *testing.T) {
 				_, notifyErr = client.NotifyIncomingFunds(ctx, offchainAddr.Address)
 			})
 
-			res, err := client.SendOffChain(ctx, []types.Receiver{{
+			res, err := client.SendOffChain(ctx, []clientlib.Receiver{{
 				To:     offchainAddr.Address,
 				Amount: sendAmount,
 			}})
@@ -159,7 +158,7 @@ func TestVtxoChain(t *testing.T) {
 	tip := spendable[0]
 
 	// Benchmark GetVtxoChain on the last VTXO in the chain.
-	last := types.Outpoint{Txid: tip.Txid, VOut: tip.VOut}
+	last := clientlib.Outpoint{Txid: tip.Txid, VOut: tip.VOut}
 	idx, err := grpcindexer.NewClient(*arkServerUrl)
 	require.NoError(t, err)
 

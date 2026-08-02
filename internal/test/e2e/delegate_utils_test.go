@@ -13,8 +13,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
-	"github.com/arkade-os/arkd/pkg/client-lib/client"
-	"github.com/arkade-os/arkd/pkg/client-lib/identity"
+	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
@@ -25,8 +24,8 @@ type delegateBatchEventsHandler struct {
 	intentId          string
 	signerSession     tree.SignerSession
 	partialForfeitTx  string
-	delegatorIdentity identity.Identity
-	client            client.Client
+	delegatorIdentity clientlib.Identity
+	client            clientlib.Client
 	forfeitPubKey     *btcec.PublicKey
 	batchExpiry       arklib.RelativeLocktime
 
@@ -34,13 +33,13 @@ type delegateBatchEventsHandler struct {
 }
 
 func (h *delegateBatchEventsHandler) OnStreamStarted(
-	ctx context.Context, event client.StreamStartedEvent,
+	ctx context.Context, event clientlib.StreamStartedEvent,
 ) error {
 	return nil
 }
 
 func (h *delegateBatchEventsHandler) OnBatchStarted(
-	ctx context.Context, event client.BatchStartedEvent,
+	ctx context.Context, event clientlib.BatchStartedEvent,
 ) (bool, time.Duration, error) {
 	buf := sha256.Sum256([]byte(h.intentId))
 	hashedIntentId := hex.EncodeToString(buf[:])
@@ -60,13 +59,13 @@ func (h *delegateBatchEventsHandler) OnBatchStarted(
 }
 
 func (h *delegateBatchEventsHandler) OnBatchFinalized(
-	ctx context.Context, event client.BatchFinalizedEvent,
+	ctx context.Context, event clientlib.BatchFinalizedEvent,
 ) error {
 	return nil
 }
 
 func (h *delegateBatchEventsHandler) OnBatchFailed(
-	ctx context.Context, event client.BatchFailedEvent,
+	ctx context.Context, event clientlib.BatchFailedEvent,
 ) error {
 	if event.Id == h.cacheBatchId {
 		return fmt.Errorf("batch failed: %s", event.Reason)
@@ -75,19 +74,19 @@ func (h *delegateBatchEventsHandler) OnBatchFailed(
 }
 
 func (h *delegateBatchEventsHandler) OnTreeTxEvent(
-	ctx context.Context, event client.TreeTxEvent,
+	ctx context.Context, event clientlib.TreeTxEvent,
 ) error {
 	return nil
 }
 
 func (h *delegateBatchEventsHandler) OnTreeSignatureEvent(
-	ctx context.Context, event client.TreeSignatureEvent,
+	ctx context.Context, event clientlib.TreeSignatureEvent,
 ) error {
 	return nil
 }
 
 func (h *delegateBatchEventsHandler) OnTreeSigningStarted(
-	ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree,
+	ctx context.Context, event clientlib.TreeSigningStartedEvent, vtxoTree *tree.TxTree,
 ) (bool, error) {
 	myPubkey := h.signerSession.GetPublicKey()
 	if !slices.Contains(event.CosignersPubkeys, myPubkey) {
@@ -137,15 +136,13 @@ func (h *delegateBatchEventsHandler) OnTreeSigningStarted(
 }
 
 func (h *delegateBatchEventsHandler) OnTreeNonces(
-	ctx context.Context,
-	event client.TreeNoncesEvent,
+	ctx context.Context, event clientlib.TreeNoncesEvent,
 ) (bool, error) {
 	return false, nil
 }
 
 func (h *delegateBatchEventsHandler) OnTreeNoncesAggregated(
-	ctx context.Context,
-	event client.TreeNoncesAggregatedEvent,
+	ctx context.Context, event clientlib.TreeNoncesAggregatedEvent,
 ) (bool, error) {
 	h.signerSession.SetAggregatedNonces(event.Nonces)
 
@@ -155,19 +152,14 @@ func (h *delegateBatchEventsHandler) OnTreeNoncesAggregated(
 	}
 
 	err = h.client.SubmitTreeSignatures(
-		ctx,
-		event.Id,
-		h.signerSession.GetPublicKey(),
-		sigs,
+		ctx, event.Id, h.signerSession.GetPublicKey(), sigs,
 	)
 	return err == nil, err
 }
 
 func (h *delegateBatchEventsHandler) OnBatchFinalization(
 	ctx context.Context,
-	event client.BatchFinalizationEvent,
-	vtxoTree *tree.TxTree,
-	connectorTree *tree.TxTree,
+	event clientlib.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree,
 ) ([]string, error) {
 	forfeitPtx, err := psbt.NewFromRawBytes(strings.NewReader(h.partialForfeitTx), true)
 	if err != nil {
@@ -220,20 +212,19 @@ func (h *delegateBatchEventsHandler) OnBatchFinalization(
 }
 
 type customBatchEventsHandler struct {
-	onStreamStarted        func(ctx context.Context, event client.StreamStartedEvent) error
-	onBatchStarted         func(ctx context.Context, event client.BatchStartedEvent) (bool, time.Duration, error)
-	onBatchFinalization    func(ctx context.Context, event client.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree) ([]string, error)
-	onBatchFinalized       func(ctx context.Context, event client.BatchFinalizedEvent) error
-	onBatchFailed          func(ctx context.Context, event client.BatchFailedEvent) error
-	onTreeTxEvent          func(ctx context.Context, event client.TreeTxEvent) error
-	onTreeSignatureEvent   func(ctx context.Context, event client.TreeSignatureEvent) error
-	onTreeSigningStarted   func(ctx context.Context, event client.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error)
-	onTreeNoncesAggregated func(ctx context.Context, event client.TreeNoncesAggregatedEvent) (bool, error)
+	onStreamStarted        func(ctx context.Context, event clientlib.StreamStartedEvent) error
+	onBatchStarted         func(ctx context.Context, event clientlib.BatchStartedEvent) (bool, time.Duration, error)
+	onBatchFinalization    func(ctx context.Context, event clientlib.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree) ([]string, error)
+	onBatchFinalized       func(ctx context.Context, event clientlib.BatchFinalizedEvent) error
+	onBatchFailed          func(ctx context.Context, event clientlib.BatchFailedEvent) error
+	onTreeTxEvent          func(ctx context.Context, event clientlib.TreeTxEvent) error
+	onTreeSignatureEvent   func(ctx context.Context, event clientlib.TreeSignatureEvent) error
+	onTreeSigningStarted   func(ctx context.Context, event clientlib.TreeSigningStartedEvent, vtxoTree *tree.TxTree) (bool, error)
+	onTreeNoncesAggregated func(ctx context.Context, event clientlib.TreeNoncesAggregatedEvent) (bool, error)
 }
 
 func (h *customBatchEventsHandler) OnStreamStarted(
-	ctx context.Context,
-	event client.StreamStartedEvent,
+	ctx context.Context, event clientlib.StreamStartedEvent,
 ) error {
 	if h.onStreamStarted != nil {
 		return h.onStreamStarted(ctx, event)
@@ -242,8 +233,7 @@ func (h *customBatchEventsHandler) OnStreamStarted(
 }
 
 func (h *customBatchEventsHandler) OnBatchStarted(
-	ctx context.Context,
-	event client.BatchStartedEvent,
+	ctx context.Context, event clientlib.BatchStartedEvent,
 ) (bool, time.Duration, error) {
 	if h.onBatchStarted != nil {
 		return h.onBatchStarted(ctx, event)
@@ -253,9 +243,7 @@ func (h *customBatchEventsHandler) OnBatchStarted(
 
 func (h *customBatchEventsHandler) OnBatchFinalization(
 	ctx context.Context,
-	event client.BatchFinalizationEvent,
-	vtxoTree *tree.TxTree,
-	connectorTree *tree.TxTree,
+	event clientlib.BatchFinalizationEvent, vtxoTree *tree.TxTree, connectorTree *tree.TxTree,
 ) ([]string, error) {
 	if h.onBatchFinalization != nil {
 		return h.onBatchFinalization(ctx, event, vtxoTree, connectorTree)
@@ -264,8 +252,7 @@ func (h *customBatchEventsHandler) OnBatchFinalization(
 }
 
 func (h *customBatchEventsHandler) OnBatchFinalized(
-	ctx context.Context,
-	event client.BatchFinalizedEvent,
+	ctx context.Context, event clientlib.BatchFinalizedEvent,
 ) error {
 	if h.onBatchFinalized != nil {
 		return h.onBatchFinalized(ctx, event)
@@ -274,8 +261,7 @@ func (h *customBatchEventsHandler) OnBatchFinalized(
 }
 
 func (h *customBatchEventsHandler) OnBatchFailed(
-	ctx context.Context,
-	event client.BatchFailedEvent,
+	ctx context.Context, event clientlib.BatchFailedEvent,
 ) error {
 	if h.onBatchFailed != nil {
 		return h.onBatchFailed(ctx, event)
@@ -284,8 +270,7 @@ func (h *customBatchEventsHandler) OnBatchFailed(
 }
 
 func (h *customBatchEventsHandler) OnTreeTxEvent(
-	ctx context.Context,
-	event client.TreeTxEvent,
+	ctx context.Context, event clientlib.TreeTxEvent,
 ) error {
 	if h.onTreeTxEvent != nil {
 		return h.onTreeTxEvent(ctx, event)
@@ -294,8 +279,7 @@ func (h *customBatchEventsHandler) OnTreeTxEvent(
 }
 
 func (h *customBatchEventsHandler) OnTreeSignatureEvent(
-	ctx context.Context,
-	event client.TreeSignatureEvent,
+	ctx context.Context, event clientlib.TreeSignatureEvent,
 ) error {
 	if h.onTreeSignatureEvent != nil {
 		return h.onTreeSignatureEvent(ctx, event)
@@ -304,9 +288,7 @@ func (h *customBatchEventsHandler) OnTreeSignatureEvent(
 }
 
 func (h *customBatchEventsHandler) OnTreeSigningStarted(
-	ctx context.Context,
-	event client.TreeSigningStartedEvent,
-	vtxoTree *tree.TxTree,
+	ctx context.Context, event clientlib.TreeSigningStartedEvent, vtxoTree *tree.TxTree,
 ) (bool, error) {
 	if h.onTreeSigningStarted != nil {
 		return h.onTreeSigningStarted(ctx, event, vtxoTree)
@@ -315,8 +297,7 @@ func (h *customBatchEventsHandler) OnTreeSigningStarted(
 }
 
 func (h *customBatchEventsHandler) OnTreeNoncesAggregated(
-	ctx context.Context,
-	event client.TreeNoncesAggregatedEvent,
+	ctx context.Context, event clientlib.TreeNoncesAggregatedEvent,
 ) (bool, error) {
 	if h.onTreeNoncesAggregated != nil {
 		return h.onTreeNoncesAggregated(ctx, event)
@@ -325,8 +306,7 @@ func (h *customBatchEventsHandler) OnTreeNoncesAggregated(
 }
 
 func (h *customBatchEventsHandler) OnTreeNonces(
-	ctx context.Context,
-	event client.TreeNoncesEvent,
+	ctx context.Context, event clientlib.TreeNoncesEvent,
 ) (bool, error) {
 	return false, nil
 }

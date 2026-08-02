@@ -18,14 +18,11 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	wallet "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
-	"github.com/arkade-os/arkd/pkg/client-lib/identity"
-	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey"
-	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-lib/identity/singlekey/store/inmemory"
-	"github.com/arkade-os/arkd/pkg/client-lib/indexer"
-	"github.com/arkade-os/arkd/pkg/client-lib/store"
-	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	wallet "github.com/arkade-os/arkd/pkg/client-wallet"
+	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-wallet/identity"
+	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-wallet/identity/store/inmemory"
+	"github.com/arkade-os/arkd/pkg/client-wallet/store"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -143,7 +140,7 @@ func newCommand(name string, arg ...string) *exec.Cmd {
 	return cmd
 }
 
-func bumpAndBroadcastTx(t *testing.T, tx string, explorer explorer.Explorer) {
+func bumpAndBroadcastTx(t *testing.T, tx string, explorer clientlib.Explorer) {
 	var transaction wire.MsgTx
 	err := transaction.Deserialize(hex.NewDecoder(strings.NewReader(tx)))
 	require.NoError(t, err)
@@ -159,7 +156,7 @@ func bumpAndBroadcastTx(t *testing.T, tx string, explorer explorer.Explorer) {
 
 // bumpAnchorTx is crafting and signing a transaction bumping the fees for a given tx with P2A output
 // it is using the onchain P2TR account to select UTXOs
-func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explorer) string {
+func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc clientlib.Explorer) string {
 	randomPrivKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
 
@@ -267,10 +264,8 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc explorer.Explore
 	return hex.EncodeToString(serializedTx.Bytes())
 }
 
-func setupClientWallet(t *testing.T) wallet.Wallet {
-	appDataStore, err := store.NewStore(store.Config{
-		ConfigStoreType: types.InMemoryStore,
-	})
+func setupClientWallet(t *testing.T, prvkey ...string) wallet.Wallet {
+	appDataStore, err := store.NewStore(wallet.InMemoryStore, "")
 	require.NoError(t, err)
 
 	client, err := wallet.NewWallet(appDataStore)
@@ -278,8 +273,10 @@ func setupClientWallet(t *testing.T) wallet.Wallet {
 
 	privkey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-
 	privkeyHex := hex.EncodeToString(privkey.Serialize())
+	if len(prvkey) > 0 {
+		privkeyHex = prvkey[0]
+	}
 
 	err = client.Init(t.Context(), wallet.InitArgs{
 		ServerUrl:   serverUrl,
@@ -297,7 +294,7 @@ func setupClientWallet(t *testing.T) wallet.Wallet {
 	return client
 }
 
-func setupIdentity(t *testing.T) (identity.Identity, *btcec.PublicKey, error) {
+func setupIdentity(t *testing.T) (clientlib.Identity, *btcec.PublicKey, error) {
 	store, err := identityinmemorystore.NewStore()
 	require.NoError(t, err)
 	require.NotNil(t, store)
@@ -365,7 +362,7 @@ func faucetOnchain(t *testing.T, address string, amount float64) {
 	require.NoError(t, err)
 }
 
-func faucetOffchain(t *testing.T, client wallet.Wallet, amount float64) types.Vtxo {
+func faucetOffchain(t *testing.T, client wallet.Wallet, amount float64) clientlib.Vtxo {
 	_, offchainAddr, _, err := client.Receive(t.Context())
 	require.NoError(t, err)
 
@@ -373,7 +370,7 @@ func faucetOffchain(t *testing.T, client wallet.Wallet, amount float64) types.Vt
 
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	var incomingFunds []types.Vtxo
+	var incomingFunds []clientlib.Vtxo
 	var incomingErr error
 	go func() {
 		incomingFunds, incomingErr = client.NotifyIncomingFunds(t.Context(), offchainAddr.Address)
@@ -393,7 +390,7 @@ func faucetOffchain(t *testing.T, client wallet.Wallet, amount float64) types.Vt
 	return incomingFunds[0]
 }
 
-func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.Vtxo {
+func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) clientlib.Vtxo {
 	client := setupClientWallet(t)
 
 	_, offchainAddr, _, err := client.Receive(t.Context())
@@ -403,7 +400,7 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.
 
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	var incomingFunds []types.Vtxo
+	var incomingFunds []clientlib.Vtxo
 	var incomingErr error
 	go func() {
 		incomingFunds, incomingErr = client.NotifyIncomingFunds(t.Context(), offchainAddr.Address)
@@ -429,7 +426,7 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) types.
 		wg.Done()
 	}()
 
-	res, err := client.SendOffChain(t.Context(), []types.Receiver{{
+	res, err := client.SendOffChain(t.Context(), []clientlib.Receiver{{
 		To:     addr,
 		Amount: uint64(amount * 1e8),
 	}})
@@ -448,7 +445,7 @@ func settleVtxo(t *testing.T, ctx context.Context, client wallet.Wallet, offchai
 
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	var incomingFunds []types.Vtxo
+	var incomingFunds []clientlib.Vtxo
 	var incomingErr error
 	go func() {
 		incomingFunds, incomingErr = client.NotifyIncomingFunds(ctx, offchainAddr)
@@ -764,12 +761,12 @@ func refill(httpClient *http.Client) error {
 	return nil
 }
 
-func listVtxosWithAsset(t *testing.T, client wallet.Wallet, assetID string) []types.Vtxo {
+func listVtxosWithAsset(t *testing.T, client wallet.Wallet, assetID string) []clientlib.Vtxo {
 	t.Helper()
 	vtxos, _, err := client.ListVtxos(t.Context())
 	require.NoError(t, err)
 
-	assetVtxos := make([]types.Vtxo, 0, len(vtxos))
+	assetVtxos := make([]clientlib.Vtxo, 0, len(vtxos))
 	for _, vtxo := range vtxos {
 		for _, asset := range vtxo.Assets {
 			if asset.AssetId == assetID {
@@ -781,17 +778,17 @@ func listVtxosWithAsset(t *testing.T, client wallet.Wallet, assetID string) []ty
 	return assetVtxos
 }
 
-func findAssetInVtxo(vtxo types.Vtxo, assetID string) (types.Asset, bool) {
+func findAssetInVtxo(vtxo clientlib.Vtxo, assetID string) (clientlib.Asset, bool) {
 	for _, asset := range vtxo.Assets {
 		if asset.AssetId == assetID {
 			return asset, true
 		}
 	}
-	return types.Asset{}, false
+	return clientlib.Asset{}, false
 }
 
 // requireVtxoHasAsset asserts that the given VTXO contains an asset with the given ID and amount.
-func requireVtxoHasAsset(t *testing.T, vtxo types.Vtxo, assetID string, expectedAmount uint64) {
+func requireVtxoHasAsset(t *testing.T, vtxo clientlib.Vtxo, assetID string, expectedAmount uint64) {
 	t.Helper()
 	asset, found := findAssetInVtxo(vtxo, assetID)
 	require.True(t, found)
@@ -835,13 +832,11 @@ func isRetryableChurnError(err error) bool {
 }
 
 func waitForVTXOs(
-	ch <-chan indexer.ScriptEvent,
-	atLeastN int,
-	timeout time.Duration,
-) ([]types.Vtxo, error) {
+	ch <-chan clientlib.ScriptEvent, atLeastN int, timeout time.Duration,
+) ([]clientlib.Vtxo, error) {
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(timeout))
 	defer cancel()
-	vtxos := make([]types.Vtxo, 0)
+	vtxos := make([]clientlib.Vtxo, 0)
 	for {
 		select {
 		case <-ctx.Done():
