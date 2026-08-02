@@ -318,7 +318,7 @@ func (t *treeSignerSession) Init(
 	t.prevoutFetcherFactory = prevOutFetcherFactory
 	t.txs = treeToIndexedTxs(vtxoTree, make(map[string]*psbt.Packet))
 
-	// Nonces are rest to a retry does not reuse any.
+	// Nonces are reset so a retry does not reuse any.
 	t.myNonces = nil
 	t.aggregateNonces = nil
 	return nil
