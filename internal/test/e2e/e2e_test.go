@@ -4240,8 +4240,7 @@ func TestIntent(t *testing.T) {
 		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
 		require.NoError(t, err)
 
-		// Fees() reports int64(vtxo.Amount) - (x + -x) =
-		const stolenAmount = 1_000_000
+		const amount = 1_000_000
 
 		intentProof, err := intent.New(
 			encodedIntentMessage,
@@ -4259,8 +4258,8 @@ func TestIntent(t *testing.T) {
 				},
 			},
 			[]*wire.TxOut{
-				{Value: stolenAmount, PkScript: alicePkScript},
-				{Value: -stolenAmount, PkScript: alicePkScript},
+				{Value: amount, PkScript: alicePkScript},
+				{Value: -amount, PkScript: alicePkScript},
 			},
 		)
 		require.NoError(t, err)
