@@ -19,6 +19,7 @@ type Config struct {
 	TLSExtraIPs          []string
 	TLSExtraDomains      []string
 	HeartbeatInterval    int64
+	StreamMaxLifetime    int64
 	EnablePprof          bool
 	EnableChannelz       bool
 	MaxConcurrentStreams uint32

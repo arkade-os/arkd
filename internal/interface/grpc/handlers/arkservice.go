@@ -24,6 +24,11 @@ type service interface {
 type handler struct {
 	version   string
 	heartbeat time.Duration
+	// maxStreamLifetime bounds how long a single server-streaming RPC
+	// (GetEventStream / GetTransactionsStream) may stay open. Abandoned
+	// streams whose client disconnect is never observed are reaped after this
+	// duration; live clients reconnect transparently. Zero disables the bound.
+	maxStreamLifetime time.Duration
 
 	svc application.Service
 
@@ -31,10 +36,13 @@ type handler struct {
 	transactionsListenerHandler *broker[*arkv1.GetTransactionsStreamResponse]
 }
 
-func NewAppServiceHandler(version string, service application.Service, heartbeat int64) service {
+func NewAppServiceHandler(
+	version string, service application.Service, heartbeat int64, maxStreamLifetime int64,
+) service {
 	h := &handler{
 		version:                     version,
 		heartbeat:                   time.Duration(heartbeat) * time.Second,
+		maxStreamLifetime:           time.Duration(maxStreamLifetime) * time.Second,
 		svc:                         service,
 		eventsListenerHandler:       newBroker[*arkv1.GetEventStreamResponse](),
 		transactionsListenerHandler: newBroker[*arkv1.GetTransactionsStreamResponse](),
@@ -226,6 +234,19 @@ func (h *handler) SubmitSignedForfeitTxs(
 	return &arkv1.SubmitSignedForfeitTxsResponse{}, nil
 }
 
+// streamContext derives a child of the stream's context bounded by an absolute
+// max lifetime. When maxLifetime <= 0 the bound is disabled and only the
+// stream's own cancellation applies. The returned cancel func must always be
+// called to release resources.
+func streamContext(
+	parent context.Context, maxLifetime time.Duration,
+) (context.Context, context.CancelFunc) {
+	if maxLifetime <= 0 {
+		return context.WithCancel(parent)
+	}
+	return context.WithTimeout(parent, maxLifetime)
+}
+
 func (h *handler) GetEventStream(
 	req *arkv1.GetEventStreamRequest, stream arkv1.ArkService_GetEventStreamServer,
 ) error {
@@ -247,6 +268,12 @@ func (h *handler) GetEventStream(
 		return err
 	}
 
+	// Bound the stream lifetime so abandoned subscriptions are reaped even if
+	// the client disconnect is never observed (e.g. masked by an upstream
+	// proxy). On expiry we return nil: the client sees io.EOF and reconnects.
+	ctx, cancel := streamContext(stream.Context(), h.maxStreamLifetime)
+	defer cancel()
+
 	// create a Timer that will fire after one heartbeat interval
 	timer := time.NewTimer(h.heartbeat)
 	defer timer.Stop()
@@ -265,7 +292,7 @@ func (h *handler) GetEventStream(
 
 	for {
 		select {
-		case <-stream.Context().Done():
+		case <-ctx.Done():
 			return nil
 		case <-listener.done:
 			return nil
@@ -437,6 +464,12 @@ func (h *handler) GetTransactionsStream(
 		h.transactionsListenerHandler.removeListener(listener.id)
 	}()
 
+	// Bound the stream lifetime so abandoned subscriptions are reaped even if
+	// the client disconnect is never observed (e.g. masked by an upstream
+	// proxy). On expiry we return nil: the client sees io.EOF and reconnects.
+	ctx, cancel := streamContext(stream.Context(), h.maxStreamLifetime)
+	defer cancel()
+
 	// create a Timer that will fire after one heartbeat interval
 	timer := time.NewTimer(h.heartbeat)
 	defer timer.Stop()
@@ -455,7 +488,7 @@ func (h *handler) GetTransactionsStream(
 
 	for {
 		select {
-		case <-stream.Context().Done():
+		case <-ctx.Done():
 			return nil
 		case <-listener.done:
 			return nil

@@ -103,6 +103,7 @@ type Config struct {
 	BoardingExitDelay          arklib.RelativeLocktime
 	NoteUriPrefix              string
 	HeartbeatInterval          int64
+	StreamMaxLifetime          int64
 	BuildVersionHeaderRequired bool
 	BuildVersionHeader         string
 	DigestHeaderRequired       bool
@@ -230,6 +231,7 @@ var (
 	UtxoMinAmount             = "UTXO_MIN_AMOUNT"
 	VtxoMinAmount             = "VTXO_MIN_AMOUNT"
 	HeartbeatInterval         = "HEARTBEAT_INTERVAL"
+	StreamMaxLifetime         = "STREAM_MAX_LIFETIME"
 	SettlementMinExpiryGap    = "SETTLEMENT_MIN_EXPIRY_GAP"
 	// Minimum remaining CSV time (in seconds) for an unrolled VTXO to be accepted into a batch.
 	// 0 means fallback to session duration.
@@ -290,10 +292,11 @@ var (
 
 	defaultRoundMaxParticipantsCount     = 128
 	defaultRoundMinParticipantsCount     = 1
-	defaultOtelPushInterval              = 10  // seconds
-	defaultHeartbeatInterval             = 60  // seconds
-	defaultSettlementMinExpiryGap        = 0   // disabled by default
-	defaultUnrolledVtxoMinExpiryMargin   = 300 // 5 minutes in seconds
+	defaultOtelPushInterval              = 10   // seconds
+	defaultHeartbeatInterval             = 60   // seconds
+	defaultStreamMaxLifetime             = 1800 // 30 minutes in seconds
+	defaultSettlementMinExpiryGap        = 0    // disabled by default
+	defaultUnrolledVtxoMinExpiryMargin   = 300  // 5 minutes in seconds
 	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
 	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
@@ -346,6 +349,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(RedisTxNumOfRetries, defaultRedisTxNumOfRetries)
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
+	viper.SetDefault(StreamMaxLifetime, defaultStreamMaxLifetime)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(UnrolledVtxoMinExpiryMargin, defaultUnrolledVtxoMinExpiryMargin)
 	viper.SetDefault(MaxTxWeight, defaultMaxTxWeight)
@@ -491,6 +495,7 @@ func LoadConfig() (*Config, error) {
 		OtelPushInterval:          viper.GetInt64(OtelPushInterval),
 		PyroscopeServerURL:        viper.GetString(PyroscopeServerURL),
 		HeartbeatInterval:         viper.GetInt64(HeartbeatInterval),
+		StreamMaxLifetime:         viper.GetInt64(StreamMaxLifetime),
 
 		RoundMaxParticipantsCount:     viper.GetUint64(RoundMaxParticipantsCount),
 		RoundMinParticipantsCount:     viper.GetUint64(RoundMinParticipantsCount),

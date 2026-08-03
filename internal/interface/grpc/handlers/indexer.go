@@ -33,11 +33,16 @@ type indexerService struct {
 	subscriptionTimeoutDuration time.Duration
 
 	heartbeat time.Duration
+	// maxStreamLifetime bounds how long a single GetSubscription stream may
+	// stay open. Abandoned subscriptions (client vanished behind a proxy that
+	// masks the disconnect) are reaped after this duration; live clients
+	// reconnect transparently. Zero disables the bound.
+	maxStreamLifetime time.Duration
 }
 
 func NewIndexerService(
 	indexerSvc application.IndexerService, eventsCh <-chan application.TransactionEvent,
-	subscriptionTimeoutDuration time.Duration, heartbeat int64,
+	subscriptionTimeoutDuration time.Duration, heartbeat int64, maxStreamLifetime int64,
 ) arkv1.IndexerServiceServer {
 	svc := &indexerService{
 		indexerSvc:                  indexerSvc,
@@ -45,6 +50,7 @@ func NewIndexerService(
 		scriptSubsHandler:           newBroker[*arkv1.GetSubscriptionResponse](),
 		subscriptionTimeoutDuration: subscriptionTimeoutDuration,
 		heartbeat:                   time.Duration(heartbeat) * time.Second,
+		maxStreamLifetime:           time.Duration(maxStreamLifetime) * time.Second,
 	}
 
 	go svc.listenToTxEvents()
@@ -491,6 +497,12 @@ func (h *indexerService) GetSubscription(
 		}
 	}
 
+	// Bound the stream lifetime so abandoned subscriptions are reaped even if
+	// the client disconnect is never observed (e.g. masked by an upstream
+	// proxy). On expiry we return nil: the client sees io.EOF and reconnects.
+	ctx, cancel := streamContext(stream.Context(), h.maxStreamLifetime)
+	defer cancel()
+
 	// create a Timer that will fire after one heartbeat interval
 	timer := time.NewTimer(h.heartbeat)
 	defer timer.Stop()
@@ -517,7 +529,7 @@ func (h *indexerService) GetSubscription(
 		// pending, it returns immediately without draining listener.ch,
 		// leaving buffered events for the successor.
 		select {
-		case <-stream.Context().Done():
+		case <-ctx.Done():
 			return nil
 		case <-listener.done:
 			return nil

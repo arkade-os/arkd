@@ -1832,6 +1832,76 @@ func TestSubscribeForScripts(t *testing.T) {
 	})
 }
 
+// TestGetSubscriptionMaxLifetime asserts that a streaming subscription is
+// proactively closed once maxStreamLifetime elapses, even when the client
+// never disconnects (its context stays live). This reaps abandoned streams
+// that would otherwise pile up on the gateway loopback sockets; the client
+// SDK reconnects transparently on the resulting io.EOF.
+func TestGetSubscriptionMaxLifetime(t *testing.T) {
+	svc := newTestIndexerService(t)
+	svc.maxStreamLifetime = 150 * time.Millisecond
+
+	// A context that never cancels on its own: only the max-lifetime bound
+	// should end the stream.
+	stream := newMockGetSubscriptionServer(context.Background())
+
+	errCh := make(chan error, 1)
+	start := time.Now()
+	go func() {
+		errCh <- svc.GetSubscription(&arkv1.GetSubscriptionRequest{}, stream)
+	}()
+
+	// Drain the initial SubscriptionStarted event.
+	require.NotNil(t, stream.recv(t, time.Second).GetSubscriptionStarted())
+
+	select {
+	case err := <-errCh:
+		require.NoError(t, err, "handler must close gracefully (nil) so the client reconnects")
+		require.GreaterOrEqual(t, time.Since(start), 150*time.Millisecond,
+			"stream must live at least its max lifetime")
+	case <-time.After(2 * time.Second):
+		t.Fatal("GetSubscription did not return after max stream lifetime elapsed")
+	}
+}
+
+// TestStreamContext locks the contract of the streamContext helper shared by
+// all three streaming handlers: zero disables the bound (cancel tracks the
+// parent only), a positive value imposes an absolute deadline.
+func TestStreamContext(t *testing.T) {
+	t.Run("disabled when zero", func(t *testing.T) {
+		parent, cancelParent := context.WithCancel(context.Background())
+		defer cancelParent()
+
+		ctx, cancel := streamContext(parent, 0)
+		defer cancel()
+
+		_, hasDeadline := ctx.Deadline()
+		require.False(t, hasDeadline, "no bound expected when maxLifetime is zero")
+
+		cancelParent()
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Second):
+			t.Fatal("ctx must cancel together with its parent")
+		}
+	})
+
+	t.Run("bounded when positive", func(t *testing.T) {
+		ctx, cancel := streamContext(context.Background(), 100*time.Millisecond)
+		defer cancel()
+
+		_, hasDeadline := ctx.Deadline()
+		require.True(t, hasDeadline, "deadline expected when maxLifetime is positive")
+
+		select {
+		case <-ctx.Done():
+			require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+		case <-time.After(time.Second):
+			t.Fatal("ctx must expire after its max lifetime")
+		}
+	})
+}
+
 // requireSubscriptionNotFound asserts err is the structured
 // SUBSCRIPTION_NOT_FOUND error: it exposes the NotFound gRPC code and the
 // SUBSCRIPTION_NOT_FOUND structured code, and preserves the legacy
