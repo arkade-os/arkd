@@ -1,5 +1,8 @@
-# First stage: build the ark-wallet binary
-FROM golang:1.26.5 AS builder
+# First stage: build the ark-wallet binary.
+# Pinned to BUILDPLATFORM so the Go toolchain runs natively on the builder and cross-compiles to
+# TARGETOS/TARGETARCH below. Without this the whole stage runs under QEMU emulation when the target
+# architecture differs from the builder, which is far slower for compilation.
+FROM --platform=$BUILDPLATFORM golang:1.26.5 AS builder
 
 ARG VERSION
 ARG TARGETOS

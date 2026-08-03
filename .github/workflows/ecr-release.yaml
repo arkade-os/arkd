@@ -94,8 +94,6 @@ jobs:
             ${{ steps.ecr-prod.outputs.registry }}/arkd-prod:${{ steps.meta.outputs.sha }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
-          cache-from: type=gha,scope=arkd
-          cache-to: type=gha,mode=max,scope=arkd
 
       - name: Build and push arkd-wallet image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -112,8 +110,6 @@ jobs:
             ${{ steps.ecr-prod.outputs.registry }}/arkd-wallet-prod:${{ steps.meta.outputs.sha }}
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
-          cache-from: type=gha,scope=arkd-wallet
-          cache-to: type=gha,mode=max,scope=arkd-wallet
 
       - name: Summary
         run: |

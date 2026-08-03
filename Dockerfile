@@ -1,5 +1,8 @@
-# First image used to build the sources
-FROM golang:1.26.5 AS builder
+# First image used to build the sources.
+# Pinned to BUILDPLATFORM so the Go toolchain runs natively on the builder and cross-compiles to
+# TARGETOS/TARGETARCH below. Without this the whole stage runs under QEMU emulation when the target
+# architecture differs from the builder, which is far slower for compilation.
+FROM --platform=$BUILDPLATFORM golang:1.26.5 AS builder
 
 ARG VERSION
 ARG TARGETOS
