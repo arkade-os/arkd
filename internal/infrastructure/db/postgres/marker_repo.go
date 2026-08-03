@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
@@ -53,6 +54,7 @@ func (m *markerRepository) AddMarker(ctx context.Context, marker domain.Marker) 
 			RawMessage: parentMarkersJSON,
 			Valid:      true,
 		},
+		CreatedAt: marker.CreatedAt,
 	})
 }
 
@@ -241,6 +243,7 @@ func (m *markerRepository) CreateRootMarkersForVtxos(
 					RawMessage: []byte("[]"),
 					Valid:      true,
 				},
+				CreatedAt: time.Now().Unix(),
 			}); err != nil {
 				return fmt.Errorf("failed to create marker for vtxo %s: %w", markerID, err)
 			}
@@ -346,6 +349,7 @@ func rowToMarker(row queries.Marker) (domain.Marker, error) {
 		ID:              row.ID,
 		Depth:           uint32(row.Depth),
 		ParentMarkerIDs: parentMarkerIDs,
+		CreatedAt:       row.CreatedAt,
 	}, nil
 }
 

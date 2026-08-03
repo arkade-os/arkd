@@ -592,6 +592,12 @@ func (s *service) SubmitOffchainTx(
 			WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo})
 	}
 
+	// last of the input checks: it hits the marker store, the ones above are
+	// in-memory or already cached.
+	if rateLimitErr := s.checkRateLimit(ctx, spentVtxos); rateLimitErr != nil {
+		return nil, rateLimitErr
+	}
+
 	indexedSpentVtxos := make(map[domain.Outpoint]domain.Vtxo)
 	commitmentTxsByCheckpointTxid := make(map[string]string)
 	expiration := int64(math.MaxInt64)
@@ -2214,6 +2220,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 	network := settings.Network.Name
 	maxTxWeight := settings.MaxTxWeight
 	maxOpReturnOutputs := settings.MaxOpReturnOutputs
+	rateLimitEnabled := settings.RateLimitEnabled
 	signerPubkey := hex.EncodeToString(settings.SignerPubkey.SerializeCompressed())
 	forfeitPubkey := hex.EncodeToString(settings.ForfeitPubkey.SerializeCompressed())
 	forfeitAddress := settings.ForfeitAddress
@@ -2263,6 +2270,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		CheckpointTapscript:  checkpointTapscript,
 		MaxTxWeight:          int64(maxTxWeight),
 		MaxOpReturnOutputs:   int64(maxOpReturnOutputs),
+		RateLimitEnabled:     rateLimitEnabled,
 		Fees: FeeInfo{
 			IntentFees: batchFees,
 		},

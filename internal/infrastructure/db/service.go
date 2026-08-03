@@ -726,6 +726,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 						ID:              dustMarkerID,
 						Depth:           newDepth,
 						ParentMarkerIDs: markerIDs,
+						CreatedAt:       time.Now().Unix(),
 					}); err != nil {
 						// Sub-dust vtxos can't be spent offchain (OP_RETURN outputs):
 						// they can only be collected until they sum to a non-sub-dust

@@ -419,8 +419,11 @@ WHERE txid = @txid;
 -- Marker queries
 
 -- name: UpsertMarker :exec
-INSERT INTO marker (id, depth, parent_markers)
-VALUES (@id, @depth, @parent_markers)
+-- created_at is deliberately left out of the update. It stamps when the marker
+-- first appeared, and the rate limiter measures elapsed time from it, so a
+-- replayed upsert must not reset the clock.
+INSERT INTO marker (id, depth, parent_markers, created_at)
+VALUES (@id, @depth, @parent_markers, @created_at)
 ON CONFLICT(id) DO UPDATE SET
     depth = EXCLUDED.depth,
     parent_markers = EXCLUDED.parent_markers;
@@ -537,6 +540,7 @@ INSERT INTO settings (
     batch_onchain_output_fee, batch_offchain_output_fee,
     build_version_header, build_version_header_required, digest_header_required,
     batch_trigger,
+    rate_limit_enabled, rate_limit_max_velocity, rate_limit_max_cooldown_secs,
     updated_at
 ) VALUES (
     1,
@@ -557,6 +561,7 @@ INSERT INTO settings (
     @batch_onchain_output_fee, @batch_offchain_output_fee,
     @build_version_header, @build_version_header_required, @digest_header_required,
     @batch_trigger,
+    @rate_limit_enabled, @rate_limit_max_velocity, @rate_limit_max_cooldown_secs,
     @updated_at
 )
 ON CONFLICT(id) DO UPDATE SET
@@ -597,6 +602,9 @@ ON CONFLICT(id) DO UPDATE SET
     build_version_header_required = EXCLUDED.build_version_header_required,
     digest_header_required = EXCLUDED.digest_header_required,
     batch_trigger = EXCLUDED.batch_trigger,
+    rate_limit_enabled = EXCLUDED.rate_limit_enabled,
+    rate_limit_max_velocity = EXCLUDED.rate_limit_max_velocity,
+    rate_limit_max_cooldown_secs = EXCLUDED.rate_limit_max_cooldown_secs,
     updated_at = EXCLUDED.updated_at;
 
 -- name: SelectSettings :one

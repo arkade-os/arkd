@@ -812,11 +812,10 @@ func (i *indexerService) preloadByMarkers(
 	// Seed the traversal with the markers of the start VTXOs, caching the
 	// VTXOs themselves along the way. markerIds accumulates every marker
 	// discovered during the traversal below.
-	markerIds := make([]string, 0)
 	for _, v := range startVtxos {
 		vtxoCache[v.Outpoint.String()] = v
-		markerIds = append(markerIds, v.MarkerIDs...)
 	}
+	markerIds := domain.MarkerIDsOf(startVtxos)
 
 	// Legacy VTXOs may carry no markers, leaving nothing to walk or bulk-fetch.
 	if len(markerIds) == 0 {

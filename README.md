@@ -105,6 +105,9 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_INDEXER_SIGNING_PRIVKEY`     | Hex-encoded private key for indexer auth token signing (sensitive)              | -                              |
 | `ARKD_INDEXER_AUTH_TOKEN_EXPIRY`   | Auth token TTL in seconds                                                       | `300` (5 minutes)              |
 | `ARKD_BATCH_TRIGGER`               | Optional CEL formula returning `bool`. When set, the server only starts a new batch round when the formula evaluates to `true`. See [`pkg/ark-lib/batchtrigger/README.md`](pkg/ark-lib/batchtrigger/README.md) for the available variables and examples. | - (always start)               |
+| `ARKD_RATE_LIMIT_ENABLED`          | Enable the velocity rate limiter, which rejects offchain txs that grow a VTXO chain faster than the configured velocity | `false`                        |
+| `ARKD_RATE_LIMIT_MAX_VELOCITY`     | Max VTXO chain growth, in depths per second, before an input is rate limited (must be `> 0` when enabled). The default of `0.28` is roughly 1000 txs per hour per chain | `0.28`                         |
+| `ARKD_RATE_LIMIT_MAX_COOLDOWN_SECS`| Cap (in seconds) on the cooldown suggested to rate-limited clients (must be `> 0` when enabled). This clamps the reported value only, so a client that waits a clamped cooldown may still be rejected | `3600`                         |
 
 #### Admin Settings
 

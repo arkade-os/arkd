@@ -509,3 +509,20 @@ var INVALID_TX_FILTER = Code[TxFilterMetadata]{
 	"INVALID_TX_FILTER",
 	grpccodes.InvalidArgument,
 }
+
+type RateLimitMetadata struct {
+	CooldownSecs string `json:"cooldown_secs"`
+	Inputs       string `json:"inputs"`
+}
+
+type InputRateLimitInfoMeta struct {
+	Depth        int   `json:"depth"`
+	MarkerDepth  int   `json:"marker_depth"`
+	CooldownSecs int64 `json:"cooldown_secs"`
+}
+
+var RATE_LIMITED = Code[RateLimitMetadata]{
+	53,
+	"RATE_LIMITED",
+	grpccodes.ResourceExhausted,
+}

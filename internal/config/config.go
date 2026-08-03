@@ -150,6 +150,12 @@ type Config struct {
 	// empty, every session starts a round (legacy behaviour).
 	BatchTrigger string
 
+	// RateLimit* configure the velocity rate limiter, which rejects offchain
+	// txs that grow a VTXO chain faster than RateLimitMaxVelocity depths/second.
+	RateLimitEnabled         bool
+	RateLimitMaxVelocity     float64
+	RateLimitMaxCooldownSecs int64
+
 	fee       ports.FeeManager
 	repo      ports.RepoManager
 	svc       application.Service
@@ -263,6 +269,11 @@ var (
 	// X-Digest header should be rejected
 	DigestHeaderRequired = "DIGEST_HEADER_REQUIRED"
 
+	// RateLimit* configure the velocity rate limiter.
+	RateLimitEnabled         = "RATE_LIMIT_ENABLED"
+	RateLimitMaxVelocity     = "RATE_LIMIT_MAX_VELOCITY"
+	RateLimitMaxCooldownSecs = "RATE_LIMIT_MAX_COOLDOWN_SECS"
+
 	defaultDatadir             = arklib.AppDataDir("arkd", false)
 	defaultSessionDuration     = 30
 	defaultBanDuration         = 10 * defaultSessionDuration
@@ -307,6 +318,9 @@ var (
 	defaultMaxOpReturnOuts               = uint32(3)
 	defaultBuildVersionHeaderRequired    = false
 	defaultDigestHeaderRequired          = false
+	defaultRateLimitEnabled              = false
+	defaultRateLimitMaxVelocity          = 0.28
+	defaultRateLimitMaxCooldownSecs      = int64(3600)
 )
 
 func LoadConfig() (*Config, error) {
@@ -360,6 +374,9 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(MaxOpReturnOutputs, defaultMaxOpReturnOuts)
 	viper.SetDefault(MinBuildVersionHeaderRequired, defaultBuildVersionHeaderRequired)
 	viper.SetDefault(DigestHeaderRequired, defaultDigestHeaderRequired)
+	viper.SetDefault(RateLimitEnabled, defaultRateLimitEnabled)
+	viper.SetDefault(RateLimitMaxVelocity, defaultRateLimitMaxVelocity)
+	viper.SetDefault(RateLimitMaxCooldownSecs, defaultRateLimitMaxCooldownSecs)
 
 	if err := initDatadir(); err != nil {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
@@ -519,6 +536,9 @@ func LoadConfig() (*Config, error) {
 		BuildVersionHeaderRequired: viper.GetBool(MinBuildVersionHeaderRequired),
 		BuildVersionHeader:         viper.GetString(MinBuildVersionHeader),
 		DigestHeaderRequired:       viper.GetBool(DigestHeaderRequired),
+		RateLimitEnabled:           viper.GetBool(RateLimitEnabled),
+		RateLimitMaxVelocity:       viper.GetFloat64(RateLimitMaxVelocity),
+		RateLimitMaxCooldownSecs:   viper.GetInt64(RateLimitMaxCooldownSecs),
 	}, nil
 }
 
@@ -981,6 +1001,7 @@ func (c *Config) getSettings() (*domain.Settings, error) {
 		c.MaxTxWeight, c.MaxOpReturnOutputs, c.AssetTxMaxWeightRatio, c.NoteUriPrefix,
 		c.BuildVersionHeader, c.BuildVersionHeaderRequired, c.DigestHeaderRequired,
 		c.BatchTrigger,
+		c.RateLimitEnabled, c.RateLimitMaxVelocity, c.RateLimitMaxCooldownSecs,
 	)
 	if err != nil {
 		return nil, err
