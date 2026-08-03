@@ -26,6 +26,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/errors"
+	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -448,6 +449,32 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.INVALID_ARK_PSBT.New("failed to parse tx: %w", err).
 			WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 	}
+
+	if err := blockchain.CheckTransactionSanity(btcutil.NewTx(arkPtx.UnsignedTx)); err != nil {
+		return nil, errors.INVALID_ARK_PSBT.Wrap(err)
+	}
+
+	sumOfInputs := int64(0)
+	for i, input := range arkPtx.Inputs {
+		if input.WitnessUtxo == nil {
+			return nil, errors.INVALID_ARK_PSBT.New("missing witness utxo for input %d", i)
+		}
+		sumOfInputs += int64(input.WitnessUtxo.Value)
+	}
+
+	sumOfOutputs := int64(0)
+	for _, output := range arkPtx.UnsignedTx.TxOut {
+		sumOfOutputs += int64(output.Value)
+	}
+
+	if sumOfInputs != sumOfOutputs {
+		return nil, errors.INVALID_ARK_PSBT.New(
+			"sum(inputs) != sum(outputs) (%d != %d)",
+			sumOfInputs,
+			sumOfOutputs,
+		)
+	}
+
 	txid := arkPtx.UnsignedTx.TxID()
 
 	settings, err := s.cache.Settings().Get(ctx)
@@ -481,6 +508,12 @@ func (s *service) SubmitOffchainTx(
 		if err != nil {
 			return nil, errors.INVALID_CHECKPOINT_PSBT.New("failed to parse tx: %w", err).
 				WithMetadata(errors.PsbtMetadata{Tx: tx})
+		}
+
+		if err := blockchain.CheckTransactionSanity(
+			btcutil.NewTx(checkpointPtx.UnsignedTx),
+		); err != nil {
+			return nil, errors.INVALID_CHECKPOINT_PSBT.Wrap(err)
 		}
 
 		txid := checkpointPtx.UnsignedTx.TxID()
@@ -1162,6 +1195,19 @@ func (s *service) SubmitOffchainTx(
 func (s *service) FinalizeOffchainTx(
 	ctx context.Context, txid string, finalCheckpointTxs []string,
 ) (structErr errors.Error) {
+	for _, b64 := range finalCheckpointTxs {
+		checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
+		if err != nil {
+			return errors.INVALID_CHECKPOINT_PSBT.New("malformed checkpoint psbt")
+		}
+
+		if err := blockchain.CheckTransactionSanity(
+			btcutil.NewTx(checkpointPtx.UnsignedTx),
+		); err != nil {
+			return errors.INVALID_CHECKPOINT_PSBT.Wrap(err)
+		}
+	}
+
 	var changes []domain.Event
 
 	offchainTx, err := s.cache.OffchainTxs().Get(ctx, txid)
@@ -1505,6 +1551,35 @@ func (s *service) RegisterIntent(
 	assetInputs := make(map[int][]domain.AssetDenomination)
 	// the boarding utxos to add in the commitment tx
 	boardingUtxos := make([]boardingIntentInput, 0)
+
+	if err := blockchain.CheckTransactionSanity(btcutil.NewTx(proof.UnsignedTx)); err != nil {
+		return "", errors.INVALID_INTENT_PROOF.Wrap(err)
+	}
+
+	if proof.Inputs[0].WitnessUtxo.Value != 0 {
+		return "", errors.INVALID_INTENT_PROOF.New("value of BIP322 proof input 0 must be zero")
+	}
+
+	sumOfInputs := int64(0)
+	for i, input := range proof.Inputs {
+		if input.WitnessUtxo == nil {
+			return "", errors.INVALID_INTENT_PROOF.New("missing witness utxo for input %d", i)
+		}
+		sumOfInputs += int64(input.WitnessUtxo.Value)
+	}
+
+	sumOfOutputs := int64(0)
+	for _, output := range proof.UnsignedTx.TxOut {
+		sumOfOutputs += int64(output.Value)
+	}
+
+	if sumOfOutputs > sumOfInputs {
+		return "", errors.INVALID_INTENT_PROOF.New(
+			"sum(outputs) greater than sum(inputs) (%d > %d)",
+			sumOfOutputs,
+			sumOfInputs,
+		)
+	}
 
 	outpoints := proof.GetOutpoints()
 	if len(outpoints) == 0 {
@@ -2122,6 +2197,19 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 		return nil
 	}
 
+	for _, b64 := range forfeitTxs {
+		forfeitPtx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
+		if err != nil {
+			return errors.INVALID_FORFEIT_TXS.New("malformed forfeit psbt")
+		}
+
+		if err := blockchain.CheckTransactionSanity(
+			btcutil.NewTx(forfeitPtx.UnsignedTx),
+		); err != nil {
+			return errors.INVALID_FORFEIT_TXS.Wrap(err)
+		}
+	}
+
 	round, err := s.cache.CurrentRound().Get(ctx)
 	if err != nil {
 		log.WithError(err).Error("failed to get current round from cache")
@@ -2274,6 +2362,10 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 func (s *service) DeleteIntentsByProof(
 	ctx context.Context, proof intent.Proof, message intent.DeleteMessage,
 ) errors.Error {
+	if err := blockchain.CheckTransactionSanity(btcutil.NewTx(proof.UnsignedTx)); err != nil {
+		return errors.INVALID_INTENT_PROOF.Wrap(err)
+	}
+
 	matches, err := s.verifyIntentProofAndFindMatches(ctx, proof, message)
 	if err != nil {
 		return err
@@ -2328,6 +2420,10 @@ func (s *service) RegisterCosignerSignatures(
 func (s *service) EstimateIntentFee(
 	ctx context.Context, proof intent.Proof, message intent.EstimateIntentFeeMessage,
 ) (int64, errors.Error) {
+	if err := blockchain.CheckTransactionSanity(btcutil.NewTx(proof.UnsignedTx)); err != nil {
+		return 0, errors.INVALID_INTENT_PROOF.Wrap(err)
+	}
+
 	now := time.Now()
 
 	if message.ValidAt > 0 {
@@ -4330,6 +4426,10 @@ func (s *service) GetIntentByTxid(
 func (s *service) GetIntentByProofs(
 	ctx context.Context, proof intent.Proof, message intent.GetIntentMessage,
 ) ([]*domain.Intent, errors.Error) {
+	if err := blockchain.CheckTransactionSanity(btcutil.NewTx(proof.UnsignedTx)); err != nil {
+		return nil, errors.INVALID_INTENT_PROOF.Wrap(err)
+	}
+
 	matches, err := s.verifyIntentProofAndFindMatches(ctx, proof, message)
 	if err != nil {
 		return nil, err

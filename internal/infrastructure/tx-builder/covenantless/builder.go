@@ -13,6 +13,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -1058,6 +1059,10 @@ func (b *txBuilder) VerifyBoardingTapscriptSigs(
 ) (map[uint32]ports.SignedBoardingInput, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(txToVerify), true)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := blockchain.CheckTransactionSanity(btcutil.NewTx(ptx.UnsignedTx)); err != nil {
 		return nil, err
 	}
 
