@@ -1556,6 +1556,10 @@ func (s *service) RegisterIntent(
 		return "", errors.INVALID_INTENT_PROOF.Wrap(err)
 	}
 
+	if proof.Inputs[0].WitnessUtxo.Value != 0 {
+		return "", errors.INVALID_INTENT_PROOF.New("value of BIP322 proof input 0 must be zero")
+	}
+
 	sumOfInputs := int64(0)
 	for i, input := range proof.Inputs {
 		if input.WitnessUtxo == nil {
