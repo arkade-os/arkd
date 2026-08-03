@@ -4289,6 +4289,217 @@ func TestIntent(t *testing.T) {
 		require.ErrorContains(t, err, "transaction output has negative value")
 		require.Empty(t, intentId)
 	})
+
+	t.Run("non-zero BIP322 input", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
+
+		vtxo := faucetOffchain(t, alice, 0.001)
+
+		_, offchainAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddr)
+
+		arkAddr, err := arklib.DecodeAddressV0(offchainAddr.Address)
+		require.NoError(t, err)
+
+		alicePkScript, err := arkAddr.GetPkScript()
+		require.NoError(t, err)
+
+		vtxoScript, err := script.ParseVtxoScript(offchainAddr.Tapscripts)
+		require.NoError(t, err)
+
+		forfeitClosures := vtxoScript.ForfeitClosures()
+		require.Len(t, forfeitClosures, 1)
+
+		forfeitScript, err := forfeitClosures[0].Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(forfeitScript).TapHash(),
+		)
+		require.NoError(t, err)
+
+		cosignerKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+
+		intentMessage := intent.RegisterMessage{
+			BaseMessage: intent.BaseMessage{
+				Type: intent.IntentMessageTypeRegister,
+			},
+			CosignersPublicKeys: []string{
+				hex.EncodeToString(cosignerKey.PubKey().SerializeCompressed()),
+			},
+		}
+
+		encodedIntentMessage, err := intentMessage.Encode()
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		intentProof, err := intent.New(
+			encodedIntentMessage,
+			[]intent.Input{
+				{
+					OutPoint: &wire.OutPoint{
+						Hash:  *vtxoHash,
+						Index: vtxo.VOut,
+					},
+					Sequence: wire.MaxTxInSequenceNum,
+					WitnessUtxo: &wire.TxOut{
+						Value:    int64(vtxo.Amount),
+						PkScript: alicePkScript,
+					},
+				},
+			},
+			[]*wire.TxOut{
+				{Value: int64(vtxo.Amount), PkScript: alicePkScript},
+			},
+		)
+		require.NoError(t, err)
+
+		// modify proof to set non-zero value for BIP322 input
+		intentProof.Inputs[0].WitnessUtxo.Value = 100_000_000
+
+		tapLeafScript := &psbt.TaprootTapLeafScript{
+			ControlBlock: merkleProof.ControlBlock,
+			Script:       merkleProof.Script,
+			LeafVersion:  txscript.BaseLeafVersion,
+		}
+		intentProof.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
+		intentProof.Inputs[1].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
+
+		err = txutils.SetArkPsbtField(
+			&intentProof.Packet, 1, txutils.VtxoTaprootTreeField,
+			txutils.TapTree(offchainAddr.Tapscripts),
+		)
+		require.NoError(t, err)
+
+		unsignedIntentProof, err := intentProof.B64Encode()
+		require.NoError(t, err)
+
+		encodedIntentProof, err := alice.SignTransaction(ctx, unsignedIntentProof)
+		require.NoError(t, err)
+
+		intentId, err := aliceClient.RegisterIntent(ctx, encodedIntentProof, encodedIntentMessage)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "value of BIP322 proof input 0 must be zero")
+		require.Empty(t, intentId)
+	})
+
+	t.Run("nil BIP322 input witness UTXO", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
+
+		vtxo := faucetOffchain(t, alice, 0.001)
+
+		_, offchainAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddr)
+
+		arkAddr, err := arklib.DecodeAddressV0(offchainAddr.Address)
+		require.NoError(t, err)
+
+		alicePkScript, err := arkAddr.GetPkScript()
+		require.NoError(t, err)
+
+		vtxoScript, err := script.ParseVtxoScript(offchainAddr.Tapscripts)
+		require.NoError(t, err)
+
+		forfeitClosures := vtxoScript.ForfeitClosures()
+		require.Len(t, forfeitClosures, 1)
+
+		forfeitScript, err := forfeitClosures[0].Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(forfeitScript).TapHash(),
+		)
+		require.NoError(t, err)
+
+		cosignerKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+
+		intentMessage := intent.RegisterMessage{
+			BaseMessage: intent.BaseMessage{
+				Type: intent.IntentMessageTypeRegister,
+			},
+			CosignersPublicKeys: []string{
+				hex.EncodeToString(cosignerKey.PubKey().SerializeCompressed()),
+			},
+		}
+
+		encodedIntentMessage, err := intentMessage.Encode()
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		intentProof, err := intent.New(
+			encodedIntentMessage,
+			[]intent.Input{
+				{
+					OutPoint: &wire.OutPoint{
+						Hash:  *vtxoHash,
+						Index: vtxo.VOut,
+					},
+					Sequence: wire.MaxTxInSequenceNum,
+					WitnessUtxo: &wire.TxOut{
+						Value:    int64(vtxo.Amount),
+						PkScript: alicePkScript,
+					},
+				},
+			},
+			[]*wire.TxOut{
+				{Value: int64(vtxo.Amount), PkScript: alicePkScript},
+			},
+		)
+		require.NoError(t, err)
+
+		tapLeafScript := &psbt.TaprootTapLeafScript{
+			ControlBlock: merkleProof.ControlBlock,
+			Script:       merkleProof.Script,
+			LeafVersion:  txscript.BaseLeafVersion,
+		}
+		intentProof.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
+		intentProof.Inputs[1].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
+
+		err = txutils.SetArkPsbtField(
+			&intentProof.Packet, 1, txutils.VtxoTaprootTreeField,
+			txutils.TapTree(offchainAddr.Tapscripts),
+		)
+		require.NoError(t, err)
+
+		unsignedIntentProof, err := intentProof.B64Encode()
+		require.NoError(t, err)
+
+		encodedIntentProof, err := alice.SignTransaction(ctx, unsignedIntentProof)
+		require.NoError(t, err)
+
+		// strip the BIP322 input's witness UTXO after signing: the client
+		// signer requires input 0's prevout, the server must reject its absence
+		signedProof, err := psbt.NewFromRawBytes(strings.NewReader(encodedIntentProof), true)
+		require.NoError(t, err)
+		signedProof.Inputs[0].WitnessUtxo = nil
+		strippedProof, err := (&intent.Proof{Packet: *signedProof}).B64Encode()
+		require.NoError(t, err)
+
+		intentId, err := aliceClient.RegisterIntent(ctx, strippedProof, encodedIntentMessage)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "missing witness utxo for input 0")
+		require.Empty(t, intentId)
+	})
 }
 
 // TestBan tests all supported ban scenarios
