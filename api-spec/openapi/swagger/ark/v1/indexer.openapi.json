@@ -721,6 +721,75 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "filter.expressions",
+            "in": "query",
+            "description": "CEL expressions evaluated against each indexed tx envelope. The\nindexer combines them with OR.",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "after.timestamp",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "before.timestamp",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "within.startTimestamp",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "within.endTimestamp",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "filter.scripts.add",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter.scripts.remove",
+            "in": "query",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
         ],
         "responses": {
@@ -1180,7 +1249,18 @@
       "GetVirtualTxsRequest": {
         "title": "GetVirtualTxsRequest",
         "type": "object",
+        "description": "GetVirtualTxs resolves txs by id and/or by filter. A pure-txid\nlookup (no filter expression, no time range) preserves the\npre-filter behavior of resolving offchain (ark), checkpoint, and\nround commitment txs in one call. When a `filter` or `time_range`\nis supplied, the response is narrowed to offchain txs only, since\nthe filter predicates (`tx.extension[N]`, etc.) and the\n`starting_timestamp` time range are only defined for offchain txs.",
         "properties": {
+          "after": {
+            "$ref": "#/components/schemas/TimeRangeAfter"
+          },
+          "before": {
+            "$ref": "#/components/schemas/TimeRangeBefore"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/SubscriptionFilter",
+            "description": "Optional filter on tx contents. The expressions field carries CEL\nexpressions evaluated against the tx envelope (see SubscriptionFilter).\nOnly the structured subset of CEL is supported on this unary RPC: a\nflat AND of `has(tx.extension)`, `hasPacket(tx.extension, N)`,\n`tx.extension[N] == 'hex'`, and `tx.extension[N].contains('hex')`\npredicates. `== 'hex'` matches the serialized packet exactly;\n`.contains('hex')` matches when the hex bytes appear anywhere in the\nserialized packet. Both mirror the streaming SubscriptionFilter\nsemantics so the unary and stream RPCs return the same set.\nUnsupported shapes (OR, NOT, !=, size(), non-bool expressions, etc.)\nare rejected with InvalidArgument. The scripts field must be left\nempty; non-empty scripts are also rejected with InvalidArgument.\n\nResult-set cap: when a filter is supplied without a `txids` set,\nthe server applies a safety LIMIT (currently 10000 rows) at the\nSQL layer. Callers using the \"fill the gap\" pattern after a\ndropped stream should pair the filter with a `time_range` bound\nto keep the scan set small and avoid silent truncation. Cursor-\nbased pagination over the filtered set is a planned follow-up.\n\nIn every predicate above N is an extension packet type (0..255),\nlooked up by type rather than by position, so `tx.extension[3]` is\n\"the packet whose type is 3\", not \"the third packet\".\n\nUpgrade window: to answer these predicates without decoding every\nstored tx, the server keeps a `packets` column listing the packet\ntypes each tx carries. On a server booting against a database that\npredates the column, it is filled in by a one-off background\nbackfill, and until that finishes filtered requests may omit older\ntxs that do carry packets. Unfiltered txid lookups are unaffected."
+          },
           "intent": {
             "$ref": "#/components/schemas/IndexerIntent",
             "description": "Intent that directly proves ownership of the transaction inputs.\nIf passed, the txids field is ignored."
@@ -1197,6 +1277,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "within": {
+            "$ref": "#/components/schemas/TimeRangeWithin"
           }
         }
       },
@@ -1774,6 +1857,40 @@
         "properties": {
           "subscriptionId": {
             "type": "string"
+          }
+        }
+      },
+      "TimeRangeAfter": {
+        "title": "TimeRangeAfter",
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TimeRangeBefore": {
+        "title": "TimeRangeBefore",
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TimeRangeWithin": {
+        "title": "TimeRangeWithin",
+        "type": "object",
+        "properties": {
+          "endTimestamp": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "startTimestamp": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

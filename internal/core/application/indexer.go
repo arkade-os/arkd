@@ -82,9 +82,11 @@ type IndexerService interface {
 	) (*VtxoChainResp, error)
 	GetVtxoChainByIntent(ctx context.Context, intent Intent) (*VtxoChainResp, error)
 	GetVirtualTxs(
-		ctx context.Context, authToken string, txids []string, page *Page,
+		ctx context.Context, authToken string, filter domain.OffchainTxFilter, page *Page,
 	) (*VirtualTxsResp, error)
-	GetVirtualTxsByIntent(ctx context.Context, intent Intent, page *Page) (*VirtualTxsResp, error)
+	GetVirtualTxsByIntent(
+		ctx context.Context, intent Intent, filter domain.OffchainTxFilter, page *Page,
+	) (*VirtualTxsResp, error)
 	GetBatchSweepTxs(ctx context.Context, batchOutpoint Outpoint) ([]string, error)
 	GetAsset(ctx context.Context, assetID string) ([]Asset, error)
 	ListTokens(ctx context.Context, token, hash, outpoint, txid string) ([]TokenEntry, error)
@@ -473,7 +475,7 @@ func (i *indexerService) GetVtxoChainByIntent(
 }
 
 func (i *indexerService) GetVirtualTxs(
-	ctx context.Context, authToken string, txids []string, page *Page,
+	ctx context.Context, authToken string, filter domain.OffchainTxFilter, page *Page,
 ) (*VirtualTxsResp, error) {
 	var valid bool
 	switch i.txExposure {
@@ -492,8 +494,14 @@ func (i *indexerService) GetVirtualTxs(
 			if !ok {
 				break
 			}
+			// Defense in depth: an empty WithTxids must not silently bypass
+			// the token's txid scope. Scope the storage query to the
+			// token's whitelist so the caller cannot see txs outside it.
+			if len(filter.WithTxids) == 0 {
+				filter.WithTxids = txidWhitelistToSlice(txidWhitelist)
+			}
 			valid = true
-			for _, txid := range txids {
+			for _, txid := range filter.WithTxids {
 				if _, ok := txidWhitelist[txid]; !ok {
 					valid = false
 					break
@@ -511,7 +519,13 @@ func (i *indexerService) GetVirtualTxs(
 		if !ok {
 			return nil, fmt.Errorf("auth token not found")
 		}
-		for _, txid := range txids {
+		// Defense in depth: same reasoning as the withheld branch. In
+		// private mode the token IS the auth, so silently letting an
+		// empty WithTxids bypass the scope would be a full bypass.
+		if len(filter.WithTxids) == 0 {
+			filter.WithTxids = txidWhitelistToSlice(txidWhitelist)
+		}
+		for _, txid := range filter.WithTxids {
 			if _, ok := txidWhitelist[txid]; !ok {
 				return nil, fmt.Errorf("auth token is not for txid %s", txid)
 			}
@@ -519,7 +533,7 @@ func (i *indexerService) GetVirtualTxs(
 		valid = true
 	}
 
-	resp, err := i.getVirtualTxs(ctx, txids, page, "")
+	resp, err := i.getVirtualTxs(ctx, filter, page, "")
 	if err != nil {
 		return nil, err
 	}
@@ -532,7 +546,7 @@ func (i *indexerService) GetVirtualTxs(
 }
 
 func (i *indexerService) GetVirtualTxsByIntent(
-	ctx context.Context, intent Intent, page *Page,
+	ctx context.Context, intent Intent, filter domain.OffchainTxFilter, page *Page,
 ) (*VirtualTxsResp, error) {
 	outpoints, err := i.extractOutpointsFromIntent(intent)
 	if err != nil {
@@ -542,10 +556,11 @@ func (i *indexerService) GetVirtualTxsByIntent(
 	for _, outpoint := range outpoints {
 		txids = append(txids, outpoint.Txid)
 	}
+	filter.WithTxids = txids
 
 	switch i.txExposure {
 	case exposurePublic:
-		return i.getVirtualTxs(ctx, txids, page, "")
+		return i.getVirtualTxs(ctx, filter, page, "")
 	case exposureWithheld, exposurePrivate:
 		if err := i.validateIntent(ctx, intent); err != nil {
 			return nil, err
@@ -557,7 +572,7 @@ func (i *indexerService) GetVirtualTxsByIntent(
 		return nil, fmt.Errorf("failed to create auth token: %w", err)
 	}
 
-	return i.getVirtualTxs(ctx, txids, page, token)
+	return i.getVirtualTxs(ctx, filter, page, token)
 }
 
 func (i *indexerService) GetBatchSweepTxs(
@@ -677,13 +692,20 @@ func (i *indexerService) walkVtxoChain(
 			if vtxo.Preconfirmed {
 				offchainTx, ok := offchainTxCache[vtxo.Txid]
 				if !ok {
-					var err error
-					offchainTx, err = i.repoManager.OffchainTxs().GetOffchainTx(ctx, vtxo.Txid)
+					offchainTxs, err := i.repoManager.OffchainTxs().GetOffchainTxs(
+						ctx, domain.OffchainTxFilter{WithTxids: []string{vtxo.Txid}},
+					)
 					if err != nil {
 						return nil, nil, false, fmt.Errorf(
 							"failed to retrieve offchain tx: %s", err,
 						)
 					}
+					if len(offchainTxs) == 0 {
+						return nil, nil, false, fmt.Errorf(
+							"offchain tx %s not found", vtxo.Txid,
+						)
+					}
+					offchainTx = offchainTxs[0]
 					offchainTxCache[vtxo.Txid] = offchainTx
 				}
 
@@ -957,11 +979,37 @@ func (i *indexerService) ensureVtxosCached(
 }
 
 func (i *indexerService) getVirtualTxs(
-	ctx context.Context, txids []string, page *Page, authToken string,
+	ctx context.Context, filter domain.OffchainTxFilter, page *Page, authToken string,
 ) (*VirtualTxsResp, error) {
-	txs, err := i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
+	offchainTxs, err := i.repoManager.OffchainTxs().GetOffchainTxs(ctx, filter)
 	if err != nil {
 		return nil, err
+	}
+	txs := make([]string, 0, len(offchainTxs))
+	found := make(map[string]struct{}, len(offchainTxs))
+	for _, off := range offchainTxs {
+		txs = append(txs, off.ArkTx)
+		found[off.ArkTxid] = struct{}{}
+	}
+	// Fall back to the rounds repo for any caller-supplied txid that
+	// didn't resolve to an offchain tx. Client code (e.g. client-lib's
+	// redeem path) walks chains of mixed offchain / checkpoint /
+	// commitment txs through this RPC, so we preserve the master
+	// behavior of resolving any of those three types by txid. We only
+	// fall back for pure-txid lookups; CEL / time-range constraints
+	// only make sense for offchain txs.
+	if isPureTxidLookup(filter) && len(filter.WithTxids) > len(found) {
+		missing := make([]string, 0, len(filter.WithTxids)-len(found))
+		for _, txid := range filter.WithTxids {
+			if _, ok := found[txid]; !ok {
+				missing = append(missing, txid)
+			}
+		}
+		roundTxs, err := i.repoManager.Rounds().GetTxsWithTxids(ctx, missing)
+		if err != nil {
+			return nil, err
+		}
+		txs = append(txs, roundTxs...)
 	}
 	virtualTxs, resp := paginate(txs, page, maxPageSizeVirtualTxs)
 	return &VirtualTxsResp{
@@ -969,6 +1017,28 @@ func (i *indexerService) getVirtualTxs(
 		Page:      resp,
 		AuthToken: authToken,
 	}, nil
+}
+
+// txidWhitelistToSlice projects the token cache's set-shaped txid
+// whitelist into the slice shape OffchainTxFilter.WithTxids expects.
+func txidWhitelistToSlice(set map[string]struct{}) []string {
+	out := make([]string, 0, len(set))
+	for txid := range set {
+		out = append(out, txid)
+	}
+	return out
+}
+
+// isPureTxidLookup is true when the filter narrows by caller-supplied
+// txids and nothing else. CEL / time-range constraints only apply to
+// offchain txs, so they disable the rounds-repo fallback.
+func isPureTxidLookup(f domain.OffchainTxFilter) bool {
+	return len(f.WithTxids) > 0 &&
+		!f.WithExtension &&
+		len(f.WithPacket) == 0 &&
+		len(f.WithPacketContains) == 0 &&
+		f.WithAfterDate == 0 &&
+		f.WithBeforeDate == 0
 }
 
 func (i *indexerService) stripSignerSignatures(virtualTxs []string) error {
