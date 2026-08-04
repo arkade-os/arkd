@@ -43,6 +43,10 @@ const (
 	completedFlagName                 = "completed"
 	failedFlagName                    = "failed"
 	withDetailsFlagName               = "with-details"
+	onlyFailedFlagName                = "only-failed"
+	onlyCompletedFlagName             = "only-completed"
+	limitFlagName                     = "limit"
+	txidFlagName                      = "txid"
 	sweepConnectorsFlagName           = "with-connectors"
 	sweepCommitmentTxidsFlagName      = "commitment-txids"
 	onchainInputFlagName              = "onchain-input"
@@ -139,7 +143,7 @@ var (
 	}
 	roundIdFlag = &cli.StringFlag{
 		Name:     roundIdFlagName,
-		Usage:    "id of the round to get info",
+		Usage:    "id of the round to get info, its commitment txid works too",
 		Required: true,
 	}
 	beforeDateFlag = &cli.StringFlag{
@@ -243,6 +247,26 @@ var (
 		Name:  withDetailsFlagName,
 		Usage: "return detailed information for each round (like round-info command)",
 		Value: false,
+	}
+	onlyFailedFlag = &cli.BoolFlag{
+		Name:  onlyFailedFlagName,
+		Usage: "return only the failed results",
+		Value: false,
+	}
+	onlyCompletedFlag = &cli.BoolFlag{
+		Name:  onlyCompletedFlagName,
+		Usage: "return only the finalized results",
+		Value: false,
+	}
+	limitFlag = &cli.Int64Flag{
+		Name:  limitFlagName,
+		Usage: "max number of results to return, most recent first (0 means no limit)",
+		Value: 0,
+	}
+	txidFlag = &cli.StringFlag{
+		Name:     txidFlagName,
+		Usage:    "txid of the offchain tx to inspect",
+		Required: true,
 	}
 	sweepConnectorsFlag = &cli.BoolFlag{
 		Name:  sweepConnectorsFlagName,

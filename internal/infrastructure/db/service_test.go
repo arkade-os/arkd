@@ -187,6 +187,7 @@ func TestService(t *testing.T) {
 			// records are added before the asset ones, and vtxos are added after assets.
 			testEventRepository(t, svc)
 			testRoundRepository(t, svc)
+			testRoundSummaries(t, svc)
 			testOffchainTxRepository(t, svc)
 			testAssetRepository(t, svc)
 			testVtxoRepository(t, svc)
@@ -3533,6 +3534,59 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 			require.NotContains(t, got[firstTxid].CheckpointTxs, secondCheckpointTxid)
 			require.Contains(t, got[secondTxid].CheckpointTxs, secondCheckpointTxid)
 			require.NotContains(t, got[secondTxid].CheckpointTxs, firstCheckpointTxid)
+		})
+
+		t.Run("admin lookup of a tx failed at request stage", func(t *testing.T) {
+			// A tx that failed before being accepted must stay invisible to
+			// GetOffchainTx, otherwise it would be treated as a duplicate and could
+			// not be retried. GetAnyOffchainTx is the admin escape hatch.
+			failedTxid := "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+			startedAt := now.Unix() + 1000
+
+			offchainTx := domain.NewOffchainTxFromEvents([]domain.Event{
+				domain.OffchainTxRequested{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   failedTxid,
+						Type: domain.EventTypeOffchainTxRequested,
+					},
+					ArkTx:                 "unsigned-ark-tx",
+					UnsignedCheckpointTxs: map[string]string{},
+					StartingTimestamp:     startedAt,
+				},
+				domain.OffchainTxFailed{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   failedTxid,
+						Type: domain.EventTypeOffchainTxFailed,
+					},
+					Reason:    "boom",
+					Timestamp: startedAt,
+				},
+			})
+			require.NoError(t, repo.AddOrUpdateOffchainTx(ctx, offchainTx))
+
+			_, err := repo.GetOffchainTx(ctx, failedTxid)
+			require.Error(t, err)
+
+			gotOffchainTx, err := repo.GetAnyOffchainTx(ctx, failedTxid)
+			require.NoError(t, err)
+			require.True(t, gotOffchainTx.IsFailed())
+			require.Equal(t, "boom", gotOffchainTx.FailReason)
+			require.Equal(t, int(domain.OffchainTxRequestedStage), gotOffchainTx.Stage.Code)
+
+			// The same tx must show up in the failed-only range query.
+			failedTxs, err := repo.GetOffchainTxsInRange(
+				ctx, startedAt-1, startedAt+1, true, false, 0,
+			)
+			require.NoError(t, err)
+			require.Len(t, failedTxs, 1)
+			require.Equal(t, failedTxid, failedTxs[0].ArkTxid)
+
+			// ...and be excluded from the completed-only one.
+			completedTxs, err := repo.GetOffchainTxsInRange(
+				ctx, startedAt-1, startedAt+1, false, true, 0,
+			)
+			require.NoError(t, err)
+			require.Empty(t, completedTxs)
 		})
 	})
 }

@@ -136,22 +136,54 @@ var (
 		Action: walletUtxosAction,
 	}
 	roundInfoCmd = &cli.Command{
-		Name:   "round-info",
-		Usage:  "Get round info",
+		Name:        "round-info",
+		Usage:       "Get round info, including the fail reason if it failed",
+		Flags:       []cli.Flag{roundIdFlag},
+		Action:      roundInfoAction,
+		Subcommands: cli.Commands{roundIntentsCmd},
+	}
+	roundIntentsCmd = &cli.Command{
+		Name:   "intents",
+		Usage:  "Get the intents registered in a round, even if the round failed",
 		Flags:  []cli.Flag{roundIdFlag},
-		Action: roundInfoAction,
+		Action: roundIntentsAction,
 	}
 	roundsInTimeRangeCmd = &cli.Command{
 		Name:  "rounds",
-		Usage: "Get ids of rounds in the given time range",
+		Usage: "Get a summary of the rounds in the given time range",
 		Flags: []cli.Flag{
 			beforeDateFlag,
 			afterDateFlag,
 			completedFlag,
 			failedFlag,
 			withDetailsFlag,
+			onlyFailedFlag,
+			limitFlag,
 		},
 		Action: roundsInTimeRangeAction,
+	}
+	offchainTxsCmd = &cli.Command{
+		Name:  "offchain-txs",
+		Usage: "Get a summary of the offchain txs in the given time range",
+		Flags: []cli.Flag{
+			beforeDateFlag,
+			afterDateFlag,
+			onlyFailedFlag,
+			onlyCompletedFlag,
+			limitFlag,
+		},
+		Action: offchainTxsAction,
+	}
+	offchainTxInfoCmd = &cli.Command{
+		Name:   "offchain-tx-info",
+		Usage:  "Get the details of an offchain tx at any stage, failed ones included",
+		Flags:  []cli.Flag{txidFlag},
+		Action: offchainTxInfoAction,
+	}
+	feeRateCmd = &cli.Command{
+		Name:   "fee-rate",
+		Usage:  "Get the fee rate the wallet uses to estimate the fees of the onchain txs",
+		Action: feeRateAction,
 	}
 	scheduledSessionCmd = &cli.Command{
 		Name:  "scheduled-session",
@@ -680,30 +712,27 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 	completed := ctx.Bool(completedFlagName)
 	failed := ctx.Bool(failedFlagName)
 	withDetails := ctx.Bool(withDetailsFlagName)
+	onlyFailed := ctx.Bool(onlyFailedFlagName)
+	limit := ctx.Int64(limitFlagName)
 	macaroon, tlsConfig, err := getCredentials(ctx)
 	if err != nil {
 		return err
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/rounds", baseURL)
+	queryParams := make([]string, 0)
 
-	// Default to today's time range if no flags are provided
+	// Default to today's time range if no date flag is provided
 	if afterDate == "" && beforeDate == "" {
 		now := time.Now()
 		startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		endOfDay := startOfDay.Add(24 * time.Hour)
 
-		url = fmt.Sprintf(
-			"%s?after=%d&before=%d&with_completed=%t&with_failed=%t",
-			url,
-			startOfDay.Unix(),
-			endOfDay.Unix(),
-			completed,
-			failed,
+		queryParams = append(
+			queryParams,
+			fmt.Sprintf("after=%d", startOfDay.Unix()),
+			fmt.Sprintf("before=%d", endOfDay.Unix()),
 		)
 	} else {
-		queryParams := make([]string, 0)
-
 		if afterDate != "" {
 			afterTs, err := time.Parse(dateFormat, afterDate)
 			if err != nil {
@@ -718,47 +747,133 @@ func roundsInTimeRangeAction(ctx *cli.Context) error {
 			}
 			queryParams = append(queryParams, fmt.Sprintf("before=%d", beforeTs.Unix()))
 		}
-
-		// Add the filtering parameters
-		queryParams = append(queryParams, fmt.Sprintf("with_completed=%t", completed))
-		queryParams = append(queryParams, fmt.Sprintf("with_failed=%t", failed))
-
-		if len(queryParams) > 0 {
-			url = fmt.Sprintf("%s?%s", url, strings.Join(queryParams, "&"))
-		}
 	}
 
-	roundIds, err := get[[]string](url, "rounds", macaroon, tlsConfig)
+	queryParams = append(
+		queryParams,
+		fmt.Sprintf("with_completed=%t", completed),
+		fmt.Sprintf("with_failed=%t", failed),
+		fmt.Sprintf("only_failed=%t", onlyFailed),
+		fmt.Sprintf("limit=%d", limit),
+	)
+
+	url := fmt.Sprintf("%s/v1/admin/rounds?%s", baseURL, strings.Join(queryParams, "&"))
+
+	if !withDetails {
+		return printJSON(url, macaroon, tlsConfig)
+	}
+
+	summaries, err := get[[]struct {
+		RoundId string `json:"roundId"`
+	}](url, "summaries", macaroon, tlsConfig)
 	if err != nil {
 		return err
 	}
 
-	if withDetails {
-		roundDetails := make([]*roundInfo, 0, len(roundIds))
-		for _, roundId := range roundIds {
-			detailUrl := fmt.Sprintf("%s/v1/admin/round/%s", baseURL, roundId)
-			detail, err := getRoundInfo(detailUrl, macaroon, tlsConfig)
-			if err != nil {
-				return fmt.Errorf("failed to get details for round %s: %w", roundId, err)
-			}
-			roundDetails = append(roundDetails, detail)
-		}
-
-		respJson, err := json.MarshalIndent(roundDetails, "", "  ")
+	roundDetails := make([]*roundInfo, 0, len(summaries))
+	for _, summary := range summaries {
+		detailUrl := fmt.Sprintf("%s/v1/admin/round/%s", baseURL, summary.RoundId)
+		detail, err := getRoundInfo(detailUrl, macaroon, tlsConfig)
 		if err != nil {
-			return fmt.Errorf("failed to json encode round details: %s", err)
+			return fmt.Errorf("failed to get details for round %s: %w", summary.RoundId, err)
 		}
-		fmt.Println(string(respJson))
-		return nil
+		roundDetails = append(roundDetails, detail)
 	}
 
-	// Default behavior: return just the round IDs
-	respJson, err := json.MarshalIndent(roundIds, "", "  ")
+	respJson, err := json.MarshalIndent(roundDetails, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to json encode round ids: %s", err)
+		return fmt.Errorf("failed to json encode round details: %s", err)
 	}
 	fmt.Println(string(respJson))
 	return nil
+}
+
+func roundIntentsAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	roundId := ctx.String(roundIdFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/round/%s/intents", baseURL, roundId)
+	return printJSON(url, macaroon, tlsConfig)
+}
+
+func offchainTxsAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	beforeDate := ctx.String(beforeDateFlagName)
+	afterDate := ctx.String(afterDateFlagName)
+	onlyFailed := ctx.Bool(onlyFailedFlagName)
+	onlyCompleted := ctx.Bool(onlyCompletedFlagName)
+	limit := ctx.Int64(limitFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	queryParams := make([]string, 0)
+
+	// Default to today's time range if no date flag is provided
+	if afterDate == "" && beforeDate == "" {
+		now := time.Now()
+		startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		endOfDay := startOfDay.Add(24 * time.Hour)
+
+		queryParams = append(
+			queryParams,
+			fmt.Sprintf("after=%d", startOfDay.Unix()),
+			fmt.Sprintf("before=%d", endOfDay.Unix()),
+		)
+	} else {
+		if afterDate != "" {
+			afterTs, err := time.Parse(dateFormat, afterDate)
+			if err != nil {
+				return fmt.Errorf("invalid --after-date format, must be %s", dateFormat)
+			}
+			queryParams = append(queryParams, fmt.Sprintf("after=%d", afterTs.Unix()))
+		}
+		if beforeDate != "" {
+			beforeTs, err := time.Parse(dateFormat, beforeDate)
+			if err != nil {
+				return fmt.Errorf("invalid --before-date format, must be %s", dateFormat)
+			}
+			queryParams = append(queryParams, fmt.Sprintf("before=%d", beforeTs.Unix()))
+		}
+	}
+
+	queryParams = append(
+		queryParams,
+		fmt.Sprintf("only_failed=%t", onlyFailed),
+		fmt.Sprintf("only_completed=%t", onlyCompleted),
+		fmt.Sprintf("limit=%d", limit),
+	)
+
+	url := fmt.Sprintf("%s/v1/admin/offchainTxs?%s", baseURL, strings.Join(queryParams, "&"))
+	return printJSON(url, macaroon, tlsConfig)
+}
+
+func offchainTxInfoAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	txid := ctx.String(txidFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/offchainTx/%s", baseURL, txid)
+	return printJSON(url, macaroon, tlsConfig)
+}
+
+func feeRateAction(ctx *cli.Context) error {
+	baseURL := ctx.String(urlFlagName)
+	macaroon, tlsConfig, err := getCredentials(ctx)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/feeRate", baseURL)
+	return printJSON(url, macaroon, tlsConfig)
 }
 
 func getScheduledSessionAction(ctx *cli.Context) error {

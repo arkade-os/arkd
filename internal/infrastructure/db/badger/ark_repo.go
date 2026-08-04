@@ -242,6 +242,58 @@ func (r *arkRepository) GetRoundIds(
 	return ids, nil
 }
 
+func (r *arkRepository) GetRoundSummaries(
+	ctx context.Context, startedAfter, startedBefore int64,
+	withFailed, withCompleted, onlyFailed bool, limit int64,
+) ([]domain.RoundSummary, error) {
+	query := badgerhold.Where("Id").Ne("")
+
+	if startedAfter > 0 {
+		query = query.And("StartingTimestamp").Gt(startedAfter)
+	}
+	if startedBefore > 0 {
+		query = query.And("StartingTimestamp").Lt(startedBefore)
+	}
+	if onlyFailed {
+		query = query.And("Stage.Failed").Eq(true)
+	} else {
+		if !withFailed {
+			query = query.And("Stage.Failed").Eq(false)
+		}
+		if !withCompleted {
+			query = query.And("Stage.Ended").Eq(false)
+		}
+	}
+
+	query = query.SortBy("StartingTimestamp").Reverse()
+	if limit > 0 {
+		query = query.Limit(int(limit))
+	}
+
+	rounds, err := r.findRound(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	summaries := make([]domain.RoundSummary, 0, len(rounds))
+	for i := range rounds {
+		round := rounds[i]
+		summaries = append(summaries, domain.RoundSummary{
+			RoundId:        round.Id,
+			CommitmentTxid: round.CommitmentTxid,
+			StartedAt:      round.StartingTimestamp,
+			EndedAt:        round.EndingTimestamp,
+			Stage:          domain.RoundStage(round.Stage.Code).String(),
+			Ended:          round.IsEnded(),
+			Failed:         round.IsFailed(),
+			Swept:          round.Swept,
+			FailReason:     round.FailReason,
+			TotalIntents:   int64(len(round.Intents)),
+		})
+	}
+	return summaries, nil
+}
+
 func (r *arkRepository) GetRoundVtxoTree(
 	ctx context.Context, txid string,
 ) (tree.FlatTxTree, error) {
@@ -285,6 +337,56 @@ func (r *arkRepository) GetOffchainTx(
 	ctx context.Context, txid string,
 ) (*domain.OffchainTx, error) {
 	return r.getOffchainTx(ctx, txid)
+}
+
+// GetAnyOffchainTx is the same as GetOffchainTx: badger stores the whole aggregate, so
+// the lookup never filtered by stage in the first place.
+func (r *arkRepository) GetAnyOffchainTx(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	return r.getOffchainTx(ctx, txid)
+}
+
+func (r *arkRepository) GetOffchainTxsInRange(
+	ctx context.Context, after, before int64, onlyFailed, onlyCompleted bool, limit int64,
+) ([]*domain.OffchainTx, error) {
+	query := badgerhold.Where("ArkTxid").Ne("")
+
+	if after > 0 {
+		query = query.And("StartingTimestamp").Gt(after)
+	}
+	if before > 0 {
+		query = query.And("StartingTimestamp").Lt(before)
+	}
+	if onlyFailed {
+		query = query.And("Stage.Failed").Eq(true)
+	}
+	if onlyCompleted {
+		query = query.And("Stage.Ended").Eq(true).And("Stage.Failed").Eq(false)
+	}
+
+	query = query.SortBy("StartingTimestamp").Reverse()
+	if limit > 0 {
+		query = query.Limit(int(limit))
+	}
+
+	var offchainTxs []domain.OffchainTx
+	var err error
+	if ctx.Value("tx") != nil {
+		tx := ctx.Value("tx").(*badger.Txn)
+		err = r.store.TxFind(tx, &offchainTxs, query)
+	} else {
+		err = r.store.Find(&offchainTxs, query)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	txs := make([]*domain.OffchainTx, 0, len(offchainTxs))
+	for i := range offchainTxs {
+		txs = append(txs, &offchainTxs[i])
+	}
+	return txs, nil
 }
 
 func (r *arkRepository) GetOffchainTxsByTxids(

@@ -306,6 +306,26 @@ func (m *mockOffchainTxRepoForIndexer) GetOffchainTxsByTxids(
 	return args.Get(0).([]*domain.OffchainTx), args.Error(1)
 }
 
+func (m *mockOffchainTxRepoForIndexer) GetAnyOffchainTx(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	args := m.Called(ctx, txid)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.OffchainTx), args.Error(1)
+}
+
+func (m *mockOffchainTxRepoForIndexer) GetOffchainTxsInRange(
+	ctx context.Context, after, before int64, onlyFailed, onlyCompleted bool, limit int64,
+) ([]*domain.OffchainTx, error) {
+	args := m.Called(ctx, after, before, onlyFailed, onlyCompleted, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*domain.OffchainTx), args.Error(1)
+}
+
 func (m *mockOffchainTxRepoForIndexer) AddOrUpdateOffchainTx(
 	ctx context.Context, offchainTx *domain.OffchainTx,
 ) error {

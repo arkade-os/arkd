@@ -78,6 +78,53 @@ func (r *roundRepository) GetRoundIds(
 	return roundIDs, nil
 }
 
+func (r *roundRepository) GetRoundSummaries(
+	ctx context.Context, startedAfter, startedBefore int64,
+	withFailed, withCompleted, onlyFailed bool, limit int64,
+) ([]domain.RoundSummary, error) {
+	if onlyFailed {
+		withFailed = true
+	}
+	// The query takes -1, not 0, as "no limit".
+	maxResults := int64(-1)
+	if limit > 0 {
+		maxResults = limit
+	}
+
+	var rows []queries.SelectRoundSummariesRow
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectRoundSummaries(ctx, queries.SelectRoundSummariesParams{
+			StartTs:       startedAfter,
+			EndTs:         startedBefore,
+			WithFailed:    withFailed,
+			WithCompleted: withCompleted,
+			OnlyFailed:    onlyFailed,
+			MaxResults:    maxResults,
+		})
+		return err
+	}); err != nil {
+		return nil, err
+	}
+
+	summaries := make([]domain.RoundSummary, 0, len(rows))
+	for _, row := range rows {
+		summaries = append(summaries, domain.RoundSummary{
+			RoundId:        row.ID,
+			CommitmentTxid: row.CommitmentTxid,
+			StartedAt:      row.StartingTimestamp,
+			EndedAt:        row.EndingTimestamp,
+			Stage:          domain.RoundStage(row.StageCode).String(),
+			Ended:          row.Ended && !row.Failed,
+			Failed:         row.Failed,
+			Swept:          row.Swept,
+			FailReason:     row.FailReason.String,
+			TotalIntents:   row.TotalIntents,
+		})
+	}
+	return summaries, nil
+}
+
 func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Round) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		if err := querierWithTx.UpsertRound(

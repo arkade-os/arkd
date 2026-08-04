@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -23,10 +24,21 @@ const maxSweepInputs = 1000
 type AdminService interface {
 	Wallet() ports.WalletService
 	GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep, error)
+	// GetRoundDetails accepts either a batch id or a commitment txid.
 	GetRoundDetails(ctx context.Context, roundId string) (*RoundDetails, error)
+	// GetRoundIntents returns the intents registered in a batch as they were persisted,
+	// so they can be inspected even if the batch failed. It accepts either a batch id or
+	// a commitment txid.
+	GetRoundIntents(ctx context.Context, roundId string) ([]IntentInfo, error)
 	GetRounds(
-		ctx context.Context, after, before int64, withFailed, withCompleted bool,
-	) ([]string, error)
+		ctx context.Context, after, before int64, withFailed, withCompleted, onlyFailed bool,
+		limit int64,
+	) ([]domain.RoundSummary, error)
+	GetOffchainTxs(
+		ctx context.Context, after, before int64, onlyFailed, onlyCompleted bool, limit int64,
+	) ([]*domain.OffchainTx, error)
+	GetOffchainTxDetails(ctx context.Context, txid string) (*domain.OffchainTx, error)
+	GetFeeRate(ctx context.Context) (uint64, error)
 	GetExpiredRounds(ctx context.Context) ([]domain.ExpiredRound, error)
 	GetWalletAddress(ctx context.Context) (string, error)
 	GetWalletStatus(ctx context.Context) (*WalletStatus, error)
@@ -96,7 +108,7 @@ func (a *adminService) GetMainAccountUtxos(ctx context.Context) ([]ports.WalletU
 func (a *adminService) GetRoundDetails(
 	ctx context.Context, roundId string,
 ) (*RoundDetails, error) {
-	round, err := a.repoManager.Rounds().GetRoundWithId(ctx, roundId)
+	round, err := a.getRound(ctx, roundId)
 	if err != nil {
 		return nil, err
 	}
@@ -133,8 +145,7 @@ func (a *adminService) GetRoundDetails(
 	}
 
 	return &RoundDetails{
-		RoundId:          round.Id,
-		TxId:             round.CommitmentTxid,
+		RoundSummary:     roundSummary(round),
 		ForfeitedAmount:  totalForfeitAmount,
 		TotalVtxosAmount: totalVtxosAmount,
 		TotalExitAmount:  totalExitAmount,
@@ -142,15 +153,143 @@ func (a *adminService) GetRoundDetails(
 		FeesAmount:       round.CollectedFees,
 		InputVtxos:       inputVtxos,
 		OutputVtxos:      outputVtxos,
-		StartedAt:        round.StartingTimestamp,
-		EndedAt:          round.EndingTimestamp,
 	}, nil
 }
 
+func (a *adminService) GetRoundIntents(
+	ctx context.Context, roundId string,
+) ([]IntentInfo, error) {
+	round, err := a.getRound(ctx, roundId)
+	if err != nil {
+		return nil, err
+	}
+
+	intentsInfo := make([]IntentInfo, 0, len(round.Intents))
+	for _, intent := range round.Intents {
+		receivers, err := receiversInfo(intent.Receivers)
+		if err != nil {
+			return nil, err
+		}
+
+		// Boarding inputs and cosigner pubkeys are not persisted with the intent, they
+		// only live in the intent queue, so they are left empty here.
+		intentsInfo = append(intentsInfo, IntentInfo{
+			Id:        intent.Id,
+			Receivers: receivers,
+			Inputs:    intent.Inputs,
+			Proof:     intent.Proof,
+			Message:   intent.Message,
+		})
+	}
+
+	return intentsInfo, nil
+}
+
+// GetRounds lists batches. Filtering, ordering and the limit are pushed into the
+// repository query, so a wide window costs one round trip rather than loading
+// every round in the range.
 func (a *adminService) GetRounds(
-	ctx context.Context, after, before int64, withFailed, withCompleted bool,
-) ([]string, error) {
-	return a.repoManager.Rounds().GetRoundIds(ctx, after, before, withFailed, withCompleted)
+	ctx context.Context, after, before int64, withFailed, withCompleted, onlyFailed bool,
+	limit int64,
+) ([]domain.RoundSummary, error) {
+	return a.repoManager.Rounds().GetRoundSummaries(
+		ctx, after, before, withFailed, withCompleted, onlyFailed, limit,
+	)
+}
+
+func (a *adminService) GetOffchainTxs(
+	ctx context.Context, after, before int64, onlyFailed, onlyCompleted bool, limit int64,
+) ([]*domain.OffchainTx, error) {
+	txs, err := a.repoManager.OffchainTxs().GetOffchainTxsInRange(
+		ctx, after, before, onlyFailed, onlyCompleted, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Slice(txs, func(i, j int) bool {
+		return txs[i].StartingTimestamp > txs[j].StartingTimestamp
+	})
+
+	return txs, nil
+}
+
+func (a *adminService) GetOffchainTxDetails(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	return a.repoManager.OffchainTxs().GetAnyOffchainTx(ctx, txid)
+}
+
+func (a *adminService) GetFeeRate(ctx context.Context) (uint64, error) {
+	return a.walletSvc.FeeRate(ctx)
+}
+
+// getRound loads a batch by its id, or by its commitment txid if the given value looks
+// like one. Batch ids are uuids, so the two can never be confused.
+func (a *adminService) getRound(ctx context.Context, id string) (*domain.Round, error) {
+	if isTxid(id) {
+		return a.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, id)
+	}
+	return a.repoManager.Rounds().GetRoundWithId(ctx, id)
+}
+
+func isTxid(id string) bool {
+	if len(id) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(id)
+	return err == nil
+}
+
+// receiversInfo turns the receivers of an intent into their inspectable form, encoding
+// the offchain ones as vtxo scripts.
+func receiversInfo(list []domain.Receiver) ([]Receiver, error) {
+	receivers := make([]Receiver, 0, len(list))
+	for _, receiver := range list {
+		if len(receiver.OnchainAddress) > 0 {
+			receivers = append(receivers, Receiver{
+				OnchainAddress: receiver.OnchainAddress,
+				Amount:         receiver.Amount,
+			})
+			continue
+		}
+
+		pubkey, err := hex.DecodeString(receiver.PubKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode pubkey: %s", err)
+		}
+
+		vtxoTapKey, err := schnorr.ParsePubKey(pubkey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse pubkey: %s", err)
+		}
+
+		outScript, err := script.P2TRScript(vtxoTapKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode vtxo script: %s", err)
+		}
+
+		receivers = append(receivers, Receiver{
+			VtxoScript: hex.EncodeToString(outScript),
+			Amount:     receiver.Amount,
+		})
+	}
+	return receivers, nil
+}
+
+func roundSummary(round *domain.Round) domain.RoundSummary {
+	return domain.RoundSummary{
+		RoundId:        round.Id,
+		CommitmentTxid: round.CommitmentTxid,
+		StartedAt:      round.StartingTimestamp,
+		EndedAt:        round.EndingTimestamp,
+		Stage:          domain.RoundStage(round.Stage.Code).String(),
+		Ended:          round.IsEnded(),
+		Failed:         round.IsFailed(),
+		Swept:          round.Swept,
+		FailReason:     round.FailReason,
+		TotalIntents:   int64(len(round.Intents)),
+	}
 }
 
 func (a *adminService) GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep, error) {
@@ -306,35 +445,9 @@ func (s *adminService) ListIntents(
 
 	intentsInfo := make([]IntentInfo, 0, len(intents))
 	for _, intent := range intents {
-		receivers := make([]Receiver, 0, len(intent.Receivers))
-		for _, receiver := range intent.Receivers {
-			if len(receiver.OnchainAddress) > 0 {
-				receivers = append(receivers, Receiver{
-					OnchainAddress: receiver.OnchainAddress,
-					Amount:         receiver.Amount,
-				})
-				continue
-			}
-
-			pubkey, err := hex.DecodeString(receiver.PubKey)
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode pubkey: %s", err)
-			}
-
-			vtxoTapKey, err := schnorr.ParsePubKey(pubkey)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse pubkey: %s", err)
-			}
-
-			outScript, err := script.P2TRScript(vtxoTapKey)
-			if err != nil {
-				return nil, fmt.Errorf("failed to encode vtxo script: %s", err)
-			}
-
-			receivers = append(receivers, Receiver{
-				VtxoScript: hex.EncodeToString(outScript),
-				Amount:     receiver.Amount,
-			})
+		receivers, err := receiversInfo(intent.Receivers)
+		if err != nil {
+			return nil, err
 		}
 
 		intentsInfo = append(intentsInfo, IntentInfo{
@@ -934,8 +1047,7 @@ type ScheduledSweep struct {
 }
 
 type RoundDetails struct {
-	RoundId          string
-	TxId             string
+	domain.RoundSummary
 	ForfeitedAmount  uint64
 	TotalVtxosAmount uint64
 	TotalExitAmount  uint64
@@ -943,8 +1055,6 @@ type RoundDetails struct {
 	InputVtxos       []string
 	OutputVtxos      []string
 	ExitAddresses    []string
-	StartedAt        int64
-	EndedAt          int64
 }
 
 type Receiver struct {
