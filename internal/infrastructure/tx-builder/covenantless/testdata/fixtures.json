@@ -214,7 +214,37 @@
         "expectedNumOfLeaves": 1
       }
     ],
-    "invalid": []
+    "invalid": [
+      {
+        "intents": [
+          {
+            "id": "0",
+            "inputs": [
+              {
+                "txid": "8da512b338ca3fd6f83e9237154a300872780aab58a072cea6b3deb62708beb4",
+                "vout": 0,
+                "pubkey": "0000000000000000000000000000000000000000000000000000000000000001",
+                "amount": 8579,
+                "rootCommitmentTxid": "0000000000000000000000000000000000000000000000000000000000000002",
+                "commitmentTxids": ["0000000000000000000000000000000000000000000000000000000000000002"],
+                "expiresAt": 253402300799
+              }
+            ],
+            "receivers": [
+              {
+                "pubkey": "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967",
+                "amount": 18446744073699560655
+              },
+              {
+                "onchainAddress": "bc1p54849jyr65wv5k64mn0qcjh5tmkpa6rpnatnqdvpg2cn4p9xcwgqflzdxh",
+                "amount": 9999340
+              }
+            ]
+          }
+        ],
+        "expectedErr": "invalid batch output amount -9990961, must be greater than 0"
+      }
+    ]
   },
   "buildForfeitTxs": {
     "valid": [

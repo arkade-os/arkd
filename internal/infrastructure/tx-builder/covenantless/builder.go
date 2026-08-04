@@ -552,6 +552,12 @@ func (b *txBuilder) BuildCommitmentTx(
 		if err != nil {
 			return "", nil, "", nil, err
 		}
+
+		if batchOutputAmount <= 0 {
+			return "", nil, "", nil, fmt.Errorf(
+				"invalid batch output amount %d, must be greater than 0", batchOutputAmount,
+			)
+		}
 	}
 
 	nbOfConnectors := intents.CountSpentVtxos()
@@ -599,7 +605,7 @@ func (b *txBuilder) BuildCommitmentTx(
 
 		cosigners := []string{hex.EncodeToString(taprootKey.SerializeCompressed())}
 
-		for i := 0; i < nbOfConnectors; i++ {
+		for range nbOfConnectors {
 			connectorsTreeLeaves = append(connectorsTreeLeaves, tree.Leaf{
 				Outputs: []tree.LeafOutput{
 					{
@@ -616,6 +622,12 @@ func (b *txBuilder) BuildCommitmentTx(
 		)
 		if err != nil {
 			return "", nil, "", nil, err
+		}
+
+		if connectorsTreeAmount <= 0 {
+			return "", nil, "", nil, fmt.Errorf(
+				"invalid connector output amount %d, must be greater than 0", connectorsTreeAmount,
+			)
 		}
 	}
 

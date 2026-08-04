@@ -24,7 +24,6 @@ const (
 	connectorAddress = "bc1py00yhcjpcj0k0sqra0etq0u3yy0purmspppsw0shyzyfe8c83tmq5h6kc2"
 	forfeitPubkey    = "020000000000000000000000000000000000000000000000000000000000000002"
 	changeAddress    = "bcrt1qhhq55mut9easvrncy4se8q6vg3crlug7yj4j56"
-	minRelayFeeRate  = 3
 )
 
 var (
@@ -289,17 +288,12 @@ func parseCommitmentTxFixtures() (*commitmentTxFixtures, error) {
 	if err != nil {
 		return nil, err
 	}
-	v := map[string]interface{}{}
+	var v struct {
+		BuildCommitmentTx commitmentTxFixtures `json:"buildCommitmentTx"`
+	}
 	if err := json.Unmarshal(file, &v); err != nil {
 		return nil, err
 	}
 
-	vv := v["buildCommitmentTx"].(map[string]interface{})
-	file, _ = json.Marshal(vv)
-	var fixtures commitmentTxFixtures
-	if err := json.Unmarshal(file, &fixtures); err != nil {
-		return nil, err
-	}
-
-	return &fixtures, nil
+	return &v.BuildCommitmentTx, nil
 }
