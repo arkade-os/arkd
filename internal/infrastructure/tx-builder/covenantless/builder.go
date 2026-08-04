@@ -508,6 +508,16 @@ func (b *txBuilder) VerifyForfeitTxs(
 			)
 		}
 
+		// A txid doesn't commit to PSBT metadata, so verify it against known prevouts.
+		for i, prevout := range prevouts {
+			witnessUtxo := tx.Inputs[i].WitnessUtxo
+			if witnessUtxo == nil ||
+				witnessUtxo.Value != prevout.Value ||
+				!bytes.Equal(witnessUtxo.PkScript, prevout.PkScript) {
+				return nil, fmt.Errorf("invalid witness utxo for input %d", i)
+			}
+		}
+
 		validForfeitTxs[vtxoKey] = ports.ValidForfeitTx{
 			Tx: forfeitTx,
 			Connector: domain.Outpoint{
