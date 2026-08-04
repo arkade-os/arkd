@@ -2476,27 +2476,19 @@ func (s *service) EstimateIntentFee(
 
 		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
 		if err != nil || len(vtxosResult) == 0 {
-			// no vtxo to compare against, so the amount is whatever the client declared. Bound
-			// it: the fee estimator casts to uint64, turning a negative into a huge amount.
-			value := psbtInput.WitnessUtxo.Value
-			if value < 0 || value > btcutil.MaxSatoshi {
+			if value := psbtInput.WitnessUtxo.Value; value < 0 || value > btcutil.MaxSatoshi {
 				return 0, errors.INVALID_INTENT_PSBT.New(
 					"invalid amount for input %d: %d", i+1, value,
 				).WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 			}
 
-			boardingInput := wire.TxOut{
-				Value:    value,
-				PkScript: psbtInput.WitnessUtxo.PkScript,
-			}
-			onchainInputs = append(onchainInputs, boardingInput)
+			onchainInputs = append(onchainInputs, *psbtInput.WitnessUtxo)
 			continue
 		}
 
 		// Mirror RegisterIntent: unrolled VTXOs re-enter as boarding inputs and
 		// are counted as onchain for fee purposes.
 		if vtxosResult[0].Unrolled {
-			// take the amount from the repository, not from the client supplied witness utxo
 			onchainInputs = append(onchainInputs, wire.TxOut{
 				Value:    int64(vtxosResult[0].Amount),
 				PkScript: psbtInput.WitnessUtxo.PkScript,
