@@ -54,6 +54,14 @@ func buildVtxoSetup(
 	closureScript, err := closure.Script()
 	require.NoError(t, err)
 
+	return buildVtxoSetupFromScript(t, closureKey, signerKey, closureScript)
+}
+
+func buildVtxoSetupFromScript(
+	t *testing.T, closureKey, signerKey *btcec.PrivateKey, closureScript []byte,
+) vtxoSetup {
+	t.Helper()
+
 	leaf := txscript.NewBaseTapLeaf(closureScript)
 	tapTree := txscript.AssembleTaprootScriptTree(leaf)
 	root := tapTree.RootNode.TapHash()

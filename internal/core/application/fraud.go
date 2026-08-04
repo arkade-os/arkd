@@ -22,21 +22,62 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// keyedMutex serializes work per key instead of process-wide.
+type keyedMutex struct {
+	mtx   sync.Mutex
+	locks map[string]*keyedLock
+}
+
+// keyedLock is one key's mutex plus the number of goroutines holding or waiting
+// for it. Entries are dropped once that count reaches zero.
+type keyedLock struct {
+	mtx     sync.Mutex
+	waiters int
+}
+
+func newKeyedMutex() *keyedMutex {
+	return &keyedMutex{locks: make(map[string]*keyedLock)}
+}
+
+// lock blocks until key is free and returns the func releasing it.
+func (k *keyedMutex) lock(key string) func() {
+	k.mtx.Lock()
+	lock, ok := k.locks[key]
+	if !ok {
+		lock = &keyedLock{}
+		k.locks[key] = lock
+	}
+	lock.waiters++
+	k.mtx.Unlock()
+
+	lock.mtx.Lock()
+
+	return func() {
+		lock.mtx.Unlock()
+
+		k.mtx.Lock()
+		lock.waiters--
+		if lock.waiters <= 0 {
+			delete(k.locks, key)
+		}
+		k.mtx.Unlock()
+	}
+}
+
 // reactToFraud handles the case where a user spent or renewed a vtxo in the past and now tries to
 // redeem it onchain. This function is called by the app service when it detects such fraud.
 //
 // If the vtxo wasn't settled, we broadcast the checkpoint tx signed by both parties when the vtxo
 // was spent offchain. Otherwise, the forfeit tx created and signed during the batch execution is
 // broadcasted.
-//
-// The function takes a mutex to ensure that only one goroutine can react to a fraud at the same
-// time.
-func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync.Mutex) error {
-	mutx.Lock()
-	defer mutx.Unlock()
-
+func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, locks *keyedMutex) error {
 	// If the vtxo wasn't settled we must broadcast a checkpoint tx.
 	if !vtxo.IsSettled() {
+
+		// lock by outpoint to defend against duplicate notification
+		unlock := locks.lock(vtxo.Outpoint.String())
+		defer unlock()
+
 		ptx, err := s.broadcastCheckpointTx(ctx, vtxo)
 		if err != nil {
 			return fmt.Errorf("failed to broadcast checkpoint tx: %s", err)
@@ -68,7 +109,13 @@ func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, mutx *sync
 		return nil
 	}
 
-	// Otherwise, we must broadcast a forfeit tx.
+	// otherwise, we must broadcast a forfeit transaction
+
+	// lock by settled by to avoid having several routines working on the same connector tree
+	// it is necessary to make sure we respect 1C1P TRUC limitation
+	unlock := locks.lock(vtxo.SettledBy)
+	defer unlock()
+
 	if err := s.broadcastForfeitTx(ctx, vtxo); err != nil {
 		return fmt.Errorf("failed to broadcast forfeit tx: %s", err)
 	}
@@ -271,37 +318,64 @@ func (s *service) bumpAnchorTx(
 		return "", err
 	}
 
-	// Estimate for the size of the bump transaction.
-	weightEstimator := input.TxWeightEstimator{}
-
-	// TODO: weightEstimator doesn't support P2A size, using P2WSH will lead to a small
-	// over-estimation. Use the exact P2A size once supported.
-	weightEstimator.AddNestedP2WSHInput(lntypes.VByte(3).ToWU())
-
-	// We assume only one UTXO will be selected to have a correct estimation
-	weightEstimator.AddTaprootKeySpendInput(txscript.SigHashDefault)
-	weightEstimator.AddP2TROutput()
-
-	childVSize := weightEstimator.Weight().ToVB()
-
-	packageSize := childVSize + computeVSize(parent)
 	feeRate, err := s.wallet.FeeRate(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	fees := chainfee.SatPerKVByte(feeRate).FeeForVSize(packageSize)
+	dust, err := s.wallet.GetDustAmount(ctx)
+	if err != nil {
+		dust = 330 // failsafe get dust amount
+	}
 
-	selectedCoins, changeAmount, err := s.wallet.SelectUtxos(
-		ctx, "", uint64(fees.ToUnit(btcutil.AmountSatoshi)), true,
-	)
+	parentVSize := computeVSize(parent)
+
+	packageFee := func(numCoins int) uint64 {
+		weightEstimator := input.TxWeightEstimator{}
+
+		// TODO: weightEstimator doesn't support P2A size, using P2WSH will lead to small over-estimate
+		weightEstimator.AddNestedP2WSHInput(lntypes.VByte(3).ToWU())
+
+		for range numCoins {
+			weightEstimator.AddTaprootKeySpendInput(txscript.SigHashDefault)
+		}
+		weightEstimator.AddP2TROutput()
+
+		fees := chainfee.SatPerKVByte(feeRate).FeeForVSize(
+			weightEstimator.Weight().ToVB() + parentVSize,
+		)
+		return uint64(fees.ToUnit(btcutil.AmountSatoshi))
+	}
+
+	s.feeBumpMtx.Lock()
+	defer s.feeBumpMtx.Unlock()
+
+	// add dust on top of the fees to enforce a change output
+	// we MUST enforce the change : it's the only output of the child tx
+	selectedCoins, _, err := s.wallet.SelectUtxos(ctx, "", packageFee(1)+dust, true)
 	if err != nil {
 		return "", err
 	}
 
+	totalIn := uint64(0)
+	for _, utxo := range selectedCoins {
+		totalIn += utxo.Value
+	}
+
+	fees := packageFee(len(selectedCoins))
+	if totalIn < fees+dust {
+		return "", fmt.Errorf(
+			"insufficient funds to bump anchor tx: selected %d sats, need %d", totalIn, fees+dust,
+		)
+	}
+	changeAmount := totalIn - fees
+
 	addresses, err := s.wallet.DeriveAddresses(ctx, 1)
 	if err != nil {
 		return "", err
+	}
+	if len(addresses) <= 0 {
+		return "", fmt.Errorf("wallet was unable to generate new address to bump anchor tx")
 	}
 
 	addr, err := btcutil.DecodeAddress(addresses[0], nil)

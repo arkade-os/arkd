@@ -67,6 +67,8 @@ type service struct {
 	ctx          context.Context
 	wg           *sync.WaitGroup
 	offchainTxMu *sync.Mutex
+	// global mtx for the fraud.go coinselection
+	feeBumpMtx sync.Mutex
 }
 
 func NewService(
@@ -3525,7 +3527,7 @@ func (s *service) listenToScannerNotifications() {
 	ctx := context.Background()
 	chVtxos := s.scanner.GetNotificationChannel(ctx)
 
-	mutx := &sync.Mutex{}
+	locks := newKeyedMutex()
 	for vtxoKeys := range chVtxos {
 		go func(vtxoKeys map[string][]ports.VtxoWithValue) {
 			for _, keys := range vtxoKeys {
@@ -3534,11 +3536,11 @@ func (s *service) listenToScannerNotifications() {
 					vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, outs)
 					if err != nil {
 						log.WithError(err).Warn("failed to retrieve vtxos, skipping...")
-						return
+						continue
 					}
 					if len(vtxos) <= 0 {
 						log.Warnf("vtxo %s not found, skipping...", v.String())
-						return
+						continue
 					}
 
 					vtxo := vtxos[0]
@@ -3590,7 +3592,7 @@ func (s *service) listenToScannerNotifications() {
 					if vtxo.Spent {
 						log.Infof("fraud detected on vtxo %s", vtxo.Outpoint.String())
 						go func() {
-							if err := s.reactToFraud(ctx, vtxo, mutx); err != nil {
+							if err := s.reactToFraud(ctx, vtxo, locks); err != nil {
 								log.WithError(err).Warnf(
 									"failed to react to fraud for vtxo %s", vtxo.Outpoint.String(),
 								)

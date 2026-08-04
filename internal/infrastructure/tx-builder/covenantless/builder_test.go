@@ -12,9 +12,11 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	txbuilder "github.com/arkade-os/arkd/internal/infrastructure/tx-builder/covenantless"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -255,6 +257,53 @@ func TestVerifyVtxoTapscriptSigs(t *testing.T) {
 			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig}
 
 			_, _, err := builder.VerifyVtxoTapscriptSigs(encodeTx(t, packet), false)
+			require.Error(t, err)
+		})
+
+		t.Run("stripped leaf script when mustIncludeSignerSig=true", func(t *testing.T) {
+			// Dropping the leaf script used to skip the input, so an unsigned
+			// psbt passed as fully signed and left arkd unable to punish.
+			setup := newSingleKeyVtxoSetup(t, signerKey)
+			packet := buildTx(t, setup, nil)
+			packet.Inputs[0].TaprootLeafScript = nil
+
+			_, _, err := builder.VerifyVtxoTapscriptSigs(encodeTx(t, packet), true)
+			require.Error(t, err)
+		})
+
+		t.Run("closure type not handled by the verifier", func(t *testing.T) {
+			// ConditionCSVMultisigClosure decodes fine but matched no case in the
+			// type switch, so no required keys were collected and the input passed
+			// with zero signatures checked - the same bypass as a stripped leaf
+			// script, reached through a leaf script that is present.
+			closureKey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+
+			closure := &script.ConditionCSVMultisigClosure{
+				Condition: []byte{txscript.OP_TRUE},
+				CSVMultisigClosure: script.CSVMultisigClosure{
+					MultisigClosure: script.MultisigClosure{
+						PubKeys: []*btcec.PublicKey{closureKey.PubKey(), signerKey.PubKey()},
+						Type:    script.MultisigTypeChecksig,
+					},
+					Locktime: arklib.RelativeLocktime{
+						Type: arklib.LocktimeTypeBlock, Value: 10,
+					},
+				},
+			}
+			closureScript, err := closure.Script()
+			require.NoError(t, err)
+
+			// Pin the premise: if this script ever decodes as a handled closure
+			// type the test would pass for the wrong reason.
+			decoded, err := script.DecodeClosure(closureScript)
+			require.NoError(t, err)
+			require.IsType(t, &script.ConditionCSVMultisigClosure{}, decoded)
+
+			setup := buildVtxoSetupFromScript(t, closureKey, signerKey, closureScript)
+			packet := buildTx(t, setup, nil) // no signatures at all
+
+			_, _, err = builder.VerifyVtxoTapscriptSigs(encodeTx(t, packet), true)
 			require.Error(t, err)
 		})
 

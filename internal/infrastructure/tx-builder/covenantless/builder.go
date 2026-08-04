@@ -90,6 +90,13 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 
 	for index, input := range ptx.Inputs {
 		if len(input.TaprootLeafScript) == 0 {
+			// when verifying the signer sig, we expect the taproot leaf script to be set
+			// it is to avoid malicious attack where the user strip the leaf while finalizing offchain tx
+			if mustIncludeSignerSig {
+				return false, nil, fmt.Errorf(
+					"missing taproot leaf script for input %d", index,
+				)
+			}
 			continue
 		}
 
@@ -144,6 +151,11 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 			for _, key := range c.PubKeys {
 				keys[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
+		default:
+			// an unhandled closure type collects no required keys,
+			// so the input would pass with nothing verified at all
+			// reject to avoid malicious checkpoint to bypass sig validation
+			return false, nil, fmt.Errorf("unsupported closure type for input %d", index)
 		}
 
 		if !mustIncludeSignerSig {
