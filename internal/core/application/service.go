@@ -4369,8 +4369,8 @@ func (s *service) verifyForfeitTxsSigs(
 					if extractErr != nil {
 						log.WithError(extractErr).
 							Errorf(
-								"failed to extract vtxo script from forfeit tx %s, cannot ban",
-								ptx.UnsignedTx.TxID(),
+								"failed to extract vtxo script from forfeit tx in round %s, "+
+									"cannot ban", roundId,
 							)
 						continue
 					}
