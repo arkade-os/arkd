@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
@@ -27,6 +28,7 @@ var (
 	ErrInvalidTxWrongTxHash      = fmt.Errorf("invalid intent proof: wrong tx hash in message input")
 	ErrInvalidTxWrongOutputIndex = fmt.Errorf("invalid intent proof: wrong output index in message input")
 	ErrPrevoutNotFound           = fmt.Errorf("invalid intent proof: missing witness utxo field")
+	ErrAmountOverflow            = fmt.Errorf("amount overflows int64")
 )
 
 var (
@@ -167,24 +169,64 @@ func New(message string, inputs []Input, outputs []*wire.TxOut) (*Proof, error) 
 
 // Fees returns the implicit fee of the proof transaction (sum of inputs minus sum of outputs).
 func (p Proof) Fees() (int64, error) {
+	if len(p.Inputs) < 2 {
+		return 0, ErrInvalidTxNumberOfInputs
+	}
+
+	if p.Inputs[0].WitnessUtxo == nil {
+		return 0, fmt.Errorf("missing witness utxo for input 0")
+	}
+	if v := p.Inputs[0].WitnessUtxo.Value; v != 0 {
+		return 0, fmt.Errorf("value of BIP322 proof input 0 must be zero, got %d", v)
+	}
+
+	// input 0 is the zero-valued toSpend, it never contributes to the fee. Its witness utxo is
+	// client supplied, so summing it would let a forged value inflate the inputs.
 	sumOfInputs := int64(0)
-	for i, input := range p.Inputs {
+	for i, input := range p.Inputs[1:] {
 		if input.WitnessUtxo == nil {
-			return 0, fmt.Errorf("missing witness utxo for input %d", i)
+			return 0, fmt.Errorf("missing witness utxo for input %d", i+1)
 		}
-		sumOfInputs += int64(input.WitnessUtxo.Value)
+
+		var err error
+		if sumOfInputs, err = addAmounts(sumOfInputs, input.WitnessUtxo.Value); err != nil {
+			return 0, fmt.Errorf("sum of inputs: %w", err)
+		}
 	}
 
 	sumOfOutputs := int64(0)
 	for _, output := range p.UnsignedTx.TxOut {
-		sumOfOutputs += int64(output.Value)
+		var err error
+		if sumOfOutputs, err = addAmounts(sumOfOutputs, output.Value); err != nil {
+			return 0, fmt.Errorf("sum of outputs: %w", err)
+		}
 	}
 
-	fees := sumOfInputs - sumOfOutputs
+	fees, err := subAmounts(sumOfInputs, sumOfOutputs)
+	if err != nil {
+		return 0, fmt.Errorf("fee: %w", err)
+	}
 	if fees < 0 {
 		return 0, fmt.Errorf("sum of inputs is smaller than sum of outputs (diff: %d)", fees)
 	}
 	return fees, nil
+}
+
+// addAmounts returns a+b, refusing to wrap. Amounts are int64 in the psbt and consumers cast
+// them to uint64, so a wrapped sum must never reach them.
+func addAmounts(a, b int64) (int64, error) {
+	if (b > 0 && a > math.MaxInt64-b) || (b < 0 && a < math.MinInt64-b) {
+		return 0, ErrAmountOverflow
+	}
+	return a + b, nil
+}
+
+// subAmounts returns a-b, refusing to wrap.
+func subAmounts(a, b int64) (int64, error) {
+	if (b < 0 && a > math.MaxInt64+b) || (b > 0 && a < math.MinInt64+b) {
+		return 0, ErrAmountOverflow
+	}
+	return a - b, nil
 }
 
 // GetOutpoints returns the list of inputs proving ownership of coins
