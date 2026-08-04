@@ -2478,15 +2478,13 @@ func (s *service) EstimateIntentFee(
 
 		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
 		if err != nil || len(vtxosResult) == 0 {
-			if psbtInput.WitnessUtxo == nil {
-				return 0, errors.INVALID_INTENT_PSBT.New("missing witness utxo for input %d", i+1).
-					WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+			if value := psbtInput.WitnessUtxo.Value; value < 0 || value > btcutil.MaxSatoshi {
+				return 0, errors.INVALID_INTENT_PSBT.New(
+					"invalid amount for input %d: %d", i+1, value,
+				).WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 			}
-			boardingInput := wire.TxOut{
-				Value:    psbtInput.WitnessUtxo.Value,
-				PkScript: psbtInput.WitnessUtxo.PkScript,
-			}
-			onchainInputs = append(onchainInputs, boardingInput)
+
+			onchainInputs = append(onchainInputs, *psbtInput.WitnessUtxo)
 			continue
 		}
 
@@ -2494,7 +2492,7 @@ func (s *service) EstimateIntentFee(
 		// are counted as onchain for fee purposes.
 		if vtxosResult[0].Unrolled {
 			onchainInputs = append(onchainInputs, wire.TxOut{
-				Value:    psbtInput.WitnessUtxo.Value,
+				Value:    int64(vtxosResult[0].Amount),
 				PkScript: psbtInput.WitnessUtxo.PkScript,
 			})
 			continue

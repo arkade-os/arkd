@@ -10,16 +10,44 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
 
 const testDust uint64 = 546
+
+func TestEstimateIntentFeeRejectsNegativeBoardingAmount(t *testing.T) {
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(wire.NewTxIn(&wire.OutPoint{}, nil, nil))
+	boardingOutpoint := wire.OutPoint{Index: 1}
+	tx.AddTxIn(wire.NewTxIn(&boardingOutpoint, nil, nil))
+	tx.AddTxOut(wire.NewTxOut(0, []byte{txscript.OP_RETURN}))
+
+	packet, err := psbt.NewFromUnsignedTx(tx)
+	require.NoError(t, err)
+	packet.Inputs[1].WitnessUtxo = wire.NewTxOut(-1, nil)
+
+	ctx := t.Context()
+	vtxos := &mockedVtxoRepo{}
+	vtxos.On("GetVtxos", ctx, []domain.Outpoint{{
+		Txid: boardingOutpoint.Hash.String(), VOut: boardingOutpoint.Index,
+	}}).Return(nil, nil)
+	repos := &mockedRepoManager{}
+	repos.On("Vtxos").Return(vtxos)
+
+	svc := &service{repoManager: repos}
+	_, appErr := svc.EstimateIntentFee(
+		ctx, intent.Proof{Packet: *packet}, intent.EstimateIntentFeeMessage{},
+	)
+	require.ErrorContains(t, appErr, "invalid amount for input 1: -1")
+}
 
 func TestNextScheduledSession(t *testing.T) {
 	scheduledSessionStartTime := parseTime(t, "2023-10-10 13:00:00")
