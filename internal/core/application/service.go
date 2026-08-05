@@ -8,7 +8,6 @@ import (
 	"math"
 	"runtime"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -314,15 +313,11 @@ func (s *service) registerEventHandlers() {
 				return
 			}
 
-			// Calculate depth for new vtxos: max(parent depths) + 1
-			var maxDepth uint32
-			for _, v := range spentVtxos {
-				if v.Depth > maxDepth {
-					maxDepth = v.Depth
-				}
-			}
+			// Depth for new vtxos: max(parent depths) + 1, shared with the
+			// accept path via the same domain helper.
+			depth, _ := domain.ChainDepthAndParentMarkers(spentVtxos)
 			for i := range newVtxos {
-				newVtxos[i].Depth = maxDepth + 1
+				newVtxos[i].Depth = depth
 			}
 
 			// Make sure to mark new vtxos as swept if any of the spent inputs is swept as well or
@@ -1082,27 +1077,7 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// Compute depth and parent markers from spent VTXOs for the accepted event.
-	var maxDepth uint32
-	parentMarkerSet := make(map[string]struct{})
-	for _, v := range spentVtxos {
-		if v.Depth > maxDepth {
-			maxDepth = v.Depth
-		}
-		for _, markerID := range v.MarkerIDs {
-			if markerID != "" {
-				parentMarkerSet[markerID] = struct{}{}
-			}
-		}
-	}
-	var newDepth uint32
-	if len(spentVtxos) > 0 {
-		newDepth = maxDepth + 1
-	}
-	parentMarkerIDs := make([]string, 0, len(parentMarkerSet))
-	for id := range parentMarkerSet {
-		parentMarkerIDs = append(parentMarkerIDs, id)
-	}
-	sort.Strings(parentMarkerIDs)
+	newDepth, parentMarkerIDs := domain.ChainDepthAndParentMarkers(spentVtxos)
 
 	change, err := offchainTx.Accept(
 		fullySignedArkTx, signedCheckpointTxsMap,
