@@ -66,6 +66,15 @@ func TestVtxo_IsNote(t *testing.T) {
 			},
 			isNote: false,
 		},
+		{
+			// An on-chain Arkade UTXO has no commitment txids either, so
+			// the kind discriminator must keep it from reading as a note.
+			name: "onchain kind is not a note despite empty commitments",
+			vtxo: domain.Vtxo{
+				Kind: domain.VtxoKindOnchain,
+			},
+			isNote: false,
+		},
 	}
 	for _, f := range fixtures {
 		t.Run(f.name, func(t *testing.T) {
@@ -112,6 +121,16 @@ func TestVtxo_IsExpired(t *testing.T) {
 		{
 			name:      "should be false",
 			vtxo:      domain.Vtxo{ExpiresAt: time.Now().Add(time.Hour).Unix()},
+			isExpired: false,
+		},
+		{
+			// An on-chain Arkade UTXO has no batch expiry, so a zero ExpiresAt
+			// must not read as expired.
+			name: "onchain kind never expires",
+			vtxo: domain.Vtxo{
+				Kind:      domain.VtxoKindOnchain,
+				ExpiresAt: time.Now().Add(-time.Hour).Unix(),
+			},
 			isExpired: false,
 		},
 	}
