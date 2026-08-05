@@ -82,9 +82,11 @@ func VerifyTapscriptSigs(
 			)
 		}
 
-		// skip if not a taproot input
+		// a tapscript spend is possible only if the prevout is a taproot script
 		if txscript.GetScriptClass(prevout.PkScript) != txscript.WitnessV1TaprootTy {
-			continue
+			return nil, fmt.Errorf(
+				"input %d has a taproot leaf script but a non-taproot prevout", inputIndex,
+			)
 		}
 
 		tapscriptLeaf := input.TaprootLeafScript[0]

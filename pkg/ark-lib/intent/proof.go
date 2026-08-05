@@ -440,6 +440,9 @@ func verifyNoteInput(
 	if prevout == nil {
 		return fmt.Errorf("prevout not found for note input %d", inputIndex)
 	}
+	if !txscript.IsPayToTaproot(prevout.PkScript) {
+		return fmt.Errorf("prevout of note input %d is not a taproot script", inputIndex)
+	}
 
 	controlBlock, err := txscript.ParseControlBlock(tapscriptLeaf.ControlBlock)
 	if err != nil {

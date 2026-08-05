@@ -2025,6 +2025,16 @@ func (s *service) RegisterIntent(
 				})
 			}
 
+			// offchain outputs must be taproot scripts, the receiver pubkey is
+			// read from the script
+			if txscript.GetScriptClass(output.PkScript) != txscript.WitnessV1TaprootTy {
+				return "", errors.INVALID_PKSCRIPT.New(
+					"invalid script type for output %d: not a taproot pkscript", outputIndex,
+				).WithMetadata(errors.InvalidPkScriptMetadata{
+					Script: hex.EncodeToString(output.PkScript),
+				})
+			}
+
 			hasOffChainReceiver = true
 			rcv.PubKey = hex.EncodeToString(output.PkScript[2:])
 		}
