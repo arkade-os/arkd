@@ -172,6 +172,25 @@ func TestVerifyIntent(t *testing.T) {
 				err = intent.Verify(serializeProof(t, p), noteProofMessage, nil)
 				require.ErrorContains(t, err, "preimage")
 			})
+
+			// Two condition witnesses on one input make the revealed preimage
+			// depend on which field a reader happens to look at, so
+			// verification refuses the input rather than resolving it to the
+			// first one set.
+			t.Run("duplicate condition witness", func(t *testing.T) {
+				s := newNoteClosureSetup(t)
+				p := buildNoteProof(t, s, s.cbBytes)
+
+				wrong := make([]byte, 32)
+				_, err := rand.Read(wrong)
+				require.NoError(t, err)
+
+				setNotePreimage(t, p, 1, s.preimage)
+				setNotePreimage(t, p, 1, wrong)
+
+				err = intent.Verify(serializeProof(t, p), noteProofMessage, nil)
+				require.ErrorContains(t, err, "expected at most one")
+			})
 		})
 	})
 }

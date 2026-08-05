@@ -735,15 +735,15 @@ func (w *wallet) SignTransaction(
 					return "", err
 				}
 
-				conditionWitnessFields, err := txutils.GetArkPsbtFields(ptx, i, txutils.ConditionWitnessField)
+				conditionWitness, err := txutils.GetArkPsbtConditionWitness(ptx, i)
 				if err != nil {
 					return "", err
 				}
 
 				args := make(map[string][]byte)
-				if len(conditionWitnessFields) > 0 {
+				if conditionWitness != nil {
 					var conditionWitnessBytes bytes.Buffer
-					if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitnessFields[0]); err != nil {
+					if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitness); err != nil {
 						return "", err
 					}
 					args[string(txutils.ArkFieldConditionWitness)] = conditionWitnessBytes.Bytes()

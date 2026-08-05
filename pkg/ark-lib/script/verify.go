@@ -115,15 +115,12 @@ func VerifyTapscriptSigs(
 				expectedSigners[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
 		case *ConditionMultisigClosure:
-			witnessFields, err := txutils.GetArkPsbtFields(
-				tx, inputIndex, txutils.ConditionWitnessField,
-			)
+			witness, err := txutils.GetArkPsbtConditionWitness(tx, inputIndex)
 			if err != nil {
 				return nil, err
 			}
-			witness := make(wire.TxWitness, 0)
-			if len(witnessFields) > 0 {
-				witness = witnessFields[0]
+			if witness == nil {
+				witness = make(wire.TxWitness, 0)
 			}
 
 			if err := executeConditionScript(inputIndex, tx, prevoutFetcher, c.Condition, witness); err != nil {
@@ -135,15 +132,12 @@ func VerifyTapscriptSigs(
 				expectedSigners[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
 		case *ConditionCSVMultisigClosure:
-			witnessFields, err := txutils.GetArkPsbtFields(
-				tx, inputIndex, txutils.ConditionWitnessField,
-			)
+			witness, err := txutils.GetArkPsbtConditionWitness(tx, inputIndex)
 			if err != nil {
 				return nil, err
 			}
-			witness := make(wire.TxWitness, 0)
-			if len(witnessFields) > 0 {
-				witness = witnessFields[0]
+			if witness == nil {
+				witness = make(wire.TxWitness, 0)
 			}
 
 			if err := executeConditionScript(inputIndex, tx, prevoutFetcher, c.Condition, witness); err != nil {

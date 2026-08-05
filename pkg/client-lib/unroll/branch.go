@@ -109,20 +109,16 @@ func (r *RedeemBranch) NextRedeemTx() (string, error) {
 				return "", err
 			}
 
-			conditionWitnessFields, err := txutils.GetArkPsbtFields(
-				tx,
-				i,
-				txutils.ConditionWitnessField,
-			)
+			conditionWitness, err := txutils.GetArkPsbtConditionWitness(tx, i)
 			if err != nil {
 				return "", err
 			}
 
 			args := make(map[string][]byte)
-			if len(conditionWitnessFields) > 0 {
+			if conditionWitness != nil {
 				var conditionWitnessBytes bytes.Buffer
 				if err := psbt.WriteTxWitness(
-					&conditionWitnessBytes, conditionWitnessFields[0],
+					&conditionWitnessBytes, conditionWitness,
 				); err != nil {
 					return "", err
 				}

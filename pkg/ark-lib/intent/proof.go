@@ -475,20 +475,18 @@ func verifyNoteInput(
 	}
 
 	// retrieve the preimage from the PSBT condition witness field
-	conditionWitnessFields, err := txutils.GetArkPsbtFields(
-		ptx, inputIndex, txutils.ConditionWitnessField,
-	)
+	conditionWitness, err := txutils.GetArkPsbtConditionWitness(ptx, inputIndex)
 	if err != nil {
 		return fmt.Errorf(
 			"failed to get condition witness for note input %d: %w", inputIndex, err,
 		)
 	}
 
-	if len(conditionWitnessFields) != 1 || len(conditionWitnessFields[0]) == 0 {
+	if len(conditionWitness) == 0 {
 		return fmt.Errorf("missing preimage for note input %d", inputIndex)
 	}
 
-	preimage := conditionWitnessFields[0][0]
+	preimage := conditionWitness[0]
 	preimageHash := sha256.Sum256(preimage)
 
 	if preimageHash != noteClosure.PreimageHash {

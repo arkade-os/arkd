@@ -128,15 +128,12 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 				keys[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
 		case *script.ConditionMultisigClosure:
-			witnessFields, err := txutils.GetArkPsbtFields(
-				ptx, index, txutils.ConditionWitnessField,
-			)
+			witness, err := txutils.GetArkPsbtConditionWitness(ptx, index)
 			if err != nil {
 				return false, nil, err
 			}
-			witness := make(wire.TxWitness, 0)
-			if len(witnessFields) > 0 {
-				witness = witnessFields[0]
+			if witness == nil {
+				witness = make(wire.TxWitness, 0)
 			}
 
 			result, err := script.EvaluateScriptToBool(c.Condition, witness)
