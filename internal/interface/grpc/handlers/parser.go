@@ -316,6 +316,47 @@ func (i intentsInfo) toProto() []*arkv1.IntentInfo {
 	return list
 }
 
+type roundSummaries []domain.RoundSummary
+
+func (r roundSummaries) toProto() []*arkv1.RoundSummary {
+	list := make([]*arkv1.RoundSummary, 0, len(r))
+	for _, summary := range r {
+		list = append(list, &arkv1.RoundSummary{
+			RoundId:        summary.RoundId,
+			CommitmentTxid: summary.CommitmentTxid,
+			StartedAt:      summary.StartedAt,
+			EndedAt:        summary.EndedAt,
+			Stage:          summary.Stage,
+			Ended:          summary.Ended,
+			Failed:         summary.Failed,
+			Swept:          summary.Swept,
+			FailReason:     summary.FailReason,
+			TotalIntents:   summary.TotalIntents,
+		})
+	}
+	return list
+}
+
+type offchainTxsInfo []*domain.OffchainTx
+
+func (o offchainTxsInfo) toProto() []*arkv1.OffchainTxSummary {
+	list := make([]*arkv1.OffchainTxSummary, 0, len(o))
+	for _, tx := range o {
+		list = append(list, &arkv1.OffchainTxSummary{
+			Txid:               tx.ArkTxid,
+			Stage:              domain.OffchainTxStage(tx.Stage.Code).String(),
+			Ended:              tx.IsFinalized(),
+			Failed:             tx.IsFailed(),
+			FailReason:         tx.FailReason,
+			StartedAt:          tx.StartingTimestamp,
+			EndedAt:            tx.EndingTimestamp,
+			RootCommitmentTxid: tx.RootCommitmentTxId,
+			TotalCheckpoints:   int64(len(tx.CheckpointTxs)),
+		})
+	}
+	return list
+}
+
 type scheduledSession struct {
 	t *application.NextScheduledSession
 }

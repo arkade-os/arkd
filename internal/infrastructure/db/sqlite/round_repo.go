@@ -11,6 +11,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 )
 
 type roundRepository struct {
@@ -76,6 +77,53 @@ func (r *roundRepository) GetRoundIds(
 	}
 
 	return roundIDs, nil
+}
+
+func (r *roundRepository) GetRoundSummaries(
+	ctx context.Context, startedAfter, startedBefore int64,
+	withFailed, withCompleted, onlyFailed bool, limit int64,
+) ([]domain.RoundSummary, error) {
+	if onlyFailed {
+		withFailed = true
+	}
+
+	var rows []queries.SelectRoundSummariesRow
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectRoundSummaries(ctx, queries.SelectRoundSummariesParams{
+			StartTs:       startedAfter,
+			EndTs:         startedBefore,
+			WithFailed:    withFailed,
+			WithCompleted: withCompleted,
+			OnlyFailed:    onlyFailed,
+			MaxResults:    limit,
+		})
+		return err
+	}); err != nil {
+		return nil, err
+	}
+
+	summaries := make([]domain.RoundSummary, 0, len(rows))
+	for _, row := range rows {
+		stage := domain.Stage{
+			Code:   int(row.StageCode),
+			Ended:  row.Ended,
+			Failed: row.Failed,
+		}
+		summaries = append(summaries, domain.RoundSummary{
+			RoundId:        row.ID,
+			CommitmentTxid: row.CommitmentTxid,
+			StartedAt:      row.StartingTimestamp,
+			EndedAt:        row.EndingTimestamp,
+			Stage:          domain.RoundStage(stage.Code).String(),
+			Ended:          domain.RoundEnded(stage),
+			Failed:         stage.Failed,
+			Swept:          row.Swept,
+			FailReason:     row.FailReason.String,
+			TotalIntents:   row.TotalIntents,
+		})
+	}
+	return summaries, nil
 }
 
 func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Round) error {
@@ -240,7 +288,9 @@ func (r *roundRepository) GetRoundWithId(ctx context.Context, id string) (*domai
 			return err
 		}
 		if len(rounds) == 0 {
-			return errors.New("batch not found")
+			return arkerrors.ROUND_NOT_FOUND.
+				New("batch %s not found", id).
+				WithMetadata(arkerrors.RoundNotFoundMetadata{RoundId: id})
 		}
 
 		round = rounds[0]
@@ -295,7 +345,9 @@ func (r *roundRepository) GetRoundWithCommitmentTxid(
 			return err
 		}
 		if len(rounds) == 0 {
-			return errors.New("batch not found")
+			return arkerrors.ROUND_NOT_FOUND.
+				New("batch with commitment txid %s not found", txid).
+				WithMetadata(arkerrors.RoundNotFoundMetadata{RoundId: txid})
 		}
 
 		round = rounds[0]
