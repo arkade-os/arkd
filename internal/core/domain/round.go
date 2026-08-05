@@ -212,9 +212,20 @@ func (r *Round) Sweep(
 		return nil, nil
 	}
 
-	sweptVtxosCount := countSweptLeafVtxos(r.Changes)
+	// count distinct leaf txids, a leaf tx may carry more than one vtxo output
+	sweptLeafTxids := make(map[string]struct{})
+	for _, event := range r.Changes {
+		if e, ok := event.(BatchSwept); ok {
+			for _, leaf := range e.LeafVtxos {
+				sweptLeafTxids[leaf.Txid] = struct{}{}
+			}
+		}
+	}
+	for _, leaf := range leafVtxos {
+		sweptLeafTxids[leaf.Txid] = struct{}{}
+	}
 	leavesCount := len(tree.FlatTxTree(r.VtxoTree).Leaves())
-	fullySwept := len(leafVtxos)+sweptVtxosCount == leavesCount
+	fullySwept := len(sweptLeafTxids) == leavesCount
 
 	event := BatchSwept{
 		RoundEvent: RoundEvent{
@@ -324,14 +335,4 @@ func (r *Round) raise(event Event) {
 	}
 	r.Changes = append(r.Changes, event)
 	r.on(event, false)
-}
-
-func countSweptLeafVtxos(events []Event) int {
-	count := 0
-	for _, event := range events {
-		if e, ok := event.(BatchSwept); ok {
-			count += len(e.LeafVtxos)
-		}
-	}
-	return count
 }

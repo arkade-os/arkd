@@ -739,7 +739,7 @@ func (r *VtxoRepository) updateVtxo(ctx context.Context, vtxo *domain.Vtxo) erro
 	return nil
 }
 
-func (r *VtxoRepository) GetSweepableVtxosByCommitmentTxid(
+func (r *VtxoRepository) GetSweepablePreconfirmedVtxosByCommitmentTxid(
 	ctx context.Context,
 	txid string,
 ) ([]domain.Outpoint, error) {
@@ -767,8 +767,9 @@ func (r *VtxoRepository) GetSweepableVtxosByCommitmentTxid(
 		for _, vtxo := range vtxos {
 			outpointKey := vtxo.Outpoint.String()
 			if !visited[outpointKey] {
-				if _, seen := visited[outpointKey]; !seen {
-					visited[outpointKey] = true
+				visited[outpointKey] = true
+				// only preconfirmed vtxos are returned, leaves are excluded
+				if vtxo.Preconfirmed {
 					outpoints = append(outpoints, vtxo.Outpoint)
 				}
 
@@ -805,6 +806,65 @@ func (r *VtxoRepository) GetAllChildrenVtxos(
 		if !visited[outpointKey] {
 			visited[outpointKey] = true
 			outpoints = append(outpoints, vtxo.Outpoint)
+			if vtxo.ArkTxid != "" {
+				queue = append(queue, vtxo.ArkTxid)
+			}
+		}
+	}
+
+	for len(queue) > 0 {
+		currentTxid := queue[0]
+		queue = queue[1:]
+
+		if visitedTxids[currentTxid] {
+			continue
+		}
+		visitedTxids[currentTxid] = true
+
+		query := badgerhold.Where("Txid").Eq(currentTxid)
+		vtxos, err := r.findVtxos(ctx, query)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find vtxos for txid %s: %w", currentTxid, err)
+		}
+
+		for _, vtxo := range vtxos {
+			outpointKey := vtxo.Outpoint.String()
+			if !visited[outpointKey] {
+				visited[outpointKey] = true
+				outpoints = append(outpoints, vtxo.Outpoint)
+				if vtxo.ArkTxid != "" {
+					queue = append(queue, vtxo.ArkTxid)
+				}
+			}
+		}
+	}
+
+	return outpoints, nil
+}
+
+func (r *VtxoRepository) GetDescendantVtxos(
+	ctx context.Context,
+	outpoint domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	// Seed with the specific outpoint, not all vouts of the txid, so that
+	// sibling outputs (which belong to independent lineages) are not included.
+	seedQuery := badgerhold.Where("Txid").Eq(outpoint.Txid).
+		And("VOut").Eq(outpoint.VOut)
+	seedVtxos, err := r.findVtxos(ctx, seedQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find seed vtxo %s: %w", outpoint, err)
+	}
+
+	visited := make(map[string]bool)
+	visitedTxids := make(map[string]bool)
+	var outpoints []domain.Outpoint
+	queue := make([]string, 0, len(seedVtxos))
+
+	// the seed vtxo is excluded from the result, only its spending tx is followed
+	for _, vtxo := range seedVtxos {
+		outpointKey := vtxo.Outpoint.String()
+		if !visited[outpointKey] {
+			visited[outpointKey] = true
 			if vtxo.ArkTxid != "" {
 				queue = append(queue, vtxo.ArkTxid)
 			}

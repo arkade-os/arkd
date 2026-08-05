@@ -91,6 +91,60 @@ func findSweepableOutputs(
 	return sweepableBatchOutputs, nil
 }
 
+// leafVtxoOutpoints returns all vtxo outpoints of a leaf tx, skipping anchor and extension
+func leafVtxoOutpoints(leaf *psbt.Packet) []domain.Outpoint {
+	txid := leaf.UnsignedTx.TxID()
+	outpoints := make([]domain.Outpoint, 0, len(leaf.UnsignedTx.TxOut))
+	for i, out := range leaf.UnsignedTx.TxOut {
+		if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
+			extension.IsExtension(out.PkScript) {
+			continue
+		}
+		outpoints = append(outpoints, domain.Outpoint{Txid: txid, VOut: uint32(i)})
+	}
+	return outpoints
+}
+
+// collectPreconfirmedVtxos returns the preconfirmed vtxos swept along with the given leaves,
+// the whole batch is fetched if the commitment root itself is among the swept inputs,
+// otherwise only the descendants of each swept leaf
+func collectPreconfirmedVtxos(
+	ctx context.Context,
+	vtxoRepo domain.VtxoRepository,
+	commitmentTxid string,
+	commitmentRootSwept bool,
+	leafVtxos []domain.Outpoint,
+) []domain.Outpoint {
+	preconfirmedVtxos := make([]domain.Outpoint, 0)
+	if commitmentRootSwept {
+		var err error
+		preconfirmedVtxos, err = vtxoRepo.GetSweepablePreconfirmedVtxosByCommitmentTxid(
+			ctx, commitmentTxid,
+		)
+		if err != nil {
+			log.WithError(err).
+				Error("error while getting sweepable preconfirmed vtxos by commitment txid")
+		}
+		return preconfirmedVtxos
+	}
+
+	seen := make(map[string]struct{})
+	for _, leafVtxo := range leafVtxos {
+		descendants, err := vtxoRepo.GetDescendantVtxos(ctx, leafVtxo)
+		if err != nil {
+			log.WithError(err).Error("error while getting descendant vtxos")
+			continue
+		}
+		for _, descendant := range descendants {
+			if _, ok := seen[descendant.String()]; !ok {
+				preconfirmedVtxos = append(preconfirmedVtxos, descendant)
+				seen[descendant.String()] = struct{}{}
+			}
+		}
+	}
+	return preconfirmedVtxos
+}
+
 func getSpentVtxos(intents map[string]domain.Intent) []domain.Outpoint {
 	vtxos := make([]domain.Outpoint, 0)
 	for _, intent := range intents {

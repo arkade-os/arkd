@@ -525,6 +525,76 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 	return items, nil
 }
 
+const selectDescendantVtxoOutpointsByArkTxid = `-- name: SelectDescendantVtxoOutpointsByArkTxid :many
+WITH RECURSIVE descendants_chain AS (
+    -- seed: only the specific outpoint, not all vouts of the txid
+    SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
+           0 AS depth,
+           ARRAY[(v.txid||':'||v.vout)]::text[] AS visited
+    FROM vtxo v
+    WHERE v.txid = $1 AND v.vout = $2
+
+    UNION ALL
+
+    -- children: next vtxo(s) are those whose txid == current.ark_txid
+    SELECT c.txid, c.vout, c.preconfirmed, c.ark_txid, c.spent_by,
+           w.depth + 1,
+           w.visited || (c.txid||':'||c.vout)
+    FROM descendants_chain w
+             JOIN vtxo c
+                  ON c.txid = w.ark_txid
+    WHERE w.ark_txid IS NOT NULL
+      AND (c.txid||':'||c.vout) <> ALL (w.visited)   -- cycle/visited guard
+),
+nodes AS (
+   SELECT DISTINCT ON (txid, vout)
+       txid, vout, preconfirmed, depth
+   FROM descendants_chain
+   ORDER BY txid, vout, depth
+)
+SELECT txid, vout
+FROM nodes
+WHERE depth > 0
+ORDER BY depth, txid, vout
+`
+
+type SelectDescendantVtxoOutpointsByArkTxidParams struct {
+	Txid string
+	Vout int32
+}
+
+type SelectDescendantVtxoOutpointsByArkTxidRow struct {
+	Txid string
+	Vout int32
+}
+
+// Same lineage walk as SelectVtxosOutpointsByArkTxidRecursive but the seed
+// outpoint itself is excluded from the result (depth > 0), descendants only.
+// keep one row per node at its MIN depth (layers)
+// depth > 0 excludes the seed vtxo itself, descendants only
+func (q *Queries) SelectDescendantVtxoOutpointsByArkTxid(ctx context.Context, arg SelectDescendantVtxoOutpointsByArkTxidParams) ([]SelectDescendantVtxoOutpointsByArkTxidRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectDescendantVtxoOutpointsByArkTxid, arg.Txid, arg.Vout)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectDescendantVtxoOutpointsByArkTxidRow
+	for rows.Next() {
+		var i SelectDescendantVtxoOutpointsByArkTxidRow
+		if err := rows.Scan(&i.Txid, &i.Vout); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectExpiredRounds = `-- name: SelectExpiredRounds :many
 SELECT r.id, r.txid, CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS expired_at
 FROM round_with_commitment_tx_vw r
@@ -1659,6 +1729,43 @@ func (q *Queries) SelectSettings(ctx context.Context) (Setting, error) {
 	return i, err
 }
 
+const selectSweepablePreconfirmedVtxoOutpointsByCommitmentTxid = `-- name: SelectSweepablePreconfirmedVtxoOutpointsByCommitmentTxid :many
+SELECT DISTINCT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+WHERE v.swept = false
+  AND v.preconfirmed = true
+  AND (v.commitment_txid = $1
+    OR (',' || COALESCE(v.commitments::text, '') || ',') LIKE '%,' || $1 || ',%')
+`
+
+type SelectSweepablePreconfirmedVtxoOutpointsByCommitmentTxidRow struct {
+	VtxoTxid string
+	VtxoVout int32
+}
+
+func (q *Queries) SelectSweepablePreconfirmedVtxoOutpointsByCommitmentTxid(ctx context.Context, commitmentTxid string) ([]SelectSweepablePreconfirmedVtxoOutpointsByCommitmentTxidRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectSweepablePreconfirmedVtxoOutpointsByCommitmentTxid, commitmentTxid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectSweepablePreconfirmedVtxoOutpointsByCommitmentTxidRow
+	for rows.Next() {
+		var i SelectSweepablePreconfirmedVtxoOutpointsByCommitmentTxidRow
+		if err := rows.Scan(&i.VtxoTxid, &i.VtxoVout); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectSweepableRounds = `-- name: SelectSweepableRounds :many
 SELECT txid FROM round_with_commitment_tx_vw r
 WHERE r.swept = false AND r.ended = true AND r.failed = false
@@ -1731,42 +1838,6 @@ func (q *Queries) SelectSweepableUnrolledVtxos(ctx context.Context) ([]SelectSwe
 			&i.VtxoVw.AssetID,
 			&i.VtxoVw.AssetAmount,
 		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectSweepableVtxoOutpointsByCommitmentTxid = `-- name: SelectSweepableVtxoOutpointsByCommitmentTxid :many
-SELECT DISTINCT v.txid AS vtxo_txid, v.vout AS vtxo_vout
-FROM vtxo_vw v
-WHERE v.swept = false
-  AND (v.commitment_txid = $1
-    OR (',' || COALESCE(v.commitments::text, '') || ',') LIKE '%,' || $1 || ',%')
-`
-
-type SelectSweepableVtxoOutpointsByCommitmentTxidRow struct {
-	VtxoTxid string
-	VtxoVout int32
-}
-
-func (q *Queries) SelectSweepableVtxoOutpointsByCommitmentTxid(ctx context.Context, commitmentTxid string) ([]SelectSweepableVtxoOutpointsByCommitmentTxidRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectSweepableVtxoOutpointsByCommitmentTxid, commitmentTxid)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectSweepableVtxoOutpointsByCommitmentTxidRow
-	for rows.Next() {
-		var i SelectSweepableVtxoOutpointsByCommitmentTxidRow
-		if err := rows.Scan(&i.VtxoTxid, &i.VtxoVout); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

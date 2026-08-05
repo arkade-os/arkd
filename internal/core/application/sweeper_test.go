@@ -388,6 +388,16 @@ func (m *mockVtxoRepository) GetAllChildrenVtxos(
 	return args.Get(0).([]domain.Outpoint), args.Error(1)
 }
 
+func (m *mockVtxoRepository) GetDescendantVtxos(
+	ctx context.Context, outpoint domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	args := m.Called(ctx, outpoint)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.Outpoint), args.Error(1)
+}
+
 func (m *mockVtxoRepository) GetVtxos(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) ([]domain.Vtxo, error) {
@@ -466,7 +476,7 @@ func (m *mockVtxoRepository) GetLeafVtxosForBatch(
 	return nil, nil
 }
 
-func (m *mockVtxoRepository) GetSweepableVtxosByCommitmentTxid(
+func (m *mockVtxoRepository) GetSweepablePreconfirmedVtxosByCommitmentTxid(
 	ctx context.Context, commitmentTxid string,
 ) ([]domain.Outpoint, error) {
 	return nil, nil

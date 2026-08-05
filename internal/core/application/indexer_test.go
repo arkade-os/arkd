@@ -110,7 +110,7 @@ func (m *mockVtxoRepoForIndexer) GetLeafVtxosForBatch(
 	return nil, nil
 }
 
-func (m *mockVtxoRepoForIndexer) GetSweepableVtxosByCommitmentTxid(
+func (m *mockVtxoRepoForIndexer) GetSweepablePreconfirmedVtxosByCommitmentTxid(
 	ctx context.Context,
 	commitmentTxid string,
 ) ([]domain.Outpoint, error) {
@@ -118,6 +118,13 @@ func (m *mockVtxoRepoForIndexer) GetSweepableVtxosByCommitmentTxid(
 }
 
 func (m *mockVtxoRepoForIndexer) GetAllChildrenVtxos(
+	ctx context.Context,
+	outpoint domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	return nil, nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetDescendantVtxos(
 	ctx context.Context,
 	outpoint domain.Outpoint,
 ) ([]domain.Outpoint, error) {

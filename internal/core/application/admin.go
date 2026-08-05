@@ -859,50 +859,15 @@ func (a *adminService) saveBatchSweptEvents(
 				}
 
 				for _, leaf := range vtxosLeaves {
-					// The VTXO is the first non-anchor output; leaf txs can
-					// carry an anchor at vout 0, so the VTXO is not always at
-					// vout 0. extractVtxoOutpoint handles that.
-					vtxo, err := extractVtxoOutpoint(leaf)
-					if err != nil {
-						log.WithError(err).Errorf(
-							"failed to extract vtxo outpoint from leaf %s",
-							leaf.UnsignedTx.TxID(),
-						)
-						continue
-					}
-					leafVtxos = append(leafVtxos, *vtxo)
+					// a leaf tx may pay multiple receivers, collect every vtxo outpoint it carries
+					leafVtxos = append(leafVtxos, leafVtxoOutpoints(leaf)...)
 				}
 			}
 		}
 
-		// get preconfirmed vtxos
-		preconfirmedVtxos := make([]domain.Outpoint, 0)
-		if commitmentRootSwept {
-			var err error
-			preconfirmedVtxos, err = vtxoRepo.GetSweepableVtxosByCommitmentTxid(
-				ctx,
-				commitmentTxid,
-			)
-			if err != nil {
-				log.WithError(err).
-					Error("error while getting sweepable vtxos by commitment txid")
-			}
-		} else {
-			seen := make(map[string]struct{})
-			for _, leafVtxo := range leafVtxos {
-				children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo)
-				if err != nil {
-					log.WithError(err).Error("error while getting children vtxos")
-					continue
-				}
-				for _, child := range children {
-					if _, ok := seen[child.String()]; !ok {
-						preconfirmedVtxos = append(preconfirmedVtxos, child)
-						seen[child.String()] = struct{}{}
-					}
-				}
-			}
-		}
+		preconfirmedVtxos := collectPreconfirmedVtxos(
+			ctx, vtxoRepo, commitmentTxid, commitmentRootSwept, leafVtxos,
+		)
 
 		events, err := round.Sweep(leafVtxos, preconfirmedVtxos, txid, txhex)
 		if err != nil {
