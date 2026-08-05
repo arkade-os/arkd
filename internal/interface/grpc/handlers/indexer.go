@@ -25,6 +25,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const (
+	// Hard caps on page-number pagination: index*size must stay below MaxInt32
+	// so the offset computed downstream can never wrap.
+	maxPageRequestSize  = 1000
+	maxPageRequestIndex = 1_000_000
+)
+
 type indexerService struct {
 	indexerSvc application.IndexerService
 	eventsCh   <-chan application.TransactionEvent
@@ -913,10 +920,10 @@ func parsePage(page *arkv1.IndexerPageRequest) (*application.Page, error) {
 	if page == nil {
 		return nil, nil
 	}
-	if page.Size <= 0 {
+	if page.Size <= 0 || page.Size > maxPageRequestSize {
 		return nil, fmt.Errorf("invalid page size")
 	}
-	if page.Index < 0 {
+	if page.Index < 0 || page.Index > maxPageRequestIndex {
 		return nil, fmt.Errorf("invalid page index")
 	}
 	return &application.Page{

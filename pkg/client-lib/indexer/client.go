@@ -22,8 +22,15 @@ import (
 const (
 	maxPageSize   = 1000
 	maxReqsPerSec = 10
-	maxPages      = 100
+	// The server clamps a page down to its own per-endpoint maximum, the smallest
+	// being 100, so maxPages has to cover maxPageSize/100 times more pages than a
+	// honoured maxPageSize would need to keep the same retrievable item ceiling.
+	maxPages = 1000
 )
+
+// throttleInterval is how long paginatedFetch waits every maxReqsPerSec pages.
+// It is a var so tests can shorten it.
+var throttleInterval = time.Second
 
 type grpcClient struct {
 	conn   *grpc.ClientConn
@@ -811,7 +818,7 @@ func paginatedFetch[T any](
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
-			case <-time.After(time.Second):
+			case <-time.After(throttleInterval):
 			}
 		}
 	}
