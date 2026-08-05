@@ -562,7 +562,10 @@ func (t *treeCoordinatorSession) AddSignatures(pubkey *btcec.PublicKey, sig Tree
 			return false, fmt.Errorf("invalid taproot signature hash length for txid %s", tx.UnsignedTx.TxID())
 		}
 
-		if !sig.Verify(nonce.PubNonce, combinedNonce.PubNonce, cosigners, pubkey, [32]byte(message), musig2.WithTaprootSignTweak(t.scriptRoot)) {
+		if !sig.Verify(
+			nonce.PubNonce, combinedNonce.PubNonce, cosigners, pubkey, [32]byte(message),
+			musig2.WithSortedKeys(), musig2.WithTaprootSignTweak(t.scriptRoot),
+		) {
 			return true, fmt.Errorf("invalid signature for txid %s", txid)
 		}
 	}
