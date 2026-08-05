@@ -6360,6 +6360,12 @@ func TestTxListenerChurn(t *testing.T) {
 		txProducerDelay        = 200 * time.Millisecond
 		minimumTxEvents        = 1
 		sendAmount      uint64 = 1000
+		// The producer stops this far before the stress window closes so a
+		// send is never in flight when the window expires.
+		producerGrace = 3 * time.Second
+		// Per-send budget. Generous: a healthy send completes in tens of
+		// milliseconds, so this only bounds a genuinely stuck call.
+		producerCallTimeout = 20 * time.Second
 	)
 
 	ctx := t.Context()
@@ -6534,6 +6540,16 @@ func TestTxListenerChurn(t *testing.T) {
 	// workers are running. Without real tx events flowing through the
 	// fanout, the sentinel would have nothing to observe and the test
 	// would be meaningless.
+	// The producer runs on its own context, which ends before the stress
+	// window, and gives every RPC its own budget. Passing the window context
+	// straight into the RPCs meant the send in flight when the window expired
+	// was always cancelled mid-call, and a cancelled send is indistinguishable
+	// at errCh from a real failure of the fanout under test.
+	producerCtx, stopProducer := context.WithTimeout(ctx, testDuration-producerGrace)
+	t.Cleanup(stopProducer)
+
+	var skippedSends atomic.Int64
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -6542,32 +6558,48 @@ func TestTxListenerChurn(t *testing.T) {
 
 		for {
 			select {
-			case <-stressCtx.Done():
+			case <-producerCtx.Done():
 				return
 			case <-ticker.C:
-				_, receiverOffchainAddr, _, err := receiver.Receive(stressCtx)
-				if err != nil {
-					reportErr(fmt.Errorf("tx producer receive address: %w", err))
-					return
-				}
-
-				res, err := sender.SendOffChain(stressCtx, []clientlib.Receiver{{
-					To:     receiverOffchainAddr.Address,
-					Amount: sendAmount,
-				}})
-				if err != nil {
-					if stressCtx.Err() != nil {
-						return
-					}
-					reportErr(fmt.Errorf("tx producer send offchain: %w", err))
-					return
-				}
-				if res.Txid == "" {
-					reportErr(fmt.Errorf("tx producer got empty txid"))
-					return
-				}
-				producedTxEvents.Add(1)
 			}
+
+			callCtx, cancelCall := context.WithTimeout(ctx, producerCallTimeout)
+
+			_, receiverOffchainAddr, _, err := receiver.Receive(callCtx)
+			if err != nil {
+				cancelCall()
+				if producerCtx.Err() != nil {
+					return
+				}
+				reportErr(fmt.Errorf("tx producer receive address: %w", err))
+				return
+			}
+
+			res, err := sender.SendOffChain(callCtx, []clientlib.Receiver{{
+				To:     receiverOffchainAddr.Address,
+				Amount: sendAmount,
+			}})
+			cancelCall()
+
+			if err != nil {
+				if producerCtx.Err() != nil {
+					return
+				}
+				// The producer outrunning its own wallet state is not a
+				// fanout failure. Skip the tick; the assertions below still
+				// require that sends got through overall.
+				if isTransientProducerError(err) {
+					skippedSends.Add(1)
+					continue
+				}
+				reportErr(fmt.Errorf("tx producer send offchain: %w", err))
+				return
+			}
+			if res.Txid == "" {
+				reportErr(fmt.Errorf("tx producer got empty txid"))
+				return
+			}
+			producedTxEvents.Add(1)
 		}
 	}()
 
@@ -6603,6 +6635,11 @@ func TestTxListenerChurn(t *testing.T) {
 		sentinelTxEvents.Load(),
 		int64(minimumTxEvents),
 		"sentinel subscription did not observe tx events during churn",
+	)
+
+	t.Logf(
+		"produced %d tx events, sentinel observed %d, skipped %d sends on transient wallet state",
+		producedTxEvents.Load(), sentinelTxEvents.Load(), skippedSends.Load(),
 	)
 
 	require.NoError(t, firstRunErr)

@@ -1163,6 +1163,34 @@ func churnWorkerBackoff(workerID int) time.Duration {
 	return time.Duration(5+workerID%11) * time.Millisecond
 }
 
+// isTransientProducerError reports whether err is the tx producer losing a
+// race with its own wallet state rather than a failure of the fanout under
+// test. The producer sends every few hundred milliseconds and each send spends
+// the change vtxo of the previous one, so it can outrun the indexer: the
+// wallet then either cannot select coins yet, or resubmits a tx the server has
+// already seen. Neither says anything about the listener behaviour the churn
+// tests exist to exercise.
+func isTransientProducerError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errMsg := strings.ToLower(err.Error())
+	signatures := []string{
+		"not enough funds",
+		"missing funds",
+		"duplicated offchain tx",
+		"duplicated input",
+	}
+
+	for _, sig := range signatures {
+		if strings.Contains(errMsg, sig) {
+			return true
+		}
+	}
+	return false
+}
+
 func isRetryableChurnError(err error) bool {
 	if err == nil {
 		return false
