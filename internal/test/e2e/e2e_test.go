@@ -110,11 +110,11 @@ func TestBatchSession(t *testing.T) {
 		// They join the same batch to settle their funds
 		var aliceIncomingErr, bobIncomingErr error
 		go func() {
-			_, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr.Address)
+			_, aliceIncomingErr = notifyIncomingFunds(ctx, alice, aliceOffchainAddr.Address)
 			wg.Done()
 		}()
 		go func() {
-			_, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
+			_, bobIncomingErr = notifyIncomingFunds(ctx, bob, bobOffchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -159,11 +159,11 @@ func TestBatchSession(t *testing.T) {
 		wg.Add(4)
 
 		go func() {
-			_, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr.Address)
+			_, aliceIncomingErr = notifyIncomingFunds(ctx, alice, aliceOffchainAddr.Address)
 			wg.Done()
 		}()
 		go func() {
-			_, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
+			_, bobIncomingErr = notifyIncomingFunds(ctx, bob, bobOffchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -227,7 +227,7 @@ func TestBatchSession(t *testing.T) {
 		wg.Add(1)
 		var incomingErr error
 		go func() {
-			_, incomingErr = alice.NotifyIncomingFunds(t.Context(), offchainAddr.Address)
+			_, incomingErr = notifyIncomingFunds(t.Context(), alice, offchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -315,7 +315,7 @@ func TestUnilateralExit(t *testing.T) {
 		wg.Add(1)
 		var incomingErr error
 		go func() {
-			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr.Address)
+			_, incomingErr = notifyIncomingFunds(t.Context(), bob, bobOffchainAddr.Address)
 			wg.Done()
 		}()
 		_, err = alice.SendOffChain(t.Context(), []clientlib.Receiver{{
@@ -451,7 +451,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 			wg.Add(1)
 			var incomingErr error
 			go func() {
-				_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+				_, incomingErr = notifyIncomingFunds(ctx, alice, offchainAddr.Address)
 				wg.Done()
 			}()
 
@@ -590,7 +590,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 			wg.Add(1)
 			var incomingErr error
 			go func() {
-				_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+				_, incomingErr = notifyIncomingFunds(ctx, alice, offchainAddr.Address)
 				wg.Done()
 			}()
 
@@ -910,7 +910,7 @@ func TestOffchainTx(t *testing.T) {
 		var incomingFunds []clientlib.Vtxo
 		var incomingErr error
 		go func() {
-			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress.Address)
+			incomingFunds, incomingErr = notifyIncomingFunds(ctx, bob, bobAddress.Address)
 			wg.Done()
 		}()
 		_, err = alice.SendOffChain(ctx, []clientlib.Receiver{{To: bobAddress.Address, Amount: 1000}})
@@ -923,7 +923,7 @@ func TestOffchainTx(t *testing.T) {
 
 		wg.Add(1)
 		go func() {
-			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress.Address)
+			incomingFunds, incomingErr = notifyIncomingFunds(ctx, bob, bobAddress.Address)
 			wg.Done()
 		}()
 		_, err = alice.SendOffChain(ctx, []clientlib.Receiver{{To: bobAddress.Address, Amount: 10000}})
@@ -936,7 +936,7 @@ func TestOffchainTx(t *testing.T) {
 
 		wg.Add(1)
 		go func() {
-			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress.Address)
+			incomingFunds, incomingErr = notifyIncomingFunds(ctx, bob, bobAddress.Address)
 			wg.Done()
 		}()
 		_, err = alice.SendOffChain(ctx, []clientlib.Receiver{{
@@ -952,7 +952,7 @@ func TestOffchainTx(t *testing.T) {
 
 		wg.Add(1)
 		go func() {
-			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddress.Address)
+			incomingFunds, incomingErr = notifyIncomingFunds(ctx, bob, bobAddress.Address)
 			wg.Done()
 		}()
 		_, err = alice.SendOffChain(ctx, []clientlib.Receiver{{To: bobAddress.Address, Amount: 10000}})
@@ -995,7 +995,7 @@ func TestOffchainTx(t *testing.T) {
 			wg.Add(1)
 			var incomingErr error
 			go func() {
-				_, incomingErr = alice.NotifyIncomingFunds(t.Context(), aliceOffchainAddr.Address)
+				_, incomingErr = notifyIncomingFunds(t.Context(), alice, aliceOffchainAddr.Address)
 				wg.Done()
 			}()
 			_, err := alice.SendOffChain(t.Context(), []clientlib.Receiver{{
@@ -1011,7 +1011,7 @@ func TestOffchainTx(t *testing.T) {
 		wg.Add(1)
 		var incomingErr error
 		go func() {
-			_, incomingErr = alice.NotifyIncomingFunds(t.Context(), aliceOffchainAddr.Address)
+			_, incomingErr = notifyIncomingFunds(t.Context(), alice, aliceOffchainAddr.Address)
 			wg.Done()
 		}()
 		_, err = bob.SendOffChain(t.Context(), []clientlib.Receiver{{
@@ -1046,7 +1046,7 @@ func TestOffchainTx(t *testing.T) {
 		// Alice sends 100 sats to Bob
 		var incomingErr error
 		go func() {
-			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr.Address)
+			_, incomingErr = notifyIncomingFunds(t.Context(), bob, bobOffchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -1074,7 +1074,7 @@ func TestOffchainTx(t *testing.T) {
 		// Alice sends 250 sats more to Bob, another sub-dust amount
 		wg.Add(1)
 		go func() {
-			_, incomingErr = bob.NotifyIncomingFunds(t.Context(), bobOffchainAddr.Address)
+			_, incomingErr = notifyIncomingFunds(t.Context(), bob, bobOffchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -1374,7 +1374,7 @@ func TestOffchainTx(t *testing.T) {
 		var incomingErr error
 		wg := &sync.WaitGroup{}
 		wg.Go(func() {
-			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddress.Address)
+			incomingFunds, incomingErr = notifyIncomingFunds(ctx, alice, offchainAddress.Address)
 		})
 
 		finalizedTxIds, err := alice.FinalizePendingTxs(ctx, nil)
@@ -1523,7 +1523,7 @@ func TestOffchainTx(t *testing.T) {
 			var incomingErr error
 			wg := &sync.WaitGroup{}
 			wg.Go(func() {
-				incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddress.Address)
+				incomingFunds, incomingErr = notifyIncomingFunds(ctx, alice, offchainAddress.Address)
 			})
 
 			// Finalize the pending tx and ensure the new vtxo is marked as swept
@@ -1659,7 +1659,7 @@ func TestOffchainTx(t *testing.T) {
 			var incomingErr error
 			wg := &sync.WaitGroup{}
 			wg.Go(func() {
-				incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddress.Address)
+				incomingFunds, incomingErr = notifyIncomingFunds(ctx, alice, offchainAddress.Address)
 			})
 
 			// Finalize the pending tx and ensure the new vtxo is still marked as swept
@@ -2132,7 +2132,7 @@ func TestDelegateRefresh(t *testing.T) {
 	var incomingFunds []clientlib.Vtxo
 	var incomingErr error
 	go func() {
-		incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, arkAddressStr)
+		incomingFunds, incomingErr = notifyIncomingFunds(ctx, alice, arkAddressStr)
 		wg.Done()
 	}()
 	_, err = alice.SendOffChain(t.Context(), []clientlib.Receiver{{
@@ -2413,7 +2413,7 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 	wg.Add(1)
 	var incomingErr error
 	go func() {
-		_, incomingErr = alice.NotifyIncomingFunds(ctx, bobAddrStr)
+		_, incomingErr = notifyIncomingFunds(ctx, alice, bobAddrStr)
 		wg.Done()
 	}()
 	res, err := alice.SendOffChain(
@@ -2652,7 +2652,7 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 	wg.Add(1)
 	var incomingErr error
 	go func() {
-		_, incomingErr = alice.NotifyIncomingFunds(ctx, bobAddrStr)
+		_, incomingErr = notifyIncomingFunds(ctx, alice, bobAddrStr)
 		defer wg.Done()
 	}()
 
@@ -2808,7 +2808,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := client.NotifyIncomingFunds(ctx, arkAddr.Address)
+				vtxos, err := notifyIncomingFunds(ctx, client, arkAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -2823,7 +2823,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := client.NotifyIncomingFunds(ctx, arkAddr.Address)
+				vtxos, err := notifyIncomingFunds(ctx, client, arkAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -2898,7 +2898,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := client.NotifyIncomingFunds(ctx, arkAddr.Address)
+				vtxos, err := notifyIncomingFunds(ctx, client, arkAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -2913,7 +2913,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := client.NotifyIncomingFunds(ctx, arkAddr.Address)
+				vtxos, err := notifyIncomingFunds(ctx, client, arkAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -2989,7 +2989,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := client.NotifyIncomingFunds(ctx, offchainAddress.Address)
+				vtxos, err := notifyIncomingFunds(ctx, client, offchainAddress.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -3008,7 +3008,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := client.NotifyIncomingFunds(ctx, offchainAddress.Address)
+				vtxos, err := notifyIncomingFunds(ctx, client, offchainAddress.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -3025,7 +3025,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := client.NotifyIncomingFunds(ctx, offchainAddress.Address)
+				vtxos, err := notifyIncomingFunds(ctx, client, offchainAddress.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -3096,7 +3096,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+				vtxos, err := notifyIncomingFunds(ctx, alice, offchainAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -3163,7 +3163,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+				vtxos, err := notifyIncomingFunds(ctx, alice, offchainAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -3286,7 +3286,7 @@ func TestReactToFraud(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				vtxos, err := alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+				vtxos, err := notifyIncomingFunds(ctx, alice, offchainAddr.Address)
 				require.NoError(t, err)
 				require.NotNil(t, vtxos)
 			}()
@@ -3359,7 +3359,7 @@ func TestSweep(t *testing.T) {
 		var incominFunds []clientlib.Vtxo
 		var incomingErr error
 		go func() {
-			incominFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+			incominFunds, incomingErr = notifyIncomingFunds(ctx, alice, offchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -3421,7 +3421,7 @@ func TestSweep(t *testing.T) {
 
 		wg.Add(1)
 		go func() {
-			_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+			_, incomingErr = notifyIncomingFunds(ctx, alice, offchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -3463,7 +3463,7 @@ func TestSweep(t *testing.T) {
 		var incomingFunds []clientlib.Vtxo
 		var incomingErr error
 		go func() {
-			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+			incomingFunds, incomingErr = notifyIncomingFunds(ctx, alice, offchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -3482,7 +3482,7 @@ func TestSweep(t *testing.T) {
 		incomingErr = nil
 		wg.Add(1)
 		go func() {
-			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+			incomingFunds, incomingErr = notifyIncomingFunds(ctx, alice, offchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -3619,7 +3619,7 @@ func TestSweep(t *testing.T) {
 		var incominFunds []clientlib.Vtxo
 		var incomingErr error
 		go func() {
-			incominFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+			incominFunds, incomingErr = notifyIncomingFunds(ctx, alice, offchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -3655,7 +3655,7 @@ func TestSweep(t *testing.T) {
 		require.False(t, spendable[0].Spent)
 
 		wg.Go(func() {
-			_, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+			_, incomingErr = notifyIncomingFunds(ctx, alice, offchainAddr.Address)
 		})
 
 		// Test fund recovery
@@ -3853,7 +3853,7 @@ func TestSweep(t *testing.T) {
 		var incomingFunds []clientlib.Vtxo
 		var incomingErr error
 		go func() {
-			incomingFunds, incomingErr = alice.NotifyIncomingFunds(ctx, offchainAddr.Address)
+			incomingFunds, incomingErr = notifyIncomingFunds(ctx, alice, offchainAddr.Address)
 			wg.Done()
 		}()
 
@@ -5404,13 +5404,13 @@ func TestFee(t *testing.T) {
 	var aliceIncomingErr, bobIncomingErr error
 	var aliceIncomingFunds, bobIncomingFunds []clientlib.Vtxo
 	go func() {
-		aliceIncomingFunds, aliceIncomingErr = alice.NotifyIncomingFunds(
-			ctx, aliceOffchainAddr.Address,
+		aliceIncomingFunds, aliceIncomingErr = notifyIncomingFunds(
+			ctx, alice, aliceOffchainAddr.Address,
 		)
 		wg.Done()
 	}()
 	go func() {
-		bobIncomingFunds, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
+		bobIncomingFunds, bobIncomingErr = notifyIncomingFunds(ctx, bob, bobOffchainAddr.Address)
 		wg.Done()
 	}()
 
@@ -5465,13 +5465,13 @@ func TestFee(t *testing.T) {
 	wg.Add(4)
 
 	go func() {
-		aliceIncomingFunds, aliceIncomingErr = alice.NotifyIncomingFunds(
-			ctx, aliceOffchainAddr.Address,
+		aliceIncomingFunds, aliceIncomingErr = notifyIncomingFunds(
+			ctx, alice, aliceOffchainAddr.Address,
 		)
 		wg.Done()
 	}()
 	go func() {
-		bobIncomingFunds, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
+		bobIncomingFunds, bobIncomingErr = notifyIncomingFunds(ctx, bob, bobOffchainAddr.Address)
 		wg.Done()
 	}()
 
@@ -5588,13 +5588,13 @@ func TestCollectedFees(t *testing.T) {
 
 	var aliceIncomingErr error
 	go func() {
-		_, aliceIncomingErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr.Address)
+		_, aliceIncomingErr = notifyIncomingFunds(ctx, alice, aliceOffchainAddr.Address)
 		wg.Done()
 	}()
 
 	var bobIncomingErr error
 	go func() {
-		_, bobIncomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
+		_, bobIncomingErr = notifyIncomingFunds(ctx, bob, bobOffchainAddr.Address)
 		wg.Done()
 	}()
 
@@ -5978,7 +5978,7 @@ func TestAsset(t *testing.T) {
 		wg.Add(1)
 		var incomingErr error
 		go func() {
-			_, incomingErr = bob.NotifyIncomingFunds(ctx, bobAddr.Address)
+			_, incomingErr = notifyIncomingFunds(ctx, bob, bobAddr.Address)
 			wg.Done()
 		}()
 
@@ -6904,9 +6904,8 @@ func TestEventListenerChurn(t *testing.T) {
 				idx := i
 				go func() {
 					defer roundWG.Done()
-					_, notifyErrors[idx] = participants[idx].NotifyIncomingFunds(
-						roundCtx,
-						offchainAddrs[idx],
+					_, notifyErrors[idx] = notifyIncomingFunds(
+						roundCtx, participants[idx], offchainAddrs[idx],
 					)
 				}()
 				go func() {
@@ -7122,7 +7121,7 @@ func TestDeprecatedSignerKey(t *testing.T) {
 		var incomingFunds []clientlib.Vtxo
 		var incomingErr error
 		go func() {
-			incomingFunds, incomingErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
+			incomingFunds, incomingErr = notifyIncomingFunds(ctx, bob, bobOffchainAddr.Address)
 			wg.Done()
 		}()
 

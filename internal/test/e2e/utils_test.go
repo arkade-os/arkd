@@ -57,6 +57,9 @@ const (
 	chainWait = 60 * time.Second
 	// serverWait bounds waits on arkd reacting to a newly confirmed tx.
 	serverWait = 60 * time.Second
+	// notifyWait bounds waits for funds to arrive at an address. A settle
+	// spans at least one batch session, so this is generous.
+	notifyWait = 90 * time.Second
 	// sweepWait bounds waits on the block-scheduled sweeper acting on expired
 	// batch outputs. The sweeper polls the chain tip on its own schedule, so
 	// the lag between mining the expiring blocks and the vtxo table reflecting
@@ -115,6 +118,33 @@ func waitUntil(t *testing.T, timeout time.Duration, what string, cond func() err
 		}
 		time.Sleep(pollInterval)
 	}
+}
+
+// notifyIncomingFunds waits for funds to land at addr, bounded so that a
+// transfer which never arrives fails its own test with a legible message.
+//
+// client.NotifyIncomingFunds returns only when funds arrive or its context is
+// cancelled. Callers pass the test context and then block on a WaitGroup, so
+// that context cannot be cancelled while they are waiting: an uncredited
+// address deadlocks the test, and the deadlock consumes the whole `go test`
+// budget and takes every other test in the package down with it.
+func notifyIncomingFunds(
+	ctx context.Context, client wallet.Wallet, addr string,
+) ([]clientlib.Vtxo, error) {
+	notifyCtx, cancel := context.WithTimeout(ctx, notifyWait)
+	defer cancel()
+
+	funds, err := client.NotifyIncomingFunds(notifyCtx, addr)
+	if err != nil {
+		if notifyCtx.Err() != nil && ctx.Err() == nil {
+			return nil, fmt.Errorf("no funds received at %s within %s", addr, notifyWait)
+		}
+		return nil, err
+	}
+	if len(funds) == 0 {
+		return nil, fmt.Errorf("no funds received at %s within %s", addr, notifyWait)
+	}
+	return funds, nil
 }
 
 // waitForOnchainUtxos blocks until the explorer reports at least n utxos for
@@ -731,7 +761,7 @@ func faucetOffchain(t *testing.T, client wallet.Wallet, amount float64) clientli
 	var incomingFunds []clientlib.Vtxo
 	var incomingErr error
 	go func() {
-		incomingFunds, incomingErr = client.NotifyIncomingFunds(t.Context(), offchainAddr.Address)
+		incomingFunds, incomingErr = notifyIncomingFunds(t.Context(), client, offchainAddr.Address)
 		wg.Done()
 	}()
 
@@ -761,7 +791,7 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) client
 	var incomingFunds []clientlib.Vtxo
 	var incomingErr error
 	go func() {
-		incomingFunds, incomingErr = client.NotifyIncomingFunds(t.Context(), offchainAddr.Address)
+		incomingFunds, incomingErr = notifyIncomingFunds(t.Context(), client, offchainAddr.Address)
 		wg.Done()
 	}()
 
@@ -780,7 +810,7 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) client
 	incomingFunds = nil
 	incomingErr = nil
 	go func() {
-		incomingFunds, incomingErr = client.NotifyIncomingFunds(t.Context(), addr)
+		incomingFunds, incomingErr = notifyIncomingFunds(t.Context(), client, addr)
 		wg.Done()
 	}()
 
@@ -806,7 +836,7 @@ func settleVtxo(t *testing.T, ctx context.Context, client wallet.Wallet, offchai
 	var incomingFunds []clientlib.Vtxo
 	var incomingErr error
 	go func() {
-		incomingFunds, incomingErr = client.NotifyIncomingFunds(ctx, offchainAddr)
+		incomingFunds, incomingErr = notifyIncomingFunds(ctx, client, offchainAddr)
 		wg.Done()
 	}()
 
@@ -1036,21 +1066,19 @@ func setupArkd() error {
 		return err
 	}
 
-	if status.Initialized && !status.Unlocked {
-		url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
-		body := fmt.Sprintf(`{"password": "%s"}`, password)
-		if err := post(adminHttpClient, url, body, "unlock"); err != nil {
-			return err
+	if status.Initialized {
+		if !status.Unlocked {
+			if err := unlockArkd(adminHttpClient); err != nil {
+				return err
+			}
 		}
 
+		// An initialised wallet is never re-created, even when it is still
+		// syncing; wait for it instead.
 		if err := waitUntilReady(adminHttpClient); err != nil {
 			return err
 		}
 
-		return refill(adminHttpClient)
-	}
-
-	if status.Initialized && status.Unlocked && status.Synced {
 		return refill(adminHttpClient)
 	}
 
@@ -1066,9 +1094,7 @@ func setupArkd() error {
 		return err
 	}
 
-	url = fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
-	body = fmt.Sprintf(`{"password": "%s"}`, password)
-	if err := post(adminHttpClient, url, body, "unlock"); err != nil {
+	if err := unlockArkd(adminHttpClient); err != nil {
 		return err
 	}
 
@@ -1118,8 +1144,22 @@ func post(httpClient *http.Client, url, body, name string) error {
 		return fmt.Errorf("failed to prepare %s request: %s", name, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if _, err := httpClient.Do(req); err != nil {
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
 		return fmt.Errorf("failed to %s wallet: %s", name, err)
+	}
+	defer resp.Body.Close()
+
+	// The status has to be checked: a wallet that is listening but not yet
+	// able to serve the request answers with a 5xx, and treating that as
+	// success lets callers proceed against a wallet that is not ready.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf(
+			"failed to %s wallet: status %d: %s",
+			name, resp.StatusCode, strings.TrimSpace(string(msg)),
+		)
 	}
 	return nil
 }

@@ -80,7 +80,7 @@ func TestVtxoChain(t *testing.T) {
 		wg := &sync.WaitGroup{}
 		var notifyErr error
 		wg.Go(func() {
-			_, notifyErr = client.NotifyIncomingFunds(ctx, offchainAddr.Address)
+			_, notifyErr = notifyIncomingFunds(ctx, client, offchainAddr.Address)
 		})
 
 		redeemRes, err := client.RedeemNotes(ctx, []string{note})
@@ -131,7 +131,7 @@ func TestVtxoChain(t *testing.T) {
 			wg := &sync.WaitGroup{}
 			var notifyErr error
 			wg.Go(func() {
-				_, notifyErr = client.NotifyIncomingFunds(ctx, offchainAddr.Address)
+				_, notifyErr = notifyIncomingFunds(ctx, client, offchainAddr.Address)
 			})
 
 			res, err := client.SendOffChain(ctx, []clientlib.Receiver{{
