@@ -19,6 +19,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client"
 	wallet "github.com/arkade-os/arkd/pkg/client-wallet"
 	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-wallet/identity"
 	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-wallet/identity/store/inmemory"
@@ -159,13 +160,30 @@ func waitForUnrolledOnchainFunds(t *testing.T, client wallet.Wallet) *types.Bala
 }
 
 // waitForMatureOnchainFunds blocks until unrolled funds have aged past the
-// unilateral exit delay and become spendable.
+// unilateral exit delay and become claimable.
+//
+// Maturity has to be observed as the funds leaving LockedAmount, not as
+// SpendableAmount going positive: SpendableAmount also covers the plain
+// onchain utxo the wallet holds for unroll fees, so it is non-zero from the
+// start and would make this return immediately.
 func waitForMatureOnchainFunds(t *testing.T, client wallet.Wallet) {
 	t.Helper()
 
 	waitForBalance(t, client, "unrolled funds to mature", func(b *types.Balance) bool {
-		return b.OnchainBalance.SpendableAmount > 0
+		return len(b.OnchainBalance.LockedAmount) == 0 && b.OnchainBalance.SpendableAmount > 0
 	})
+}
+
+// waitForOnchainSpendable blocks until the wallet reports exactly amount sats
+// spendable onchain. Used when funds are sent to a wallet's onchain address,
+// which it only sees once the explorer has indexed the new utxo.
+func waitForOnchainSpendable(t *testing.T, client wallet.Wallet, amount uint64) *types.Balance {
+	t.Helper()
+
+	return waitForBalance(
+		t, client, fmt.Sprintf("onchain spendable balance of %d", amount),
+		func(b *types.Balance) bool { return b.OnchainBalance.SpendableAmount == amount },
+	)
 }
 
 // waitForSpendableVtxos blocks until the wallet reports exactly n spendable
@@ -841,7 +859,35 @@ func restartArkd() error {
 
 	// wait until the wallet is synced again before returning, otherwise RPCs
 	// racing the restart get "server not ready".
-	return waitUntilReady(adminHttpClient)
+	if err := waitUntilReady(adminHttpClient); err != nil {
+		return err
+	}
+
+	// The admin wallet status and the gRPC readiness gate are separate
+	// signals: the public service keeps rejecting calls with "server not
+	// ready" until the app service has started, which happens after the
+	// wallet reports ready.
+	return waitUntilArkServiceReady()
+}
+
+// waitUntilArkServiceReady polls the public gRPC surface until it stops
+// rejecting calls through the readiness interceptor.
+func waitUntilArkServiceReady() error {
+	client, err := grpcclient.NewClient(serverUrl, "")
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	deadline := time.Now().Add(2 * time.Minute)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		if _, lastErr = client.GetInfo(context.Background()); lastErr == nil {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("timed out waiting for the ark service to be ready: %w", lastErr)
 }
 
 // unlockArkd posts the unlock request, retrying until the admin API is

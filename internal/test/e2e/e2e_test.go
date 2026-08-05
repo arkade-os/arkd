@@ -177,7 +177,6 @@ func TestBatchSession(t *testing.T) {
 		}()
 
 		wg.Wait()
-		time.Sleep(time.Second)
 
 		require.NoError(t, aliceIncomingErr)
 		require.NoError(t, bobIncomingErr)
@@ -188,10 +187,11 @@ func TestBatchSession(t *testing.T) {
 		require.NotEmpty(t, aliceBatchRes.CommitmentTxid)
 		require.Equal(t, aliceBatchRes.CommitmentTxid, bobBatchRes.CommitmentTxid)
 
+		waitForOffchainBalance(t, alice, 1)
+
 		aliceBalance, err = alice.Balance(t.Context())
 		require.NoError(t, err)
 		require.NotNil(t, aliceBalance)
-		require.NotZero(t, int(aliceBalance.OffchainBalance.Total))
 		require.Zero(t, int(aliceBalance.OnchainBalance.SpendableAmount))
 		require.Empty(t, aliceBalance.OnchainBalance.LockedAmount)
 
@@ -822,12 +822,10 @@ func TestCollaborativeExit(t *testing.T) {
 				prevTotalBalance,
 			)
 
-			bobBalance, err = bob.Balance(t.Context())
-			require.NoError(t, err)
+			bobBalance = waitForOnchainSpendable(t, bob, 21000)
 			require.NotNil(t, bobBalance)
 			require.Zero(t, int(bobBalance.OffchainBalance.Total))
 			require.Empty(t, bobBalance.OnchainBalance.LockedAmount)
-			require.Equal(t, 21000, int(bobBalance.OnchainBalance.SpendableAmount))
 		})
 
 		// In this test Alice sends all to Bob'c onchain address without (VTXO) change
@@ -862,12 +860,10 @@ func TestCollaborativeExit(t *testing.T) {
 			require.NotNil(t, aliceBalance)
 			require.Empty(t, aliceBalance.OnchainBalance.LockedAmount)
 
-			bobBalance, err = bob.Balance(t.Context())
-			require.NoError(t, err)
+			// 100 satoshis is the fee for the onchain output
+			bobBalance = waitForOnchainSpendable(t, bob, 21000)
 			require.NotNil(t, bobBalance)
 			require.Zero(t, int(bobBalance.OffchainBalance.Total))
-			// 100 satoshis is the fee for the onchain output
-			require.Equal(t, 21000, int(bobBalance.OnchainBalance.SpendableAmount))
 		})
 	})
 
@@ -3098,8 +3094,7 @@ func TestReactToFraud(t *testing.T) {
 
 			wg.Wait()
 
-			spendableVtxos := waitForAnySpendableVtxo(t, alice)
-			require.Len(t, spendableVtxos, 1)
+			spendableVtxos := waitForSpendableVtxos(t, alice, 1)
 
 			vtxoToFraud := spendableVtxos[0]
 			initialTreeVtxo := vtxoToFraud
@@ -5499,10 +5494,11 @@ func TestFee(t *testing.T) {
 	require.NotNil(t, bobBatchRes)
 	require.Equal(t, aliceBatchRes.CommitmentTxid, bobBatchRes.CommitmentTxid)
 
+	waitForOffchainBalance(t, alice, 1)
+
 	aliceBalance, err = alice.Balance(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, aliceBalance)
-	require.NotZero(t, int(aliceBalance.OffchainBalance.Total))
 	require.Zero(t, int(aliceBalance.OnchainBalance.SpendableAmount))
 	require.Empty(t, aliceBalance.OnchainBalance.LockedAmount)
 
