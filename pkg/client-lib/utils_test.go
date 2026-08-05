@@ -5,6 +5,7 @@ import (
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/stretchr/testify/require"
@@ -124,6 +125,53 @@ func TestCoinSelect(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, sel, 1)
 		require.Equal(t, uint64(0), change)
+	})
+
+	t.Run("change smaller than the change-output fee drops to zero", func(t *testing.T) {
+		// One 100000-sat vtxo, receiver 98940, 1% offchain input fee (1000) and
+		// a flat 50-sat offchain output fee. Target is 98940+50+1000 = 99990, so
+		// the residual change is 10 while the change output is itself charged
+		// 50 — a fee never reserved in the target. Subtracting it raw wrapped
+		// the uint64 to ~2^64, which then sailed past the sub-dust check.
+		estimator, err := arkfee.New(arkfee.Config{
+			IntentOffchainInputProgram:  "0.01 * amount",
+			IntentOffchainOutputProgram: "50.0",
+		})
+		require.NoError(t, err)
+
+		big := vtxoAt("d", 0, 100000, now.Add(1*time.Hour))
+		_, sel, change, err := clientlib.CoinSelect(
+			nil,
+			[]clientlib.Vtxo{big},
+			[]clientlib.Receiver{{Amount: 98940}}, 330, estimator,
+		)
+		require.NoError(t, err)
+		require.Len(t, sel, 1)
+		require.Equal(t, uint64(0), change)
+	})
+
+	t.Run("folded-in input pays the change-output fee the change could not cover", func(t *testing.T) {
+		// Same setup as above but with a spare vtxo, so the sub-dust branch folds
+		// it in. The 40 sats of change-output fee the residual could not cover
+		// must still be paid out of the folded-in input, otherwise the intent
+		// underpays and the server rejects it with INTENT_INSUFFICIENT_FEE.
+		// inputs 101000 - outputs (98940 + 950) = 1110 = the fee the server wants.
+		estimator, err := arkfee.New(arkfee.Config{
+			IntentOffchainInputProgram:  "0.01 * amount",
+			IntentOffchainOutputProgram: "50.0",
+		})
+		require.NoError(t, err)
+
+		big := vtxoAt("e", 0, 100000, now.Add(1*time.Hour))
+		spare := vtxoAt("f", 0, 1000, now.Add(2*time.Hour))
+		_, sel, change, err := clientlib.CoinSelect(
+			nil,
+			[]clientlib.Vtxo{big, spare},
+			[]clientlib.Receiver{{Amount: 98940}}, 330, estimator,
+		)
+		require.NoError(t, err)
+		require.Len(t, sel, 2)
+		require.Equal(t, uint64(950), change)
 	})
 }
 
