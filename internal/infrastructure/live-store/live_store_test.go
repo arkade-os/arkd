@@ -320,9 +320,17 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		tx, err := parseOffchainTxFixture(offchainTxJSON)
 		require.NoError(t, err)
 
-		// Add
-		err = store.OffchainTxs().Add(ctx, tx)
+		// Add returns ClaimFresh for the first submission of a tx.
+		status, conflict, err := store.OffchainTxs().Add(ctx, tx)
 		require.NoError(t, err)
+		require.Nil(t, conflict)
+		require.Equal(t, ports.ClaimFresh, status)
+
+		// Re-adding the same arkTxid is idempotent (ClaimAlreadyOwned).
+		status, conflict, err = store.OffchainTxs().Add(ctx, tx)
+		require.NoError(t, err)
+		require.Nil(t, conflict)
+		require.Equal(t, ports.ClaimAlreadyOwned, status)
 
 		// Get
 		offchainTx, err := store.OffchainTxs().Get(ctx, "nonexistent")
@@ -334,7 +342,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 		require.NotNil(t, offchainTx)
 
-		// Includes
+		// Includes: every checkpoint TxIn the tx registered is visible.
 		outpointJSON := `{"Txid":"fefcc1d90510aa15a77b3bac88a745f7cc58a02a1d4ebe631901bff7f327c51a","VOut":0}`
 		var outpoint domain.Outpoint
 		err = json.Unmarshal([]byte(outpointJSON), &outpoint)
@@ -342,6 +350,52 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		exists, err := store.OffchainTxs().Includes(ctx, outpoint)
 		require.NoError(t, err)
 		require.True(t, exists)
+
+		// A DIFFERENT owner claiming an outpoint the off-chain Add registered
+		// conflicts: both writers share one owner-tagged domain.
+		status, conflict, err = store.OffchainTxs().ClaimOutpoints(
+			ctx, "other-owner", []domain.Outpoint{outpoint},
+		)
+		require.NoError(t, err)
+		require.Equal(t, ports.ClaimConflict, status)
+		require.NotNil(t, conflict)
+		require.Equal(t, outpoint.String(), conflict.String())
+
+		// A fresh outpoint claims cleanly, reads back through Includes, and a
+		// different owner is then refused until it is released.
+		fresh := domain.Outpoint{
+			Txid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			VOut: 7,
+		}
+		status, conflict, err = store.OffchainTxs().ClaimOutpoints(
+			ctx, "owner-x", []domain.Outpoint{fresh},
+		)
+		require.NoError(t, err)
+		require.Nil(t, conflict)
+		require.Equal(t, ports.ClaimFresh, status)
+		exists, err = store.OffchainTxs().Includes(ctx, fresh)
+		require.NoError(t, err)
+		require.True(t, exists)
+		status, _, err = store.OffchainTxs().ClaimOutpoints(
+			ctx, "owner-y", []domain.Outpoint{fresh},
+		)
+		require.NoError(t, err)
+		require.Equal(t, ports.ClaimConflict, status)
+
+		// Release is owner-scoped: the wrong owner cannot release it, the right
+		// owner can.
+		require.NoError(t,
+			store.OffchainTxs().ReleaseOutpoints(ctx, "owner-y", []domain.Outpoint{fresh}),
+		)
+		exists, err = store.OffchainTxs().Includes(ctx, fresh)
+		require.NoError(t, err)
+		require.True(t, exists)
+		require.NoError(t,
+			store.OffchainTxs().ReleaseOutpoints(ctx, "owner-x", []domain.Outpoint{fresh}),
+		)
+		exists, err = store.OffchainTxs().Includes(ctx, fresh)
+		require.NoError(t, err)
+		require.False(t, exists)
 
 		// Remove
 		err = store.OffchainTxs().Remove(ctx, tx.ArkTxid)
