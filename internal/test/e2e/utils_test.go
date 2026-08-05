@@ -23,6 +23,7 @@ import (
 	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-wallet/identity"
 	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-wallet/identity/store/inmemory"
 	"github.com/arkade-os/arkd/pkg/client-wallet/store"
+	"github.com/arkade-os/arkd/pkg/client-wallet/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -41,6 +42,262 @@ const (
 	serverUrl   = "127.0.0.1:7070"
 	explorerUrl = "http://127.0.0.1:3000"
 )
+
+// Timeouts for the wait helpers below. They are upper bounds on how long a
+// condition may take to become true, not delays: a helper returns as soon as
+// its condition holds, so raising a bound costs nothing on a healthy run.
+const (
+	// pollInterval is how often the wait helpers re-check their condition.
+	pollInterval = 250 * time.Millisecond
+	// indexerWait bounds waits on the indexer projection catching up with a
+	// change the client has already been notified about.
+	indexerWait = 30 * time.Second
+	// chainWait bounds waits on the explorer indexing new onchain activity.
+	chainWait = 60 * time.Second
+	// serverWait bounds waits on arkd reacting to a newly confirmed tx.
+	serverWait = 60 * time.Second
+	// sweepWait bounds waits on the block-scheduled sweeper acting on expired
+	// batch outputs. The sweeper polls the chain tip on its own schedule, so
+	// the lag between mining the expiring blocks and the vtxo table reflecting
+	// the sweep can be considerably longer than a single round.
+	sweepWait = 4 * time.Minute
+)
+
+// testExplorer is a shared read-only explorer used by the wait helpers to
+// observe onchain state the way the client wallets do.
+var testExplorer clientlib.Explorer
+
+// waitUntil polls cond every pollInterval until it returns true, failing the
+// test if timeout elapses first. Prefer this over a fixed sleep: the systems
+// under test (explorer indexing, the indexer projection, the sweeper) settle
+// after an unpredictable delay that varies with CI load.
+func waitUntil(t *testing.T, timeout time.Duration, what string, cond func() bool) {
+	t.Helper()
+	require.Eventually(
+		t, cond, timeout, pollInterval, "timed out after %s waiting for %s", timeout, what,
+	)
+}
+
+// waitForOnchainUtxos blocks until the explorer reports at least n utxos for
+// addr and returns them.
+func waitForOnchainUtxos(t *testing.T, addr string, n int) []clientlib.ExplorerUtxo {
+	t.Helper()
+
+	var utxos []clientlib.ExplorerUtxo
+	waitUntil(t, chainWait, fmt.Sprintf("%d utxo(s) at %s", n, addr), func() bool {
+		found, err := testExplorer.GetUtxos([]string{addr})
+		if err != nil {
+			return false
+		}
+		utxos = found
+		return len(found) >= n
+	})
+	return utxos
+}
+
+// faucetOnchainAndWait faucets addr and blocks until the explorer has indexed
+// the new utxo, so that a wallet reading the explorer can actually see it.
+func faucetOnchainAndWait(t *testing.T, addr string, amount float64) {
+	t.Helper()
+
+	before, err := testExplorer.GetUtxos([]string{addr})
+	require.NoError(t, err)
+
+	faucetOnchain(t, addr, amount)
+	waitForOnchainUtxos(t, addr, len(before)+1)
+}
+
+// waitForOffchainBalance blocks until the wallet reports at least min sats
+// offchain.
+func waitForOffchainBalance(t *testing.T, client wallet.Wallet, min uint64) {
+	t.Helper()
+
+	waitForBalance(
+		t, client, fmt.Sprintf("offchain balance >= %d", min),
+		func(b *types.Balance) bool { return b.OffchainBalance.Total >= min },
+	)
+}
+
+// waitForEmptyOffchainBalance blocks until the wallet has no offchain funds
+// left, e.g. after they have been unrolled onchain.
+func waitForEmptyOffchainBalance(t *testing.T, client wallet.Wallet) *types.Balance {
+	t.Helper()
+
+	return waitForBalance(
+		t, client, "offchain balance to drain",
+		func(b *types.Balance) bool { return b.OffchainBalance.Total == 0 },
+	)
+}
+
+// waitForBalance blocks until the wallet's balance satisfies cond.
+func waitForBalance(
+	t *testing.T, client wallet.Wallet, what string, cond func(*types.Balance) bool,
+) *types.Balance {
+	t.Helper()
+
+	var balance *types.Balance
+	waitUntil(t, indexerWait, what, func() bool {
+		b, err := client.Balance(t.Context())
+		if err != nil {
+			return false
+		}
+		balance = b
+		return cond(b)
+	})
+	return balance
+}
+
+// waitForUnrolledOnchainFunds blocks until the wallet's offchain funds have
+// moved onchain and are still locked by the exit delay.
+func waitForUnrolledOnchainFunds(t *testing.T, client wallet.Wallet) *types.Balance {
+	t.Helper()
+
+	return waitForBalance(t, client, "offchain funds to move onchain", func(b *types.Balance) bool {
+		return b.OffchainBalance.Total == 0 && len(b.OnchainBalance.LockedAmount) > 0 &&
+			b.OnchainBalance.LockedAmount[0].Amount > 0
+	})
+}
+
+// waitForMatureOnchainFunds blocks until unrolled funds have aged past the
+// unilateral exit delay and become spendable.
+func waitForMatureOnchainFunds(t *testing.T, client wallet.Wallet) {
+	t.Helper()
+
+	waitForBalance(t, client, "unrolled funds to mature", func(b *types.Balance) bool {
+		return b.OnchainBalance.SpendableAmount > 0
+	})
+}
+
+// waitForSpendableVtxos blocks until the wallet reports exactly n spendable
+// vtxos and returns them.
+func waitForSpendableVtxos(t *testing.T, client wallet.Wallet, n int) []clientlib.Vtxo {
+	t.Helper()
+
+	var vtxos []clientlib.Vtxo
+	waitUntil(t, indexerWait, fmt.Sprintf("%d spendable vtxo(s)", n), func() bool {
+		spendable, _, err := client.ListVtxos(t.Context())
+		if err != nil {
+			return false
+		}
+		vtxos = spendable
+		return len(spendable) == n
+	})
+	return vtxos
+}
+
+// waitForAnySpendableVtxo blocks until the wallet reports at least one
+// spendable vtxo and returns the full set.
+func waitForAnySpendableVtxo(t *testing.T, client wallet.Wallet) []clientlib.Vtxo {
+	t.Helper()
+
+	var vtxos []clientlib.Vtxo
+	waitUntil(t, indexerWait, "at least one spendable vtxo", func() bool {
+		spendable, _, err := client.ListVtxos(t.Context())
+		if err != nil {
+			return false
+		}
+		vtxos = spendable
+		return len(spendable) > 0
+	})
+	return vtxos
+}
+
+// waitForAnySpentVtxo blocks until the wallet reports at least one spent vtxo
+// and returns the full set.
+func waitForAnySpentVtxo(t *testing.T, client wallet.Wallet) []clientlib.Vtxo {
+	t.Helper()
+
+	var vtxos []clientlib.Vtxo
+	waitUntil(t, indexerWait, "at least one spent vtxo", func() bool {
+		_, spent, err := client.ListVtxos(t.Context())
+		if err != nil {
+			return false
+		}
+		vtxos = spent
+		return len(spent) > 0
+	})
+	return vtxos
+}
+
+// waitForSweptVtxos blocks until every spendable vtxo held by client is marked
+// swept.
+func waitForSweptVtxos(t *testing.T, client wallet.Wallet) []clientlib.Vtxo {
+	t.Helper()
+
+	var vtxos []clientlib.Vtxo
+	waitUntil(t, sweepWait, "all vtxos to be swept", func() bool {
+		spendable, _, err := client.ListVtxos(t.Context())
+		if err != nil || len(spendable) == 0 {
+			return false
+		}
+		for _, v := range spendable {
+			if !v.Swept {
+				return false
+			}
+		}
+		vtxos = spendable
+		return true
+	})
+	return vtxos
+}
+
+// waitForVtxosInIndexer blocks until all the given vtxos are queryable as
+// spendable. NotifyIncomingFunds returns off the subscription stream, which
+// runs ahead of the indexer projection that ListVtxos and Balance read from.
+func waitForVtxosInIndexer(t *testing.T, client wallet.Wallet, vtxos ...clientlib.Vtxo) {
+	t.Helper()
+
+	want := make(map[clientlib.Outpoint]struct{}, len(vtxos))
+	for _, v := range vtxos {
+		want[v.Outpoint] = struct{}{}
+	}
+
+	waitUntil(t, indexerWait, "vtxos to appear in the indexer", func() bool {
+		spendable, _, err := client.ListVtxos(t.Context())
+		if err != nil {
+			return false
+		}
+		found := 0
+		for _, v := range spendable {
+			if _, ok := want[v.Outpoint]; ok {
+				found++
+			}
+		}
+		return found == len(want)
+	})
+}
+
+// waitForOutspendsIndexed blocks until the explorer knows about the given tx
+// and can report the spent status of its output vout.
+func waitForOutspendsIndexed(
+	t *testing.T, explorer clientlib.Explorer, txid string, vout uint32,
+) []clientlib.SpentStatus {
+	t.Helper()
+
+	var spentStatus []clientlib.SpentStatus
+	waitUntil(t, chainWait, fmt.Sprintf("the explorer to index %s", txid), func() bool {
+		found, err := explorer.GetTxOutspends(txid)
+		if err != nil {
+			return false
+		}
+		spentStatus = found
+		return len(found) > int(vout)
+	})
+	return spentStatus
+}
+
+// waitForOutspend blocks until the explorer reports the given output as spent.
+func waitForOutspend(t *testing.T, explorer clientlib.Explorer, txid string, vout uint32) {
+	t.Helper()
+
+	waitUntil(t, serverWait, fmt.Sprintf("%s:%d to be spent", txid, vout), func() bool {
+		spentStatus, err := explorer.GetTxOutspends(txid)
+		if err != nil || len(spentStatus) <= int(vout) {
+			return false
+		}
+		return spentStatus[vout].Spent
+	})
+}
 
 func generateBlocks(n int) error {
 	_, err := runCommand("nigiri", "rpc", "--generate", fmt.Sprintf("%d", n))
@@ -185,11 +442,15 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc clientlib.Explor
 		wire.MaxTxInSequenceNum,
 	}
 
-	time.Sleep(5 * time.Second)
-
-	selectedCoins, err := explorerSvc.GetUtxos([]string{addr.EncodeAddress()})
-	require.NoError(t, err)
-	require.Len(t, selectedCoins, 1)
+	var selectedCoins []clientlib.ExplorerUtxo
+	waitUntil(t, chainWait, "faucet utxo for the anchor bump", func() bool {
+		found, err := explorerSvc.GetUtxos([]string{addr.EncodeAddress()})
+		if err != nil {
+			return false
+		}
+		selectedCoins = found
+		return len(found) == 1
+	})
 
 	utxo := selectedCoins[0]
 	txid, err := chainhash.NewHashFromStr(utxo.Txid)
@@ -326,7 +587,7 @@ func faucet(t *testing.T, client wallet.Wallet, amount float64) {
 	require.NoError(t, err)
 	require.NotEmpty(t, onchainAddr)
 	// Faucet onchain addr to cover network fees for the unroll.
-	faucetOnchain(t, onchainAddr, 0.00001)
+	faucetOnchainAndWait(t, onchainAddr, 0.00001)
 }
 
 func generateNote(t *testing.T, amount uint64) string {
@@ -386,7 +647,7 @@ func faucetOffchain(t *testing.T, client wallet.Wallet, amount float64) clientli
 	require.NoError(t, incomingErr)
 	require.NotEmpty(t, incomingFunds)
 
-	time.Sleep(time.Second)
+	waitForVtxosInIndexer(t, client, incomingFunds[0])
 	return incomingFunds[0]
 }
 
@@ -416,7 +677,7 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) client
 	require.NoError(t, incomingErr)
 	require.NotEmpty(t, incomingFunds)
 
-	time.Sleep(time.Second)
+	waitForVtxosInIndexer(t, client, incomingFunds[0])
 
 	wg.Add(1)
 	incomingFunds = nil
@@ -459,7 +720,7 @@ func settleVtxo(t *testing.T, ctx context.Context, client wallet.Wallet, offchai
 	require.NoError(t, incomingErr)
 	require.NotEmpty(t, incomingFunds)
 
-	time.Sleep(time.Second)
+	waitForVtxosInIndexer(t, client, incomingFunds[0])
 }
 
 func getBatchExpiryLocktime(batchExpiry uint32) arklib.RelativeLocktime {
@@ -558,34 +819,53 @@ func clearIntentFees() error {
 	return nil
 }
 
-// lock the wallet, wait 10s and unlock it
+// restart the arkd container and unlock its wallet
 func restartArkd() error {
 	adminHttpClient := &http.Client{
 		Timeout: 15 * time.Second,
 	}
 
-	// down arkd container
+	// docker stop/start block until the container has changed state, so the
+	// only thing left to wait on is the admin API accepting requests again.
 	if _, err := runCommand("docker", "container", "stop", "arkd"); err != nil {
 		return err
 	}
-
-	time.Sleep(5 * time.Second)
 
 	if _, err := runCommand("docker", "container", "start", "arkd"); err != nil {
 		return err
 	}
 
-	time.Sleep(5 * time.Second)
-
-	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
-	body := fmt.Sprintf(`{"password": "%s"}`, password)
-	if err := post(adminHttpClient, url, body, "unlock"); err != nil {
+	if err := unlockArkd(adminHttpClient); err != nil {
 		return err
 	}
 
 	// wait until the wallet is synced again before returning, otherwise RPCs
 	// racing the restart get "server not ready".
 	return waitUntilReady(adminHttpClient)
+}
+
+// unlockArkd posts the unlock request, retrying until the admin API is
+// listening again after a container restart.
+func unlockArkd(httpClient *http.Client) error {
+	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
+	body := fmt.Sprintf(`{"password": "%s"}`, password)
+	return postWithRetry(httpClient, url, body, "unlock", time.Minute)
+}
+
+// postWithRetry retries post until it succeeds or timeout elapses. The admin
+// API refuses connections for an unpredictable stretch after a restart.
+func postWithRetry(
+	httpClient *http.Client, url, body, name string, timeout time.Duration,
+) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		if lastErr = post(httpClient, url, body, name); lastErr == nil {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("timed out after %s retrying %s: %w", timeout, name, lastErr)
 }
 
 // recreate the arkd-wallet container with overridden signer keys, reusing the
@@ -604,14 +884,12 @@ func recreateArkdWallet(signerKey, deprecated string) error {
 		return fmt.Errorf("failed to recreate arkd-wallet: %w", err)
 	}
 
-	time.Sleep(8 * time.Second)
-
 	if err := unlockArkdWallet(); err != nil {
 		return err
 	}
 
-	time.Sleep(5 * time.Second)
-
+	// restartArkd waits for arkd to report ready, so there is nothing to wait
+	// on here beyond the wallet accepting the unlock.
 	return restartArkd()
 }
 
@@ -619,7 +897,7 @@ func unlockArkdWallet() error {
 	adminHttpClient := &http.Client{Timeout: 15 * time.Second}
 	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
 	body := fmt.Sprintf(`{"password": "%s"}`, password)
-	return post(adminHttpClient, url, body, "unlock")
+	return postWithRetry(adminHttpClient, url, body, "unlock", time.Minute)
 }
 
 func setupArkd() error {
@@ -722,20 +1000,23 @@ func post(httpClient *http.Client, url, body, name string) error {
 }
 
 func waitUntilReady(httpClient *http.Client) error {
-	ticker := time.NewTicker(2 * time.Second)
 	url := fmt.Sprintf("%s/v1/admin/wallet/status", adminUrl)
-	for range ticker.C {
+	deadline := time.Now().Add(2 * time.Minute)
+	var lastErr error
+	for time.Now().Before(deadline) {
 		status, err := get[statusResp](httpClient, url, "status")
 		if err != nil {
-			return err
+			// The admin API refuses connections until arkd is listening again.
+			lastErr = err
+		} else if status.Initialized && status.Unlocked && status.Synced {
+			return nil
 		}
-
-		if status.Initialized && status.Unlocked && status.Synced {
-			ticker.Stop()
-			break
-		}
+		time.Sleep(500 * time.Millisecond)
 	}
-	return nil
+	if lastErr != nil {
+		return fmt.Errorf("timed out waiting for arkd to be ready: %w", lastErr)
+	}
+	return fmt.Errorf("timed out waiting for arkd to be ready")
 }
 
 func refill(httpClient *http.Client) error {
@@ -776,6 +1057,43 @@ func listVtxosWithAsset(t *testing.T, client wallet.Wallet, assetID string) []cl
 		}
 	}
 	return assetVtxos
+}
+
+// waitForAssetVtxos blocks until the wallet holds exactly n vtxos carrying the
+// given asset and returns them.
+func waitForAssetVtxos(
+	t *testing.T, client wallet.Wallet, assetID string, n int,
+) []clientlib.Vtxo {
+	t.Helper()
+
+	var assetVtxos []clientlib.Vtxo
+	waitUntil(t, indexerWait, fmt.Sprintf("%d vtxo(s) with asset %s", n, assetID), func() bool {
+		vtxos, _, err := client.ListVtxos(t.Context())
+		if err != nil {
+			return false
+		}
+		assetVtxos = assetVtxos[:0]
+		for _, vtxo := range vtxos {
+			if _, ok := findAssetInVtxo(vtxo, assetID); ok {
+				assetVtxos = append(assetVtxos, vtxo)
+			}
+		}
+		return len(assetVtxos) == n
+	})
+	return assetVtxos
+}
+
+// waitForAssetBalance blocks until the wallet reports the given asset balance.
+func waitForAssetBalance(t *testing.T, client wallet.Wallet, assetID string, amount uint64) {
+	t.Helper()
+
+	waitUntil(t, indexerWait, fmt.Sprintf("asset %s balance of %d", assetID, amount), func() bool {
+		balance, err := client.Balance(t.Context())
+		if err != nil {
+			return false
+		}
+		return balance.AssetBalances[assetID] == amount
+	})
 }
 
 func findAssetInVtxo(vtxo clientlib.Vtxo, assetID string) (clientlib.Asset, bool) {
