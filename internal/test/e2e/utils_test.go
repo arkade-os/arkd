@@ -68,15 +68,53 @@ const (
 // observe onchain state the way the client wallets do.
 var testExplorer clientlib.Explorer
 
-// waitUntil polls cond every pollInterval until it returns true, failing the
+// waitUntil polls cond every pollInterval until it returns nil, failing the
 // test if timeout elapses first. Prefer this over a fixed sleep: the systems
 // under test (explorer indexing, the indexer projection, the sweeper) settle
 // after an unpredictable delay that varies with CI load.
-func waitUntil(t *testing.T, timeout time.Duration, what string, cond func() bool) {
+//
+// cond returns an error rather than a bool so that a condition which never
+// holds because of a persistent fault reports that fault, instead of an
+// anonymous timeout that looks like a merely slow system. Each call runs in
+// its own goroutine so a hung cond cannot outlive the deadline.
+func waitUntil(t *testing.T, timeout time.Duration, what string, cond func() error) {
 	t.Helper()
-	require.Eventually(
-		t, cond, timeout, pollInterval, "timed out after %s waiting for %s", timeout, what,
-	)
+
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+
+	fail := func() {
+		t.Helper()
+		if lastErr == nil {
+			lastErr = fmt.Errorf("condition did not complete before the deadline")
+		}
+		require.FailNowf(
+			t, "timed out waiting",
+			"timed out after %s waiting for %s; last error: %v", timeout, what, lastErr,
+		)
+	}
+
+	for {
+		done := make(chan error, 1)
+		go func() { done <- cond() }()
+
+		select {
+		case err := <-done:
+			if err == nil {
+				return
+			}
+			lastErr = err
+		case <-time.After(time.Until(deadline)):
+			fail()
+			return
+		}
+
+		if !time.Now().Before(deadline) {
+			fail()
+			return
+		}
+		time.Sleep(pollInterval)
+	}
 }
 
 // waitForOnchainUtxos blocks until the explorer reports at least n utxos for
@@ -85,13 +123,16 @@ func waitForOnchainUtxos(t *testing.T, addr string, n int) []clientlib.ExplorerU
 	t.Helper()
 
 	var utxos []clientlib.ExplorerUtxo
-	waitUntil(t, chainWait, fmt.Sprintf("%d utxo(s) at %s", n, addr), func() bool {
+	waitUntil(t, chainWait, fmt.Sprintf("%d utxo(s) at %s", n, addr), func() error {
 		found, err := testExplorer.GetUtxos([]string{addr})
 		if err != nil {
-			return false
+			return err
 		}
 		utxos = found
-		return len(found) >= n
+		if len(found) < n {
+			return fmt.Errorf("only %d utxo(s) indexed", len(found))
+		}
+		return nil
 	})
 	return utxos
 }
@@ -137,13 +178,20 @@ func waitForBalance(
 	t.Helper()
 
 	var balance *types.Balance
-	waitUntil(t, indexerWait, what, func() bool {
+	waitUntil(t, indexerWait, what, func() error {
 		b, err := client.Balance(t.Context())
 		if err != nil {
-			return false
+			return err
 		}
 		balance = b
-		return cond(b)
+		if !cond(b) {
+			return fmt.Errorf(
+				"balance not settled: offchain %d, onchain spendable %d, locked entries %d",
+				b.OffchainBalance.Total, b.OnchainBalance.SpendableAmount,
+				len(b.OnchainBalance.LockedAmount),
+			)
+		}
+		return nil
 	})
 	return balance
 }
@@ -192,13 +240,16 @@ func waitForSpendableVtxos(t *testing.T, client wallet.Wallet, n int) []clientli
 	t.Helper()
 
 	var vtxos []clientlib.Vtxo
-	waitUntil(t, indexerWait, fmt.Sprintf("%d spendable vtxo(s)", n), func() bool {
+	waitUntil(t, indexerWait, fmt.Sprintf("%d spendable vtxo(s)", n), func() error {
 		spendable, _, err := client.ListVtxos(t.Context())
 		if err != nil {
-			return false
+			return err
 		}
 		vtxos = spendable
-		return len(spendable) == n
+		if len(spendable) != n {
+			return fmt.Errorf("have %d spendable vtxo(s)", len(spendable))
+		}
+		return nil
 	})
 	return vtxos
 }
@@ -209,13 +260,16 @@ func waitForAnySpendableVtxo(t *testing.T, client wallet.Wallet) []clientlib.Vtx
 	t.Helper()
 
 	var vtxos []clientlib.Vtxo
-	waitUntil(t, indexerWait, "at least one spendable vtxo", func() bool {
+	waitUntil(t, indexerWait, "at least one spendable vtxo", func() error {
 		spendable, _, err := client.ListVtxos(t.Context())
 		if err != nil {
-			return false
+			return err
 		}
 		vtxos = spendable
-		return len(spendable) > 0
+		if len(spendable) == 0 {
+			return fmt.Errorf("no spendable vtxos yet")
+		}
+		return nil
 	})
 	return vtxos
 }
@@ -226,13 +280,16 @@ func waitForAnySpentVtxo(t *testing.T, client wallet.Wallet) []clientlib.Vtxo {
 	t.Helper()
 
 	var vtxos []clientlib.Vtxo
-	waitUntil(t, indexerWait, "at least one spent vtxo", func() bool {
+	waitUntil(t, indexerWait, "at least one spent vtxo", func() error {
 		_, spent, err := client.ListVtxos(t.Context())
 		if err != nil {
-			return false
+			return err
 		}
 		vtxos = spent
-		return len(spent) > 0
+		if len(spent) == 0 {
+			return fmt.Errorf("no spent vtxos yet")
+		}
+		return nil
 	})
 	return vtxos
 }
@@ -243,18 +300,25 @@ func waitForSweptVtxos(t *testing.T, client wallet.Wallet) []clientlib.Vtxo {
 	t.Helper()
 
 	var vtxos []clientlib.Vtxo
-	waitUntil(t, sweepWait, "all vtxos to be swept", func() bool {
+	waitUntil(t, sweepWait, "all vtxos to be swept", func() error {
 		spendable, _, err := client.ListVtxos(t.Context())
-		if err != nil || len(spendable) == 0 {
-			return false
+		if err != nil {
+			return err
 		}
+		if len(spendable) == 0 {
+			return fmt.Errorf("no spendable vtxos to sweep")
+		}
+		unswept := 0
 		for _, v := range spendable {
 			if !v.Swept {
-				return false
+				unswept++
 			}
 		}
+		if unswept > 0 {
+			return fmt.Errorf("%d of %d vtxo(s) not swept", unswept, len(spendable))
+		}
 		vtxos = spendable
-		return true
+		return nil
 	})
 	return vtxos
 }
@@ -270,10 +334,10 @@ func waitForVtxosInIndexer(t *testing.T, client wallet.Wallet, vtxos ...clientli
 		want[v.Outpoint] = struct{}{}
 	}
 
-	waitUntil(t, indexerWait, "vtxos to appear in the indexer", func() bool {
+	waitUntil(t, indexerWait, "vtxos to appear in the indexer", func() error {
 		spendable, _, err := client.ListVtxos(t.Context())
 		if err != nil {
-			return false
+			return err
 		}
 		found := 0
 		for _, v := range spendable {
@@ -281,7 +345,10 @@ func waitForVtxosInIndexer(t *testing.T, client wallet.Wallet, vtxos ...clientli
 				found++
 			}
 		}
-		return found == len(want)
+		if found != len(want) {
+			return fmt.Errorf("%d of %d vtxo(s) visible", found, len(want))
+		}
+		return nil
 	})
 }
 
@@ -293,13 +360,16 @@ func waitForOutspendsIndexed(
 	t.Helper()
 
 	var spentStatus []clientlib.SpentStatus
-	waitUntil(t, chainWait, fmt.Sprintf("the explorer to index %s", txid), func() bool {
+	waitUntil(t, chainWait, fmt.Sprintf("the explorer to index %s", txid), func() error {
 		found, err := explorer.GetTxOutspends(txid)
 		if err != nil {
-			return false
+			return err
 		}
 		spentStatus = found
-		return len(found) > int(vout)
+		if len(found) <= int(vout) {
+			return fmt.Errorf("tx has %d outspend entries, need index %d", len(found), vout)
+		}
+		return nil
 	})
 	return spentStatus
 }
@@ -308,12 +378,18 @@ func waitForOutspendsIndexed(
 func waitForOutspend(t *testing.T, explorer clientlib.Explorer, txid string, vout uint32) {
 	t.Helper()
 
-	waitUntil(t, serverWait, fmt.Sprintf("%s:%d to be spent", txid, vout), func() bool {
+	waitUntil(t, serverWait, fmt.Sprintf("%s:%d to be spent", txid, vout), func() error {
 		spentStatus, err := explorer.GetTxOutspends(txid)
-		if err != nil || len(spentStatus) <= int(vout) {
-			return false
+		if err != nil {
+			return err
 		}
-		return spentStatus[vout].Spent
+		if len(spentStatus) <= int(vout) {
+			return fmt.Errorf("tx has %d outspend entries, need index %d", len(spentStatus), vout)
+		}
+		if !spentStatus[vout].Spent {
+			return fmt.Errorf("output not spent yet")
+		}
+		return nil
 	})
 }
 
@@ -461,13 +537,16 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc clientlib.Explor
 	}
 
 	var selectedCoins []clientlib.ExplorerUtxo
-	waitUntil(t, chainWait, "faucet utxo for the anchor bump", func() bool {
+	waitUntil(t, chainWait, "faucet utxo for the anchor bump", func() error {
 		found, err := explorerSvc.GetUtxos([]string{addr.EncodeAddress()})
 		if err != nil {
-			return false
+			return err
 		}
 		selectedCoins = found
-		return len(found) == 1
+		if len(found) != 1 {
+			return fmt.Errorf("explorer reports %d utxo(s), want 1", len(found))
+		}
+		return nil
 	})
 
 	utxo := selectedCoins[0]
@@ -1113,10 +1192,10 @@ func waitForAssetVtxos(
 	t.Helper()
 
 	var assetVtxos []clientlib.Vtxo
-	waitUntil(t, indexerWait, fmt.Sprintf("%d vtxo(s) with asset %s", n, assetID), func() bool {
+	waitUntil(t, indexerWait, fmt.Sprintf("%d vtxo(s) with asset %s", n, assetID), func() error {
 		vtxos, _, err := client.ListVtxos(t.Context())
 		if err != nil {
-			return false
+			return err
 		}
 		assetVtxos = assetVtxos[:0]
 		for _, vtxo := range vtxos {
@@ -1124,7 +1203,10 @@ func waitForAssetVtxos(
 				assetVtxos = append(assetVtxos, vtxo)
 			}
 		}
-		return len(assetVtxos) == n
+		if len(assetVtxos) != n {
+			return fmt.Errorf("have %d vtxo(s) with the asset", len(assetVtxos))
+		}
+		return nil
 	})
 	return assetVtxos
 }
@@ -1133,12 +1215,15 @@ func waitForAssetVtxos(
 func waitForAssetBalance(t *testing.T, client wallet.Wallet, assetID string, amount uint64) {
 	t.Helper()
 
-	waitUntil(t, indexerWait, fmt.Sprintf("asset %s balance of %d", assetID, amount), func() bool {
+	waitUntil(t, indexerWait, fmt.Sprintf("asset %s balance of %d", assetID, amount), func() error {
 		balance, err := client.Balance(t.Context())
 		if err != nil {
-			return false
+			return err
 		}
-		return balance.AssetBalances[assetID] == amount
+		if got := balance.AssetBalances[assetID]; got != amount {
+			return fmt.Errorf("asset balance is %d", got)
+		}
+		return nil
 	})
 }
 

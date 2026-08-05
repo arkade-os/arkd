@@ -1499,15 +1499,23 @@ func TestOffchainTx(t *testing.T) {
 			// Ensure the vtxo is pending and swept, once the server has swept it
 			scriptStr := hex.EncodeToString(pkscript)
 			var resp *clientlib.VtxosResponse
-			waitUntil(t, sweepWait, "the pending vtxo to be swept", func() bool {
+			waitUntil(t, sweepWait, "the pending vtxo to be swept", func() error {
 				res, err := alice.Indexer().GetVtxos(
 					ctx, clientlib.WithScripts([]string{scriptStr}), clientlib.WithPendingOnly(),
 				)
-				if err != nil || res == nil || len(res.Vtxos) == 0 {
-					return false
+				if err != nil {
+					return err
+				}
+				if res == nil || len(res.Vtxos) == 0 {
+					return fmt.Errorf("no pending vtxos returned")
 				}
 				resp = res
-				return res.Vtxos[0].Spent && res.Vtxos[0].Swept
+				if !res.Vtxos[0].Spent || !res.Vtxos[0].Swept {
+					return fmt.Errorf(
+						"vtxo spent=%t swept=%t", res.Vtxos[0].Spent, res.Vtxos[0].Swept,
+					)
+				}
+				return nil
 			})
 			require.NotNil(t, resp)
 
@@ -1784,17 +1792,20 @@ func TestOffchainTx(t *testing.T) {
 		require.NoError(t, err)
 
 		// The server should now have marked the input vtxo as unrolled
-		waitUntil(t, serverWait, "the input vtxo to be marked unrolled", func() bool {
+		waitUntil(t, serverWait, "the input vtxo to be marked unrolled", func() error {
 			_, spentVtxos, err := alice.ListVtxos(ctx)
 			if err != nil {
-				return false
+				return err
 			}
 			for _, v := range spentVtxos {
 				if v.Txid == vtxo.Txid && v.VOut == vtxo.VOut {
-					return v.Unrolled
+					if !v.Unrolled {
+						return fmt.Errorf("input vtxo found but not marked unrolled")
+					}
+					return nil
 				}
 			}
-			return false
+			return fmt.Errorf("input vtxo not among the %d spent vtxo(s)", len(spentVtxos))
 		})
 
 		// Sign the checkpoints so the finalize request is otherwise valid
@@ -3794,8 +3805,11 @@ func TestSweep(t *testing.T) {
 			return swept
 		}
 
-		waitUntil(t, sweepWait, "two of the three batch outputs to be swept", func() bool {
-			return countSwept(bob, charlie, mike) >= 2
+		waitUntil(t, sweepWait, "two of the three batch outputs to be swept", func() error {
+			if swept := countSwept(bob, charlie, mike); swept < 2 {
+				return fmt.Errorf("%d of 3 batch outputs swept", swept)
+			}
+			return nil
 		})
 
 		// alice vtxos should not be swept yet
@@ -5874,9 +5888,15 @@ func TestAsset(t *testing.T) {
 		require.NoError(t, err)
 
 		// alice vtxos should have been unrolled
-		waitUntil(t, serverWait, "alice's vtxos to be unrolled", func() bool {
+		waitUntil(t, serverWait, "alice's vtxos to be unrolled", func() error {
 			spendable, _, err := alice.ListVtxos(ctx)
-			return err == nil && len(spendable) == 0
+			if err != nil {
+				return err
+			}
+			if len(spendable) != 0 {
+				return fmt.Errorf("%d vtxo(s) still spendable", len(spendable))
+			}
+			return nil
 		})
 
 		spendableVtxos, spentVtxos, err := alice.ListVtxos(ctx)
