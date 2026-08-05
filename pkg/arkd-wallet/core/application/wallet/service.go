@@ -61,14 +61,20 @@ type DeprecatedSignerKey struct {
 type wallet struct {
 	WalletOptions
 
-	locker  *outpointLocker
-	keyMgr  *keyManager
-	readyCh chan bool
+	locker   *outpointLocker
+	keyMgr   *keyManager
+	keyPaths *keyPathCache
+	readyCh  chan bool
 }
 
 // New creates a new WalletService service
 func New(opts WalletOptions) application.WalletService {
-	return &wallet{opts, newOutpointLocker(time.Minute), nil, make(chan bool)}
+	return &wallet{
+		WalletOptions: opts,
+		locker:        newOutpointLocker(time.Minute),
+		keyPaths:      newKeyPathCache(),
+		readyCh:       make(chan bool),
+	}
 }
 
 func (w *wallet) GetReadyUpdate(ctx context.Context) <-chan bool {
@@ -363,6 +369,7 @@ func (w *wallet) ListConnectorUtxos(
 	if err != nil {
 		return nil, err
 	}
+	w.cacheKeyPaths(w.keyMgr.connectorAccountDerivationScheme, connectorAccountUtxos)
 
 	lockedOutpoints, err := w.locker.get(ctx)
 	if err != nil {
@@ -466,6 +473,7 @@ func (w *wallet) selectCoins(
 	if err != nil {
 		return nil, 0, err
 	}
+	w.cacheKeyPaths(w.keyMgr.mainAccountDerivationScheme, mainAccountUtxos)
 
 	lockedOutpoints, err := w.locker.get(ctx)
 	if err != nil {
@@ -1062,6 +1070,7 @@ func (w *wallet) withdrawAll(ctx context.Context, feeRate chainfee.SatPerKVByte,
 	if err != nil {
 		return nil, err
 	}
+	w.cacheKeyPaths(w.keyMgr.mainAccountDerivationScheme, mainAccountUtxos)
 
 	utxos = append(utxos, mainAccountUtxos...)
 
@@ -1070,6 +1079,7 @@ func (w *wallet) withdrawAll(ctx context.Context, feeRate chainfee.SatPerKVByte,
 		if err != nil {
 			return nil, err
 		}
+		w.cacheKeyPaths(w.keyMgr.connectorAccountDerivationScheme, connectorAccountUtxos)
 		utxos = append(utxos, connectorAccountUtxos...)
 	}
 
@@ -1215,6 +1225,12 @@ func (w *wallet) getPrivateKeyFromScript(ctx context.Context, scriptPubKey strin
 		return nil, ErrWalletLocked
 	}
 
+	// A cache hit lets us derive the key without any NBXplorer lookup. The cache
+	// is populated whenever we list UTXOs, which already carry their key path.
+	if entry, ok := w.keyPaths.get(scriptPubKey); ok {
+		return w.keyMgr.deriveKey(entry.derivationScheme, entry.keyPath)
+	}
+
 	accountsDerivationSchemes := []string{
 		w.keyMgr.mainAccountDerivationScheme,
 		w.keyMgr.connectorAccountDerivationScheme,
@@ -1225,11 +1241,25 @@ func (w *wallet) getPrivateKeyFromScript(ctx context.Context, scriptPubKey strin
 		if err != nil {
 			continue
 		}
+		// a script tracked under a scheme always has a key path; if it is empty
+		// the script does not belong to this account, so try the next scheme.
+		if scriptPubKeyDetails.KeyPath == "" {
+			continue
+		}
 
+		w.keyPaths.set(scriptPubKey, derivationScheme, scriptPubKeyDetails.KeyPath)
 		return w.keyMgr.deriveKey(derivationScheme, scriptPubKeyDetails.KeyPath)
 	}
 
 	return nil, nil
+}
+
+// cacheKeyPaths records the script -> key path mapping for the given UTXOs so
+// that later signing of these scripts can skip the per-input NBXplorer lookup.
+func (w *wallet) cacheKeyPaths(derivationScheme string, utxos []ports.Utxo) {
+	for _, utxo := range utxos {
+		w.keyPaths.set(utxo.Script, derivationScheme, utxo.KeyPath)
+	}
 }
 
 func (w *wallet) getBalance(ctx context.Context, derivationScheme string) (uint64, uint64, error) {
@@ -1237,6 +1267,7 @@ func (w *wallet) getBalance(ctx context.Context, derivationScheme string) (uint6
 	if err != nil {
 		return 0, 0, err
 	}
+	w.cacheKeyPaths(derivationScheme, utxos)
 
 	lockedOutpoints, err := w.locker.get(ctx)
 	if err != nil {
