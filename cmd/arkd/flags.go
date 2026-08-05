@@ -14,8 +14,6 @@ const (
 	datadirFlagName                   = "datadir"
 	macaroonFlagName                  = "macaroon"
 	passwordFlagName                  = "password"
-	mnemonicFlagName                  = "mnemonic"
-	gapLimitFlagName                  = "addr-gap-limit"
 	amountFlagName                    = "amount"
 	withdrawAllFlagName               = "all"
 	quantityFlagName                  = "quantity"
@@ -94,17 +92,8 @@ var (
 	}
 	passwordFlag = &cli.StringFlag{
 		Name:     passwordFlagName,
-		Usage:    "wallet password",
+		Usage:    "password to unlock the macaroon (admin auth) service",
 		Required: true,
-	}
-	mnemonicFlag = &cli.StringFlag{
-		Name:  mnemonicFlagName,
-		Usage: "mnemonic from which restore the wallet",
-	}
-	gapLimitFlag = &cli.Uint64Flag{
-		Name:  gapLimitFlagName,
-		Usage: "address gap limit for wallet restoration",
-		Value: 100,
 	}
 	amountFlag = &cli.UintFlag{
 		Name:     amountFlagName,
