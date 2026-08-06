@@ -3881,8 +3881,19 @@ func TestSweep(t *testing.T) {
 		require.Len(t, aliceVtxos, 1)
 		require.False(t, aliceVtxos[0].Swept)
 
-		// half of the vtxos must be swept
-		require.Equal(t, 2, countSwept(bob, charlie, mike))
+		// half of the vtxos must be swept. Counted strictly here rather than
+		// with countSwept: the poll above tolerates a client that is not yet
+		// readable, the assertion must not.
+		nbOfVtxosSwept := 0
+		for _, client := range []wallet.Wallet{bob, charlie, mike} {
+			vtxos, _, err := client.ListVtxos(ctx)
+			require.NoError(t, err)
+			require.Len(t, vtxos, 1)
+			if vtxos[0].Swept {
+				nbOfVtxosSwept++
+			}
+		}
+		require.Equal(t, 2, nbOfVtxosSwept)
 
 		// generate other blocks to expire the remaining batch outputs
 		err = generateBlocks(25)

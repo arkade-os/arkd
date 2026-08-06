@@ -21,7 +21,6 @@ import (
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	batchsession "github.com/arkade-os/arkd/pkg/client-lib/batch-session"
 	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client"
-	mempoolexplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	wallet "github.com/arkade-os/arkd/pkg/client-wallet"
 	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-wallet/identity"
 	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-wallet/identity/store/inmemory"
@@ -1447,8 +1446,7 @@ func settleBoardingSurplusBatch(
 	require.NoError(t, err)
 
 	faucetOffchain(t, bob, float64(bobVtxoAmount)/1e8)
-	faucetOnchain(t, aliceBoardingAddr.Address, float64(aliceBoardingAmount)/1e8)
-	time.Sleep(6 * time.Second)
+	faucetOnchainAndWait(t, aliceBoardingAddr.Address, float64(aliceBoardingAmount)/1e8)
 
 	wg := &sync.WaitGroup{}
 	wg.Add(4)
@@ -1456,11 +1454,11 @@ func settleBoardingSurplusBatch(
 	var aliceFunds, bobFunds []clientlib.Vtxo
 	var aliceFundsErr, bobFundsErr error
 	go func() {
-		aliceFunds, aliceFundsErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr.Address)
+		aliceFunds, aliceFundsErr = notifyIncomingFunds(ctx, alice, aliceOffchainAddr.Address)
 		wg.Done()
 	}()
 	go func() {
-		bobFunds, bobFundsErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
+		bobFunds, bobFundsErr = notifyIncomingFunds(ctx, bob, bobOffchainAddr.Address)
 		wg.Done()
 	}()
 
@@ -1511,16 +1509,15 @@ func getServerDust(t *testing.T) uint64 {
 func fetchTx(t *testing.T, txid string) *wire.MsgTx {
 	t.Helper()
 
-	explorerSvc, err := mempoolexplorer.NewExplorer(
-		explorerUrl, arklib.BitcoinRegTest, mempoolexplorer.WithTracker(false),
-	)
-	require.NoError(t, err)
-
 	var txHex string
-	require.Eventually(t, func() bool {
-		txHex, err = explorerSvc.GetTxHex(txid)
-		return err == nil
-	}, 30*time.Second, time.Second, "tx %s never showed up in the explorer", txid)
+	waitUntil(t, chainWait, fmt.Sprintf("the explorer to index tx %s", txid), func() error {
+		hex, err := testExplorer.GetTxHex(txid)
+		if err != nil {
+			return err
+		}
+		txHex = hex
+		return nil
+	})
 
 	var tx wire.MsgTx
 	require.NoError(t, tx.Deserialize(hex.NewDecoder(strings.NewReader(txHex))))
