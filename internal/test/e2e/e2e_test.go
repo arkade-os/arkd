@@ -6657,6 +6657,14 @@ func TestTxListenerChurn(t *testing.T) {
 		"sentinel subscription did not observe tx events during churn",
 	)
 
+	// Skipping a send on transient wallet state is tolerated, but it must stay the exception.
+	require.Greater(
+		t,
+		producedTxEvents.Load(),
+		skippedSends.Load(),
+		"most producer sends were skipped on transient wallet state",
+	)
+
 	t.Logf(
 		"produced %d tx events, sentinel observed %d, skipped %d sends on transient wallet state",
 		producedTxEvents.Load(), sentinelTxEvents.Load(), skippedSends.Load(),
