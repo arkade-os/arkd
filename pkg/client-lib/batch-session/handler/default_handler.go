@@ -593,9 +593,9 @@ func (h *defaultHandler) createAndSignForfeits(
 			LeafVersion:  txscript.BaseLeafVersion,
 		}
 
-		vtxoLocktime := arklib.AbsoluteLocktime(0)
+		var cltvLocktime *arklib.AbsoluteLocktime
 		if cltv, ok := forfeitClosure.(*script.CLTVMultisigClosure); ok {
-			vtxoLocktime = cltv.Locktime
+			cltvLocktime = &cltv.Locktime
 		}
 
 		vtxoPrevout := &wire.TxOut{
@@ -604,8 +604,10 @@ func (h *defaultHandler) createAndSignForfeits(
 		}
 
 		vtxoSequence := wire.MaxTxInSequenceNum
-		if vtxoLocktime != 0 {
+		vtxoLocktime := arklib.AbsoluteLocktime(0)
+		if cltvLocktime != nil {
 			vtxoSequence = wire.MaxTxInSequenceNum - 1
+			vtxoLocktime = *cltvLocktime
 		}
 
 		forfeitTx, err := tree.BuildForfeitTx(

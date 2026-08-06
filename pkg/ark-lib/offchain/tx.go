@@ -85,7 +85,7 @@ func buildArkTx(vtxos []VtxoInput, outputs []*wire.TxOut) (*psbt.Packet, error) 
 	witnessUtxos := make(map[int]*wire.TxOut)
 	signingTapLeaves := make(map[int]*psbt.TaprootTapLeafScript)
 	tapscripts := make(map[int][]string)
-	txLocktime := common.AbsoluteLocktime(0)
+	var txLocktime *common.AbsoluteLocktime
 
 	for index, vtxo := range vtxos {
 		if len(vtxo.RevealedTapscripts) == 0 {
@@ -128,18 +128,12 @@ func buildArkTx(vtxos []VtxoInput, outputs []*wire.TxOut) (*psbt.Packet, error) 
 		var locktime *common.AbsoluteLocktime
 		if cltv, ok := closure.(*script.CLTVMultisigClosure); ok {
 			locktime = &cltv.Locktime
-			if locktime.IsSeconds() {
-				if txLocktime != 0 && !txLocktime.IsSeconds() {
-					return nil, fmt.Errorf("mixed absolute locktime types")
-				}
-			} else {
-				if txLocktime != 0 && txLocktime.IsSeconds() {
-					return nil, fmt.Errorf("mixed absolute locktime types")
-				}
+			if txLocktime != nil && txLocktime.IsSeconds() != locktime.IsSeconds() {
+				return nil, fmt.Errorf("mixed absolute locktime types")
 			}
 
-			if *locktime > txLocktime {
-				txLocktime = *locktime
+			if txLocktime == nil || *locktime > *txLocktime {
+				txLocktime = locktime
 			}
 		}
 
@@ -151,9 +145,11 @@ func buildArkTx(vtxos []VtxoInput, outputs []*wire.TxOut) (*psbt.Packet, error) 
 		}
 	}
 
-	arkTx, err := psbt.New(
-		ins, append(outputs, txutils.AnchorOutput()), 3, uint32(txLocktime), sequences,
-	)
+	var nLockTime uint32
+	if txLocktime != nil {
+		nLockTime = uint32(*txLocktime)
+	}
+	arkTx, err := psbt.New(ins, append(outputs, txutils.AnchorOutput()), 3, nLockTime, sequences)
 	if err != nil {
 		return nil, err
 	}

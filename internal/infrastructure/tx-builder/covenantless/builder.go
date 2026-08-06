@@ -415,29 +415,29 @@ func (b *txBuilder) VerifyForfeitTxs(
 			return nil, err
 		}
 
-		locktime := arklib.AbsoluteLocktime(0)
+		var locktime *arklib.AbsoluteLocktime
 
 		switch c := closure.(type) {
 		case *script.CLTVMultisigClosure:
-			locktime = c.Locktime
+			locktime = &c.Locktime
 		case *script.MultisigClosure, *script.ConditionMultisigClosure:
 		default:
 			return nil, fmt.Errorf("invalid forfeit closure script")
 		}
 
-		if locktime != 0 {
+		if locktime != nil {
 			if !locktime.IsSeconds() {
-				if locktime > arklib.AbsoluteLocktime(blocktimestamp.Height) {
+				if *locktime > arklib.AbsoluteLocktime(blocktimestamp.Height) {
 					return nil, fmt.Errorf(
 						"forfeit closure is CLTV locked, %d > %d (block height)",
-						locktime, blocktimestamp.Height,
+						*locktime, blocktimestamp.Height,
 					)
 				}
 			} else {
-				if locktime > arklib.AbsoluteLocktime(blocktimestamp.Time) {
+				if *locktime > arklib.AbsoluteLocktime(blocktimestamp.Time) {
 					return nil, fmt.Errorf(
 						"forfeit closure is CLTV locked, %d > %d (block time)",
-						locktime, blocktimestamp.Time,
+						*locktime, blocktimestamp.Time,
 					)
 				}
 			}
@@ -469,8 +469,10 @@ func (b *txBuilder) VerifyForfeitTxs(
 		var sequences []uint32
 
 		vtxoSequence := wire.MaxTxInSequenceNum
-		if locktime != 0 {
+		txLocktime := arklib.AbsoluteLocktime(0)
+		if locktime != nil {
 			vtxoSequence = wire.MaxTxInSequenceNum - 1
+			txLocktime = *locktime
 		}
 
 		if vtxoFirst {
@@ -492,7 +494,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 			sequences,
 			prevouts,
 			forfeitScript,
-			uint32(locktime),
+			uint32(txLocktime),
 		)
 		if err != nil {
 			return nil, err

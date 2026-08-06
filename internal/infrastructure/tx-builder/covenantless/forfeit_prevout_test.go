@@ -156,3 +156,202 @@ func newForfeitScenario(
 
 	return builder, []domain.Vtxo{vtxo}, connectors, forfeit
 }
+
+func TestVerifyForfeitTxsRejectsMalformedCltvLeaf(t *testing.T) {
+	wallet.On("GetCurrentBlockTime", mock.Anything).
+		Return(&ports.BlockTimestamp{Height: 100, Time: 1_700_000_000}, nil).Maybe()
+
+	signerKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	closureKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	builder := txbuilder.NewTxBuilder(
+		wallet, &staticSigner{pubkey: signerKey.PubKey()}, arklib.Bitcoin,
+	)
+
+	multisig, err := (&script.MultisigClosure{
+		PubKeys: []*btcec.PublicKey{closureKey.PubKey()},
+		Type:    script.MultisigTypeChecksig,
+	}).Script()
+	require.NoError(t, err)
+
+	malformed := append(
+		[]byte{txscript.OP_NOP, txscript.OP_CHECKLOCKTIMEVERIFY, txscript.OP_DROP},
+		multisig...,
+	)
+
+	_, err = script.DecodeClosure(malformed)
+	require.Error(t, err, "a leaf that re-encodes differently must not decode")
+
+	setup := buildVtxoSetupFromScript(t, closureKey, signerKey, malformed)
+
+	var vtxoHash chainhash.Hash
+	copy(vtxoHash[:], []byte("malformed-cltv-vtxo-prevout-hash"))
+	taprootKey, err := schnorr.ParsePubKey(setup.p2trScript[2:])
+	require.NoError(t, err)
+	vtxo := domain.Vtxo{
+		Outpoint: domain.Outpoint{Txid: vtxoHash.String(), VOut: 0},
+		PubKey:   hex.EncodeToString(schnorr.SerializePubKey(taprootKey)),
+		Amount:   10_000,
+	}
+
+	connectorOut := wire.NewTxOut(450, setup.p2trScript)
+	connectorPtx, err := psbt.New(
+		[]*wire.OutPoint{{Hash: chainhash.Hash{}, Index: 0}},
+		[]*wire.TxOut{connectorOut},
+		2, 0, []uint32{wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+	connectors := tree.FlatTxTree{{
+		Txid: connectorPtx.UnsignedTx.TxID(),
+		Tx:   encodeTx(t, connectorPtx),
+	}}
+	connectorHash, err := chainhash.NewHashFromStr(connectorPtx.UnsignedTx.TxID())
+	require.NoError(t, err)
+
+	forfeitPubkeyBytes, err := hex.DecodeString(forfeitPubkey)
+	require.NoError(t, err)
+	forfeitPub, err := btcec.ParsePubKey(forfeitPubkeyBytes)
+	require.NoError(t, err)
+	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+		btcutil.Hash160(forfeitPub.SerializeCompressed()), &chaincfg.MainNetParams,
+	)
+	require.NoError(t, err)
+	forfeitScript, err := txscript.PayToAddrScript(forfeitAddr)
+	require.NoError(t, err)
+
+	forfeit, err := tree.BuildForfeitTx(
+		[]*wire.OutPoint{
+			{Hash: vtxoHash, Index: 0},
+			{Hash: *connectorHash, Index: 0},
+		},
+		[]uint32{wire.MaxTxInSequenceNum, wire.MaxTxInSequenceNum},
+		[]*wire.TxOut{
+			{Value: int64(vtxo.Amount), PkScript: setup.p2trScript},
+			connectorOut,
+		},
+		forfeitScript,
+		0,
+	)
+	require.NoError(t, err)
+	forfeit.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{{
+		ControlBlock: setup.cbBytes,
+		Script:       setup.closureScript,
+		LeafVersion:  txscript.BaseLeafVersion,
+	}}
+	forfeit.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{
+		makeVtxoSig(t, closureKey, forfeit, setup.leaf),
+	}
+
+	valid, err := builder.VerifyForfeitTxs(
+		[]domain.Vtxo{vtxo}, connectors, []string{encodeTx(t, forfeit)},
+	)
+	require.Error(t, err)
+	require.Empty(t, valid)
+}
+
+func TestVerifyForfeitTxsZeroLocktimeCltvNeedsNonFinalSequence(t *testing.T) {
+	wallet.On("GetCurrentBlockTime", mock.Anything).
+		Return(&ports.BlockTimestamp{Height: 100, Time: 1_700_000_000}, nil).Maybe()
+
+	signerKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	closureKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	builder := txbuilder.NewTxBuilder(
+		wallet, &staticSigner{pubkey: signerKey.PubKey()}, arklib.Bitcoin,
+	)
+
+	leafScript, err := (&script.CLTVMultisigClosure{
+		MultisigClosure: script.MultisigClosure{
+			PubKeys: []*btcec.PublicKey{closureKey.PubKey()},
+			Type:    script.MultisigTypeChecksig,
+		},
+		Locktime: 0,
+	}).Script()
+	require.NoError(t, err)
+
+	// the decoder reports the script faithfully, zero locktime included
+	decoded, err := script.DecodeClosure(leafScript)
+	require.NoError(t, err)
+	cltv, ok := decoded.(*script.CLTVMultisigClosure)
+	require.True(t, ok)
+	require.Equal(t, arklib.AbsoluteLocktime(0), cltv.Locktime)
+
+	setup := buildVtxoSetupFromScript(t, closureKey, signerKey, leafScript)
+
+	var vtxoHash chainhash.Hash
+	copy(vtxoHash[:], []byte("zero-locktime-cltv-vtxo-prevout1"))
+	taprootKey, err := schnorr.ParsePubKey(setup.p2trScript[2:])
+	require.NoError(t, err)
+	vtxo := domain.Vtxo{
+		Outpoint: domain.Outpoint{Txid: vtxoHash.String(), VOut: 0},
+		PubKey:   hex.EncodeToString(schnorr.SerializePubKey(taprootKey)),
+		Amount:   10_000,
+	}
+
+	connectorOut := wire.NewTxOut(450, setup.p2trScript)
+	connectorPtx, err := psbt.New(
+		[]*wire.OutPoint{{Hash: chainhash.Hash{}, Index: 0}},
+		[]*wire.TxOut{connectorOut},
+		2, 0, []uint32{wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+	connectors := tree.FlatTxTree{{
+		Txid: connectorPtx.UnsignedTx.TxID(),
+		Tx:   encodeTx(t, connectorPtx),
+	}}
+	connectorHash, err := chainhash.NewHashFromStr(connectorPtx.UnsignedTx.TxID())
+	require.NoError(t, err)
+
+	forfeitPubkeyBytes, err := hex.DecodeString(forfeitPubkey)
+	require.NoError(t, err)
+	forfeitPub, err := btcec.ParsePubKey(forfeitPubkeyBytes)
+	require.NoError(t, err)
+	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+		btcutil.Hash160(forfeitPub.SerializeCompressed()), &chaincfg.MainNetParams,
+	)
+	require.NoError(t, err)
+	forfeitScript, err := txscript.PayToAddrScript(forfeitAddr)
+	require.NoError(t, err)
+
+	buildWithSequence := func(seq uint32) string {
+		forfeit, err := tree.BuildForfeitTx(
+			[]*wire.OutPoint{
+				{Hash: vtxoHash, Index: 0},
+				{Hash: *connectorHash, Index: 0},
+			},
+			[]uint32{seq, wire.MaxTxInSequenceNum},
+			[]*wire.TxOut{
+				{Value: int64(vtxo.Amount), PkScript: setup.p2trScript},
+				connectorOut,
+			},
+			forfeitScript,
+			0,
+		)
+		require.NoError(t, err)
+		forfeit.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{{
+			ControlBlock: setup.cbBytes,
+			Script:       setup.closureScript,
+			LeafVersion:  txscript.BaseLeafVersion,
+		}}
+		forfeit.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{
+			makeVtxoSig(t, closureKey, forfeit, setup.leaf),
+		}
+		return encodeTx(t, forfeit)
+	}
+
+	// a final sequence makes OP_CLTV fail, so the operator must not accept it
+	_, err = builder.VerifyForfeitTxs(
+		[]domain.Vtxo{vtxo}, connectors, []string{buildWithSequence(wire.MaxTxInSequenceNum)},
+	)
+	require.Error(t, err)
+
+	valid, err := builder.VerifyForfeitTxs(
+		[]domain.Vtxo{vtxo}, connectors, []string{buildWithSequence(wire.MaxTxInSequenceNum - 1)},
+	)
+	require.NoError(t, err)
+	require.Len(t, valid, 1)
+}
