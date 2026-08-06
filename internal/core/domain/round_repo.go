@@ -24,6 +24,16 @@ type RoundRepository interface {
 		startedAfter, startedBefore int64,
 		withFailed, withCompleted bool,
 	) ([]string, error)
+	// GetRoundSummaries returns the listing view of the rounds started in the given
+	// range (0 means unbounded), most recent first, capped at limit (0 means no
+	// limit). Filtering, ordering and the limit are applied by the query, so
+	// listing N rounds costs one round trip rather than loading each one.
+	GetRoundSummaries(
+		ctx context.Context,
+		startedAfter, startedBefore int64,
+		withFailed, withCompleted, onlyFailed bool,
+		limit int64,
+	) ([]RoundSummary, error)
 	// TODO return only connector addresses with unspent utxos
 	GetSweptRoundsConnectorAddress(ctx context.Context) ([]string, error)
 	GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error)
@@ -40,6 +50,21 @@ type ExpiredRound struct {
 	RoundId        string
 	CommitmentTxid string
 	ExpiredAt      int64
+}
+
+// RoundSummary is the listing view of a round: everything the admin batch list
+// renders, without loading the round's intents, txs or trees.
+type RoundSummary struct {
+	RoundId        string
+	CommitmentTxid string
+	StartedAt      int64
+	EndedAt        int64
+	Stage          string
+	Ended          bool
+	Failed         bool
+	Swept          bool
+	FailReason     string
+	TotalIntents   int64
 }
 
 type RoundStats struct {

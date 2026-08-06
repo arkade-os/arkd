@@ -509,3 +509,23 @@ var INVALID_TX_FILTER = Code[TxFilterMetadata]{
 	"INVALID_TX_FILTER",
 	grpccodes.InvalidArgument,
 }
+
+type RoundNotFoundMetadata struct {
+	RoundId string `json:"round_id"`
+}
+
+var ROUND_NOT_FOUND = Code[RoundNotFoundMetadata]{
+	53,
+	"ROUND_NOT_FOUND",
+	grpccodes.NotFound,
+}
+
+type OffchainTxNotFoundMetadata struct {
+	Txid string `json:"txid"`
+}
+
+var OFFCHAIN_TX_NOT_FOUND = Code[OffchainTxNotFoundMetadata]{
+	54,
+	"OFFCHAIN_TX_NOT_FOUND",
+	grpccodes.NotFound,
+}

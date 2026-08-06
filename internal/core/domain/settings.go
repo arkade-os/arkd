@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger"
@@ -130,6 +131,14 @@ func (s Settings) Validate() error {
 		return fmt.Errorf(
 			"invalid unrolled vtxo min expiry margin (%s), must be at least session duration (%s)",
 			s.UnrolledVtxoMinExpiryMargin, s.SessionDuration,
+		)
+	}
+	// The threshold is unsigned, so a negative input narrows to a value above
+	// MaxInt64 and would otherwise read as an enormous threshold rather than the
+	// value the operator typed.
+	if s.BanThreshold > math.MaxInt64 {
+		return fmt.Errorf(
+			"invalid ban threshold (%d), must not be negative", int64(s.BanThreshold),
 		)
 	}
 	if s.BanThreshold > 0 && s.BanDuration < minBanDuration {

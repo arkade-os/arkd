@@ -101,7 +101,8 @@ func CompleteUnroll(ctx context.Context, args CompleteUnrollArgs) (string, error
 
 	feeAmount := uint64(math.Ceil(float64(vbytes)*feeRate) + 100)
 
-	if targetAmount-feeAmount <= args.ServerParams.Dust {
+	// the fee is checked first to prevent the uint64 subtraction from wrapping.
+	if feeAmount >= targetAmount || targetAmount-feeAmount <= args.ServerParams.Dust {
 		return "", fmt.Errorf("not enough funds to cover network fees")
 	}
 

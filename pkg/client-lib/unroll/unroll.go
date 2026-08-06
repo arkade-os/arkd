@@ -177,6 +177,9 @@ func bumpAnchorTx(
 	}
 
 	fees := uint64(math.Ceil(float64(packageSize) * feeRate))
+	if fees > math.MaxInt64 {
+		return "", "", fmt.Errorf("invalid fee amount %d", fees)
+	}
 
 	addr := args.BumpAddr
 	pkScript, err := toOutputScript(addr, args.ServerParams.Network)
@@ -204,6 +207,10 @@ func bumpAnchorTx(
 
 	if amountToSelect > 0 {
 		return "", "", fmt.Errorf("not enough funds to select %d", amountToSelect)
+	}
+
+	if fees > selectedAmount {
+		return "", "", fmt.Errorf("not enough funds to cover network fees")
 	}
 
 	changeAmount := selectedAmount - fees

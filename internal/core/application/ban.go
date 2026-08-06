@@ -20,7 +20,7 @@ type withOutputScript interface {
 func (s *service) checkIfBanned(
 	ctx context.Context, banThreshold uint64, script withOutputScript,
 ) error {
-	// If ban threshold is less than 1, we disable banning
+	// If ban threshold is 0, we disable banning
 	if banThreshold == 0 {
 		return nil
 	}
@@ -34,7 +34,8 @@ func (s *service) checkIfBanned(
 	if err != nil {
 		return err
 	}
-	if len(conviction) >= int(banThreshold) {
+	// len() is never negative, so comparing as uint64 can't wrap for huge thresholds
+	if uint64(len(conviction)) >= banThreshold {
 		convictionsStr := make([]string, 0)
 		for _, conviction := range conviction {
 			convictionsStr = append(convictionsStr, conviction.String())

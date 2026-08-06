@@ -252,7 +252,7 @@ func (e *explorerSvc) GetFeeRate() (float64, error) {
 		return 1, nil
 	}
 
-	return response["fastestFee"], nil
+	return sanitizeFeeRate(response["fastestFee"])
 }
 
 func (e *explorerSvc) GetConnectionCount() int {
@@ -1057,7 +1057,7 @@ func (e *explorerSvc) getLegacyFeeRate() (float64, error) {
 		return 1, nil
 	}
 
-	return response["1"], nil
+	return sanitizeFeeRate(response["1"])
 }
 
 // get reads from an endpoint with the given path into the target (which

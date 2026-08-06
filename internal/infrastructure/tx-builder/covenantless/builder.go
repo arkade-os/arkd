@@ -822,15 +822,31 @@ func (b *txBuilder) createCommitmentTx(
 
 	outputs = append(outputs, onchainOutputs...)
 
+	boardingAmount := uint64(0)
 	for _, input := range boardingInputs {
-		targetAmount -= input.Amount
+		boardingAmount += input.Amount
 	}
 
+	// boarding inputs fund the outputs, any surplus should belong to the change output, if any
+	// it avoids targetAmount to be negative and the tx to be invalid
+	boardingSurplus := uint64(0)
+	if boardingAmount >= targetAmount {
+		boardingSurplus = boardingAmount - targetAmount
+		targetAmount = 0
+	} else {
+		targetAmount -= boardingAmount
+	}
+
+	// even if targetAmount is 0, we still need to select UTXOs to pay for the fees
 	ctx := context.Background()
 	utxos, change, err := b.wallet.SelectUtxos(ctx, "", targetAmount, false)
 	if err != nil {
 		return nil, err
 	}
+
+	// the surplus is input value the selection didn't account for, it belongs to the
+	// change so that inputs and outputs keep balancing
+	change += boardingSurplus
 
 	var cacheChangeScript []byte
 	// avoid derivation of several change addresses

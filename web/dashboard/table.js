@@ -1,0 +1,271 @@
+/*
+  The generic renderer.
+
+  Most panels in this console are "GET a URL, show a table". Those are declared
+  as descriptors in panels.js and driven from here, so adding an endpoint later
+  costs a few lines instead of a new file. The three panels that carry real
+  logic (solvency, batch, offchain tx) are written by hand instead.
+*/
+
+import { el, clear } from './fmt.js';
+import { adminGet, indexerGet, ApiError } from './api.js';
+
+/* ------------------------------------------------------------------ states */
+
+export function skeleton() {
+  return el('div', { class: 'skeleton' },
+    el('div', { class: 'skeleton-row' }),
+    el('div', { class: 'skeleton-row' }),
+    el('div', { class: 'skeleton-row' }),
+  );
+}
+
+export function emptyState(title, hint) {
+  return el('div', { class: 'state' },
+    el('p', { class: 'state-title', text: title }),
+    hint ? el('p', { text: hint }) : null,
+  );
+}
+
+export function errorState(err) {
+  const message = err?.message ?? String(err);
+  // grpc-gateway often surfaces the same string as both, so only show the
+  // detail when it actually adds something.
+  const detail = err instanceof ApiError && err.detail !== message ? err.detail : '';
+  return el('div', { class: 'state error' },
+    el('p', { class: 'state-title', text: 'Could not load this' }),
+    el('p', { text: message }),
+    detail ? el('p', {}, el('code', { text: detail })) : null,
+  );
+}
+
+/* ------------------------------------------------------------------ tables */
+
+// Rows rendered before the table truncates itself. A batch can hold tens of
+// thousands of leaf VTXOs; building that many rows blocks the main thread long
+// enough that the panel looks hung, so we cap and offer an explicit override.
+const ROW_CAP = 500;
+
+/**
+ * cols: [{ label, cell(row, i) -> Node|string, cls?: 'num'|'mono'|'wrap', width? }]
+ */
+export function table(cols, rows, opts = {}) {
+  const cap = opts.cap ?? ROW_CAP;
+  const wrap = el('div', {});
+
+  const draw = (limit) => {
+    const shown = limit === null ? rows : rows.slice(0, limit);
+
+    const thead = el('thead', {}, el('tr', {}, cols.map((c) =>
+      el('th', { scope: 'col', style: c.width ? { width: c.width } : undefined }, c.label))));
+
+    // One fragment, one insertion: appending rows individually forces the
+    // browser to re-evaluate layout far more than it needs to.
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < shown.length; i += 1) {
+      const tr = el('tr', {});
+      for (const c of cols) {
+        tr.append(el('td', { class: c.cls || undefined }, c.cell(shown[i], i) ?? '—'));
+      }
+      frag.append(tr);
+    }
+    const tbody = el('tbody', {});
+    tbody.append(frag);
+
+    clear(wrap).append(
+      el('div', { class: 'table-wrap' }, el('table', { class: 'grid' }, thead, tbody)),
+    );
+
+    if (limit !== null && rows.length > limit) {
+      wrap.append(el('div', { class: 'table-more' },
+        el('span', {
+          text: `Showing the first ${limit.toLocaleString('en-US')} of ${rows.length.toLocaleString('en-US')} rows.`,
+        }),
+        el('button', {
+          class: 'btn btn-ghost',
+          type: 'button',
+          onclick: (e) => { e.currentTarget.disabled = true; draw(null); },
+        }, 'Render all'),
+      ));
+    }
+  };
+
+  draw(cap);
+  return wrap;
+}
+
+/** pairs: [[label, Node|string], ...]. Entries with a null value are dropped. */
+export function kv(pairs) {
+  const kept = pairs.filter(([, v]) => v !== null && v !== undefined);
+  return el('dl', { class: 'kv' }, kept.flatMap(([k, v]) => [
+    el('dt', { text: k }),
+    el('dd', {}, v),
+  ]));
+}
+
+export function card(title, body, note) {
+  return el('section', { class: 'card' },
+    title ? el('header', { class: 'card-head' },
+      el('h2', { class: 'card-title', text: title }),
+      note ? el('span', { class: 'card-note', text: note }) : null,
+    ) : null,
+    body,
+  );
+}
+
+/** Stack several bare panels under one heading and reload them together. */
+export function combine(title, sub, parts) {
+  return {
+    node: el('div', {}, panelHead(title, sub), parts.map((p) => p.node)),
+    reload: () => Promise.all(parts.map((p) => p.reload())),
+  };
+}
+
+export function panelHead(title, sub) {
+  return el('header', { class: 'panel-head' },
+    el('p', { class: 'eyebrow', text: 'arkd' }),
+    el('h1', { class: 'panel-title', text: title }),
+    sub ? el('p', { class: 'panel-sub', text: sub }) : null,
+  );
+}
+
+/* ----------------------------------------------------------------- filters */
+
+/**
+ * spec: [{ name, label, type: 'date'|'text'|'number'|'check'|'select', value, options, grow, placeholder }]
+ * Returns { node, values() } — values() reads the live control state.
+ */
+export function filterBar(spec, onApply) {
+  const inputs = new Map();
+
+  const controls = spec.map((f) => {
+    if (f.type === 'check') {
+      const input = el('input', { type: 'checkbox', id: `f-${f.name}` });
+      input.checked = Boolean(f.value);
+      input.addEventListener('change', onApply);
+      inputs.set(f.name, () => input.checked);
+      return el('label', { class: 'filter-check', for: `f-${f.name}` }, input, f.label);
+    }
+
+    if (f.type === 'select') {
+      const select = el('select', { id: `f-${f.name}` },
+        f.options.map((o) => el('option', { value: o.value, selected: o.value === f.value }, o.label)));
+      select.value = f.value;
+      select.addEventListener('change', onApply);
+      inputs.set(f.name, () => select.value);
+      return el('label', { class: 'filter' }, el('span', { text: f.label }), select);
+    }
+
+    const input = el('input', {
+      type: f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text',
+      id: `f-${f.name}`,
+      value: f.value ?? '',
+      placeholder: f.placeholder,
+      min: f.type === 'number' ? '0' : undefined,
+    });
+    input.addEventListener('change', onApply);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); onApply(); } });
+    inputs.set(f.name, () => input.value);
+    return el('label', { class: `filter${f.grow ? ' grow' : ''}` }, el('span', { text: f.label }), input);
+  });
+
+  return {
+    node: el('div', { class: 'filters' }, controls),
+    values() {
+      const out = {};
+      for (const [name, read] of inputs) out[name] = read();
+      return out;
+    },
+  };
+}
+
+/* ------------------------------------------------------------- list driver */
+
+/**
+ * Drives a descriptor into a live panel. Returns { node, reload }.
+ *
+ * desc: {
+ *   title, sub, source: 'admin'|'indexer',
+ *   path: string | (values) => string,
+ *   params?: (values) => object,
+ *   key: string,                       // response field holding the array
+ *   cols, filters?, empty?, emptyHint?,
+ *   requires?: (values) => string|null, // block the request until an input is given
+ *   note?: (rows, body) => string,
+ * }
+ */
+export function listPanel(desc) {
+  const body = el('div', {});
+  const node = el('div', {}, desc.bare ? null : panelHead(desc.title, desc.sub));
+
+  let bar = null;
+  if (desc.filters?.length) {
+    bar = filterBar(desc.filters, () => void reload());
+    node.append(bar.node);
+  }
+  node.append(body);
+
+  async function reload() {
+    const values = bar ? bar.values() : {};
+
+    const missing = desc.requires?.(values);
+    if (missing) {
+      clear(body).append(card(null, emptyState(missing)));
+      return;
+    }
+
+    clear(body).append(card(null, skeleton()));
+
+    try {
+      const get = desc.source === 'indexer' ? indexerGet : adminGet;
+      const path = typeof desc.path === 'function' ? desc.path(values) : desc.path;
+      const res = await get(path, desc.params?.(values));
+      const rows = res?.[desc.key] ?? [];
+
+      clear(body);
+      if (!rows.length) {
+        body.append(card(null, emptyState(desc.empty ?? 'Nothing here', desc.emptyHint)));
+        return;
+      }
+      const note = desc.note?.(rows, res) ?? `${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`;
+      body.append(card(desc.cardTitle ?? desc.title, table(desc.cols, rows), note));
+    } catch (err) {
+      clear(body).append(card(null, errorState(err)));
+    }
+  }
+
+  return { node, reload };
+}
+
+/**
+ * Same idea for endpoints that return one object rather than a list.
+ * desc: { title, sub, source, path, params?, filters?, pick?: (res) => object,
+ *         render: (data, values) => Node }
+ */
+export function objectPanel(desc) {
+  const body = el('div', {});
+  const node = el('div', {}, desc.bare ? null : panelHead(desc.title, desc.sub));
+
+  let bar = null;
+  if (desc.filters?.length) {
+    bar = filterBar(desc.filters, () => void reload());
+    node.append(bar.node);
+  }
+  node.append(body);
+
+  async function reload() {
+    const values = bar ? bar.values() : {};
+    clear(body).append(card(null, skeleton()));
+    try {
+      const get = desc.source === 'indexer' ? indexerGet : adminGet;
+      const path = typeof desc.path === 'function' ? desc.path(values) : desc.path;
+      const res = await get(path, desc.params?.(values));
+      const data = desc.pick ? desc.pick(res) : res;
+      clear(body).append(desc.render(data ?? {}, values));
+    } catch (err) {
+      clear(body).append(card(null, errorState(err)));
+    }
+  }
+
+  return { node, reload };
+}
