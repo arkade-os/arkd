@@ -424,6 +424,45 @@ func TestGetFeeRate(t *testing.T) {
 			_, err := svc.GetFeeRate()
 			require.Error(t, err)
 		})
+
+		t.Run("negative fee rate", func(t *testing.T) {
+			ts := newTestServer(t)
+			ts.handle("/v1/fees/recommended", ts.jsonResponse(
+				http.StatusOK, map[string]float64{"fastestFee": -5},
+			))
+
+			svc := makeExplorer(t, ts.URL)
+
+			_, err := svc.GetFeeRate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "out of range")
+		})
+
+		t.Run("out of range fee rate", func(t *testing.T) {
+			ts := newTestServer(t)
+			ts.handle("/v1/fees/recommended", ts.jsonResponse(
+				http.StatusOK, map[string]float64{"fastestFee": 1e18},
+			))
+
+			svc := makeExplorer(t, ts.URL)
+
+			_, err := svc.GetFeeRate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "out of range")
+		})
+
+		t.Run("out of range fee rate on old endpoint", func(t *testing.T) {
+			ts := newTestServer(t)
+			ts.handle("/fee-estimates", ts.jsonResponse(
+				http.StatusOK, map[string]float64{"1": 1e18},
+			))
+
+			svc := makeExplorer(t, ts.URL)
+
+			_, err := svc.GetFeeRate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "out of range")
+		})
 	})
 }
 

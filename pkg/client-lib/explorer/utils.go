@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -44,6 +45,22 @@ func parseBitcoinTx(txStr string) (string, string, error) {
 	txid := tx.TxHash().String()
 
 	return txhex, txid, nil
+}
+
+// maxFeeRate is the highest fee rate in sat/vB accepted from the explorer.
+const maxFeeRate = 10_000
+
+// sanitizeFeeRate rejects the fee rates callers can't turn into a fee amount:
+// NaN, infinite, negative or absurdly high values would make the conversion to
+// uint64 undefined or wrap the fee computation.
+func sanitizeFeeRate(feeRate float64) (float64, error) {
+	if math.IsNaN(feeRate) || math.IsInf(feeRate, 0) {
+		return 0, fmt.Errorf("invalid fee rate: %v", feeRate)
+	}
+	if feeRate < 0 || feeRate > maxFeeRate {
+		return 0, fmt.Errorf("fee rate out of range: %v sat/vB", feeRate)
+	}
+	return feeRate, nil
 }
 
 func deriveWsURL(baseUrl string) (string, error) {

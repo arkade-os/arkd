@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -999,6 +1000,11 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		batchTrigger                                     *string
 	)
 	if settings.BanThreshold != nil {
+		if settings.GetBanThreshold() < 0 {
+			return nil, fmt.Errorf(
+				"invalid ban threshold (%d), must not be negative", settings.GetBanThreshold(),
+			)
+		}
 		t := uint64(settings.GetBanThreshold())
 		banThreshold = &t
 	}
@@ -1007,6 +1013,12 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		maxTxWeight = &t
 	}
 	if settings.MaxOpReturnOutputs != nil {
+		if settings.GetMaxOpReturnOutputs() < 0 {
+			return nil, fmt.Errorf(
+				"invalid max op return outputs (%d), must not be negative",
+				settings.GetMaxOpReturnOutputs(),
+			)
+		}
 		t := uint64(settings.GetMaxOpReturnOutputs())
 		maxOpReturnOutputs = &t
 	}
@@ -1059,16 +1071,37 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		batchTrigger = &t
 	}
 
+	unilateralExitDelay, err := parseLocktime(settings.UnilateralExitDelay)
+	if err != nil {
+		return nil, err
+	}
+	publicUnilateralExitDelay, err := parseLocktime(settings.PublicUnilateralExitDelay)
+	if err != nil {
+		return nil, err
+	}
+	checkpointExitDelay, err := parseLocktime(settings.CheckpointExitDelay)
+	if err != nil {
+		return nil, err
+	}
+	boardingExitDelay, err := parseLocktime(settings.BoardingExitDelay)
+	if err != nil {
+		return nil, err
+	}
+	vtxoTreeExpiry, err := parseLocktime(settings.VtxoTreeExpiry)
+	if err != nil {
+		return nil, err
+	}
+
 	return &domain.SettingsUpdate{
 		SessionDuration:               parseDuration(settings.SessionDuration),
 		UnrolledVtxoMinExpiryMargin:   parseDuration(settings.UnrolledVtxoMinExpiryMargin),
 		BanThreshold:                  banThreshold,
 		BanDuration:                   parseDuration(settings.BanDuration),
-		UnilateralExitDelay:           parseLocktime(settings.UnilateralExitDelay),
-		PublicUnilateralExitDelay:     parseLocktime(settings.PublicUnilateralExitDelay),
-		CheckpointExitDelay:           parseLocktime(settings.CheckpointExitDelay),
-		BoardingExitDelay:             parseLocktime(settings.BoardingExitDelay),
-		VtxoTreeExpiry:                parseLocktime(settings.VtxoTreeExpiry),
+		UnilateralExitDelay:           unilateralExitDelay,
+		PublicUnilateralExitDelay:     publicUnilateralExitDelay,
+		CheckpointExitDelay:           checkpointExitDelay,
+		BoardingExitDelay:             boardingExitDelay,
+		VtxoTreeExpiry:                vtxoTreeExpiry,
 		RoundMinParticipantsCount:     batchMinParticipants,
 		RoundMaxParticipantsCount:     batchMaxParticipants,
 		VtxoMinAmount:                 vtxoMinAmount,
@@ -1101,12 +1134,19 @@ func formatDuration(duration time.Duration) *int64 {
 	return &t
 }
 
-func parseLocktime(delay *int64) *arklib.RelativeLocktime {
+// parseLocktime rejects out of range values because narrowing them to uint32
+// inverts their meaning: -1 becomes a ~136 years delay, 2^32 becomes no delay.
+func parseLocktime(delay *int64) (*arklib.RelativeLocktime, error) {
 	if delay == nil {
-		return nil
+		return nil, nil
+	}
+	if *delay < 0 || *delay > math.MaxUint32 {
+		return nil, fmt.Errorf(
+			"invalid locktime (%d), must be between 0 and %d", *delay, uint32(math.MaxUint32),
+		)
 	}
 	t, _ := arklib.ParseRelativeLocktime(uint32(*delay))
-	return &t
+	return &t, nil
 }
 
 func formatLocktime(delay arklib.RelativeLocktime) *int64 {
