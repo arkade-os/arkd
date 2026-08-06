@@ -134,15 +134,15 @@ func notifyIncomingFunds(
 	notifyCtx, cancel := context.WithTimeout(ctx, notifyWait)
 	defer cancel()
 
+	// An empty result is not an error: some callers deliberately spend
+	// everything so that nothing lands back at addr. Callers that require
+	// funds assert that themselves.
 	funds, err := client.NotifyIncomingFunds(notifyCtx, addr)
 	if err != nil {
 		if notifyCtx.Err() != nil && ctx.Err() == nil {
 			return nil, fmt.Errorf("no funds received at %s within %s", addr, notifyWait)
 		}
 		return nil, err
-	}
-	if len(funds) == 0 {
-		return nil, fmt.Errorf("no funds received at %s within %s", addr, notifyWait)
 	}
 	return funds, nil
 }
@@ -1079,6 +1079,14 @@ func setupArkd() error {
 			return err
 		}
 
+		// The wallet reporting ready is not the same signal as the public
+		// gRPC surface accepting calls, which is gated separately on the app
+		// service having started. Clients created before that gate opens fail
+		// with "server not ready".
+		if err := waitUntilArkServiceReady(); err != nil {
+			return err
+		}
+
 		return refill(adminHttpClient)
 	}
 
@@ -1099,6 +1107,10 @@ func setupArkd() error {
 	}
 
 	if err := waitUntilReady(adminHttpClient); err != nil {
+		return err
+	}
+
+	if err := waitUntilArkServiceReady(); err != nil {
 		return err
 	}
 
