@@ -247,6 +247,69 @@ func TestBatchSession(t *testing.T) {
 		_, err = alice.RedeemNotes(t.Context(), []string{note1, note2})
 		require.Error(t, err)
 	})
+
+	// In this test Alice and Bob settle a batch of two intents, one offchain and one boarding, sized so
+	// that the boarding input alone covers every output the coin selection is asked to fund.
+	// createCommitmentTx subtracts the boarding inputs from that target, so this is the case where
+	// the target reaches its lower bound: it used to wrap below zero and ask the wallet for ~1.8e19
+	// sats. The intent fee charged on the boarding input is what frees the input value: the bigger
+	// it is, the smaller the outputs are compared to the input funding them.
+	t.Run("boarding surplus", func(t *testing.T) {
+		const (
+			bobVtxoAmount       = 20_000
+			aliceBoardingAmount = 100_000
+		)
+
+		originalFees, err := getIntentFees()
+		require.NoError(t, err)
+
+		t.Cleanup(func() {
+			require.NoError(t, clearIntentFees())
+			if !isEmptyIntentFees(*originalFees) {
+				require.NoError(t, updateIntentFees(*originalFees))
+			}
+		})
+
+		dust := getServerDust(t)
+
+		// The batch output pays bob's vtxo plus what is left of alice's boarding input, and the
+		// single connector output is worth the dust limit. Alice's boarding input covers all of it
+		// exactly once her fee reaches bob's vtxo plus the connector.
+		breakEvenFee := uint64(bobVtxoAmount) + dust
+
+		t.Run("boarding input exceeding the outputs", func(t *testing.T) {
+			const surplus = 10_000
+
+			batch := settleBoardingSurplusBatch(
+				t, breakEvenFee+surplus, bobVtxoAmount, aliceBoardingAmount,
+			)
+
+			require.EqualValues(t, bobVtxoAmount, batch.bobVtxo.Amount)
+			require.EqualValues(
+				t, aliceBoardingAmount-(breakEvenFee+surplus), batch.aliceVtxo.Amount,
+			)
+			require.EqualValues(t, dust, batch.connectorOutput())
+			require.EqualValues(
+				t, uint64(bobVtxoAmount)+batch.aliceVtxo.Amount, batch.batchOutput(),
+			)
+			require.EqualValues(t, surplus, batch.boardingSurplus(aliceBoardingAmount))
+		})
+
+		t.Run("boarding input matching the outputs", func(t *testing.T) {
+			batch := settleBoardingSurplusBatch(
+				t, breakEvenFee, bobVtxoAmount, aliceBoardingAmount,
+			)
+
+			require.EqualValues(t, bobVtxoAmount, batch.bobVtxo.Amount)
+			require.EqualValues(t, aliceBoardingAmount-breakEvenFee, batch.aliceVtxo.Amount)
+			require.EqualValues(t, dust, batch.connectorOutput())
+			require.EqualValues(
+				t, uint64(bobVtxoAmount)+batch.aliceVtxo.Amount, batch.batchOutput(),
+			)
+			// the target amount the wallet is asked for is exactly 0 here
+			require.Zero(t, batch.boardingSurplus(aliceBoardingAmount))
+		})
+	})
 }
 
 func TestUnilateralExit(t *testing.T) {

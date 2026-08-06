@@ -19,6 +19,8 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	batchsession "github.com/arkade-os/arkd/pkg/client-lib/batch-session"
+	mempoolexplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	wallet "github.com/arkade-os/arkd/pkg/client-wallet"
 	singlekeyidentity "github.com/arkade-os/arkd/pkg/client-wallet/identity"
 	identityinmemorystore "github.com/arkade-os/arkd/pkg/client-wallet/identity/store/inmemory"
@@ -859,4 +861,140 @@ func waitForVTXOs(
 			return vtxos, nil
 		}
 	}
+}
+
+// boardingSurplusBatch is the outcome of a batch made of one offchain intent and one boarding
+// intent, see settleBoardingSurplusBatch.
+type boardingSurplusBatch struct {
+	aliceVtxo    clientlib.Vtxo
+	bobVtxo      clientlib.Vtxo
+	commitmentTx *wire.MsgTx
+}
+
+// batchOutput returns the value of the commitment tx output funding the vtxo tree, ie. the one
+// at index 0.
+func (b boardingSurplusBatch) batchOutput() int64 {
+	return b.commitmentTx.TxOut[0].Value
+}
+
+// connectorOutput returns the value of the commitment tx output funding the connectors tree, ie.
+// the one at index 1.
+func (b boardingSurplusBatch) connectorOutput() int64 {
+	return b.commitmentTx.TxOut[1].Value
+}
+
+// boardingSurplus returns the boarding input value the coin selection target doesn't account
+// for, ie. what is left of the boarding input once it has funded the batch and connector
+// outputs.
+func (b boardingSurplusBatch) boardingSurplus(boardingAmount int64) int64 {
+	return boardingAmount - (b.batchOutput() + b.connectorOutput())
+}
+
+// settleBoardingSurplusBatch charges onchainInputFee on every boarding input, funds bob offchain
+// and alice's boarding address, then makes them settle together in the same batch.
+func settleBoardingSurplusBatch(
+	t *testing.T, onchainInputFee, bobVtxoAmount, aliceBoardingAmount uint64,
+) boardingSurplusBatch {
+	t.Helper()
+
+	// only the boarding input is charged, so bob's vtxo and both vtxo outputs keep their
+	// nominal amount and the arithmetic of the batch stays predictable.
+	require.NoError(t, updateIntentFees(intentFees{
+		IntentOffchainInputFeeProgram:  "0.0",
+		IntentOnchainInputFeeProgram:   fmt.Sprintf("%d.0", onchainInputFee),
+		IntentOffchainOutputFeeProgram: "0.0",
+		IntentOnchainOutputFeeProgram:  "0.0",
+	}))
+
+	ctx := t.Context()
+
+	// the clients cache the fee programs at init time, so they must be created after the update
+	alice := setupClientWallet(t)
+	bob := setupClientWallet(t)
+
+	_, aliceOffchainAddr, aliceBoardingAddr, err := alice.Receive(ctx)
+	require.NoError(t, err)
+	_, bobOffchainAddr, _, err := bob.Receive(ctx)
+	require.NoError(t, err)
+
+	faucetOffchain(t, bob, float64(bobVtxoAmount)/1e8)
+	faucetOnchain(t, aliceBoardingAddr.Address, float64(aliceBoardingAmount)/1e8)
+	time.Sleep(6 * time.Second)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(4)
+
+	var aliceFunds, bobFunds []clientlib.Vtxo
+	var aliceFundsErr, bobFundsErr error
+	go func() {
+		aliceFunds, aliceFundsErr = alice.NotifyIncomingFunds(ctx, aliceOffchainAddr.Address)
+		wg.Done()
+	}()
+	go func() {
+		bobFunds, bobFundsErr = bob.NotifyIncomingFunds(ctx, bobOffchainAddr.Address)
+		wg.Done()
+	}()
+
+	var aliceRes, bobRes *batchsession.BatchTxRes
+	var aliceErr, bobErr error
+	go func() {
+		aliceRes, aliceErr = alice.Settle(ctx)
+		wg.Done()
+	}()
+	go func() {
+		bobRes, bobErr = bob.Settle(ctx)
+		wg.Done()
+	}()
+
+	wg.Wait()
+
+	require.NoError(t, aliceErr)
+	require.NoError(t, bobErr)
+	require.NoError(t, aliceFundsErr)
+	require.NoError(t, bobFundsErr)
+	require.NotNil(t, aliceRes)
+	require.NotNil(t, bobRes)
+	require.NotEmpty(t, aliceRes.CommitmentTxid)
+	// both intents must land in the same batch, otherwise the boarding input is alone in its
+	// commitment tx and the case under test is not the one being exercised
+	require.Equal(t, aliceRes.CommitmentTxid, bobRes.CommitmentTxid)
+	require.Len(t, aliceFunds, 1)
+	require.Len(t, bobFunds, 1)
+
+	return boardingSurplusBatch{
+		aliceVtxo:    aliceFunds[0],
+		bobVtxo:      bobFunds[0],
+		commitmentTx: fetchTx(t, aliceRes.CommitmentTxid),
+	}
+}
+
+// getServerDust returns the dust limit advertised by the server.
+func getServerDust(t *testing.T) uint64 {
+	t.Helper()
+
+	info, err := setupClientWallet(t).Client().GetInfo(t.Context())
+	require.NoError(t, err)
+
+	return info.Dust
+}
+
+// fetchTx returns the onchain tx with the given txid, waiting for the explorer to see it.
+func fetchTx(t *testing.T, txid string) *wire.MsgTx {
+	t.Helper()
+
+	explorerSvc, err := mempoolexplorer.NewExplorer(
+		explorerUrl, arklib.BitcoinRegTest, mempoolexplorer.WithTracker(false),
+	)
+	require.NoError(t, err)
+
+	var txHex string
+	require.Eventually(t, func() bool {
+		txHex, err = explorerSvc.GetTxHex(txid)
+		return err == nil
+	}, 30*time.Second, time.Second, "tx %s never showed up in the explorer", txid)
+
+	var tx wire.MsgTx
+	require.NoError(t, tx.Deserialize(hex.NewDecoder(strings.NewReader(txHex))))
+
+	return &tx
 }

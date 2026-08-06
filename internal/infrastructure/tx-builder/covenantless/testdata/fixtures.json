@@ -24,6 +24,119 @@
             ]
           }
         ],
+        "expectedSelectionTarget": 2100,
+        "expectedNumOfNodes": 1,
+        "expectedNumOfLeaves": 1
+      },
+      {
+        "intents": [
+          {
+            "id": "0",
+            "inputs": [
+              {
+                "txid": "fd68e3c5796cc7db0a8036d486d5f625b6b2f2c014810ac020e1ac23e82c59d6",
+                "vout": 0,
+                "pubkey": "0000000000000000000000000000000000000000000000000000000000000001",
+                "amount": 1100,
+                "rootCommitmentTxid": "0000000000000000000000000000000000000000000000000000000000000002",
+                "commitmentTxids": ["0000000000000000000000000000000000000000000000000000000000000002"],
+                "expiresAt": 253402300799
+              }
+            ],
+            "receivers": [
+              {
+                "pubkey": "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967",
+                "amount": 1100
+              }
+            ]
+          }
+        ],
+        "boardingAmounts": [100000],
+        "expectedSelectionTarget": 0,
+        "expectedNumOfNodes": 1,
+        "expectedNumOfLeaves": 1
+      },
+      {
+        "intents": [
+          {
+            "id": "0",
+            "inputs": [
+              {
+                "txid": "fd68e3c5796cc7db0a8036d486d5f625b6b2f2c014810ac020e1ac23e82c59d6",
+                "vout": 0,
+                "pubkey": "0000000000000000000000000000000000000000000000000000000000000001",
+                "amount": 1100,
+                "rootCommitmentTxid": "0000000000000000000000000000000000000000000000000000000000000002",
+                "commitmentTxids": ["0000000000000000000000000000000000000000000000000000000000000002"],
+                "expiresAt": 253402300799
+              }
+            ],
+            "receivers": [
+              {
+                "pubkey": "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967",
+                "amount": 1100
+              }
+            ]
+          }
+        ],
+        "boardingAmounts": [600, 200],
+        "expectedSelectionTarget": 1300,
+        "expectedNumOfNodes": 1,
+        "expectedNumOfLeaves": 1
+      },
+      {
+        "intents": [
+          {
+            "id": "0",
+            "inputs": [
+              {
+                "txid": "fd68e3c5796cc7db0a8036d486d5f625b6b2f2c014810ac020e1ac23e82c59d6",
+                "vout": 0,
+                "pubkey": "0000000000000000000000000000000000000000000000000000000000000001",
+                "amount": 1100,
+                "rootCommitmentTxid": "0000000000000000000000000000000000000000000000000000000000000002",
+                "commitmentTxids": ["0000000000000000000000000000000000000000000000000000000000000002"],
+                "expiresAt": 253402300799
+              }
+            ],
+            "receivers": [
+              {
+                "pubkey": "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967",
+                "amount": 1100
+              }
+            ]
+          }
+        ],
+        "boardingAmounts": [2100],
+        "expectedSelectionTarget": 0,
+        "expectedNumOfNodes": 1,
+        "expectedNumOfLeaves": 1
+      },
+      {
+        "intents": [
+          {
+            "id": "0",
+            "inputs": [
+              {
+                "txid": "fd68e3c5796cc7db0a8036d486d5f625b6b2f2c014810ac020e1ac23e82c59d6",
+                "vout": 0,
+                "pubkey": "0000000000000000000000000000000000000000000000000000000000000001",
+                "amount": 1100,
+                "rootCommitmentTxid": "0000000000000000000000000000000000000000000000000000000000000002",
+                "commitmentTxids": ["0000000000000000000000000000000000000000000000000000000000000002"],
+                "expiresAt": 253402300799
+              }
+            ],
+            "receivers": [
+              {
+                "pubkey": "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967",
+                "amount": 1100
+              }
+            ]
+          }
+        ],
+        "boardingAmounts": [1500, 1000],
+        "expectedSelectionTarget": 0,
         "expectedNumOfNodes": 1,
         "expectedNumOfLeaves": 1
       },
@@ -54,6 +167,7 @@
             ]
           }
         ],
+        "expectedSelectionTarget": 2100,
         "expectedNumOfNodes": 3,
         "expectedNumOfLeaves": 1
       },
@@ -132,6 +246,87 @@
             ]
           }
         ],
+        "expectedSelectionTarget": 6300,
+        "expectedNumOfNodes": 11,
+        "expectedNumOfLeaves": 3
+      },
+      {
+        "intents": [
+          {
+            "id": "0",
+            "inputs": [
+              {
+                "txid": "fd68e3c5796cc7db0a8036d486d5f625b6b2f2c014810ac020e1ac23e82c59d6",
+                "vout": 0,
+                "pubkey": "0000000000000000000000000000000000000000000000000000000000000001",
+                "amount": 1100,
+                "rootCommitmentTxid": "0000000000000000000000000000000000000000000000000000000000000002",
+                "commitmentTxids": ["0000000000000000000000000000000000000000000000000000000000000002"],
+                "expiresAt": 253402300799
+              }
+            ],
+            "receivers": [
+              {
+                "pubkey": "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967",
+                "amount": 600
+              },
+              {
+                "pubkey": "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967",
+                "amount": 500
+              }
+            ]
+          },
+          {
+            "id": "0",
+            "inputs": [
+              {
+                "txid": "fd68e3c5796cc7db0a8036d486d5f625b6b2f2c014810ac020e1ac23e82c59d6",
+                "vout": 0,
+                "pubkey": "0000000000000000000000000000000000000000000000000000000000000001",
+                "amount": 1100,
+                "rootCommitmentTxid": "0000000000000000000000000000000000000000000000000000000000000002",
+                "commitmentTxids": ["0000000000000000000000000000000000000000000000000000000000000002"],
+                "expiresAt": 253402300799
+              }
+            ],
+            "receivers": [
+              {
+                "pubkey": "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967",
+                "amount": 600
+              },
+              {
+                "pubkey": "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967",
+                "amount": 500
+              }
+            ]
+          },
+          {
+            "id": "0",
+            "inputs": [
+              {
+                "txid": "fd68e3c5796cc7db0a8036d486d5f625b6b2f2c014810ac020e1ac23e82c59d6",
+                "vout": 0,
+                "pubkey": "0000000000000000000000000000000000000000000000000000000000000001",
+                "amount": 1100,
+                "rootCommitmentTxid": "0000000000000000000000000000000000000000000000000000000000000002",
+                "commitmentTxids": ["0000000000000000000000000000000000000000000000000000000000000002"],
+                "expiresAt": 253402300799
+              }
+            ],
+            "receivers": [
+              {
+                "pubkey": "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967",
+                "amount": 600
+              },
+              {
+                "pubkey": "25a43cecfa0e1b1a4f72d64ad15f4cfa7a84d0723e8511c969aa543638ea9967",
+                "amount": 500
+              }
+            ]
+          }
+        ],
+        "boardingAmounts": [7000],
+        "expectedSelectionTarget": 0,
         "expectedNumOfNodes": 11,
         "expectedNumOfLeaves": 3
       },
@@ -210,6 +405,7 @@
             ]
           }
         ],
+        "expectedSelectionTarget": 9500,
         "expectedNumOfNodes": 9,
         "expectedNumOfLeaves": 1
       }
