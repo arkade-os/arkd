@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -508,4 +509,60 @@ func txBalance(ptx *psbt.Packet) int64 {
 		balance -= out.Value
 	}
 	return balance
+}
+
+func TestVerifyBoardingTapscriptSigsBindsToCommitmentTx(t *testing.T) {
+	signerKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	builder := txbuilder.NewTxBuilder(
+		wallet, &staticSigner{pubkey: signerKey.PubKey()}, arklib.Bitcoin,
+	)
+
+	// a boarding input the operator and the user co-sign
+	setup := newTwoKeyVtxoSetup(t, signerKey)
+	commitment := buildTx(t, setup, nil)
+	commitmentB64 := encodeTx(t, commitment)
+
+	signWith := func(packet *psbt.Packet) string {
+		t.Helper()
+		sig := makeVtxoSig(t, setup.closureKey, packet, setup.leaf)
+		packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig}
+		return encodeTx(t, packet)
+	}
+
+	t.Run("signature over the operator's tx is accepted", func(t *testing.T) {
+		honest := clonePacket(t, commitment)
+
+		ins, err := builder.VerifyBoardingTapscriptSigs(signWith(honest), commitmentB64)
+		require.NoError(t, err)
+		require.Len(t, ins, 1)
+	})
+
+	t.Run("signature over a modified tx is refused", func(t *testing.T) {
+		modified := clonePacket(t, commitment)
+		modified.UnsignedTx.TxOut[0].Value--
+		require.NotEqual(t, commitment.UnsignedTx.TxID(), modified.UnsignedTx.TxID())
+
+		// the signature is cryptographically valid, just for the wrong transaction
+		_, err := builder.VerifyBoardingTapscriptSigs(signWith(modified), commitmentB64)
+		require.ErrorContains(t, err, "commitment tx mismatch")
+	})
+
+	t.Run("signature over a tx with an extra output is refused", func(t *testing.T) {
+		modified := clonePacket(t, commitment)
+		modified.UnsignedTx.AddTxOut(wire.NewTxOut(500, setup.p2trScript))
+		modified.Outputs = append(modified.Outputs, psbt.POutput{})
+
+		_, err := builder.VerifyBoardingTapscriptSigs(signWith(modified), commitmentB64)
+		require.ErrorContains(t, err, "commitment tx mismatch")
+	})
+}
+
+// clonePacket deep copies a psbt through its serialization.
+func clonePacket(t *testing.T, p *psbt.Packet) *psbt.Packet {
+	t.Helper()
+	clone, err := psbt.NewFromRawBytes(strings.NewReader(encodeTx(t, p)), true)
+	require.NoError(t, err)
+	return clone
 }

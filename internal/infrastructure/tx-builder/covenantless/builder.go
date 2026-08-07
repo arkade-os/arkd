@@ -1120,6 +1120,13 @@ func (b *txBuilder) VerifyBoardingTapscriptSigs(
 		return nil, err
 	}
 
+	if ptx.UnsignedTx.TxID() != commitmentPtx.UnsignedTx.TxID() {
+		return nil, fmt.Errorf(
+			"commitment tx mismatch: expected %s, got %s",
+			commitmentPtx.UnsignedTx.TxID(), ptx.UnsignedTx.TxID(),
+		)
+	}
+
 	// rely on the commitment tx (built by the builder) to get the prevouts
 	// it ensures that txToVerify is not modifying the prevouts in order to produce "fake" but valid signatures
 	prevoutFetcher, err := txutils.GetPrevOutputFetcher(commitmentPtx)
