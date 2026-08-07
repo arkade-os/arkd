@@ -505,6 +505,15 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			return store.TreeSigingSessions().AddSignatures(ctx, roundId, signer.pubkey, sigs)
 		}
 
+		// unregistered cosigner must be rejected
+		unknown := signer{
+			pubkey: "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			nonce:  n1,
+			sig:    s1,
+		}
+		require.Error(t, doSubmitNonces(unknown, roundId1))
+		require.Error(t, doSubmitSigs(unknown, roundId1))
+
 		for _, signer := range signers {
 			go func() {
 				err := doSubmitNonces(signer, roundId1)
