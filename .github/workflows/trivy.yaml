@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     name: Build and Scan
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-24.04' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
