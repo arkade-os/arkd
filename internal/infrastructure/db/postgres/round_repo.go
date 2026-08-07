@@ -38,45 +38,6 @@ func (r *roundRepository) Close() {
 	_ = r.db.Close()
 }
 
-func (r *roundRepository) GetRoundIds(
-	ctx context.Context, startedAfter, startedBefore int64, withFailed, withCompleted bool,
-) ([]string, error) {
-	var roundIDs []string
-	if startedAfter == 0 && startedBefore == 0 {
-		// Use filtering query when no time range is specified
-		ids, err := r.querier.SelectRoundIdsWithFilters(
-			ctx,
-			queries.SelectRoundIdsWithFiltersParams{
-				WithFailed:    withFailed,
-				WithCompleted: withCompleted,
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		roundIDs = ids
-	} else {
-		// Use time range filtering query
-		ids, err := r.querier.SelectRoundIdsInTimeRangeWithFilters(
-			ctx,
-			queries.SelectRoundIdsInTimeRangeWithFiltersParams{
-				StartTs:       startedAfter,
-				EndTs:         startedBefore,
-				WithFailed:    withFailed,
-				WithCompleted: withCompleted,
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		roundIDs = ids
-	}
-
-	return roundIDs, nil
-}
-
 func (r *roundRepository) GetRoundSummaries(
 	ctx context.Context, startedAfter, startedBefore int64,
 	withFailed, withCompleted, onlyFailed bool, limit int64,
@@ -530,21 +491,37 @@ func (r *roundRepository) GetIntentByTxid(
 	}, nil
 }
 
-func (r *roundRepository) PatchCollectedFees(
-	ctx context.Context, feesByRoundId map[string]uint64,
-) error {
-	txBody := func(querierWithTx *queries.Queries) error {
-		for id, fees := range feesByRoundId {
-			if err := querierWithTx.UpdateRoundCollectedFees(
-				ctx,
-				queries.UpdateRoundCollectedFeesParams{Fees: int64(fees), ID: id},
-			); err != nil {
-				return fmt.Errorf("failed to patch collected fees for round %s: %w", id, err)
-			}
-		}
-		return nil
+func (r *roundRepository) SumCollectedFees(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	total, err := r.querier.SelectCollectedFeesInRange(
+		ctx, queries.SelectCollectedFeesInRangeParams{StartTs: after, EndTs: before},
+	)
+	if err != nil {
+		return 0, err
 	}
-	return execTx(ctx, r.db, txBody)
+	return uint64(total), nil
+}
+
+func (r *roundRepository) GetScheduledSweeps(
+	ctx context.Context, limit int64,
+) ([]domain.ScheduledSweep, error) {
+	rows, err := r.querier.SelectScheduledSweeps(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	sweeps := make([]domain.ScheduledSweep, 0, len(rows))
+	for _, row := range rows {
+		sweeps = append(sweeps, domain.ScheduledSweep{
+			RoundId:        row.ID,
+			CommitmentTxid: row.Txid,
+			SweepAt:        row.SweepAt,
+			TotalAmount:    uint64(row.TotalAmount),
+			VtxoCount:      row.VtxoCount,
+		})
+	}
+	return sweeps, nil
 }
 
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {

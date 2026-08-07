@@ -14,7 +14,7 @@ already worked out.
 | Overview | Liability by expiry bucket, coverage against the wallet balance, fee rate, wallet state |
 | Batches | Batch list with fail reasons, drill-down into details and registered intents |
 | Expired | Batches past expiry that were never swept |
-| Scheduled sweeps | What the sweeper is tracking and when each output comes due |
+| Scheduled sweeps | Batches awaiting a sweep, when each comes due and the unswept value it carries |
 | Offchain txs | Ark tx list with fail reasons, drill-down into checkpoints |
 | Intent queue | Intents waiting for the next batch |
 | Convictions | Search by time range, batch, script, or id |

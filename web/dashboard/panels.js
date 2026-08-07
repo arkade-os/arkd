@@ -91,30 +91,44 @@ export const expiredBatches = () => listPanel({
 
 export const scheduledSweeps = () => listPanel({
   title: 'Scheduled sweeps',
-  sub: 'Batch outputs the sweeper is tracking, with the time each becomes sweepable.',
+  sub: 'Batches awaiting a sweep, soonest due first, with the unswept value each still carries.',
   cardTitle: 'Scheduled sweeps',
   source: 'admin',
   path: '/v1/admin/sweeps',
   key: 'sweeps',
   empty: 'No sweeps scheduled',
+  emptyHint: 'Every batch with a vtxo tree has been swept.',
+  filters: [
+    { name: 'limit', label: 'Limit', type: 'number', value: 100 },
+  ],
+  params: (v) => ({ limit: num(v.limit) }),
+  note: (rows) => {
+    const total = rows.reduce((sum, r) => sum + num(r.totalAmount), 0);
+    return `${rows.length} batches · ${sats(total)} sats at stake`;
+  },
   cols: [
     { label: 'Batch', cls: 'mono', cell: (r) => refLink(`#/batch/${encodeURIComponent(r.roundId)}`, r.roundId) },
-    { label: 'Commitment confirmed', cell: (r) => boolBadge(r.confirmed, 'confirmed', 'unconfirmed') },
-    { label: 'Outputs', cls: 'num', cell: (r) => String(r.outputs?.length ?? 0) },
     {
-      label: 'Total',
-      cls: 'num',
-      cell: (r) => btc((r.outputs ?? []).reduce((sum, o) => sum + num(o.amount), 0)),
+      label: 'Commitment',
+      cls: 'mono',
+      cell: (r) => (r.commitmentTxid
+        ? refLink(`#/commitment/${encodeURIComponent(r.commitmentTxid)}`, r.commitmentTxid)
+        : '—'),
     },
+    { label: 'Due', cls: 'num', cell: (r) => timeCell(r.sweepAt) },
     {
-      label: 'Next due',
+      label: 'Overdue by',
       cls: 'num',
       cell: (r) => {
-        const times = (r.outputs ?? []).map((o) => num(o.scheduledAt)).filter(Boolean);
-        return times.length ? timeCell(Math.min(...times)) : '—';
+        const overdue = Math.floor(Date.now() / 1000) - num(r.sweepAt);
+        return overdue > 0 ? dur(overdue) : '—';
       },
     },
+    { label: 'Unswept vtxos', cls: 'num', cell: (r) => sats(r.vtxoCount) },
+    { label: 'At stake', cls: 'num', cell: (r) => btc(r.totalAmount) },
   ],
+  // Pending work, not history: the most overdue sweep is the one to look at first.
+  sort: (a, b) => num(a.sweepAt) - num(b.sweepAt),
 });
 
 /* ------------------------------------------------------------- offchain txs */

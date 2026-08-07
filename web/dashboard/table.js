@@ -7,7 +7,7 @@
   logic (solvency, batch, offchain tx) are written by hand instead.
 */
 
-import { el, clear } from './fmt.js';
+import { el, clear, num } from './fmt.js';
 import { adminGet, indexerGet, ApiError } from './api.js';
 
 /* ------------------------------------------------------------------ states */
@@ -191,9 +191,20 @@ export function filterBar(spec, onApply) {
  *   key: string,                       // response field holding the array
  *   cols, filters?, empty?, emptyHint?,
  *   requires?: (values) => string|null, // block the request until an input is given
+ *   sort?: (a, b) => number,           // row comparator; defaults to recent first
  *   note?: (rows, body) => string,
  * }
  */
+// Every list here is a log of things that happened, so the newest row is the one
+// worth seeing first. Rows without any of these fields keep the server's order
+// (Array.sort is stable), and a panel with a different natural order sets desc.sort.
+const TIME_FIELDS = ['createdAt', 'startedAt', 'expiredAt', 'timestamp'];
+
+function recentFirst(a, b) {
+  const f = TIME_FIELDS.find((k) => a?.[k] != null || b?.[k] != null);
+  return f ? num(b[f]) - num(a[f]) : 0;
+}
+
 export function listPanel(desc) {
   const body = el('div', {});
   const node = el('div', {}, desc.bare ? null : panelHead(desc.title, desc.sub));
@@ -205,7 +216,12 @@ export function listPanel(desc) {
   }
   node.append(body);
 
+  // Changing a filter twice in a row leaves two requests in flight. Without this
+  // the slower one can land last and paint results for a filter nobody selected.
+  let gen = 0;
+
   async function reload() {
+    const mine = ++gen;
     const values = bar ? bar.values() : {};
 
     const missing = desc.requires?.(values);
@@ -220,7 +236,9 @@ export function listPanel(desc) {
       const get = desc.source === 'indexer' ? indexerGet : adminGet;
       const path = typeof desc.path === 'function' ? desc.path(values) : desc.path;
       const res = await get(path, desc.params?.(values));
-      const rows = res?.[desc.key] ?? [];
+      if (mine !== gen) return;
+      const rows = (res?.[desc.key] ?? []).slice();
+      rows.sort(desc.sort ?? recentFirst);
 
       clear(body);
       if (!rows.length) {
@@ -230,6 +248,7 @@ export function listPanel(desc) {
       const note = desc.note?.(rows, res) ?? `${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`;
       body.append(card(desc.cardTitle ?? desc.title, table(desc.cols, rows), note));
     } catch (err) {
+      if (mine !== gen) return;
       clear(body).append(card(null, errorState(err)));
     }
   }
@@ -253,16 +272,23 @@ export function objectPanel(desc) {
   }
   node.append(body);
 
+  // Same stale-response guard as listPanel: the last request to be issued is the
+  // only one allowed to paint.
+  let gen = 0;
+
   async function reload() {
+    const mine = ++gen;
     const values = bar ? bar.values() : {};
     clear(body).append(card(null, skeleton()));
     try {
       const get = desc.source === 'indexer' ? indexerGet : adminGet;
       const path = typeof desc.path === 'function' ? desc.path(values) : desc.path;
       const res = await get(path, desc.params?.(values));
+      if (mine !== gen) return;
       const data = desc.pick ? desc.pick(res) : res;
       clear(body).append(desc.render(data ?? {}, values));
     } catch (err) {
+      if (mine !== gen) return;
       clear(body).append(card(null, errorState(err)));
     }
   }

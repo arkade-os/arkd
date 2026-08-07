@@ -36,49 +36,6 @@ func (r *roundRepository) Close() {
 	_ = r.db.Close()
 }
 
-func (r *roundRepository) GetRoundIds(
-	ctx context.Context, startedAfter, startedBefore int64, withFailed, withCompleted bool,
-) ([]string, error) {
-	var roundIDs []string
-	err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
-		if startedAfter == 0 && startedBefore == 0 {
-			ids, err := q.SelectRoundIdsWithFilters(
-				ctx,
-				queries.SelectRoundIdsWithFiltersParams{
-					WithFailed:    withFailed,
-					WithCompleted: withCompleted,
-				},
-			)
-			if err != nil {
-				return err
-			}
-			roundIDs = ids
-			return nil
-		}
-
-		ids, err := q.SelectRoundIdsInTimeRangeWithFilters(
-			ctx,
-			queries.SelectRoundIdsInTimeRangeWithFiltersParams{
-				StartTs:       startedAfter,
-				EndTs:         startedBefore,
-				WithFailed:    withFailed,
-				WithCompleted: withCompleted,
-			},
-		)
-		if err != nil {
-			return err
-		}
-
-		roundIDs = ids
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return roundIDs, nil
-}
-
 func (r *roundRepository) GetRoundSummaries(
 	ctx context.Context, startedAfter, startedBefore int64,
 	withFailed, withCompleted, onlyFailed bool, limit int64,
@@ -661,21 +618,46 @@ func (r *roundRepository) GetIntentByTxid(
 	}, nil
 }
 
-func (r *roundRepository) PatchCollectedFees(
-	ctx context.Context, feesByRoundId map[string]uint64,
-) error {
-	txBody := func(querierWithTx *queries.Queries) error {
-		for id, fees := range feesByRoundId {
-			if err := querierWithTx.UpdateRoundCollectedFees(
-				ctx,
-				queries.UpdateRoundCollectedFeesParams{Fees: int64(fees), ID: id},
-			); err != nil {
-				return fmt.Errorf("failed to patch collected fees for round %s: %w", id, err)
-			}
-		}
-		return nil
+func (r *roundRepository) SumCollectedFees(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	var total int64
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		total, err = q.SelectCollectedFeesInRange(ctx, queries.SelectCollectedFeesInRangeParams{
+			StartTs: after,
+			EndTs:   before,
+		})
+		return err
+	}); err != nil {
+		return 0, err
 	}
-	return execTx(ctx, r.db.Write(), txBody)
+	return uint64(total), nil
+}
+
+func (r *roundRepository) GetScheduledSweeps(
+	ctx context.Context, limit int64,
+) ([]domain.ScheduledSweep, error) {
+	var rows []queries.SelectScheduledSweepsRow
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectScheduledSweeps(ctx, limit)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+
+	sweeps := make([]domain.ScheduledSweep, 0, len(rows))
+	for _, row := range rows {
+		sweeps = append(sweeps, domain.ScheduledSweep{
+			RoundId:        row.ID,
+			CommitmentTxid: row.Txid,
+			SweepAt:        row.SweepAt,
+			TotalAmount:    uint64(row.TotalAmount),
+			VtxoCount:      row.VtxoCount,
+		})
+	}
+	return sweeps, nil
 }
 
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {

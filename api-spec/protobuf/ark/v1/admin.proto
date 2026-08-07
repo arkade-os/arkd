@@ -197,7 +197,10 @@ service AdminService {
   }
 }
 
-message GetScheduledSweepRequest {}
+message GetScheduledSweepRequest {
+  // Max batches to return, soonest due first. 0 means no limit.
+  int64 limit = 1;
+}
 message GetScheduledSweepResponse {
   repeated ScheduledSweep sweeps = 1;
 }
@@ -415,17 +418,16 @@ message RevokeAuthResponse {
   string token = 1;
 }
 
-message SweepableOutput {
-  string txid = 1;
-  uint32 vout = 2;
-  string amount = 3;
-  int64 scheduled_at = 4;
-}
-
 message ScheduledSweep {
   string round_id = 1;
-  repeated SweepableOutput outputs = 2;
-  bool confirmed = 3;
+  string commitment_txid = 2;
+  // When the batch outputs fall due, derived from the batch's ending timestamp
+  // plus its vtxo tree expiry. No chain access is needed to answer this.
+  int64 sweep_at = 3;
+  // Unswept leaf value still carried by the batch, in satoshis.
+  uint64 total_amount = 4;
+  // Number of unswept leaf vtxos backing total_amount.
+  int64 vtxo_count = 5;
 }
 
 message ScheduledSessionConfig {

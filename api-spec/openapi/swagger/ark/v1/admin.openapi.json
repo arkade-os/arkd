@@ -1236,6 +1236,17 @@
           "AdminService"
         ],
         "operationId": "AdminService_GetScheduledSweep",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max batches to return, soonest due first. 0 means no limit.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "a successful response.",
@@ -2046,7 +2057,14 @@
       },
       "GetScheduledSweepRequest": {
         "title": "GetScheduledSweepRequest",
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Max batches to return, soonest due first. 0 means no limit.",
+            "format": "int64"
+          }
+        }
       },
       "GetScheduledSweepResponse": {
         "title": "GetScheduledSweepResponse",
@@ -2426,17 +2444,26 @@
         "title": "ScheduledSweep",
         "type": "object",
         "properties": {
-          "confirmed": {
-            "type": "boolean"
-          },
-          "outputs": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SweepableOutput"
-            }
+          "commitmentTxid": {
+            "type": "string"
           },
           "roundId": {
             "type": "string"
+          },
+          "sweepAt": {
+            "type": "integer",
+            "description": "When the batch outputs fall due, derived from the batch's ending timestamp\nplus its vtxo tree expiry. No chain access is needed to answer this.",
+            "format": "int64"
+          },
+          "totalAmount": {
+            "type": "integer",
+            "description": "Unswept leaf value still carried by the batch, in satoshis.",
+            "format": "uint64"
+          },
+          "vtxoCount": {
+            "type": "integer",
+            "description": "Number of unswept leaf vtxos backing total_amount.",
+            "format": "int64"
           }
         }
       },
@@ -2664,26 +2691,6 @@
           },
           "txid": {
             "type": "string"
-          }
-        }
-      },
-      "SweepableOutput": {
-        "title": "SweepableOutput",
-        "type": "object",
-        "properties": {
-          "amount": {
-            "type": "string"
-          },
-          "scheduledAt": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "txid": {
-            "type": "string"
-          },
-          "vout": {
-            "type": "integer",
-            "format": "uint32"
           }
         }
       },

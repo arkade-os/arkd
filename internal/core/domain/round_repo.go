@@ -16,14 +16,15 @@ type RoundRepository interface {
 	GetRoundConnectorTree(ctx context.Context, commitmentTxid string) (tree.FlatTxTree, error)
 	GetRoundVtxoTree(ctx context.Context, txid string) (tree.FlatTxTree, error)
 	GetSweepableRounds(ctx context.Context) ([]string, error)
+	// GetScheduledSweeps returns the batches awaiting a sweep, soonest due first,
+	// capped at limit (0 means no limit). The due time is derived in the query
+	// from ending_timestamp + vtxo_tree_expiration, so this costs one round trip
+	// and never touches the chain. The sweeper's own findSweepableOutputs is the
+	// chain-accurate path and stays as is: it builds a real transaction.
+	GetScheduledSweeps(ctx context.Context, limit int64) ([]ScheduledSweep, error)
 	// GetExpiredRounds returns the list of info about batches that expired but haven't been
 	// swept because of uneconomical conditions (amount too low to cover network fees)
 	GetExpiredRounds(ctx context.Context, expiredBefore int64) ([]ExpiredRound, error)
-	GetRoundIds(
-		ctx context.Context,
-		startedAfter, startedBefore int64,
-		withFailed, withCompleted bool,
-	) ([]string, error)
 	// GetRoundSummaries returns the listing view of the rounds started in the given
 	// range (0 means unbounded), most recent first, capped at limit (0 means no
 	// limit). Filtering, ordering and the limit are applied by the query, so
@@ -39,11 +40,21 @@ type RoundRepository interface {
 	GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error)
 	GetRoundsWithCommitmentTxids(ctx context.Context, txids []string) (map[string]any, error)
 	GetIntentByTxid(ctx context.Context, txid string) (*Intent, error)
-	// PatchCollectedFees sets the collected fees of the given rounds (by id),
-	// used to lazily persist fees recomputed for rounds finalized before fee
-	// persistence was introduced (https://github.com/arkade-os/arkd/pull/933).
-	PatchCollectedFees(ctx context.Context, feesByRoundId map[string]uint64) error
+	// SumCollectedFees totals the fees recorded against batches that finalized in
+	// the given range (0 means unbounded). It reports what storage holds: batches
+	// finalized before fees were persisted count as zero.
+	SumCollectedFees(ctx context.Context, after, before int64) (uint64, error)
 	Close()
+}
+
+// ScheduledSweep is the listing view of a batch awaiting its sweep: when it
+// falls due and how much unswept leaf value it still carries.
+type ScheduledSweep struct {
+	RoundId        string
+	CommitmentTxid string
+	SweepAt        int64
+	TotalAmount    uint64
+	VtxoCount      int64
 }
 
 type ExpiredRound struct {

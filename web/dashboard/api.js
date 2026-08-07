@@ -15,6 +15,11 @@
 
 const IDLE_LIMIT_MS = 15 * 60 * 1000;
 
+// Without this a slow endpoint leaves the tab spinning forever with no way to
+// tell a hang from a wide query. AbortSignal.timeout cancels the fetch itself,
+// so the socket goes with it.
+const REQUEST_TIMEOUT_MS = 30 * 1000;
+
 // null = disconnected. Otherwise { macaroon } where macaroon is null on a server
 // started with --no-macaroons, which is how regtest runs.
 let session = null;
@@ -182,8 +187,20 @@ async function request(base, path, params, headers) {
 
   let res;
   try {
-    res = await fetch(url.toString(), { method: 'GET', headers, credentials: 'omit', mode: 'cors' });
+    res = await fetch(url.toString(), {
+      method: 'GET',
+      headers,
+      credentials: 'omit',
+      mode: 'cors',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
   } catch (cause) {
+    if (cause?.name === 'TimeoutError') {
+      throw new ApiError(
+        `arkd did not answer within ${REQUEST_TIMEOUT_MS / 1000}s. Narrow the window or lower the limit, then try again.`,
+        0, `GET ${path}`,
+      );
+    }
     throw new ApiError(
       `Cannot reach ${base}. Check the URL, that arkd is up, and that its TLS certificate is trusted by this browser.`,
       0, String(cause?.message ?? cause),

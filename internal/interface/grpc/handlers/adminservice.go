@@ -282,30 +282,26 @@ func (a *adminHandler) GetRecoverableLiquidity(
 }
 
 func (a *adminHandler) GetScheduledSweep(
-	ctx context.Context, _ *arkv1.GetScheduledSweepRequest,
+	ctx context.Context, req *arkv1.GetScheduledSweepRequest,
 ) (*arkv1.GetScheduledSweepResponse, error) {
-	scheduledSweeps, err := a.adminService.GetScheduledSweeps(ctx)
+	limit := req.GetLimit()
+	if limit < 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid limit (must be >= 0)")
+	}
+
+	scheduledSweeps, err := a.adminService.GetScheduledSweeps(ctx, limit)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	sweeps := make([]*arkv1.ScheduledSweep, 0)
+	sweeps := make([]*arkv1.ScheduledSweep, 0, len(scheduledSweeps))
 	for _, sweep := range scheduledSweeps {
-		outputs := make([]*arkv1.SweepableOutput, 0)
-
-		for _, output := range sweep.SweepableOutputs {
-			outputs = append(outputs, &arkv1.SweepableOutput{
-				Txid:        output.TxInput.Txid,
-				Vout:        output.TxInput.Index,
-				ScheduledAt: output.ScheduledAt,
-				Amount:      convertSatsToBTCStr(output.TxInput.Value),
-			})
-		}
-
 		sweeps = append(sweeps, &arkv1.ScheduledSweep{
-			RoundId:   sweep.RoundId,
-			Confirmed: sweep.Confirmed,
-			Outputs:   outputs,
+			RoundId:        sweep.RoundId,
+			CommitmentTxid: sweep.CommitmentTxid,
+			SweepAt:        sweep.SweepAt,
+			TotalAmount:    sweep.TotalAmount,
+			VtxoCount:      sweep.VtxoCount,
 		})
 	}
 

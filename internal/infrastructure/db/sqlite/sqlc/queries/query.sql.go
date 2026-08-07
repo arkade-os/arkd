@@ -162,33 +162,6 @@ func (q *Queries) SelectActiveScriptConvictions(ctx context.Context, arg SelectA
 	return items, nil
 }
 
-const selectAllRoundIds = `-- name: SelectAllRoundIds :many
-SELECT id FROM round
-`
-
-func (q *Queries) SelectAllRoundIds(ctx context.Context) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectAllRoundIds)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const selectAllVtxos = `-- name: SelectAllVtxos :many
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw
 `
@@ -482,6 +455,29 @@ func (q *Queries) SelectCheckpointTxsByVtxoPubKeys(ctx context.Context, pubkeys 
 		return nil, err
 	}
 	return items, nil
+}
+
+const selectCollectedFeesInRange = `-- name: SelectCollectedFeesInRange :one
+SELECT
+    CAST(COALESCE(SUM(fees), 0) AS BIGINT) AS total
+FROM round
+WHERE ended = true AND failed = false
+  AND (?1 = 0 OR starting_timestamp > ?1)
+  AND (?2 = 0 OR starting_timestamp < ?2)
+`
+
+type SelectCollectedFeesInRangeParams struct {
+	StartTs interface{}
+	EndTs   interface{}
+}
+
+// Collected fees for the admin console. One indexed aggregate replaces loading
+// every round in the window in full.
+func (q *Queries) SelectCollectedFeesInRange(ctx context.Context, arg SelectCollectedFeesInRangeParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, selectCollectedFeesInRange, arg.StartTs, arg.EndTs)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
 }
 
 const selectControlAssetByID = `-- name: SelectControlAssetByID :one
@@ -1307,115 +1303,6 @@ func (q *Queries) SelectRoundForfeitTxs(ctx context.Context, txid string) ([]Tx,
 	return items, nil
 }
 
-const selectRoundIdsInTimeRange = `-- name: SelectRoundIdsInTimeRange :many
-SELECT id FROM round WHERE starting_timestamp > ?1 AND starting_timestamp < ?2
-`
-
-type SelectRoundIdsInTimeRangeParams struct {
-	StartTs int64
-	EndTs   int64
-}
-
-func (q *Queries) SelectRoundIdsInTimeRange(ctx context.Context, arg SelectRoundIdsInTimeRangeParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectRoundIdsInTimeRange, arg.StartTs, arg.EndTs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectRoundIdsInTimeRangeWithFilters = `-- name: SelectRoundIdsInTimeRangeWithFilters :many
-SELECT id FROM round 
-WHERE starting_timestamp > ?1 
-  AND starting_timestamp < ?2
-  AND (?3 = 1 OR failed = 0)
-  AND (?4 = 1 OR ended = 0)
-`
-
-type SelectRoundIdsInTimeRangeWithFiltersParams struct {
-	StartTs       int64
-	EndTs         int64
-	WithFailed    interface{}
-	WithCompleted interface{}
-}
-
-func (q *Queries) SelectRoundIdsInTimeRangeWithFilters(ctx context.Context, arg SelectRoundIdsInTimeRangeWithFiltersParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectRoundIdsInTimeRangeWithFilters,
-		arg.StartTs,
-		arg.EndTs,
-		arg.WithFailed,
-		arg.WithCompleted,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectRoundIdsWithFilters = `-- name: SelectRoundIdsWithFilters :many
-SELECT id FROM round 
-WHERE (?1 = 1 OR failed = 0)
-  AND (?2 = 1 OR ended = 0)
-`
-
-type SelectRoundIdsWithFiltersParams struct {
-	WithFailed    interface{}
-	WithCompleted interface{}
-}
-
-func (q *Queries) SelectRoundIdsWithFilters(ctx context.Context, arg SelectRoundIdsWithFiltersParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectRoundIdsWithFilters, arg.WithFailed, arg.WithCompleted)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const selectRoundStats = `-- name: SelectRoundStats :one
 SELECT
     r.swept,
@@ -1843,6 +1730,77 @@ func (q *Queries) SelectRoundsWithTxids(ctx context.Context, txids []string) ([]
 			return nil, err
 		}
 		items = append(items, txid)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectScheduledSweeps = `-- name: SelectScheduledSweeps :many
+WITH due AS (
+    SELECT r.id, r.txid,
+           CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS sweep_at
+    FROM round_with_commitment_tx_vw r
+    WHERE r.swept = false AND r.ended = true AND r.failed = false
+    AND EXISTS (
+        SELECT 1 FROM tx tree_tx
+        WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
+    )
+    ORDER BY sweep_at ASC
+    LIMIT (CASE WHEN ?1 = 0 THEN -1 ELSE ?1 END)
+)
+SELECT d.id, d.txid, d.sweep_at,
+    CAST(COALESCE((
+        SELECT SUM(v.amount) FROM vtxo_vw v
+        WHERE v.commitment_txid = d.txid
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false
+    ), 0) AS BIGINT) AS total_amount,
+    CAST((
+        SELECT COUNT(*) FROM vtxo_vw v
+        WHERE v.commitment_txid = d.txid
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false
+    ) AS BIGINT) AS vtxo_count
+FROM due d
+ORDER BY d.sweep_at ASC
+`
+
+type SelectScheduledSweepsRow struct {
+	ID          string
+	Txid        string
+	SweepAt     int64
+	TotalAmount int64
+	VtxoCount   int64
+}
+
+// Scheduled sweeps for the admin console. The due time is a plain column
+// expression (same as SelectExpiredRounds), so this needs no chain access at
+// all -- unlike findSweepableOutputs, which the sweeper itself still uses
+// because it builds a real transaction.
+// The aggregates are correlated subqueries against the already-limited CTE, so
+// the limit bounds how many of them get computed.
+func (q *Queries) SelectScheduledSweeps(ctx context.Context, maxResults interface{}) ([]SelectScheduledSweepsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectScheduledSweeps, maxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectScheduledSweepsRow
+	for rows.Next() {
+		var i SelectScheduledSweepsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Txid,
+			&i.SweepAt,
+			&i.TotalAmount,
+			&i.VtxoCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -2761,20 +2719,6 @@ UPDATE conviction SET pardoned = true WHERE id = ?1
 
 func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, updateConvictionPardoned, id)
-	return err
-}
-
-const updateRoundCollectedFees = `-- name: UpdateRoundCollectedFees :exec
-UPDATE round SET fees = ?1 WHERE id = ?2
-`
-
-type UpdateRoundCollectedFeesParams struct {
-	Fees int64
-	ID   string
-}
-
-func (q *Queries) UpdateRoundCollectedFees(ctx context.Context, arg UpdateRoundCollectedFeesParams) error {
-	_, err := q.db.ExecContext(ctx, updateRoundCollectedFees, arg.Fees, arg.ID)
 	return err
 }
 
