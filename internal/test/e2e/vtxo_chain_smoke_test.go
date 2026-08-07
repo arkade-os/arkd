@@ -80,10 +80,10 @@ func TestVtxoChain(t *testing.T) {
 		wg := &sync.WaitGroup{}
 		var notifyErr error
 		wg.Go(func() {
-			_, notifyErr = client.NotifyIncomingFunds(ctx, offchainAddr.Address)
+			_, notifyErr = notifyIncomingFunds(ctx, client, offchainAddr.Address)
 		})
 
-		redeemRes, err := client.RedeemNotes(ctx, []string{note})
+		redeemRes, err := redeemNotesBounded(ctx, client, []string{note})
 		require.NoError(t, err)
 		require.NotEmpty(t, redeemRes.CommitmentTxid)
 
@@ -117,7 +117,7 @@ func TestVtxoChain(t *testing.T) {
 			if !tip.ExpiresAt.IsZero() && time.Until(tip.ExpiresAt) < 120*time.Second {
 				t.Logf("settling at hop %d to refresh ExpiresAt (expires in %s)",
 					i, time.Until(tip.ExpiresAt).Round(time.Second))
-				_, err = client.Settle(ctx)
+				_, err = settleBounded(ctx, client)
 				require.NoError(t, err)
 				spendable, _, err = client.ListVtxos(ctx)
 				require.NoError(t, err)
@@ -131,10 +131,10 @@ func TestVtxoChain(t *testing.T) {
 			wg := &sync.WaitGroup{}
 			var notifyErr error
 			wg.Go(func() {
-				_, notifyErr = client.NotifyIncomingFunds(ctx, offchainAddr.Address)
+				_, notifyErr = notifyIncomingFunds(ctx, client, offchainAddr.Address)
 			})
 
-			res, err := client.SendOffChain(ctx, []clientlib.Receiver{{
+			res, err := sendOffChainBounded(ctx, client, []clientlib.Receiver{{
 				To:     offchainAddr.Address,
 				Amount: sendAmount,
 			}})
