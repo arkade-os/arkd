@@ -131,6 +131,19 @@ func IsSubDustScript(script []byte) bool {
 	return data != nil && len(data) == schnorr.PubKeyBytesLen
 }
 
+// CheckSigHashType rejects sighash types that don't commit to every output.
+func CheckSigHashType(sigHashType txscript.SigHashType) error {
+	switch sigHashType {
+	case txscript.SigHashDefault, txscript.SigHashAll:
+		return nil
+	default:
+		return fmt.Errorf(
+			"unsupported sighash type %#x: only SIGHASH_DEFAULT and SIGHASH_ALL are allowed",
+			uint32(sigHashType),
+		)
+	}
+}
+
 func EncodeTaprootSignature(sig []byte, sigHashType txscript.SigHashType) []byte {
 	if sigHashType == txscript.SigHashDefault {
 		return sig

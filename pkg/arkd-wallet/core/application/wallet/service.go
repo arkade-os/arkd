@@ -668,6 +668,12 @@ func (w *wallet) SignTransaction(
 			continue
 		}
 
+		// this comes from the submitted psbt, so without the check a caller can steer
+		// what our own signature commits to.
+		if err := script.CheckSigHashType(input.SighashType); err != nil {
+			return "", fmt.Errorf("input %d: %w", inputIndex, err)
+		}
+
 		if len(input.TaprootLeafScript) > 0 {
 			var signingKey *btcec.PrivateKey
 			if signMode == application.SignModeSigner {
