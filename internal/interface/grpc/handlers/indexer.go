@@ -249,8 +249,7 @@ func (e *indexerService) GetVtxos(
 
 	pubkeys := make([]string, 0, len(request.GetScripts()))
 	for _, script := range request.GetScripts() {
-		script, err := parseScript(script)
-		if err != nil {
+		if err := parseScript(script); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 		pubkeys = append(pubkeys, script[4:])
@@ -962,28 +961,28 @@ func parseScripts(scripts []string) ([]string, error) {
 	}
 
 	for _, script := range scripts {
-		if _, err := parseScript(script); err != nil {
+		if err := parseScript(script); err != nil {
 			return nil, err
 		}
 	}
 	return scripts, nil
 }
 
-func parseScript(script string) (string, error) {
+func parseScript(script string) error {
 	if len(script) <= 0 {
-		return "", fmt.Errorf("missing script")
+		return fmt.Errorf("missing script")
 	}
 	buf, err := hex.DecodeString(script)
 	if err != nil {
-		return "", fmt.Errorf("invalid script format, must be hex")
+		return fmt.Errorf("invalid script format, must be hex")
 	}
 	if !txscript.IsPayToTaproot(buf) {
-		return "", fmt.Errorf("invalid script, must be P2TR")
+		return fmt.Errorf("invalid script, must be P2TR")
 	}
 	if _, err := schnorr.ParsePubKey(buf[2:]); err != nil {
-		return "", fmt.Errorf("invalid script, failed to extract tapkey: %s", err)
+		return fmt.Errorf("invalid script, failed to extract tapkey: %s", err)
 	}
-	return script, nil
+	return nil
 }
 
 func parseTimeRange(after, before int64) (int64, int64, error) {

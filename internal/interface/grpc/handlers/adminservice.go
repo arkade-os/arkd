@@ -553,9 +553,15 @@ func (a *adminHandler) GetConvictionsByRound(
 func (a *adminHandler) GetActiveScriptConvictions(
 	ctx context.Context, req *arkv1.GetActiveScriptConvictionsRequest,
 ) (*arkv1.GetActiveScriptConvictionsResponse, error) {
-	script := req.GetScript()
+	script := strings.ToLower(req.GetScript())
+
 	if len(script) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "missing script")
+	}
+
+	if err := parseScript(script); err != nil {
+		return nil, arkerrors.INVALID_PKSCRIPT.Wrap(err).
+			WithMetadata(arkerrors.InvalidPkScriptMetadata{Script: req.GetScript()})
 	}
 
 	conviction, err := a.adminService.GetActiveScriptConvictions(ctx, script)
@@ -597,9 +603,15 @@ func (a *adminHandler) PardonConviction(
 func (a *adminHandler) BanScript(
 	ctx context.Context, req *arkv1.BanScriptRequest,
 ) (*arkv1.BanScriptResponse, error) {
-	script := req.GetScript()
-	if len(script) == 0 {
+	script := strings.ToLower(req.GetScript())
+
+	if len(req.GetScript()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "missing script")
+	}
+
+	if err := parseScript(script); err != nil {
+		return nil, arkerrors.INVALID_PKSCRIPT.Wrap(err).
+			WithMetadata(arkerrors.InvalidPkScriptMetadata{Script: req.GetScript()})
 	}
 
 	banDuration := req.GetBanDuration()
