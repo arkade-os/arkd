@@ -1,6 +1,7 @@
 package txbuilder_test
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -14,9 +15,9 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -262,7 +263,25 @@ func TestVerifyVtxoTapscriptSigs(t *testing.T) {
 		wallet, &staticSigner{pubkey: signerKey.PubKey()}, arklib.Bitcoin,
 	)
 
+	preimage := bytes.Repeat([]byte{0xAB}, 32)
+	conditionCSVSetup, preimageWitness := newConditionCSVVtxoSetup(t, signerKey, preimage)
+
 	t.Run("valid", func(t *testing.T) {
+		t.Run("condition csv multisig accepted when condition is met", func(t *testing.T) {
+			packet := buildTx(t, conditionCSVSetup, nil)
+			require.NoError(t, txutils.SetArkPsbtField(
+				packet, 0, txutils.ConditionWitnessField, preimageWitness,
+			))
+
+			sig := makeVtxoSig(t, conditionCSVSetup.closureKey, packet, conditionCSVSetup.leaf)
+			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig}
+
+			ok, ptx, err := builder.VerifyVtxoTapscriptSigs(encodeTx(t, packet), false)
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.NotNil(t, ptx)
+		})
+
 		t.Run("input without taproot leaf script is skipped", func(t *testing.T) {
 			setup := newSingleKeyVtxoSetup(t, signerKey)
 			tx := buildTx(t, setup, nil)
@@ -349,39 +368,32 @@ func TestVerifyVtxoTapscriptSigs(t *testing.T) {
 			require.Error(t, err)
 		})
 
-		t.Run("closure type not handled by the verifier", func(t *testing.T) {
-			// ConditionCSVMultisigClosure decodes fine but matched no case in the
-			// type switch, so no required keys were collected and the input passed
-			// with zero signatures checked - the same bypass as a stripped leaf
-			// script, reached through a leaf script that is present.
-			closureKey, err := btcec.NewPrivateKey()
-			require.NoError(t, err)
+		t.Run("condition csv multisig with unmet condition", func(t *testing.T) {
+			packet := buildTx(t, conditionCSVSetup, nil)
+			require.NoError(t, txutils.SetArkPsbtField(
+				packet, 0, txutils.ConditionWitnessField,
+				wire.TxWitness{bytes.Repeat([]byte{0xCD}, 32)}, // wrong preimage
+			))
 
-			closure := &script.ConditionCSVMultisigClosure{
-				Condition: []byte{txscript.OP_TRUE},
-				CSVMultisigClosure: script.CSVMultisigClosure{
-					MultisigClosure: script.MultisigClosure{
-						PubKeys: []*btcec.PublicKey{closureKey.PubKey(), signerKey.PubKey()},
-						Type:    script.MultisigTypeChecksig,
-					},
-					Locktime: arklib.RelativeLocktime{
-						Type: arklib.LocktimeTypeBlock, Value: 10,
-					},
-				},
-			}
-			closureScript, err := closure.Script()
-			require.NoError(t, err)
+			sig := makeVtxoSig(t, conditionCSVSetup.closureKey, packet, conditionCSVSetup.leaf)
+			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig}
 
-			// Pin the premise: if this script ever decodes as a handled closure
-			// type the test would pass for the wrong reason.
-			decoded, err := script.DecodeClosure(closureScript)
-			require.NoError(t, err)
-			require.IsType(t, &script.ConditionCSVMultisigClosure{}, decoded)
+			_, _, err := builder.VerifyVtxoTapscriptSigs(encodeTx(t, packet), false)
+			require.Error(t, err)
+		})
 
-			setup := buildVtxoSetupFromScript(t, closureKey, signerKey, closureScript)
-			packet := buildTx(t, setup, nil) // no signatures at all
+		t.Run("condition csv multisig with met condition but no signature", func(t *testing.T) {
+			// A met condition must not stand in for a signature: this closure
+			// used to match no case in the verifier's type switch, so no required
+			// keys were collected and the input passed with zero signatures
+			// checked - the same bypass as a stripped leaf script, reached
+			// through a leaf script that is present.
+			packet := buildTx(t, conditionCSVSetup, nil)
+			require.NoError(t, txutils.SetArkPsbtField(
+				packet, 0, txutils.ConditionWitnessField, preimageWitness,
+			))
 
-			_, _, err = builder.VerifyVtxoTapscriptSigs(encodeTx(t, packet), true)
+			_, _, err := builder.VerifyVtxoTapscriptSigs(encodeTx(t, packet), true)
 			require.Error(t, err)
 		})
 

@@ -128,31 +128,25 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 				keys[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
 		case *script.ConditionMultisigClosure:
-			witness, err := txutils.GetArkPsbtConditionWitness(ptx, index)
-			if err != nil {
-				return false, nil, err
-			}
-			if witness == nil {
-				witness = make(wire.TxWitness, 0)
-			}
-
-			result, err := script.EvaluateScriptToBool(c.Condition, witness)
-			if err != nil {
+			if err := checkConditionMet(ptx, index, c.Condition); err != nil {
 				return false, nil, err
 			}
 
-			if !result {
-				return false, nil, fmt.Errorf("condition not met for input %d", index)
+			for _, key := range c.PubKeys {
+				keys[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
+			}
+		case *script.ConditionCSVMultisigClosure:
+			if err := checkConditionMet(ptx, index, c.Condition); err != nil {
+				return false, nil, err
 			}
 
 			for _, key := range c.PubKeys {
 				keys[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
 		default:
-			// an unhandled closure type collects no required keys,
-			// so the input would pass with nothing verified at all
-			// reject to avoid malicious checkpoint to bypass sig validation
-			return false, nil, fmt.Errorf("unsupported closure type for input %d", index)
+			return false, nil, fmt.Errorf(
+				"unsupported tapscript closure %T for input %d", closure, index,
+			)
 		}
 
 		if !mustIncludeSignerSig {
@@ -1286,4 +1280,22 @@ func (b *txBuilder) getForfeitScript() ([]byte, error) {
 	}
 
 	return txscript.PayToAddrScript(addr)
+}
+
+// checkConditionMet evaluates a closure's spending condition against the
+// condition witness carried by the input, and reports an error unless it
+// evaluates true.
+func checkConditionMet(ptx *psbt.Packet, index int, condition []byte) error {
+	witness, err := txutils.GetArkPsbtConditionWitness(ptx, index)
+	if err != nil {
+		return err
+	}
+	result, err := script.EvaluateScriptToBool(condition, witness)
+	if err != nil {
+		return err
+	}
+	if !result {
+		return fmt.Errorf("condition not met for input %d", index)
+	}
+	return nil
 }
