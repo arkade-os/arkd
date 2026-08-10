@@ -1174,6 +1174,10 @@ func (s *service) SubmitOffchainTx(
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: spentVtxo.Outpoint.String()})
 		}
 	}
+	if exists, vtxo := s.cache.Intents().IncludesAny(ctx, spentVtxoKeys); exists {
+		return nil, errors.VTXO_ALREADY_REGISTERED.New("%s already registered", vtxo).
+			WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo})
+	}
 	if err := s.cache.OffchainTxs().Add(ctx, *offchainTx); err != nil {
 		return nil, errors.INTERNAL_ERROR.New("something went wrong").
 			WithMetadata(map[string]any{"ark_txid": offchainTx.ArkTxid})
@@ -2201,6 +2205,24 @@ func (s *service) RegisterIntent(
 		boardingInputs, err = s.processBoardingInputs(ctx, intent.Id, boardingUtxos, *settings)
 		if err != nil {
 			return "", err
+		}
+	}
+
+	s.offchainTxMu.Lock()
+	defer s.offchainTxMu.Unlock()
+
+	for _, vtxo := range vtxoInputs {
+		isSpent, err := s.cache.OffchainTxs().Includes(ctx, vtxo.Outpoint)
+		if err != nil {
+			log.WithError(err).
+				Errorf("failed to check again spent status of input against tx in cache")
+			return "", errors.INTERNAL_ERROR.New("something went wrong").
+				WithMetadata(map[string]any{"vtxo": vtxo.Outpoint.String()})
+		}
+		if isSpent {
+			return "", errors.VTXO_ALREADY_SPENT.New(
+				"vtxo %s is currently being spent", vtxo.Outpoint.String(),
+			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
 		}
 	}
 

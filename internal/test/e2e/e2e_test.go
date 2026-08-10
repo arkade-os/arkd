@@ -27,6 +27,7 @@ import (
 	batchsession "github.com/arkade-os/arkd/pkg/client-lib/batch-session"
 	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client"
 	mempoolexplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer"
+	offchaintx "github.com/arkade-os/arkd/pkg/client-lib/offchain-tx"
 	"github.com/arkade-os/arkd/pkg/client-lib/unroll"
 	wallet "github.com/arkade-os/arkd/pkg/client-wallet"
 	"github.com/arkade-os/arkd/pkg/client-wallet/types"
@@ -4012,75 +4013,97 @@ func TestSweep(t *testing.T) {
 	})
 }
 
-// TestCollisionBetweenInRoundAndRedeemVtxo tests for a potential collision between VTXOs that
-// could occur due to a race condition between simultaneous Settle and SubmitRedeemTx calls.
-// The race condition doesn't consistently reproduce, making the test unreliable in automated test
-// suites. Therefore, the test is skipped by default and left here as documentation for future
-// debugging and reference.
-func TestCollisionBetweenInRoundAndRedeemVtxo(t *testing.T) {
-	t.Skip()
-
+// TestRegisterIntentAndSubmitOffchainTxSameVtxo fires a RegisterIntent and a
+// SubmitTx spending the same vtxo at the same time. The server must reject
+// exactly one of them: accepting both spends the vtxo twice
+func TestRegisterIntentAndSubmitOffchainTxSameVtxo(t *testing.T) {
 	ctx := t.Context()
 	alice := setupClientWallet(t)
-	bob := setupClientWallet(t)
+	aliceClient := alice.Client()
 
-	faucetOffchain(t, alice, 0.00005)
+	faucetOffchain(t, alice, 0.00021)
 
-	_, bobAddr, _, err := bob.Receive(ctx)
+	_, offchainAddr, _, err := alice.Receive(ctx)
 	require.NoError(t, err)
 
-	// Test collision when first Settle is called
-	type resp struct {
-		txid string
-		err  error
-	}
+	vtxos, _, err := alice.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.Len(t, vtxos, 1)
 
-	ch := make(chan resp, 2)
-	wg := &sync.WaitGroup{}
+	serverParams, err := alice.GetConfigData(ctx)
+	require.NoError(t, err)
+
+	cosignerKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	signerSession := tree.NewTreeSignerSession(cosignerKey)
+
+	intentOutputs := []clientlib.Receiver{{To: offchainAddr.Address, Amount: 20000}}
+
+	// Build and sign both requests up front so the only concurrency below is the two RPCs themselves
+	proof, message, _, err := batchsession.BuildAndSignRegisterIntent(ctx, batchsession.IntentArgs{
+		BaseArgs: batchsession.BaseArgs{
+			Vtxos:   vtxos,
+			Outputs: intentOutputs,
+			SignTx:  alice.SignTransaction,
+		},
+		Cosigners: []string{signerSession.GetPublicKey()},
+	})
+	require.NoError(t, err)
+
+	send, err := offchaintx.BuildAndSignTx(ctx, offchaintx.BuildAndSignTxArgs{
+		BaseArgs: offchaintx.BaseArgs{
+			ServerParams: *serverParams,
+			SignTx:       alice.SignTransaction,
+			Vtxos:        vtxos,
+			ChangeAddr:   offchainAddr.Address,
+		},
+		Receivers: []clientlib.Receiver{{To: offchainAddr.Address, Amount: 1000}},
+	})
+	require.NoError(t, err)
+
+	// Park both goroutines on goStart so the RPCs overlap as tightly as the scheduler allows
+	goStart := make(chan struct{})
+	registerReady, submitReady := make(chan struct{}), make(chan struct{})
+
+	var intentId, submitTxid string
+	var registerErr, submitErr error
+	var wg sync.WaitGroup
 	wg.Add(2)
-
 	go func() {
 		defer wg.Done()
-		res, err := settleBounded(ctx, alice)
-		if err != nil {
-			ch <- resp{"", err}
-			return
-		}
-		ch <- resp{res.CommitmentTxid, nil}
+		close(registerReady)
+		<-goStart
+		intentId, registerErr = runBounded(ctx, offchainWait, "register intent racing an offchain submit",
+			func(callCtx context.Context) (string, error) {
+				return aliceClient.RegisterIntent(callCtx, proof, message)
+			})
 	}()
-	// SDK Settle call is bit slower than Redeem so we introduce small delay so we make sure Settle is called before Redeem
-	// this timeout can vary depending on the environment
 	go func() {
-		time.Sleep(50 * time.Millisecond)
 		defer wg.Done()
-		res, err := sendOffChainBounded(
-			ctx, alice, []clientlib.Receiver{{To: bobAddr.Address, Amount: 1000}},
+		close(submitReady)
+		<-goStart
+		_, submitErr = runBounded(ctx, offchainWait, "offchain submit racing an intent register",
+			func(callCtx context.Context) (struct{}, error) {
+				var err error
+				submitTxid, _, _, err = aliceClient.SubmitTx(
+					callCtx, send.SignedArkTx, send.CheckpointTxs,
+				)
+				return struct{}{}, err
+			})
+	}()
+	<-registerReady
+	<-submitReady
+	close(goStart)
+	wg.Wait()
+
+	switch {
+	case registerErr == nil && submitErr == nil:
+		t.Fatalf(
+			"same vtxo spent in intent %s and offchain tx %s", intentId, submitTxid,
 		)
-		if err != nil {
-			ch <- resp{"", err}
-			return
-		}
-		ch <- resp{res.Txid, nil}
-	}()
-
-	go func() {
-		wg.Wait()
-		close(ch)
-	}()
-
-	finalResp := resp{}
-	for resp := range ch {
-		if resp.err != nil {
-			finalResp.err = resp.err
-		} else {
-			finalResp.txid = resp.txid
-		}
+	case registerErr != nil && submitErr != nil:
+		t.Fatalf("both calls failed: register: %v, submit: %v", registerErr, submitErr)
 	}
-
-	t.Log(finalResp.err)
-	require.NotEmpty(t, finalResp.txid)
-	require.Error(t, finalResp.err)
-
 }
 
 // TestIntent tests intent registration and deletion functionality
