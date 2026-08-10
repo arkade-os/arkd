@@ -38,8 +38,9 @@ func (s *treeSigningSessionsStore) New(
 		Signatures:  make(map[string]tree.TreePartialSigs),
 	}
 	s.sessions[roundId] = session
-	s.nonceCollectedCh[roundId] = make(chan struct{})
-	s.sigsCollectedCh[roundId] = make(chan struct{})
+
+	s.nonceCollectedCh[roundId] = make(chan struct{}, 1)
+	s.sigsCollectedCh[roundId] = make(chan struct{}, 1)
 	return nil
 }
 
@@ -88,7 +89,10 @@ func (s *treeSigningSessionsStore) AddNonces(
 	s.sessions[roundId].Nonces[pubkey] = nonces
 
 	if len(s.sessions[roundId].Nonces) == s.sessions[roundId].NbCosigners-1 {
-		s.nonceCollectedCh[roundId] <- struct{}{}
+		select {
+		case s.nonceCollectedCh[roundId] <- struct{}{}:
+		default:
+		}
 	}
 	return nil
 }
@@ -113,7 +117,10 @@ func (s *treeSigningSessionsStore) AddSignatures(
 	s.sessions[roundId].Signatures[pubkey] = sigs
 
 	if len(s.sessions[roundId].Signatures) == s.sessions[roundId].NbCosigners-1 {
-		s.sigsCollectedCh[roundId] <- struct{}{}
+		select {
+		case s.sigsCollectedCh[roundId] <- struct{}{}:
+		default:
+		}
 	}
 
 	return nil

@@ -574,6 +574,50 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		event, ok = <-signaturesCollectedCh
 		require.False(t, ok)
 		require.Empty(t, event)
+
+		// The collection threshold is re-reached on every resubmission, since a
+		// cosigner overwriting its own entry leaves the count unchanged, while the
+		// coordinator receives at most once. Submitting again must not block.
+		roundId3 := uuid.New().String()
+		require.NoError(t, store.TreeSigingSessions().New(ctx, roundId3, uniqueSigners))
+
+		collected := make(chan struct{})
+		go func() {
+			<-store.TreeSigingSessions().NoncesCollected(roundId3)
+			<-store.TreeSigingSessions().SignaturesCollected(roundId3)
+			close(collected)
+		}()
+
+		// submitted from the test goroutine so failures are reported normally
+		for _, signer := range signers {
+			require.NoError(t, doSubmitNonces(signer, roundId3))
+		}
+		for _, signer := range signers {
+			require.NoError(t, doSubmitSigs(signer, roundId3))
+		}
+
+		select {
+		case <-collected:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "collection was never signalled")
+		}
+
+		// nobody is receiving now: resubmitting must return rather than park
+		resubmitted := make(chan error, 2)
+		go func() {
+			resubmitted <- doSubmitNonces(signers[0], roundId3)
+			resubmitted <- doSubmitSigs(signers[0], roundId3)
+		}()
+		for range 2 {
+			select {
+			case err := <-resubmitted:
+				require.NoError(t, err)
+			case <-time.After(5 * time.Second):
+				require.Fail(t, "resubmission after collection blocked")
+			}
+		}
+
+		require.NoError(t, store.TreeSigingSessions().Delete(ctx, roundId3))
 	})
 
 	t.Run("BoardingInputsStore", func(t *testing.T) {
