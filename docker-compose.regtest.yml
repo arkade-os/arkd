@@ -61,6 +61,11 @@ services:
       - ARKD_WALLET_DEPRECATED_SIGNER_KEYS=${ARKD_WALLET_DEPRECATED_SIGNER_KEYS:-}
     volumes:
       - arkd-wallet-volume:/app/data
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "6060"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
   redis:
     restart: unless-stopped
     image: redis:7-alpine
@@ -79,9 +84,12 @@ services:
     container_name: arkd
     restart: unless-stopped
     depends_on:
-      - arkd-wallet
-      - pg
-      - redis
+      arkd-wallet:
+        condition: service_healthy
+      pg:
+        condition: service_started
+      redis:
+        condition: service_started
     ports:
       - "7070:7070"
       - "7071:7071"
