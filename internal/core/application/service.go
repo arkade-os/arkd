@@ -1999,6 +1999,19 @@ func (s *service) RegisterIntent(
 				})
 			}
 
+			//  reject any unknown or insuported script supported by the txscript package
+			switch scriptType {
+			case txscript.PubKeyHashTy, txscript.ScriptHashTy,
+				txscript.WitnessV0PubKeyHashTy, txscript.WitnessV0ScriptHashTy,
+				txscript.WitnessV1TaprootTy:
+			default:
+				return "", errors.INVALID_PKSCRIPT.New(
+					"unsupported script type for output %d: %s", outputIndex, scriptType,
+				).WithMetadata(errors.InvalidPkScriptMetadata{
+					Script: hex.EncodeToString(output.PkScript),
+				})
+			}
+
 			rcv.OnchainAddress = addrs[0].EncodeAddress()
 			onchainOutputs = append(onchainOutputs, *output)
 		} else {
