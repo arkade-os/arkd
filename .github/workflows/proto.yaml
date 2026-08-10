@@ -15,7 +15,7 @@ on:
 
 jobs:
   verify-proto:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
 
     permissions:
       contents: read
