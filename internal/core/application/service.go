@@ -3732,8 +3732,24 @@ func (s *service) propagateBatchStartedEvent(
 func (s *service) propagateRoundSigningStartedEvent(
 	round *domain.Round, vtxoTree *tree.TxTree, cosignersPubkeys []string,
 ) {
+	// reuse treeTxEvents to make sure the cosigner public key are encoded in the same way as the topics in the tree events
+	// we can't reuse cosignersPubkeys, the topics expect the pubkeys to be compressed format
+	treeEvents := treeTxEvents(vtxoTree, 0, round.Id, getVtxoTreeTopic)
+	topicSet := make(map[string]struct{})
+	for _, ev := range treeEvents {
+		if txMsg, ok := ev.(TreeTxMessage); ok {
+			for _, topic := range txMsg.Topic {
+				topicSet[topic] = struct{}{}
+			}
+		}
+	}
+	topics := make([]string, 0, len(topicSet))
+	for topic := range topicSet {
+		topics = append(topics, topic)
+	}
+
 	events := append(
-		treeTxEvents(vtxoTree, 0, round.Id, getVtxoTreeTopic),
+		treeEvents,
 		RoundSigningStarted{
 			RoundEvent: domain.RoundEvent{
 				Id:   round.Id,
@@ -3741,6 +3757,7 @@ func (s *service) propagateRoundSigningStartedEvent(
 			},
 			UnsignedCommitmentTx: round.CommitmentTx,
 			CosignersPubkeys:     cosignersPubkeys,
+			Topics:               topics,
 		},
 	)
 

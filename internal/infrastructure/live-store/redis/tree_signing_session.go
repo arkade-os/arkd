@@ -212,13 +212,27 @@ func (s *treeSigningSessionsStore) AddNonces(
 	}
 
 	for range s.numOfRetries {
+		var alreadySubmitted bool
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			exists, err := tx.HExists(ctx, noncesKey, pubkey).Result()
+			if err != nil {
+				return err
+			}
+			if exists {
+				alreadySubmitted = true
+				return nil
+			}
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				pipe.HSet(ctx, noncesKey, pubkey, val)
 				return nil
 			})
 			return err
 		}, noncesKey); err == nil {
+			if alreadySubmitted {
+				return fmt.Errorf(
+					`nonces already submitted for cosigner %s in round "%s"`, pubkey, roundId,
+				)
+			}
 			return nil
 		}
 		time.Sleep(s.retryDelay)

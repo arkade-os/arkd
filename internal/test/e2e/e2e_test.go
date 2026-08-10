@@ -5448,6 +5448,40 @@ func TestBan(t *testing.T) {
 	})
 }
 
+// TestUnauthenticatedCosignerSubmission checks that the operator refuses tree nonces and
+// signatures submitted for a cosigner pubkey the caller does not control. Both endpoints
+// are whitelisted, and the live store only checks the pubkey is registered for the round.
+// Mallory learns alice's pubkey from the CosignersPubkeys list every participant receives.
+func TestUnauthenticatedCosignerSubmission(t *testing.T) {
+	// nonces first: this subtest bans nobody, so it cannot poison the one after it
+	t.Run("nonces", func(t *testing.T) {
+		res := runCosignerOverwrite(t, overwriteNonces)
+
+		require.True(t, res.forged, "mallory never reached signing, nothing was verified")
+		require.NotEmpty(t, res.victims, "alice and mallory did not share a batch")
+
+		require.Error(t, res.forgeErr,
+			"operator accepted tree nonces for a cosigner pubkey mallory does not own")
+		require.NoError(t, res.aliceErr, "alice's batch was broken by mallory's submission")
+	})
+
+	t.Run("signatures", func(t *testing.T) {
+		t.Skip("TODO: need validation on submit signature")
+		res := runCosignerOverwrite(t, overwriteSignatures)
+
+		require.True(t, res.forged, "mallory never reached signing, nothing was verified")
+		require.NotEmpty(t, res.victims, "alice and mallory did not share a batch")
+
+		require.Error(t, res.forgeErr,
+			"operator accepted tree signatures for a cosigner pubkey mallory does not own")
+		require.NoError(t, res.aliceErr, "alice's batch was broken by mallory's submission")
+
+		// alice was correct throughout, so a ban can only come from the overwrite
+		aliceBanned := bannedFor(res.convictions, res.aliceScript, crimeBadMusig2Sig)
+		require.False(t, aliceBanned, "alice was banned over a signature mallory overwrote")
+	})
+}
+
 // TestFee tests the fee calculation for the onboarding and settlement of the funds.
 // It first updates the 4 fee programs for intents.
 func TestFee(t *testing.T) {

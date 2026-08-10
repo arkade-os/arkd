@@ -603,18 +603,23 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		}
 
 		// nobody is receiving now: resubmitting must return rather than park
-		resubmitted := make(chan error, 2)
+		nonceResubmit := make(chan error, 1)
+		sigResubmit := make(chan error, 1)
 		go func() {
-			resubmitted <- doSubmitNonces(signers[0], roundId3)
-			resubmitted <- doSubmitSigs(signers[0], roundId3)
+			nonceResubmit <- doSubmitNonces(signers[0], roundId3)
+			sigResubmit <- doSubmitSigs(signers[0], roundId3)
 		}()
-		for range 2 {
-			select {
-			case err := <-resubmitted:
-				require.NoError(t, err)
-			case <-time.After(5 * time.Second):
-				require.Fail(t, "resubmission after collection blocked")
-			}
+		select {
+		case err := <-nonceResubmit:
+			require.Error(t, err, "nonce resubmission must be rejected, not overwrite")
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "nonce resubmission after collection blocked")
+		}
+		select {
+		case err := <-sigResubmit:
+			require.NoError(t, err, "signature resubmission must succeed")
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "signature resubmission after collection blocked")
 		}
 
 		require.NoError(t, store.TreeSigingSessions().Delete(ctx, roundId3))

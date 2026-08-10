@@ -82,6 +82,9 @@ func (s *treeSigningSessionsStore) AddNonces(
 	if _, ok := session.Cosigners[pubkey]; !ok {
 		return fmt.Errorf(`cosigner %s not found for round "%s"`, pubkey, roundId)
 	}
+	if _, exists := session.Nonces[pubkey]; exists {
+		return fmt.Errorf(`nonces already submitted for cosigner %s in round "%s"`, pubkey, roundId)
+	}
 	if _, exists := s.nonceCollectedCh[roundId]; !exists {
 		return fmt.Errorf("nonce channel not initialized for round %s", roundId)
 	}

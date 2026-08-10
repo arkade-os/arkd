@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -17,9 +18,11 @@ import (
 	"time"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	batchsession "github.com/arkade-os/arkd/pkg/client-lib/batch-session"
+	batchsessionhandler "github.com/arkade-os/arkd/pkg/client-lib/batch-session/handler"
 	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client"
 	offchaintx "github.com/arkade-os/arkd/pkg/client-lib/offchain-tx"
 	wallet "github.com/arkade-os/arkd/pkg/client-wallet"
@@ -29,6 +32,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-wallet/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -1706,4 +1710,449 @@ func fetchTx(t *testing.T, txid string) *wire.MsgTx {
 	require.NoError(t, tx.Deserialize(hex.NewDecoder(strings.NewReader(txHex))))
 
 	return &tx
+}
+
+
+// overwriteStage selects which of alice's entries mallory replaces.
+type overwriteStage int
+
+const (
+	overwriteNothing overwriteStage = iota
+	overwriteNonces
+	overwriteSignatures
+)
+
+type overwriteResult struct {
+	forged         bool
+	victims        []string
+	forgeErr       error
+	aliceErr       error
+	roundId        string
+	convictions    []roundConviction
+	convictionsRaw string
+	// input scripts of each participant, so a conviction can be attributed
+	aliceScript   string
+	malloryScript string
+}
+
+// runCosignerOverwrite puts alice and mallory in one batch, both driving the production
+// handler, and has mallory overwrite alice's entry at the given stage.
+func runCosignerOverwrite(t *testing.T, stage overwriteStage) overwriteResult {
+	t.Helper()
+
+	alice := setupClientWallet(t)
+	mallory := setupClientWallet(t)
+	aliceClient, malloryClient := alice.Client(), mallory.Client()
+
+	_, aliceAddr, _, err := alice.Receive(t.Context())
+	require.NoError(t, err)
+	_, malloryAddr, _, err := mallory.Receive(t.Context())
+	require.NoError(t, err)
+
+	faucetOffchain(t, alice, 0.001)
+	faucetOffchain(t, mallory, 0.001)
+
+	// faucetOffchain's vtxo carries no tapscripts, which the forfeit step needs
+	aliceVtxos, _, err := alice.ListVtxos(t.Context())
+	require.NoError(t, err)
+	require.NotEmpty(t, aliceVtxos)
+	malloryVtxos, _, err := mallory.ListVtxos(t.Context())
+	require.NoError(t, err)
+	require.NotEmpty(t, malloryVtxos)
+
+	aliceVtxo, malloryVtxo := aliceVtxos[0], malloryVtxos[0]
+	require.NotEmpty(t, aliceVtxo.Tapscripts, "alice's vtxo carries no tapscripts")
+	require.NotEqual(t, aliceVtxo.Script, malloryVtxo.Script,
+		"alice and mallory share an input script, convictions could not be attributed")
+
+	aliceKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	malloryKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	aliceSigner := tree.NewTreeSignerSession(aliceKey)
+	mallorySigner := tree.NewTreeSignerSession(malloryKey)
+
+	cfgData, err := alice.GetConfigData(t.Context())
+	require.NoError(t, err)
+	require.NotNil(t, cfgData)
+
+	// registered up front so both sit in the queue when the window closes
+	aliceIntentId, err := alice.RegisterIntent(
+		t.Context(),
+		[]clientlib.Vtxo{aliceVtxo}, []clientlib.Utxo{}, nil,
+		[]clientlib.Receiver{{Amount: aliceVtxo.Amount, To: aliceAddr.Address}},
+		[]string{aliceSigner.GetPublicKey()},
+	)
+	require.NoError(t, err)
+
+	malloryIntentId, err := mallory.RegisterIntent(
+		t.Context(),
+		[]clientlib.Vtxo{malloryVtxo}, []clientlib.Utxo{}, nil,
+		[]clientlib.Receiver{{Amount: malloryVtxo.Amount, To: malloryAddr.Address}},
+		[]string{mallorySigner.GetPublicKey()},
+	)
+	require.NoError(t, err)
+
+	aliceArgs := batchsession.JoinBatchArgs{
+		BaseArgs: batchsession.BaseArgs{
+			SignTx: alice.SignTransaction,
+			Vtxos:  []clientlib.Vtxo{aliceVtxo},
+			Outputs: []clientlib.Receiver{{
+				To: aliceAddr.Address, Amount: aliceVtxo.Amount,
+			}},
+		},
+		TreeSigners:  []tree.SignerSession{aliceSigner},
+		IntentId:     aliceIntentId,
+		Client:       aliceClient,
+		ServerParams: *cfgData,
+	}
+	malloryArgs := batchsession.JoinBatchArgs{
+		BaseArgs: batchsession.BaseArgs{
+			SignTx: mallory.SignTransaction,
+			Vtxos:  []clientlib.Vtxo{malloryVtxo},
+			Outputs: []clientlib.Receiver{{
+				To: malloryAddr.Address, Amount: malloryVtxo.Amount,
+			}},
+		},
+		TreeSigners:  []tree.SignerSession{mallorySigner},
+		IntentId:     malloryIntentId,
+		Client:       malloryClient,
+		ServerParams: *cfgData,
+	}
+
+	aliceBase, err := batchsessionhandler.NewDefaultHandler(defaultHandlerArgs(aliceArgs))
+	require.NoError(t, err)
+	malloryBase, err := batchsessionhandler.NewDefaultHandler(defaultHandlerArgs(malloryArgs))
+	require.NoError(t, err)
+
+	var (
+		mu       sync.Mutex
+		res      overwriteResult
+		aliceRnd string
+	)
+
+	// closed once alice has submitted the set mallory is about to overwrite
+	aliceSubmitted := make(chan struct{})
+	var closeOnce sync.Once
+	signalAlice := func() { closeOnce.Do(func() { close(aliceSubmitted) }) }
+
+	// forge once, after alice has submitted
+	var forgeOnce sync.Once
+
+	forge := func(ctx context.Context, submit func(pubkey string) error) error {
+		var outer error
+		forgeOnce.Do(func() {
+			if err := waitFor(ctx, aliceSubmitted); err != nil {
+				outer = err
+				return
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			for _, pubkey := range res.victims {
+				res.forged = true
+				res.forgeErr = submit(pubkey)
+			}
+		})
+		return outer
+	}
+
+	// learned from the broadcast cosigner list
+	recordVictims := func(event clientlib.TreeSigningStartedEvent, mine string) {
+		mu.Lock()
+		defer mu.Unlock()
+		if res.victims != nil {
+			return
+		}
+		for _, pubkey := range event.CosignersPubkeys {
+			if pubkey != mine {
+				res.victims = append(res.victims, pubkey)
+			}
+		}
+	}
+
+	aliceHandler := &interposingHandler{
+		Handler: aliceBase, mu: &mu, roundId: &aliceRnd,
+		afterNonces: func() {
+			if stage == overwriteNonces {
+				signalAlice()
+			}
+		},
+		afterSigs: func() {
+			if stage == overwriteSignatures {
+				signalAlice()
+			}
+		},
+	}
+
+	malloryHandler := &interposingHandler{
+		Handler: malloryBase, mu: &mu, roundId: &res.roundId,
+		beforeNonces: func(ctx context.Context, event clientlib.TreeSigningStartedEvent, vtxoTree *tree.TxTree) error {
+			mine := mallorySigner.GetPublicKey()
+			recordVictims(event, mine)
+			if stage != overwriteNonces {
+				return nil
+			}
+			txids, err := cosignedTxids(vtxoTree, mine)
+			if err != nil {
+				return err
+			}
+			return forge(ctx, func(pubkey string) error {
+				nonces, err := forgedNonces(txids, malloryKey.PubKey())
+				if err != nil {
+					return err
+				}
+				return malloryClient.SubmitTreeNonces(ctx, event.Id, pubkey, nonces)
+			})
+		},
+		beforeSigs: func(ctx context.Context, event clientlib.TreeNoncesEvent, vtxoTree *tree.TxTree) error {
+			if stage != overwriteSignatures {
+				return nil
+			}
+			txids, err := cosignedTxids(vtxoTree, mallorySigner.GetPublicKey())
+			if err != nil {
+				return err
+			}
+			return forge(ctx, func(pubkey string) error {
+				sigs, err := forgedSigs(txids)
+				if err != nil {
+					return err
+				}
+				return malloryClient.SubmitTreeSignatures(ctx, event.Id, pubkey, sigs)
+			})
+		},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		defer signalAlice() // never strand mallory's gate
+		_, res.aliceErr = joinBatchBounded(
+			t.Context(), aliceArgs, batchsession.WithHandler(aliceHandler),
+		)
+	}()
+
+	go func() {
+		defer wg.Done()
+		// nolint:errcheck
+		joinBatchBounded(t.Context(), malloryArgs, batchsession.WithHandler(malloryHandler))
+	}()
+
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if res.roundId != "" {
+		res.convictions, res.convictionsRaw = convictionsByRound(t, res.roundId)
+	}
+	res.aliceScript, res.malloryScript = aliceVtxo.Script, malloryVtxo.Script
+	return res
+}
+
+// interposingHandler wraps the production handler, running a hook around the step it
+// delegates to. Everything else is the real client, so a participant is correct by
+// construction rather than by imitation.
+type interposingHandler struct {
+	batchsessionhandler.Handler
+
+	mu      *sync.Mutex
+	roundId *string
+	// captured at signing start so the signature hook can see it
+	vtxoTree *tree.TxTree
+
+	beforeNonces func(context.Context, clientlib.TreeSigningStartedEvent, *tree.TxTree) error
+	afterNonces  func()
+	beforeSigs   func(context.Context, clientlib.TreeNoncesEvent, *tree.TxTree) error
+	afterSigs    func()
+}
+
+func (h *interposingHandler) OnBatchStarted(
+	ctx context.Context, event clientlib.BatchStartedEvent,
+) (bool, time.Duration, error) {
+	skip, expiry, err := h.Handler.OnBatchStarted(ctx, event)
+	if !skip && err == nil {
+		h.mu.Lock()
+		*h.roundId = event.Id
+		h.mu.Unlock()
+	}
+	return skip, expiry, err
+}
+
+// OnBatchFailed ignores other rounds; the default errors on any failed round, including the
+// "not enough intents" aborts firing while we wait for the other participant.
+func (h *interposingHandler) OnBatchFailed(
+	ctx context.Context, event clientlib.BatchFailedEvent,
+) error {
+	h.mu.Lock()
+	mine := *h.roundId
+	h.mu.Unlock()
+	if event.Id != mine {
+		return nil
+	}
+	return h.Handler.OnBatchFailed(ctx, event)
+}
+
+func (h *interposingHandler) OnTreeSigningStarted(
+	ctx context.Context, event clientlib.TreeSigningStartedEvent, vtxoTree *tree.TxTree,
+) (bool, error) {
+	h.vtxoTree = vtxoTree
+	if h.beforeNonces != nil {
+		if err := h.beforeNonces(ctx, event, vtxoTree); err != nil {
+			return false, err
+		}
+	}
+	skip, err := h.Handler.OnTreeSigningStarted(ctx, event, vtxoTree)
+	if h.afterNonces != nil && !skip && err == nil {
+		h.afterNonces()
+	}
+	return skip, err
+}
+
+func (h *interposingHandler) OnTreeNonces(
+	ctx context.Context, event clientlib.TreeNoncesEvent,
+) (bool, error) {
+	if h.beforeSigs != nil {
+		if err := h.beforeSigs(ctx, event, h.vtxoTree); err != nil {
+			return false, err
+		}
+	}
+	signed, err := h.Handler.OnTreeNonces(ctx, event)
+	if h.afterSigs != nil && signed && err == nil {
+		h.afterSigs()
+	}
+	return signed, err
+}
+
+// defaultHandlerArgs mirrors what JoinBatch builds internally.
+func defaultHandlerArgs(args batchsession.JoinBatchArgs) batchsessionhandler.Args {
+	return batchsessionhandler.Args{
+		Client:         args.Client,
+		ServerParams:   args.ServerParams,
+		SignTx:         args.SignTx,
+		IntentId:       args.IntentId,
+		Vtxos:          args.Vtxos,
+		BoardingUtxos:  args.BoardingUtxos,
+		Receivers:      args.Outputs,
+		SignerSessions: args.TreeSigners,
+	}
+}
+
+// cosignedTxids lists the txs the given cosigner must sign. The tree was rebuilt from
+// topic-filtered events, so another participant's leaf is not in it.
+func cosignedTxids(vtxoTree *tree.TxTree, pubkey string) ([]string, error) {
+	if vtxoTree == nil {
+		return nil, fmt.Errorf("no vtxo tree captured")
+	}
+
+	txids := make([]string, 0)
+	err := vtxoTree.Apply(func(g *tree.TxTree) (bool, error) {
+		keys, err := txutils.ParseCosignerKeysFromArkPsbt(g.Root, 0)
+		if err != nil {
+			return false, err
+		}
+		for _, key := range keys {
+			if hex.EncodeToString(key.SerializeCompressed()) == pubkey {
+				txids = append(txids, g.Root.UnsignedTx.TxID())
+				break
+			}
+		}
+		return true, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(txids) == 0 {
+		return nil, fmt.Errorf("no txs cosigned by %s in the visible tree", pubkey)
+	}
+	return txids, nil
+}
+
+// forgedNonces builds a well-formed nonce set from a secret only the forger knows.
+func forgedNonces(txids []string, pubkey *btcec.PublicKey) (tree.TreeNonces, error) {
+	nonces := make(tree.TreeNonces, len(txids))
+	for _, txid := range txids {
+		nonce, err := musig2.GenNonces(musig2.WithPublicKey(pubkey))
+		if err != nil {
+			return nil, err
+		}
+		nonces[txid] = &tree.Musig2Nonce{PubNonce: nonce.PubNonce}
+	}
+	return nonces, nil
+}
+
+// forgedSigs builds a well-formed but meaningless partial-signature set.
+func forgedSigs(txids []string) (tree.TreePartialSigs, error) {
+	sigs := make(tree.TreePartialSigs, len(txids))
+	for _, txid := range txids {
+		var buf [32]byte
+		if _, err := rand.Read(buf[:]); err != nil {
+			return nil, err
+		}
+		var s btcec.ModNScalar
+		s.SetBytes(&buf)
+		sigs[txid] = &musig2.PartialSignature{S: &s}
+	}
+	return sigs, nil
+}
+
+// waitFor bounds a gate so it can never strand a handler for the whole batch timeout.
+func waitFor(ctx context.Context, ch <-chan struct{}) error {
+	select {
+	case <-ch:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(60 * time.Second):
+		return fmt.Errorf("timed out waiting for the other participant to submit")
+	}
+}
+
+// convictionsByRound returns the raw admin-API conviction list for a round, so a test
+// can show who the operator punished and why.
+func convictionsByRound(t *testing.T, roundId string) ([]roundConviction, string) {
+	t.Helper()
+
+	req, err := http.NewRequest(
+		"GET", fmt.Sprintf("%s/v1/admin/convictionsByRound/%s", adminUrl, roundId), nil,
+	)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Basic YWRtaW46YWRtaW4=")
+
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return nil, fmt.Sprintf("query failed: %s", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Sprintf("read failed: %s", err)
+	}
+
+	var parsed struct {
+		Convictions []roundConviction `json:"convictions"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Sprintf("parse failed: %s (%s)", err, body)
+	}
+	return parsed.Convictions, string(body)
+}
+
+type roundConviction struct {
+	Script    string `json:"script"`
+	CrimeType string `json:"crimeType"`
+	Reason    string `json:"reason"`
+}
+
+const crimeBadMusig2Sig = "CRIME_TYPE_MUSIG2_INVALID_SIGNATURE"
+
+// bannedFor reports whether a script was banned for a specific crime.
+func bannedFor(convictions []roundConviction, script, crimeType string) bool {
+	for _, c := range convictions {
+		if c.Script == script && c.CrimeType == crimeType {
+			return true
+		}
+	}
+	return false
 }
