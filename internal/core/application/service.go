@@ -2061,10 +2061,10 @@ func (s *service) RegisterIntent(
 
 			hasOffChainReceiver = true
 			rcv.PubKey = hex.EncodeToString(output.PkScript[2:])
+			offchainOutputs = append(offchainOutputs, *output)
 		}
 
 		receivers = append(receivers, rcv)
-		offchainOutputs = append(offchainOutputs, *output)
 	}
 
 	if hasOffChainReceiver {
@@ -2539,6 +2539,10 @@ func (s *service) EstimateIntentFee(
 	onchainOutputs := make([]wire.TxOut, 0)
 
 	for outputIndex, output := range proof.UnsignedTx.TxOut {
+		if extension.IsExtension(output.PkScript) {
+			continue
+		}
+
 		isOnchainOutput := slices.Contains(message.OnchainOutputIndexes, outputIndex)
 		if isOnchainOutput {
 			onchainOutputs = append(onchainOutputs, *output)
