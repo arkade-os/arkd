@@ -2035,6 +2035,17 @@ func (s *service) RegisterIntent(
 				})
 			}
 
+			// the check above only looks at the shape of the script, so the 32 bytes it carries
+			// can still be off the curve. The batch builder parses them as an x-only key and
+			// fails the whole round if it cannot, so reject them here instead.
+			if _, err := schnorr.ParsePubKey(output.PkScript[2:]); err != nil {
+				return "", errors.INVALID_PKSCRIPT.New(
+					"output %d carries an invalid taproot key: %s", outputIndex, err,
+				).WithMetadata(errors.InvalidPkScriptMetadata{
+					Script: hex.EncodeToString(output.PkScript),
+				})
+			}
+
 			hasOffChainReceiver = true
 			rcv.PubKey = hex.EncodeToString(output.PkScript[2:])
 		}
