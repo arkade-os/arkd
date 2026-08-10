@@ -7,7 +7,7 @@
   logic (solvency, batch, offchain tx) are written by hand instead.
 */
 
-import { el, clear, num } from './fmt.js';
+import { el, clear, num, short } from './fmt.js';
 import { adminGet, indexerGet, ApiError } from './api.js';
 
 /* ------------------------------------------------------------------ states */
@@ -47,17 +47,54 @@ export function errorState(err) {
 const ROW_CAP = 500;
 
 /**
- * cols: [{ label, cell(row, i) -> Node|string, cls?: 'num'|'mono'|'wrap', width? }]
+ * cols: [{ label, cell(row, i) -> Node|string, cls?: 'num'|'mono'|'wrap', width?,
+ *          sortValue?: (row) => number|string }]
+ *
+ * A column with sortValue gets a clickable header; the first click sorts it
+ * descending. Sorting is client-side over every row, not just the rendered cap.
  */
-export function table(cols, rows, opts = {}) {
-  const cap = opts.cap ?? ROW_CAP;
+export function table(cols, rows) {
   const wrap = el('div', {});
+  let limit = ROW_CAP;
+  let sortCol = null;
+  let descending = true;
 
-  const draw = (limit) => {
-    const shown = limit === null ? rows : rows.slice(0, limit);
+  const ordered = () => {
+    if (sortCol === null) return rows;
+    const key = cols[sortCol].sortValue;
+    const dir = descending ? -1 : 1;
+    // Slice: the caller's array order is the panel's default, restored by a
+    // third click on the header.
+    return rows.slice().sort((a, b) => {
+      const x = key(a);
+      const y = key(b);
+      return (x < y ? -1 : x > y ? 1 : 0) * dir;
+    });
+  };
 
-    const thead = el('thead', {}, el('tr', {}, cols.map((c) =>
-      el('th', { scope: 'col', style: c.width ? { width: c.width } : undefined }, c.label))));
+  const header = (c, i) => {
+    if (!c.sortValue) return c.label;
+    const on = sortCol === i;
+    return el('button', {
+      class: `th-sort${on ? ' on' : ''}`,
+      type: 'button',
+      // Descending first, then ascending, then back to the panel's own order.
+      onclick: () => {
+        if (!on) { sortCol = i; descending = true; } else if (descending) { descending = false; } else { sortCol = null; }
+        draw();
+      },
+    }, c.label, el('span', { class: 'caret', text: on ? (descending ? '▾' : '▴') : '⇅' }));
+  };
+
+  const draw = () => {
+    const all = ordered();
+    const shown = limit === null ? all : all.slice(0, limit);
+
+    const thead = el('thead', {}, el('tr', {}, cols.map((c, i) => el('th', {
+      scope: 'col',
+      style: c.width ? { width: c.width } : undefined,
+      'aria-sort': sortCol === i ? (descending ? 'descending' : 'ascending') : undefined,
+    }, header(c, i)))));
 
     // One fragment, one insertion: appending rows individually forces the
     // browser to re-evaluate layout far more than it needs to.
@@ -76,21 +113,21 @@ export function table(cols, rows, opts = {}) {
       el('div', { class: 'table-wrap' }, el('table', { class: 'grid' }, thead, tbody)),
     );
 
-    if (limit !== null && rows.length > limit) {
+    if (limit !== null && all.length > limit) {
       wrap.append(el('div', { class: 'table-more' },
         el('span', {
-          text: `Showing the first ${limit.toLocaleString('en-US')} of ${rows.length.toLocaleString('en-US')} rows.`,
+          text: `Showing the first ${limit.toLocaleString('en-US')} of ${all.length.toLocaleString('en-US')} rows.`,
         }),
         el('button', {
           class: 'btn btn-ghost',
           type: 'button',
-          onclick: (e) => { e.currentTarget.disabled = true; draw(null); },
+          onclick: () => { limit = null; draw(); },
         }, 'Render all'),
       ));
     }
   };
 
-  draw(cap);
+  draw();
   return wrap;
 }
 
@@ -103,11 +140,46 @@ export function kv(pairs) {
   ]));
 }
 
+/* ------------------------------------------------------------------- blobs */
+
+/** A long opaque value (a proof, a script) collapsed behind a disclosure. */
+export function blobCell(value, summary) {
+  const raw = String(value ?? '');
+  if (!raw) return el('span', { class: 'mono', text: '—' });
+  return el('details', { class: 'blob' },
+    el('summary', { class: 'mono', text: summary ?? short(raw, 28, 0) }),
+    el('pre', { text: raw }),
+  );
+}
+
+/** Pretty-printed JSON in full, for detail pages with room to show it. */
+export function jsonBlock(value) {
+  const raw = String(value ?? '');
+  if (!raw) return el('span', { class: 'mono', text: '—' });
+  let body = raw;
+  try { body = JSON.stringify(JSON.parse(raw), null, 2); } catch { /* not json, show raw */ }
+  return el('pre', { class: 'json-block', text: body });
+}
+
+/** The same, collapsed to one line. Intent messages are named by their type. */
+export function jsonCell(value) {
+  const raw = String(value ?? '');
+  if (!raw) return el('span', { class: 'mono', text: '—' });
+
+  let type;
+  try { type = JSON.parse(raw)?.type; } catch { return blobCell(raw); }
+
+  return el('details', { class: 'blob' },
+    el('summary', { class: 'mono', text: type ?? short(raw, 28, 0) }),
+    jsonBlock(raw),
+  );
+}
+
 export function card(title, body, note) {
   return el('section', { class: 'card' },
     title ? el('header', { class: 'card-head' },
       el('h2', { class: 'card-title', text: title }),
-      note ? el('span', { class: 'card-note', text: note }) : null,
+      note ? el('span', { class: 'card-note' }, note) : null,
     ) : null,
     body,
   );
@@ -135,7 +207,7 @@ export function panelHead(title, sub) {
  * spec: [{ name, label, type: 'date'|'text'|'number'|'check'|'select', value, options, grow, placeholder }]
  * Returns { node, values() } — values() reads the live control state.
  */
-export function filterBar(spec, onApply) {
+function filterBar(spec, onApply) {
   const inputs = new Map();
 
   const controls = spec.map((f) => {
@@ -193,6 +265,7 @@ export function filterBar(spec, onApply) {
  *   requires?: (values) => string|null, // block the request until an input is given
  *   sort?: (a, b) => number,           // row comparator; defaults to recent first
  *   note?: (rows, body) => string,
+ *   enrich?: async (rows) => void,     // second read, joined onto the rows in place
  * }
  */
 // Every list here is a log of things that happened, so the newest row is the one
@@ -238,6 +311,11 @@ export function listPanel(desc) {
       const res = await get(path, desc.params?.(values));
       if (mine !== gen) return;
       const rows = (res?.[desc.key] ?? []).slice();
+
+      // Allowed to fail: the rows still render, just without the joined field.
+      if (desc.enrich) await desc.enrich(rows);
+      if (mine !== gen) return;
+
       rows.sort(desc.sort ?? recentFirst);
 
       clear(body);

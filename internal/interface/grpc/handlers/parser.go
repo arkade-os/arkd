@@ -311,6 +311,10 @@ func (i intentsInfo) toProto() []*arkv1.IntentInfo {
 			Inputs:              inputs,
 			BoardingInputs:      boardingInputs,
 			CosignersPublicKeys: intent.Cosigners,
+			Intent: &arkv1.Intent{
+				Proof:   intent.Proof,
+				Message: intent.Message,
+			},
 		})
 	}
 	return list

@@ -7,7 +7,9 @@
   the macaroon.
 */
 
-import { el, clear, btc, num, sats, short, ts, timeCell, badge, boolBadge, refLink, enumLabel } from './fmt.js';
+import {
+  el, clear, btc, num, sats, ts, timeCell, badge, boolBadge, refLink, txCell, commitmentCell, enumLabel,
+} from './fmt.js';
 import { indexerGet } from './api.js';
 import { card, kv, table, panelHead, skeleton, errorState, emptyState } from './table.js';
 
@@ -60,7 +62,7 @@ function render(txid, tx, forfeits, connectors, batches, trees) {
       ['Started', el('span', { class: 'mono', text: ts(tx.startedAt) })],
       ['Ended', el('span', { class: 'mono', text: num(tx.endedAt) ? ts(tx.endedAt) : '—' })],
       ['Batch outputs', el('span', { class: 'mono', text: String(batches.length) })],
-      ['Admin view', refLink(`#/batch/${encodeURIComponent(txid)}`, 'open batch detail', { full: true })],
+      ['Admin view', refLink(`#/batch/${encodeURIComponent(txid)}`, 'open batch detail', true)],
     ])),
     card('Totals', kv([
       ['Input amount', btc(tx.totalInputAmount)],
@@ -81,7 +83,7 @@ function render(txid, tx, forfeits, connectors, batches, trees) {
         ['Tree nodes', el('span', { class: 'mono', text: String(tree.length) })],
         ['Leaves', el('span', { class: 'mono', text: String(leaves.length) })],
         ['Swept by', sweeps.length
-          ? el('span', { class: 'mono' }, sweeps.map((s, j) => el('span', {}, j ? ', ' : '', short(s))))
+          ? el('span', { class: 'tx-list' }, sweeps.map((s) => txCell(s)))
           : null],
       ]),
       tree.length ? treeTable(tree) : emptyState('No tree', 'This batch output has no VTXO tree.'),
@@ -89,21 +91,17 @@ function render(txid, tx, forfeits, connectors, batches, trees) {
   });
 
   out.push(el('div', { class: 'cols-2' },
-    forfeits.length
-      ? card('Forfeit transactions', table(
-        [{ label: 'Txid', cls: 'mono', cell: (t) => t }],
-        forfeits,
-      ), `${forfeits.length} forfeits`)
-      : card('Forfeit transactions', emptyState('None', 'No VTXO inputs required a forfeit.')),
-    connectors.length
-      ? card('Connectors', table(
-        [
-          { label: 'Txid', cls: 'mono', cell: (n) => short(n.txid, 12, 8) },
-          { label: 'Children', cls: 'num', cell: (n) => String(Object.keys(n.children ?? {}).length) },
-        ],
-        connectors,
-      ), `${connectors.length} nodes`)
-      : card('Connectors', emptyState('None', 'This batch has no connector tree.')),
+    card('Forfeit transactions', forfeits.length
+      ? table([{ label: 'Txid', cls: 'mono', cell: (t) => txCell(t, { full: true }) }], forfeits)
+      : emptyState('None', 'No VTXO inputs required a forfeit.'),
+    forfeits.length ? `${forfeits.length} forfeits` : undefined),
+    card('Connectors', connectors.length
+      ? table([
+        { label: 'Txid', cls: 'mono', cell: (n) => txCell(n.txid, { head: 12, tail: 8 }) },
+        { label: 'Children', cls: 'num', cell: (n) => String(Object.keys(n.children ?? {}).length) },
+      ], connectors)
+      : emptyState('None', 'This batch has no connector tree.'),
+    connectors.length ? `${connectors.length} nodes` : undefined),
   ));
 
   return out;
@@ -111,14 +109,14 @@ function render(txid, tx, forfeits, connectors, batches, trees) {
 
 function treeTable(tree) {
   return table([
-    { label: 'Node txid', cls: 'mono', cell: (n) => short(n.txid, 12, 8) },
+    { label: 'Node txid', cls: 'mono', cell: (n) => txCell(n.txid, { head: 12, tail: 8 }) },
     { label: 'Children', cls: 'num', cell: (n) => String(Object.keys(n.children ?? {}).length) },
     {
       label: 'Child txids',
       cls: 'wrap',
-      cell: (n) => el('span', { class: 'mono' },
-        Object.entries(n.children ?? {}).map(([vout, child], i) =>
-          el('span', {}, i ? ', ' : '', `${vout}→${short(child, 6, 4)}`))),
+      cell: (n) => el('span', { class: 'tx-list' },
+        Object.entries(n.children ?? {}).map(([vout, child]) =>
+          el('span', { class: 'mono' }, `${vout}→`, txCell(child, { head: 6, tail: 4 })))),
     },
   ], tree);
 }
@@ -173,24 +171,23 @@ function renderVtxo(v, chain) {
         ['Unrolled', boolBadge(v.isUnrolled, 'unrolled', 'no')],
         ['Preconfirmed', boolBadge(v.isPreconfirmed, 'preconfirmed', 'confirmed')],
         ['Spent by', v.spentBy ? el('span', { class: 'mono', text: v.spentBy }) : null],
-        ['Settled by', v.settledBy ? el('span', { class: 'mono', text: v.settledBy }) : null],
-        ['Ark txid', v.arkTxid ? el('span', { class: 'mono', text: v.arkTxid }) : null],
+        ['Settled by', v.settledBy ? txCell(v.settledBy, { full: true }) : null],
+        ['Ark txid', v.arkTxid ? txCell(v.arkTxid, { full: true }) : null],
         ['Commitments', commitments.length
-          ? el('span', {}, commitments.map((c, i) => el('span', {}, i ? ', ' : '',
-            refLink(`#/commitment/${encodeURIComponent(c)}`, c))))
+          ? el('span', { class: 'tx-list' }, commitments.map((c) => commitmentCell(c)))
           : badge('none — this is a note', 'warn')],
       ])),
     ),
     chain.length
       ? card('Chain', table([
-        { label: 'Txid', cls: 'mono', cell: (c) => short(c.txid, 12, 8) },
+        { label: 'Txid', cls: 'mono', cell: (c) => txCell(c.txid, { head: 12, tail: 8 }) },
         { label: 'Type', cell: (c) => badge(enumLabel(c.type, 'INDEXER_CHAINED_TX_TYPE_'), 'neutral') },
         { label: 'Expires', cls: 'num', cell: (c) => timeCell(c.expiresAt) },
         {
           label: 'Spends',
           cls: 'wrap',
-          cell: (c) => el('span', { class: 'mono' },
-            (c.spends ?? []).map((s, i) => el('span', {}, i ? ', ' : '', short(s, 8, 6)))),
+          cell: (c) => el('span', { class: 'tx-list' },
+            (c.spends ?? []).map((s) => txCell(s, { head: 8, tail: 6 }))),
         },
       ], chain), `${chain.length} transactions back to a commitment`)
       : card('Chain', emptyState('No chain', 'The indexer returned no ancestry for this VTXO.')),

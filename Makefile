@@ -12,6 +12,8 @@
 # The admin API and the indexer sit on different ports when ADMIN_PORT is set.
 CONSOLE_ADMIN_URL   ?= http://localhost:7071
 CONSOLE_INDEXER_URL ?= http://localhost:7070
+# Block explorer the console links txids to. Empty uses the mainnet default.
+CONSOLE_EXPLORER_URL ?=
 CONSOLE_PORT        ?= 8080
 
 define setup_env
@@ -60,7 +62,7 @@ cov:
 	@go test -cover ./internal/...
 	@find ./pkg -name go.mod -execdir go test -cover ./... \;
 
-## console: serve the read-only operator console (override CONSOLE_ADMIN_URL, CONSOLE_INDEXER_URL, CONSOLE_PORT)
+## console: serve the read-only operator console (override CONSOLE_ADMIN_URL, CONSOLE_INDEXER_URL, CONSOLE_EXPLORER_URL, CONSOLE_PORT)
 console:
 	@echo "Building arkd console..."
 	@docker build -q -t arkd-console web/dashboard > /dev/null
@@ -68,10 +70,12 @@ console:
 	@docker run -d --name arkd-console -p $(CONSOLE_PORT):80 \
 		-e ARKD_ADMIN_URL=$(CONSOLE_ADMIN_URL) \
 		-e ARKD_INDEXER_URL=$(CONSOLE_INDEXER_URL) \
+		-e ARKD_EXPLORER_URL=$(CONSOLE_EXPLORER_URL) \
 		arkd-console > /dev/null
 	@echo "Console on http://localhost:$(CONSOLE_PORT)"
 	@echo "  admin   $(CONSOLE_ADMIN_URL)"
 	@echo "  indexer $(CONSOLE_INDEXER_URL)"
+	@echo "  explorer $(if $(CONSOLE_EXPLORER_URL),$(CONSOLE_EXPLORER_URL),<mainnet default>)"
 	@echo "The console is read-only; use the read-only macaroon:"
 	@echo "  xxd -p -c 1000 <datadir>/macaroons/readonly.macaroon"
 	@echo "(servers started with --no-macaroons connect with no credential at all)"

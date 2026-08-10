@@ -34,7 +34,16 @@ export function config() {
   return {
     adminUrl: trimSlash(c.adminUrl),
     indexerUrl: trimSlash(c.indexerUrl),
+    explorerUrl: trimSlash(c.explorerUrl),
   };
+}
+
+// Mainnet by default; signet and regtest set ARKD_EXPLORER_URL to their own.
+const DEFAULT_EXPLORER = 'https://arkade.space';
+
+export function explorerBase() {
+  const { explorerUrl } = config();
+  return /^https?:\/\//.test(explorerUrl) ? explorerUrl : DEFAULT_EXPLORER;
 }
 
 /** Why the app cannot start, or null when the config is usable. */
@@ -126,7 +135,7 @@ export function onLock(fn) {
 
 /* -------------------------------------------------------------- idle timer */
 
-export function touch() {
+function touch() {
   lastActivity = Date.now();
   // Nothing to protect when there is no macaroon, so no idle lock either.
   if (!idleTimer && session !== null && session.macaroon !== null) startIdleTimer();

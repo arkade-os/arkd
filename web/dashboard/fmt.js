@@ -8,6 +8,8 @@
   numbers, so every numeric read goes through num().
 */
 
+import { explorerBase, hasIndexer } from './api.js';
+
 const SATS_PER_BTC = 100_000_000;
 
 /** Coerce a protojson scalar to a number. Missing fields default to 0. */
@@ -38,40 +40,42 @@ export function el(tag, props = {}, ...kids) {
 }
 
 export function clear(node) {
-  while (node.firstChild) node.removeChild(node.firstChild);
+  node.replaceChildren();
   return node;
 }
 
-/**
- * Render sats as BTC with the integer part bright and the fraction dim, so the
- * magnitude reads before the precision. `1.85` then a dimmed `418816`.
- */
-export function btc(sats, opts = {}) {
-  const n = num(sats);
-  const neg = n < 0;
-  const abs = Math.abs(n);
-  const whole = Math.floor(abs / SATS_PER_BTC);
-  const frac = String(abs % SATS_PER_BTC).padStart(8, '0');
-  const cls = ['amount', opts.large ? 'amount-lg' : null, n === 0 ? 'amount-zero' : null]
-    .filter(Boolean).join(' ');
-  return el('span', { class: cls, title: `${n.toLocaleString('en-US')} sats` },
-    el('span', { class: 'amount-int', text: `${neg ? '-' : ''}${whole}.` }),
-    el('span', { class: 'amount-frac', text: frac }),
+/** Leading zeros dim, significant digits bright, tail grouped: `0.00 002 324`. */
+function amount(neg, whole, frac, opts, title) {
+  const digits = `${whole}.${frac.slice(0, 2)} ${frac.slice(2, 5)} ${frac.slice(5)}`;
+  const at = digits.search(/[1-9]/);
+  return el('span', {
+    class: `amount${opts.large ? ' amount-lg' : ''}`,
+    title,
+  },
+    neg ? el('span', { class: 'amount-sig', text: '-' }) : null,
+    el('span', { class: 'amount-dim', text: at < 0 ? digits : digits.slice(0, at) }),
+    at < 0 ? null : el('span', { class: 'amount-sig', text: digits.slice(at) }),
     opts.unit === false ? null : el('span', { class: 'amount-unit', text: 'BTC' }),
   );
 }
 
-/** Same treatment for an already-formatted "0.00000000" string from the admin API. */
-export function btcStr(s, opts = {}) {
-  const [whole = '0', frac = '00000000'] = String(s ?? '0').split('.');
-  const zero = Number(whole) === 0 && Number(frac) === 0;
-  const cls = ['amount', opts.large ? 'amount-lg' : null, zero ? 'amount-zero' : null]
-    .filter(Boolean).join(' ');
-  return el('span', { class: cls },
-    el('span', { class: 'amount-int', text: `${whole}.` }),
-    el('span', { class: 'amount-frac', text: frac }),
-    opts.unit === false ? null : el('span', { class: 'amount-unit', text: 'BTC' }),
+/** Sats to BTC. */
+export function btc(v, opts = {}) {
+  const n = num(v);
+  const abs = Math.abs(n);
+  return amount(
+    n < 0,
+    String(Math.floor(abs / SATS_PER_BTC)),
+    String(abs % SATS_PER_BTC).padStart(8, '0'),
+    opts,
+    `${n.toLocaleString('en-US')} sats`,
   );
+}
+
+/** Same, for an already-formatted "0.00000000" string from the admin API. */
+export function btcStr(s, opts = {}) {
+  const [whole = '0', frac = ''] = String(s ?? '0').split('.');
+  return amount(whole.startsWith('-'), whole.replace('-', ''), frac.padEnd(8, '0'), opts);
 }
 
 export function sats(v) {
@@ -143,7 +147,7 @@ export function stageBadge(row) {
   return badge((stage || 'pending').toLowerCase().replace(/_/g, ' '), 'warn');
 }
 
-export function boolBadge(v, yes = 'yes', no = 'no') {
+export function boolBadge(v, yes, no) {
   return v ? badge(yes, 'ok') : badge(no, 'neutral');
 }
 
@@ -155,10 +159,68 @@ export function enumLabel(v, prefix = '') {
 }
 
 /** An internal hash link, monospace and middle-truncated. */
-export function refLink(href, value, opts = {}) {
+export function refLink(href, value, full = false) {
   if (!value) return el('span', { class: 'mono', text: '—' });
-  return el('a', { href, class: 'mono', title: value },
-    opts.full ? value : short(value, opts.head ?? 8, opts.tail ?? 6));
+  return el('a', { href, class: 'mono', title: value }, full ? value : short(value));
+}
+
+/** A txid: the in-console drill-down, then an out-link to the block explorer. */
+export function txCell(txid, opts = {}) {
+  if (!txid) return el('span', { class: 'mono', text: '—' });
+
+  const label = opts.label ?? (opts.full ? txid : short(txid, opts.head ?? 8, opts.tail ?? 6));
+  const inner = opts.href
+    ? el('a', { href: opts.href, class: 'mono', title: txid }, label)
+    : el('span', { class: 'mono', title: txid, text: label });
+
+  const base = explorerBase();
+  if (!base) return inner;
+
+  return el('span', { class: 'tx-cell' }, inner, el('a', {
+    class: 'ext',
+    href: `${base}/tx/${txid}`,
+    target: '_blank',
+    rel: 'noopener noreferrer',
+    title: 'open in the block explorer',
+  }, '↗'));
+}
+
+/**
+ * A commitment txid. The in-console drill-down is an indexer page, so the link
+ * only appears when an indexer is configured — otherwise it would land on
+ * "indexer not configured".
+ */
+export function commitmentCell(txid, opts = {}) {
+  return txCell(txid, {
+    ...opts,
+    href: txid && hasIndexer() ? `#/commitment/${encodeURIComponent(txid)}` : null,
+  });
+}
+
+/** An outpoint, with the txid carrying the explorer link. */
+export function outpointCell(txid, vout, opts = {}) {
+  if (!txid) return el('span', { class: 'mono', text: '—' });
+  const head = opts.full ? txid : short(txid, opts.head ?? 8, opts.tail ?? 6);
+  return txCell(txid, { ...opts, label: `${head}:${vout ?? 0}` });
+}
+
+/**
+ * Copies `text` to the clipboard. The console never writes to arkd, so commands
+ * that would change state are handed over for the operator to run. Falls back to
+ * showing the text when the clipboard is unavailable, e.g. served over http.
+ */
+export function copyButton(text, label) {
+  const btn = el('button', { class: 'btn btn-ghost btn-xs', type: 'button', title: text }, label);
+  btn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = 'copied';
+      setTimeout(() => { btn.textContent = label; }, 1500);
+    } catch {
+      btn.replaceWith(el('code', { class: 'mono copy-fallback', text }));
+    }
+  });
+  return btn;
 }
 
 /** Date input value (YYYY-MM-DD) to unix seconds. */
@@ -169,8 +231,7 @@ export function dateToUnix(value, endOfDay = false) {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** The date half of ts(), for a date input's value. */
 export function unixToDate(unix) {
-  const d = new Date(num(unix) * 1000);
-  const p = (x) => String(x).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return ts(unix).slice(0, 10);
 }

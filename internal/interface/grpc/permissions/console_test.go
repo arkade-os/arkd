@@ -23,7 +23,6 @@ var consoleMethods = map[string][]string{
 		"GetRoundDetails",
 		"GetRoundIntents",
 		"GetRounds",
-		"GetExpiredRounds",
 		"GetOffchainTxs",
 		"GetOffchainTxDetails",
 		"GetFeeRate",

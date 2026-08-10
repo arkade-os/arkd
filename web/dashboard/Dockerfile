@@ -2,12 +2,8 @@
 # No build step: the sources are the artifact.
 FROM nginx:1.27-alpine
 
-RUN apk add --no-cache gettext
-
-COPY index.html style.css config.js.tpl /usr/share/nginx/html/
-COPY app.js api.js table.js panels.js fmt.js \
-     solvency.js batch.js offchainTx.js indexer.js \
-     /usr/share/nginx/html/
+# Every module: a hand-kept list silently drops a new one and 404s the page.
+COPY index.html style.css config.js.tpl *.js /usr/share/nginx/html/
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY entrypoint.sh /entrypoint.sh
 

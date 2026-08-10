@@ -110,7 +110,11 @@ func main() {
 	)
 
 	app.DefaultCommand = startCmd.Name
-	app.Flags = append(app.Flags, urlFlag, datadirFlag, macaroonFlag)
+	app.Flags = append(app.Flags, urlFlag, datadirFlag, macaroonFlag, timeoutFlag)
+	app.Before = func(ctx *cli.Context) error {
+		timeout = ctx.Duration(timeoutFlagName)
+		return nil
+	}
 
 	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)

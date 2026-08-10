@@ -15,34 +15,48 @@
 
 import { el, clear, btc, num, sats } from './fmt.js';
 import { adminGet } from './api.js';
-import { card, panelHead, skeleton, errorState } from './table.js';
+import { card, table, panelHead, skeleton, errorState, emptyState } from './table.js';
 
 const DAY = 86400;
 
 /* Left to right: overdue sits before "now" where it should not exist. */
 const BUCKETS = [
-  { id: 'overdue',     label: 'Overdue',      axis: 'past',   cls: 'overdue',     swatch: 'var(--oxide)' },
+  { id: 'overdue',     label: 'Past expiry',  axis: 'past',   cls: 'overdue',     swatch: 'var(--oxide)' },
   { id: 'd1',          label: 'Under 1 day',  axis: 'now',    cls: 'd1',          swatch: 'var(--amber)' },
   { id: 'd2',          label: '1 – 2 days',   axis: null,     cls: 'd2',          swatch: '#b9793c' },
   { id: 'd3',          label: '2 – 3 days',   axis: null,     cls: 'd3',          swatch: '#8f6134' },
   { id: 'later',       label: 'Over 3 days',  axis: '3d+',    cls: 'later',       swatch: 'var(--gold-dim)' },
-  { id: 'recoverable', label: 'Recoverable',  axis: 'swept',  cls: 'recoverable', swatch: 'var(--teal)' },
+  { id: 'recoverable', label: 'Recoverable',  axis: 'swept',  cls: 'recoverable', swatch: 'var(--teal-dim)' },
 ];
 
 export function solvencyPanel() {
   const body = el('div', {});
   const node = el('div', {},
-    panelHead('Overview', 'What the server owes, when it comes due, and what is available to cover it.'),
+    panelHead('Overview', 'Liability, when it unlocks, and what covers it.'),
     body,
   );
 
   async function reload() {
     clear(body).append(card(null, skeleton()));
+
+    // The sweep schedule is the slow read: it is unbounded and grows with the
+    // number of unswept batches. Fire it now, paint without it, fill in after.
+    const slot = el('div', {}, card('Sweep inflow', skeleton()));
+    const pending = adminGet('/v1/admin/sweeps', { limit: 0 })
+      .then((r) => r.sweeps ?? [])
+      .catch(() => null);
+
+    let d;
     try {
-      clear(body).append(...render(await load()));
+      d = await load();
     } catch (err) {
       clear(body).append(card(null, errorState(err)));
+      return;
     }
+    clear(body).append(liabilityCard(d), slot, tiles(d), caveats());
+
+    // Not awaited: navigating away should not wait on it.
+    void pending.then((sweeps) => clear(slot).append(sweepsCard(sweeps, d.unswept)));
   }
 
   return { node, reload };
@@ -61,9 +75,9 @@ async function load() {
   // The liability reads are required: without them the panel has nothing to say.
   // Everything else is best-effort, so a locked wallet or an older server that
   // lacks GetFeeRate degrades one tile instead of blanking the whole overview.
-  const optional = (p) => p.then((v) => ({ ok: true, value: v }), (err) => ({ ok: false, err }));
+  let walletError = null;
 
-  const [overdue, d1, d2, d3, later, recoverable, balanceRes, statusRes, feeRateRes] =
+  const [overdue, d1, d2, d3, later, recoverable, balance, status, feeRate] =
     await Promise.all([
       expiring(1, now),
       expiring(now, now + DAY),
@@ -71,15 +85,15 @@ async function load() {
       expiring(now + 2 * DAY, now + 3 * DAY),
       expiring(now + 3 * DAY, 0),
       adminGet('/v1/admin/liquidity/recoverable').then((r) => num(r.amount)),
-      optional(adminGet('/v1/admin/wallet/balance')),
-      optional(adminGet('/v1/admin/wallet/status')),
-      optional(adminGet('/v1/admin/feeRate')),
+      // The balance is the only optional read whose failure is worth naming: it
+      // drives the coverage figure.
+      adminGet('/v1/admin/wallet/balance').catch((err) => {
+        walletError = err?.message ?? 'unavailable';
+        return null;
+      }),
+      adminGet('/v1/admin/wallet/status').catch(() => null),
+      adminGet('/v1/admin/feeRate').catch(() => null),
     ]);
-
-  const balance = balanceRes.ok ? balanceRes.value : null;
-  const status = statusRes.ok ? statusRes.value : null;
-  const feeRate = feeRateRes.ok ? feeRateRes.value : null;
-  const walletError = balanceRes.ok ? null : (balanceRes.err?.message ?? 'unavailable');
 
   const amounts = { overdue, d1, d2, d3, later, recoverable };
 
@@ -110,28 +124,80 @@ function btcToSats(s) {
 
 /* ------------------------------------------------------------------ render */
 
-function render(d) {
-  return [
-    liabilityCard(d),
-    tiles(d),
-    caveats(),
-  ];
+// Windows are cumulative from now: a sweep falls in the first one it fits.
+const SWEEP_WINDOWS = [
+  { label: 'Past due', within: 0 },
+  { label: 'Within 24h', within: DAY },
+  { label: '1 – 3 days', within: 3 * DAY },
+  { label: '3 – 7 days', within: 7 * DAY },
+  { label: 'Later', within: Infinity },
+];
+
+/**
+ * Unswept leaf value from the sweep schedule: a batch whose leaves were spent
+ * forward reports nothing even though its output still returns coins. A floor.
+ */
+function sweepsCard(sweeps, locked) {
+  if (sweeps === null) {
+    return card('Sweep inflow', emptyState('Sweep schedule unavailable'));
+  }
+  if (!sweeps.length) {
+    return card('Sweep inflow', emptyState('Nothing scheduled'));
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const rows = SWEEP_WINDOWS.map((w) => ({ ...w, amount: 0, batches: 0 }));
+  let blind = 0;
+
+  for (const s of sweeps) {
+    const delta = num(s.sweepAt) - now;
+    const row = rows.find((w) => delta <= w.within);
+    row.amount += num(s.totalAmount);
+    row.batches += 1;
+    if (!num(s.vtxoCount)) blind += 1;
+  }
+
+  let running = 0;
+  for (const row of rows) {
+    running += row.amount;
+    row.cumulative = running;
+  }
+
+  return card('Sweep inflow', el('div', {},
+    table([
+      { label: 'When', cell: (r) => r.label },
+      { label: 'Batches', cls: 'num', cell: (r) => String(r.batches) },
+      { label: 'Reclaimed', cls: 'num', cell: (r) => btc(r.amount) },
+      { label: 'Running total', cls: 'num', cell: (r) => btc(r.cumulative) },
+    ], rows.filter((r) => r.batches)),
+    el('div', { class: 'card-body' },
+      el('p', { class: 'hint', text: 'Sweep date = batch end + tree expiry, an estimate: the sweeper goes by the onchain locktime. Amount = unspent, unswept leaves of that batch.' }),
+      blind ? el('p', { class: 'hint', text: `${blind} of ${sweeps.length} batches have no unspent leaves left: their value was spent forward into preconfirmed VTXOs, which still sit in the same batch output but are not counted here. The totals are a floor.` }) : null,
+    ),
+  // Inflow counts unrolled leaves that the locked figure drops, so it can top it.
+  ), running <= locked
+    ? `${sats(running)} sats of the ${sats(locked)} locked`
+    : `${sats(running)} sats scheduled`);
 }
 
 function liabilityCard(d) {
   const { amounts, total, wallet } = d;
   const coverPct = total > 0 ? Math.min(100, (wallet.total / total) * 100) : 100;
   const covered = wallet.known && wallet.total >= total;
+  const share = (v) => (total > 0 ? (v / total) * 100 : 0);
 
   const bar = el('div', { class: 'bar' },
     BUCKETS.map((b) => {
       const value = amounts[b.id];
       if (!value) return null;
+      const pct = share(value);
       const seg = el('div', {
         class: `bar-seg ${b.cls}`,
-        title: `${b.label}: ${sats(value)} sats`,
-      });
-      seg.style.setProperty('width', `${(value / total) * 100}%`);
+        title: `${b.label}: ${sats(value)} sats (${pct.toFixed(1)}%)`,
+      },
+        // Only where it fits: a clipped label is worse than none.
+        pct >= 11 ? el('span', { class: 'bar-seg-label', text: b.label }) : null);
+      seg.style.setProperty('width', `${pct}%`);
       return seg;
     }),
   );
@@ -150,8 +216,13 @@ function liabilityCard(d) {
   const body = el('div', { class: 'liab' },
     el('div', { class: 'liab-top' },
       el('div', { class: 'liab-total' },
+        el('p', { class: 'eyebrow', text: 'Locked in batches' }),
+        btc(d.unswept, { large: true }),
+        el('p', { class: 'subline', text: 'unswept batch outputs' }),
+      ),
+      el('div', { class: 'liab-side' },
         el('p', { class: 'eyebrow', text: 'Total liability' }),
-        btc(total, { large: true }),
+        btc(total),
       ),
       el('div', { class: 'liab-cover' },
         el('p', { class: 'eyebrow', text: 'Covered by wallet' }),
@@ -161,27 +232,35 @@ function liabilityCard(d) {
             text: `${coverPct.toFixed(1)}%`,
           })
           : el('div', { class: 'liab-cover-pct', text: '—', title: 'wallet balance unavailable' }),
+        el('p', {
+          class: 'subline',
+          text: wallet.known ? `wallet ${sats(wallet.total)} sats` : d.walletError ?? 'unavailable',
+        }),
       ),
     ),
 
+    // The one thing on this page that asks for action.
+    amounts.overdue > 0 ? el('div', { class: 'liab-alert' },
+      el('span', {}, `${sats(amounts.overdue)} sats past expiry, unswept`),
+      el('a', { href: '#/sweeps' }, 'Sweeps →'),
+    ) : null,
+
     total > 0 ? bar : el('p', { class: 'state', text: 'No outstanding liability.' }),
 
-    // No axis scale here on purpose: segment widths are amounts, so evenly
-    // spaced time labels would point at the wrong places. The legend below is
-    // in the same order and carries the exact figures.
     total > 0 && wallet.known && !covered
-      ? el('p', { class: 'bar-caption', text: 'Marker shows how far the wallet balance reaches, paying most urgent first. Everything shaded to its right is unbacked.' })
-      : null,
-    d.walletError
-      ? el('p', { class: 'bar-caption', text: `Coverage unavailable: ${d.walletError}` })
+      ? el('p', { class: 'bar-caption', text: 'Marker: wallet reach, most urgent first. Shaded is unbacked.' })
       : null,
 
     el('div', { class: 'legend' },
-      BUCKETS.map((b) => el('div', { class: 'legend-item' },
-        el('span', { class: 'legend-swatch', style: { background: b.swatch } }),
-        el('span', { class: 'legend-name', text: b.label }),
-        btc(amounts[b.id]),
-      )),
+      BUCKETS.map((b) => {
+        const value = amounts[b.id];
+        return el('div', { class: `legend-item${value ? '' : ' legend-empty'}` },
+          el('span', { class: 'legend-swatch', style: { background: b.swatch } }),
+          el('span', { class: 'legend-name', text: b.label }),
+          btc(value),
+          el('span', { class: 'legend-pct', text: value ? `${share(value).toFixed(0)}%` : '' }),
+        );
+      }),
     ),
   );
 
@@ -195,27 +274,16 @@ function liabilityCard(d) {
 }
 
 function tiles(d) {
-  const { amounts, unswept, due72h, wallet, status, feeRate } = d;
+  const { due72h, wallet, status, feeRate } = d;
   const walletTile = wallet.known
     ? { value: btc(wallet.mainAvailable + wallet.connAvailable), note: `${sats(wallet.mainLocked + wallet.connLocked)} sats locked` }
-    : { value: el('span', { class: 'badge warn', text: 'unavailable' }), note: 'wallet is locked or unreachable' };
+    : { value: el('span', { class: 'badge warn', text: 'unavailable' }), note: 'locked or unreachable' };
 
   const items = [
     {
-      label: 'Due within 72h',
+      label: 'Reclaimable within 72h',
       value: btc(due72h),
-      note: 'recoverable + overdue + the three day buckets',
-    },
-    {
-      label: 'Locked in batches',
-      value: btc(unswept),
-      note: 'unswept batch outputs, not yet claimable by you',
-    },
-    {
-      label: 'Overdue, unswept',
-      value: btc(amounts.overdue),
-      note: amounts.overdue > 0 ? 'expired but never swept — invisible to liquidity-report' : 'nothing past due',
-      alert: amounts.overdue > 0,
+      note: 'recoverable + past expiry + the three day buckets',
     },
     {
       label: 'Wallet available',
@@ -223,7 +291,7 @@ function tiles(d) {
       note: walletTile.note,
     },
     {
-      label: 'Wallet',
+      label: 'Wallet state',
       value: walletStatus(status),
       note: 'initialized · unlocked · synced',
     },
@@ -237,7 +305,7 @@ function tiles(d) {
   ];
 
   return el('div', { class: 'tiles' }, items.map((t) =>
-    el('div', { class: `tile${t.alert ? ' alert' : ''}` },
+    el('div', { class: 'tile' },
       el('div', { class: 'tile-label', text: t.label }),
       el('div', { class: 'tile-value' }, t.value),
       el('div', { class: 'tile-note', text: t.note }),
@@ -259,12 +327,12 @@ function walletStatus(s) {
 }
 
 function caveats() {
-  return card('How these numbers are built', el('div', { class: 'card-body' },
-    el('p', { class: 'panel-sub', text:
-      'Every bucket counts unspent VTXOs only. The expiring buckets are swept = false and exclude unrolled VTXOs; recoverable is swept = true and does not exclude them, so a unilaterally exited VTXO that was later swept still counts here.' }),
+  return card(null, el('details', { class: 'blob card-body' },
+    el('summary', { text: 'How these numbers are built' }),
     el('p', { class: 'hint', text:
-      'Notes are counted as liability. They are operator-minted, so the true user-owed figure is lower by the outstanding note value, which the admin API does not expose separately.' }),
+      'Buckets count unspent VTXOs. Expiring buckets are swept = false and exclude unrolled; recoverable is swept = true and does not.' }),
     el('p', { class: 'hint', text:
-      'Coverage compares total liability against the wallet balance including locked UTXOs. Locked funds are still yours, but they are reserved and not immediately spendable.' }),
+      'Notes count as liability; the admin API does not expose them separately.' }),
+    el('p', { class: 'hint', text: 'Coverage includes locked wallet UTXOs.' }),
   ));
 }

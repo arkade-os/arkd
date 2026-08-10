@@ -12,14 +12,13 @@ already worked out.
 | Panel | Covers |
 |---|---|
 | Overview | Liability by expiry bucket, coverage against the wallet balance, fee rate, wallet state |
-| Batches | Batch list with fail reasons, drill-down into details and registered intents |
-| Expired | Batches past expiry that were never swept |
-| Scheduled sweeps | Batches awaiting a sweep, when each comes due and the unswept value it carries |
+| Batches | Batch list with what each unswept batch still holds and when it becomes reclaimable (joined from the sweep schedule), fail reasons, and drill-down into details and intents |
+| Scheduled sweeps | Batches not yet reclaimed: when each becomes sweepable and how much comes back |
 | Offchain txs | Ark tx list with fail reasons, drill-down into checkpoints |
-| Intent queue | Intents waiting for the next batch |
+| Intent queue | Intents waiting for the next batch, with their decoded intent message and a PSBT proof inspector |
 | Convictions | Search by time range, batch, script, or id |
 | Config | Settings and scheduled-session configuration |
-| Fees | Intent fees and fees collected over a window |
+| Fees | The intent fee CEL programs and fees collected over a window |
 | Wallet | Balance and the main-account UTXO set |
 | VTXO lookup | Indexer search by script or outpoint, with chain and commitment drill-down |
 
@@ -45,7 +44,7 @@ three things the CLI cannot tell you:
   the CLI reports nowhere. The console finds them by querying `after=1`
   (`after=0` gets coerced to *now* by the handler).
 - **Coverage.** Total liability against the wallet balance that has to back it.
-- **Derived totals.** Due-within-72h, locked-in-batches, and the total.
+- **Derived totals.** Reclaimable-within-72h, locked-in-batches, and the total.
 
 Known accounting caveats, restated in the panel itself: notes count as
 liability even though the operator minted them, and `recoverable` does not
@@ -53,12 +52,18 @@ exclude unrolled VTXOs while the expiring buckets do.
 
 ## Configuration
 
-Two environment variables, read at container start:
+Three environment variables, read at container start:
 
 | Variable | Required | Example |
 |---|---|---|
 | `ARKD_ADMIN_URL` | yes | `https://arkd.internal:7071` |
 | `ARKD_INDEXER_URL` | no | `https://arkd.internal:7070` |
+| `ARKD_EXPLORER_URL` | no, defaults to `https://arkade.space` | `https://mempool.space/signet` |
+
+`ARKD_EXPLORER_URL` is a block explorer base: every txid in the console carries
+an out-link to `<explorer>/tx/<txid>`. It defaults to the mainnet explorer,
+`https://arkade.space`, so set it on signet or regtest or the links point at the
+wrong chain. It is only ever a link target, so it is not added to `connect-src`.
 
 The indexer lives on arkd's **public** gateway, not the admin one, so when
 `ARKD_ADMIN_PORT` is set these are different URLs. Leave `ARKD_INDEXER_URL`
@@ -81,6 +86,7 @@ Defaults point at a local arkd (`http://localhost:7071` admin,
 make console \
   CONSOLE_ADMIN_URL=https://arkd.internal:7071 \
   CONSOLE_INDEXER_URL=https://arkd.internal:7070 \
+  CONSOLE_EXPLORER_URL=https://mempool.space/signet \
   CONSOLE_PORT=9000
 ```
 
@@ -201,6 +207,7 @@ solvency.js     Overview: liability buckets, coverage
 batch.js        batch detail and its intents
 offchainTx.js   offchain tx detail
 indexer.js      commitment and VTXO drill-downs
+psbt.js         BIP-174 decoder and its modal; runs offline in the tab
 fmt.js          amounts, timestamps, hashes, badges, DOM helper
 style.css       one stylesheet, tokens in :root
 ```

@@ -10,10 +10,12 @@ set -eu
 
 : "${ARKD_ADMIN_URL:?ARKD_ADMIN_URL is required, e.g. https://arkd:7071}"
 ARKD_INDEXER_URL="${ARKD_INDEXER_URL:-}"
+ARKD_EXPLORER_URL="${ARKD_EXPLORER_URL:-}"
 
 # Strip trailing slashes so the app can concatenate paths safely.
 ARKD_ADMIN_URL="${ARKD_ADMIN_URL%/}"
 ARKD_INDEXER_URL="${ARKD_INDEXER_URL%/}"
+ARKD_EXPLORER_URL="${ARKD_EXPLORER_URL%/}"
 
 # Both values are interpolated into a JS string literal and into the CSP, the
 # latter via a sed replacement. A quote would break out of the literal and a
@@ -41,14 +43,21 @@ check_url ARKD_ADMIN_URL "$ARKD_ADMIN_URL"
 if [ -n "$ARKD_INDEXER_URL" ]; then
   check_url ARKD_INDEXER_URL "$ARKD_INDEXER_URL"
 fi
-
-export ARKD_ADMIN_URL ARKD_INDEXER_URL
+# The explorer is only ever a link target, never a fetch origin, so it stays out
+# of connect-src. It still goes through check_url: it lands in a JS string.
+if [ -n "$ARKD_EXPLORER_URL" ]; then
+  check_url ARKD_EXPLORER_URL "$ARKD_EXPLORER_URL"
+fi
 
 # Overridable so the rendering step can be exercised outside the image.
 ROOT="${ROOT:-/usr/share/nginx/html}"
 
-envsubst '${ARKD_ADMIN_URL} ${ARKD_INDEXER_URL}' \
-  < "$ROOT/config.js.tpl" > "$ROOT/config.js.new"
+# check_url has already rejected anything that could break out of a sed
+# expression or a JS string literal, so plain substitution is safe here.
+sed -e "s|\${ARKD_ADMIN_URL}|$ARKD_ADMIN_URL|" \
+    -e "s|\${ARKD_INDEXER_URL}|$ARKD_INDEXER_URL|" \
+    -e "s|\${ARKD_EXPLORER_URL}|$ARKD_EXPLORER_URL|" \
+    "$ROOT/config.js.tpl" > "$ROOT/config.js.new"
 mv "$ROOT/config.js.new" "$ROOT/config.js"
 
 # connect-src has to name the origins the page is allowed to reach. Pinning it
@@ -65,6 +74,6 @@ fi
 sed "s|ARKD_CONNECT_SRC|$CONNECT_SRC|" "$ROOT/index.html.tpl" > "$ROOT/index.html.new"
 mv "$ROOT/index.html.new" "$ROOT/index.html"
 
-echo "arkd console -> admin $ARKD_ADMIN_URL, indexer ${ARKD_INDEXER_URL:-<disabled>}"
+echo "arkd console -> admin $ARKD_ADMIN_URL, indexer ${ARKD_INDEXER_URL:-<disabled>}, explorer ${ARKD_EXPLORER_URL:-<mainnet default>}"
 
 exec nginx -g 'daemon off;'

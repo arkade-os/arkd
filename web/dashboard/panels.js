@@ -6,11 +6,13 @@
 */
 
 import {
-  el, btc, btcStr, sats, num, short, ts, dur,
-  timeCell, badge, boolBadge, stageBadge, enumLabel, refLink,
+  el, btc, btcStr, sats, num, short, ts, dur, ago,
+  timeCell, badge, boolBadge, stageBadge, enumLabel, refLink, txCell, commitmentCell, outpointCell, copyButton,
   dateToUnix, unixToDate,
 } from './fmt.js';
-import { listPanel, objectPanel, kv, card, table } from './table.js';
+import { listPanel, objectPanel, kv, card, table, jsonCell } from './table.js';
+import { adminGet } from './api.js';
+import { decodeIcon } from './psbt.js';
 
 const DAY = 86400;
 
@@ -34,13 +36,13 @@ function rangeParams(v) {
 
 export const batches = () => listPanel({
   title: 'Batches',
-  sub: 'Settlement batches in the selected window, most recent first. Failed batches carry the reason arkd recorded when it gave up.',
+  sub: 'Most recent first. Locked up and reclaimable come from the sweep schedule: blank once swept.',
   cardTitle: 'Batches',
   source: 'admin',
   path: '/v1/admin/rounds',
   key: 'summaries',
   empty: 'No batches in this window',
-  emptyHint: 'Widen the date range, or clear the failed-only filter.',
+  emptyHint: 'Widen the range or clear the filters.',
   filters: [
     ...rangeFilters(7),
     { name: 'onlyFailed', label: 'Failed only', type: 'check', value: false },
@@ -55,93 +57,117 @@ export const batches = () => listPanel({
     with_failed: v.withFailed,
     limit: num(v.limit),
   }),
+  enrich: joinSweeps,
   cols: [
     { label: 'Batch', cls: 'mono', cell: (r) => refLink(`#/batch/${encodeURIComponent(r.roundId)}`, r.roundId) },
     { label: 'State', cell: (r) => stageBadge(r) },
+    { label: 'Locked up', cls: 'num', cell: (r) => (r.sweep ? btc(r.sweep.totalAmount) : dash()) },
+    { label: 'Reclaimable', cls: 'num', cell: (r) => reclaimCell(r) },
     { label: 'Started', cls: 'num', cell: (r) => timeCell(r.startedAt) },
     { label: 'Ended', cls: 'num', cell: (r) => timeCell(r.endedAt) },
     { label: 'Intents', cls: 'num', cell: (r) => sats(r.totalIntents) },
-    {
-      label: 'Commitment',
-      cls: 'mono',
-      cell: (r) => r.commitmentTxid
-        ? refLink(`#/commitment/${encodeURIComponent(r.commitmentTxid)}`, r.commitmentTxid)
-        : '—',
-    },
+    { label: 'Commitment', cls: 'mono', cell: (r) => commitmentCell(r.commitmentTxid) },
     { label: 'Fail reason', cls: 'wrap', cell: (r) => r.failReason || '—' },
   ],
 });
 
-export const expiredBatches = () => listPanel({
-  title: 'Expired batches',
-  sub: 'Batches whose outputs passed their expiry but were never swept. Each one is liability the server still carries and funds it has not reclaimed.',
-  cardTitle: 'Expired, unswept',
-  source: 'admin',
-  path: '/v1/admin/rounds/expired',
-  key: 'rounds',
-  empty: 'Nothing expired and unswept',
-  emptyHint: 'Every expired batch has been swept.',
-  cols: [
-    { label: 'Batch', cls: 'mono', cell: (r) => refLink(`#/batch/${encodeURIComponent(r.roundId)}`, r.roundId) },
-    { label: 'Commitment', cls: 'mono', cell: (r) => refLink(`#/commitment/${encodeURIComponent(r.commitmentTxid)}`, r.commitmentTxid) },
-    { label: 'Expired', cls: 'num', cell: (r) => timeCell(r.expiredAt) },
-    { label: 'Overdue by', cls: 'num', cell: (r) => dur(Math.max(0, Math.floor(Date.now() / 1000) - num(r.expiredAt))) },
-  ],
-});
+const dash = () => el('span', { class: 'mono dim', text: '—' });
+
+/**
+ * GetRounds carries neither the value a batch holds nor its expiry, so the sweep
+ * schedule is read once and joined on by batch id. Swept, failed and tree-less
+ * batches have no sweep row and stay blank. Unbounded on purpose: a limited
+ * sweep page is ordered by sweep time and would not line up with this one.
+ */
+async function joinSweeps(rows) {
+  const res = await adminGet('/v1/admin/sweeps', { limit: 0 }).catch(() => null);
+  if (!res) return;
+  const byRound = new Map((res.sweeps ?? []).map((s) => [s.roundId, s]));
+  for (const row of rows) row.sweep = byRound.get(row.roundId) ?? null;
+}
+
+/** A date until it is overdue, then a badge: unswept past expiry is money left out. */
+function reclaimCell(r) {
+  if (r.swept) return badge('swept', 'ok');
+  const sweepAt = num(r.sweep?.sweepAt);
+  if (!sweepAt) return dash();
+  if (Math.floor(Date.now() / 1000) > sweepAt) {
+    return el('span', { title: `expired ${ts(sweepAt)}` },
+      badge(`unswept · due ${ago(sweepAt)}`, 'fail'));
+  }
+  return timeCell(sweepAt);
+}
 
 export const scheduledSweeps = () => listPanel({
   title: 'Scheduled sweeps',
-  sub: 'Batches awaiting a sweep, soonest due first, with the unswept value each still carries.',
+  sub: 'Batch outputs not reclaimed yet, soonest first. Due time is estimated from the round timestamps; the sweeper goes by the onchain locktime, and skips batches whose outputs are already gone.',
   cardTitle: 'Scheduled sweeps',
   source: 'admin',
   path: '/v1/admin/sweeps',
   key: 'sweeps',
-  empty: 'No sweeps scheduled',
-  emptyHint: 'Every batch with a vtxo tree has been swept.',
+  empty: 'Nothing left to sweep',
   filters: [
     { name: 'limit', label: 'Limit', type: 'number', value: 100 },
   ],
   params: (v) => ({ limit: num(v.limit) }),
   note: (rows) => {
+    const now = Math.floor(Date.now() / 1000);
+    const ready = rows.filter((r) => r.commitmentTxid && num(r.sweepAt) <= now);
     const total = rows.reduce((sum, r) => sum + num(r.totalAmount), 0);
-    return `${rows.length} batches · ${sats(total)} sats at stake`;
+    const empty = rows.filter((r) => !num(r.vtxoCount)).length;
+
+    const parts = [`${rows.length} batches`, `${sats(total)} sats to reclaim`];
+    if (ready.length) parts.push(`${ready.length} past due`);
+    if (empty) parts.push(`${empty} with no unspent leaves`);
+    const text = parts.join(' · ');
+    if (!ready.length) return text;
+
+    // The console cannot sweep. It hands over the command that does, for every
+    // batch that is due — arkd caps a single sweep at maxSweepInputs and leaves
+    // the remainder for the next call.
+    const cmd = `arkd sweep --commitment-txids ${ready.map((r) => r.commitmentTxid).join(',')}`;
+    return el('span', { class: 'note-with-action' }, `${text} `,
+      copyButton(cmd, `copy sweep cmd (${ready.length})`));
   },
   cols: [
     { label: 'Batch', cls: 'mono', cell: (r) => refLink(`#/batch/${encodeURIComponent(r.roundId)}`, r.roundId) },
-    {
-      label: 'Commitment',
-      cls: 'mono',
-      cell: (r) => (r.commitmentTxid
-        ? refLink(`#/commitment/${encodeURIComponent(r.commitmentTxid)}`, r.commitmentTxid)
-        : '—'),
-    },
-    { label: 'Due', cls: 'num', cell: (r) => timeCell(r.sweepAt) },
-    {
-      label: 'Overdue by',
-      cls: 'num',
-      cell: (r) => {
-        const overdue = Math.floor(Date.now() / 1000) - num(r.sweepAt);
-        return overdue > 0 ? dur(overdue) : '—';
-      },
-    },
-    { label: 'Unswept vtxos', cls: 'num', cell: (r) => sats(r.vtxoCount) },
-    { label: 'At stake', cls: 'num', cell: (r) => btc(r.totalAmount) },
+    { label: 'To reclaim', cls: 'num', cell: (r) => reclaimAmount(r), sortValue: (r) => num(r.totalAmount) },
+    { label: 'Sweepable at', cls: 'num', cell: (r) => sweepCell(r), sortValue: (r) => num(r.sweepAt) },
+    { label: 'Unswept vtxos', cls: 'num', cell: (r) => sats(r.vtxoCount), sortValue: (r) => num(r.vtxoCount) },
+    { label: 'Commitment', cls: 'mono', cell: (r) => commitmentCell(r.commitmentTxid) },
   ],
-  // Pending work, not history: the most overdue sweep is the one to look at first.
+  // Pending work, not history: whatever is reclaimable first comes first.
   sort: (a, b) => num(a.sweepAt) - num(b.sweepAt),
 });
+
+/** Zero here means no unspent leaves, not nothing to sweep: the output is still onchain. */
+function reclaimAmount(r) {
+  if (num(r.vtxoCount)) return btc(r.totalAmount);
+  return badge('no unspent leaves', 'neutral');
+}
+
+/** The date, with "in 3d" under it — or a badge once the estimate has passed. */
+function sweepCell(r) {
+  const at = num(r.sweepAt);
+  return el('div', {},
+    el('div', { class: 'mono', text: ts(at) }),
+    Math.floor(Date.now() / 1000) > at
+      ? badge(`due ${ago(at)}`, 'fail')
+      : el('div', { class: 'subline mono', text: ago(at) }),
+  );
+}
 
 /* ------------------------------------------------------------- offchain txs */
 
 export const offchainTxs = () => listPanel({
   title: 'Offchain transactions',
-  sub: 'Ark transactions in the selected window. Failures are kept with their reason, including the ones that never reached the accepted stage.',
+  sub: 'Ark transactions in the window, failures included.',
   cardTitle: 'Offchain transactions',
   source: 'admin',
   path: '/v1/admin/offchainTxs',
   key: 'txs',
   empty: 'No offchain transactions in this window',
-  emptyHint: 'Widen the date range, or clear the failed-only filter.',
+  emptyHint: 'Widen the range or clear the filters.',
   filters: [
     ...rangeFilters(1),
     { name: 'onlyFailed', label: 'Failed only', type: 'check', value: false },
@@ -155,18 +181,16 @@ export const offchainTxs = () => listPanel({
     limit: num(v.limit),
   }),
   cols: [
-    { label: 'Ark txid', cls: 'mono', cell: (r) => refLink(`#/offchain/${encodeURIComponent(r.txid)}`, r.txid) },
+    {
+      label: 'Ark txid',
+      cls: 'mono',
+      cell: (r) => txCell(r.txid, { href: `#/offchain/${encodeURIComponent(r.txid)}` }),
+    },
     { label: 'State', cell: (r) => stageBadge(r) },
     { label: 'Started', cls: 'num', cell: (r) => timeCell(r.startedAt) },
     { label: 'Ended', cls: 'num', cell: (r) => timeCell(r.endedAt) },
     { label: 'Checkpoints', cls: 'num', cell: (r) => sats(r.totalCheckpoints) },
-    {
-      label: 'Root commitment',
-      cls: 'mono',
-      cell: (r) => r.rootCommitmentTxid
-        ? refLink(`#/commitment/${encodeURIComponent(r.rootCommitmentTxid)}`, r.rootCommitmentTxid)
-        : '—',
-    },
+    { label: 'Root commitment', cls: 'mono', cell: (r) => commitmentCell(r.rootCommitmentTxid) },
     { label: 'Fail reason', cls: 'wrap', cell: (r) => r.failReason || '—' },
   ],
 });
@@ -175,13 +199,16 @@ export const offchainTxs = () => listPanel({
 
 export const intentQueue = () => listPanel({
   title: 'Intent queue',
-  sub: 'Intents waiting for the next batch. This is live queue state, so it empties as batches start.',
+  sub: 'Live queue state: it empties as batches start.',
   cardTitle: 'Queued intents',
   source: 'admin',
   path: '/v1/admin/intents',
   key: 'intents',
   empty: 'The queue is empty',
-  emptyHint: 'Nothing is waiting for the next batch.',
+  // An arkd predating intent proofs sends no `intent` at all. Say so.
+  note: (rows) => (rows.every((r) => !r.intent?.message && !r.intent?.proof)
+    ? `${rows.length} queued · this arkd returns no intent messages or proofs`
+    : `${rows.length} queued`),
   cols: [
     { label: 'Intent', cls: 'mono', cell: (r) => short(r.id, 10, 6) },
     { label: 'Registered', cls: 'num', cell: (r) => timeCell(r.createdAt) },
@@ -200,6 +227,8 @@ export const intentQueue = () => listPanel({
       cell: (r) => btc((r.receivers ?? []).reduce((sum, o) => sum + num(o.amount), 0)),
     },
     { label: 'Cosigners', cls: 'num', cell: (r) => String(r.cosignersPublicKeys?.length ?? 0) },
+    { label: 'Message', cls: 'wrap', cell: (r) => jsonCell(r.intent?.message) },
+    { label: 'Proof', cell: (r) => decodeIcon(r.intent?.proof, 'Intent proof') },
   ],
 });
 
@@ -224,12 +253,12 @@ const convictionCols = [
 
 export const convictions = () => listPanel({
   title: 'Convictions',
-  sub: 'Scripts banned for misbehaving during a batch. Search a window, a batch, or a single script.',
+  sub: 'Scripts banned for misbehaving in a batch.',
   cardTitle: 'Convictions',
   source: 'admin',
   key: 'convictions',
   empty: 'No convictions found',
-  emptyHint: 'Nothing matched. Try a wider window or a different batch.',
+  emptyHint: 'Try a wider window or another batch.',
   filters: [
     {
       name: 'mode',
@@ -267,7 +296,7 @@ export const convictions = () => listPanel({
 export const wallet = (opts = {}) => objectPanel({
   bare: opts.bare,
   title: 'Wallet',
-  sub: 'Operator wallet state and the UTXO set backing the main account. Read-only: this console cannot unlock, derive, or withdraw.',
+  sub: 'Wallet state and the main account UTXO set. Read-only.',
   source: 'admin',
   path: '/v1/admin/wallet/balance',
   render: (balance) => card('Balance', kv([
@@ -281,7 +310,7 @@ export const wallet = (opts = {}) => objectPanel({
 export const walletUtxos = (opts = {}) => listPanel({
   bare: opts.bare,
   title: 'Wallet UTXOs',
-  sub: 'The UTXO set of the main account, as arkd sees it.',
+  sub: 'Main account UTXOs, as arkd sees them.',
   cardTitle: 'Main account UTXOs',
   source: 'admin',
   path: '/v1/admin/wallet/utxos',
@@ -292,7 +321,7 @@ export const walletUtxos = (opts = {}) => listPanel({
     return `${rows.length} utxos · ${sats(total)} sats`;
   },
   cols: [
-    { label: 'Outpoint', cls: 'mono', cell: (r) => `${short(r.txid)}:${r.vout ?? 0}` },
+    { label: 'Outpoint', cls: 'mono', cell: (r) => outpointCell(r.txid, r.vout) },
     { label: 'Value', cls: 'num', cell: (r) => btc(r.value) },
     { label: 'Confirmations', cls: 'num', cell: (r) => sats(r.confirmations) },
     { label: 'Locked', cell: (r) => boolBadge(r.locked, 'locked', 'free') },
@@ -306,7 +335,7 @@ export const walletUtxos = (opts = {}) => listPanel({
 export const settings = (opts = {}) => objectPanel({
   bare: opts.bare,
   title: 'Settings',
-  sub: 'Live server configuration. Change these with the arkd CLI — this console never writes.',
+  sub: 'Live server configuration. Change it with the arkd CLI.',
   source: 'admin',
   path: '/v1/admin/settings',
   pick: (r) => r.settings ?? {},
@@ -355,7 +384,7 @@ export const settings = (opts = {}) => objectPanel({
 export const scheduledSession = (opts = {}) => objectPanel({
   bare: opts.bare,
   title: 'Scheduled session',
-  sub: 'The recurring batch window, when one is configured.',
+  sub: 'The recurring batch window, if configured.',
   source: 'admin',
   path: '/v1/admin/scheduledSession',
   pick: (r) => r.config ?? null,
@@ -374,25 +403,32 @@ export const scheduledSession = (opts = {}) => objectPanel({
     ))),
 });
 
+/** Intent fees are CEL source, not amounts: show the program, never a balance. */
+function celProgram(src) {
+  return src
+    ? el('code', { text: src })
+    : el('span', { class: 'dim', text: 'unset' });
+}
+
 export const fees = (opts = {}) => objectPanel({
   bare: opts.bare,
   title: 'Fees',
-  sub: 'The per-input and per-output fees charged on intents, and what the server has collected over a window.',
+  sub: 'CEL programs evaluated per input and per output of an intent.',
   source: 'admin',
   path: '/v1/admin/intentFees',
   pick: (r) => r.fees ?? {},
   render: (f) => card('Intent fees', kv([
-    ['Offchain input', btcStr(f.offchainInputFee)],
-    ['Onchain input', btcStr(f.onchainInputFee)],
-    ['Offchain output', btcStr(f.offchainOutputFee)],
-    ['Onchain output', btcStr(f.onchainOutputFee)],
-  ])),
+    ['Offchain input', celProgram(f.offchainInputFee)],
+    ['Onchain input', celProgram(f.onchainInputFee)],
+    ['Offchain output', celProgram(f.offchainOutputFee)],
+    ['Onchain output', celProgram(f.onchainOutputFee)],
+  ]), 'Programs return sats; an unset program charges nothing.'),
 });
 
 export const collectedFees = (opts = {}) => objectPanel({
   bare: opts.bare,
   title: 'Collected fees',
-  sub: 'Fees the operator collected from batches that finalized in the selected window.',
+  sub: 'Collected from batches finalized in the window.',
   source: 'admin',
   path: '/v1/admin/fees/collected',
   filters: rangeFilters(30),
@@ -408,13 +444,13 @@ export const collectedFees = (opts = {}) => objectPanel({
 
 export const vtxoLookup = () => listPanel({
   title: 'VTXO lookup',
-  sub: 'Query the public indexer by script or by outpoint. No macaroon is used for these — the indexer is unauthenticated.',
+  sub: 'Public indexer, queried by script or outpoint. Unauthenticated.',
   cardTitle: 'VTXOs',
   source: 'indexer',
   path: '/v1/indexer/vtxos',
   key: 'vtxos',
   empty: 'No VTXOs matched',
-  emptyHint: 'Check the script hex or the txid:vout you entered.',
+  emptyHint: 'Check the script hex or txid:vout.',
   filters: [
     {
       name: 'mode',
@@ -442,11 +478,9 @@ export const vtxoLookup = () => listPanel({
     {
       label: 'Outpoint',
       cls: 'mono',
-      cell: (r) => refLink(
-        `#/vtxo/${encodeURIComponent(r.outpoint?.txid ?? '')}/${r.outpoint?.vout ?? 0}`,
-        `${short(r.outpoint?.txid)}:${r.outpoint?.vout ?? 0}`,
-        { full: true },
-      ),
+      cell: (r) => outpointCell(r.outpoint?.txid, r.outpoint?.vout, {
+        href: `#/vtxo/${encodeURIComponent(r.outpoint?.txid ?? '')}/${r.outpoint?.vout ?? 0}`,
+      }),
     },
     { label: 'Amount', cls: 'num', cell: (r) => btc(r.amount) },
     {
@@ -467,11 +501,10 @@ export const vtxoLookup = () => listPanel({
       cls: 'mono',
       cell: (r) => {
         const list = r.commitmentTxids ?? [];
-        if (!list.length) return badge('note', 'warn');
-        return refLink(`#/commitment/${encodeURIComponent(list[0])}`, list[0]);
+        return list.length ? commitmentCell(list[0]) : badge('note', 'warn');
       },
     },
-    { label: 'Spent by', cls: 'mono', cell: (r) => (r.spentBy ? short(r.spentBy) : '—') },
+    { label: 'Spent by', cls: 'mono', cell: (r) => txCell(r.spentBy) },
   ],
 });
 

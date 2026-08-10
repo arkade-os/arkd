@@ -13,6 +13,7 @@ const (
 	urlFlagName                       = "url"
 	datadirFlagName                   = "datadir"
 	macaroonFlagName                  = "macaroon"
+	timeoutFlagName                   = "timeout"
 	passwordFlagName                  = "password"
 	mnemonicFlagName                  = "mnemonic"
 	gapLimitFlagName                  = "addr-gap-limit"
@@ -95,6 +96,11 @@ var (
 	macaroonFlag = &cli.StringFlag{
 		Name:  macaroonFlagName,
 		Usage: "macaroon in hex format used for authenticated requests",
+	}
+	timeoutFlag = &cli.DurationFlag{
+		Name:  timeoutFlagName,
+		Usage: "timeout for requests to the ark server",
+		Value: timeout,
 	}
 	passwordFlag = &cli.StringFlag{
 		Name:     passwordFlagName,

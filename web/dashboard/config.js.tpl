@@ -6,4 +6,7 @@ window.ARKD = {
   // Base URL of the public gateway that serves the indexer, e.g. https://arkd.internal:7070
   // Leave empty to hide the tree, forfeit, connector, and VTXO panels.
   indexerUrl: "${ARKD_INDEXER_URL}",
+  // Block explorer base, e.g. https://mempool.space/signet: txids link to
+  // <explorer>/tx/<txid>. Empty falls back to mainnet, https://arkade.space.
+  explorerUrl: "${ARKD_EXPLORER_URL}",
 };

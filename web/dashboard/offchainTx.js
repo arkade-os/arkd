@@ -6,8 +6,8 @@
   regular offchain-tx read hides on purpose, is visible here.
 */
 
-import { el, clear, num, ts, short, badge, stageBadge, refLink } from './fmt.js';
-import { adminGet, hasIndexer } from './api.js';
+import { el, clear, num, ts, badge, stageBadge, txCell, commitmentCell } from './fmt.js';
+import { adminGet } from './api.js';
 import { card, kv, table, panelHead, skeleton, errorState, emptyState } from './table.js';
 
 export function offchainTxPanel(txid) {
@@ -38,23 +38,21 @@ function render(d) {
   }
 
   out.push(card('State', kv([
-    ['Ark txid', el('span', { class: 'mono', text: d.txid })],
+    ['Ark txid', txCell(d.txid, { full: true })],
     ['State', stageBadge(d)],
     ['Stage', el('span', { class: 'mono', text: String(d.stage ?? '—') })],
     ['Started', el('span', { class: 'mono', text: ts(d.startedAt) })],
     ['Ended', el('span', { class: 'mono', text: num(d.endedAt) ? ts(d.endedAt) : '—' })],
     ['Expires', el('span', { class: 'mono', text: num(d.expiresAt) ? ts(d.expiresAt) : '—' })],
     ['Root commitment', d.rootCommitmentTxid
-      ? (hasIndexer()
-        ? refLink(`#/commitment/${encodeURIComponent(d.rootCommitmentTxid)}`, d.rootCommitmentTxid, { full: true })
-        : el('span', { class: 'mono', text: d.rootCommitmentTxid }))
+      ? commitmentCell(d.rootCommitmentTxid, { full: true })
       : badge('not assigned — never accepted', 'fail')],
   ])));
 
   out.push(checkpointsCard(d));
 
   out.push(card('Ark transaction', d.arkTx
-    ? el('div', { class: 'card-body' }, el('p', { class: 'mono', style: { 'word-break': 'break-all', 'font-size': '11px', color: 'var(--ink-dim)' }, text: d.arkTx }))
+    ? el('div', { class: 'card-body' }, el('pre', { class: 'json-block', text: d.arkTx }))
     : emptyState('No ark transaction recorded'),
     d.arkTx ? `${d.arkTx.length} chars, base64 PSBT` : undefined));
 
@@ -74,17 +72,16 @@ function checkpointsCard(d) {
   }
 
   const cols = [
-    { label: 'Checkpoint txid', cls: 'mono', cell: (t) => short(t, 12, 8) },
+    { label: 'Checkpoint txid', cls: 'mono', cell: (t) => txCell(t, { head: 12, tail: 8 }) },
     {
       label: 'Commitment',
       cls: 'mono',
       cell: (t) => {
         const c = commitments[t];
         if (!c) return '—';
-        const isRoot = c === d.rootCommitmentTxid;
         return el('span', {},
-          hasIndexer() ? refLink(`#/commitment/${encodeURIComponent(c)}`, c) : short(c),
-          isRoot ? el('span', {}, ' ', badge('root', 'ok')) : null,
+          commitmentCell(c),
+          c === d.rootCommitmentTxid ? el('span', {}, ' ', badge('root', 'ok')) : null,
         );
       },
     },

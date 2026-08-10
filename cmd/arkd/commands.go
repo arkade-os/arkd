@@ -322,7 +322,9 @@ var (
 	}
 )
 
-var timeout = time.Minute
+// default timeout for admin requests, overridable with the global --timeout flag.
+// sweep and liquidity endpoints scan every round and can take minutes on a busy server.
+var timeout = 5 * time.Minute
 
 func walletStatusAction(ctx *cli.Context) error {
 	baseURL := ctx.String(urlFlagName)

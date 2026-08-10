@@ -20,7 +20,6 @@ const ROUTES = [
   { path: '', group: null, nav: 'Overview', title: 'Overview', make: solvencyPanel },
 
   { path: 'batches', group: 'Batches', nav: 'Batches', title: 'Batches', make: panels.batches },
-  { path: 'expired', group: 'Batches', nav: 'Expired', title: 'Expired batches', make: panels.expiredBatches },
   { path: 'sweeps', group: 'Batches', nav: 'Scheduled sweeps', title: 'Scheduled sweeps', make: panels.scheduledSweeps },
 
   { path: 'offchain', group: 'Flow', nav: 'Offchain txs', title: 'Offchain transactions', make: panels.offchainTxs },
@@ -34,7 +33,7 @@ const ROUTES = [
     title: 'Config',
     make: () => combine(
       'Config',
-      'Live server configuration, read straight from arkd. Change any of it with the arkd CLI — this console never writes.',
+      'Live server configuration. Change it with the arkd CLI.',
       [bare(panels.settings), bare(panels.scheduledSession)],
     ),
   },
@@ -45,7 +44,7 @@ const ROUTES = [
     title: 'Fees',
     make: () => combine(
       'Fees',
-      'What the server charges on intents, and what it has collected.',
+      'What the server charges, and what it collected.',
       [bare(panels.fees), bare(panels.collectedFees)],
     ),
   },
@@ -57,7 +56,7 @@ const ROUTES = [
     title: 'Wallet',
     make: () => combine(
       'Wallet',
-      'Operator wallet balance and UTXO set. Read-only: this console cannot unlock, derive an address, or withdraw.',
+      'Wallet balance and UTXO set. Read-only.',
       [bare(panels.wallet), bare(panels.walletUtxos)],
     ),
   },
@@ -308,9 +307,7 @@ function setCrumbs(parts) {
 }
 
 function stampFetched() {
-  const d = new Date();
-  const p = (x) => String(x).padStart(2, '0');
-  dom['fetched-at'].textContent = `fetched ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  dom['fetched-at'].textContent = `fetched ${new Date().toLocaleTimeString('en-GB')}`;
 }
 
 /* --------------------------------------------------------------- idle clock */
