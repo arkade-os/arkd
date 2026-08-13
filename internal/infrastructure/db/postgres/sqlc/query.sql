@@ -664,6 +664,11 @@ WITH due AS (
         SELECT 1 FROM tx tree_tx
         WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
     )
+    AND EXISTS (
+        SELECT 1 FROM vtxo_vw v
+        WHERE v.commitment_txid = r.txid
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false AND v.unrolled = false
+    )
     ORDER BY sweep_at ASC
     LIMIT (CASE WHEN @max_results::bigint = 0 THEN NULL ELSE @max_results::bigint END)
 )
@@ -671,12 +676,12 @@ SELECT d.id, d.txid, d.sweep_at,
     CAST(COALESCE((
         SELECT SUM(v.amount) FROM vtxo_vw v
         WHERE v.commitment_txid = d.txid
-          AND v.preconfirmed = false AND v.spent = false AND v.swept = false
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false AND v.unrolled = false
     ), 0) AS BIGINT) AS total_amount,
     CAST((
         SELECT COUNT(*) FROM vtxo_vw v
         WHERE v.commitment_txid = d.txid
-          AND v.preconfirmed = false AND v.spent = false AND v.swept = false
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false AND v.unrolled = false
     ) AS BIGINT) AS vtxo_count
 FROM due d
 ORDER BY d.sweep_at ASC;

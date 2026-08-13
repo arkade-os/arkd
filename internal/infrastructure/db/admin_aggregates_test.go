@@ -119,6 +119,8 @@ func testScheduledSweeps(t *testing.T, svc ports.RepoManager) {
 			{id: "sw-swept", txid: fmt.Sprintf("%064x", 0xB3), endsAt: base + 100, expiry: 100, ended: true, swept: true, withTre: true},
 			// Excluded: no vtxo tree, so there is nothing to sweep.
 			{id: "sw-no-tree", txid: fmt.Sprintf("%064x", 0xB4), endsAt: base + 100, expiry: 100, ended: true},
+			// Excluded: its only vtxo is unrolled, so nothing is left to sweep.
+			{id: "sw-unrolled", txid: fmt.Sprintf("%064x", 0xB5), endsAt: base + 100, expiry: 100, ended: true, withTre: true},
 		}
 
 		for _, s := range specs {
@@ -173,6 +175,31 @@ func testScheduledSweeps(t *testing.T, svc ports.RepoManager) {
 				ExpiresAt:          base + 200, CreatedAt: base,
 				Preconfirmed: true,
 			},
+			{
+				Outpoint: domain.Outpoint{Txid: fmt.Sprintf("%064x", 0xC4), VOut: 0},
+				Amount:   8000, PubKey: fmt.Sprintf("%064x", 0xD1),
+				RootCommitmentTxid: fmt.Sprintf("%064x", 0xB2),
+				CommitmentTxids:    []string{fmt.Sprintf("%064x", 0xB2)},
+				ExpiresAt:          base + 200, CreatedAt: base,
+				Unrolled: true,
+			},
+			// Keeps sw-late listed: batches with no sweepable vtxo are dropped.
+			{
+				Outpoint: domain.Outpoint{Txid: fmt.Sprintf("%064x", 0xC5), VOut: 0},
+				Amount:   500, PubKey: fmt.Sprintf("%064x", 0xD1),
+				RootCommitmentTxid: fmt.Sprintf("%064x", 0xB1),
+				CommitmentTxids:    []string{fmt.Sprintf("%064x", 0xB1)},
+				ExpiresAt:          base + 1000, CreatedAt: base,
+			},
+			// sw-unrolled's only vtxo: unrolled, so the batch is excluded.
+			{
+				Outpoint: domain.Outpoint{Txid: fmt.Sprintf("%064x", 0xC6), VOut: 0},
+				Amount:   700, PubKey: fmt.Sprintf("%064x", 0xD1),
+				RootCommitmentTxid: fmt.Sprintf("%064x", 0xB5),
+				CommitmentTxids:    []string{fmt.Sprintf("%064x", 0xB5)},
+				ExpiresAt:          base + 200, CreatedAt: base,
+				Unrolled: true,
+			},
 		}
 		require.NoError(t, svc.Vtxos().AddVtxos(ctx, vtxos))
 
@@ -193,6 +220,7 @@ func testScheduledSweeps(t *testing.T, svc ports.RepoManager) {
 			require.Contains(t, got, "sw-late")
 			require.NotContains(t, got, "sw-swept", "an already-swept batch is not scheduled")
 			require.NotContains(t, got, "sw-no-tree", "a batch with no tree has nothing to sweep")
+			require.NotContains(t, got, "sw-unrolled", "a batch whose vtxos all unrolled has nothing to sweep")
 		})
 
 		t.Run("derives the due time without touching the chain", func(t *testing.T) {
@@ -205,15 +233,15 @@ func testScheduledSweeps(t *testing.T, svc ports.RepoManager) {
 			require.Equal(t, fmt.Sprintf("%064x", 0xB2), got["sw-early"].CommitmentTxid)
 		})
 
-		t.Run("counts only unspent, unswept, non-preconfirmed leaves", func(t *testing.T) {
+		t.Run("counts only unspent, unswept, non-preconfirmed, non-unrolled leaves", func(t *testing.T) {
 			all, err := repo.GetScheduledSweeps(ctx, 0)
 			require.NoError(t, err)
 			got := byId(all)
 
 			require.Equal(t, uint64(1000), got["sw-early"].TotalAmount,
-				"the spent and preconfirmed leaves must not count")
+				"the spent, preconfirmed and unrolled leaves must not count")
 			require.Equal(t, int64(1), got["sw-early"].VtxoCount)
-			require.Equal(t, uint64(0), got["sw-late"].TotalAmount)
+			require.Equal(t, uint64(500), got["sw-late"].TotalAmount)
 		})
 
 		t.Run("orders soonest due first and honours the limit", func(t *testing.T) {
