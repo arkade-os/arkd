@@ -1,4 +1,0 @@
-# Rendered from config.js.tpl at container start (or by hand for local dev).
-config.js
-# Pristine copy of index.html, kept by entrypoint.sh so re-runs stay idempotent.
-index.html.tpl

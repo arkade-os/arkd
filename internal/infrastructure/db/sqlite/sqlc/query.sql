@@ -644,7 +644,7 @@ ON CONFLICT(id) DO UPDATE SET
 -- name: SelectSettings :one
 SELECT * FROM settings WHERE id = 1;
 
--- Collected fees for the admin console. One indexed aggregate replaces loading
+-- Collected fees for the admin API. One indexed aggregate replaces loading
 -- every round in the window in full.
 -- name: SelectCollectedFeesInRange :one
 SELECT
@@ -655,7 +655,7 @@ WHERE ended = true AND failed = false
   AND (@end_ts = 0 OR starting_timestamp < @end_ts);
 
 
--- Scheduled sweeps for the admin console. The due time is a plain column
+-- Scheduled sweeps for the admin API. The due time is a plain column
 -- expression (same as SelectExpiredRounds), so this needs no chain access at
 -- all -- unlike findSweepableOutputs, which the sweeper itself still uses
 -- because it builds a real transaction.

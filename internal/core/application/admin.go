@@ -291,14 +291,6 @@ func roundSummary(round *domain.Round) domain.RoundSummary {
 }
 
 // GetScheduledSweeps lists the batches awaiting a sweep, soonest due first.
-//
-// The due time is derived in SQL from the batch's ending timestamp and vtxo tree
-// expiry, so this is one query and never touches the chain. It used to walk each
-// batch's vtxo tree issuing a wallet RPC per node, which on a production server
-// meant thousands of sequential RPCs and an endpoint that never returned.
-//
-// The sweeper's own findSweepableOutputs is untouched: it builds a real
-// transaction and must be chain-accurate. A dashboard read must not be.
 func (a *adminService) GetScheduledSweeps(
 	ctx context.Context, limit int64,
 ) ([]domain.ScheduledSweep, error) {

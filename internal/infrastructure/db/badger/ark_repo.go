@@ -149,12 +149,8 @@ func (r *arkRepository) GetScheduledSweeps(
 			RoundId:        round.Id,
 			CommitmentTxid: round.CommitmentTxid,
 			SweepAt:        sweepAt,
-			// ponytail: badger's round store has no view of vtxo spend state, so
-			// the value at stake is left unreported rather than over-counted from
-			// the tree leaves. Wire the vtxo repo in here if badger ever needs to
-			// serve the admin console for real.
-			TotalAmount: 0,
-			VtxoCount:   0,
+			TotalAmount:    0,
+			VtxoCount:      0,
 		})
 	}
 

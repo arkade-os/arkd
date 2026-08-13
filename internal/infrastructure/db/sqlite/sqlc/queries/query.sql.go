@@ -471,7 +471,7 @@ type SelectCollectedFeesInRangeParams struct {
 	EndTs   interface{}
 }
 
-// Collected fees for the admin console. One indexed aggregate replaces loading
+// Collected fees for the admin API. One indexed aggregate replaces loading
 // every round in the window in full.
 func (q *Queries) SelectCollectedFeesInRange(ctx context.Context, arg SelectCollectedFeesInRangeParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, selectCollectedFeesInRange, arg.StartTs, arg.EndTs)
@@ -1781,7 +1781,7 @@ type SelectScheduledSweepsRow struct {
 	VtxoCount   int64
 }
 
-// Scheduled sweeps for the admin console. The due time is a plain column
+// Scheduled sweeps for the admin API. The due time is a plain column
 // expression (same as SelectExpiredRounds), so this needs no chain access at
 // all -- unlike findSweepableOutputs, which the sweeper itself still uses
 // because it builds a real transaction.
