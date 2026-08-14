@@ -19,7 +19,7 @@ require (
 	github.com/arkade-os/arkd/pkg/client-lib v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/client-wallet v0.0.0-00010101000000-000000000000
 	github.com/urfave/cli/v2 v2.27.4
-	golang.org/x/term v0.43.0
+	golang.org/x/term v0.44.0
 )
 
 require (
@@ -71,12 +71,11 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
-	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
-	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
-	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.39.0 // indirect
 	google.golang.org/genproto v0.0.0-20240812133136-8ffd90a71988 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
