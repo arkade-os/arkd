@@ -21,7 +21,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.26.5'
+          go-version-file: go.mod
 
       - name: Check for changes
         run: |
@@ -36,11 +36,11 @@ jobs:
     name: unit tests
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.26.5'
-
-      - uses: actions/checkout@v4
+          go-version-file: go.mod
 
       - name: check linting
         uses: golangci/golangci-lint-action@v8

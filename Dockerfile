@@ -2,7 +2,7 @@
 # Pinned to BUILDPLATFORM so the Go toolchain runs natively on the builder and cross-compiles to
 # TARGETOS/TARGETARCH below. Without this the whole stage runs under QEMU emulation when the target
 # architecture differs from the builder, which is far slower for compilation.
-FROM --platform=$BUILDPLATFORM golang:1.26.5 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.6 AS builder
 
 ARG VERSION
 ARG TARGETOS
@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-X 'm
 RUN cd pkg/ark-cli && CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-X 'main.Version=${VERSION}'" -o ../../bin/ark main.go
 
 # Second image, running the arkd executable
-FROM alpine:3.20
+FROM alpine:3.24
 
 RUN apk update && apk upgrade
 
