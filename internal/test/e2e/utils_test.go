@@ -1122,6 +1122,102 @@ func clearIntentFees() error {
 	return nil
 }
 
+// roundSettings holds the batch settings the tests read back before overriding them.
+type roundSettings struct {
+	minParticipants int64
+	sessionDuration time.Duration
+}
+
+// adminSettings carries only the fields the tests touch, so that a round-trip through the
+// admin API leaves every other setting untouched. Int64 fields are JSON-encoded as strings.
+type adminSettings struct {
+	RoundMinParticipantsCount string `json:"roundMinParticipantsCount"`
+	SessionDuration           string `json:"sessionDuration"`
+}
+
+type adminSettingsResponse struct {
+	Settings adminSettings `json:"settings"`
+}
+
+func getRoundSettings() (*roundSettings, error) {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/settings", adminUrl)
+	resp, err := get[adminSettingsResponse](adminHttpClient, url, "settings")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get settings: %w", err)
+	}
+
+	// callers restore the count they read, so an absent value is an error rather than a
+	// zero: restoring 0 would leave the server accepting rounds with no participants at all.
+	minParticipants, err := parseSettingsInt(resp.Settings.RoundMinParticipantsCount)
+	if err != nil {
+		return nil, fmt.Errorf("invalid round min participants count: %w", err)
+	}
+
+	sessionDuration, err := parseSettingsInt(resp.Settings.SessionDuration)
+	if err != nil {
+		return nil, fmt.Errorf("invalid session duration: %w", err)
+	}
+
+	return &roundSettings{
+		minParticipants: minParticipants,
+		sessionDuration: time.Duration(sessionDuration) * time.Second,
+	}, nil
+}
+
+func parseSettingsInt(value string) (int64, error) {
+	if value == "" {
+		return 0, fmt.Errorf("missing from the settings response")
+	}
+	return strconv.ParseInt(value, 10, 64)
+}
+
+func updateRoundMinParticipants(count int64) error {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	body := fmt.Sprintf(`{"settings": {"roundMinParticipantsCount": "%d"}}`, count)
+
+	url := fmt.Sprintf("%s/v1/admin/settings", adminUrl)
+	if err := post(adminHttpClient, url, body, "updateSettings"); err != nil {
+		return fmt.Errorf("failed to update round min participants count: %s", err)
+	}
+
+	return nil
+}
+
+// requirePairedBatch makes the server refuse to settle a batch holding a single intent for
+// the rest of the test, so that two intents registered around the same time can only be
+// popped by the same round: a round finding one intent aborts before the batch starts and
+// leaves it queued for the next one.
+//
+// Every batch opened after this call must therefore carry two intents. Single-intent steps,
+// notably the faucets, have to be done before it.
+func requirePairedBatch(t *testing.T) {
+	t.Helper()
+
+	settings, err := getRoundSettings()
+	require.NoError(t, err)
+
+	// registered before the update, so that a response lost on the way back from a server
+	// that did apply it still leaves the count restored
+	t.Cleanup(func() {
+		require.NoError(t, updateRoundMinParticipants(settings.minParticipants))
+	})
+
+	require.NoError(t, updateRoundMinParticipants(2))
+
+	// a round reads the participant count once, when it starts, and pops the queue one
+	// registration window later, so the last round that can still settle a lone intent is
+	// the one in flight here and it pops within a window of this update. A session duration
+	// is the same bound with room to spare, the window being a sixth of it.
+	time.Sleep(settings.sessionDuration)
+}
+
 // restart the arkd container and unlock its wallet
 func restartArkd() error {
 	adminHttpClient := &http.Client{
@@ -1634,6 +1730,9 @@ func settleBoardingSurplusBatch(
 
 	faucetOffchain(t, bob, float64(bobVtxoAmount)/1e8)
 	faucetOnchainAndWait(t, aliceBoardingAddr.Address, float64(aliceBoardingAmount)/1e8)
+
+	// only now that the funding batches are done, since those carry a single intent each
+	requirePairedBatch(t)
 
 	wg := &sync.WaitGroup{}
 	wg.Add(4)
