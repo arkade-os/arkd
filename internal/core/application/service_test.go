@@ -980,6 +980,8 @@ type testOffchainTxStore struct {
 	ports.OffChainTxStore
 }
 
+func (s testOffchainTxStore) Remove(context.Context, string) error { return nil }
+
 func (s testOffchainTxStore) Includes(
 	context.Context, domain.Outpoint,
 ) (bool, error) {

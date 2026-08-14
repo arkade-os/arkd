@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -39,6 +40,8 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcwallet/waddrmgr"
+	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -1472,6 +1475,95 @@ func TestOffchainTx(t *testing.T) {
 		require.NotEmpty(t, incomingFunds)
 		require.Len(t, incomingFunds, 1)
 		require.Equal(t, txid, incomingFunds[0].Txid)
+	})
+
+	t.Run("finalize projected tx after cache eviction", func(t *testing.T) {
+		liveStoreType, err := runDockerExec("arkd", "printenv", "ARKD_LIVE_STORE_TYPE")
+		require.NoError(t, err)
+		if strings.TrimSpace(liveStoreType) != "redis" {
+			t.Skip("cache eviction is only externally observable with the redis live store")
+		}
+		redisClient := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+		defer redisClient.Close()
+
+		ctx := t.Context()
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
+
+		faucetOffchain(t, alice, 0.00021)
+		vtxos, _, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, vtxos, 1)
+		vtxo := vtxos[0]
+		_, offchainAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+
+		serverParams, err := alice.GetConfigData(ctx)
+		require.NoError(t, err)
+
+		tx, err := offchaintx.BuildAndSignTx(ctx, offchaintx.BuildAndSignTxArgs{
+			BaseArgs: offchaintx.BaseArgs{
+				ServerParams: *serverParams,
+				SignTx:       alice.SignTransaction,
+				Vtxos:        []clientlib.Vtxo{vtxo},
+				ChangeAddr:   offchainAddr.Address,
+			},
+			Receivers: []clientlib.Receiver{{To: offchainAddr.Address, Amount: 1000}},
+		})
+		require.NoError(t, err)
+
+		txid, _, signedCheckpoints, err := aliceClient.SubmitTx(
+			ctx, tx.SignedArkTx, tx.CheckpointTxs,
+		)
+		require.NoError(t, err)
+		require.Equal(t, tx.Txid, txid)
+
+		waitUntil(t, indexerWait, "the submitted tx input to be projected as spent", func(ctx context.Context) error {
+			_, spentVtxos, err := alice.ListVtxos(ctx)
+			if err != nil {
+				return err
+			}
+			for _, spentVtxo := range spentVtxos {
+				if spentVtxo.Outpoint == vtxo.Outpoint {
+					return nil
+				}
+			}
+			return fmt.Errorf("input %s not projected as spent", vtxo.Outpoint)
+		})
+
+		waitUntil(t, serverWait, "the projected tx cache entry to be removed", func(ctx context.Context) error {
+			exists, err := redisClient.HExists(ctx, "offChainTxStore:txs", txid).Result()
+			if err != nil {
+				return err
+			}
+			if exists {
+				return fmt.Errorf("offchain tx %s still exists in cache", txid)
+			}
+			return nil
+		})
+
+		finalCheckpoints := make([]string, 0, len(signedCheckpoints))
+		for _, checkpoint := range signedCheckpoints {
+			finalCheckpoint, err := alice.SignTransaction(ctx, checkpoint)
+			require.NoError(t, err)
+			finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
+		}
+
+		err = aliceClient.FinalizeTx(ctx, txid, finalCheckpoints)
+		require.NoError(t, err)
+
+		waitUntil(t, indexerWait, "the finalized tx output to be projected", func(ctx context.Context) error {
+			spendableVtxos, _, err := alice.ListVtxos(ctx)
+			if err != nil {
+				return err
+			}
+			for _, spendableVtxo := range spendableVtxos {
+				if spendableVtxo.Txid == txid {
+					return nil
+				}
+			}
+			return fmt.Errorf("no spendable output for finalized tx %s", txid)
+		})
 	})
 
 	// In these tests, Alice submits an offchain tx and waits for the inputs to be swept before
@@ -4104,6 +4196,101 @@ func TestRegisterIntentAndSubmitOffchainTxSameVtxo(t *testing.T) {
 	case registerErr != nil && submitErr != nil:
 		t.Fatalf("both calls failed: register: %v, submit: %v", registerErr, submitErr)
 	}
+}
+
+// TestResubmitOffchainTxAfterFailedFinalize holds tx X's accepted projection
+// open, fails finalization with INVALID_SIGNATURE, and submits tx Y spending
+// the same vtxo. Y must be rejected by X's retained live reservation; accepting
+// it leaves two fully-signed ark txs competing for the same checkpoint output.
+func TestResubmitOffchainTxAfterFailedFinalize(t *testing.T) {
+	ctx := t.Context()
+	alice := setupClientWallet(t)
+	aliceClient := alice.Client()
+
+	vtxo := faucetOffchain(t, alice, 0.00021)
+
+	vtxos, _, err := alice.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.Len(t, vtxos, 1)
+
+	_, offchainAddr, _, err := alice.Receive(ctx)
+	require.NoError(t, err)
+
+	serverParams, err := alice.GetConfigData(ctx)
+	require.NoError(t, err)
+
+	// X and Y spend the same vtxo through the same deterministic checkpoint;
+	// the different send amounts keep their ark txids distinct.
+	build := func(amount uint64) *offchaintx.BuildAndSignTxRes {
+		send, err := offchaintx.BuildAndSignTx(ctx, offchaintx.BuildAndSignTxArgs{
+			BaseArgs: offchaintx.BaseArgs{
+				ServerParams: *serverParams,
+				SignTx:       alice.SignTransaction,
+				Vtxos:        vtxos,
+				ChangeAddr:   offchainAddr.Address,
+			},
+			Receivers: []clientlib.Receiver{{To: offchainAddr.Address, Amount: amount}},
+		})
+		require.NoError(t, err)
+		return send
+	}
+	txX := build(1000)
+	txY := build(2000)
+	submit := func(name string, tx *offchaintx.BuildAndSignTxRes) ([]string, error) {
+		return runBounded(ctx, offchainWait, "submit offchain tx "+name,
+			func(callCtx context.Context) ([]string, error) {
+				_, _, checkpoints, err := aliceClient.SubmitTx(
+					callCtx, tx.SignedArkTx, tx.CheckpointTxs,
+				)
+				return checkpoints, err
+			})
+	}
+
+	// Lock the vtxo's DB row so the async projection of tx X's acceptance
+	// blocks when marking it spent, holding the race window open. Without
+	// this the projection wins every time (measured 0/20 resubmissions
+	// accepted) and the test never exercises the race.
+	db, err := sql.Open(
+		"postgres", "postgresql://postgres@127.0.0.1:5432/projection?sslmode=disable",
+	)
+	require.NoError(t, err)
+	//nolint
+	defer db.Close()
+	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(pingCtx); err != nil {
+		t.Skipf("postgres not reachable (e2e running in light mode): %s", err)
+	}
+	lockTx, err := db.Begin()
+	require.NoError(t, err)
+	//nolint
+	defer lockTx.Rollback()
+	var locked string
+	err = lockTx.QueryRow(
+		`SELECT txid FROM vtxo WHERE txid = $1 AND vout = $2 FOR UPDATE`,
+		vtxo.Txid, vtxo.VOut,
+	).Scan(&locked)
+	if err == sql.ErrNoRows {
+		// the pg container also runs in light mode, unused: a reachable
+		// database without the vtxo row means arkd is not on postgres
+		t.Skip("arkd is not backed by postgres (e2e running in light mode)")
+	}
+	require.NoError(t, err)
+
+	signedCheckpointsX, err := submit("X", txX)
+	require.NoError(t, err)
+
+	// Server-only checkpoints make finalization fail deterministically while
+	// X's accepted projection remains blocked.
+	_, err = runBounded(ctx, offchainWait, "finalize tx X with a missing signature",
+		func(callCtx context.Context) (struct{}, error) {
+			return struct{}{}, aliceClient.FinalizeTx(callCtx, txX.Txid, signedCheckpointsX)
+		})
+	require.Error(t, err)
+
+	_, err = submit("Y", txY)
+	require.NoError(t, lockTx.Rollback())
+	require.ErrorContains(t, err, "already spent")
 }
 
 // TestIntent tests intent registration and deletion functionality

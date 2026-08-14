@@ -286,6 +286,18 @@ func (s *service) registerEventHandlers() {
 
 	s.repoManager.RegisterOffchainTxUpdateHandler(
 		func(offchainTx domain.OffchainTx) {
+			// After an accepted offchain tx is projected, the DB prevents double-spends
+			// Evict the redundent cache entry
+			if offchainTx.IsAccepted() {
+				if err := s.cache.OffchainTxs().Remove(
+					context.Background(), offchainTx.ArkTxid,
+				); err != nil {
+					log.WithError(err).Warnf(
+						"failed to remove offchain tx %s from cache", offchainTx.ArkTxid,
+					)
+				}
+			}
+
 			if !offchainTx.IsFinalized() {
 				return
 			}
@@ -1174,10 +1186,51 @@ func (s *service) SubmitOffchainTx(
 				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: spentVtxo.Outpoint.String()})
 		}
 	}
+
 	if exists, vtxo := s.cache.Intents().IncludesAny(ctx, spentVtxoKeys); exists {
 		return nil, errors.VTXO_ALREADY_REGISTERED.New("%s already registered", vtxo).
 			WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo})
 	}
+
+	// Cache entries are removed after DB projection completes
+	// Re-read DB to confirm unspent status and prevent a race with cache entry removal
+	freshSpentVtxos, err := vtxoRepo.GetVtxos(ctx, spentVtxoKeys)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to fetch vtxos: %w", err).
+			WithMetadata(map[string]any{"vtxos": spentVtxoKeys})
+	}
+	if len(freshSpentVtxos) != len(spentVtxoKeys) {
+		vtxoOutpoints := make([]string, 0)
+		for _, vtxo := range spentVtxoKeys {
+			vtxoOutpoints = append(vtxoOutpoints, vtxo.String())
+		}
+		gotVtxos := make([]string, 0)
+		for _, vtxo := range freshSpentVtxos {
+			gotVtxos = append(gotVtxos, vtxo.Outpoint.String())
+		}
+		return nil, errors.VTXO_NOT_FOUND.New("some vtxos not found").
+			WithMetadata(errors.VtxoNotFoundMetadata{
+				VtxoOutpoints: vtxoOutpoints,
+				GotVtxos:      gotVtxos,
+			})
+	}
+
+	for _, vtxo := range freshSpentVtxos {
+		outpoint := vtxo.Outpoint.String()
+		if vtxo.Spent {
+			return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", outpoint).
+				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: outpoint})
+		}
+		if vtxo.Unrolled {
+			return nil, errors.VTXO_ALREADY_UNROLLED.New("%s already unrolled", outpoint).
+				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: outpoint})
+		}
+		if vtxo.Swept || vtxo.IsExpired() {
+			return nil, errors.VTXO_RECOVERABLE.New("%s is recoverable", outpoint).
+				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: outpoint})
+		}
+	}
+
 	if err := s.cache.OffchainTxs().Add(ctx, *offchainTx); err != nil {
 		return nil, errors.INTERNAL_ERROR.New("something went wrong").
 			WithMetadata(map[string]any{"ark_txid": offchainTx.ArkTxid})
@@ -1222,6 +1275,8 @@ func (s *service) FinalizeOffchainTx(
 		return errors.INTERNAL_ERROR.New("something went wrong").
 			WithMetadata(map[string]any{"txid": txid})
 	}
+	// Cache entries are removed after DB projection completes for an accepted offchain tx.
+	// Fallback to fetching the offchain tx from the DB if it does not exist in the cache.
 	if offchainTx == nil {
 		offchainTx, err = s.repoManager.OffchainTxs().GetOffchainTx(ctx, txid)
 		if err != nil {
@@ -1234,10 +1289,6 @@ func (s *service) FinalizeOffchainTx(
 		if structErr != nil {
 			change := offchainTx.Fail(structErr)
 			changes = append(changes, change)
-		}
-
-		if err := s.cache.OffchainTxs().Remove(ctx, txid); err != nil {
-			log.WithError(err).Warnf("failed to remove offchain tx %s from the cache", txid)
 		}
 
 		if err := s.repoManager.Events().Save(
