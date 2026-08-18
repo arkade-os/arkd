@@ -441,6 +441,56 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.Empty(t, event)
 	})
 
+	t.Run("ConfirmationSessionsStore concurrent Confirm", func(t *testing.T) {
+		ctx := t.Context()
+		hashes := [][32]byte{h1, h2}
+
+		// The first burst runs against a cold redis connection pool: one goroutine
+		// grabs the only warm connection and completes its whole Confirm before the
+		// other 19 finish dialing, so nothing overlaps and a racy Confirm would
+		// still pass. Later rounds reuse the now-warm pool, making the confirms
+		// truly concurrent; repeating 20x turns a probabilistic race into a
+		// reliable failure.
+		for round := range 20 {
+			require.NoError(t, store.ConfirmationSessions().Init(ctx, hashes))
+
+			start := make(chan struct{})
+			errs := make(chan error, 20)
+			var wg sync.WaitGroup
+			for range 20 {
+				wg.Go(func() {
+					<-start
+					errs <- store.ConfirmationSessions().Confirm(ctx, intentId1)
+				})
+			}
+			close(start)
+			wg.Wait()
+			close(errs)
+			for err := range errs {
+				require.NoError(t, err)
+			}
+
+			got, err := store.ConfirmationSessions().Get(ctx)
+			require.NoError(t, err)
+			require.Equal(t, 1, got.NumConfirmedIntents, "round %d", round)
+		}
+
+		sessionCompleteCh := store.ConfirmationSessions().SessionCompleted()
+		require.NoError(t, store.ConfirmationSessions().Confirm(ctx, intentId2))
+
+		select {
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "Confirmation session not completed")
+		case <-sessionCompleteCh:
+		}
+
+		got, err := store.ConfirmationSessions().Get(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 2, got.NumConfirmedIntents)
+
+		require.NoError(t, store.ConfirmationSessions().Reset(ctx))
+	})
+
 	t.Run("TreeSigningSessionsStore", func(t *testing.T) {
 		ctx := t.Context()
 
