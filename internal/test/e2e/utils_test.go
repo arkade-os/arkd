@@ -1122,6 +1122,24 @@ func clearIntentFees() error {
 	return nil
 }
 
+func preserveIntentFees(t *testing.T) {
+	t.Helper()
+
+	originalFees, err := getIntentFees()
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		require.NoError(t, clearIntentFees())
+		if !isEmptyIntentFees(*originalFees) {
+			require.NoError(t, updateIntentFees(*originalFees))
+		}
+
+		restoredFees, err := getIntentFees()
+		require.NoError(t, err)
+		require.Equal(t, originalFees, restoredFees)
+	})
+}
+
 // roundSettings holds the batch settings the tests read back before overriding them.
 type roundSettings struct {
 	minParticipants int64
@@ -1810,7 +1828,6 @@ func fetchTx(t *testing.T, txid string) *wire.MsgTx {
 
 	return &tx
 }
-
 
 // overwriteStage selects which of alice's entries mallory replaces.
 type overwriteStage int

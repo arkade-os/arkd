@@ -14,11 +14,25 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	batchsessionhandler "github.com/arkade-os/arkd/pkg/client-lib/batch-session/handler"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 )
+
+type finalizationObservingHandler struct {
+	batchsessionhandler.Handler
+	connectorTree *tree.TxTree
+}
+
+func (h *finalizationObservingHandler) OnBatchFinalization(
+	ctx context.Context, event clientlib.BatchFinalizationEvent,
+	vtxoTree, connectorTree *tree.TxTree,
+) ([]string, error) {
+	h.connectorTree = connectorTree
+	return h.Handler.OnBatchFinalization(ctx, event, vtxoTree, connectorTree)
+}
 
 type delegateBatchEventsHandler struct {
 	intentId          string

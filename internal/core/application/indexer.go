@@ -327,7 +327,8 @@ func (i *indexerService) GetVtxos(
 		if renewableOnly {
 			// Renewable is the union of the spendable and recoverable sets: an
 			// unspent, non-unrolled vtxo is spendable when not swept, and
-			// recoverable otherwise (RequiresForfeit is false once swept).
+			// recoverable otherwise (RequiresForfeit is false for swept, note,
+			// and unrolled vtxos).
 			renewableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
 			for _, vtxo := range allVtxos {
 				if !vtxo.Spent && !vtxo.Unrolled {

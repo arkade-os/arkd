@@ -26,6 +26,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	batchsession "github.com/arkade-os/arkd/pkg/client-lib/batch-session"
+	batchsessionhandler "github.com/arkade-os/arkd/pkg/client-lib/batch-session/handler"
 	grpcclient "github.com/arkade-os/arkd/pkg/client-lib/client"
 	mempoolexplorer "github.com/arkade-os/arkd/pkg/client-lib/explorer"
 	offchaintx "github.com/arkade-os/arkd/pkg/client-lib/offchain-tx"
@@ -271,15 +272,7 @@ func TestBatchSession(t *testing.T) {
 			aliceBoardingAmount = 100_000
 		)
 
-		originalFees, err := getIntentFees()
-		require.NoError(t, err)
-
-		t.Cleanup(func() {
-			require.NoError(t, clearIntentFees())
-			if !isEmptyIntentFees(*originalFees) {
-				require.NoError(t, updateIntentFees(*originalFees))
-			}
-		})
+		preserveIntentFees(t)
 
 		dust := getServerDust(t)
 
@@ -4718,6 +4711,124 @@ func TestIntent(t *testing.T) {
 		require.ErrorContains(t, err, "missing witness utxo for input 0")
 		require.Empty(t, intentId)
 	})
+
+	t.Run("expired unswept vtxo requires taptree", func(t *testing.T) {
+		preserveIntentFees(t)
+
+		require.NoError(t, clearIntentFees())
+
+		ctx := t.Context()
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
+
+		_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
+		require.NoError(t, err)
+
+		faucetOnchainAndWait(t, boardingAddr.Address, 0.00000330)
+
+		settleVtxo(t, ctx, alice, offchainAddr.Address)
+		spendable, _, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, spendable, 1)
+		vtxo := spendable[0]
+		vtxoOutpoint := vtxo.Outpoint
+		require.Empty(t, vtxo.Assets)
+		require.NotEmpty(t, vtxo.Tapscripts)
+		require.NotNil(t, vtxo.SigningClosure)
+		require.False(t, vtxo.Spent)
+		require.False(t, vtxo.Swept)
+		require.False(t, vtxo.Unrolled)
+		require.False(t, vtxo.ExpiresAt.IsZero())
+
+		err = generateBlocks(50)
+		require.NoError(t, err)
+
+		time.Sleep(max(10*time.Second, time.Until(vtxo.ExpiresAt.Add(time.Second))))
+
+		spendable, _, err = alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, spendable, 1)
+		vtxo = spendable[0]
+		require.Equal(t, vtxoOutpoint, vtxo.Outpoint)
+		require.True(t, time.Now().After(vtxo.ExpiresAt))
+		require.False(t, vtxo.Spent)
+		require.False(t, vtxo.Swept)
+		require.False(t, vtxo.Unrolled)
+
+		cosignerKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		signerSession := tree.NewTreeSignerSession(cosignerKey)
+		baseArgs := batchsession.BaseArgs{
+			Vtxos:   []clientlib.Vtxo{vtxo},
+			Outputs: []clientlib.Receiver{{To: offchainAddr.Address, Amount: vtxo.Amount}},
+			SignTx:  alice.SignTransaction,
+		}
+		proof, message, _, err := batchsession.BuildAndSignRegisterIntent(ctx, batchsession.IntentArgs{
+			BaseArgs:  baseArgs,
+			Cosigners: []string{signerSession.GetPublicKey()},
+		})
+		require.NoError(t, err)
+
+		signedProof, err := psbt.NewFromRawBytes(strings.NewReader(proof), true)
+		require.NoError(t, err)
+		require.Len(t, signedProof.Inputs, 2)
+		require.NotEmpty(t, signedProof.Inputs[1].TaprootLeafScript)
+
+		treeFields, err := txutils.GetArkPsbtFields(signedProof, 1, txutils.VtxoTaprootTreeField)
+		require.NoError(t, err)
+		require.Len(t, treeFields, 1)
+
+		unknowns := signedProof.Inputs[1].Unknowns
+		unknowns = slices.DeleteFunc(unknowns, func(unknown *psbt.Unknown) bool {
+			decoded, err := txutils.VtxoTaprootTreeField.Decode(unknown)
+			require.NoError(t, err)
+			return decoded != nil
+		})
+		signedProof.Inputs[1].Unknowns = unknowns
+
+		treeFields, err = txutils.GetArkPsbtFields(signedProof, 1, txutils.VtxoTaprootTreeField)
+		require.NoError(t, err)
+		require.Empty(t, treeFields)
+
+		malformedProof, err := (&intent.Proof{Packet: *signedProof}).B64Encode()
+		require.NoError(t, err)
+
+		intentID, registerErr := runBounded(ctx, offchainWait, "register expired unswept vtxo without taptree",
+			func(callCtx context.Context) (string, error) {
+				return aliceClient.RegisterIntent(callCtx, malformedProof, message)
+			})
+		if registerErr == nil {
+			require.NoError(t, alice.DeleteIntent(ctx, []clientlib.Vtxo{vtxo}, nil, nil))
+		}
+		require.ErrorContains(t, registerErr, "missing taptree")
+		require.Empty(t, intentID)
+
+		validIntentID, err := runBounded(ctx, offchainWait, "register valid expired unswept vtxo with taptree",
+			func(callCtx context.Context) (string, error) {
+				return aliceClient.RegisterIntent(callCtx, proof, message)
+			})
+		require.NoError(t, err)
+		require.NotEmpty(t, validIntentID)
+
+		serverParams, err := alice.GetConfigData(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, serverParams)
+
+		joinArgs := batchsession.JoinBatchArgs{
+			BaseArgs:     baseArgs,
+			TreeSigners:  []tree.SignerSession{signerSession},
+			IntentId:     validIntentID,
+			Client:       aliceClient,
+			ServerParams: *serverParams,
+		}
+		defaultHandler, err := batchsessionhandler.NewDefaultHandler(defaultHandlerArgs(joinArgs))
+		require.NoError(t, err)
+
+		observingHandler := &finalizationObservingHandler{Handler: defaultHandler}
+		_, joinErr := joinBatchBounded(ctx, joinArgs, batchsession.WithHandler(observingHandler))
+		require.NotNil(t, observingHandler.connectorTree, "batch did not reach finalization: %v", joinErr)
+		require.Len(t, observingHandler.connectorTree.Leaves(), 1)
+	})
 }
 
 // TestBan tests all supported ban scenarios
@@ -5695,20 +5806,7 @@ func TestUnauthenticatedCosignerSubmission(t *testing.T) {
 // TestFee tests the fee calculation for the onboarding and settlement of the funds.
 // It first updates the 4 fee programs for intents.
 func TestFee(t *testing.T) {
-	originalFees, err := getIntentFees()
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		require.NoError(t, clearIntentFees())
-		if !isEmptyIntentFees(*originalFees) {
-			require.NoError(t, updateIntentFees(*originalFees))
-		}
-
-		// verify the fees have been restored
-		restoredFees, err := getIntentFees()
-		require.NoError(t, err)
-		require.Equal(t, originalFees, restoredFees)
-	})
+	preserveIntentFees(t)
 
 	fees := intentFees{
 		// for input: free in case of recoverable or note, 1% of the amount otherwise
@@ -5719,7 +5817,7 @@ func TestFee(t *testing.T) {
 		IntentOnchainOutputFeeProgram:  "200.0",
 	}
 
-	err = updateIntentFees(fees)
+	err := updateIntentFees(fees)
 	require.NoError(t, err)
 
 	ctx := t.Context()
@@ -5886,15 +5984,7 @@ func TestCollectedFees(t *testing.T) {
 
 	// Save and clear fees so the funding round (faucetOffchain) doesn't
 	// collect fees — only the final settle round should.
-	originalFees, err := getIntentFees()
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		require.NoError(t, clearIntentFees())
-		if !isEmptyIntentFees(*originalFees) {
-			require.NoError(t, updateIntentFees(*originalFees))
-		}
-	})
+	preserveIntentFees(t)
 
 	require.NoError(t, clearIntentFees())
 
