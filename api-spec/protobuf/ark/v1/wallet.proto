@@ -4,6 +4,16 @@ package ark.v1;
 
 import "meshapi/gateway/annotations.proto";
 
+option (meshapi.gateway.openapi_doc) = {
+  info: {
+    title: "Arkade Wallet Initializer API"
+    version: "v1"
+    description:
+      "Operator-internal API for initializing and unlocking the arkd wallet. "
+      "Not intended for application developers."
+  }
+};
+
 service WalletInitializerService {
   rpc GenSeed(GenSeedRequest) returns (GenSeedResponse) {
     option (meshapi.gateway.http) = {

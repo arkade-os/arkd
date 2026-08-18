@@ -914,7 +914,9 @@ const file_ark_v1_wallet_proto_rawDesc = "" +
 	"\rDeriveAddress\x12\x1c.ark.v1.DeriveAddressRequest\x1a\x1d.ark.v1.DeriveAddressResponse\"\x1d\xb2J\x1a\x12\x18/v1/admin/wallet/address\x12b\n" +
 	"\n" +
 	"GetBalance\x12\x19.ark.v1.GetBalanceRequest\x1a\x1a.ark.v1.GetBalanceResponse\"\x1d\xb2J\x1a\x12\x18/v1/admin/wallet/balance\x12`\n" +
-	"\bWithdraw\x12\x17.ark.v1.WithdrawRequest\x1a\x18.ark.v1.WithdrawResponse\"!\xb2J\x1eB\x01*\"\x19/v1/admin/wallet/withdrawBz\n" +
+	"\bWithdraw\x12\x17.ark.v1.WithdrawRequest\x1a\x18.ark.v1.WithdrawResponse\"!\xb2J\x1eB\x01*\"\x19/v1/admin/wallet/withdrawB\x94\x02\xbaJ\x96\x01\n" +
+	"\x93\x01\n" +
+	"\x1dArkade Wallet Initializer API\x1anOperator-internal API for initializing and unlocking the arkd wallet. Not intended for application developers.:\x02v1\n" +
 	"\n" +
 	"com.ark.v1B\vWalletProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"
 

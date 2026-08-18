@@ -2154,7 +2154,15 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\x15GetTransactionsStream\x12$.ark.v1.GetTransactionsStreamRequest\x1a%.ark.v1.GetTransactionsStreamResponse\"\x12\xb2J\x0fb\x04\b\x01\x18\x01\x12\a/v1/txs0\x01\x12b\n" +
 	"\tGetIntent\x12\x18.ark.v1.GetIntentRequest\x1a\x19.ark.v1.GetIntentResponse\" \xb2J\x1dR\x0fB\x01*\"\n" +
 	"/v1/intent\x12\n" +
-	"/v1/intentB{\n" +
+	"/v1/intentB\xca\x04\xbaJ\xcb\x03\n" +
+	"\x8e\x02\n" +
+	"\x12Arkade Service API\x1a\xf3\x01The REST API of the Arkade operator. Use it to read operator parameters, register intents, take part in a batch swap, and submit transactions.\n" +
+	"\n" +
+	"Most applications should use an SDK rather than these endpoints directly: https://docs.arkadeos.com:\x02v1\x12*\n" +
+	"\x17https://arkade.computer\x12\x0fBitcoin mainnet\x12(\n" +
+	"\x1bhttps://mutinynet.arkade.sh\x12\tMutinynet\x12\"\n" +
+	"\x18https://signet.arkade.sh\x12\x06Signet\x12>\n" +
+	"\x15http://localhost:7070\x12%Local regtest, through arkade-regtest\n" +
 	"\n" +
 	"com.ark.v1B\fServiceProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"
 

@@ -1,8 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "",
-    "version": "version not set"
+    "title": "Arkade Wallet Initializer API",
+    "description": "Operator-internal API for initializing and unlocking the arkd wallet. Not intended for application developers.",
+    "version": "v1"
   },
   "paths": {
     "/v1/admin/wallet/address": {

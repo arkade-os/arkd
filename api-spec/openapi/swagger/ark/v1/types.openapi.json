@@ -1,8 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "",
-    "version": "version not set"
+    "title": "Arkade Shared Types",
+    "description": "Message types shared by the Arkade service and indexer APIs. This document defines schemas only and binds no endpoints.",
+    "version": "v1"
   },
   "components": {
     "schemas": {

@@ -7,6 +7,7 @@
 package arkv1
 
 import (
+	_ "github.com/meshapi/grpc-api-gateway/api"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -1582,7 +1583,7 @@ var File_ark_v1_types_proto protoreflect.FileDescriptor
 
 const file_ark_v1_types_proto_rawDesc = "" +
 	"\n" +
-	"\x12ark/v1/types.proto\x12\x06ark.v1\"2\n" +
+	"\x12ark/v1/types.proto\x12\x06ark.v1\x1a!meshapi/gateway/annotations.proto\"2\n" +
 	"\bOutpoint\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x12\n" +
 	"\x04vout\x18\x02 \x01(\rR\x04vout\"l\n" +
@@ -1718,7 +1719,9 @@ const file_ark_v1_types_proto_rawDesc = "" +
 	"\bmetadata\x18\x04 \x03(\v2\".ark.v1.ErrorDetails.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01By\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x92\x02\xbaJ\x95\x01\n" +
+	"\x92\x01\n" +
+	"\x13Arkade Shared Types\x1awMessage types shared by the Arkade service and indexer APIs. This document defines schemas only and binds no endpoints.:\x02v1\n" +
 	"\n" +
 	"com.ark.v1B\n" +
 	"TypesProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"

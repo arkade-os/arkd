@@ -3,6 +3,38 @@ syntax = "proto3";
 package ark.v1;
 
 import "meshapi/gateway/annotations.proto";
+
+option (meshapi.gateway.openapi_doc) = {
+  info: {
+    title: "Arkade Indexer API"
+    version: "v1"
+    description:
+      "The read API of the Arkade operator. Use it to look up virtual "
+      "outputs, commitment transactions, batch trees, and to subscribe to "
+      "script activity.\n\n"
+      "Most applications should use an SDK rather than these endpoints "
+      "directly: https://docs.arkadeos.com"
+  }
+  servers: [
+    {
+      url: "https://arkade.computer"
+      description: "Bitcoin mainnet"
+    },
+    {
+      url: "https://mutinynet.arkade.sh"
+      description: "Mutinynet"
+    },
+    {
+      url: "https://signet.arkade.sh"
+      description: "Signet"
+    },
+    {
+      url: "http://localhost:7070"
+      description: "Local regtest, through arkade-regtest"
+    }
+  ]
+};
+
 service IndexerService {
   // GetCommitmentTx returns information about a specific commitment transaction identified by the
   // provided txid.

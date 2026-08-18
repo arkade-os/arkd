@@ -2,6 +2,18 @@ syntax = "proto3";
 
 package ark.v1;
 
+import "meshapi/gateway/annotations.proto";
+
+option (meshapi.gateway.openapi_doc) = {
+  info: {
+    title: "Arkade Shared Types"
+    version: "v1"
+    description:
+      "Message types shared by the Arkade service and indexer APIs. This "
+      "document defines schemas only and binds no endpoints."
+  }
+};
+
 /* Types */
 
 message Outpoint {

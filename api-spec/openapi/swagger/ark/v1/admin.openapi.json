@@ -1,8 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "",
-    "version": "version not set"
+    "title": "Arkade Admin API",
+    "description": "Operator-internal administration API. Not intended for application developers, and not exposed on the public operator endpoints.",
+    "version": "v1"
   },
   "paths": {
     "/v1/admin/auth/revoke": {

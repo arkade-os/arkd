@@ -5,6 +5,16 @@ package ark.v1;
 import "meshapi/gateway/annotations.proto";
 import "ark/v1/types.proto";
 
+option (meshapi.gateway.openapi_doc) = {
+  info: {
+    title: "Arkade Admin API"
+    version: "v1"
+    description:
+      "Operator-internal administration API. Not intended for application "
+      "developers, and not exposed on the public operator endpoints."
+  }
+};
+
 service AdminService {
   rpc GetScheduledSweep(GetScheduledSweepRequest) returns (GetScheduledSweepResponse) {
     option (meshapi.gateway.http) = {

@@ -3249,7 +3249,15 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x13SubscribeForScripts\x12\".ark.v1.SubscribeForScriptsRequest\x1a#.ark.v1.SubscribeForScriptsResponse\"$\xb2J!B\x01*\"\x1c/v1/indexer/script/subscribe\x12\x8c\x01\n" +
 	"\x15UnsubscribeForScripts\x12$.ark.v1.UnsubscribeForScriptsRequest\x1a%.ark.v1.UnsubscribeForScriptsResponse\"&\xb2J#B\x01*\"\x1e/v1/indexer/script/unsubscribe\x12\xb4\x01\n" +
 	"\x0fGetSubscription\x12\x1e.ark.v1.GetSubscriptionRequest\x1a\x1f.ark.v1.GetSubscriptionResponse\"^\xb2J[R b\x04\b\x01\x18\x01\x12\x18/v1/indexer/subscriptionb\x04\b\x01\x18\x01\x121/v1/indexer/script/subscription/{subscription_id}0\x01\x12\x84\x01\n" +
-	"\x12UpdateSubscription\x12!.ark.v1.UpdateSubscriptionRequest\x1a\".ark.v1.UpdateSubscriptionResponse\"'\xb2J$B\x01*\"\x1f/v1/indexer/subscription/updateB{\n" +
+	"\x12UpdateSubscription\x12!.ark.v1.UpdateSubscriptionRequest\x1a\".ark.v1.UpdateSubscriptionResponse\"'\xb2J$B\x01*\"\x1f/v1/indexer/subscription/updateB\xce\x04\xbaJ\xcf\x03\n" +
+	"\x92\x02\n" +
+	"\x12Arkade Indexer API\x1a\xf7\x01The read API of the Arkade operator. Use it to look up virtual outputs, commitment transactions, batch trees, and to subscribe to script activity.\n" +
+	"\n" +
+	"Most applications should use an SDK rather than these endpoints directly: https://docs.arkadeos.com:\x02v1\x12*\n" +
+	"\x17https://arkade.computer\x12\x0fBitcoin mainnet\x12(\n" +
+	"\x1bhttps://mutinynet.arkade.sh\x12\tMutinynet\x12\"\n" +
+	"\x18https://signet.arkade.sh\x12\x06Signet\x12>\n" +
+	"\x15http://localhost:7070\x12%Local regtest, through arkade-regtest\n" +
 	"\n" +
 	"com.ark.v1B\fIndexerProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"
 

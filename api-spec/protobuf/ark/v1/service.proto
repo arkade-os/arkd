@@ -5,6 +5,37 @@ package ark.v1;
 import "meshapi/gateway/annotations.proto";
 import "ark/v1/types.proto";
 
+option (meshapi.gateway.openapi_doc) = {
+  info: {
+    title: "Arkade Service API"
+    version: "v1"
+    description:
+      "The REST API of the Arkade operator. Use it to read operator "
+      "parameters, register intents, take part in a batch swap, and submit "
+      "transactions.\n\n"
+      "Most applications should use an SDK rather than these endpoints "
+      "directly: https://docs.arkadeos.com"
+  }
+  servers: [
+    {
+      url: "https://arkade.computer"
+      description: "Bitcoin mainnet"
+    },
+    {
+      url: "https://mutinynet.arkade.sh"
+      description: "Mutinynet"
+    },
+    {
+      url: "https://signet.arkade.sh"
+      description: "Signet"
+    },
+    {
+      url: "http://localhost:7070"
+      description: "Local regtest, through arkade-regtest"
+    }
+  ]
+};
+
 service ArkService {
   // GetInfo returns information and parameters of the server.
   rpc GetInfo(GetInfoRequest) returns (GetInfoResponse) {

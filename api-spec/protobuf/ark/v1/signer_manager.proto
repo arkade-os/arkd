@@ -4,6 +4,16 @@ package ark.v1;
 
 import "meshapi/gateway/annotations.proto";
 
+option (meshapi.gateway.openapi_doc) = {
+  info: {
+    title: "Arkade Signer Manager API"
+    version: "v1"
+    description:
+      "Operator-internal API for managing signers. Not intended for "
+      "application developers."
+  }
+};
+
 service SignerManagerService {
   rpc LoadSigner(LoadSignerRequest) returns (LoadSignerResponse) {
     option (meshapi.gateway.http) = {

@@ -153,7 +153,9 @@ const file_ark_v1_signer_manager_proto_rawDesc = "" +
 	"\x12LoadSignerResponse2u\n" +
 	"\x14SignerManagerService\x12]\n" +
 	"\n" +
-	"LoadSigner\x12\x19.ark.v1.LoadSignerRequest\x1a\x1a.ark.v1.LoadSignerResponse\"\x18\xb2J\x15B\x01*\"\x10/v1/admin/signerB\x81\x01\n" +
+	"LoadSigner\x12\x19.ark.v1.LoadSignerRequest\x1a\x1a.ark.v1.LoadSignerResponse\"\x18\xb2J\x15B\x01*\"\x10/v1/admin/signerB\xfb\x01\xbaJw\n" +
+	"u\n" +
+	"\x19Arkade Signer Manager API\x1aTOperator-internal API for managing signers. Not intended for application developers.:\x02v1\n" +
 	"\n" +
 	"com.ark.v1B\x12SignerManagerProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"
 

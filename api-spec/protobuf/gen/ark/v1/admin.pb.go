@@ -4183,7 +4183,9 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x05Sweep\x12\x14.ark.v1.SweepRequest\x1a\x15.ark.v1.SweepResponse\"\x17\xb2J\x14B\x01*\"\x0f/v1/admin/sweep\x12_\n" +
 	"\vGetSettings\x12\x1a.ark.v1.GetSettingsRequest\x1a\x1b.ark.v1.GetSettingsResponse\"\x17\xb2J\x14\x12\x12/v1/admin/settings\x12k\n" +
 	"\x0eUpdateSettings\x12\x1d.ark.v1.UpdateSettingsRequest\x1a\x1e.ark.v1.UpdateSettingsResponse\"\x1a\xb2J\x17B\x01*\"\x12/v1/admin/settings\x12{\n" +
-	"\x13GetMainAccountUtxos\x12\".ark.v1.GetMainAccountUtxosRequest\x1a#.ark.v1.GetMainAccountUtxosResponse\"\x1b\xb2J\x18\x12\x16/v1/admin/wallet/utxosBy\n" +
+	"\x13GetMainAccountUtxos\x12\".ark.v1.GetMainAccountUtxosRequest\x1a#.ark.v1.GetMainAccountUtxosResponse\"\x1b\xb2J\x18\x12\x16/v1/admin/wallet/utxosB\x99\x02\xbaJ\x9c\x01\n" +
+	"\x99\x01\n" +
+	"\x10Arkade Admin API\x1a\x80\x01Operator-internal administration API. Not intended for application developers, and not exposed on the public operator endpoints.:\x02v1\n" +
 	"\n" +
 	"com.ark.v1B\n" +
 	"AdminProtoP\x01Z&github.com/arkade-os/arkd/ark/v1;arkv1\xa2\x02\x03AXX\xaa\x02\x06Ark.V1\xca\x02\x06Ark\\V1\xe2\x02\x12Ark\\V1\\GPBMetadata\xea\x02\aArk::V1b\x06proto3"

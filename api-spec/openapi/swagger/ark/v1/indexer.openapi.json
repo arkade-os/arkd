@@ -1,9 +1,28 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "",
-    "version": "version not set"
+    "title": "Arkade Indexer API",
+    "description": "The read API of the Arkade operator. Use it to look up virtual outputs, commitment transactions, batch trees, and to subscribe to script activity.\n\nMost applications should use an SDK rather than these endpoints directly: https://docs.arkadeos.com",
+    "version": "v1"
   },
+  "servers": [
+    {
+      "url": "https://arkade.computer",
+      "description": "Bitcoin mainnet"
+    },
+    {
+      "url": "https://mutinynet.arkade.sh",
+      "description": "Mutinynet"
+    },
+    {
+      "url": "https://signet.arkade.sh",
+      "description": "Signet"
+    },
+    {
+      "url": "http://localhost:7070",
+      "description": "Local regtest, through arkade-regtest"
+    }
+  ],
   "paths": {
     "/v1/indexer/asset/{asset_id}": {
       "get": {
