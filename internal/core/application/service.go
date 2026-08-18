@@ -565,27 +565,6 @@ func (s *service) SubmitOffchainTx(
 		).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 	}
 
-	event, err := offchainTx.Request(txid, signedArkTx, checkpointTxs)
-	if err != nil {
-		return nil, errors.INTERNAL_ERROR.Wrap(err)
-	}
-	changes = []domain.Event{event}
-
-	defer func() {
-		if structErr != nil {
-			change := offchainTx.Fail(structErr)
-			changes = append(changes, change)
-		}
-
-		if len(changes) > 0 {
-			if err := s.repoManager.Events().Save(
-				ctx, domain.OffchainTxTopic, txid, changes,
-			); err != nil {
-				log.WithError(err).Errorf("failed to save events for offchain tx %s", txid)
-			}
-		}
-	}()
-
 	// get all the vtxos inputs
 	spentVtxos, err := vtxoRepo.GetVtxos(ctx, spentVtxoKeys)
 	if err != nil {
@@ -638,6 +617,28 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.VTXO_ALREADY_REGISTERED.New("%s already registered", vtxo).
 			WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo})
 	}
+
+	// Create the request event only after VTXO preflight checks so rejected payloads are not persisted.
+	event, err := offchainTx.Request(txid, signedArkTx, checkpointTxs)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.Wrap(err)
+	}
+	changes = []domain.Event{event}
+
+	defer func() {
+		if structErr != nil {
+			change := offchainTx.Fail(structErr)
+			changes = append(changes, change)
+		}
+
+		if len(changes) > 0 {
+			if err := s.repoManager.Events().Save(
+				ctx, domain.OffchainTxTopic, txid, changes,
+			); err != nil {
+				log.WithError(err).Errorf("failed to save events for offchain tx %s", txid)
+			}
+		}
+	}()
 
 	indexedSpentVtxos := make(map[domain.Outpoint]domain.Vtxo)
 	commitmentTxsByCheckpointTxid := make(map[string]string)
