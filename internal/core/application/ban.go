@@ -147,12 +147,8 @@ func (s *service) banSignaturesCollectionTimeout(
 
 func (s *service) banForfeitCollectionTimeout(
 	ctx context.Context, roundId string, banDuration *time.Duration,
+	unsignedVtxoKeys []domain.Outpoint,
 ) {
-	unsignedVtxoKeys, err := s.cache.ForfeitTxs().GetUnsignedInputs(ctx)
-	if err != nil {
-		log.WithError(err).Warn("failed to get unsigned inputs from cache")
-		return
-	}
 	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, unsignedVtxoKeys)
 	if err != nil {
 		log.WithError(err).Warn("failed to get vtxos")

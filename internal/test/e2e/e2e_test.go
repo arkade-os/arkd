@@ -5237,6 +5237,10 @@ func TestBan(t *testing.T) {
 		)
 		require.NoError(t, err)
 
+		cfgData, err := alice.GetConfigData(t.Context())
+		require.NoError(t, err)
+		require.NotNil(t, cfgData)
+
 		var batchExpiry arklib.RelativeLocktime
 		handler := &customBatchEventsHandler{
 			onBatchStarted: func(ctx context.Context, event clientlib.BatchStartedEvent) (bool, time.Duration, error) {
@@ -5257,11 +5261,9 @@ func TestBan(t *testing.T) {
 					return true, nil
 				}
 
-				signerPubKey := secKey.PubKey()
-
 				sweepClosure := script.CSVMultisigClosure{
 					MultisigClosure: script.MultisigClosure{
-						PubKeys: []*btcec.PublicKey{signerPubKey},
+						PubKeys: []*btcec.PublicKey{cfgData.ForfeitPubKey},
 					},
 					Locktime: batchExpiry,
 				}
@@ -5331,10 +5333,6 @@ func TestBan(t *testing.T) {
 			},
 		}
 
-		cfgData, err := alice.GetConfigData(t.Context())
-		require.NoError(t, err)
-		require.NotNil(t, cfgData)
-
 		_, err = joinBatchBounded(t.Context(), batchsession.JoinBatchArgs{
 			BaseArgs: batchsession.BaseArgs{
 				SignTx: alice.SignTransaction,
@@ -5349,18 +5347,35 @@ func TestBan(t *testing.T) {
 			Client:       aliceClient,
 			ServerParams: *cfgData,
 		}, batchsession.WithHandler(handler))
-		require.Error(t, err)
+		require.ErrorContains(t, err, "missing forfeit transactions")
+
+		require.Eventually(t, func() bool {
+			adminClient := &http.Client{Timeout: 5 * time.Second}
+			resp, err := get[struct {
+				Convictions []json.RawMessage `json:"convictions"`
+			}](
+				adminClient,
+				fmt.Sprintf(
+					"%s/v1/admin/convictionsByScript/%s", adminUrl, aliceVtxo.Script,
+				),
+				"active script convictions",
+			)
+			if err != nil {
+				return false
+			}
+			return len(resp.Convictions) > 0
+		}, serverWait, pollInterval, "missing-forfeit conviction was not persisted")
 
 		// next settle should fail because the forfeit txs have not been submitted
 		_, err = settleBounded(t.Context(), alice)
-		require.Error(t, err)
+		require.ErrorContains(t, err, "VTXO_BANNED")
 
 		// send should fail
 		_, err = sendOffChainBounded(t.Context(), alice, []clientlib.Receiver{{
 			Amount: aliceVtxo.Amount,
 			To:     aliceAddr.Address,
 		}})
-		require.Error(t, err)
+		require.ErrorContains(t, err, "VTXO_BANNED")
 	})
 
 	t.Run("failed to submit valid forfeit txs signatures", func(t *testing.T) {

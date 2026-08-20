@@ -3461,22 +3461,16 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming, setting
 			log.Debug("timeout waiting for forfeit txs and boarding inputs signatures")
 		}
 
-		forfeitTxList, err := s.cache.ForfeitTxs().Pop(ctx)
+		forfeitTxList, unsignedVtxoKeys, err := s.collectForfeitTxs(ctx)
 		if err != nil {
-			log.WithError(err).Error("failed to pop forfeit txs from cache")
+			log.WithError(err).Error("failed to collect forfeit txs from cache")
 			changes = round.Fail(errors.INTERNAL_ERROR.New("failed to finalize round: %s", err))
 			return
 		}
-
-		// some forfeits are not signed, we must ban the associated scripts
-		allForfeitTxsSigned, err := s.cache.ForfeitTxs().AllSigned(ctx)
-		if err != nil {
-			log.WithError(err).Error("failed to check all signed forfeit txs in cache")
-			changes = round.Fail(errors.INTERNAL_ERROR.New("failed to finalize round: %s", err))
-			return
-		}
-		if !allForfeitTxsSigned {
-			go s.banForfeitCollectionTimeout(ctx, roundId, banDuration)
+		if len(unsignedVtxoKeys) > 0 {
+			go s.banForfeitCollectionTimeout(
+				ctx, roundId, banDuration, unsignedVtxoKeys,
+			)
 
 			changes = round.Fail(errors.INTERNAL_ERROR.New("missing forfeit transactions"))
 			return
@@ -3928,6 +3922,27 @@ func (s *service) checkForfeitsAndBoardingSigsSent(ctx context.Context, commitme
 		default:
 		}
 	}
+}
+
+// collectForfeitTxs takes a snapshot of unsigned inputs before Pop resets the
+// store. If anything is missing, it leaves the store untouched and returns an
+// immutable snapshot that the ban goroutine can use after the next round starts.
+func (s *service) collectForfeitTxs(
+	ctx context.Context,
+) (forfeitTxs []string, unsignedVtxoKeys []domain.Outpoint, err error) {
+	unsignedVtxoKeys, err = s.cache.ForfeitTxs().GetUnsignedInputs(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(unsignedVtxoKeys) > 0 {
+		return nil, slices.Clone(unsignedVtxoKeys), nil
+	}
+
+	forfeitTxs, err = s.cache.ForfeitTxs().Pop(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return forfeitTxs, nil, nil
 }
 
 func (s *service) getSpentVtxos(intents map[string]domain.Intent) []domain.Vtxo {
