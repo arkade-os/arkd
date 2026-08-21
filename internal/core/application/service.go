@@ -3629,83 +3629,113 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming, setting
 
 func (s *service) listenToScannerNotifications() {
 	ctx := context.Background()
-	chVtxos := s.scanner.GetNotificationChannel(ctx)
-
 	locks := newKeyedMutex()
-	for vtxoKeys := range chVtxos {
-		go func(vtxoKeys map[string][]ports.VtxoWithValue) {
-			for _, keys := range vtxoKeys {
-				for _, v := range keys {
-					outs := []domain.Outpoint{v.Outpoint}
-					vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, outs)
-					if err != nil {
-						log.WithError(err).Warn("failed to retrieve vtxos, skipping...")
-						continue
-					}
-					if len(vtxos) <= 0 {
-						log.Warnf("vtxo %s not found, skipping...", v.String())
-						continue
-					}
 
-					vtxo := vtxos[0]
+	backoff := time.Second
+	streamCtx, cancelStream := context.WithCancel(s.ctx)
+	ch := s.scanner.GetNotificationChannel(streamCtx)
+	for {
+		for vtxoKeys := range ch {
+			backoff = time.Second
+			go func(vtxoKeys map[string][]ports.VtxoWithValue) {
+				for _, keys := range vtxoKeys {
+					for _, v := range keys {
+						outs := []domain.Outpoint{v.Outpoint}
+						vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, outs)
+						if err != nil {
+							log.WithError(err).Warn("failed to retrieve vtxos, skipping...")
+							continue
+						}
+						if len(vtxos) <= 0 {
+							log.Warnf("vtxo %s not found, skipping...", v.String())
+							continue
+						}
 
-					if vtxo.Preconfirmed {
-						go func() {
-							txs, err := s.repoManager.Rounds().GetTxsWithTxids(
-								ctx, []string{vtxo.Txid},
-							)
-							if err != nil {
-								log.WithError(err).Warn("failed to retrieve txs, skipping...")
-								return
-							}
+						vtxo := vtxos[0]
 
-							if len(txs) <= 0 {
-								log.Warnf("tx %s not found", vtxo.Txid)
-								return
-							}
-
-							ptx, err := psbt.NewFromRawBytes(strings.NewReader(txs[0]), true)
-							if err != nil {
-								log.WithError(err).Warn("failed to parse tx, skipping...")
-								return
-							}
-
-							// remove sweeper task for the associated checkpoint outputs
-							for _, in := range ptx.UnsignedTx.TxIn {
-								taskId := in.PreviousOutPoint.Hash.String()
-								s.sweeper.removeTask(taskId)
-								log.Debugf("sweeper: unscheduled task for tx %s", taskId)
-							}
-						}()
-					}
-
-					if !vtxo.Unrolled {
-						go func() {
-							if err := s.repoManager.Vtxos().UnrollVtxos(
-								ctx, []domain.Outpoint{vtxo.Outpoint},
-							); err != nil {
-								log.WithError(err).Warnf(
-									"failed to mark vtxo %s as unrolled", vtxo.Outpoint.String(),
+						if vtxo.Preconfirmed {
+							go func() {
+								txs, err := s.repoManager.Rounds().GetTxsWithTxids(
+									ctx, []string{vtxo.Txid},
 								)
-							}
+								if err != nil {
+									log.WithError(err).Warn("failed to retrieve txs, skipping...")
+									return
+								}
 
-							log.Debugf("vtxo %s unrolled", vtxo.Outpoint.String())
-						}()
-					}
+								if len(txs) <= 0 {
+									log.Warnf("tx %s not found", vtxo.Txid)
+									return
+								}
 
-					if vtxo.Spent {
-						log.Infof("fraud detected on vtxo %s", vtxo.Outpoint.String())
-						go func() {
-							if err := s.reactToFraud(ctx, vtxo, locks); err != nil {
-								log.WithError(err).Warnf(
-									"failed to react to fraud for vtxo %s", vtxo.Outpoint.String(),
-								)
-							}
-						}()
+								ptx, err := psbt.NewFromRawBytes(strings.NewReader(txs[0]), true)
+								if err != nil {
+									log.WithError(err).Warn("failed to parse tx, skipping...")
+									return
+								}
+
+								// remove sweeper task for the associated checkpoint outputs
+								for _, in := range ptx.UnsignedTx.TxIn {
+									taskId := in.PreviousOutPoint.Hash.String()
+									s.sweeper.removeTask(taskId)
+									log.Debugf("sweeper: unscheduled task for tx %s", taskId)
+								}
+							}()
+						}
+
+						if !vtxo.Unrolled {
+							go func() {
+								if err := s.repoManager.Vtxos().UnrollVtxos(
+									ctx, []domain.Outpoint{vtxo.Outpoint},
+								); err != nil {
+									log.WithError(err).Warnf(
+										"failed to mark vtxo %s as unrolled", vtxo.Outpoint.String(),
+									)
+								}
+
+								log.Debugf("vtxo %s unrolled", vtxo.Outpoint.String())
+							}()
+						}
+
+						if vtxo.Spent {
+							log.Infof("fraud detected on vtxo %s", vtxo.Outpoint.String())
+							go func() {
+								if err := s.reactToFraud(ctx, vtxo, locks); err != nil {
+									log.WithError(err).Warnf(
+										"failed to react to fraud for vtxo %s", vtxo.Outpoint.String(),
+									)
+								}
+							}()
+						}
 					}
 				}
+			}(vtxoKeys)
+		}
+		cancelStream()
+
+		if s.ctx.Err() != nil {
+			return
+		}
+		log.Error("wallet notification stream closed, fraud detection is down until it reconnects")
+
+		// it's not enough to reconnect the stream,
+		// we also need to restore the watched scripts in the wallet.
+		for {
+			select {
+			case <-s.ctx.Done():
+				return
+			case <-time.After(backoff):
 			}
-		}(vtxoKeys)
+			backoff = min(backoff*2, time.Minute)
+			streamCtx, cancelStream = context.WithCancel(s.ctx)
+			ch = s.scanner.GetNotificationChannel(streamCtx)
+			if err := s.restoreWatchingVtxos(); err != nil {
+				log.WithError(err).Error("failed to restore watched scripts")
+				cancelStream()
+				continue
+			}
+			break
+		}
 	}
 }
 

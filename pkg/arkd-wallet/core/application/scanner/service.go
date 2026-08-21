@@ -156,6 +156,22 @@ func (s *scanner) GetNotificationChannel(ctx context.Context) <-chan map[string]
 	s.lock.Lock()
 	s.notificationListeners = append(s.notificationListeners, ch)
 	s.lock.Unlock()
+
+	go func() {
+		// remove the listener if the context is canceled
+		<-ctx.Done()
+		s.lock.Lock()
+		defer s.lock.Unlock()
+		for i, listener := range s.notificationListeners {
+			if listener == ch {
+				s.notificationListeners = append(
+					s.notificationListeners[:i], s.notificationListeners[i+1:]...,
+				)
+				return
+			}
+		}
+	}()
+
 	return ch
 }
 
