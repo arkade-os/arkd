@@ -529,3 +529,14 @@ var OFFCHAIN_TX_NOT_FOUND = Code[OffchainTxNotFoundMetadata]{
 	"OFFCHAIN_TX_NOT_FOUND",
 	grpccodes.NotFound,
 }
+
+type InvalidBatchOutputScriptMetadata struct {
+	ExpectedPkScript string `json:"expected_pkscript"`
+	ActualPkScript   string `json:"actual_pkscript"`
+}
+
+var INVALID_BATCH_OUTPUT_SCRIPT = Code[InvalidBatchOutputScriptMetadata]{
+	55,
+	"INVALID_BATCH_OUTPUT_SCRIPT",
+	grpccodes.InvalidArgument,
+}
