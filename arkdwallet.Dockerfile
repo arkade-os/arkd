@@ -10,6 +10,18 @@ ARG TARGETARCH
 
 WORKDIR /app
 
+COPY go.mod go.sum ./
+COPY api-spec/go.mod api-spec/go.sum ./api-spec/
+COPY pkg/ark-lib/go.mod pkg/ark-lib/go.sum ./pkg/ark-lib/
+COPY pkg/arkd-wallet/go.mod pkg/arkd-wallet/go.sum ./pkg/arkd-wallet/
+COPY pkg/macaroons/go.mod pkg/macaroons/go.sum ./pkg/macaroons/
+COPY pkg/kvdb/go.mod pkg/kvdb/go.sum ./pkg/kvdb/
+COPY pkg/errors/go.mod pkg/errors/go.sum ./pkg/errors/
+COPY pkg/client-lib/go.mod pkg/client-lib/go.sum ./pkg/client-lib/
+COPY pkg/client-wallet/go.mod pkg/client-wallet/go.sum ./pkg/client-wallet/
+
+RUN go mod download
+
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-X 'main.Version=${VERSION}'" -o /app/bin/arkd-wallet ./cmd/arkd-wallet/main.go

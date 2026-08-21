@@ -22,6 +22,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: ${{ vars.CI_RUNNER_LABEL == '' }}
 
       - name: Check for changes
         run: |
@@ -41,6 +42,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: ${{ vars.CI_RUNNER_LABEL == '' }}
 
       - name: check linting
         uses: golangci/golangci-lint-action@v8
