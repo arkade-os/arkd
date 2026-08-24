@@ -223,6 +223,77 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 	})
 
+	t.Run("IntentStore vtxo guard set", func(t *testing.T) {
+		ctx := t.Context()
+
+		vtxo := domain.Vtxo{
+			Outpoint: domain.Outpoint{
+				Txid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				VOut: 0,
+			},
+			Amount:          1000,
+			PubKey:          "7086d72a8ddacc9e6e0451d92133ef583d6748a4726b632a94f26df8c802ac24",
+			CommitmentTxids: []string{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+		}
+		outpoints := []domain.Outpoint{vtxo.Outpoint}
+
+		pushIntent := func() error {
+			intent := domain.Intent{
+				Id:        uuid.New().String(),
+				Inputs:    []domain.Vtxo{vtxo},
+				Receivers: []domain.Receiver{{Amount: 1000, PubKey: vtxo.PubKey}},
+			}
+			return store.Intents().Push(ctx, intent, nil, nil)
+		}
+
+		t.Run("Pop then DeleteVtxos drains the guard set", func(t *testing.T) {
+			require.NoError(t, pushIntent())
+
+			found, _ := store.Intents().IncludesAny(ctx, outpoints)
+			require.True(t, found)
+
+			popped, err := store.Intents().Pop(ctx, 1)
+			require.NoError(t, err)
+			require.Len(t, popped, 1)
+
+			// the vtxo stays guarded while the round is in flight
+			found, _ = store.Intents().IncludesAny(ctx, outpoints)
+			require.True(t, found)
+
+			require.NoError(t, store.Intents().DeleteVtxos(ctx))
+
+			found, _ = store.Intents().IncludesAny(ctx, outpoints)
+			require.False(t, found)
+		})
+
+		t.Run("DeleteAll flushes pending guard set removals", func(t *testing.T) {
+			require.NoError(t, pushIntent())
+
+			popped, err := store.Intents().Pop(ctx, 1)
+			require.NoError(t, err)
+			require.Len(t, popped, 1)
+
+			// admin flush while the round is in flight
+			require.NoError(t, store.Intents().DeleteAll(ctx))
+
+			found, _ := store.Intents().IncludesAny(ctx, outpoints)
+			require.False(t, found)
+
+			// the same vtxo can be registered again by a new intent
+			require.NoError(t, pushIntent())
+
+			// draining the pending removals must not evict the vtxo still
+			// referenced by the live intent
+			require.NoError(t, store.Intents().DeleteVtxos(ctx))
+
+			found, res := store.Intents().IncludesAny(ctx, outpoints)
+			require.True(t, found)
+			require.Equal(t, vtxo.Outpoint.String(), res)
+
+			require.NoError(t, store.Intents().DeleteAll(ctx))
+		})
+	})
+
 	t.Run("ForfeitTxsStore", func(t *testing.T) {
 		ctx := t.Context()
 
