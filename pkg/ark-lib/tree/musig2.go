@@ -317,6 +317,10 @@ func (t *treeSignerSession) Init(
 	t.scriptRoot = batchOutSweepClosure
 	t.prevoutFetcherFactory = prevOutFetcherFactory
 	t.txs = treeToIndexedTxs(vtxoTree, make(map[string]*psbt.Packet))
+
+	// Nonces are reset so a retry does not reuse any.
+	t.myNonces = nil
+	t.aggregateNonces = nil
 	return nil
 }
 
@@ -558,7 +562,10 @@ func (t *treeCoordinatorSession) AddSignatures(pubkey *btcec.PublicKey, sig Tree
 			return false, fmt.Errorf("invalid taproot signature hash length for txid %s", tx.UnsignedTx.TxID())
 		}
 
-		if !sig.Verify(nonce.PubNonce, combinedNonce.PubNonce, cosigners, pubkey, [32]byte(message), musig2.WithTaprootSignTweak(t.scriptRoot)) {
+		if !sig.Verify(
+			nonce.PubNonce, combinedNonce.PubNonce, cosigners, pubkey, [32]byte(message),
+			musig2.WithSortedKeys(), musig2.WithTaprootSignTweak(t.scriptRoot),
+		) {
 			return true, fmt.Errorf("invalid signature for txid %s", txid)
 		}
 	}

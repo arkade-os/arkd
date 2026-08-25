@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"strings"
+	"sort"
 	"sync"
 	"time"
 
@@ -14,7 +14,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -22,11 +21,22 @@ const maxSweepInputs = 1000
 
 type AdminService interface {
 	Wallet() ports.WalletService
-	GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep, error)
+	GetScheduledSweeps(ctx context.Context, limit int64) ([]domain.ScheduledSweep, error)
+	// GetRoundDetails accepts either a batch id or a commitment txid.
 	GetRoundDetails(ctx context.Context, roundId string) (*RoundDetails, error)
+	// GetRoundIntents returns the intents registered in a batch as they were persisted,
+	// so they can be inspected even if the batch failed. It accepts either a batch id or
+	// a commitment txid.
+	GetRoundIntents(ctx context.Context, roundId string) ([]IntentInfo, error)
 	GetRounds(
-		ctx context.Context, after, before int64, withFailed, withCompleted bool,
-	) ([]string, error)
+		ctx context.Context, after, before int64, withFailed, withCompleted, onlyFailed bool,
+		limit int64,
+	) ([]domain.RoundSummary, error)
+	GetOffchainTxs(
+		ctx context.Context, after, before int64, onlyFailed, onlyCompleted bool, limit int64,
+	) ([]*domain.OffchainTx, error)
+	GetOffchainTxDetails(ctx context.Context, txid string) (*domain.OffchainTx, error)
+	GetFeeRate(ctx context.Context) (uint64, error)
 	GetExpiredRounds(ctx context.Context) ([]domain.ExpiredRound, error)
 	GetWalletAddress(ctx context.Context) (string, error)
 	GetWalletStatus(ctx context.Context) (*WalletStatus, error)
@@ -96,7 +106,7 @@ func (a *adminService) GetMainAccountUtxos(ctx context.Context) ([]ports.WalletU
 func (a *adminService) GetRoundDetails(
 	ctx context.Context, roundId string,
 ) (*RoundDetails, error) {
-	round, err := a.repoManager.Rounds().GetRoundWithId(ctx, roundId)
+	round, err := a.getRound(ctx, roundId)
 	if err != nil {
 		return nil, err
 	}
@@ -133,8 +143,7 @@ func (a *adminService) GetRoundDetails(
 	}
 
 	return &RoundDetails{
-		RoundId:          round.Id,
-		TxId:             round.CommitmentTxid,
+		RoundSummary:     roundSummary(round),
 		ForfeitedAmount:  totalForfeitAmount,
 		TotalVtxosAmount: totalVtxosAmount,
 		TotalExitAmount:  totalExitAmount,
@@ -142,34 +151,150 @@ func (a *adminService) GetRoundDetails(
 		FeesAmount:       round.CollectedFees,
 		InputVtxos:       inputVtxos,
 		OutputVtxos:      outputVtxos,
-		StartedAt:        round.StartingTimestamp,
-		EndedAt:          round.EndingTimestamp,
 	}, nil
 }
 
-func (a *adminService) GetRounds(
-	ctx context.Context, after, before int64, withFailed, withCompleted bool,
-) ([]string, error) {
-	return a.repoManager.Rounds().GetRoundIds(ctx, after, before, withFailed, withCompleted)
-}
-
-func (a *adminService) GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep, error) {
-	sweepableRounds, err := a.repoManager.Rounds().GetSweepableRounds(ctx)
+func (a *adminService) GetRoundIntents(
+	ctx context.Context, roundId string,
+) ([]IntentInfo, error) {
+	round, err := a.getRound(ctx, roundId)
 	if err != nil {
 		return nil, err
 	}
 
-	scheduledSweeps := make([]ScheduledSweep, 0, len(sweepableRounds))
-	for _, commitmentTxid := range sweepableRounds {
-		scheduledSweep, err := a.getScheduledSweep(ctx, commitmentTxid)
+	intentsInfo := make([]IntentInfo, 0, len(round.Intents))
+	for _, intent := range round.Intents {
+		receivers, err := receiversInfo(intent.Receivers)
 		if err != nil {
-			log.WithError(err).Errorf("failed to get scheduled sweep for round %s", commitmentTxid)
-			continue
+			return nil, err
 		}
-		scheduledSweeps = append(scheduledSweeps, *scheduledSweep)
+
+		// Boarding inputs and cosigner pubkeys are not persisted with the intent, they
+		// only live in the intent queue, so they are left empty here.
+		intentsInfo = append(intentsInfo, IntentInfo{
+			Id:        intent.Id,
+			Receivers: receivers,
+			Inputs:    intent.Inputs,
+			Proof:     intent.Proof,
+			Message:   intent.Message,
+		})
 	}
 
-	return scheduledSweeps, nil
+	return intentsInfo, nil
+}
+
+// GetRounds lists batches. Filtering, ordering and the limit are pushed into the
+// repository query, so a wide window costs one round trip rather than loading
+// every round in the range.
+func (a *adminService) GetRounds(
+	ctx context.Context, after, before int64, withFailed, withCompleted, onlyFailed bool,
+	limit int64,
+) ([]domain.RoundSummary, error) {
+	return a.repoManager.Rounds().GetRoundSummaries(
+		ctx, after, before, withFailed, withCompleted, onlyFailed, limit,
+	)
+}
+
+func (a *adminService) GetOffchainTxs(
+	ctx context.Context, after, before int64, onlyFailed, onlyCompleted bool, limit int64,
+) ([]*domain.OffchainTx, error) {
+	txs, err := a.repoManager.OffchainTxs().GetOffchainTxsInRange(
+		ctx, after, before, onlyFailed, onlyCompleted, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Slice(txs, func(i, j int) bool {
+		return txs[i].StartingTimestamp > txs[j].StartingTimestamp
+	})
+
+	return txs, nil
+}
+
+func (a *adminService) GetOffchainTxDetails(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	return a.repoManager.OffchainTxs().GetAnyOffchainTx(ctx, txid)
+}
+
+func (a *adminService) GetFeeRate(ctx context.Context) (uint64, error) {
+	return a.walletSvc.FeeRate(ctx)
+}
+
+// getRound loads a batch by its id, or by its commitment txid if the given value looks
+// like one. Batch ids are uuids, so the two can never be confused.
+func (a *adminService) getRound(ctx context.Context, id string) (*domain.Round, error) {
+	if isTxid(id) {
+		return a.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, id)
+	}
+	return a.repoManager.Rounds().GetRoundWithId(ctx, id)
+}
+
+func isTxid(id string) bool {
+	if len(id) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(id)
+	return err == nil
+}
+
+// receiversInfo turns the receivers of an intent into their inspectable form, encoding
+// the offchain ones as vtxo scripts.
+func receiversInfo(list []domain.Receiver) ([]Receiver, error) {
+	receivers := make([]Receiver, 0, len(list))
+	for _, receiver := range list {
+		if len(receiver.OnchainAddress) > 0 {
+			receivers = append(receivers, Receiver{
+				OnchainAddress: receiver.OnchainAddress,
+				Amount:         receiver.Amount,
+			})
+			continue
+		}
+
+		pubkey, err := hex.DecodeString(receiver.PubKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode pubkey: %s", err)
+		}
+
+		vtxoTapKey, err := schnorr.ParsePubKey(pubkey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse pubkey: %s", err)
+		}
+
+		outScript, err := script.P2TRScript(vtxoTapKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode vtxo script: %s", err)
+		}
+
+		receivers = append(receivers, Receiver{
+			VtxoScript: hex.EncodeToString(outScript),
+			Amount:     receiver.Amount,
+		})
+	}
+	return receivers, nil
+}
+
+func roundSummary(round *domain.Round) domain.RoundSummary {
+	return domain.RoundSummary{
+		RoundId:        round.Id,
+		CommitmentTxid: round.CommitmentTxid,
+		StartedAt:      round.StartingTimestamp,
+		EndedAt:        round.EndingTimestamp,
+		Stage:          domain.RoundStage(round.Stage.Code).String(),
+		Ended:          round.IsEnded(),
+		Failed:         round.IsFailed(),
+		Swept:          round.Swept,
+		FailReason:     round.FailReason,
+		TotalIntents:   int64(len(round.Intents)),
+	}
+}
+
+// GetScheduledSweeps lists the batches awaiting a sweep, soonest due first.
+func (a *adminService) GetScheduledSweeps(
+	ctx context.Context, limit int64,
+) ([]domain.ScheduledSweep, error) {
+	return a.repoManager.Rounds().GetScheduledSweeps(ctx, limit)
 }
 
 // GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose
@@ -306,35 +431,9 @@ func (s *adminService) ListIntents(
 
 	intentsInfo := make([]IntentInfo, 0, len(intents))
 	for _, intent := range intents {
-		receivers := make([]Receiver, 0, len(intent.Receivers))
-		for _, receiver := range intent.Receivers {
-			if len(receiver.OnchainAddress) > 0 {
-				receivers = append(receivers, Receiver{
-					OnchainAddress: receiver.OnchainAddress,
-					Amount:         receiver.Amount,
-				})
-				continue
-			}
-
-			pubkey, err := hex.DecodeString(receiver.PubKey)
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode pubkey: %s", err)
-			}
-
-			vtxoTapKey, err := schnorr.ParsePubKey(pubkey)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse pubkey: %s", err)
-			}
-
-			outScript, err := script.P2TRScript(vtxoTapKey)
-			if err != nil {
-				return nil, fmt.Errorf("failed to encode vtxo script: %s", err)
-			}
-
-			receivers = append(receivers, Receiver{
-				VtxoScript: hex.EncodeToString(outScript),
-				Amount:     receiver.Amount,
-			})
+		receivers, err := receiversInfo(intent.Receivers)
+		if err != nil {
+			return nil, err
 		}
 
 		intentsInfo = append(intentsInfo, IntentInfo{
@@ -654,157 +753,14 @@ func (a *adminService) UpdateSettings(
 	return changelog, nil
 }
 
+// GetCollectedFees totals the fees recorded against batches finalized in the
+// window. One indexed aggregate: it used to load every round in the window in
+// full — intents, receivers, inputs, txs and vtxo trees — plus a wallet RPC per
+// boarding input, to produce a single integer.
 func (a *adminService) GetCollectedFees(
 	ctx context.Context, after, before int64,
 ) (uint64, error) {
-	roundIds, err := a.repoManager.Rounds().GetRoundIds(ctx, after, before, false, true)
-	if err != nil {
-		return 0, err
-	}
-
-	var total uint64
-	// batchesToPatch is used to keep track of the batches for which we calculcated fees,
-	// so we can lazily patch the missing info in storage for batches prior
-	// https://github.com/arkade-os/arkd/pull/933.
-	batchesToPatch := make(map[string]uint64)
-	for _, id := range roundIds {
-		round, err := a.repoManager.Rounds().GetRoundWithId(ctx, id)
-		if err != nil {
-			return 0, err
-		}
-
-		// Batches finalized before fee persistence have a zero (default) collected fee;
-		// recompute it on the fly. Only patch (persist) when the recomputation is complete,
-		// so we never persist a value that under-counts boarding.
-		if round.CollectedFees == 0 {
-			fees, complete := a.recomputeCollectedFees(ctx, round)
-			total += fees
-			if complete && fees > 0 {
-				batchesToPatch[round.Id] = fees
-			}
-			continue
-		}
-		total += round.CollectedFees
-	}
-
-	if len(batchesToPatch) > 0 {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-			defer cancel()
-			if err := a.repoManager.Rounds().PatchCollectedFees(ctx, batchesToPatch); err != nil {
-				log.WithError(err).WithField("patches", batchesToPatch).Warn(
-					"failed to patch collected fees",
-				)
-			}
-		}()
-	}
-
-	return total, nil
-}
-
-// recomputeCollectedFees recomputes the fees collected by the operator for a batch whose fee was
-// not persisted (finalized before fee persistence). It recovers the boarding input amount from the
-// finalized commitment tx and returns whether the recomputation was complete.
-// When complete is false the boarding amount could not be recovered, so the returned value
-// under-counts the real fee and must not be persisted (a later call can retry).
-func (a *adminService) recomputeCollectedFees(
-	ctx context.Context, round *domain.Round,
-) (fees uint64, complete bool) {
-	boardingInputAmount, err := a.boardingInputAmount(ctx, round.CommitmentTx)
-	if err != nil {
-		log.WithError(err).WithField("round_id", round.Id).Warn(
-			"failed to recover boarding input amount, collected fees may be underestimated",
-		)
-		return calculateCollectedFees(round, 0), false
-	}
-	return calculateCollectedFees(round, boardingInputAmount), true
-}
-
-// boardingInputAmount computes the total amount (sats) of the boarding inputs of
-// a finalized (raw) commitment tx. Boarding inputs are detected by their taproot
-// script-path witness; since a raw tx carries no input amounts, each boarding
-// input's value is looked up from its prevout via the wallet.
-func (a *adminService) boardingInputAmount(
-	ctx context.Context, commitmentTx string,
-) (uint64, error) {
-	var tx wire.MsgTx
-	if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(commitmentTx))); err != nil {
-		return 0, fmt.Errorf("failed to deserialize commitment tx: %w", err)
-	}
-
-	var total uint64
-	for _, in := range tx.TxIn {
-		if !isBoardingWitness(in.Witness) {
-			continue
-		}
-
-		prevTxid := in.PreviousOutPoint.Hash.String()
-		prevTxHex, err := a.walletSvc.GetTransaction(ctx, prevTxid)
-		if err != nil {
-			return 0, fmt.Errorf("failed to get boarding prevout tx %s: %w", prevTxid, err)
-		}
-
-		var prevTx wire.MsgTx
-		if err := prevTx.Deserialize(hex.NewDecoder(strings.NewReader(prevTxHex))); err != nil {
-			return 0, fmt.Errorf("failed to deserialize boarding prevout tx %s: %w", prevTxid, err)
-		}
-
-		vout := in.PreviousOutPoint.Index
-		if int(vout) >= len(prevTx.TxOut) {
-			return 0, fmt.Errorf(
-				"boarding prevout %s:%d out of range", prevTxid, vout,
-			)
-		}
-		total += uint64(prevTx.TxOut[vout].Value)
-	}
-
-	return total, nil
-}
-
-func (a *adminService) getScheduledSweep(
-	ctx context.Context, commitmentTxid string,
-) (*ScheduledSweep, error) {
-	confirmed, _, err := a.walletSvc.IsTransactionConfirmed(ctx, commitmentTxid)
-	if !confirmed || err != nil {
-		return &ScheduledSweep{
-			RoundId:          commitmentTxid,
-			Confirmed:        false,
-			SweepableOutputs: make([]SweepableOutput, 0),
-		}, nil
-	}
-
-	round, err := a.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
-	if err != nil {
-		return nil, err
-	}
-
-	vtxoTree, err := tree.NewTxTree(round.VtxoTree)
-	if err != nil {
-		return nil, err
-	}
-
-	batchOutsByExpiration, err := findSweepableOutputs(
-		ctx, a.walletSvc, a.txBuilder, a.sweeperTimeUnit, vtxoTree,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	batchOutputs := make([]SweepableOutput, 0)
-	for expirationTime, inputs := range batchOutsByExpiration {
-		for _, input := range inputs {
-			batchOutputs = append(batchOutputs, SweepableOutput{
-				TxInput:     input,
-				ScheduledAt: expirationTime,
-			})
-		}
-	}
-
-	return &ScheduledSweep{
-		RoundId:          round.Id,
-		SweepableOutputs: batchOutputs,
-		Confirmed:        true,
-	}, nil
+	return a.repoManager.Rounds().SumCollectedFees(ctx, after, before)
 }
 
 func (a *adminService) saveBatchSweptEvents(
@@ -859,11 +815,18 @@ func (a *adminService) saveBatchSweptEvents(
 				}
 
 				for _, leaf := range vtxosLeaves {
-					vtxo := domain.Outpoint{
-						Txid: leaf.UnsignedTx.TxID(),
-						VOut: 0,
+					// The VTXO is the first non-anchor output; leaf txs can
+					// carry an anchor at vout 0, so the VTXO is not always at
+					// vout 0. extractVtxoOutpoint handles that.
+					vtxo, err := extractVtxoOutpoint(leaf)
+					if err != nil {
+						log.WithError(err).Errorf(
+							"failed to extract vtxo outpoint from leaf %s",
+							leaf.UnsignedTx.TxID(),
+						)
+						continue
 					}
-					leafVtxos = append(leafVtxos, vtxo)
+					leafVtxos = append(leafVtxos, *vtxo)
 				}
 			}
 		}
@@ -883,7 +846,7 @@ func (a *adminService) saveBatchSweptEvents(
 		} else {
 			seen := make(map[string]struct{})
 			for _, leafVtxo := range leafVtxos {
-				children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
+				children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo)
 				if err != nil {
 					log.WithError(err).Error("error while getting children vtxos")
 					continue
@@ -915,20 +878,8 @@ func (a *adminService) saveBatchSweptEvents(
 	}
 }
 
-type SweepableOutput struct {
-	TxInput     ports.TxInput
-	ScheduledAt int64
-}
-
-type ScheduledSweep struct {
-	RoundId          string
-	Confirmed        bool
-	SweepableOutputs []SweepableOutput
-}
-
 type RoundDetails struct {
-	RoundId          string
-	TxId             string
+	domain.RoundSummary
 	ForfeitedAmount  uint64
 	TotalVtxosAmount uint64
 	TotalExitAmount  uint64
@@ -936,8 +887,6 @@ type RoundDetails struct {
 	InputVtxos       []string
 	OutputVtxos      []string
 	ExitAddresses    []string
-	StartedAt        int64
-	EndedAt          int64
 }
 
 type Receiver struct {

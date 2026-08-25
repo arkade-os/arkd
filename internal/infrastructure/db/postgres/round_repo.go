@@ -10,6 +10,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/sqlc-dev/pqtype"
 )
 
@@ -37,43 +38,47 @@ func (r *roundRepository) Close() {
 	_ = r.db.Close()
 }
 
-func (r *roundRepository) GetRoundIds(
-	ctx context.Context, startedAfter, startedBefore int64, withFailed, withCompleted bool,
-) ([]string, error) {
-	var roundIDs []string
-	if startedAfter == 0 && startedBefore == 0 {
-		// Use filtering query when no time range is specified
-		ids, err := r.querier.SelectRoundIdsWithFilters(
-			ctx,
-			queries.SelectRoundIdsWithFiltersParams{
-				WithFailed:    withFailed,
-				WithCompleted: withCompleted,
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		roundIDs = ids
-	} else {
-		// Use time range filtering query
-		ids, err := r.querier.SelectRoundIdsInTimeRangeWithFilters(
-			ctx,
-			queries.SelectRoundIdsInTimeRangeWithFiltersParams{
-				StartTs:       startedAfter,
-				EndTs:         startedBefore,
-				WithFailed:    withFailed,
-				WithCompleted: withCompleted,
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		roundIDs = ids
+func (r *roundRepository) GetRoundSummaries(
+	ctx context.Context, startedAfter, startedBefore int64,
+	withFailed, withCompleted, onlyFailed bool, limit int64,
+) ([]domain.RoundSummary, error) {
+	if onlyFailed {
+		withFailed = true
 	}
 
-	return roundIDs, nil
+	rows, err := r.querier.SelectRoundSummaries(ctx, queries.SelectRoundSummariesParams{
+		StartTs:       startedAfter,
+		EndTs:         startedBefore,
+		WithFailed:    withFailed,
+		WithCompleted: withCompleted,
+		OnlyFailed:    onlyFailed,
+		MaxResults:    limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	summaries := make([]domain.RoundSummary, 0, len(rows))
+	for _, row := range rows {
+		stage := domain.Stage{
+			Code:   int(row.StageCode),
+			Ended:  row.Ended,
+			Failed: row.Failed,
+		}
+		summaries = append(summaries, domain.RoundSummary{
+			RoundId:        row.ID,
+			CommitmentTxid: row.CommitmentTxid,
+			StartedAt:      row.StartingTimestamp,
+			EndedAt:        row.EndingTimestamp,
+			Stage:          domain.RoundStage(stage.Code).String(),
+			Ended:          domain.RoundEnded(stage),
+			Failed:         stage.Failed,
+			Swept:          row.Swept,
+			FailReason:     row.FailReason.String,
+			TotalIntents:   row.TotalIntents,
+		})
+	}
+	return summaries, nil
 }
 
 func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Round) error {
@@ -240,7 +245,9 @@ func (r *roundRepository) GetRoundWithId(ctx context.Context, id string) (*domai
 		return rounds[0], nil
 	}
 
-	return nil, errors.New("batch not found")
+	return nil, arkerrors.ROUND_NOT_FOUND.
+		New("batch %s not found", id).
+		WithMetadata(arkerrors.RoundNotFoundMetadata{RoundId: id})
 }
 
 func (r *roundRepository) GetRoundWithCommitmentTxid(
@@ -271,7 +278,9 @@ func (r *roundRepository) GetRoundWithCommitmentTxid(
 		return rounds[0], nil
 	}
 
-	return nil, errors.New("batch not found")
+	return nil, arkerrors.ROUND_NOT_FOUND.
+		New("batch with commitment txid %s not found", txid).
+		WithMetadata(arkerrors.RoundNotFoundMetadata{RoundId: txid})
 }
 
 func (r *roundRepository) GetRoundStats(
@@ -482,21 +491,37 @@ func (r *roundRepository) GetIntentByTxid(
 	}, nil
 }
 
-func (r *roundRepository) PatchCollectedFees(
-	ctx context.Context, feesByRoundId map[string]uint64,
-) error {
-	txBody := func(querierWithTx *queries.Queries) error {
-		for id, fees := range feesByRoundId {
-			if err := querierWithTx.UpdateRoundCollectedFees(
-				ctx,
-				queries.UpdateRoundCollectedFeesParams{Fees: int64(fees), ID: id},
-			); err != nil {
-				return fmt.Errorf("failed to patch collected fees for round %s: %w", id, err)
-			}
-		}
-		return nil
+func (r *roundRepository) SumCollectedFees(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	total, err := r.querier.SelectCollectedFeesInRange(
+		ctx, queries.SelectCollectedFeesInRangeParams{StartTs: after, EndTs: before},
+	)
+	if err != nil {
+		return 0, err
 	}
-	return execTx(ctx, r.db, txBody)
+	return uint64(total), nil
+}
+
+func (r *roundRepository) GetScheduledSweeps(
+	ctx context.Context, limit int64,
+) ([]domain.ScheduledSweep, error) {
+	rows, err := r.querier.SelectScheduledSweeps(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	sweeps := make([]domain.ScheduledSweep, 0, len(rows))
+	for _, row := range rows {
+		sweeps = append(sweeps, domain.ScheduledSweep{
+			RoundId:        row.ID,
+			CommitmentTxid: row.Txid,
+			SweepAt:        row.SweepAt,
+			TotalAmount:    uint64(row.TotalAmount),
+			VtxoCount:      row.VtxoCount,
+		})
+	}
+	return sweeps, nil
 }
 
 func (r *roundRepository) PatchForfeitTxs(

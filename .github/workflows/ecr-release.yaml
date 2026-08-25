@@ -1,0 +1,125 @@
+# =============================================================================
+# Gated on the ECR_PUSH_ENABLED repository variable
+# =============================================================================
+# Every job is inert unless the repository defines ECR_PUSH_ENABLED = "true", so
+# this workflow only does anything where that variable and the AWS role secrets
+# below have been configured. Everywhere else a tag push skips it.
+#
+# A repository variable is used rather than a secret because the secrets context
+# is not available in a job-level `if` condition, while vars is.
+#
+# Credentials cannot leak to a repository that merely has this file: the IAM
+# trust policy restricts role assumption to tag refs of the specific repository
+# it was provisioned for, so an OIDC token minted anywhere else is rejected.
+# =============================================================================
+name: Build and Push Images to ECR
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write # required to request the OIDC token used to assume the AWS roles
+
+jobs:
+  build-and-push:
+    if: vars.ECR_PUSH_ENABLED == 'true'
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve image tags
+        id: meta
+        run: |
+          echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "sha=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # Staging and prod ECR live in separate AWS accounts, so the job assumes a
+      # role in each. amazon-ecr-login writes its credentials to the Docker
+      # config, which is not affected by the AWS environment variables the next
+      # step overwrites, so both registry logins remain valid for the build.
+      - name: Configure AWS credentials (staging)
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_ROLE_ARN }}
+          aws-region: eu-central-1
+
+      - name: Login to Amazon ECR (staging)
+        id: ecr-staging
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+
+      # unset-current-credentials discards the staging credentials first. Without
+      # it the action would role-chain from staging into the prod role rather than
+      # requesting a fresh OIDC token, and staging has no permission to do so.
+      - name: Configure AWS credentials (prod)
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: eu-central-1
+          unset-current-credentials: true
+
+      - name: Login to Amazon ECR (prod)
+        id: ecr-prod
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+
+      # Each image is built once and pushed to both registries so that staging and
+      # prod are guaranteed to receive the same digest. No `latest` tag: every tag
+      # push reaches prod, so a release candidate would otherwise move `latest`
+      # there.
+      #
+      # provenance is disabled so the push produces a plain manifest list. Buildx
+      # would otherwise attach provenance attestations, which appear in ECR as
+      # extra unknown/unknown platform entries alongside the real images.
+      - name: Build and push arkd image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          tags: |
+            ${{ steps.ecr-staging.outputs.registry }}/arkd-staging:${{ steps.meta.outputs.version }}
+            ${{ steps.ecr-staging.outputs.registry }}/arkd-staging:${{ steps.meta.outputs.sha }}
+            ${{ steps.ecr-prod.outputs.registry }}/arkd-prod:${{ steps.meta.outputs.version }}
+            ${{ steps.ecr-prod.outputs.registry }}/arkd-prod:${{ steps.meta.outputs.sha }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+
+      - name: Build and push arkd-wallet image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./arkdwallet.Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          tags: |
+            ${{ steps.ecr-staging.outputs.registry }}/arkd-wallet-staging:${{ steps.meta.outputs.version }}
+            ${{ steps.ecr-staging.outputs.registry }}/arkd-wallet-staging:${{ steps.meta.outputs.sha }}
+            ${{ steps.ecr-prod.outputs.registry }}/arkd-wallet-prod:${{ steps.meta.outputs.version }}
+            ${{ steps.ecr-prod.outputs.registry }}/arkd-wallet-prod:${{ steps.meta.outputs.sha }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+
+      - name: Summary
+        run: |
+          {
+            echo "### Images pushed"
+            echo ""
+            echo "| Repository | Tags |"
+            echo "| --- | --- |"
+            echo "| \`arkd-staging\` | \`${{ steps.meta.outputs.version }}\`, \`${{ steps.meta.outputs.sha }}\` |"
+            echo "| \`arkd-wallet-staging\` | \`${{ steps.meta.outputs.version }}\`, \`${{ steps.meta.outputs.sha }}\` |"
+            echo "| \`arkd-prod\` | \`${{ steps.meta.outputs.version }}\`, \`${{ steps.meta.outputs.sha }}\` |"
+            echo "| \`arkd-wallet-prod\` | \`${{ steps.meta.outputs.version }}\`, \`${{ steps.meta.outputs.sha }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

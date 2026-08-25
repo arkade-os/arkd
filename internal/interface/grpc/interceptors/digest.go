@@ -6,6 +6,7 @@ import (
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -29,6 +30,7 @@ func unaryDigestHandler(getDigest func() (string, bool, error)) grpc.UnaryServer
 		if !skipDigestGuard(info.FullMethod) {
 			expectedDigest, guardEnabled, err := getDigest()
 			if err != nil {
+				log.WithError(err).Warn("failed to get digest")
 				return nil, errors.INTERNAL_ERROR.New(
 					"failed to verify digest header, retry later",
 				)
@@ -60,6 +62,7 @@ func streamDigestHandler(
 		if !skipDigestGuard(info.FullMethod) {
 			expectedDigest, guardEnabled, err := getDigest()
 			if err != nil {
+				log.WithError(err).Warn("failed to get digest")
 				return errors.INTERNAL_ERROR.New("failed to verify digest header, retry later")
 			}
 			// A present digest is always validated against the expected one;

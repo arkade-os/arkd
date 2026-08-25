@@ -46,6 +46,7 @@ func TestSettingsDTORoundTrip(t *testing.T) {
 		Network:        arklib.Bitcoin,
 		DustAmount:     354,
 		ForfeitAddress: "forfeit-address",
+		LastBatchAt:    time.Now(),
 	}
 
 	// Mimic the redis Set/Get: marshal the DTO to JSON and back before parsing.
@@ -70,4 +71,5 @@ func TestSettingsDTORoundTrip(t *testing.T) {
 	require.Equal(t, in.NoteUriPrefix, out.NoteUriPrefix)
 	require.Equal(t, in.VtxoMaxAmount, out.VtxoMaxAmount)
 	require.Equal(t, in.MaxOpReturnOutputs, out.MaxOpReturnOutputs)
+	require.Equal(t, in.LastBatchAt.Unix(), out.LastBatchAt.Unix())
 }

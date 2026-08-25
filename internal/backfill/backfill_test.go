@@ -217,8 +217,6 @@ func TestBackfillSkipsNonForfeitableVtxos(t *testing.T) {
 
 	swept := forfeitableVtxo(domain.Outpoint{Txid: txid(0x01)}, commitment)
 	swept.Swept = true
-	expired := forfeitableVtxo(domain.Outpoint{Txid: txid(0x02)}, commitment)
-	expired.ExpiresAt = time.Now().Add(-time.Hour).Unix()
 	unrolled := forfeitableVtxo(domain.Outpoint{Txid: txid(0x03)}, commitment)
 	unrolled.Unrolled = true
 	note := domain.Vtxo{ // no commitment txids -> note
@@ -233,7 +231,7 @@ func TestBackfillSkipsNonForfeitableVtxos(t *testing.T) {
 	}
 
 	rounds := &fakeRounds{rounds: map[string]*domain.Round{}}
-	vtxos := &fakeVtxos{vtxos: []domain.Vtxo{swept, expired, unrolled, note, unsettled}}
+	vtxos := &fakeVtxos{vtxos: []domain.Vtxo{swept, unrolled, note, unsettled}}
 	signer := &fakeSigner{pubkey: pub, operatorXOnly: xOnly}
 
 	res, err := backfill.Run(ctx, vtxos, rounds, signer)
@@ -241,6 +239,8 @@ func TestBackfillSkipsNonForfeitableVtxos(t *testing.T) {
 
 	require.Equal(t, 0, res.Scanned)
 	require.Equal(t, 0, res.Signed)
+	// no round lookup was even attempted: the vtxos were filtered out, not dropped
+	require.Equal(t, 0, res.Failed)
 	require.Equal(t, 0, signer.calls)
 }
 

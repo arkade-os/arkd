@@ -13,12 +13,12 @@ func UnaryInterceptor(
 ) grpc.ServerOption {
 	return grpc.UnaryInterceptor(middleware.ChainUnaryServer(
 		unaryPanicRecoveryInterceptor(),
+		errorConverter,
 		unaryLogger,
+		unaryReadinessHandler(readiness),
 		unaryVersionCompatHandler(getVersionGuard),
 		unaryDigestHandler(getDigest),
 		unaryMacaroonAuthHandler(svc),
-		unaryReadinessHandler(readiness),
-		errorConverter,
 	))
 }
 
@@ -29,10 +29,11 @@ func StreamInterceptor(
 ) grpc.ServerOption {
 	return grpc.StreamInterceptor(middleware.ChainStreamServer(
 		streamPanicRecoveryInterceptor(),
+		streamErrorConverter,
 		streamLogger,
+		streamReadinessHandler(readiness),
 		streamVersionCompatHandler(getVersionGuard),
 		streamDigestHandler(getDigest),
 		streamMacaroonAuthHandler(svc),
-		streamReadinessHandler(readiness),
 	))
 }

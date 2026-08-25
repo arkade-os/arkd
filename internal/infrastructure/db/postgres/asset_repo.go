@@ -45,16 +45,16 @@ func (r *assetRepository) AddAssets(
 		return -1, nil
 	}
 
+	// a repeat inside the batch is skipped, like an asset already in the db further down.
 	assets := make([]domain.Asset, 0)
 	seen := make(map[string]struct{})
 	for _, assetList := range assetsByTx {
 		for _, ast := range assetList {
-			if _, exists := seen[ast.Id]; !exists {
-				assets = append(assets, ast)
-				seen[ast.Id] = struct{}{}
+			if _, exists := seen[ast.Id]; exists {
 				continue
 			}
-			return -1, fmt.Errorf("duplicated asset %s", ast.Id)
+			assets = append(assets, ast)
+			seen[ast.Id] = struct{}{}
 		}
 	}
 	// Make sure all control assets are added first

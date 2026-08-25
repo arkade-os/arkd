@@ -2,10 +2,11 @@
 // persisted before arkd started signing forfeit txs at collection time.
 //
 // It is meant to be run on demand by the operator (see cmd/arkd-forfeit-backfill).
-// It only touches forfeit txs of vtxos that still require a forfeit (unswept,
-// unexpired, not notes, not unrolled): those are the only forfeits that could
-// ever still be broadcast. Forfeit txs that already carry the operator signature
-// are left untouched, so the backfill is safe to run repeatedly.
+// It only touches forfeit txs of vtxos that still require a forfeit (unswept, not
+// notes, not unrolled): those are the only forfeits that could ever still be
+// broadcast. Expired but unswept vtxos are included, since they still require a
+// forfeit. Forfeit txs that already carry the operator signature are left
+// untouched, so the backfill is safe to run repeatedly.
 package backfill
 
 import (
