@@ -5,20 +5,16 @@
 // It only touches forfeit txs of vtxos that still require a forfeit (unswept, not
 // notes, not unrolled): those are the only forfeits that could ever still be
 // broadcast. Expired but unswept vtxos are included, since they still require a
-// forfeit. Forfeit txs that already carry the operator signature are left
-// untouched, so the backfill is safe to run repeatedly.
+// forfeit. Forfeit txs that already carry every signature needed to broadcast
+// them are left untouched, so the backfill is safe to run repeatedly.
 package backfill
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"strings"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/arkade-os/arkd/internal/core/ports"
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	log "github.com/sirupsen/logrus"
 )
@@ -38,8 +34,6 @@ type ForfeitStore interface {
 // Signer adds the operator signature to a forfeit tx. Satisfied by
 // ports.SignerService.
 type Signer interface {
-	GetPubkey(ctx context.Context) (*btcec.PublicKey, error)
-	GetDeprecatedPubkeys(ctx context.Context) ([]ports.DeprecatedSignerPubkey, error)
 	SignTransactionTapscript(
 		ctx context.Context,
 		partialTx string,
@@ -51,7 +45,7 @@ type Signer interface {
 type Result struct {
 	Scanned       int // unswept forfeited vtxos considered
 	Signed        int // forfeit txs newly signed and persisted
-	AlreadySigned int // forfeit txs already operator-signed (skipped)
+	AlreadySigned int // forfeit txs already broadcast-ready (skipped)
 	Failed        int // forfeit txs that could not be signed or persisted
 }
 
@@ -65,24 +59,6 @@ func Run(
 	rounds ForfeitStore,
 	signer Signer,
 ) (Result, error) {
-	pubkey, err := signer.GetPubkey(ctx)
-	if err != nil {
-		return Result{}, fmt.Errorf("failed to get operator pubkey: %w", err)
-	}
-	operatorKeys := [][]byte{schnorr.SerializePubKey(pubkey)}
-
-	// Include deprecated keys so forfeits signed before a key rotation are
-	// recognized as already signed and not re-signed with the current key.
-	deprecated, err := signer.GetDeprecatedPubkeys(ctx)
-	if err != nil {
-		return Result{}, fmt.Errorf("failed to get deprecated operator pubkeys: %w", err)
-	}
-	for _, d := range deprecated {
-		if d.PubKey != nil {
-			operatorKeys = append(operatorKeys, schnorr.SerializePubKey(d.PubKey))
-		}
-	}
-
 	allVtxos, err := vtxos.GetAllVtxos(ctx)
 	if err != nil {
 		return Result{}, fmt.Errorf("failed to list vtxos: %w", err)
@@ -121,7 +97,7 @@ func Run(
 				continue
 			}
 
-			if forfeitOperatorSigned(forfeitTx, operatorKeys) {
+			if domain.ForfeitTxReadyToBroadcast(forfeitTx) {
 				res.AlreadySigned++
 				continue
 			}
@@ -158,10 +134,23 @@ func Run(
 		}
 
 		if err := rounds.PatchForfeitTxs(ctx, patch); err != nil {
-			res.Failed += len(patch)
-			log.WithError(err).Errorf(
-				"failed to persist %d signed forfeit tx(s) for round %s", len(patch), commitmentTxid,
+			// The SQL backends run the batch in one transaction, so a single bad
+			// txid rolls the whole round back and re-running would fail the same
+			// way forever. Retry each forfeit on its own so one bad txid can't
+			// block the rest of the round, and so the counts name what actually
+			// failed rather than blaming the whole batch.
+			log.WithError(err).Warnf(
+				"batch patch failed for round %s, retrying its %d forfeit(s) one by one",
+				commitmentTxid, len(patch),
 			)
+			for txid, tx := range patch {
+				if err := rounds.PatchForfeitTxs(ctx, map[string]string{txid: tx}); err != nil {
+					res.Failed++
+					log.WithError(err).Errorf("failed to persist signed forfeit tx %s", txid)
+					continue
+				}
+				res.Signed++
+			}
 			continue
 		}
 		res.Signed += len(patch)
@@ -187,21 +176,4 @@ func findForfeitTx(forfeits []domain.ForfeitTx, vtxo domain.Outpoint) (*psbt.Pac
 		}
 	}
 	return nil, fmt.Errorf("forfeit tx not found for vtxo %s", vtxo.String())
-}
-
-// forfeitOperatorSigned reports whether the forfeit tx already carries a tapscript
-// signature from one of the operator's signer keys (the current key or any
-// deprecated one). Deprecated keys are included so a forfeit signed before a key
-// rotation is recognized as already signed and not re-signed with the current key.
-func forfeitOperatorSigned(ptx *psbt.Packet, operatorXOnlyKeys [][]byte) bool {
-	for _, in := range ptx.Inputs {
-		for _, sig := range in.TaprootScriptSpendSig {
-			for _, key := range operatorXOnlyKeys {
-				if bytes.Equal(sig.XOnlyPubKey, key) {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }

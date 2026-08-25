@@ -10,7 +10,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/backfill"
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/arkade-os/arkd/internal/core/ports"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -36,6 +36,11 @@ type fakeRounds struct {
 	patches  []map[string]string
 	getErr   error
 	patchErr error
+	// failBatch rejects any patch of more than one txid, mimicking the SQL
+	// backends rolling a whole round back when one txid in the batch is bad.
+	failBatch bool
+	// failTxid rejects this txid however it is patched, batched or alone.
+	failTxid string
 }
 
 func (f *fakeRounds) GetRoundWithCommitmentTxid(
@@ -55,6 +60,12 @@ func (f *fakeRounds) PatchForfeitTxs(_ context.Context, txByTxid map[string]stri
 	if f.patchErr != nil {
 		return f.patchErr
 	}
+	if _, bad := txByTxid[f.failTxid]; bad && f.failTxid != "" {
+		return fmt.Errorf("forfeit tx %s not found", f.failTxid)
+	}
+	if f.failBatch && len(txByTxid) > 1 {
+		return fmt.Errorf("batch rolled back")
+	}
 	f.patches = append(f.patches, txByTxid)
 	// Apply the patch to the stored rounds so re-runs observe signed forfeits.
 	for _, r := range f.rounds {
@@ -68,23 +79,14 @@ func (f *fakeRounds) PatchForfeitTxs(_ context.Context, txByTxid map[string]stri
 }
 
 type fakeSigner struct {
-	pubkey        *btcec.PublicKey
 	operatorXOnly []byte
-	deprecated    []ports.DeprecatedSignerPubkey
 	signErr       error
 	calls         int
 }
 
-func (f *fakeSigner) GetPubkey(_ context.Context) (*btcec.PublicKey, error) {
-	return f.pubkey, nil
-}
-
-func (f *fakeSigner) GetDeprecatedPubkeys(
-	_ context.Context,
-) ([]ports.DeprecatedSignerPubkey, error) {
-	return f.deprecated, nil
-}
-
+// SignTransactionTapscript mirrors the real signer: with no input indexes it adds
+// the operator tapscript sig to the vtxo input and a key spend sig to the
+// connector, leaving the forfeit ready to finalize.
 func (f *fakeSigner) SignTransactionTapscript(
 	_ context.Context, partialTx string, _ []int,
 ) (string, error) {
@@ -100,6 +102,7 @@ func (f *fakeSigner) SignTransactionTapscript(
 		p.Inputs[0].TaprootScriptSpendSig,
 		operatorSig(f.operatorXOnly),
 	)
+	p.Inputs[1].TaprootKeySpendSig = make([]byte, 64)
 	return p.B64Encode()
 }
 
@@ -118,9 +121,11 @@ func operatorSig(xOnly []byte) *psbt.TaprootScriptSpendSig {
 	}
 }
 
-// buildForfeit builds a forfeit psbt spending vtxoOp at input 0 and a connector at
-// input 1. When signed is true, it carries the operator's tapscript signature.
-func buildForfeit(t *testing.T, vtxoOp domain.Outpoint, operatorXOnly []byte, signed bool) domain.ForfeitTx {
+// buildForfeit builds a forfeit shaped like the real thing: input 0 spends the
+// vtxo through a user+operator multisig leaf, input 1 spends the connector
+// through the wallet key path. When signed, it carries every signature the
+// finalizer needs, so it is already broadcast-ready.
+func buildForfeit(t *testing.T, vtxoOp domain.Outpoint, operator *btcec.PublicKey, signed bool) domain.ForfeitTx {
 	t.Helper()
 	vh, err := chainhash.NewHashFromStr(vtxoOp.Txid)
 	require.NoError(t, err)
@@ -134,12 +139,53 @@ func buildForfeit(t *testing.T, vtxoOp domain.Outpoint, operatorXOnly []byte, si
 
 	p, err := psbt.NewFromUnsignedTx(tx)
 	require.NoError(t, err)
-	if signed {
-		p.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{operatorSig(operatorXOnly)}
+
+	leaf, user := forfeitLeaf(t, operator)
+	p.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{{
+		ControlBlock: controlBlock(t),
+		Script:       leaf,
+		LeafVersion:  txscript.BaseLeafVersion,
+	}}
+	// the user always signs its own half before submitting the forfeit
+	p.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{
+		operatorSig(schnorr.SerializePubKey(user)),
 	}
+	if signed {
+		p.Inputs[0].TaprootScriptSpendSig = append(
+			p.Inputs[0].TaprootScriptSpendSig,
+			operatorSig(schnorr.SerializePubKey(operator)),
+		)
+		p.Inputs[1].TaprootKeySpendSig = make([]byte, 64)
+	}
+
 	b64, err := p.B64Encode()
 	require.NoError(t, err)
 	return domain.ForfeitTx{Txid: p.UnsignedTx.TxID(), Tx: b64}
+}
+
+// controlBlock returns a well-formed single-leaf control block: the leaf version
+// byte followed by a real internal key, which psbt decoding requires.
+func controlBlock(t *testing.T) []byte {
+	t.Helper()
+	internal, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	return append(
+		[]byte{byte(txscript.BaseLeafVersion)}, schnorr.SerializePubKey(internal.PubKey())...,
+	)
+}
+
+// forfeitLeaf returns a user+operator multisig leaf script and the user pubkey.
+func forfeitLeaf(t *testing.T, operator *btcec.PublicKey) ([]byte, *btcec.PublicKey) {
+	t.Helper()
+	userKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	closure := &script.MultisigClosure{
+		PubKeys: []*btcec.PublicKey{userKey.PubKey(), operator},
+		Type:    script.MultisigTypeChecksig,
+	}
+	leaf, err := closure.Script()
+	require.NoError(t, err)
+	return leaf, userKey.PubKey()
 }
 
 // forfeitableVtxo builds a settled vtxo that still requires a forfeit.
@@ -167,12 +213,12 @@ func TestBackfillSignsUnsignedForfeits(t *testing.T) {
 	commitment := txid(0x11)
 	vtxoOp := domain.Outpoint{Txid: txid(0xaa), VOut: 0}
 
-	forfeit := buildForfeit(t, vtxoOp, xOnly, false)
+	forfeit := buildForfeit(t, vtxoOp, pub, false)
 	rounds := &fakeRounds{rounds: map[string]*domain.Round{
 		commitment: {CommitmentTxid: commitment, ForfeitTxs: []domain.ForfeitTx{forfeit}},
 	}}
 	vtxos := &fakeVtxos{vtxos: []domain.Vtxo{forfeitableVtxo(vtxoOp, commitment)}}
-	signer := &fakeSigner{pubkey: pub, operatorXOnly: xOnly}
+	signer := &fakeSigner{operatorXOnly: xOnly}
 
 	res, err := backfill.Run(ctx, vtxos, rounds, signer)
 	require.NoError(t, err)
@@ -193,12 +239,12 @@ func TestBackfillSkipsAlreadySignedForfeits(t *testing.T) {
 	commitment := txid(0x11)
 	vtxoOp := domain.Outpoint{Txid: txid(0xaa), VOut: 0}
 
-	forfeit := buildForfeit(t, vtxoOp, xOnly, true) // already operator-signed
+	forfeit := buildForfeit(t, vtxoOp, pub, true) // already broadcast-ready
 	rounds := &fakeRounds{rounds: map[string]*domain.Round{
 		commitment: {CommitmentTxid: commitment, ForfeitTxs: []domain.ForfeitTx{forfeit}},
 	}}
 	vtxos := &fakeVtxos{vtxos: []domain.Vtxo{forfeitableVtxo(vtxoOp, commitment)}}
-	signer := &fakeSigner{pubkey: pub, operatorXOnly: xOnly}
+	signer := &fakeSigner{operatorXOnly: xOnly}
 
 	res, err := backfill.Run(ctx, vtxos, rounds, signer)
 	require.NoError(t, err)
@@ -212,7 +258,7 @@ func TestBackfillSkipsAlreadySignedForfeits(t *testing.T) {
 
 func TestBackfillSkipsNonForfeitableVtxos(t *testing.T) {
 	ctx := context.Background()
-	pub, xOnly := newOperator(t)
+	_, xOnly := newOperator(t)
 	commitment := txid(0x11)
 
 	swept := forfeitableVtxo(domain.Outpoint{Txid: txid(0x01)}, commitment)
@@ -232,7 +278,7 @@ func TestBackfillSkipsNonForfeitableVtxos(t *testing.T) {
 
 	rounds := &fakeRounds{rounds: map[string]*domain.Round{}}
 	vtxos := &fakeVtxos{vtxos: []domain.Vtxo{swept, unrolled, note, unsettled}}
-	signer := &fakeSigner{pubkey: pub, operatorXOnly: xOnly}
+	signer := &fakeSigner{operatorXOnly: xOnly}
 
 	res, err := backfill.Run(ctx, vtxos, rounds, signer)
 	require.NoError(t, err)
@@ -250,12 +296,12 @@ func TestBackfillIsIdempotent(t *testing.T) {
 	commitment := txid(0x11)
 	vtxoOp := domain.Outpoint{Txid: txid(0xaa), VOut: 0}
 
-	forfeit := buildForfeit(t, vtxoOp, xOnly, false)
+	forfeit := buildForfeit(t, vtxoOp, pub, false)
 	rounds := &fakeRounds{rounds: map[string]*domain.Round{
 		commitment: {CommitmentTxid: commitment, ForfeitTxs: []domain.ForfeitTx{forfeit}},
 	}}
 	vtxos := &fakeVtxos{vtxos: []domain.Vtxo{forfeitableVtxo(vtxoOp, commitment)}}
-	signer := &fakeSigner{pubkey: pub, operatorXOnly: xOnly}
+	signer := &fakeSigner{operatorXOnly: xOnly}
 
 	first, err := backfill.Run(ctx, vtxos, rounds, signer)
 	require.NoError(t, err)
@@ -274,12 +320,12 @@ func TestBackfillSignerErrorCountsAsFailed(t *testing.T) {
 	commitment := txid(0x11)
 	vtxoOp := domain.Outpoint{Txid: txid(0xaa), VOut: 0}
 
-	forfeit := buildForfeit(t, vtxoOp, xOnly, false)
+	forfeit := buildForfeit(t, vtxoOp, pub, false)
 	rounds := &fakeRounds{rounds: map[string]*domain.Round{
 		commitment: {CommitmentTxid: commitment, ForfeitTxs: []domain.ForfeitTx{forfeit}},
 	}}
 	vtxos := &fakeVtxos{vtxos: []domain.Vtxo{forfeitableVtxo(vtxoOp, commitment)}}
-	signer := &fakeSigner{pubkey: pub, operatorXOnly: xOnly, signErr: errors.New("signer down")}
+	signer := &fakeSigner{operatorXOnly: xOnly, signErr: errors.New("signer down")}
 
 	res, err := backfill.Run(ctx, vtxos, rounds, signer)
 	require.NoError(t, err, "a per-forfeit signer error must not abort the whole run")
@@ -289,25 +335,85 @@ func TestBackfillSignerErrorCountsAsFailed(t *testing.T) {
 	require.Empty(t, rounds.patches, "nothing persisted when signing failed")
 }
 
-func TestBackfillSkipsForfeitsSignedWithDeprecatedKey(t *testing.T) {
+func TestBackfillSalvagesForfeitsWhenTheBatchPatchFails(t *testing.T) {
 	ctx := context.Background()
-	pub, xOnly := newOperator(t)       // current operator key
-	depPub, depXOnly := newOperator(t) // a now-deprecated operator key
+	pub, xOnly := newOperator(t)
+	commitment := txid(0x11)
+	vtxoA := domain.Outpoint{Txid: txid(0xaa), VOut: 0}
+	vtxoB := domain.Outpoint{Txid: txid(0xbb), VOut: 0}
+
+	forfeitA := buildForfeit(t, vtxoA, pub, false)
+	forfeitB := buildForfeit(t, vtxoB, pub, false)
+	rounds := &fakeRounds{
+		rounds: map[string]*domain.Round{commitment: {
+			CommitmentTxid: commitment,
+			ForfeitTxs:     []domain.ForfeitTx{forfeitA, forfeitB},
+		}},
+		// the round's batch is rejected, as one bad txid does on the SQL backends
+		failBatch: true,
+	}
+	vtxos := &fakeVtxos{vtxos: []domain.Vtxo{
+		forfeitableVtxo(vtxoA, commitment), forfeitableVtxo(vtxoB, commitment),
+	}}
+	signer := &fakeSigner{operatorXOnly: xOnly}
+
+	res, err := backfill.Run(ctx, vtxos, rounds, signer)
+	require.NoError(t, err)
+
+	// both are salvaged one by one rather than written off with the batch
+	require.Equal(t, 2, res.Scanned)
+	require.Equal(t, 2, res.Signed)
+	require.Equal(t, 0, res.Failed)
+}
+
+func TestBackfillCountsOnlyTheForfeitThatFailedToPersist(t *testing.T) {
+	ctx := context.Background()
+	pub, xOnly := newOperator(t)
+	commitment := txid(0x11)
+	vtxoA := domain.Outpoint{Txid: txid(0xaa), VOut: 0}
+	vtxoB := domain.Outpoint{Txid: txid(0xbb), VOut: 0}
+
+	forfeitA := buildForfeit(t, vtxoA, pub, false)
+	forfeitB := buildForfeit(t, vtxoB, pub, false)
+	// forfeitA's txid is unknown to storage, so patching it always fails. Before
+	// the per-txid retry this rolled forfeitB back too and counted both failed.
+	rounds := &fakeRounds{
+		rounds: map[string]*domain.Round{commitment: {
+			CommitmentTxid: commitment,
+			ForfeitTxs:     []domain.ForfeitTx{forfeitA, forfeitB},
+		}},
+		failTxid: forfeitA.Txid,
+	}
+	vtxos := &fakeVtxos{vtxos: []domain.Vtxo{
+		forfeitableVtxo(vtxoA, commitment), forfeitableVtxo(vtxoB, commitment),
+	}}
+	signer := &fakeSigner{operatorXOnly: xOnly}
+
+	res, err := backfill.Run(ctx, vtxos, rounds, signer)
+	require.NoError(t, err)
+
+	require.Equal(t, 2, res.Scanned)
+	require.Equal(t, 1, res.Signed, "the healthy forfeit is still persisted")
+	require.Equal(t, 1, res.Failed, "only the bad txid is counted as failed")
+}
+
+func TestBackfillSkipsForfeitsSignedWithRotatedAwayKey(t *testing.T) {
+	ctx := context.Background()
+	_, xOnly := newOperator(t)  // the operator key in use today
+	oldPub, _ := newOperator(t) // the key that signed the forfeit, since rotated away
 	commitment := txid(0x11)
 	vtxoOp := domain.Outpoint{Txid: txid(0xaa), VOut: 0}
 
-	// The forfeit was signed with the operator key that was active before a key
-	// rotation; it must be recognized as already signed, not re-signed.
-	forfeit := buildForfeit(t, vtxoOp, depXOnly, true)
+	// The forfeit was signed with an operator key that is no longer current and is
+	// not even retained as deprecated. Its leaf still commits to that key, so the
+	// forfeit is still finalizable and must be left alone rather than re-signed
+	// with a key the leaf does not accept.
+	forfeit := buildForfeit(t, vtxoOp, oldPub, true)
 	rounds := &fakeRounds{rounds: map[string]*domain.Round{
 		commitment: {CommitmentTxid: commitment, ForfeitTxs: []domain.ForfeitTx{forfeit}},
 	}}
 	vtxos := &fakeVtxos{vtxos: []domain.Vtxo{forfeitableVtxo(vtxoOp, commitment)}}
-	signer := &fakeSigner{
-		pubkey:        pub,
-		operatorXOnly: xOnly,
-		deprecated:    []ports.DeprecatedSignerPubkey{{PubKey: depPub}},
-	}
+	signer := &fakeSigner{operatorXOnly: xOnly}
 
 	res, err := backfill.Run(ctx, vtxos, rounds, signer)
 	require.NoError(t, err)
@@ -315,6 +421,6 @@ func TestBackfillSkipsForfeitsSignedWithDeprecatedKey(t *testing.T) {
 	require.Equal(t, 1, res.Scanned)
 	require.Equal(t, 0, res.Signed)
 	require.Equal(t, 1, res.AlreadySigned)
-	require.Equal(t, 0, signer.calls, "must not re-sign a forfeit signed with a deprecated key")
+	require.Equal(t, 0, signer.calls, "must not re-sign a forfeit signed with a rotated-away key")
 	require.Empty(t, rounds.patches)
 }

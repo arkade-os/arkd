@@ -2331,9 +2331,53 @@ func (s *service) signForfeitTxs(
 	return signed, nil
 }
 
+// operatorXOnlyKeys returns the x-only encoding of every signer key the operator
+// signs forfeit txs with: the current one and any deprecated one still accepted.
+func (s *service) operatorXOnlyKeys(ctx context.Context) ([][]byte, error) {
+	settings, err := s.cache.Settings().Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get settings: %w", err)
+	}
+	if settings == nil {
+		return nil, fmt.Errorf("settings not available")
+	}
+
+	keys := make([][]byte, 0, 1+len(settings.DeprecatedSignerPubkeys))
+	if settings.SignerPubkey != nil {
+		keys = append(keys, schnorr.SerializePubKey(settings.SignerPubkey))
+	}
+	for _, deprecated := range settings.DeprecatedSignerPubkeys {
+		if deprecated.PubKey != nil {
+			keys = append(keys, schnorr.SerializePubKey(deprecated.PubKey))
+		}
+	}
+	// SignerPubkey is nillable, so an empty set is reachable. Callers use this to
+	// reject forfeits carrying a signature under one of these keys, and an empty
+	// set would make that check quietly pass everything, so fail instead. arkd
+	// cannot sign a forfeit at all in this state.
+	if len(keys) <= 0 {
+		return nil, fmt.Errorf("no operator signer key available")
+	}
+	return keys, nil
+}
+
 func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) errors.Error {
 	if len(forfeitTxs) <= 0 {
 		return nil
+	}
+
+	// A client signs only its own half of a forfeit: the operator's signature is
+	// added by arkd at collection time, and the connector is spent with a wallet
+	// key the client does not hold. A submitted forfeit that already carries
+	// either can only be an attempt to poison the psbt, and it is not harmless:
+	// a planted tapscript sig under an operator key over the same leaf makes the
+	// collection-time signer append a second entry for that (key, leaf) pair,
+	// yielding a duplicate-key psbt that no longer parses and fails the whole
+	// round for every participant. Reject it here, before it is ever stored.
+	operatorKeys, keysErr := s.operatorXOnlyKeys(ctx)
+	if keysErr != nil {
+		log.WithError(keysErr).Error("failed to get operator signer keys")
+		return errors.INTERNAL_ERROR.New("something went wrong")
 	}
 
 	for _, b64 := range forfeitTxs {
@@ -2346,6 +2390,13 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 			btcutil.NewTx(forfeitPtx.UnsignedTx),
 		); err != nil {
 			return errors.INVALID_FORFEIT_TXS.Wrap(err)
+		}
+
+		if domain.ForfeitTxCarriesOperatorSignature(forfeitPtx, operatorKeys) {
+			return errors.INVALID_FORFEIT_TXS.New(
+				"forfeit tx %s carries a signature reserved to the operator",
+				forfeitPtx.UnsignedTx.TxID(),
+			)
 		}
 	}
 

@@ -7651,6 +7651,23 @@ func TestDeprecatedSignerKey(t *testing.T) {
 // rotating to a new key with no deprecated key retained, the server still
 // broadcasts the pre-signed forfeit to punish a fraudulent unroll of the
 // forfeited vtxo.
+//
+// The rotation has to be hard (no deprecated key retained) for this to mean
+// anything: readiness is decided from the stored psbt's own leaf, so the server
+// has to recognize the old-key signature and broadcast it as is.
+//
+// On its own this test does not discriminate. It passed before readiness was read
+// off the leaf too, because a live re-sign only appends a second signature under
+// the new key and the finalizer still picks the leaf's own key out of the psbt.
+// What it covers is the end-to-end outcome, that fraud is punished after a hard
+// rotation. That no live signing happens on the way is pinned by
+// TestForfeitTxs/broadcast_readiness, and was confirmed on regtest by observing
+// the signer record no SignTransactionTapscript call in the fraud window.
+//
+// Stopping the signer to prove that here would need SIGNER_ADDR and WALLET_ADDR
+// pointing at different services. The regtest stack runs both on arkd-wallet:6060
+// and reacting to fraud needs the wallet half for LockConnectorUtxos, the anchor
+// bump and the broadcast.
 func TestEagerForfeitSurvivesWalletRotation(t *testing.T) {
 	const (
 		oldSignerKey = "afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0"

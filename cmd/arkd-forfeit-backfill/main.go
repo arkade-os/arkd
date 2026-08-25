@@ -5,7 +5,16 @@
 // configuration / environment), so the arkd-wallet signer must be running and
 // unlocked. It scans every unswept forfeited vtxo, signs the operator's half of
 // its forfeit tx when missing, and persists the result. It is safe to run
-// repeatedly: forfeit txs that already carry the operator signature are skipped.
+// repeatedly: forfeit txs that already carry every signature needed to broadcast
+// them are skipped.
+//
+// arkd may keep running while this tool does. A patch can land next to arkd's own
+// fraud handling, but both sides decide what to do from the stored psbt, so the
+// worst case is that arkd signs a forfeit this tool was about to sign, or reads
+// the freshly signed one. Neither loses work and both are idempotent.
+//
+// It loads every vtxo in one call before filtering. On a large deployment that is
+// a big read, so prefer running it off peak.
 package main
 
 import (
