@@ -7767,7 +7767,7 @@ func TestEagerForfeitSurvivesWalletRotation(t *testing.T) {
 
 	require.NoError(t, generateBlocks(1))
 
-	// give the server time to react to the fraud
+	// give the server time to react to the fraud, arbitrary amount of time this feels sufficient
 	time.Sleep(8 * time.Second)
 
 	// the pre-signed forfeit survives the rotation: the server broadcast it and

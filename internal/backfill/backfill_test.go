@@ -236,8 +236,6 @@ func TestBackfill(t *testing.T) {
 	})
 }
 
-// --- test doubles ---
-
 type fakeVtxos struct {
 	vtxos []domain.Vtxo
 	err   error
@@ -321,8 +319,6 @@ func (f *fakeSigner) SignTransactionTapscript(
 	p.Inputs[1].TaprootKeySpendSig = make([]byte, 64)
 	return p.B64Encode()
 }
-
-// --- helpers ---
 
 func txid(seed byte) string {
 	return strings.Repeat(fmt.Sprintf("%02x", seed), 32)

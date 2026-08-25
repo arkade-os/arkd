@@ -22,10 +22,9 @@ import (
 // once the key that signed it is no longer the current one.
 //
 // This reports what the psbt carries, not whether those signatures verify, and
-// not whether a condition closure's witness is present. Forfeits collected since
-// SubmitForfeitTxs started rejecting client-supplied operator signatures cannot
-// carry a planted one; a forfeit stored before that could, in which case it was
-// already unfinalizable and re-signing would not have helped either.
+// not whether a condition closure's witness is present. Presence is enough
+// because SubmitForfeitTxs rejects a forfeit that arrives already carrying an
+// operator signature, so the only one a stored forfeit holds is arkd's own.
 func ForfeitTxReadyToBroadcast(ptx *psbt.Packet) bool {
 	if len(ptx.Inputs) <= 0 {
 		return false
@@ -85,7 +84,7 @@ func ForfeitTxCarriesOperatorSignature(ptx *psbt.Packet, operatorXOnlyKeys [][]b
 }
 
 // forfeitLeafPubkeys returns the pubkeys the forfeit leaf closure requires a
-// signature from. Forfeit closures are always multisig, see VerifyForfeitTxs.
+// signature from. Forfeit closures are always multisig.
 func forfeitLeafPubkeys(leafScript []byte) ([]*btcec.PublicKey, error) {
 	closure, err := script.DecodeClosure(leafScript)
 	if err != nil {

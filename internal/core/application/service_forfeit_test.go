@@ -194,8 +194,6 @@ func TestForfeitTxs(t *testing.T) {
 	})
 }
 
-// --- test doubles, fixtures and helpers ---
-
 const txscriptOpTrue = 0x51
 
 // fakeForfeitSigner is a minimal ports.SignerService double: it records calls to

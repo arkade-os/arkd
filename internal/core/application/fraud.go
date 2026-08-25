@@ -214,8 +214,8 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 	// Forfeit txs are signed by the operator at collection time, so the stored tx
 	// is usually already broadcast-ready. Re-signing would append a duplicate
 	// operator signature and produce an invalid PSBT (duplicate key), so we only
-	// sign here when a signature is still missing (e.g. forfeit txs collected
-	// before collection-time signing was introduced).
+	// sign here when a signature is still missing, as on a legacy forfeit stored
+	// without the operator's half.
 	//
 	// Readiness is decided from the psbt alone, without consulting the signer or
 	// the operator's current key set: a pre-signed forfeit must stay broadcastable

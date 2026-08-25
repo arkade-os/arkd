@@ -2372,8 +2372,8 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 	// either can only be an attempt to poison the psbt, and it is not harmless:
 	// a planted tapscript sig under an operator key over the same leaf makes the
 	// collection-time signer append a second entry for that (key, leaf) pair,
-	// yielding a duplicate-key psbt that no longer parses and fails the whole
-	// round for every participant. Reject it here, before it is ever stored.
+	// yielding a duplicate-key psbt that fails to parse and takes the whole round
+	// down with it. Reject it here, before it is ever stored.
 	operatorKeys, keysErr := s.operatorXOnlyKeys(ctx)
 	if keysErr != nil {
 		log.WithError(keysErr).Error("failed to get operator signer keys")

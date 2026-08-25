@@ -20,6 +20,7 @@ package main
 import (
 	"context"
 	"os"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/backfill"
 	"github.com/arkade-os/arkd/internal/config"
@@ -32,6 +33,8 @@ func main() {
 		log.Fatalf("invalid config: %s", err)
 	}
 	log.SetLevel(log.Level(cfg.LogLevel))
+	log.Info("starting forfeit-tx backfill...")
+	start := time.Now()
 
 	repo, err := cfg.RepoManager()
 	if err != nil {
@@ -44,14 +47,14 @@ func main() {
 		log.Fatalf("failed to init signer: %s", err)
 	}
 
-	log.Info("starting forfeit-tx backfill...")
 	res, err := backfill.Run(context.Background(), repo.Vtxos(), repo.Rounds(), signer)
 	if err != nil {
 		log.Fatalf("forfeit-tx backfill failed: %s", err)
 	}
 
 	log.Infof(
-		"forfeit-tx backfill done: scanned=%d signed=%d already_signed=%d failed=%d",
+		"forfeit-tx backfill done: duration=%s scanned=%d signed=%d already_signed=%d failed=%d",
+		time.Since(start).Round(time.Millisecond),
 		res.Scanned, res.Signed, res.AlreadySigned, res.Failed,
 	)
 
