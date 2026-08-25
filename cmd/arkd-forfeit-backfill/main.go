@@ -20,6 +20,8 @@ package main
 import (
 	"context"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/backfill"
@@ -47,7 +49,12 @@ func main() {
 		log.Fatalf("failed to init signer: %s", err)
 	}
 
-	res, err := backfill.Run(context.Background(), repo.Vtxos(), repo.Rounds(), signer)
+	// Interrupting stops after the round in flight rather than killing the run
+	// mid-way, so the operator still gets the counts. Re-running resumes.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	res, err := backfill.Run(ctx, repo.Vtxos(), repo.Rounds(), signer)
 	if err != nil {
 		log.Fatalf("forfeit-tx backfill failed: %s", err)
 	}

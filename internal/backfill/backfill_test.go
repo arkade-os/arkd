@@ -146,6 +146,31 @@ func TestBackfill(t *testing.T) {
 		require.Empty(t, rounds.patches, "nothing persisted when signing failed")
 	})
 
+	t.Run("stops between rounds when the context is cancelled", func(t *testing.T) {
+		pub, xOnly := newOperator(t)
+		commitment := txid(0x11)
+		vtxoOp := domain.Outpoint{Txid: txid(0xaa), VOut: 0}
+
+		forfeit := buildForfeit(t, vtxoOp, pub, false)
+		rounds := &fakeRounds{rounds: map[string]*domain.Round{
+			commitment: {CommitmentTxid: commitment, ForfeitTxs: []domain.ForfeitTx{forfeit}},
+		}}
+		vtxos := &fakeVtxos{vtxos: []domain.Vtxo{forfeitableVtxo(vtxoOp, commitment)}}
+		signer := &fakeSigner{operatorXOnly: xOnly}
+
+		cancelled, cancel := context.WithCancel(ctx)
+		cancel()
+
+		res, err := backfill.Run(cancelled, vtxos, rounds, signer)
+
+		// returns what it had rather than erroring, and signs nothing further
+		require.NoError(t, err)
+		require.Equal(t, 0, res.Scanned)
+		require.Equal(t, 0, res.Signed)
+		require.Equal(t, 0, signer.calls)
+		require.Empty(t, rounds.patches)
+	})
+
 	t.Run("salvages forfeits when the batch patch fails", func(t *testing.T) {
 		pub, xOnly := newOperator(t)
 		commitment := txid(0x11)
@@ -314,7 +339,7 @@ func (f *fakeSigner) SignTransactionTapscript(
 	}
 	p.Inputs[0].TaprootScriptSpendSig = append(
 		p.Inputs[0].TaprootScriptSpendSig,
-		operatorSig(f.operatorXOnly),
+		operatorSig(f.operatorXOnly, p.Inputs[0].TaprootLeafScript[0].Script),
 	)
 	p.Inputs[1].TaprootKeySpendSig = make([]byte, 64)
 	return p.B64Encode()
@@ -324,10 +349,11 @@ func txid(seed byte) string {
 	return strings.Repeat(fmt.Sprintf("%02x", seed), 32)
 }
 
-func operatorSig(xOnly []byte) *psbt.TaprootScriptSpendSig {
+func operatorSig(xOnly, leaf []byte) *psbt.TaprootScriptSpendSig {
+	leafHash := txscript.NewBaseTapLeaf(leaf).TapHash()
 	return &psbt.TaprootScriptSpendSig{
 		XOnlyPubKey: xOnly,
-		LeafHash:    make([]byte, 32),
+		LeafHash:    leafHash[:],
 		Signature:   make([]byte, 64),
 		SigHash:     txscript.SigHashDefault,
 	}
@@ -362,12 +388,12 @@ func buildForfeit(
 	}}
 	// the user always signs its own half before submitting the forfeit
 	p.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{
-		operatorSig(schnorr.SerializePubKey(user)),
+		operatorSig(schnorr.SerializePubKey(user), leaf),
 	}
 	if signed {
 		p.Inputs[0].TaprootScriptSpendSig = append(
 			p.Inputs[0].TaprootScriptSpendSig,
-			operatorSig(schnorr.SerializePubKey(operator)),
+			operatorSig(schnorr.SerializePubKey(operator), leaf),
 		)
 		p.Inputs[1].TaprootKeySpendSig = make([]byte, 64)
 	}

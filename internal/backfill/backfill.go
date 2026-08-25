@@ -76,6 +76,13 @@ func Run(
 
 	var res Result
 	for commitmentTxid, group := range byCommitment {
+		// Stop between rounds on cancellation, so an interrupted run leaves whole
+		// rounds patched and still reports what it got through.
+		if err := ctx.Err(); err != nil {
+			log.Warnf("backfill interrupted after %d forfeit(s): %s", res.Scanned, err)
+			return res, nil
+		}
+
 		round, err := rounds.GetRoundWithCommitmentTxid(ctx, commitmentTxid)
 		if err != nil {
 			res.Failed += len(group)

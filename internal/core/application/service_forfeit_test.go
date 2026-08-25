@@ -83,7 +83,7 @@ func TestForfeitTxs(t *testing.T) {
 			// whole round.
 			b64 := forfeitPsbt(t, func(p *psbt.Packet) {
 				p.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{
-					spendSig(operatorPub),
+					spendSig(operatorPub, []byte{txscriptOpTrue}),
 				}
 			})
 
@@ -116,7 +116,7 @@ func TestForfeitTxs(t *testing.T) {
 			}}}
 			b64 := forfeitPsbt(t, func(p *psbt.Packet) {
 				p.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{
-					spendSig(operatorPub),
+					spendSig(operatorPub, []byte{txscriptOpTrue}),
 				}
 			})
 
@@ -131,7 +131,7 @@ func TestForfeitTxs(t *testing.T) {
 			require.NoError(t, err)
 			p := forfeitPacket(t)
 			p.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{
-				spendSig(userKey.PubKey()),
+				spendSig(userKey.PubKey(), []byte{txscriptOpTrue}),
 			}
 
 			require.False(t, domain.ForfeitTxCarriesOperatorSignature(
@@ -159,7 +159,7 @@ func TestForfeitTxs(t *testing.T) {
 			}}
 			for _, signer := range signers {
 				p.Inputs[0].TaprootScriptSpendSig = append(
-					p.Inputs[0].TaprootScriptSpendSig, spendSig(signer),
+					p.Inputs[0].TaprootScriptSpendSig, spendSig(signer, leaf),
 				)
 			}
 			p.Inputs[1].TaprootKeySpendSig = make([]byte, 64)
@@ -179,6 +179,18 @@ func TestForfeitTxs(t *testing.T) {
 		t.Run("not ready when the connector key spend sig is missing", func(t *testing.T) {
 			p := build(userKey.PubKey(), operatorKey.PubKey())
 			p.Inputs[1].TaprootKeySpendSig = nil
+			require.False(t, domain.ForfeitTxReadyToBroadcast(p))
+		})
+
+		t.Run("not ready when a leaf pubkey signed a different leaf", func(t *testing.T) {
+			// A sig under the right key but committing to another leaf does not
+			// satisfy this script, so counting it would report ready and then fail
+			// at finalization.
+			p := build(userKey.PubKey())
+			p.Inputs[0].TaprootScriptSpendSig = append(
+				p.Inputs[0].TaprootScriptSpendSig,
+				spendSig(operatorKey.PubKey(), multisigLeaf(t, operatorKey.PubKey())),
+			)
 			require.False(t, domain.ForfeitTxReadyToBroadcast(p))
 		})
 
@@ -257,12 +269,13 @@ func forfeitPsbt(t *testing.T, mutate func(*psbt.Packet)) string {
 	return b64
 }
 
-// spendSig is a well-formed tapscript spend sig entry under pubkey. The
-// signature bytes are never verified by the code under test.
-func spendSig(pubkey *btcec.PublicKey) *psbt.TaprootScriptSpendSig {
+// spendSig is a well-formed tapscript spend sig entry under pubkey, committing to
+// leaf. The signature bytes are never verified by the code under test.
+func spendSig(pubkey *btcec.PublicKey, leaf []byte) *psbt.TaprootScriptSpendSig {
+	leafHash := txscript.NewBaseTapLeaf(leaf).TapHash()
 	return &psbt.TaprootScriptSpendSig{
 		XOnlyPubKey: schnorr.SerializePubKey(pubkey),
-		LeafHash:    make([]byte, 32),
+		LeafHash:    leafHash[:],
 		Signature:   make([]byte, 64),
 	}
 }

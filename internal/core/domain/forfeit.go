@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/txscript"
 )
 
 // ForfeitTxReadyToBroadcast reports whether a forfeit psbt already carries every
@@ -21,10 +22,12 @@ import (
 // signing exists to provide: the stored forfeit must remain broadcastable even
 // once the key that signed it is no longer the current one.
 //
-// This reports what the psbt carries, not whether those signatures verify, and
-// not whether a condition closure's witness is present. Presence is enough
-// because SubmitForfeitTxs rejects a forfeit that arrives already carrying an
-// operator signature, so the only one a stored forfeit holds is arkd's own.
+// A signature counts only when it is under a pubkey the leaf commits to and over
+// that same leaf. This still reports what the psbt carries, not whether those
+// signatures cryptographically verify, and not whether a condition closure's
+// witness is present. Presence is enough because SubmitForfeitTxs rejects a
+// forfeit that arrives already carrying an operator signature, so the only one a
+// stored forfeit holds is arkd's own.
 func ForfeitTxReadyToBroadcast(ptx *psbt.Packet) bool {
 	if len(ptx.Inputs) <= 0 {
 		return false
@@ -45,8 +48,16 @@ func ForfeitTxReadyToBroadcast(ptx *psbt.Packet) bool {
 			return false
 		}
 
+		// A tapscript sig is valid only for the script it was made over, which the
+		// psbt records as its leaf hash. One vtxo can expose several forfeit
+		// closures that all carry the operator key, so matching on pubkey alone
+		// would accept a sig made for a sibling leaf and fail at finalization.
+		leafHash := txscript.NewBaseTapLeaf(in.TaprootLeafScript[0].Script).TapHash()
 		signed := make(map[string]struct{}, len(in.TaprootScriptSpendSig))
 		for _, sig := range in.TaprootScriptSpendSig {
+			if !bytes.Equal(sig.LeafHash, leafHash[:]) {
+				continue
+			}
 			signed[string(sig.XOnlyPubKey)] = struct{}{}
 		}
 		for _, pubkey := range pubkeys {
