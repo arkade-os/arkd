@@ -23,7 +23,8 @@ func TestValidateVtxoTree(t *testing.T) {
 				vtxoTree, commitmentTx, signerPubkey := testCase.decode(t)
 
 				require.NoError(t, tree.ValidateVtxoTree(
-					vtxoTree, commitmentTx, signerPubkey, testCase.expiry(),
+					vtxoTree, commitmentTx, signerPubkey,
+					tree.SweepParams{Expiry: testCase.expiry()},
 				))
 			})
 		}
@@ -35,7 +36,8 @@ func TestValidateVtxoTree(t *testing.T) {
 				vtxoTree, commitmentTx, signerPubkey := testCase.decode(t)
 
 				err := tree.ValidateVtxoTree(
-					vtxoTree, commitmentTx, signerPubkey, testCase.expiry(),
+					vtxoTree, commitmentTx, signerPubkey,
+					tree.SweepParams{Expiry: testCase.expiry()},
 				)
 				require.Error(t, err)
 
