@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/require"
 )
@@ -71,6 +72,47 @@ func TestSweepInputLocktime(t *testing.T) {
 	t.Run("garbage is rejected", func(t *testing.T) {
 		_, _, err := sweepInputLocktime([]byte{0x01, 0x02, 0x03})
 		require.Error(t, err)
+	})
+
+	// A leaf that is neither kind, but which got far enough into the epoch decoder
+	// to fail there, must report why. "unsupported sweep tapscript" on its own
+	// leaves an operator with nothing to work with.
+	t.Run("a failed epoch decode reaches the caller", func(t *testing.T) {
+		// CLTV-shaped, but the locktime is a 7-byte script number: past the 6-byte
+		// limit MakeScriptNum allows, so the epoch decoder errors rather than
+		// declining. The legacy decoder does not recognise it either.
+		raw, err := txscript.NewScriptBuilder().
+			AddData([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}).
+			AddOps([]byte{txscript.OP_CHECKLOCKTIMEVERIFY, txscript.OP_DROP}).
+			Script()
+		require.NoError(t, err)
+
+		_, _, err = sweepInputLocktime(raw)
+		require.Error(t, err)
+		require.Contains(
+			t, err.Error(), "reading it as an epoch leaf failed",
+			"the epoch decoder's error must not be swallowed",
+		)
+	})
+
+	// The counterpart: a legacy leaf must keep working even if the epoch decoder
+	// errors on it. Refusing on that error would leave legacy batches unswept.
+	t.Run("a legacy leaf survives an epoch decode error", func(t *testing.T) {
+		raw, err := (&script.CSVMultisigClosure{
+			MultisigClosure: keys, Locktime: legacyExpiry,
+		}).Script()
+		require.NoError(t, err)
+
+		// Confirm the premise: whatever the epoch decoder makes of this leaf, the
+		// legacy path still has to produce a sequence.
+		epoch := script.CLTVCSVMultisigClosure{}
+		valid, _ := epoch.Decode(raw)
+		require.False(t, valid, "a csv leaf must not decode as an epoch leaf")
+
+		seq, lock, err := sweepInputLocktime(raw)
+		require.NoError(t, err)
+		require.Zero(t, lock)
+		require.NotZero(t, seq)
 	})
 }
 

@@ -293,3 +293,33 @@ func TestIsNonFinal(t *testing.T) {
 	require.False(t, ports.IsNonFinal(errors.New("insufficient fee")))
 	require.False(t, ports.IsNonFinal(nil))
 }
+
+// TestClassifyBroadcastErrorWordBoundary pins that a longer word merely
+// containing a reason is not read as that reason. Misclassifying one marks the
+// failure retryable, and the sweeper then burns its whole retry budget on an
+// error that will never clear.
+func TestClassifyBroadcastErrorWordBoundary(t *testing.T) {
+	tests := []struct {
+		msg  string
+		want error
+	}{
+		{"non-final", ports.ErrNonFinalCLTV},
+		{"bad-txns-non-final", ports.ErrNonFinalCLTV},
+		{"error: non-final, rejecting", ports.ErrNonFinalCLTV},
+		{"non-BIP68-final", ports.ErrNonFinalBIP68},
+		{"non-finalized channel state", nil},
+		{"transaction is non-finality-locked", nil},
+		{"rate limited", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.msg, func(t *testing.T) {
+			got := classifyBroadcastError(errors.New(tt.msg))
+			if tt.want == nil {
+				require.NoError(t, got)
+				return
+			}
+			require.ErrorIs(t, got, tt.want)
+		})
+	}
+}

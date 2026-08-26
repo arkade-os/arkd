@@ -22,6 +22,12 @@ import (
 //
 // This closure is only ever used in the sweep leaf. It must never appear in a
 // user's vtxo script, where ForfeitClosures/ExitClosures would not classify it.
+//
+// Consumers of this library therefore do not need to handle it in any type
+// switch over a vtxo script's closures: DecodeClosure can return it, but only
+// for a sweep leaf, which a vtxo script never contains. Code that walks a full
+// tapscript tree rather than a vtxo script is the exception and does need a case
+// for it.
 type CLTVCSVMultisigClosure struct {
 	MultisigClosure
 	ExpiryDate  arklib.AbsoluteLocktime

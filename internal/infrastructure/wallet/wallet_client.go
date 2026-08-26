@@ -410,13 +410,41 @@ func classifyBroadcastError(err error) error {
 		return nil
 	}
 	msg := strings.ToLower(err.Error())
-	if strings.Contains(msg, "non-bip68-final") {
+	if namesReason(msg, "non-bip68-final") {
 		return ports.ErrNonFinalBIP68
 	}
-	if strings.Contains(msg, "non-final") {
+	if namesReason(msg, "non-final") {
 		return ports.ErrNonFinalCLTV
 	}
 	return nil
+}
+
+// namesReason reports whether msg gives reason as a rejection reason rather than
+// as the start of a longer word.
+//
+// A plain substring test also fires on "non-finalized" and friends, and a
+// misclassification is not free here: IsNonFinal marks the failure retryable, so
+// the sweeper would spend its whole retry budget on an error that was never
+// going to clear. Only the trailing edge is checked - Core prefixes reasons in
+// more than one way, and demanding a leading boundary too would reject
+// legitimate forms like "bad-txns-non-final".
+func namesReason(msg, reason string) bool {
+	for i := 0; i+len(reason) <= len(msg); {
+		j := strings.Index(msg[i:], reason)
+		if j < 0 {
+			return false
+		}
+		end := i + j + len(reason)
+		if end == len(msg) || !isReasonByte(msg[end]) {
+			return true
+		}
+		i = end
+	}
+	return false
+}
+
+func isReasonByte(b byte) bool {
+	return b == '-' || b == '_' || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9')
 }
 
 func (w *walletDaemonClient) EstimateFees(ctx context.Context, psbt string) (uint64, error) {

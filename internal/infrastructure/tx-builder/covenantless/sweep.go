@@ -25,7 +25,8 @@ import (
 // are non-final, which is also what CHECKLOCKTIMEVERIFY requires of its input.
 func sweepInputLocktime(tapscript []byte) (sequence uint32, lockTime uint32, err error) {
 	epoch := script.CLTVCSVMultisigClosure{}
-	if valid, decodeErr := epoch.Decode(tapscript); decodeErr == nil && valid {
+	valid, epochErr := epoch.Decode(tapscript)
+	if epochErr == nil && valid {
 		seq, err := arklib.BIP68Sequence(epoch.UnrollGrace)
 		if err != nil {
 			return 0, 0, err
@@ -33,12 +34,27 @@ func sweepInputLocktime(tapscript []byte) (sequence uint32, lockTime uint32, err
 		return seq, uint32(epoch.ExpiryDate), nil
 	}
 
+	// Fall through to the legacy decoder even when the hybrid one errored. A CSV
+	// leaf is under no obligation to be readable as a hybrid leaf, and refusing
+	// on that error would leave legacy batches unswept - the failure this whole
+	// path exists to avoid.
+	//
+	// Do not throw the error away either: if the leaf turns out not to be a legacy
+	// one, it is the only thing that says what went wrong, and "unsupported sweep
+	// tapscript" on its own gives an operator nothing to work with.
 	legacy := script.CSVMultisigClosure{}
-	valid, err := legacy.Decode(tapscript)
+	valid, err = legacy.Decode(tapscript)
 	if err != nil {
 		return 0, 0, err
 	}
 	if !valid {
+		if epochErr != nil {
+			return 0, 0, fmt.Errorf(
+				"unsupported sweep tapscript, cannot build sweep transaction "+
+					"(not a legacy leaf, and reading it as an epoch leaf failed: %w)",
+				epochErr,
+			)
+		}
 		return 0, 0, fmt.Errorf("unsupported sweep tapscript, cannot build sweep transaction")
 	}
 
