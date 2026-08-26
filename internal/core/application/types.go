@@ -92,7 +92,7 @@ type ServiceInfo struct {
 	// unix seconds. Zero when epoch expiry is disabled. Wallets need it to show
 	// a renewal deadline before joining a session.
 	NextEpochExpiry int64
-	Digest               string
+	Digest          string
 }
 
 type NextScheduledSession struct {

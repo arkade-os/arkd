@@ -2467,7 +2467,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		}
 	}
 
-		// Published so wallets can show a renewal deadline before joining a session;
+	// Published so wallets can show a renewal deadline before joining a session;
 	// GetInfo carries no expiry at all otherwise.
 	nextEpochExpiry := int64(0)
 	if settings.EpochExpiryEnabled {
@@ -2478,7 +2478,7 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		}
 	}
 
-return &ServiceInfo{
+	return &ServiceInfo{
 		SignerPubKey:         signerPubkey,
 		DeprecatedSignerKeys: deprecatedSignerKeys,
 		ForfeitPubKey:        forfeitPubkey,

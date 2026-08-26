@@ -60,9 +60,9 @@ type Round struct {
 	// advertise, build and schedule against three different dates.
 	EpochExpiry   int64
 	CollectedFees uint64
-	SweepTxs           map[string]string
-	FailReason         string
-	Changes            []Event
+	SweepTxs      map[string]string
+	FailReason    string
+	Changes       []Event
 }
 
 func NewRound() *Round {
