@@ -538,7 +538,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 func (b *txBuilder) BuildCommitmentTx(
 	signerPubkey *btcec.PublicKey, intents domain.Intents,
 	boardingInputs []ports.BoardingInput,
-	cosignersPublicKeys [][]string, vtxoTreeExpiry arklib.RelativeLocktime,
+	cosignersPublicKeys [][]string, sweepParams tree.SweepParams,
 ) (string, *tree.TxTree, string, *tree.TxTree, error) {
 	var batchOutputScript []byte
 	var batchOutputAmount int64
@@ -548,7 +548,7 @@ func (b *txBuilder) BuildCommitmentTx(
 		return "", nil, "", nil, err
 	}
 
-	sweepTapscriptRoot, _, err := tree.BuildLegacySweepTapTreeRoot(signerPubkey, vtxoTreeExpiry)
+	sweepTapscriptRoot, _, err := sweepParams.Root(signerPubkey)
 	if err != nil {
 		return "", nil, "", nil, err
 	}
@@ -662,7 +662,7 @@ func (b *txBuilder) BuildCommitmentTx(
 		}
 
 		vtxoTree, err = tree.BuildVtxoTree(
-			initialOutpoint, receivers, sweepTapscriptRoot[:], tree.SweepParams{Expiry: vtxoTreeExpiry},
+			initialOutpoint, receivers, sweepTapscriptRoot[:], sweepParams,
 		)
 		if err != nil {
 			return "", nil, "", nil, err

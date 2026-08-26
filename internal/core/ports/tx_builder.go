@@ -50,7 +50,7 @@ type TxBuilder interface {
 	// Returns the commitment tx, the vtxo tree, the connector tree and its root address.
 	BuildCommitmentTx(
 		signerPubkey *btcec.PublicKey, intents domain.Intents, boardingInputs []BoardingInput,
-		cosigners [][]string, vtxoTreeExpiry arklib.RelativeLocktime,
+		cosigners [][]string, sweepParams tree.SweepParams,
 	) (
 		commitmentTx string, vtxoTree *tree.TxTree,
 		connectorAddress string, connectors *tree.TxTree, err error,
