@@ -382,7 +382,11 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 			"sweeper: trying to schedule task in the past for tx %s, executing it immediately",
 			task.id,
 		)
-		return task.execute()
+		// Same retry policy as the scheduled path. This is the branch a restart
+		// takes for a batch that expired while the service was down, so it is the
+		// one that most needs retrying: nothing re-arms the task until the next
+		// restart.
+		return s.executeWithRetry(task)
 	}
 
 	s.locker.Lock()
@@ -412,7 +416,9 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 		// block every later schedule for this tree, including our own retries.
 		s.removeTask(task.id)
 
-		s.executeWithRetry(task)
+		// Nothing to return the error to from a scheduler callback; executeWithRetry
+		// has already logged the give-up.
+		_ = s.executeWithRetry(task)
 	})
 }
 
@@ -429,7 +435,9 @@ var (
 // executeWithRetry runs a sweep task, re-attempting it on failure. Without this a
 // single failed broadcast left the batch outputs unswept until an operator
 // restart, which is the window an attacker racing the sweep needs.
-func (s *sweeper) executeWithRetry(task sweeperTask) {
+// Returns the last error if every attempt failed, so callers running a task
+// inline still learn it did not succeed.
+func (s *sweeper) executeWithRetry(task sweeperTask) error {
 	ctx := s.ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -437,7 +445,7 @@ func (s *sweeper) executeWithRetry(task sweeperTask) {
 
 	err := task.execute()
 	if err == nil {
-		return
+		return nil
 	}
 
 	for attempt := 1; attempt <= sweepRetryAttempts; attempt++ {
@@ -448,12 +456,12 @@ func (s *sweeper) executeWithRetry(task sweeperTask) {
 
 		select {
 		case <-ctx.Done():
-			return
+			return err
 		case <-time.After(sweepRetryDelay):
 		}
 
 		if err = task.execute(); err == nil {
-			return
+			return nil
 		}
 	}
 
@@ -461,6 +469,7 @@ func (s *sweeper) executeWithRetry(task sweeperTask) {
 		"sweeper: giving up on sweep of tx %s after %d attempts, outputs remain unswept "+
 			"until the next restart", task.id, sweepRetryAttempts,
 	)
+	return err
 }
 
 // createBatchSweepTask returns a function passed as handler in the scheduler

@@ -808,3 +808,40 @@ func TestScheduleTaskFreesDedupSlot(t *testing.T) {
 	sched.fire()
 	require.Equal(t, 1, second, "a fresh schedule for the same id must be accepted")
 }
+
+// TestScheduleTaskRetriesAlreadyDueTask covers the path a restart takes. When a
+// batch expired while the service was down, AfterNow is false and scheduleTask
+// runs the task inline rather than handing it to the scheduler. That path must
+// use the same bounded retry policy - it is the case that most needs it, since
+// nothing will re-arm the task until the next restart.
+func TestScheduleTaskRetriesAlreadyDueTask(t *testing.T) {
+	prevDelay, prevAttempts := sweepRetryDelay, sweepRetryAttempts
+	sweepRetryDelay, sweepRetryAttempts = time.Millisecond, 3
+	t.Cleanup(func() { sweepRetryDelay, sweepRetryAttempts = prevDelay, prevAttempts })
+
+	sched := &immediateScheduler{}
+	s := newSchedulableSweeper(sched)
+
+	calls := 0
+	err := s.scheduleTask(sweeperTask{
+		id: "already-due",
+		at: time.Now().Add(-time.Hour).Unix(),
+		execute: func() error {
+			calls++
+			return fmt.Errorf("broadcast rejected")
+		},
+	})
+
+	require.Error(t, err, "the final failure must still reach the caller")
+	require.Equal(t, 1+3, calls, "an already-due task must retry like a scheduled one")
+}
+
+// immediateScheduler reports every task as already due, which is what a restart
+// looks like for a batch that expired while the service was down.
+type immediateScheduler struct{}
+
+func (s *immediateScheduler) Start()                               {}
+func (s *immediateScheduler) Stop()                                {}
+func (s *immediateScheduler) Unit() ports.TimeUnit                 { return ports.UnixTime }
+func (s *immediateScheduler) AfterNow(expiry int64) bool           { return false }
+func (s *immediateScheduler) ScheduleTaskOnce(int64, func()) error { return nil }
