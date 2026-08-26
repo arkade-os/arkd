@@ -36,8 +36,6 @@ var migrations embed.FS
 //go:embed postgres/migration/*
 var pgMigration embed.FS
 
-var arkRepo badgerdb.ArkRepository
-
 var (
 	eventStoreTypes = map[string]func(...interface{}) (domain.EventRepository, error){
 		"badger":   badgerdb.NewEventRepository,
@@ -202,10 +200,9 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
 		}
-		offchainTxStore, err = offchainTxStoreFactory(config.DataStoreConfig...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create offchain tx store: %w", err)
-		}
+		// Same object as the round store, see newBadgerRoundRepository: opening a
+		// second one would contend for badger's directory lock.
+		offchainTxStore = roundStore.(badgerdb.ArkRepository)
 		convictionStore, err = convictionStoreFactory(config.DataStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create conviction store: %w", err)
@@ -513,7 +510,11 @@ func (s *service) Close() {
 	s.roundStore.Close()
 	s.vtxoStore.Close()
 	s.markerStore.Close()
-	s.offchainTxStore.Close()
+	// On badger these two are the same object, so the round store's Close
+	// already closed it.
+	if any(s.offchainTxStore) != any(s.roundStore) {
+		s.offchainTxStore.Close()
+	}
 	s.convictionStore.Close()
 	s.settingsStore.Close()
 }
@@ -1002,23 +1003,17 @@ func getAssetsFromTxOuts(txid string, txOuts []ports.TxOut) (
 	return issuances, assetDenominations, nil
 }
 
-func initBadgerArkRepository(args ...interface{}) (badgerdb.ArkRepository, error) {
-	if arkRepo == nil {
-		repo, err := badgerdb.NewArkRepository(args...)
-		if err != nil {
-			return nil, err
-		}
-		arkRepo = repo
-	}
-	return arkRepo, nil
-}
-
+// badgerdb.ArkRepository serves both the round and the offchain tx store: badger
+// locks its directory, so one badgerhold store has to back both. NewService
+// builds it once per service and assigns it to both slots, rather than memoizing
+// it in a package var, which made the store process-wide: a second service
+// inherited the first one's store, closed or opened against another directory.
 func newBadgerRoundRepository(args ...interface{}) (domain.RoundRepository, error) {
-	return initBadgerArkRepository(args...)
+	return badgerdb.NewArkRepository(args...)
 }
 
 func newBadgerOffchainTxRepository(args ...interface{}) (domain.OffchainTxRepository, error) {
-	return initBadgerArkRepository(args...)
+	return badgerdb.NewArkRepository(args...)
 }
 
 // stepwise migration for intent txid field addition

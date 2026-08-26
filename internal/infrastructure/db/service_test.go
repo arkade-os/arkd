@@ -150,19 +150,29 @@ func TestMain(m *testing.M) {
 
 func TestService(t *testing.T) {
 	dbDir := t.TempDir()
+	badgerDir := t.TempDir()
 	pgDns := "postgresql://root:secret@127.0.0.1:5432/projection?sslmode=disable"
 	pgEventDns := "postgresql://root:secret@127.0.0.1:5432/event?sslmode=disable"
 	tests := []struct {
 		name   string
 		config db.ServiceConfig
-		// Ran only the offchain tx suite for a backend, used by the badger
-		// case this branch added and has since dropped: db.initBadgerArkRepository
-		// memoizes the ark repository in a package-level var (badger locks its
-		// directory, so all repos share one store), and other tests in this
-		// package already build and close badger services, leaving a closed
-		// handle behind. sqlite and postgres pin the same filter semantics.
+		// badger fails several of the other repo suites for reasons
+		// unrelated to offchain txs, e.g. badgerhold cannot gob-encode the
+		// big.Int asset supply. Run only the offchain tx suite there, which
+		// is the one that pins the cross-backend filter semantics.
 		offchainTxOnly bool
 	}{
+		{
+			name: "repo_manager_with_badger_stores",
+			config: db.ServiceConfig{
+				EventStoreType:   "badger",
+				DataStoreType:    "badger",
+				EventStoreConfig: []interface{}{"", nil},
+				DataStoreConfig:  []interface{}{badgerDir, nil},
+				Settings:         validSettings(),
+			},
+			offchainTxOnly: true,
+		},
 		{
 			name: "repo_manager_with_sqlite_stores",
 			config: db.ServiceConfig{
