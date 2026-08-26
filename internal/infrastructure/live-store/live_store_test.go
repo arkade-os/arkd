@@ -1073,9 +1073,9 @@ func (m *mockedTxBuilder) BuildSweepTx(
 
 func (m *mockedTxBuilder) GetSweepableBatchOutputs(
 	vtxoTree *tree.TxTree,
-) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput *ports.TxInput, err error) {
+) (sweepParams *tree.SweepParams, sweepInput *ports.TxInput, err error) {
 	args := m.Called(vtxoTree)
-	res0 := args.Get(0).(*arklib.RelativeLocktime)
+	res0 := args.Get(0).(*tree.SweepParams)
 	res1 := args.Get(1).(*ports.TxInput)
 	return res0, res1, args.Error(2)
 }

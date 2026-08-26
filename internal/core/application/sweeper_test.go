@@ -608,7 +608,7 @@ func (m *mockTxBuilder) VerifyForfeitTxs(
 
 func (m *mockTxBuilder) GetSweepableBatchOutputs(
 	vtxoTree *tree.TxTree,
-) (*arklib.RelativeLocktime, *ports.TxInput, error) {
+) (*tree.SweepParams, *ports.TxInput, error) {
 	return nil, nil, nil
 }
 func (m *mockTxBuilder) FinalizeAndExtract(tx string) (string, error) { return "", nil }

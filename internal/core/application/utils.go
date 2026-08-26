@@ -59,12 +59,21 @@ func findSweepableOutputs(
 				}
 			}
 
-			vtxoTreeExpiry, sweepInput, err := txbuilder.GetSweepableBatchOutputs(g)
+			sweepParams, sweepInput, err := txbuilder.GetSweepableBatchOutputs(g)
 			if err != nil {
 				return false, err
 			}
 
-			expirationTime := blocktimeCache[parentTxid] + int64(vtxoTreeExpiry.Value)
+			// The scheme comes from the node itself, not from settings: batches
+			// built before the epoch cutover keep maturing on their original terms.
+			expirationTime := blocktimeCache[parentTxid] + int64(sweepParams.Expiry.Value)
+			if sweepParams.IsEpoch() {
+				expirationTime = epochMaturity(
+					int64(*sweepParams.BatchExpiry),
+					blocktimeCache[parentTxid],
+					int64(sweepParams.Expiry.Value),
+				)
+			}
 			if _, ok := sweepableBatchOutputs[expirationTime]; !ok {
 				sweepableBatchOutputs[expirationTime] = make([]ports.TxInput, 0)
 			}
@@ -669,4 +678,20 @@ func checkSettlementExpiryGap(expiresAt, now time.Time, gap time.Duration) error
 		return fmt.Errorf("vtxo expires too soon (within %s)", gap)
 	}
 	return nil
+}
+
+// epochMaturity returns when an epoch batch output becomes sweepable.
+//
+// The hybrid sweep leaf requires both an absolute date and a relative delay since
+// the output appeared, so an untouched node — whose parent confirmed long before
+// the boundary — matures at the epoch date, and every batch in the epoch can be
+// swept by one transaction. A node created by a mid-flight unilateral unroll
+// matures a grace period after it appeared, which hands the exiting user that
+// grace at each tree level without any per-level script variation, and bounds
+// griefing at depth*grace past the date rather than depth*expiry.
+func epochMaturity(epochDate, parentConfirmedAt, grace int64) int64 {
+	if withGrace := parentConfirmedAt + grace; withGrace > epochDate {
+		return withGrace
+	}
+	return epochDate
 }

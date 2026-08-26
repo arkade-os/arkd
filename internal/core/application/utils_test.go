@@ -512,3 +512,45 @@ func TestCheckSettlementExpiryGap(t *testing.T) {
 		require.NoError(t, checkSettlementExpiryGap(expiresAt, now, 0))
 	})
 }
+
+// TestEpochMaturity pins the hybrid sweep closure's whole point: an untouched
+// batch node matures at exactly the epoch date, so one transaction can sweep the
+// entire epoch, while a node created by a mid-flight unroll matures a grace
+// period after it appeared. Compare the legacy formula, where a partial unroll
+// restarted a full expiry period for the whole subtree.
+func TestEpochMaturity(t *testing.T) {
+	const (
+		epochDate = int64(1_788_134_400)
+		grace     = int64(7168)
+	)
+
+	t.Run("untouched node matures at the epoch date", func(t *testing.T) {
+		parentConfirmed := epochDate - 20*86400
+		require.Equal(t, epochDate, epochMaturity(epochDate, parentConfirmed, grace))
+	})
+
+	t.Run("node created by a late unroll matures a grace period after it", func(t *testing.T) {
+		parentConfirmed := epochDate - 60 // unrolled one minute before the boundary
+		require.Equal(t, parentConfirmed+grace, epochMaturity(epochDate, parentConfirmed, grace))
+	})
+
+	t.Run("node created after the boundary still gets its grace", func(t *testing.T) {
+		parentConfirmed := epochDate + 3600
+		require.Equal(t, parentConfirmed+grace, epochMaturity(epochDate, parentConfirmed, grace))
+	})
+
+	t.Run("exactly one grace before the boundary matures at the boundary", func(t *testing.T) {
+		parentConfirmed := epochDate - grace
+		require.Equal(t, epochDate, epochMaturity(epochDate, parentConfirmed, grace))
+	})
+
+	// The bound the design claims: griefing is capped at depth*grace past the
+	// epoch date, not depth*expiry as it was with the relative-only scheme.
+	t.Run("worst case over a deep tree is bounded by depth times grace", func(t *testing.T) {
+		at := epochDate - 1
+		for depth := 0; depth < 15; depth++ {
+			at = epochMaturity(epochDate, at, grace)
+		}
+		require.LessOrEqual(t, at, epochDate+15*grace)
+	})
+}
