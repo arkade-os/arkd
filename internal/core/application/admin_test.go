@@ -56,7 +56,7 @@ func TestAdminService_Settings(t *testing.T) {
 		if seed != nil {
 			require.NoError(t, repo.settingsRepo.Upsert(ctx, *seed, nil))
 		}
-		return application.NewAdminService(nil, repo, nil, nil, ports.UnixTime, nil)
+		return application.NewAdminService(nil, nil, repo, nil, nil, ports.UnixTime, nil)
 	}
 
 	t.Run("settings", func(t *testing.T) {
@@ -251,7 +251,7 @@ func TestAdminService_SettingsSerialization(t *testing.T) {
 	seed := validSettings()
 	probe := &serializeProbeRepo{settings: &seed, delay: 10 * time.Millisecond}
 	svc := application.NewAdminService(
-		nil, &mockRepoManager{settingsRepo: probe}, nil, nil, ports.UnixTime, nil,
+		nil, nil, &mockRepoManager{settingsRepo: probe}, nil, nil, ports.UnixTime, nil,
 	)
 
 	const workers = 8
@@ -328,7 +328,7 @@ func (r *serializeProbeRepo) Close() {}
 func TestAdminService_GetRounds(t *testing.T) {
 	ctx := context.Background()
 	repo := &mockRepoManager{roundsRepo: &mockRoundRepository{}}
-	svc := application.NewAdminService(nil, repo, nil, nil, ports.UnixTime, nil)
+	svc := application.NewAdminService(nil, nil, repo, nil, nil, ports.UnixTime, nil)
 
 	want := []domain.RoundSummary{{RoundId: "r1", FailReason: "boom", Failed: true}}
 	rounds := repo.roundsRepo.(*mockRoundRepository)

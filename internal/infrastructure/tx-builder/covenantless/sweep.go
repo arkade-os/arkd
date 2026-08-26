@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
@@ -17,9 +18,13 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-func sweepTransaction(
+// buildSweepTransaction builds the unsigned sweep transaction. The destination
+// address, fee estimate and dust limit are all taken from the given wallet (the
+// primary wallet) so every signing candidate sweeps to the same output and the
+// returned txid is stable regardless of which wallet ends up signing it.
+func buildSweepTransaction(
 	ctx context.Context, wallet ports.WalletService, inputs []ports.TxInput,
-) (txid string, txhex string, err error) {
+) (txid string, unsignedTx string, err error) {
 	ins := make([]*wire.OutPoint, 0)
 	sequences := make([]uint32, 0)
 
@@ -73,8 +78,6 @@ func sweepTransaction(
 
 	amount := int64(0)
 
-	tapscriptInputIndexes := make([]int, 0)
-
 	for i, input := range inputs {
 		if input.TapscriptLeaf != nil {
 			tapscriptBytes, err := hex.DecodeString(input.TapscriptLeaf.Tapscript)
@@ -107,8 +110,6 @@ func sweepTransaction(
 			ptx.Inputs[i].TaprootInternalKey = schnorr.SerializePubKey(
 				internalKey,
 			)
-
-			tapscriptInputIndexes = append(tapscriptInputIndexes, i)
 		}
 
 		inputAmount := int64(input.Value)
@@ -139,14 +140,14 @@ func sweepTransaction(
 		return "", "", err
 	}
 
-	script, err := txscript.PayToAddrScript(addr)
+	pkScript, err := txscript.PayToAddrScript(addr)
 	if err != nil {
 		return "", "", err
 	}
 
 	ptx.UnsignedTx.AddTxOut(&wire.TxOut{
 		Value:    amount,
-		PkScript: script,
+		PkScript: pkScript,
 	})
 	ptx.Outputs = append(ptx.Outputs, psbt.POutput{})
 
@@ -176,26 +177,39 @@ func sweepTransaction(
 
 	ptx.UnsignedTx.TxOut[0].Value = amount - int64(fees)
 
-	sweepPsbtBase64, err := ptx.B64Encode()
+	unsignedTx, err = ptx.B64Encode()
 	if err != nil {
 		return "", "", err
 	}
 
-	if len(tapscriptInputIndexes) > 0 {
-		sweepPsbtBase64, err = wallet.SignTransactionTapscript(
-			ctx,
-			sweepPsbtBase64,
-			tapscriptInputIndexes,
-		)
-		if err != nil {
-			return "", "", err
+	return ptx.UnsignedTx.TxID(), unsignedTx, nil
+}
+
+// signSweepTransaction signs the unsigned sweep transaction with the given wallet
+// The tapscript inputs that need signing are re-derived from the psbt, so the caller
+// only has to pass the unsigned tx.
+func signSweepTransaction(
+	ctx context.Context, wallet ports.WalletService, unsignedTx string,
+) (string, error) {
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(unsignedTx), true)
+	if err != nil {
+		return "", err
+	}
+
+	tapscriptInputIndexes := make([]int, 0)
+	for i, in := range ptx.Inputs {
+		if len(in.TaprootLeafScript) > 0 {
+			tapscriptInputIndexes = append(tapscriptInputIndexes, i)
 		}
 	}
 
-	signedTxHex, err := wallet.SignTransaction(ctx, sweepPsbtBase64, true)
-	if err != nil {
-		return "", "", err
+	signedTx := unsignedTx
+	if len(tapscriptInputIndexes) > 0 {
+		signedTx, err = wallet.SignTransactionTapscript(ctx, signedTx, tapscriptInputIndexes)
+		if err != nil {
+			return "", err
+		}
 	}
 
-	return ptx.UnsignedTx.TxID(), signedTxHex, nil
+	return wallet.SignTransaction(ctx, signedTx, true)
 }
