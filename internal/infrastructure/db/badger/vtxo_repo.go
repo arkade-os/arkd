@@ -16,8 +16,14 @@ import (
 
 const vtxoStoreDir = "vtxos"
 
-type vtxoRepository struct {
-	store *badgerhold.Store
+type VtxoRepository struct {
+	store    *badgerhold.Store
+	arkStore *badgerhold.Store
+}
+
+// GetStore returns the underlying badgerhold store for use by marker repository
+func (r *VtxoRepository) GetStore() *badgerhold.Store {
+	return r.store
 }
 
 type vtxoDTO struct {
@@ -26,7 +32,7 @@ type vtxoDTO struct {
 }
 
 func NewVtxoRepository(config ...interface{}) (domain.VtxoRepository, error) {
-	if len(config) != 2 {
+	if len(config) != 2 && len(config) != 3 {
 		return nil, fmt.Errorf("invalid config")
 	}
 	baseDir, ok := config[0].(string)
@@ -40,6 +46,13 @@ func NewVtxoRepository(config ...interface{}) (domain.VtxoRepository, error) {
 			return nil, fmt.Errorf("invalid logger")
 		}
 	}
+	var arkStore *badgerhold.Store
+	if len(config) == 3 && config[2] != nil {
+		arkStore, ok = config[2].(*badgerhold.Store)
+		if !ok {
+			return nil, fmt.Errorf("invalid ark store")
+		}
+	}
 
 	var dir string
 	if len(baseDir) > 0 {
@@ -50,16 +63,16 @@ func NewVtxoRepository(config ...interface{}) (domain.VtxoRepository, error) {
 		return nil, fmt.Errorf("failed to open round events store: %s", err)
 	}
 
-	return &vtxoRepository{store}, nil
+	return &VtxoRepository{store: store, arkStore: arkStore}, nil
 }
 
-func (r *vtxoRepository) AddVtxos(
+func (r *VtxoRepository) AddVtxos(
 	ctx context.Context, vtxos []domain.Vtxo,
 ) error {
 	return r.addVtxos(ctx, vtxos)
 }
 
-func (r *vtxoRepository) SettleVtxos(
+func (r *VtxoRepository) SettleVtxos(
 	ctx context.Context, spentVtxos map[domain.Outpoint]string, commitmentTxid string,
 ) error {
 	for outpoint, spentBy := range spentVtxos {
@@ -70,7 +83,7 @@ func (r *vtxoRepository) SettleVtxos(
 	return nil
 }
 
-func (r *vtxoRepository) SpendVtxos(
+func (r *VtxoRepository) SpendVtxos(
 	ctx context.Context, spentVtxos map[domain.Outpoint]string, arkTxid string,
 ) error {
 	for outpoint, spentBy := range spentVtxos {
@@ -81,7 +94,7 @@ func (r *vtxoRepository) SpendVtxos(
 	return nil
 }
 
-func (r *vtxoRepository) UnrollVtxos(
+func (r *VtxoRepository) UnrollVtxos(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) error {
 	for _, outpoint := range outpoints {
@@ -93,7 +106,7 @@ func (r *vtxoRepository) UnrollVtxos(
 	return nil
 }
 
-func (r *vtxoRepository) GetVtxos(
+func (r *VtxoRepository) GetVtxos(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) ([]domain.Vtxo, error) {
 	vtxos := make([]domain.Vtxo, 0, len(outpoints))
@@ -113,14 +126,14 @@ func (r *vtxoRepository) GetVtxos(
 	return vtxos, nil
 }
 
-func (r *vtxoRepository) GetLeafVtxosForBatch(
+func (r *VtxoRepository) GetLeafVtxosForBatch(
 	ctx context.Context, txid string,
 ) ([]domain.Vtxo, error) {
 	query := badgerhold.Where("RootCommitmentTxid").Eq(txid).And("Preconfirmed").Eq(false)
 	return r.findVtxos(ctx, query)
 }
 
-func (r *vtxoRepository) GetAllNonUnrolledVtxos(
+func (r *VtxoRepository) GetAllNonUnrolledVtxos(
 	ctx context.Context, pubkey string,
 ) ([]domain.Vtxo, []domain.Vtxo, error) {
 	query := badgerhold.Where("Unrolled").Eq(false)
@@ -144,7 +157,7 @@ func (r *vtxoRepository) GetAllNonUnrolledVtxos(
 	return unspentVtxos, spentVtxos, nil
 }
 
-func (r *vtxoRepository) GetAllSweepableUnrolledVtxos(
+func (r *VtxoRepository) GetAllSweepableUnrolledVtxos(
 	ctx context.Context,
 ) ([]domain.Vtxo, error) {
 	query := badgerhold.Where("Unrolled").
@@ -158,34 +171,11 @@ func (r *vtxoRepository) GetAllSweepableUnrolledVtxos(
 	return r.findVtxos(ctx, query)
 }
 
-func (r *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
+func (r *VtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
 	return r.findVtxos(ctx, &badgerhold.Query{})
 }
 
-func (r *vtxoRepository) SweepVtxos(
-	ctx context.Context, outpoints []domain.Outpoint,
-) (int, error) {
-	sweptCount := 0
-	for _, outpoint := range outpoints {
-		vtxo, err := r.getVtxo(ctx, outpoint)
-		if err != nil {
-			return -1, err
-		}
-		if vtxo.Swept {
-			continue // Skip already swept vtxos
-		}
-
-		// Mark as swept
-		vtxo.Swept = true
-		if err := r.updateVtxo(ctx, vtxo); err != nil {
-			return -1, err
-		}
-		sweptCount++
-	}
-	return sweptCount, nil
-}
-
-func (r *vtxoRepository) UpdateVtxosExpiration(
+func (r *VtxoRepository) UpdateVtxosExpiration(
 	ctx context.Context, vtxos []domain.Outpoint, expiresAt int64,
 ) error {
 	var err error
@@ -229,7 +219,7 @@ func (r *vtxoRepository) UpdateVtxosExpiration(
 	return err
 }
 
-func (r *vtxoRepository) GetAllVtxosWithPubKeys(
+func (r *VtxoRepository) GetAllVtxosWithPubKeys(
 	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
 	if err := validateTimeRange(after, before); err != nil {
@@ -254,7 +244,7 @@ func (r *vtxoRepository) GetAllVtxosWithPubKeys(
 	return allVtxos, nil
 }
 
-func (r *vtxoRepository) GetExpiringLiquidity(
+func (r *VtxoRepository) GetExpiringLiquidity(
 	ctx context.Context, after, before int64,
 ) (uint64, error) {
 	query := badgerhold.Where("Swept").Eq(false).
@@ -278,7 +268,7 @@ func (r *vtxoRepository) GetExpiringLiquidity(
 	return sum, nil
 }
 
-func (r *vtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
+func (r *VtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
 	query := badgerhold.Where("Swept").Eq(true).And("Spent").Eq(false)
 	vtxos, err := r.findVtxos(ctx, query)
 	if err != nil {
@@ -292,7 +282,7 @@ func (r *vtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint64, e
 	return sum, nil
 }
 
-func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
+func (r *VtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 	ctx context.Context, commitmentTxid string, amountFilter uint64,
 ) ([]string, error) {
 	if commitmentTxid == "" {
@@ -348,7 +338,7 @@ func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 // "slice intersects set" operator, so the second scan uses a MatchFunc that
 // walks the in-memory slice; the SQL backends accomplish the same with a
 // JOIN against vtxo_commitment_txid in a single query.
-func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxids(
+func (r *VtxoRepository) GetVtxoPubKeysByCommitmentTxids(
 	ctx context.Context, commitmentTxids []string, amountFilter uint64,
 ) ([]string, error) {
 	if len(commitmentTxids) == 0 {
@@ -418,7 +408,67 @@ func (r *vtxoRepository) GetVtxoPubKeysByCommitmentTxids(
 	return taprootKeys, nil
 }
 
-func (r *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
+func (r *VtxoRepository) GetCheckpointTxsByVtxoPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]domain.Tx, error) {
+	if len(pubkeys) == 0 {
+		return nil, nil
+	}
+	if r.arkStore == nil {
+		return nil, fmt.Errorf("ark store not configured")
+	}
+
+	idxIfaces := make([]interface{}, len(pubkeys))
+	for i, pk := range pubkeys {
+		idxIfaces[i] = pk
+	}
+
+	query := badgerhold.Where("PubKey").In(idxIfaces...).And("Swept").Eq(false)
+	vtxos, err := r.findVtxos(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	// Group vtxos by ArkTxid so each offchain tx is fetched once. Skip vtxos
+	// without a SpentBy checkpoint or an ArkTxid link; they can't join to a
+	// finalized offchain tx (mirrors SQL inner-join excludes).
+	byArkTxid := make(map[string][]domain.Vtxo)
+	for _, v := range vtxos {
+		if v.SpentBy == "" || v.ArkTxid == "" {
+			continue
+		}
+		byArkTxid[v.ArkTxid] = append(byArkTxid[v.ArkTxid], v)
+	}
+
+	dedup := make(map[string]domain.Tx)
+	for arkTxid, group := range byArkTxid {
+		var offchainTx domain.OffchainTx
+		if err := r.arkStore.Get(arkTxid, &offchainTx); err != nil {
+			if err == badgerhold.ErrNotFound {
+				continue
+			}
+			return nil, err
+		}
+		if offchainTx.Stage.Code != int(domain.OffchainTxFinalizedStage) {
+			continue
+		}
+		for _, v := range group {
+			data, ok := offchainTx.CheckpointTxs[v.SpentBy]
+			if !ok {
+				continue
+			}
+			dedup[v.SpentBy] = domain.Tx{Txid: v.SpentBy, Str: data}
+		}
+	}
+
+	txs := make([]domain.Tx, 0, len(dedup))
+	for _, tx := range dedup {
+		txs = append(txs, tx)
+	}
+	return txs, nil
+}
+
+func (r *VtxoRepository) GetPendingSpentVtxosWithPubKeys(
 	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
 	if err := validateTimeRange(after, before); err != nil {
@@ -468,7 +518,7 @@ func (r *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
 	return vtxos, nil
 }
 
-func (r *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
+func (r *VtxoRepository) GetPendingSpentVtxosWithOutpoints(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) ([]domain.Vtxo, error) {
 	// Get all candidates
@@ -510,12 +560,12 @@ func (r *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 	return vtxos, nil
 }
 
-func (r *vtxoRepository) Close() {
+func (r *VtxoRepository) Close() {
 	// nolint:all
 	r.store.Close()
 }
 
-func (r *vtxoRepository) addVtxos(
+func (r *VtxoRepository) addVtxos(
 	ctx context.Context, vtxos []domain.Vtxo,
 ) error {
 	for _, vtxo := range vtxos {
@@ -553,7 +603,7 @@ func (r *vtxoRepository) addVtxos(
 	return nil
 }
 
-func (r *vtxoRepository) getVtxo(
+func (r *VtxoRepository) getVtxo(
 	ctx context.Context, outpoint domain.Outpoint,
 ) (*domain.Vtxo, error) {
 	var dto vtxoDTO
@@ -574,7 +624,7 @@ func (r *vtxoRepository) getVtxo(
 	return &dto.Vtxo, nil
 }
 
-func (r *vtxoRepository) settleVtxo(
+func (r *VtxoRepository) settleVtxo(
 	ctx context.Context, outpoint domain.Outpoint, spentBy, settledBy string,
 ) error {
 	vtxo, err := r.getVtxo(ctx, outpoint)
@@ -595,7 +645,7 @@ func (r *vtxoRepository) settleVtxo(
 	return r.updateVtxo(ctx, vtxo)
 }
 
-func (r *vtxoRepository) spendVtxo(
+func (r *VtxoRepository) spendVtxo(
 	ctx context.Context, outpoint domain.Outpoint, spentBy, arkTxid string,
 ) error {
 	vtxo, err := r.getVtxo(ctx, outpoint)
@@ -616,7 +666,7 @@ func (r *vtxoRepository) spendVtxo(
 	return r.updateVtxo(ctx, vtxo)
 }
 
-func (r *vtxoRepository) unrollVtxo(
+func (r *VtxoRepository) unrollVtxo(
 	ctx context.Context, outpoint domain.Outpoint,
 ) (*domain.Vtxo, error) {
 	vtxo, err := r.getVtxo(ctx, outpoint)
@@ -638,7 +688,7 @@ func (r *vtxoRepository) unrollVtxo(
 	return vtxo, nil
 }
 
-func (r *vtxoRepository) findVtxos(
+func (r *VtxoRepository) findVtxos(
 	ctx context.Context, query *badgerhold.Query,
 ) ([]domain.Vtxo, error) {
 	vtxos := make([]domain.Vtxo, 0)
@@ -658,7 +708,7 @@ func (r *vtxoRepository) findVtxos(
 	return vtxos, err
 }
 
-func (r *vtxoRepository) updateVtxo(ctx context.Context, vtxo *domain.Vtxo) error {
+func (r *VtxoRepository) updateVtxo(ctx context.Context, vtxo *domain.Vtxo) error {
 	dto := vtxoDTO{
 		Vtxo:      *vtxo,
 		UpdatedAt: time.Now().UnixMilli(),
@@ -689,7 +739,7 @@ func (r *vtxoRepository) updateVtxo(ctx context.Context, vtxo *domain.Vtxo) erro
 	return nil
 }
 
-func (r *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
+func (r *VtxoRepository) GetSweepableVtxosByCommitmentTxid(
 	ctx context.Context,
 	txid string,
 ) ([]domain.Outpoint, error) {
@@ -732,15 +782,34 @@ func (r *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 	return outpoints, nil
 }
 
-func (r *vtxoRepository) GetAllChildrenVtxos(
+func (r *VtxoRepository) GetAllChildrenVtxos(
 	ctx context.Context,
-	txid string,
+	outpoint domain.Outpoint,
 ) ([]domain.Outpoint, error) {
+	// Seed with the specific outpoint, not all vouts of the txid, so that
+	// sibling outputs (which belong to independent lineages) are not included.
+	seedQuery := badgerhold.Where("Txid").Eq(outpoint.Txid).
+		And("VOut").Eq(outpoint.VOut)
+	seedVtxos, err := r.findVtxos(ctx, seedQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find seed vtxo %s: %w", outpoint, err)
+	}
+
 	visited := make(map[string]bool)
 	visitedTxids := make(map[string]bool)
 	var outpoints []domain.Outpoint
+	queue := make([]string, 0, len(seedVtxos))
 
-	queue := []string{txid}
+	for _, vtxo := range seedVtxos {
+		outpointKey := vtxo.Outpoint.String()
+		if !visited[outpointKey] {
+			visited[outpointKey] = true
+			outpoints = append(outpoints, vtxo.Outpoint)
+			if vtxo.ArkTxid != "" {
+				queue = append(queue, vtxo.ArkTxid)
+			}
+		}
+	}
 
 	for len(queue) > 0 {
 		currentTxid := queue[0]

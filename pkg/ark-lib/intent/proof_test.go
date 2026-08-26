@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"math"
 	"os"
 	"testing"
 
@@ -25,6 +26,7 @@ import (
 
 const noteProofMessage = "test-note-closure-parity"
 
+// TestNewIntent verifies that New constructs a valid PSBT proof for well-formed inputs and returns errors for invalid ones.
 func TestNewIntent(t *testing.T) {
 	validFixtures, invalidFixtures := parseProofFixtures(t)
 
@@ -64,8 +66,30 @@ func TestNewIntent(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("BIP-322 global 0x09 field", func(t *testing.T) {
+		validFixtures, _ := parseProofFixtures(t)
+		for _, fixture := range validFixtures {
+			t.Run(fixture.Name, func(t *testing.T) {
+				proof, err := intent.New(fixture.Message, fixture.Inputs, fixture.Outputs)
+				require.NoError(t, err)
+
+				var found *psbt.Unknown
+				for _, u := range proof.Unknowns {
+					if len(u.Key) == 1 && u.Key[0] == 0x09 {
+						found = u
+						break
+					}
+				}
+				require.NotNil(t, found, "PSBT global 0x09 field must be present")
+				require.Equal(t, []byte(fixture.Message), found.Value,
+					"0x09 value must equal the intent message")
+			})
+		}
+	})
 }
 
+// TestVerifyIntent verifies that Verify accepts valid signed proofs and rejects malformed or tampered ones.
 func TestVerifyIntent(t *testing.T) {
 	validFixtures, invalidFixtures := parseVerifyFixtures(t)
 
@@ -148,10 +172,30 @@ func TestVerifyIntent(t *testing.T) {
 				err = intent.Verify(serializeProof(t, p), noteProofMessage, nil)
 				require.ErrorContains(t, err, "preimage")
 			})
+
+			// Two condition witnesses on one input make the revealed preimage
+			// depend on which field a reader happens to look at, so
+			// verification refuses the input rather than resolving it to the
+			// first one set.
+			t.Run("duplicate condition witness", func(t *testing.T) {
+				s := newNoteClosureSetup(t)
+				p := buildNoteProof(t, s, s.cbBytes)
+
+				wrong := make([]byte, 32)
+				_, err := rand.Read(wrong)
+				require.NoError(t, err)
+
+				setNotePreimage(t, p, 1, s.preimage)
+				setNotePreimage(t, p, 1, wrong)
+
+				err = intent.Verify(serializeProof(t, p), noteProofMessage, nil)
+				require.ErrorContains(t, err, "expected at most one")
+			})
 		})
 	})
 }
 
+// TestIntentGetOutpoints checks that GetOutpoints returns the correct slice of outpoints, excluding the toSpend input.
 func TestIntentGetOutpoints(t *testing.T) {
 	t.Run("zero inputs", func(t *testing.T) {
 		ptxWithZeroInputs := psbt.Packet{
@@ -173,6 +217,101 @@ func TestIntentGetOutpoints(t *testing.T) {
 		proof := intent.Proof{Packet: ptxWithOneInput}
 		outpoints := proof.GetOutpoints()
 		require.Len(t, outpoints, 0)
+	})
+}
+
+// TestIntentFees checks that the fee never comes back from a wrapped sum and that the
+// zero-valued toSpend input is excluded from the inputs it is computed over.
+func TestIntentFees(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		t.Run("fee is sum of inputs minus sum of outputs", func(t *testing.T) {
+			proof := newFeesProof(0, []int64{8000, 2000}, []int64{6000, 3800})
+
+			fees, err := proof.Fees()
+			require.NoError(t, err)
+			require.Equal(t, int64(200), fees)
+		})
+
+		t.Run("toSpend input does not contribute to the fee", func(t *testing.T) {
+			proof := newFeesProof(0, []int64{8000}, []int64{7800})
+
+			fees, err := proof.Fees()
+			require.NoError(t, err)
+			require.Equal(t, int64(200), fees)
+		})
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		t.Run("non-zero toSpend input is refused", func(t *testing.T) {
+			// a forged input 0 would otherwise be added to the inputs and inflate the fee
+			proof := newFeesProof(5000, []int64{8000}, []int64{7800})
+
+			_, err := proof.Fees()
+			require.ErrorContains(t, err, "value of BIP322 proof input 0 must be zero")
+		})
+
+		t.Run("fewer than two inputs is refused", func(t *testing.T) {
+			proof := newFeesProof(0, nil, []int64{1000})
+
+			_, err := proof.Fees()
+			require.ErrorIs(t, err, intent.ErrInvalidTxNumberOfInputs)
+		})
+
+		t.Run("missing witness utxo is refused", func(t *testing.T) {
+			proof := newFeesProof(0, []int64{8000}, []int64{7800})
+			proof.Inputs[1].WitnessUtxo = nil
+
+			_, err := proof.Fees()
+			require.ErrorContains(t, err, "missing witness utxo for input 1")
+		})
+
+		t.Run("outputs above inputs are refused", func(t *testing.T) {
+			proof := newFeesProof(0, []int64{1000}, []int64{2000})
+
+			_, err := proof.Fees()
+			require.ErrorContains(t, err, "sum of inputs is smaller than sum of outputs")
+		})
+
+		t.Run("overflowing sum of inputs is refused", func(t *testing.T) {
+			proof := newFeesProof(0, []int64{math.MaxInt64, math.MaxInt64}, []int64{1000})
+
+			_, err := proof.Fees()
+			require.ErrorIs(t, err, intent.ErrAmountOverflow)
+			require.ErrorContains(t, err, "sum of inputs")
+		})
+
+		t.Run("overflowing sum of outputs is refused", func(t *testing.T) {
+			proof := newFeesProof(0, []int64{1000}, []int64{math.MaxInt64, math.MaxInt64})
+
+			_, err := proof.Fees()
+			require.ErrorIs(t, err, intent.ErrAmountOverflow)
+			require.ErrorContains(t, err, "sum of outputs")
+		})
+
+		t.Run("overflowing fee subtraction is refused", func(t *testing.T) {
+			// a negative output total would otherwise push inputs-outputs past MaxInt64
+			proof := newFeesProof(0, []int64{math.MaxInt64}, []int64{-1000})
+
+			_, err := proof.Fees()
+			require.ErrorIs(t, err, intent.ErrAmountOverflow)
+			require.ErrorContains(t, err, "fee")
+		})
+
+		t.Run("underflowing sum of inputs is refused", func(t *testing.T) {
+			proof := newFeesProof(0, []int64{math.MinInt64, math.MinInt64}, []int64{1000})
+
+			_, err := proof.Fees()
+			require.ErrorIs(t, err, intent.ErrAmountOverflow)
+			require.ErrorContains(t, err, "sum of inputs")
+		})
+
+		t.Run("underflowing fee subtraction is refused", func(t *testing.T) {
+			proof := newFeesProof(0, []int64{math.MinInt64}, []int64{1000})
+
+			_, err := proof.Fees()
+			require.ErrorIs(t, err, intent.ErrAmountOverflow)
+			require.ErrorContains(t, err, "fee")
+		})
 	})
 }
 
@@ -445,4 +584,29 @@ func serializeProof(t *testing.T, p *intent.Proof) string {
 	var buf bytes.Buffer
 	require.NoError(t, p.Serialize(&buf))
 	return base64.StdEncoding.EncodeToString(buf.Bytes())
+}
+
+// newFeesProof builds a proof with the shape Fees expects: a leading toSpend input followed by
+// the inputs proving ownership. Only the amounts are meaningful, the scripts are left empty.
+func newFeesProof(toSpendValue int64, inputValues, outputValues []int64) intent.Proof {
+	txIns := make([]*wire.TxIn, 0, len(inputValues)+1)
+	psbtIns := make([]psbt.PInput, 0, len(inputValues)+1)
+
+	txIns = append(txIns, &wire.TxIn{})
+	psbtIns = append(psbtIns, psbt.PInput{WitnessUtxo: &wire.TxOut{Value: toSpendValue}})
+
+	for _, v := range inputValues {
+		txIns = append(txIns, &wire.TxIn{})
+		psbtIns = append(psbtIns, psbt.PInput{WitnessUtxo: &wire.TxOut{Value: v}})
+	}
+
+	txOuts := make([]*wire.TxOut, 0, len(outputValues))
+	for _, v := range outputValues {
+		txOuts = append(txOuts, &wire.TxOut{Value: v})
+	}
+
+	return intent.Proof{Packet: psbt.Packet{
+		UnsignedTx: &wire.MsgTx{TxIn: txIns, TxOut: txOuts},
+		Inputs:     psbtIns,
+	}}
 }

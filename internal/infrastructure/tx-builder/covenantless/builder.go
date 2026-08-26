@@ -13,6 +13,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil"
@@ -26,18 +27,15 @@ import (
 )
 
 type txBuilder struct {
-	wallet            ports.WalletService
-	signer            ports.SignerService
-	network           arklib.Network
-	vtxoTreeExpiry    arklib.RelativeLocktime
-	boardingExitDelay arklib.RelativeLocktime
+	wallet  ports.WalletService
+	signer  ports.SignerService
+	network arklib.Network
 }
 
 func NewTxBuilder(
 	wallet ports.WalletService, signer ports.SignerService, network arklib.Network,
-	vtxoTreeExpiry, boardingExitDelay arklib.RelativeLocktime,
 ) ports.TxBuilder {
-	return &txBuilder{wallet, signer, network, vtxoTreeExpiry, boardingExitDelay}
+	return &txBuilder{wallet, signer, network}
 }
 
 func (b *txBuilder) GetTxid(tx string) (string, error) {
@@ -92,6 +90,13 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 
 	for index, input := range ptx.Inputs {
 		if len(input.TaprootLeafScript) == 0 {
+			// when verifying the signer sig, we expect the taproot leaf script to be set
+			// it is to avoid malicious attack where the user strip the leaf while finalizing offchain tx
+			if mustIncludeSignerSig {
+				return false, nil, fmt.Errorf(
+					"missing taproot leaf script for input %d", index,
+				)
+			}
 			continue
 		}
 
@@ -123,29 +128,25 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 				keys[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
 		case *script.ConditionMultisigClosure:
-			witnessFields, err := txutils.GetArkPsbtFields(
-				ptx, index, txutils.ConditionWitnessField,
-			)
-			if err != nil {
+			if err := checkConditionMet(ptx, index, c.Condition); err != nil {
 				return false, nil, err
-			}
-			witness := make(wire.TxWitness, 0)
-			if len(witnessFields) > 0 {
-				witness = witnessFields[0]
-			}
-
-			result, err := script.EvaluateScriptToBool(c.Condition, witness)
-			if err != nil {
-				return false, nil, err
-			}
-
-			if !result {
-				return false, nil, fmt.Errorf("condition not met for input %d", index)
 			}
 
 			for _, key := range c.PubKeys {
 				keys[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
+		case *script.ConditionCSVMultisigClosure:
+			if err := checkConditionMet(ptx, index, c.Condition); err != nil {
+				return false, nil, err
+			}
+
+			for _, key := range c.PubKeys {
+				keys[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
+			}
+		default:
+			return false, nil, fmt.Errorf(
+				"unsupported tapscript closure %T for input %d", closure, index,
+			)
 		}
 
 		if !mustIncludeSignerSig {
@@ -408,29 +409,29 @@ func (b *txBuilder) VerifyForfeitTxs(
 			return nil, err
 		}
 
-		locktime := arklib.AbsoluteLocktime(0)
+		var locktime *arklib.AbsoluteLocktime
 
 		switch c := closure.(type) {
 		case *script.CLTVMultisigClosure:
-			locktime = c.Locktime
+			locktime = &c.Locktime
 		case *script.MultisigClosure, *script.ConditionMultisigClosure:
 		default:
 			return nil, fmt.Errorf("invalid forfeit closure script")
 		}
 
-		if locktime != 0 {
+		if locktime != nil {
 			if !locktime.IsSeconds() {
-				if locktime > arklib.AbsoluteLocktime(blocktimestamp.Height) {
+				if *locktime > arklib.AbsoluteLocktime(blocktimestamp.Height) {
 					return nil, fmt.Errorf(
 						"forfeit closure is CLTV locked, %d > %d (block height)",
-						locktime, blocktimestamp.Height,
+						*locktime, blocktimestamp.Height,
 					)
 				}
 			} else {
-				if locktime > arklib.AbsoluteLocktime(blocktimestamp.Time) {
+				if *locktime > arklib.AbsoluteLocktime(blocktimestamp.Time) {
 					return nil, fmt.Errorf(
 						"forfeit closure is CLTV locked, %d > %d (block time)",
-						locktime, blocktimestamp.Time,
+						*locktime, blocktimestamp.Time,
 					)
 				}
 			}
@@ -462,8 +463,10 @@ func (b *txBuilder) VerifyForfeitTxs(
 		var sequences []uint32
 
 		vtxoSequence := wire.MaxTxInSequenceNum
-		if locktime != 0 {
+		txLocktime := arklib.AbsoluteLocktime(0)
+		if locktime != nil {
 			vtxoSequence = wire.MaxTxInSequenceNum - 1
+			txLocktime = *locktime
 		}
 
 		if vtxoFirst {
@@ -485,7 +488,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 			sequences,
 			prevouts,
 			forfeitScript,
-			uint32(locktime),
+			uint32(txLocktime),
 		)
 		if err != nil {
 			return nil, err
@@ -510,6 +513,16 @@ func (b *txBuilder) VerifyForfeitTxs(
 			)
 		}
 
+		// A txid doesn't commit to PSBT metadata, so verify it against known prevouts.
+		for i, prevout := range prevouts {
+			witnessUtxo := tx.Inputs[i].WitnessUtxo
+			if witnessUtxo == nil ||
+				witnessUtxo.Value != prevout.Value ||
+				!bytes.Equal(witnessUtxo.PkScript, prevout.PkScript) {
+				return nil, fmt.Errorf("invalid witness utxo for input %d", i)
+			}
+		}
+
 		validForfeitTxs[vtxoKey] = ports.ValidForfeitTx{
 			Tx: forfeitTx,
 			Connector: domain.Outpoint{
@@ -525,7 +538,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 func (b *txBuilder) BuildCommitmentTx(
 	signerPubkey *btcec.PublicKey, intents domain.Intents,
 	boardingInputs []ports.BoardingInput,
-	cosignersPublicKeys [][]string,
+	cosignersPublicKeys [][]string, vtxoTreeExpiry arklib.RelativeLocktime,
 ) (string, *tree.TxTree, string, *tree.TxTree, error) {
 	var batchOutputScript []byte
 	var batchOutputAmount int64
@@ -539,7 +552,7 @@ func (b *txBuilder) BuildCommitmentTx(
 		MultisigClosure: script.MultisigClosure{
 			PubKeys: []*btcec.PublicKey{signerPubkey},
 		},
-		Locktime: b.vtxoTreeExpiry,
+		Locktime: vtxoTreeExpiry,
 	}).Script()
 	if err != nil {
 		return "", nil, "", nil, err
@@ -553,6 +566,12 @@ func (b *txBuilder) BuildCommitmentTx(
 		)
 		if err != nil {
 			return "", nil, "", nil, err
+		}
+
+		if batchOutputAmount <= 0 {
+			return "", nil, "", nil, fmt.Errorf(
+				"invalid batch output amount %d, must be greater than 0", batchOutputAmount,
+			)
 		}
 	}
 
@@ -601,7 +620,7 @@ func (b *txBuilder) BuildCommitmentTx(
 
 		cosigners := []string{hex.EncodeToString(taprootKey.SerializeCompressed())}
 
-		for i := 0; i < nbOfConnectors; i++ {
+		for range nbOfConnectors {
 			connectorsTreeLeaves = append(connectorsTreeLeaves, tree.Leaf{
 				Outputs: []tree.LeafOutput{
 					{
@@ -618,6 +637,12 @@ func (b *txBuilder) BuildCommitmentTx(
 		)
 		if err != nil {
 			return "", nil, "", nil, err
+		}
+
+		if connectorsTreeAmount <= 0 {
+			return "", nil, "", nil, fmt.Errorf(
+				"invalid connector output amount %d, must be greater than 0", connectorsTreeAmount,
+			)
 		}
 	}
 
@@ -644,7 +669,7 @@ func (b *txBuilder) BuildCommitmentTx(
 		}
 
 		vtxoTree, err = tree.BuildVtxoTree(
-			initialOutpoint, receivers, sweepTapscriptRoot[:], b.vtxoTreeExpiry,
+			initialOutpoint, receivers, sweepTapscriptRoot[:], vtxoTreeExpiry,
 		)
 		if err != nil {
 			return "", nil, "", nil, err
@@ -793,15 +818,31 @@ func (b *txBuilder) createCommitmentTx(
 
 	outputs = append(outputs, onchainOutputs...)
 
+	boardingAmount := uint64(0)
 	for _, input := range boardingInputs {
-		targetAmount -= input.Amount
+		boardingAmount += input.Amount
 	}
 
+	// boarding inputs fund the outputs, any surplus should belong to the change output, if any
+	// it avoids targetAmount to be negative and the tx to be invalid
+	boardingSurplus := uint64(0)
+	if boardingAmount >= targetAmount {
+		boardingSurplus = boardingAmount - targetAmount
+		targetAmount = 0
+	} else {
+		targetAmount -= boardingAmount
+	}
+
+	// even if targetAmount is 0, we still need to select UTXOs to pay for the fees
 	ctx := context.Background()
 	utxos, change, err := b.wallet.SelectUtxos(ctx, "", targetAmount, false)
 	if err != nil {
 		return nil, err
 	}
+
+	// the surplus is input value the selection didn't account for, it belongs to the
+	// change so that inputs and outputs keep balancing
+	change += boardingSurplus
 
 	var cacheChangeScript []byte
 	// avoid derivation of several change addresses
@@ -1064,9 +1105,20 @@ func (b *txBuilder) VerifyBoardingTapscriptSigs(
 		return nil, err
 	}
 
+	if err := blockchain.CheckTransactionSanity(btcutil.NewTx(ptx.UnsignedTx)); err != nil {
+		return nil, err
+	}
+
 	commitmentPtx, err := psbt.NewFromRawBytes(strings.NewReader(commitmentTx), true)
 	if err != nil {
 		return nil, err
+	}
+
+	if ptx.UnsignedTx.TxID() != commitmentPtx.UnsignedTx.TxID() {
+		return nil, fmt.Errorf(
+			"commitment tx mismatch: expected %s, got %s",
+			commitmentPtx.UnsignedTx.TxID(), ptx.UnsignedTx.TxID(),
+		)
 	}
 
 	// rely on the commitment tx (built by the builder) to get the prevouts
@@ -1228,4 +1280,22 @@ func (b *txBuilder) getForfeitScript() ([]byte, error) {
 	}
 
 	return txscript.PayToAddrScript(addr)
+}
+
+// checkConditionMet evaluates a closure's spending condition against the
+// condition witness carried by the input, and reports an error unless it
+// evaluates true.
+func checkConditionMet(ptx *psbt.Packet, index int, condition []byte) error {
+	witness, err := txutils.GetArkPsbtConditionWitness(ptx, index)
+	if err != nil {
+		return err
+	}
+	result, err := script.EvaluateScriptToBool(condition, witness)
+	if err != nil {
+		return err
+	}
+	if !result {
+		return fmt.Errorf("condition not met for input %d", index)
+	}
+	return nil
 }

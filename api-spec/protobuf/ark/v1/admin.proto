@@ -16,9 +16,37 @@ service AdminService {
       get: "/v1/admin/round/{round_id}"
     };
   }
+  // GetRoundIntents returns the intents registered in a batch as they were persisted,
+  // so they can be inspected even if the batch failed.
+  rpc GetRoundIntents(GetRoundIntentsRequest) returns (GetRoundIntentsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/round/{round_id}/intents"
+    };
+  }
   rpc GetRounds(GetRoundsRequest) returns (GetRoundsResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/admin/rounds"
+    };
+  }
+  // GetOffchainTxs returns the offchain txs started in the given time range, most
+  // recent first, including the failed ones and their fail reason.
+  rpc GetOffchainTxs(GetOffchainTxsRequest) returns (GetOffchainTxsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/offchainTxs"
+    };
+  }
+  // GetOffchainTxDetails returns the full details of an offchain tx at any stage,
+  // including txs that failed before being accepted.
+  rpc GetOffchainTxDetails(GetOffchainTxDetailsRequest) returns (GetOffchainTxDetailsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/offchainTx/{txid}"
+    };
+  }
+  // GetFeeRate returns the fee rate the wallet currently uses to estimate the fees
+  // of the onchain txs it builds, like the commitment tx.
+  rpc GetFeeRate(GetFeeRateRequest) returns (GetFeeRateResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/admin/feeRate"
     };
   }
   // GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose
@@ -169,13 +197,16 @@ service AdminService {
   }
 }
 
-message GetScheduledSweepRequest {}
+message GetScheduledSweepRequest {
+  // Max batches to return, soonest due first. 0 means no limit.
+  int64 limit = 1;
+}
 message GetScheduledSweepResponse {
   repeated ScheduledSweep sweeps = 1;
 }
 
 message GetRoundDetailsRequest {
-  string round_id = 1;
+  string round_id = 1; // Either the batch id or its commitment txid.
 }
 message GetRoundDetailsResponse {
   string round_id = 1;
@@ -189,6 +220,19 @@ message GetRoundDetailsResponse {
   repeated string inputs_vtxos = 9;
   repeated string outputs_vtxos = 10;
   repeated string exit_addresses = 11;
+  string stage = 12;
+  bool ended = 13;
+  bool failed = 14;
+  bool swept = 15;
+  string fail_reason = 16; // Only set for failed batches.
+  int64 total_intents = 17;
+}
+
+message GetRoundIntentsRequest {
+  string round_id = 1; // Either the batch id or its commitment txid.
+}
+message GetRoundIntentsResponse {
+  repeated IntentInfo intents = 1;
 }
 
 message GetRoundsRequest {
@@ -196,9 +240,74 @@ message GetRoundsRequest {
   int64 before = 2;
   bool with_failed = 3;
   bool with_completed = 4;
+  bool only_failed = 5; // Return only the failed batches.
+  int64 limit = 6; // Max number of batches to return, most recent first. 0 means no limit.
 }
 message GetRoundsResponse {
-  repeated string rounds = 1;
+  // Deprecated: the plain list of batch ids, kept populated so existing clients
+  // keep working. It carries none of the listing fields, read summaries instead.
+  repeated string rounds = 1 [deprecated = true];
+  repeated RoundSummary summaries = 2;
+}
+
+message RoundSummary {
+  string round_id = 1;
+  string commitment_txid = 2;
+  int64 started_at = 3;
+  int64 ended_at = 4;
+  string stage = 5;
+  bool ended = 6;
+  bool failed = 7;
+  bool swept = 8;
+  string fail_reason = 9; // Only set for failed batches.
+  int64 total_intents = 10;
+}
+
+message GetOffchainTxsRequest {
+  int64 after = 1; // Unix timestamp (exclusive). 0 means no lower bound.
+  int64 before = 2; // Unix timestamp (exclusive). 0 means no upper bound.
+  bool only_failed = 3; // Return only the failed offchain txs.
+  bool only_completed = 4; // Return only the finalized offchain txs.
+  int64 limit = 5; // Max number of txs to return, most recent first. 0 means no limit.
+}
+message GetOffchainTxsResponse {
+  repeated OffchainTxSummary txs = 1;
+}
+
+message OffchainTxSummary {
+  string txid = 1;
+  string stage = 2;
+  bool ended = 3;
+  bool failed = 4;
+  string fail_reason = 5; // Only set for failed offchain txs.
+  int64 started_at = 6;
+  int64 ended_at = 7;
+  string root_commitment_txid = 8;
+  int64 total_checkpoints = 9;
+}
+
+message GetOffchainTxDetailsRequest {
+  string txid = 1;
+}
+message GetOffchainTxDetailsResponse {
+  string txid = 1;
+  string stage = 2;
+  bool ended = 3;
+  bool failed = 4;
+  string fail_reason = 5; // Only set for failed offchain txs.
+  int64 started_at = 6;
+  int64 ended_at = 7;
+  int64 expires_at = 8;
+  string ark_tx = 9;
+  string root_commitment_txid = 10;
+  map<string, string> checkpoint_txs = 11; // Checkpoint txid -> checkpoint tx.
+  map<string, string> commitment_txids = 12; // Checkpoint txid -> commitment txid.
+}
+
+message GetFeeRateRequest {}
+message GetFeeRateResponse {
+  uint64 sat_per_kvbyte = 1;
+  double sat_per_vbyte = 2;
 }
 
 message GetExpiredRoundsRequest {}
@@ -309,17 +418,16 @@ message RevokeAuthResponse {
   string token = 1;
 }
 
-message SweepableOutput {
-  string txid = 1;
-  uint32 vout = 2;
-  string amount = 3;
-  int64 scheduled_at = 4;
-}
-
 message ScheduledSweep {
   string round_id = 1;
-  repeated SweepableOutput outputs = 2;
-  bool confirmed = 3;
+  string commitment_txid = 2;
+  // When the batch outputs fall due, derived from the batch's ending timestamp
+  // plus its vtxo tree expiry. No chain access is needed to answer this.
+  int64 sweep_at = 3;
+  // Unswept leaf value still carried by the batch, in satoshis.
+  uint64 total_amount = 4;
+  // Number of unswept leaf vtxos backing total_amount.
+  int64 vtxo_count = 5;
 }
 
 message ScheduledSessionConfig {
@@ -447,6 +555,7 @@ message Settings {
   optional bool build_version_header_required = 23;
   optional string updated_at = 24;
   optional bool digest_header_required = 25;
+  optional string batch_trigger = 26;
 }
 
 message GetSettingsRequest {}
