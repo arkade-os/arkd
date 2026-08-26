@@ -710,9 +710,12 @@ func (s *controllableScheduler) fire() {
 
 // newSchedulableSweeper builds a sweeper wired to a scheduler the test controls.
 // newTestSweeper above uses mockScheduler, whose ScheduleTaskOnce is a no-op.
-func newSchedulableSweeper(sched ports.SchedulerService) *sweeper {
+func newSchedulableSweeper(sched ports.SchedulerService, attempts int) *sweeper {
 	s := newSweeper(&mockWalletService{}, &mockRepoManager{}, &mockTxBuilder{}, sched)
 	s.ctx = context.Background()
+	// per-instance, so shrinking the policy cannot race another test
+	s.retryDelay = time.Millisecond
+	s.retryAttempts = attempts
 	return s
 }
 
@@ -720,12 +723,8 @@ func newSchedulableSweeper(sched ports.SchedulerService) *sweeper {
 // is re-attempted rather than silently dropped. Before this, a single mempool
 // conflict left the batch unswept until an operator restart.
 func TestScheduleTaskRetriesFailedExecution(t *testing.T) {
-	prevDelay, prevAttempts := sweepRetryDelay, sweepRetryAttempts
-	sweepRetryDelay, sweepRetryAttempts = time.Millisecond, 3
-	t.Cleanup(func() { sweepRetryDelay, sweepRetryAttempts = prevDelay, prevAttempts })
-
 	sched := &controllableScheduler{}
-	s := newSchedulableSweeper(sched)
+	s := newSchedulableSweeper(sched, 3)
 
 	calls := 0
 	require.NoError(t, s.scheduleTask(sweeperTask{
@@ -746,12 +745,8 @@ func TestScheduleTaskRetriesFailedExecution(t *testing.T) {
 // TestScheduleTaskStopsRetryingOnSuccess pins that a retry that succeeds ends the
 // loop instead of burning the remaining attempts.
 func TestScheduleTaskStopsRetryingOnSuccess(t *testing.T) {
-	prevDelay, prevAttempts := sweepRetryDelay, sweepRetryAttempts
-	sweepRetryDelay, sweepRetryAttempts = time.Millisecond, 5
-	t.Cleanup(func() { sweepRetryDelay, sweepRetryAttempts = prevDelay, prevAttempts })
-
 	sched := &controllableScheduler{}
-	s := newSchedulableSweeper(sched)
+	s := newSchedulableSweeper(sched, 5)
 
 	calls := 0
 	require.NoError(t, s.scheduleTask(sweeperTask{
@@ -774,12 +769,8 @@ func TestScheduleTaskStopsRetryingOnSuccess(t *testing.T) {
 // run, so a later schedule for the same tree is accepted. scheduledTasks is a
 // dedup guard: holding the id past execution would block re-scheduling entirely.
 func TestScheduleTaskFreesDedupSlot(t *testing.T) {
-	prevDelay, prevAttempts := sweepRetryDelay, sweepRetryAttempts
-	sweepRetryDelay, sweepRetryAttempts = time.Millisecond, 1
-	t.Cleanup(func() { sweepRetryDelay, sweepRetryAttempts = prevDelay, prevAttempts })
-
 	sched := &controllableScheduler{}
-	s := newSchedulableSweeper(sched)
+	s := newSchedulableSweeper(sched, 1)
 
 	at := time.Now().Add(time.Hour).Unix()
 	failing := sweeperTask{
@@ -815,12 +806,8 @@ func TestScheduleTaskFreesDedupSlot(t *testing.T) {
 // use the same bounded retry policy - it is the case that most needs it, since
 // nothing will re-arm the task until the next restart.
 func TestScheduleTaskRetriesAlreadyDueTask(t *testing.T) {
-	prevDelay, prevAttempts := sweepRetryDelay, sweepRetryAttempts
-	sweepRetryDelay, sweepRetryAttempts = time.Millisecond, 3
-	t.Cleanup(func() { sweepRetryDelay, sweepRetryAttempts = prevDelay, prevAttempts })
-
 	sched := &immediateScheduler{}
-	s := newSchedulableSweeper(sched)
+	s := newSchedulableSweeper(sched, 3)
 
 	calls := 0
 	err := s.scheduleTask(sweeperTask{

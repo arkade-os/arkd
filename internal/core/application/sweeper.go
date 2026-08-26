@@ -41,6 +41,11 @@ type sweeper struct {
 	scheduledTasks map[string]struct{}
 	ctx            context.Context
 
+	// retry policy for a sweep whose execution failed; fields rather than
+	// package vars so tests can shrink them without mutating shared state
+	retryDelay    time.Duration
+	retryAttempts int
+
 	onSweepCheckpoint func(TransactionEvent)
 }
 
@@ -49,7 +54,14 @@ func newSweeper(
 	scheduler ports.SchedulerService,
 ) *sweeper {
 	return &sweeper{
-		wallet, repoManager, builder, scheduler, &sync.Mutex{}, make(map[string]struct{}), nil, nil,
+		wallet:         wallet,
+		repoManager:    repoManager,
+		builder:        builder,
+		scheduler:      scheduler,
+		locker:         &sync.Mutex{},
+		scheduledTasks: make(map[string]struct{}),
+		retryDelay:     defaultSweepRetryDelay,
+		retryAttempts:  defaultSweepRetryAttempts,
 	}
 }
 
@@ -422,14 +434,15 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 	})
 }
 
-var (
-	// sweepRetryDelay is how long to wait before re-attempting a sweep whose
-	// execution failed. A failure is usually a mempool conflict or a transient
-	// node error, neither of which clears in milliseconds.
-	sweepRetryDelay = time.Minute
-	// sweepRetryAttempts bounds the in-process retries. Beyond this the sweep is
-	// left for the next process start, which rebuilds tasks from the repository.
-	sweepRetryAttempts = 10
+const (
+	// defaultSweepRetryDelay is how long to wait before re-attempting a sweep
+	// whose execution failed. A failure is usually a mempool conflict or a
+	// transient node error, neither of which clears in milliseconds.
+	defaultSweepRetryDelay = time.Minute
+	// defaultSweepRetryAttempts bounds the in-process retries. Beyond this the
+	// sweep is left for the next process start, which rebuilds tasks from the
+	// repository.
+	defaultSweepRetryAttempts = 10
 )
 
 // executeWithRetry runs a sweep task, re-attempting it on failure. Without this a
@@ -448,16 +461,16 @@ func (s *sweeper) executeWithRetry(task sweeperTask) error {
 		return nil
 	}
 
-	for attempt := 1; attempt <= sweepRetryAttempts; attempt++ {
+	for attempt := 1; attempt <= s.retryAttempts; attempt++ {
 		log.WithError(err).Warnf(
 			"sweeper: sweep of tx %s failed, retrying in %s (attempt %d/%d)",
-			task.id, sweepRetryDelay, attempt, sweepRetryAttempts,
+			task.id, s.retryDelay, attempt, s.retryAttempts,
 		)
 
 		select {
 		case <-ctx.Done():
 			return err
-		case <-time.After(sweepRetryDelay):
+		case <-time.After(s.retryDelay):
 		}
 
 		if err = task.execute(); err == nil {
@@ -467,7 +480,7 @@ func (s *sweeper) executeWithRetry(task sweeperTask) error {
 
 	log.WithError(err).Errorf(
 		"sweeper: giving up on sweep of tx %s after %d attempts, outputs remain unswept "+
-			"until the next restart", task.id, sweepRetryAttempts,
+			"until the next restart", task.id, s.retryAttempts,
 	)
 	return err
 }
