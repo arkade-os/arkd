@@ -42,6 +42,9 @@ func DecodeClosure(script []byte) (Closure, error) {
 		closure Closure
 		name    string
 	}{
+		// most specific first: the hybrid starts with a CLTV prefix the narrower
+		// types reject anyway, but ordering keeps that from being load-bearing
+		{&CLTVCSVMultisigClosure{}, "CLTV+CSV Multisig"},
 		{&CSVMultisigClosure{}, "CSV Multisig"},
 		{&CLTVMultisigClosure{}, "CLTV Multisig"},
 		{&MultisigClosure{}, "Multisig"},
