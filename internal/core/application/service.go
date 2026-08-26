@@ -1828,6 +1828,25 @@ func (s *service) RegisterIntent(
 			continue
 		}
 
+		if settings.EpochExpiryEnabled {
+			// Renewal is decided by what the intent produces, not what it spends:
+			// an intent creating a vtxo is a renewal, one that only pays onchain is
+			// an exit and stays available for the whole epoch.
+			isRenewal := intentHasOffchainOutput(
+				proof.UnsignedTx.TxOut, message.OnchainOutputIndexes,
+			)
+			if err := checkEpochAdmission(
+				settings.EpochSchedule(), vtxo, time.Now(), isRenewal,
+			); err != nil {
+				return "", errors.INVALID_PSBT_INPUT.New(
+					"vtxo %s: %s", vtxo.Outpoint.String(), err,
+				).WithMetadata(errors.InputMetadata{
+					Txid:       proofTxid,
+					InputIndex: int(outpoint.Index),
+				})
+			}
+		}
+
 		// A swept vtxo is exempt: settling one is how recovery works, and the
 		// operator already holds the funds onchain.
 		if !vtxo.Swept {

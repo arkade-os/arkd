@@ -554,3 +554,71 @@ func TestEpochMaturity(t *testing.T) {
 		require.LessOrEqual(t, at, epochDate+15*grace)
 	})
 }
+
+// TestCheckEpochAdmission pins the two-sided settlement window. The lower bound
+// is a safety bound on every vtxo input; the upper bound applies only to
+// renewals, since exits and boarding must stay available all epoch.
+func TestCheckEpochAdmission(t *testing.T) {
+	anchor := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	sched := domain.EpochSchedule{
+		Anchor:           anchor,
+		Length:           28 * 24 * time.Hour,
+		RolloverWindow:   7 * 24 * time.Hour,
+		SettlementCutoff: 12 * time.Hour,
+	}
+	vtxo := domain.Vtxo{ExpiresAt: anchor.Unix()}
+	day := 24 * time.Hour
+
+	t.Run("renewal inside the rollover window is admitted", func(t *testing.T) {
+		require.NoError(t, checkEpochAdmission(sched, vtxo, anchor.Add(-3*day), true))
+	})
+
+	t.Run("renewal outside the rollover window is refused", func(t *testing.T) {
+		err := checkEpochAdmission(sched, vtxo, anchor.Add(-21*day), true)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "too early")
+	})
+
+	t.Run("exit outside the rollover window is admitted", func(t *testing.T) {
+		require.NoError(t, checkEpochAdmission(sched, vtxo, anchor.Add(-21*day), false))
+	})
+
+	t.Run("nothing is admitted inside the cutoff", func(t *testing.T) {
+		require.Error(t, checkEpochAdmission(sched, vtxo, anchor.Add(-time.Hour), true))
+		require.Error(t, checkEpochAdmission(sched, vtxo, anchor.Add(-time.Hour), false))
+	})
+
+	// Recovery must keep working: the operator already holds these funds onchain,
+	// so no forfeit is needed and the window does not apply.
+	t.Run("swept vtxos bypass the window entirely", func(t *testing.T) {
+		swept := domain.Vtxo{ExpiresAt: anchor.Unix(), Swept: true}
+		require.NoError(t, checkEpochAdmission(sched, swept, anchor.Add(time.Hour), false))
+		require.NoError(t, checkEpochAdmission(sched, swept, anchor.Add(-21*day), true))
+	})
+}
+
+// TestIntentHasOffchainOutput pins how renewal is distinguished from exit. It is
+// decided by what the intent produces, not what it spends: the admission
+// window's upper bound applies to renewals only.
+func TestIntentHasOffchainOutput(t *testing.T) {
+	vtxoOut := &wire.TxOut{Value: 1000, PkScript: []byte{0x51, 0x20, 0x01}}
+	onchainOut := &wire.TxOut{Value: 2000, PkScript: []byte{0x00, 0x14, 0x02}}
+
+	t.Run("a vtxo output makes it a renewal", func(t *testing.T) {
+		require.True(t, intentHasOffchainOutput([]*wire.TxOut{vtxoOut}, nil))
+	})
+
+	t.Run("only onchain outputs is an exit", func(t *testing.T) {
+		require.False(t, intentHasOffchainOutput([]*wire.TxOut{onchainOut}, []int{0}))
+	})
+
+	t.Run("mixed outputs count as a renewal", func(t *testing.T) {
+		require.True(t, intentHasOffchainOutput(
+			[]*wire.TxOut{onchainOut, vtxoOut}, []int{0},
+		))
+	})
+
+	t.Run("no outputs at all is not a renewal", func(t *testing.T) {
+		require.False(t, intentHasOffchainOutput(nil, nil))
+	})
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -694,4 +695,35 @@ func epochMaturity(epochDate, parentConfirmedAt, grace int64) int64 {
 		return withGrace
 	}
 	return epochDate
+}
+
+// checkEpochAdmission applies the settlement admission window to a vtxo input.
+//
+// Swept vtxos are exempt: the operator already holds those funds onchain, no
+// forfeit is needed, and settling one is exactly how recovery works.
+func checkEpochAdmission(
+	sched domain.EpochSchedule, vtxo domain.Vtxo, now time.Time, isRenewal bool,
+) error {
+	if vtxo.Swept {
+		return nil
+	}
+	return sched.AdmitsSettle(arklib.AbsoluteLocktime(vtxo.ExpiresAt), now, isRenewal)
+}
+
+// intentHasOffchainOutput reports whether an intent produces at least one vtxo,
+// which is what makes it a renewal rather than a pure exit.
+//
+// Extension outputs carry protocol data rather than value, so they do not count.
+// Every other output is offchain unless the intent listed its index as onchain.
+func intentHasOffchainOutput(outputs []*wire.TxOut, onchainOutputIndexes []int) bool {
+	for i, out := range outputs {
+		if extension.IsExtension(out.PkScript) {
+			continue
+		}
+		if slices.Contains(onchainOutputIndexes, i) {
+			continue
+		}
+		return true
+	}
+	return false
 }
