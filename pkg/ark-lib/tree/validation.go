@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/errors"
@@ -33,7 +32,9 @@ const batchOutputIndex = 0
 
 // ValidateVtxoTree checks if the given vtxo tree is valid
 // vtxoTree tx & commitmentTx are used to validate that the tree spends from the batch outpoint.
-// signerPubkey & vtxoTreeExpiry are used to validate the sweep tapscript leaves.
+// signerPubkey & params are used to validate the sweep tapscript leaves; passing
+// the wrong scheme in params makes every node's aggregate key fail to reproduce,
+// which is the point — an epoch tree must not validate against legacy parameters.
 // Along with that, the function validates:
 // - the number of nodes
 // - the number of leaves
@@ -43,7 +44,7 @@ const batchOutputIndex = 0
 // - the batch output is spendable by the tree, ie. it pays to the root cosigners
 func ValidateVtxoTree(
 	vtxoTree *TxTree, commitmentTx *psbt.Packet,
-	signerPubkey *btcec.PublicKey, vtxoTreeExpiry arklib.RelativeLocktime,
+	signerPubkey *btcec.PublicKey, params SweepParams,
 ) error {
 	if len(commitmentTx.Outputs) < batchOutputIndex+1 {
 		return ErrInvalidBatchOutputsNum
@@ -74,7 +75,7 @@ func ValidateVtxoTree(
 		return ErrNoLeaves
 	}
 
-	tapTreeRoot, _, err := BuildLegacySweepTapTreeRoot(signerPubkey, vtxoTreeExpiry)
+	tapTreeRoot, _, err := params.Root(signerPubkey)
 	if err != nil {
 		return err
 	}

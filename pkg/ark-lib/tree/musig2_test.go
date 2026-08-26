@@ -45,7 +45,7 @@ func TestBuildAndSignVtxoTree(t *testing.T) {
 			require.NotZero(t, batchOutAmount)
 
 			vtxoTree, err := tree.BuildVtxoTree(
-				rootInput, v.receivers, batchOutSweepClosure[:], vtxoTreeExpiry,
+				rootInput, v.receivers, batchOutSweepClosure[:], tree.SweepParams{Expiry: vtxoTreeExpiry},
 			)
 			require.NoError(t, err)
 			require.NotNil(t, vtxoTree)

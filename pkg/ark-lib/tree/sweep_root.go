@@ -8,6 +8,34 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 )
 
+// SweepParams describes how a batch's outputs become sweepable by the operator.
+//
+// BatchExpiry nil means the legacy scheme: a single relative CSV of Expiry,
+// measured from each node's own confirmation. BatchExpiry set means the epoch
+// scheme, where Expiry carries the per-level unroll grace instead and the
+// absolute date is shared by every batch in the epoch.
+//
+// The two are carried in one type deliberately. An overload pair would let a
+// caller validate an epoch tree with legacy parameters and get a green result,
+// which is exactly what validation exists to prevent.
+type SweepParams struct {
+	Expiry      arklib.RelativeLocktime
+	BatchExpiry *arklib.AbsoluteLocktime
+}
+
+// IsEpoch reports whether these parameters describe an epoch batch.
+func (p SweepParams) IsEpoch() bool {
+	return p.BatchExpiry != nil
+}
+
+// Root builds the sweep tapscript root and leaf script these parameters describe.
+func (p SweepParams) Root(operator *btcec.PublicKey) (chainhash.Hash, []byte, error) {
+	if p.IsEpoch() {
+		return BuildEpochSweepTapTreeRoot(operator, *p.BatchExpiry, p.Expiry)
+	}
+	return BuildLegacySweepTapTreeRoot(operator, p.Expiry)
+}
+
 // BuildLegacySweepTapTreeRoot returns the sweep tapscript root for a batch using
 // the relative-CSV expiry scheme, along with the leaf script itself.
 //

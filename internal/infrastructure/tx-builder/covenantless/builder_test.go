@@ -99,7 +99,7 @@ func TestBuildCommitmentTx(t *testing.T) {
 				require.NoError(t, err)
 
 				err = tree.ValidateVtxoTree(
-					vtxoTree, roundPtx, pubkey, vtxoTreeExpiry,
+					vtxoTree, roundPtx, pubkey, tree.SweepParams{Expiry: vtxoTreeExpiry},
 				)
 				require.NoError(t, err)
 
@@ -251,8 +251,8 @@ func TestBuildCommitmentTxUsesVtxoTreeExpiryArg(t *testing.T) {
 
 	// The tree validates against the expiry it was built with, and not against
 	// a different one, proving the argument determined the tree's timelock.
-	require.NoError(t, tree.ValidateVtxoTree(vtxoTree, roundPtx, pubkey, usedExpiry))
-	require.Error(t, tree.ValidateVtxoTree(vtxoTree, roundPtx, pubkey, vtxoTreeExpiry))
+	require.NoError(t, tree.ValidateVtxoTree(vtxoTree, roundPtx, pubkey, tree.SweepParams{Expiry: usedExpiry}))
+	require.Error(t, tree.ValidateVtxoTree(vtxoTree, roundPtx, pubkey, tree.SweepParams{Expiry: vtxoTreeExpiry}))
 }
 
 func TestVerifyVtxoTapscriptSigs(t *testing.T) {

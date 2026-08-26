@@ -662,7 +662,7 @@ func (b *txBuilder) BuildCommitmentTx(
 		}
 
 		vtxoTree, err = tree.BuildVtxoTree(
-			initialOutpoint, receivers, sweepTapscriptRoot[:], vtxoTreeExpiry,
+			initialOutpoint, receivers, sweepTapscriptRoot[:], tree.SweepParams{Expiry: vtxoTreeExpiry},
 		)
 		if err != nil {
 			return "", nil, "", nil, err

@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/blockchain"
@@ -49,14 +48,14 @@ func BuildBatchOutput(receivers []Leaf, sweepTapTreeRoot []byte) ([]byte, int64,
 // The radix of the tree is hardcoded to 2.
 func BuildVtxoTree(
 	rootInput *wire.OutPoint, receivers []Leaf,
-	sweepTapTreeRoot []byte, vtxoTreeExpiry arklib.RelativeLocktime,
+	sweepTapTreeRoot []byte, params SweepParams,
 ) (*TxTree, error) {
 	root, err := createTxTree(receivers, sweepTapTreeRoot, vtxoTreeRadix)
 	if err != nil {
 		return nil, err
 	}
 
-	return root.tree(rootInput, &vtxoTreeExpiry)
+	return root.tree(rootInput, &params)
 }
 
 // BuildConnectorOutput returns the taproot script and amount of a connector output of the
@@ -101,7 +100,7 @@ type node interface {
 	getChildren() []node
 	getCosigners() []*btcec.PublicKey
 	getInputScript() []byte
-	tree(input *wire.OutPoint, expiry *arklib.RelativeLocktime) (*TxTree, error)
+	tree(input *wire.OutPoint, params *SweepParams) (*TxTree, error)
 }
 
 type leaf struct {
@@ -135,9 +134,9 @@ func (l *leaf) getOutputs() ([]*wire.TxOut, error) {
 }
 
 func (l *leaf) tree(
-	initialInput *wire.OutPoint, expiry *arklib.RelativeLocktime,
+	initialInput *wire.OutPoint, params *SweepParams,
 ) (*TxTree, error) {
-	tx, err := getTx(l, initialInput, expiry)
+	tx, err := getTx(l, initialInput, params)
 	if err != nil {
 		return nil, err
 	}
@@ -191,9 +190,9 @@ func (b *branch) getOutputs() ([]*wire.TxOut, error) {
 }
 
 func (b *branch) tree(
-	initialInput *wire.OutPoint, expiry *arklib.RelativeLocktime,
+	initialInput *wire.OutPoint, params *SweepParams,
 ) (*TxTree, error) {
-	tx, err := getTx(b, initialInput, expiry)
+	tx, err := getTx(b, initialInput, params)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +207,7 @@ func (b *branch) tree(
 		subTree, err := child.tree(&wire.OutPoint{
 			Hash:  tx.UnsignedTx.TxHash(),
 			Index: uint32(i),
-		}, expiry)
+		}, params)
 		if err != nil {
 			return nil, err
 		}
@@ -219,7 +218,7 @@ func (b *branch) tree(
 	return txTree, nil
 }
 
-func getTx(n node, input *wire.OutPoint, expiry *arklib.RelativeLocktime) (*psbt.Packet, error) {
+func getTx(n node, input *wire.OutPoint, params *SweepParams) (*psbt.Packet, error) {
 	outputs, err := n.getOutputs()
 	if err != nil {
 		return nil, err
@@ -248,8 +247,20 @@ func getTx(n node, input *wire.OutPoint, expiry *arklib.RelativeLocktime) (*psbt
 		}
 	}
 
-	if expiry != nil {
-		if err := txutils.SetArkPsbtField(tx, 0, txutils.VtxoTreeExpiryField, *expiry); err != nil {
+	if params != nil {
+		// Epoch batches carry both fields: the absolute date is the discriminator
+		// the sweeper keys on, and the relative one carries the per-level unroll
+		// grace it needs to compute max(E, parentConfirmedAt+grace).
+		if params.BatchExpiry != nil {
+			if err := txutils.SetArkPsbtField(
+				tx, 0, txutils.BatchExpiryField, *params.BatchExpiry,
+			); err != nil {
+				return nil, err
+			}
+		}
+		if err := txutils.SetArkPsbtField(
+			tx, 0, txutils.VtxoTreeExpiryField, params.Expiry,
+		); err != nil {
 			return nil, err
 		}
 	}

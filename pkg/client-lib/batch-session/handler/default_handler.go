@@ -441,7 +441,8 @@ func (h *defaultHandler) validateVtxoTree(
 	// validate the vtxo tree is well formed
 	if !isOnchainOnly(h.Receivers) {
 		if err := tree.ValidateVtxoTree(
-			vtxoTree, commitmentPtx, h.ServerParams.ForfeitPubKey, h.batchExpiry,
+			vtxoTree, commitmentPtx, h.ServerParams.ForfeitPubKey,
+			tree.SweepParams{Expiry: h.batchExpiry},
 		); err != nil {
 			return err
 		}
