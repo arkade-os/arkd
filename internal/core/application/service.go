@@ -3985,11 +3985,21 @@ func (s *service) scheduleSweepBatchOutput(round domain.Round) {
 	var skipExpiryUpdate bool
 	switch {
 	case round.EpochExpiry > 0:
-		// Take the date the batch actually committed to from the round itself,
-		// rather than recomputing it: a settings change between finalization and
-		// this call must not move an existing batch's sweep schedule.
+		// Take both the date and the grace the batch actually committed to from the
+		// batch itself, never from live settings: a settings change between
+		// finalization and this call must not move an existing batch's sweep
+		// schedule. The date is pinned on the round; the grace is baked into every
+		// sweep leaf, so read it back from the tree.
+		grace, err := epochUnrollGrace(round.VtxoTree)
+		if err != nil {
+			log.WithError(err).Errorf(
+				"failed to read the unroll grace of batch %s, cannot schedule its sweep",
+				round.CommitmentTxid,
+			)
+			return
+		}
 		expirationTimestamp = epochMaturity(
-			round.EpochExpiry, blockTimestamp.Time, int64(settings.UnrollGrace.Value),
+			round.EpochExpiry, blockTimestamp.Time, int64(grace.Value),
 		)
 	case s.sweeper.scheduler.Unit() == ports.BlockHeight:
 		expirationTimestamp = int64(blockTimestamp.Height) + int64(vtxoTreeExpiry.Value)

@@ -709,6 +709,42 @@ func epochMaturity(epochDate, parentConfirmedAt, grace int64) int64 {
 	return epochDate
 }
 
+// epochUnrollGrace reads the unroll grace a batch actually committed to from its
+// own tree.
+//
+// The grace is baked into every sweep leaf at build time, so reading it back from
+// the tree is the only value that can match the onchain CSV constraint. Taking it
+// from live settings instead would reschedule an existing batch's sweep whenever
+// an operator changed the setting — the same reason the epoch date is pinned on
+// the round rather than recomputed. The sweep execution path already sources it
+// this way, via GetSweepableBatchOutputs.
+func epochUnrollGrace(vtxoTree tree.FlatTxTree) (arklib.RelativeLocktime, error) {
+	var grace arklib.RelativeLocktime
+
+	rootTxid := vtxoTree.RootTxid()
+	for _, node := range vtxoTree {
+		if node.Txid != rootTxid {
+			continue
+		}
+
+		ptx, err := psbt.NewFromRawBytes(strings.NewReader(node.Tx), true)
+		if err != nil {
+			return grace, fmt.Errorf("failed to parse tree root %s: %w", rootTxid, err)
+		}
+
+		expiries, err := txutils.GetArkPsbtFields(ptx, 0, txutils.VtxoTreeExpiryField)
+		if err != nil {
+			return grace, err
+		}
+		if len(expiries) <= 0 {
+			return grace, fmt.Errorf("tree root %s carries no expiry field", rootTxid)
+		}
+		return expiries[0], nil
+	}
+
+	return grace, fmt.Errorf("root %s not found in tree", rootTxid)
+}
+
 // checkEpochAdmission applies the settlement admission window to a vtxo input.
 //
 // Swept vtxos are exempt: the operator already holds those funds onchain, no

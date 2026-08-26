@@ -10,6 +10,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -620,5 +621,64 @@ func TestIntentHasOffchainOutput(t *testing.T) {
 
 	t.Run("no outputs at all is not a renewal", func(t *testing.T) {
 		require.False(t, intentHasOffchainOutput(nil, nil))
+	})
+}
+
+// TestEpochUnrollGrace pins that the grace used to schedule a sweep comes from
+// the batch's own tree rather than from live settings. The two agree until an
+// operator changes the setting, and from then on only the tree matches the CSV
+// constraint actually committed to onchain.
+func TestEpochUnrollGrace(t *testing.T) {
+	buildTree := func(t *testing.T, setExpiry bool, grace arklib.RelativeLocktime) tree.FlatTxTree {
+		t.Helper()
+
+		rootPtx, err := psbt.New(
+			[]*wire.OutPoint{{Hash: chainhash.Hash{0x07}, Index: 0}},
+			[]*wire.TxOut{{Value: 1000, PkScript: []byte{0x51}}},
+			2, 0, []uint32{wire.MaxTxInSequenceNum},
+		)
+		require.NoError(t, err)
+
+		if setExpiry {
+			require.NoError(t, txutils.SetArkPsbtField(
+				rootPtx, 0, txutils.VtxoTreeExpiryField, grace,
+			))
+		}
+
+		b64, err := rootPtx.B64Encode()
+		require.NoError(t, err)
+
+		return tree.FlatTxTree{{Txid: rootPtx.UnsignedTx.TxID(), Tx: b64}}
+	}
+
+	baked := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 7168}
+
+	t.Run("reads the grace baked into the tree", func(t *testing.T) {
+		got, err := epochUnrollGrace(buildTree(t, true, baked))
+		require.NoError(t, err)
+		require.Equal(t, baked, got)
+	})
+
+	t.Run("a settings change does not move it", func(t *testing.T) {
+		vtxoTree := buildTree(t, true, baked)
+
+		// What a live settings change would look like: a different value that must
+		// not be the one the sweep is scheduled against.
+		changed := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512}
+		require.NotEqual(t, baked, changed)
+
+		got, err := epochUnrollGrace(vtxoTree)
+		require.NoError(t, err)
+		require.Equal(t, baked, got, "the grace must come from the tree, not settings")
+	})
+
+	t.Run("errors rather than guessing when the field is absent", func(t *testing.T) {
+		_, err := epochUnrollGrace(buildTree(t, false, baked))
+		require.ErrorContains(t, err, "carries no expiry field")
+	})
+
+	t.Run("errors on an empty tree", func(t *testing.T) {
+		_, err := epochUnrollGrace(tree.FlatTxTree{})
+		require.ErrorContains(t, err, "not found in tree")
 	})
 }
