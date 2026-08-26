@@ -275,6 +275,17 @@ func (s Settings) Validate() error {
 	}
 
 	if s.EpochExpiryEnabled {
+		// An epoch date is a unix timestamp. A block-type deployment measures every
+		// other delay in blocks and runs a block-height sweep scheduler, which
+		// would read that timestamp as a block height roughly 1.8 billion blocks
+		// away - the batch would simply never be swept. Refuse the combination
+		// rather than accept a configuration that silently strands funds.
+		if s.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock {
+			return fmt.Errorf(
+				"epoch expiry requires seconds-based locktimes, but this deployment " +
+					"uses block-based ones",
+			)
+		}
 		if err := s.EpochSchedule().Validate(); err != nil {
 			return fmt.Errorf("invalid epoch schedule: %w", err)
 		}

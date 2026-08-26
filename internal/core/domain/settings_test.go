@@ -732,3 +732,45 @@ func TestSettingsEpochValidation(t *testing.T) {
 		require.Equal(t, 28*24*time.Hour, s.EpochLength, "a rejected update must not apply")
 	})
 }
+
+// TestSettingsEpochRequiresSecondsLocktimes pins that epoch expiry cannot be
+// enabled on a block-height deployment.
+//
+// An epoch date is a unix timestamp, but a block-type deployment measures every
+// other delay in blocks and runs a block-height sweep scheduler. Mixing them
+// silently produces a batch that never sweeps: the scheduler reads the epoch
+// timestamp as a block height roughly 1.8 billion blocks in the future.
+func TestSettingsEpochRequiresSecondsLocktimes(t *testing.T) {
+	blockLocktime := arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144}
+
+	t.Run("block-type deployment cannot enable epoch expiry", func(t *testing.T) {
+		s := epochSettingsFixture(t)
+		s.VtxoTreeExpiry = blockLocktime
+		s.UnilateralExitDelay = blockLocktime
+		s.PublicUnilateralExitDelay = blockLocktime
+		s.CheckpointExitDelay = blockLocktime
+		s.BoardingExitDelay = arklib.RelativeLocktime{
+			Type: arklib.LocktimeTypeBlock, Value: 288,
+		}
+		s.UnrollGrace = arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 12}
+
+		err := s.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "seconds")
+	})
+
+	t.Run("a block-type deployment is fine with epoch expiry disabled", func(t *testing.T) {
+		s := epochSettingsFixture(t)
+		s.EpochExpiryEnabled = false
+		s.VtxoTreeExpiry = blockLocktime
+		s.UnilateralExitDelay = blockLocktime
+		s.PublicUnilateralExitDelay = blockLocktime
+		s.CheckpointExitDelay = blockLocktime
+		s.BoardingExitDelay = arklib.RelativeLocktime{
+			Type: arklib.LocktimeTypeBlock, Value: 288,
+		}
+		s.UnrollGrace = arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 12}
+
+		require.NoError(t, s.Validate())
+	})
+}

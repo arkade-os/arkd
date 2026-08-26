@@ -69,6 +69,18 @@ func findSweepableOutputs(
 			// built before the epoch cutover keep maturing on their original terms.
 			expirationTime := blocktimeCache[parentTxid] + int64(sweepParams.Expiry.Value)
 			if sweepParams.IsEpoch() {
+				// blocktimeCache holds block heights under a block-height scheduler,
+				// and an epoch expiry is a unix timestamp. Comparing the two would
+				// schedule the sweep about 1.8 billion blocks out, i.e. never.
+				// Settings validation refuses this pairing; fail loudly if one ever
+				// slips through rather than silently stranding the batch.
+				if schedulerUnit == ports.BlockHeight {
+					return false, fmt.Errorf(
+						"epoch batch %s cannot be swept by a block-height scheduler: "+
+							"epoch expiry requires seconds-based locktimes",
+						g.Root.UnsignedTx.TxID(),
+					)
+				}
 				expirationTime = epochMaturity(
 					int64(*sweepParams.BatchExpiry),
 					blocktimeCache[parentTxid],
