@@ -568,10 +568,10 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 }
 
 const selectExpiredRounds = `-- name: SelectExpiredRounds :many
-SELECT r.id, r.txid, CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS expired_at
+SELECT r.id, r.txid, CAST(CASE WHEN r.epoch_expiry > 0 THEN r.epoch_expiry ELSE r.ending_timestamp + r.vtxo_tree_expiration END AS BIGINT) AS expired_at
 FROM round_with_commitment_tx_vw r
 WHERE r.swept = false AND r.ended = true AND r.failed = false
-AND (r.ending_timestamp + r.vtxo_tree_expiration) < $1
+AND (CASE WHEN r.epoch_expiry > 0 THEN r.epoch_expiry ELSE r.ending_timestamp + r.vtxo_tree_expiration END) < $1
 AND EXISTS (
     SELECT 1 FROM tx tree_tx
     WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
@@ -584,6 +584,8 @@ type SelectExpiredRoundsRow struct {
 	ExpiredAt int64
 }
 
+// An epoch round carries its expiry date directly; a legacy round derives it
+// from its relative expiry. Zero epoch_expiry means legacy.
 func (q *Queries) SelectExpiredRounds(ctx context.Context, now int64) ([]SelectExpiredRoundsRow, error) {
 	rows, err := q.db.QueryContext(ctx, selectExpiredRounds, now)
 	if err != nil {
@@ -2828,10 +2830,10 @@ func (q *Queries) UpsertReceiver(ctx context.Context, arg UpsertReceiverParams) 
 const upsertRound = `-- name: UpsertRound :exec
 INSERT INTO round (
     id, starting_timestamp, ending_timestamp, ended, failed, fail_reason,
-    stage_code, connector_address, version, swept, vtxo_tree_expiration, fees
+    stage_code, connector_address, version, swept, vtxo_tree_expiration, epoch_expiry, fees
 ) VALUES (
     $1, $2, $3, $4, $5, $6,
-    $7, $8, $9, $10, $11, $12
+    $7, $8, $9, $10, $11, $12, $13
 )
 ON CONFLICT(id) DO UPDATE SET
     starting_timestamp = EXCLUDED.starting_timestamp,
@@ -2844,6 +2846,7 @@ ON CONFLICT(id) DO UPDATE SET
     version = EXCLUDED.version,
     swept = EXCLUDED.swept,
     vtxo_tree_expiration = EXCLUDED.vtxo_tree_expiration,
+    epoch_expiry = EXCLUDED.epoch_expiry,
     fees = EXCLUDED.fees
 `
 
@@ -2859,6 +2862,7 @@ type UpsertRoundParams struct {
 	Version            int32
 	Swept              bool
 	VtxoTreeExpiration int64
+	EpochExpiry        int64
 	Fees               int64
 }
 
@@ -2875,6 +2879,7 @@ func (q *Queries) UpsertRound(ctx context.Context, arg UpsertRoundParams) error 
 		arg.Version,
 		arg.Swept,
 		arg.VtxoTreeExpiration,
+		arg.EpochExpiry,
 		arg.Fees,
 	)
 	return err

@@ -14,7 +14,16 @@ import (
 type BatchStarted struct {
 	domain.RoundEvent
 	IntentIdsHashes [][32]byte
-	BatchExpiry     uint32
+	// BatchExpiry is a relative locktime. For a legacy batch it is the vtxo tree
+	// expiry; for an epoch batch it is the per-level unroll grace.
+	BatchExpiry uint32
+	// BatchExpiryDate is the absolute epoch expiry, unix seconds. Zero for a
+	// legacy batch. Carried separately from BatchExpiry because an old client
+	// reads that field as a relative locktime and would fail BIP68 encoding on an
+	// absolute timestamp - safe, but opaque.
+	BatchExpiryDate uint32
+	// UnrollGrace mirrors BatchExpiry for epoch batches, named for what it is.
+	UnrollGrace uint32
 }
 
 // signer should react to this event by generating a musig2 nonce for each transaction in the tree

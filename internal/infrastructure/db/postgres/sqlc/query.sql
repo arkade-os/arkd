@@ -1,10 +1,10 @@
 -- name: UpsertRound :exec
 INSERT INTO round (
     id, starting_timestamp, ending_timestamp, ended, failed, fail_reason,
-    stage_code, connector_address, version, swept, vtxo_tree_expiration, fees
+    stage_code, connector_address, version, swept, vtxo_tree_expiration, epoch_expiry, fees
 ) VALUES (
     @id, @starting_timestamp, @ending_timestamp, @ended, @failed, @fail_reason,
-    @stage_code, @connector_address, @version, @swept, @vtxo_tree_expiration, @fees
+    @stage_code, @connector_address, @version, @swept, @vtxo_tree_expiration, @epoch_expiry, @fees
 )
 ON CONFLICT(id) DO UPDATE SET
     starting_timestamp = EXCLUDED.starting_timestamp,
@@ -17,6 +17,7 @@ ON CONFLICT(id) DO UPDATE SET
     version = EXCLUDED.version,
     swept = EXCLUDED.swept,
     vtxo_tree_expiration = EXCLUDED.vtxo_tree_expiration,
+    epoch_expiry = EXCLUDED.epoch_expiry,
     fees = EXCLUDED.fees;
 
 -- name: UpsertTx :exec
@@ -148,10 +149,12 @@ AND EXISTS (
 );
 
 -- name: SelectExpiredRounds :many
-SELECT r.id, r.txid, CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS expired_at
+-- An epoch round carries its expiry date directly; a legacy round derives it
+-- from its relative expiry. Zero epoch_expiry means legacy.
+SELECT r.id, r.txid, CAST(CASE WHEN r.epoch_expiry > 0 THEN r.epoch_expiry ELSE r.ending_timestamp + r.vtxo_tree_expiration END AS BIGINT) AS expired_at
 FROM round_with_commitment_tx_vw r
 WHERE r.swept = false AND r.ended = true AND r.failed = false
-AND (r.ending_timestamp + r.vtxo_tree_expiration) < @now
+AND (CASE WHEN r.epoch_expiry > 0 THEN r.epoch_expiry ELSE r.ending_timestamp + r.vtxo_tree_expiration END) < @now
 AND EXISTS (
     SELECT 1 FROM tx tree_tx
     WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'

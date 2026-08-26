@@ -324,7 +324,7 @@ func testStartFinalization(t *testing.T) {
 			require.NotEmpty(t, events)
 
 			events, err = round.StartFinalization(
-				"", connectors, vtxoTree, "txid", commitmentTx, expiration,
+				"", connectors, vtxoTree, "txid", commitmentTx, expiration, 0,
 			)
 			require.NoError(t, err)
 			require.Len(t, events, 1)
@@ -444,7 +444,7 @@ func testStartFinalization(t *testing.T) {
 
 			for _, f := range fixtures {
 				events, err := f.round.StartFinalization(
-					"", f.connectors, f.tree, f.txid, f.commitmentTx, f.expiration,
+					"", f.connectors, f.tree, f.txid, f.commitmentTx, f.expiration, 0,
 				)
 				require.EqualError(t, err, f.expectedErr)
 				require.Empty(t, events)
@@ -472,6 +472,7 @@ func testEndFinalization(t *testing.T) {
 				"txid",
 				commitmentTx,
 				expiration,
+				0,
 			)
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
@@ -601,6 +602,7 @@ func testSweep(t *testing.T) {
 				"txid",
 				commitmentTx,
 				expiration,
+				0,
 			)
 			require.NoError(t, err)
 			require.NotEmpty(t, events)
@@ -673,4 +675,41 @@ func leavesToVtxos(leaves tree.FlatTxTree) []domain.Outpoint {
 		})
 	}
 	return vtxos
+}
+
+// TestRoundExpiryTimestampPrefersEpochExpiry pins that a round which committed to
+// a shared epoch date reports that date verbatim. Deriving it from the ending
+// timestamp instead is the split-brain hazard: a round straddling a boundary
+// would advertise one expiry to clients, build its tree against another and
+// schedule its sweep against a third.
+func TestRoundExpiryTimestampPrefersEpochExpiry(t *testing.T) {
+	endedStage := domain.Stage{Code: int(domain.RoundFinalizationStage), Ended: true}
+
+	t.Run("legacy round derives from the ending timestamp", func(t *testing.T) {
+		r := &domain.Round{
+			Stage:              endedStage,
+			EndingTimestamp:    1_700_000_000,
+			VtxoTreeExpiration: 604672,
+		}
+		require.Equal(t, int64(1_700_000_000+604672), r.ExpiryTimestamp())
+	})
+
+	t.Run("epoch round returns the pinned date verbatim", func(t *testing.T) {
+		r := &domain.Round{
+			Stage:              endedStage,
+			EndingTimestamp:    1_700_000_000,
+			VtxoTreeExpiration: 604672,
+			EpochExpiry:        1_788_134_400,
+		}
+		require.Equal(t, int64(1_788_134_400), r.ExpiryTimestamp(),
+			"a pinned epoch date must not be recomputed from the ending timestamp")
+	})
+
+	t.Run("a round that has not ended has no expiry", func(t *testing.T) {
+		r := &domain.Round{
+			Stage:       domain.Stage{Code: int(domain.RoundRegistrationStage)},
+			EpochExpiry: 1_788_134_400,
+		}
+		require.Equal(t, int64(-1), r.ExpiryTimestamp())
+	})
 }

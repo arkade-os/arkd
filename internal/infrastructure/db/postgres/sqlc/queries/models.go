@@ -198,6 +198,8 @@ type RoundWithCommitmentTxVw struct {
 	Swept              bool
 	VtxoTreeExpiration int64
 	FailReason         sql.NullString
+	Fees               int64
+	EpochExpiry        int64
 	Txid               string
 	Tx                 string
 	RoundID            string

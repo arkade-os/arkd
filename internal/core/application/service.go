@@ -2852,6 +2852,8 @@ func (s *service) startConfirmation(
 	}
 
 	var registeredIntents []ports.TimedIntent
+	// pinned once below and carried into finalization; never recomputed
+	var sweepParams tree.SweepParams
 	roundAborted := false
 
 	log.Debugf("started confirmation stage for round: %s", round.Id)
@@ -2873,7 +2875,9 @@ func (s *service) startConfirmation(
 			return
 		}
 
-		go s.startFinalization(round.Id, roundTiming, registeredIntents, settings)
+		go s.startFinalization(
+			round.Id, roundTiming, registeredIntents, settings, sweepParams,
+		)
 	}()
 
 	num, err := s.cache.Intents().Len(ctx)
@@ -2965,7 +2969,23 @@ func (s *service) startConfirmation(
 		return
 	}
 
-	s.propagateBatchStartedEvent(ctx, roundId, intents, settings.VtxoTreeExpiry)
+	// Compute the epoch expiry exactly once, here, and carry it for the rest of
+	// the round. Re-deriving it from the clock at each use would let a round that
+	// straddles a boundary advertise, build and schedule against different dates.
+	sweepParams = tree.SweepParams{Expiry: settings.VtxoTreeExpiry}
+	if settings.EpochExpiryEnabled {
+		epochExpiry, err := settings.EpochSchedule().ExpiryFor(time.Now())
+		if err != nil {
+			roundAborted = true
+			log.WithError(err).Error("failed to compute epoch expiry, aborting round")
+			return
+		}
+		sweepParams = tree.SweepParams{
+			Expiry: settings.UnrollGrace, BatchExpiry: &epochExpiry,
+		}
+	}
+
+	s.propagateBatchStartedEvent(ctx, roundId, intents, sweepParams)
 
 	confirmedIntents := make([]ports.TimedIntent, 0)
 	notConfirmedIntents := make([]ports.TimedIntent, 0)
@@ -3050,6 +3070,7 @@ func (s *service) startConfirmation(
 func (s *service) startFinalization(
 	roundId string, roundTiming roundTiming,
 	registeredIntents []ports.TimedIntent, settings ports.Settings,
+	sweepParams tree.SweepParams,
 ) {
 	defer s.wg.Done()
 
@@ -3061,7 +3082,13 @@ func (s *service) startFinalization(
 
 	ctx := context.Background()
 	forfeitPubkey := settings.ForfeitPubkey
-	vtxoTreeExpiry := settings.VtxoTreeExpiry
+	// Derived from the params pinned at round start, not re-read from settings:
+	// a round straddling an epoch boundary must use one date throughout.
+	vtxoTreeExpiry := sweepParams.Expiry
+	epochExpiry := int64(0)
+	if sweepParams.IsEpoch() {
+		epochExpiry = int64(*sweepParams.BatchExpiry)
+	}
 	var banDuration *time.Duration
 	if settings.BanDuration > 0 {
 		banDuration = &settings.BanDuration
@@ -3130,7 +3157,7 @@ func (s *service) startFinalization(
 	log.Debugf("building tx for round %s", roundId)
 
 	commitmentTx, vtxoTree, connectorAddress, connectors, err := s.builder.BuildCommitmentTx(
-		forfeitPubkey, intents, boardingInputs, cosignersPublicKeys, tree.SweepParams{Expiry: settings.VtxoTreeExpiry},
+		forfeitPubkey, intents, boardingInputs, cosignersPublicKeys, sweepParams,
 	)
 	if err != nil {
 		round.Fail(errors.INTERNAL_ERROR.New("failed to create commitment tx: %s", err))
@@ -3356,7 +3383,7 @@ func (s *service) startFinalization(
 
 	if _, err := round.StartFinalization(
 		connectorAddress, flatConnectors, flatVtxoTree,
-		round.CommitmentTxid, round.CommitmentTx, vtxoTreeExpiry.Seconds(),
+		round.CommitmentTxid, round.CommitmentTx, vtxoTreeExpiry.Seconds(), epochExpiry,
 	); err != nil {
 		round.Fail(errors.INTERNAL_ERROR.New("failed to start finalization: %s", err))
 		return
@@ -3795,7 +3822,7 @@ func (s *service) propagateEvents(ctx context.Context, round domain.Round) {
 
 func (s *service) propagateBatchStartedEvent(
 	ctx context.Context,
-	roundId string, intents []ports.TimedIntent, vtxoTreeExpiry arklib.RelativeLocktime,
+	roundId string, intents []ports.TimedIntent, sweepParams tree.SweepParams,
 ) {
 	hashedIntentIds := make([][32]byte, 0, len(intents))
 	for _, intent := range intents {
@@ -3814,7 +3841,14 @@ func (s *service) propagateBatchStartedEvent(
 			Type: domain.EventTypeUndefined,
 		},
 		IntentIdsHashes: hashedIntentIds,
-		BatchExpiry:     vtxoTreeExpiry.Value,
+		BatchExpiry:     sweepParams.Expiry.Value,
+	}
+	if sweepParams.IsEpoch() {
+		// Legacy clients read BatchExpiry as a relative locktime, so an epoch
+		// batch leaves it carrying the unroll grace and advertises the shared
+		// date separately.
+		ev.BatchExpiryDate = uint32(*sweepParams.BatchExpiry)
+		ev.UnrollGrace = sweepParams.Expiry.Value
 	}
 	s.eventsCh <- []domain.Event{ev}
 }
@@ -3899,10 +3933,18 @@ func (s *service) scheduleSweepBatchOutput(round domain.Round) {
 
 	var expirationTimestamp int64
 	var skipExpiryUpdate bool
-	if s.sweeper.scheduler.Unit() == ports.BlockHeight {
+	switch {
+	case round.EpochExpiry > 0:
+		// Take the date the batch actually committed to from the round itself,
+		// rather than recomputing it: a settings change between finalization and
+		// this call must not move an existing batch's sweep schedule.
+		expirationTimestamp = epochMaturity(
+			round.EpochExpiry, blockTimestamp.Time, int64(settings.UnrollGrace.Value),
+		)
+	case s.sweeper.scheduler.Unit() == ports.BlockHeight:
 		expirationTimestamp = int64(blockTimestamp.Height) + int64(vtxoTreeExpiry.Value)
 		skipExpiryUpdate = true
-	} else {
+	default:
 		expirationTimestamp = blockTimestamp.Time + vtxoTreeExpiry.Seconds()
 	}
 

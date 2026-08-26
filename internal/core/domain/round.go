@@ -53,7 +53,13 @@ type Round struct {
 	Version            uint
 	Swept              bool
 	VtxoTreeExpiration int64
-	CollectedFees      uint64
+	// EpochExpiry is the absolute date this batch's outputs become sweepable,
+	// pinned once when the round starts. Zero means a legacy batch, whose expiry
+	// is derived from VtxoTreeExpiration instead. It must never be recomputed
+	// from the clock: a round straddling an epoch boundary would otherwise
+	// advertise, build and schedule against three different dates.
+	EpochExpiry   int64
+	CollectedFees uint64
 	SweepTxs           map[string]string
 	FailReason         string
 	Changes            []Event
@@ -128,7 +134,7 @@ func (r *Round) RegisterIntents(intents []Intent) ([]Event, error) {
 
 func (r *Round) StartFinalization(
 	connectorAddress string, connectors tree.FlatTxTree, vtxoTree tree.FlatTxTree,
-	commitmentTxid, commitmentTx string, vtxoTreeExpiration int64,
+	commitmentTxid, commitmentTx string, vtxoTreeExpiration, epochExpiry int64,
 ) ([]Event, error) {
 	if len(commitmentTx) <= 0 {
 		return nil, fmt.Errorf("missing unsigned commitment tx")
@@ -157,6 +163,7 @@ func (r *Round) StartFinalization(
 		CommitmentTxid:     commitmentTxid,
 		CommitmentTx:       commitmentTx,
 		VtxoTreeExpiration: vtxoTreeExpiration,
+		EpochExpiry:        epochExpiry,
 	}
 	r.raise(event)
 
@@ -270,13 +277,19 @@ func (r *Round) IsFailed() bool {
 	return r.Stage.Failed
 }
 
+// ExpiryTimestamp returns the absolute time at which this round's batch outputs
+// become sweepable. An epoch round carries that date directly; a legacy round
+// derives it from its relative expiry and the time it ended.
 func (r *Round) ExpiryTimestamp() int64 {
-	if r.IsEnded() {
-		return time.Unix(r.EndingTimestamp, 0).Add(
-			time.Second * time.Duration(r.VtxoTreeExpiration),
-		).Unix()
+	if !r.IsEnded() {
+		return -1
 	}
-	return -1
+	if r.EpochExpiry > 0 {
+		return r.EpochExpiry
+	}
+	return time.Unix(r.EndingTimestamp, 0).Add(
+		time.Second * time.Duration(r.VtxoTreeExpiration),
+	).Unix()
 }
 
 func (r *Round) on(event Event, replayed bool) {
@@ -293,6 +306,7 @@ func (r *Round) on(event Event, replayed bool) {
 		r.CommitmentTxid = e.CommitmentTxid
 		r.CommitmentTx = e.CommitmentTx
 		r.VtxoTreeExpiration = e.VtxoTreeExpiration
+		r.EpochExpiry = e.EpochExpiry
 	case RoundFinalized:
 		r.Stage.Ended = true
 		r.ForfeitTxs = append([]ForfeitTx{}, e.ForfeitTxs...)
