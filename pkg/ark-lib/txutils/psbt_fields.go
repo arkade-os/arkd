@@ -26,6 +26,14 @@ var (
 	ArkFieldCosigner = []byte("cosigner")
 	// ArkFieldConditionWitness allows to set extra witness elements used to sign custom script inputs
 	ArkFieldConditionWitness = []byte("condition")
+	// ArkFieldBatchExpiry attaches the absolute epoch expiry date to a tree tx
+	// input. Its presence marks the tree as an epoch batch; absence means the
+	// legacy relative-CSV scheme under ArkFieldTreeExpiry.
+	//
+	// Deliberately not named "batchexpiry": containsArkPsbtKey matches with
+	// bytes.Contains, so any name containing "expiry" would also be matched by
+	// VtxoTreeExpiryField, which would then BIP68-decode an absolute timestamp.
+	ArkFieldBatchExpiry = []byte("epochdate")
 )
 
 // Singletons instances for each field type
@@ -33,6 +41,7 @@ var VtxoTaprootTreeField ArkPsbtFieldCoder[TapTree] = arkPsbtFieldCoderTaprootTr
 var VtxoTreeExpiryField ArkPsbtFieldCoder[arklib.RelativeLocktime] = arkPsbtFieldCoderTreeExpiry{}
 var CosignerPublicKeyField ArkPsbtFieldCoder[IndexedCosignerPublicKey] = arkPsbtFieldCoderCosignerPublicKey{}
 var ConditionWitnessField ArkPsbtFieldCoder[wire.TxWitness] = arkPsbtFieldCoderConditionWitness{}
+var BatchExpiryField ArkPsbtFieldCoder[arklib.AbsoluteLocktime] = arkPsbtFieldCoderBatchExpiry{}
 
 type ArkPsbtFieldCoder[T any] interface {
 	Encode(T) (*psbt.Unknown, error)
@@ -167,6 +176,41 @@ func (c arkPsbtFieldCoderTreeExpiry) Decode(unknown *psbt.Unknown) (*arklib.Rela
 	}
 
 	return arklib.BIP68DecodeSequenceFromBytes(unknown.Value)
+}
+
+// ArkPsbtFieldCoder implementation for the absolute epoch expiry date.
+// Encoded as a fixed 4-byte little-endian uint32 rather than the minimal
+// encoding used for sequences: this is a timestamp, not a script number, and a
+// fixed width removes any ambiguity in the round trip.
+type arkPsbtFieldCoderBatchExpiry struct{}
+
+func (c arkPsbtFieldCoderBatchExpiry) Encode(
+	expiry arklib.AbsoluteLocktime,
+) (*psbt.Unknown, error) {
+	var valueLE [4]byte
+	binary.LittleEndian.PutUint32(valueLE[:], uint32(expiry))
+
+	return &psbt.Unknown{
+		Key:   makeArkPsbtKey(ArkFieldBatchExpiry),
+		Value: valueLE[:],
+	}, nil
+}
+
+func (c arkPsbtFieldCoderBatchExpiry) Decode(
+	unknown *psbt.Unknown,
+) (*arklib.AbsoluteLocktime, error) {
+	if !matchesArkPsbtKey(unknown, ArkFieldBatchExpiry, 0) {
+		return nil, nil
+	}
+
+	if len(unknown.Value) != 4 {
+		return nil, fmt.Errorf(
+			"invalid batch expiry field length %d, expected 4", len(unknown.Value),
+		)
+	}
+
+	expiry := arklib.AbsoluteLocktime(binary.LittleEndian.Uint32(unknown.Value))
+	return &expiry, nil
 }
 
 // ArkPsbtFieldCoder implementation for cosigner public key
