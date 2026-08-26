@@ -1705,6 +1705,13 @@ func (s *service) RegisterIntent(
 	network := settings.Network
 	maxAssetsPerVtxo := settings.MaxAssetsPerVtxo()
 
+	// A property of the intent, not of any one input: an intent that creates a
+	// vtxo is a renewal, one that only pays onchain is an exit. The epoch
+	// admission window's upper bound applies to the former only.
+	isRenewalIntent := intentHasOffchainOutput(
+		proof.UnsignedTx.TxOut, message.OnchainOutputIndexes,
+	)
+
 	for i, outpoint := range outpoints {
 		if _, seen := seenOutpoints[outpoint]; seen {
 			return "", errors.INVALID_INTENT_PROOF.New(
@@ -1829,14 +1836,8 @@ func (s *service) RegisterIntent(
 		}
 
 		if settings.EpochExpiryEnabled {
-			// Renewal is decided by what the intent produces, not what it spends:
-			// an intent creating a vtxo is a renewal, one that only pays onchain is
-			// an exit and stays available for the whole epoch.
-			isRenewal := intentHasOffchainOutput(
-				proof.UnsignedTx.TxOut, message.OnchainOutputIndexes,
-			)
 			if err := checkEpochAdmission(
-				settings.EpochSchedule(), vtxo, time.Now(), isRenewal,
+				settings.EpochSchedule(), vtxo, time.Now(), isRenewalIntent,
 			); err != nil {
 				return "", errors.INVALID_PSBT_INPUT.New(
 					"vtxo %s: %s", vtxo.Outpoint.String(), err,
