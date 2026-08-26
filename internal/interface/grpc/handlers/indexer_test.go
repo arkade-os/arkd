@@ -32,6 +32,65 @@ const (
 	testChainTxid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 )
 
+func TestParsePage(t *testing.T) {
+	tests := []struct {
+		name    string
+		page    *arkv1.IndexerPageRequest
+		wantErr bool
+	}{
+		{
+			name: "nil page",
+			page: nil,
+		},
+		{
+			name: "valid page",
+			page: &arkv1.IndexerPageRequest{Size: 100, Index: 2},
+		},
+		{
+			name: "caps are inclusive",
+			page: &arkv1.IndexerPageRequest{Size: maxPageRequestSize, Index: maxPageRequestIndex},
+		},
+		{
+			name:    "zero size",
+			page:    &arkv1.IndexerPageRequest{Size: 0, Index: 1},
+			wantErr: true,
+		},
+		{
+			name:    "negative index",
+			page:    &arkv1.IndexerPageRequest{Size: 10, Index: -1},
+			wantErr: true,
+		},
+		{
+			name:    "size above cap",
+			page:    &arkv1.IndexerPageRequest{Size: maxPageRequestSize + 1, Index: 1},
+			wantErr: true,
+		},
+		{
+			name:    "index above cap",
+			page:    &arkv1.IndexerPageRequest{Size: 10, Index: maxPageRequestIndex + 1},
+			wantErr: true,
+		},
+		{
+			// index*size would exceed MaxInt32 and wrap the offset negative.
+			name:    "index times size exceeds MaxInt32",
+			page:    &arkv1.IndexerPageRequest{Size: 32768, Index: 65537},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parsePage(tt.page)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Nil(t, got)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestGetVtxoChain(t *testing.T) {
 	// Cursor pagination is continued via the auth_token, not by re-submitting the intent proof,
 	// so combining an intent with a page_token must be rejected before the request reaches the

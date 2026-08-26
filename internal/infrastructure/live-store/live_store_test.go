@@ -223,6 +223,77 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 	})
 
+	t.Run("IntentStore vtxo guard set", func(t *testing.T) {
+		ctx := t.Context()
+
+		vtxo := domain.Vtxo{
+			Outpoint: domain.Outpoint{
+				Txid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+				VOut: 0,
+			},
+			Amount:          1000,
+			PubKey:          "7086d72a8ddacc9e6e0451d92133ef583d6748a4726b632a94f26df8c802ac24",
+			CommitmentTxids: []string{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+		}
+		outpoints := []domain.Outpoint{vtxo.Outpoint}
+
+		pushIntent := func() error {
+			intent := domain.Intent{
+				Id:        uuid.New().String(),
+				Inputs:    []domain.Vtxo{vtxo},
+				Receivers: []domain.Receiver{{Amount: 1000, PubKey: vtxo.PubKey}},
+			}
+			return store.Intents().Push(ctx, intent, nil, nil)
+		}
+
+		t.Run("Pop then DeleteVtxos drains the guard set", func(t *testing.T) {
+			require.NoError(t, pushIntent())
+
+			found, _ := store.Intents().IncludesAny(ctx, outpoints)
+			require.True(t, found)
+
+			popped, err := store.Intents().Pop(ctx, 1)
+			require.NoError(t, err)
+			require.Len(t, popped, 1)
+
+			// the vtxo stays guarded while the round is in flight
+			found, _ = store.Intents().IncludesAny(ctx, outpoints)
+			require.True(t, found)
+
+			require.NoError(t, store.Intents().DeleteVtxos(ctx))
+
+			found, _ = store.Intents().IncludesAny(ctx, outpoints)
+			require.False(t, found)
+		})
+
+		t.Run("DeleteAll flushes pending guard set removals", func(t *testing.T) {
+			require.NoError(t, pushIntent())
+
+			popped, err := store.Intents().Pop(ctx, 1)
+			require.NoError(t, err)
+			require.Len(t, popped, 1)
+
+			// admin flush while the round is in flight
+			require.NoError(t, store.Intents().DeleteAll(ctx))
+
+			found, _ := store.Intents().IncludesAny(ctx, outpoints)
+			require.False(t, found)
+
+			// the same vtxo can be registered again by a new intent
+			require.NoError(t, pushIntent())
+
+			// draining the pending removals must not evict the vtxo still
+			// referenced by the live intent
+			require.NoError(t, store.Intents().DeleteVtxos(ctx))
+
+			found, res := store.Intents().IncludesAny(ctx, outpoints)
+			require.True(t, found)
+			require.Equal(t, vtxo.Outpoint.String(), res)
+
+			require.NoError(t, store.Intents().DeleteAll(ctx))
+		})
+	})
+
 	t.Run("ForfeitTxsStore", func(t *testing.T) {
 		ctx := t.Context()
 
@@ -495,6 +566,56 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.Empty(t, event)
 	})
 
+	t.Run("ConfirmationSessionsStore concurrent Confirm", func(t *testing.T) {
+		ctx := t.Context()
+		hashes := [][32]byte{h1, h2}
+
+		// The first burst runs against a cold redis connection pool: one goroutine
+		// grabs the only warm connection and completes its whole Confirm before the
+		// other 19 finish dialing, so nothing overlaps and a racy Confirm would
+		// still pass. Later rounds reuse the now-warm pool, making the confirms
+		// truly concurrent; repeating 20x turns a probabilistic race into a
+		// reliable failure.
+		for round := range 20 {
+			require.NoError(t, store.ConfirmationSessions().Init(ctx, hashes))
+
+			start := make(chan struct{})
+			errs := make(chan error, 20)
+			var wg sync.WaitGroup
+			for range 20 {
+				wg.Go(func() {
+					<-start
+					errs <- store.ConfirmationSessions().Confirm(ctx, intentId1)
+				})
+			}
+			close(start)
+			wg.Wait()
+			close(errs)
+			for err := range errs {
+				require.NoError(t, err)
+			}
+
+			got, err := store.ConfirmationSessions().Get(ctx)
+			require.NoError(t, err)
+			require.Equal(t, 1, got.NumConfirmedIntents, "round %d", round)
+		}
+
+		sessionCompleteCh := store.ConfirmationSessions().SessionCompleted()
+		require.NoError(t, store.ConfirmationSessions().Confirm(ctx, intentId2))
+
+		select {
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "Confirmation session not completed")
+		case <-sessionCompleteCh:
+		}
+
+		got, err := store.ConfirmationSessions().Get(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 2, got.NumConfirmedIntents)
+
+		require.NoError(t, store.ConfirmationSessions().Reset(ctx))
+	})
+
 	t.Run("TreeSigningSessionsStore", func(t *testing.T) {
 		ctx := t.Context()
 
@@ -559,6 +680,15 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			return store.TreeSigingSessions().AddSignatures(ctx, roundId, signer.pubkey, sigs)
 		}
 
+		// unregistered cosigner must be rejected
+		unknown := signer{
+			pubkey: "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			nonce:  n1,
+			sig:    s1,
+		}
+		require.Error(t, doSubmitNonces(unknown, roundId1))
+		require.Error(t, doSubmitSigs(unknown, roundId1))
+
 		for _, signer := range signers {
 			go func() {
 				err := doSubmitNonces(signer, roundId1)
@@ -619,6 +749,55 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		event, ok = <-signaturesCollectedCh
 		require.False(t, ok)
 		require.Empty(t, event)
+
+		// The collection threshold is re-reached on every resubmission, since a
+		// cosigner overwriting its own entry leaves the count unchanged, while the
+		// coordinator receives at most once. Submitting again must not block.
+		roundId3 := uuid.New().String()
+		require.NoError(t, store.TreeSigingSessions().New(ctx, roundId3, uniqueSigners))
+
+		collected := make(chan struct{})
+		go func() {
+			<-store.TreeSigingSessions().NoncesCollected(roundId3)
+			<-store.TreeSigingSessions().SignaturesCollected(roundId3)
+			close(collected)
+		}()
+
+		// submitted from the test goroutine so failures are reported normally
+		for _, signer := range signers {
+			require.NoError(t, doSubmitNonces(signer, roundId3))
+		}
+		for _, signer := range signers {
+			require.NoError(t, doSubmitSigs(signer, roundId3))
+		}
+
+		select {
+		case <-collected:
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "collection was never signalled")
+		}
+
+		// nobody is receiving now: resubmitting must return rather than park
+		nonceResubmit := make(chan error, 1)
+		sigResubmit := make(chan error, 1)
+		go func() {
+			nonceResubmit <- doSubmitNonces(signers[0], roundId3)
+			sigResubmit <- doSubmitSigs(signers[0], roundId3)
+		}()
+		select {
+		case err := <-nonceResubmit:
+			require.Error(t, err, "nonce resubmission must be rejected, not overwrite")
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "nonce resubmission after collection blocked")
+		}
+		select {
+		case err := <-sigResubmit:
+			require.NoError(t, err, "signature resubmission must succeed")
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "signature resubmission after collection blocked")
+		}
+
+		require.NoError(t, store.TreeSigingSessions().Delete(ctx, roundId3))
 	})
 
 	t.Run("BoardingInputsStore", func(t *testing.T) {
