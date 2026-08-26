@@ -68,6 +68,12 @@ const (
 	utxoMinAmountFlagName                 = "utxo-min-amount"
 	utxoMaxAmountFlagName                 = "utxo-max-amount"
 	settlementMinExpiryGapFlagName        = "settlement-min-expiry-gap"
+	epochExpiryEnabledFlagName            = "epoch-expiry-enabled"
+	epochAnchorFlagName                   = "epoch-anchor"
+	epochLengthFlagName                   = "epoch-length"
+	rolloverWindowFlagName                = "rollover-window"
+	settlementCutoffFlagName              = "settlement-cutoff"
+	unrollGraceFlagName                   = "unroll-grace"
 	vtxoNoCsvValidationCutoffDateFlagName = "vtxo-no-csv-validation-cutoff-date"
 	maxTxWeightFlagName                   = "max-tx-weight"
 	maxOpReturnOutsFlagName               = "max-op-return-outputs"
@@ -371,6 +377,30 @@ var (
 	settlementMinExpiryGapFlag = &cli.IntFlag{
 		Name:  settlementMinExpiryGapFlagName,
 		Usage: "the min expiry gap in seconds required to settle a vtxo",
+	}
+	epochExpiryEnabledFlag = &cli.BoolFlag{
+		Name:  epochExpiryEnabledFlagName,
+		Usage: "expire batches on shared epoch boundaries instead of a per-batch relative timelock",
+	}
+	epochAnchorFlag = &cli.IntFlag{
+		Name:  epochAnchorFlagName,
+		Usage: "unix timestamp defining epoch boundary 0; must never change once batches exist",
+	}
+	epochLengthFlag = &cli.IntFlag{
+		Name:  epochLengthFlagName,
+		Usage: "seconds between epoch boundaries",
+	}
+	rolloverWindowFlag = &cli.IntFlag{
+		Name:  rolloverWindowFlagName,
+		Usage: "seconds; a batch expires at the first epoch boundary at least this far away",
+	}
+	settlementCutoffFlag = &cli.IntFlag{
+		Name:  settlementCutoffFlagName,
+		Usage: "seconds; no settles are accepted this close to the epoch boundary",
+	}
+	unrollGraceFlag = &cli.IntFlag{
+		Name:  unrollGraceFlagName,
+		Usage: "seconds of per-tree-level grace for a unilateral exit already underway",
 	}
 	vtxoNoCsvValidationCutoffDateFlag = &cli.IntFlag{
 		Name:  vtxoNoCsvValidationCutoffDateFlagName,

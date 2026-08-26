@@ -65,6 +65,12 @@ is unset on first boot.
 | `ARKD_UTXO_MIN_AMOUNT`                   | `utxo_min_amount`                | sats (`-1` = native dust limit)                                     | `-1`        |
 | `ARKD_UTXO_MAX_AMOUNT`                   | `utxo_max_amount`                | sats (`-1` = no limit, `0` = boarding disabled)                     | `-1`        |
 | `ARKD_SETTLEMENT_MIN_EXPIRY_GAP`         | `settlement_min_expiry_gap`      | seconds (`0` = disabled)                                            | `0`         |
+| `ARKD_EPOCH_EXPIRY_ENABLED`              | `epoch_expiry_enabled`           | bool; batches share an epoch expiry date instead of a per-batch relative timelock | `false`     |
+| `ARKD_EPOCH_ANCHOR`                      | `epoch_anchor`                   | unix timestamp defining epoch boundary 0; must never change once live | `1767571200` |
+| `ARKD_EPOCH_LENGTH`                      | `epoch_length`                   | seconds between epoch boundaries                                    | `2419200`   |
+| `ARKD_ROLLOVER_WINDOW`                   | `rollover_window`                | seconds; a batch expires at the first boundary at least this far away | `604800`    |
+| `ARKD_SETTLEMENT_CUTOFF`                 | `settlement_cutoff`              | seconds; no settles accepted this close to the boundary              | `43200`     |
+| `ARKD_UNROLL_GRACE`                      | `unroll_grace`                   | seconds; per-tree-level grace for a unilateral exit already underway | `7168`      |
 | `ARKD_VTXO_NO_CSV_VALIDATION_CUTOFF_DATE`| `vtxo_no_csv_validation_cutoff_date` | unix timestamp (`0` = disabled)                                 | `0`         |
 | `ARKD_MAX_TX_WEIGHT`                     | `max_tx_weight`                  | weight units                                                        | `40000`     |
 | `ARKD_MAX_OP_RETURN_OUTS`                | `max_op_return_outputs`          | count (floored to a minimum of `1`)                                 | `3`         |
@@ -139,3 +145,39 @@ If you are upgrading from a build that stored fees in the `intent_fees` table or
 in the `scheduled_session` table, their latest values are carried over into the unified settings
 row during the first-boot seed, so no configuration is lost. 
 Those legacy tables are then emptied and will be dropped in a future release.
+
+
+## Epoch expiry
+
+When `epoch_expiry_enabled` is false (the default) each batch expires on its own
+relative timelock, `vtxo_tree_expiry` counted from the batch's confirmation.
+
+When it is true, a batch instead commits to a shared **epoch boundary**:
+
+```
+expiry = the first boundary at least `rollover_window` away
+boundaries are at `epoch_anchor + n * epoch_length`
+```
+
+Batches created near the end of an epoch therefore roll into the next one rather
+than minting vtxos that expire almost immediately. With `rollover_window` shorter
+than `epoch_length` there are never more than two live expiry dates at once,
+which is what lets vtxos from different batches be consolidated without stranding
+time value.
+
+Three constraints are enforced at startup and on every settings update:
+
+- `0 < settlement_cutoff < rollover_window < epoch_length`
+- `unroll_grace` must be non-zero and BIP68-representable (a multiple of 512 when
+  expressed in seconds), and must be the same type as the other delays
+- `epoch_anchor` must be at least `500000000`, because an `nLockTime` below that
+  is read as a block height rather than a timestamp
+
+`epoch_anchor` can never be changed once batches exist against it: every live
+batch has already committed its date on chain.
+
+Settles are only accepted inside `[expiry - rollover_window, expiry -
+settlement_cutoff]`. The lower bound applies to every vtxo input; the upper bound
+applies only to renewals, since collaborative exits and boarding must stay
+available throughout the epoch. Swept vtxos are exempt from both, because
+settling one is how recovery works.

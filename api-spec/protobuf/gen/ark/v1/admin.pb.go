@@ -3760,8 +3760,16 @@ type Settings struct {
 	UpdatedAt                     *string                `protobuf:"bytes,24,opt,name=updated_at,json=updatedAt,proto3,oneof" json:"updated_at,omitempty"`
 	DigestHeaderRequired          *bool                  `protobuf:"varint,25,opt,name=digest_header_required,json=digestHeaderRequired,proto3,oneof" json:"digest_header_required,omitempty"`
 	BatchTrigger                  *string                `protobuf:"bytes,26,opt,name=batch_trigger,json=batchTrigger,proto3,oneof" json:"batch_trigger,omitempty"`
-	unknownFields                 protoimpl.UnknownFields
-	sizeCache                     protoimpl.SizeCache
+	// Epoch expiry. While epoch_expiry_enabled is false the rest are ignored
+	// and batches expire on a per-batch relative timelock instead.
+	EpochExpiryEnabled *bool  `protobuf:"varint,27,opt,name=epoch_expiry_enabled,json=epochExpiryEnabled,proto3,oneof" json:"epoch_expiry_enabled,omitempty"`
+	EpochAnchor        *int64 `protobuf:"varint,28,opt,name=epoch_anchor,json=epochAnchor,proto3,oneof" json:"epoch_anchor,omitempty"`
+	EpochLength        *int64 `protobuf:"varint,29,opt,name=epoch_length,json=epochLength,proto3,oneof" json:"epoch_length,omitempty"`
+	RolloverWindow     *int64 `protobuf:"varint,30,opt,name=rollover_window,json=rolloverWindow,proto3,oneof" json:"rollover_window,omitempty"`
+	SettlementCutoff   *int64 `protobuf:"varint,31,opt,name=settlement_cutoff,json=settlementCutoff,proto3,oneof" json:"settlement_cutoff,omitempty"`
+	UnrollGrace        *int64 `protobuf:"varint,32,opt,name=unroll_grace,json=unrollGrace,proto3,oneof" json:"unroll_grace,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Settings) Reset() {
@@ -3974,6 +3982,48 @@ func (x *Settings) GetBatchTrigger() string {
 		return *x.BatchTrigger
 	}
 	return ""
+}
+
+func (x *Settings) GetEpochExpiryEnabled() bool {
+	if x != nil && x.EpochExpiryEnabled != nil {
+		return *x.EpochExpiryEnabled
+	}
+	return false
+}
+
+func (x *Settings) GetEpochAnchor() int64 {
+	if x != nil && x.EpochAnchor != nil {
+		return *x.EpochAnchor
+	}
+	return 0
+}
+
+func (x *Settings) GetEpochLength() int64 {
+	if x != nil && x.EpochLength != nil {
+		return *x.EpochLength
+	}
+	return 0
+}
+
+func (x *Settings) GetRolloverWindow() int64 {
+	if x != nil && x.RolloverWindow != nil {
+		return *x.RolloverWindow
+	}
+	return 0
+}
+
+func (x *Settings) GetSettlementCutoff() int64 {
+	if x != nil && x.SettlementCutoff != nil {
+		return *x.SettlementCutoff
+	}
+	return 0
+}
+
+func (x *Settings) GetUnrollGrace() int64 {
+	if x != nil && x.UnrollGrace != nil {
+		return *x.UnrollGrace
+	}
+	return 0
 }
 
 type GetSettingsRequest struct {
@@ -4855,7 +4905,7 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x10commitment_txids\x18\x02 \x03(\tR\x0fcommitmentTxids\"5\n" +
 	"\rSweepResponse\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x10\n" +
-	"\x03hex\x18\x02 \x01(\tR\x03hex\"\xa2\x10\n" +
+	"\x03hex\x18\x02 \x01(\tR\x03hex\"\xa7\x13\n" +
 	"\bSettings\x12.\n" +
 	"\x10session_duration\x18\x01 \x01(\x03H\x00R\x0fsessionDuration\x88\x01\x01\x12I\n" +
 	"\x1funrolled_vtxo_min_expiry_margin\x18\x02 \x01(\x03H\x01R\x1bunrolledVtxoMinExpiryMargin\x88\x01\x01\x12(\n" +
@@ -4885,7 +4935,13 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x18 \x01(\tH\x17R\tupdatedAt\x88\x01\x01\x129\n" +
 	"\x16digest_header_required\x18\x19 \x01(\bH\x18R\x14digestHeaderRequired\x88\x01\x01\x12(\n" +
-	"\rbatch_trigger\x18\x1a \x01(\tH\x19R\fbatchTrigger\x88\x01\x01B\x13\n" +
+	"\rbatch_trigger\x18\x1a \x01(\tH\x19R\fbatchTrigger\x88\x01\x01\x125\n" +
+	"\x14epoch_expiry_enabled\x18\x1b \x01(\bH\x1aR\x12epochExpiryEnabled\x88\x01\x01\x12&\n" +
+	"\fepoch_anchor\x18\x1c \x01(\x03H\x1bR\vepochAnchor\x88\x01\x01\x12&\n" +
+	"\fepoch_length\x18\x1d \x01(\x03H\x1cR\vepochLength\x88\x01\x01\x12,\n" +
+	"\x0frollover_window\x18\x1e \x01(\x03H\x1dR\x0erolloverWindow\x88\x01\x01\x120\n" +
+	"\x11settlement_cutoff\x18\x1f \x01(\x03H\x1eR\x10settlementCutoff\x88\x01\x01\x12&\n" +
+	"\funroll_grace\x18  \x01(\x03H\x1fR\vunrollGrace\x88\x01\x01B\x13\n" +
 	"\x11_session_durationB\"\n" +
 	" _unrolled_vtxo_min_expiry_marginB\x10\n" +
 	"\x0e_ban_thresholdB\x0f\n" +
@@ -4911,7 +4967,13 @@ const file_ark_v1_admin_proto_rawDesc = "" +
 	"\x1e_build_version_header_requiredB\r\n" +
 	"\v_updated_atB\x19\n" +
 	"\x17_digest_header_requiredB\x10\n" +
-	"\x0e_batch_trigger\"\x14\n" +
+	"\x0e_batch_triggerB\x17\n" +
+	"\x15_epoch_expiry_enabledB\x0f\n" +
+	"\r_epoch_anchorB\x0f\n" +
+	"\r_epoch_lengthB\x12\n" +
+	"\x10_rollover_windowB\x14\n" +
+	"\x12_settlement_cutoffB\x0f\n" +
+	"\r_unroll_grace\"\x14\n" +
 	"\x12GetSettingsRequest\"C\n" +
 	"\x13GetSettingsResponse\x12,\n" +
 	"\bsettings\x18\x01 \x01(\v2\x10.ark.v1.SettingsR\bsettings\"E\n" +

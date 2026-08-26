@@ -556,6 +556,14 @@ message Settings {
   optional string updated_at = 24;
   optional bool digest_header_required = 25;
   optional string batch_trigger = 26;
+  // Epoch expiry. While epoch_expiry_enabled is false the rest are ignored
+  // and batches expire on a per-batch relative timelock instead.
+  optional bool epoch_expiry_enabled = 27;
+  optional int64 epoch_anchor = 28;
+  optional int64 epoch_length = 29;
+  optional int64 rollover_window = 30;
+  optional int64 settlement_cutoff = 31;
+  optional int64 unroll_grace = 32;
 }
 
 message GetSettingsRequest {}
