@@ -3248,8 +3248,16 @@ func (s *service) startFinalization(
 	flatVtxoTree := make(tree.FlatTxTree, 0)
 	if vtxoTree != nil {
 
-		root, _, err := tree.BuildLegacySweepTapTreeRoot(forfeitPubkey, vtxoTreeExpiry)
+		// Must be the same root BuildCommitmentTx used, so it has to come from the
+		// pinned params rather than from the relative expiry alone. This root is
+		// the taproot tweak for the tree's aggregate key, and the coordinator
+		// derives the batch output's pkScript from it to build the sighash prevout
+		// for the root tx. Seeding it with a legacy root while the batch output
+		// commits to an epoch one signs every node against a script the commitment
+		// tx does not contain.
+		root, _, err := sweepParams.Root(forfeitPubkey)
 		if err != nil {
+			round.Fail(errors.INTERNAL_ERROR.New("failed to build sweep tap tree root: %s", err))
 			return
 		}
 

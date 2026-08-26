@@ -259,3 +259,47 @@ func TestBuildVtxoTreeWritesEpochField(t *testing.T) {
 		require.Equal(t, vtxoTreeExpiry, rel[0])
 	})
 }
+
+// TestSweepRootDrivesBatchOutputScript pins why the sweep root must come from
+// SweepParams rather than from the relative expiry alone.
+//
+// The root is the taproot tweak applied to the tree's aggregate cosigner key,
+// and that key is the batch output the commitment tx pays to. A signing
+// coordinator seeded with the wrong root therefore builds its sighash prevouts
+// from a script the commitment tx does not contain, and every signature in the
+// tree is computed over the wrong message. It is not a cosmetic mismatch: it
+// makes the batch unspendable.
+//
+// arkd hit exactly this by calling BuildLegacySweepTapTreeRoot at the
+// coordinator call site while BuildCommitmentTx used the epoch params.
+func TestSweepRootDrivesBatchOutputScript(t *testing.T) {
+	prv, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	cosigner, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	cosigners := []*btcec.PublicKey{prv.PubKey(), cosigner.PubKey()}
+
+	grace := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 7168}
+	date := arklib.AbsoluteLocktime(1788134400)
+
+	batchOutputScript := func(t *testing.T, params tree.SweepParams) []byte {
+		t.Helper()
+		root, _, err := params.Root(prv.PubKey())
+		require.NoError(t, err)
+		aggregate, err := tree.AggregateKeys(cosigners, root.CloneBytes())
+		require.NoError(t, err)
+		pkScript, err := script.P2TRScript(aggregate.FinalKey)
+		require.NoError(t, err)
+		return pkScript
+	}
+
+	// Same cosigners, same relative value: only the scheme differs.
+	legacy := batchOutputScript(t, tree.SweepParams{Expiry: grace})
+	epoch := batchOutputScript(t, tree.SweepParams{Expiry: grace, BatchExpiry: &date})
+
+	require.NotEqual(
+		t, legacy, epoch,
+		"the sweep root reaches the batch output script, so using the legacy root "+
+			"for an epoch batch signs the tree against a different output",
+	)
+}
