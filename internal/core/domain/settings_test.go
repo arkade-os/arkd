@@ -648,3 +648,87 @@ func testSettingsBatchTrigger(t *testing.T) {
 		}
 	})
 }
+
+// epochSettingsFixture returns a Settings with valid epoch parameters applied on
+// top of the defaults, so the tests below vary one field at a time.
+func epochSettingsFixture(t *testing.T) *domain.Settings {
+	t.Helper()
+
+	s, err := domain.NewSettings(
+		60, 300, 3, 600, 0, 0, 1, 10, 1000, -1, 1000, -1,
+		arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 86400},
+		arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 86400},
+		arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 86400},
+		arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 7776000},
+		arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 604672},
+		40000, 3, 0.5, "", "", false, false, "",
+	)
+	require.NoError(t, err)
+
+	enabled := true
+	anchor := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	length := 28 * 24 * time.Hour
+	rollover := 7 * 24 * time.Hour
+	cutoff := 12 * time.Hour
+	grace := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 7168}
+
+	_, err = s.Update(domain.SettingsUpdate{
+		EpochExpiryEnabled: &enabled,
+		EpochAnchor:        &anchor,
+		EpochLength:        &length,
+		RolloverWindow:     &rollover,
+		SettlementCutoff:   &cutoff,
+		UnrollGrace:        &grace,
+	})
+	require.NoError(t, err)
+	return s
+}
+
+func TestSettingsEpochValidation(t *testing.T) {
+	t.Run("valid epoch settings pass", func(t *testing.T) {
+		s := epochSettingsFixture(t)
+		require.NoError(t, s.Validate())
+		require.True(t, s.EpochExpiryEnabled)
+		require.NoError(t, s.EpochSchedule().Validate())
+	})
+
+	t.Run("epoch fields are not validated while disabled", func(t *testing.T) {
+		s := epochSettingsFixture(t)
+		s.EpochExpiryEnabled = false
+		s.EpochLength = 0
+		require.NoError(t, s.Validate())
+	})
+
+	t.Run("rollover window must be shorter than the epoch", func(t *testing.T) {
+		s := epochSettingsFixture(t)
+		s.RolloverWindow = s.EpochLength
+		require.Error(t, s.Validate())
+	})
+
+	t.Run("unroll grace must share the type of the other delays", func(t *testing.T) {
+		s := epochSettingsFixture(t)
+		s.UnrollGrace = arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 12}
+		require.Error(t, s.Validate())
+	})
+
+	t.Run("unroll grace must be BIP68 representable", func(t *testing.T) {
+		s := epochSettingsFixture(t)
+		// not a multiple of 512, so BIP68Sequence rejects it at script build time
+		s.UnrollGrace = arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 7000}
+		require.Error(t, s.Validate())
+	})
+
+	t.Run("unroll grace must be non-zero", func(t *testing.T) {
+		s := epochSettingsFixture(t)
+		s.UnrollGrace = arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 0}
+		require.Error(t, s.Validate())
+	})
+
+	t.Run("an invalid update leaves the receiver untouched", func(t *testing.T) {
+		s := epochSettingsFixture(t)
+		bad := time.Duration(0)
+		_, err := s.Update(domain.SettingsUpdate{EpochLength: &bad})
+		require.Error(t, err)
+		require.Equal(t, 28*24*time.Hour, s.EpochLength, "a rejected update must not apply")
+	})
+}

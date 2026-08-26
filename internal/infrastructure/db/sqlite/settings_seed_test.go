@@ -2,6 +2,7 @@ package sqlitedb_test
 
 import (
 	"database/sql"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -226,6 +227,12 @@ CREATE TABLE IF NOT EXISTS settings (
     build_version_header_required BOOLEAN NOT NULL DEFAULT FALSE,
     digest_header_required BOOLEAN NOT NULL DEFAULT FALSE,
     batch_trigger TEXT NOT NULL DEFAULT '',
+    epoch_expiry_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    epoch_anchor BIGINT NOT NULL DEFAULT 0,
+    epoch_length BIGINT NOT NULL DEFAULT 0,
+    rollover_window BIGINT NOT NULL DEFAULT 0,
+    settlement_cutoff BIGINT NOT NULL DEFAULT 0,
+    unroll_grace BIGINT NOT NULL DEFAULT 0,
     updated_at BIGINT NOT NULL
 );`)
 	require.NoError(t, err)
@@ -254,4 +261,54 @@ CREATE TABLE IF NOT EXISTS scheduled_session (
     updated_at INTEGER NOT NULL
 );`)
 	require.NoError(t, err)
+}
+
+// TestSettingsEpochRoundTrip guards the failure mode that adding columns invites:
+// the repo fills a generated params struct with a struct literal, so a field it
+// forgets is written as a zero value and compiles cleanly. Only a round trip
+// catches that.
+func TestSettingsEpochRoundTrip(t *testing.T) {
+	ctx := t.Context()
+	// a file-backed db, not :memory: - the repository reads through a separate
+	// connection, and each :memory: connection is its own database
+	dbSvc, err := sqlitedb.OpenDb(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(t, err)
+	db := dbSvc.Write()
+	t.Cleanup(func() { _ = dbSvc.Read().Close(); _ = db.Close() })
+
+	createSettingsTable(t, db)
+	createLegacyTables(t, db)
+
+	defaults := validSeedDefaults(t)
+	require.NoError(t, sqlitedb.SeedSettings(ctx, db, defaults))
+
+	repo, err := sqlitedb.NewSettingsRepository(dbSvc)
+	require.NoError(t, err)
+
+	anchor := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	stored := defaults
+	stored.EpochExpiryEnabled = true
+	stored.EpochAnchor = anchor
+	stored.EpochLength = 28 * 24 * time.Hour
+	stored.RolloverWindow = 7 * 24 * time.Hour
+	stored.SettlementCutoff = 12 * time.Hour
+	stored.UnrollGrace = arklib.RelativeLocktime{
+		Type: arklib.LocktimeTypeSecond, Value: 7168,
+	}
+
+	require.NoError(t, repo.Upsert(ctx, stored, []string{"epoch_expiry_enabled"}))
+
+	got, err := repo.Get(ctx)
+	require.NoError(t, err)
+
+	require.True(t, got.EpochExpiryEnabled)
+	require.Equal(t, anchor.Unix(), got.EpochAnchor.Unix())
+	require.Equal(t, 28*24*time.Hour, got.EpochLength)
+	require.Equal(t, 7*24*time.Hour, got.RolloverWindow)
+	require.Equal(t, 12*time.Hour, got.SettlementCutoff)
+	require.Equal(t, uint32(7168), got.UnrollGrace.Value)
+	require.Equal(t, arklib.LocktimeTypeSecond, got.UnrollGrace.Type)
+
+	// and the schedule it projects must be usable
+	require.NoError(t, got.EpochSchedule().Validate())
 }

@@ -579,6 +579,8 @@ INSERT INTO settings (
     batch_onchain_output_fee, batch_offchain_output_fee,
     build_version_header, build_version_header_required,digest_header_required,
     batch_trigger,
+    epoch_expiry_enabled, epoch_anchor, epoch_length,
+    rollover_window, settlement_cutoff, unroll_grace,
     updated_at
 ) VALUES (
     1,
@@ -599,6 +601,8 @@ INSERT INTO settings (
     @batch_onchain_output_fee, @batch_offchain_output_fee,
     @build_version_header, @build_version_header_required, @digest_header_required,
     @batch_trigger,
+    @epoch_expiry_enabled, @epoch_anchor, @epoch_length,
+    @rollover_window, @settlement_cutoff, @unroll_grace,
     @updated_at
 )
 ON CONFLICT(id) DO UPDATE SET
@@ -639,6 +643,12 @@ ON CONFLICT(id) DO UPDATE SET
     build_version_header_required = EXCLUDED.build_version_header_required,
     digest_header_required = EXCLUDED.digest_header_required,
     batch_trigger = EXCLUDED.batch_trigger,
+    epoch_expiry_enabled = EXCLUDED.epoch_expiry_enabled,
+    epoch_anchor = EXCLUDED.epoch_anchor,
+    epoch_length = EXCLUDED.epoch_length,
+    rollover_window = EXCLUDED.rollover_window,
+    settlement_cutoff = EXCLUDED.settlement_cutoff,
+    unroll_grace = EXCLUDED.unroll_grace,
     updated_at = EXCLUDED.updated_at;
 
 -- name: SelectSettings :one

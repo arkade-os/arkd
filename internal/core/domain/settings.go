@@ -66,6 +66,26 @@ type Settings struct {
 	DigestHeaderRequired          bool
 	BatchTrigger                  string
 	UpdatedAt                     time.Time
+
+	// Epoch expiry. While EpochExpiryEnabled is false the rest are ignored and
+	// batches keep using VtxoTreeExpiry as a relative CSV, exactly as before.
+	EpochExpiryEnabled bool
+	EpochAnchor        time.Time
+	EpochLength        time.Duration
+	RolloverWindow     time.Duration
+	SettlementCutoff   time.Duration
+	UnrollGrace        arklib.RelativeLocktime
+}
+
+// EpochSchedule projects the epoch-related settings into the value type that owns
+// the boundary arithmetic.
+func (s Settings) EpochSchedule() EpochSchedule {
+	return EpochSchedule{
+		Anchor:           s.EpochAnchor,
+		Length:           s.EpochLength,
+		RolloverWindow:   s.RolloverWindow,
+		SettlementCutoff: s.SettlementCutoff,
+	}
 }
 
 func NewSettings(
@@ -253,6 +273,30 @@ func (s Settings) Validate() error {
 	if _, err := batchtrigger.New(s.BatchTrigger); err != nil {
 		return fmt.Errorf("invalid batch trigger program: %w", err)
 	}
+
+	if s.EpochExpiryEnabled {
+		if err := s.EpochSchedule().Validate(); err != nil {
+			return fmt.Errorf("invalid epoch schedule: %w", err)
+		}
+		// The unroll grace joins the existing same-type rule: mixing block- and
+		// time-based delays in one deployment is already rejected above.
+		if s.UnrollGrace.Type != s.VtxoTreeExpiry.Type {
+			return fmt.Errorf(
+				"all delays must be above or below value %d "+
+					"(unroll grace and vtxo tree expiry type mismatch)",
+				arklib.MinAllowedSequence,
+			)
+		}
+		if s.UnrollGrace.Value == 0 {
+			return fmt.Errorf("unroll grace must be greater than 0")
+		}
+		// A grace period that cannot be BIP68-encoded would only fail when a
+		// batch is already in flight and the sweep leaf is being built.
+		if _, err := arklib.BIP68Sequence(s.UnrollGrace); err != nil {
+			return fmt.Errorf("invalid unroll grace: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -284,6 +328,13 @@ type SettingsUpdate struct {
 	BuildVersionHeaderRequired    *bool
 	DigestHeaderRequired          *bool
 	BatchTrigger                  *string
+
+	EpochExpiryEnabled *bool
+	EpochAnchor        *time.Time
+	EpochLength        *time.Duration
+	RolloverWindow     *time.Duration
+	SettlementCutoff   *time.Duration
+	UnrollGrace        *arklib.RelativeLocktime
 }
 
 // Update updates any field of Settings but ScheduledSession and BatchFees and returns a changelog
@@ -392,6 +443,30 @@ func (s *Settings) Update(u SettingsUpdate) ([]string, error) {
 	if u.BatchTrigger != nil {
 		updated.BatchTrigger = *u.BatchTrigger
 		changelog = append(changelog, "batch_trigger")
+	}
+	if u.EpochExpiryEnabled != nil {
+		updated.EpochExpiryEnabled = *u.EpochExpiryEnabled
+		changelog = append(changelog, "epoch_expiry_enabled")
+	}
+	if u.EpochAnchor != nil {
+		updated.EpochAnchor = *u.EpochAnchor
+		changelog = append(changelog, "epoch_anchor")
+	}
+	if u.EpochLength != nil {
+		updated.EpochLength = *u.EpochLength
+		changelog = append(changelog, "epoch_length")
+	}
+	if u.RolloverWindow != nil {
+		updated.RolloverWindow = *u.RolloverWindow
+		changelog = append(changelog, "rollover_window")
+	}
+	if u.SettlementCutoff != nil {
+		updated.SettlementCutoff = *u.SettlementCutoff
+		changelog = append(changelog, "settlement_cutoff")
+	}
+	if u.UnrollGrace != nil {
+		updated.UnrollGrace = *u.UnrollGrace
+		changelog = append(changelog, "unroll_grace")
 	}
 
 	if err := updated.Validate(); err != nil {

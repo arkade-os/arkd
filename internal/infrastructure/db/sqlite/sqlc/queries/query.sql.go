@@ -1576,7 +1576,7 @@ func (q *Queries) SelectRoundVtxoTreeLeaves(ctx context.Context, commitmentTxid 
 }
 
 const selectRoundWithId = `-- name: SelectRoundWithId :many
-SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason, round.fees,
+SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason, round.fees, round.epoch_expiry,
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message, round_intents_vw.txid,
     round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children
 FROM round
@@ -1613,6 +1613,7 @@ func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRou
 			&i.Round.VtxoTreeExpiration,
 			&i.Round.FailReason,
 			&i.Round.Fees,
+			&i.Round.EpochExpiry,
 			&i.RoundIntentsVw.ID,
 			&i.RoundIntentsVw.RoundID,
 			&i.RoundIntentsVw.Proof,
@@ -1639,7 +1640,7 @@ func (q *Queries) SelectRoundWithId(ctx context.Context, id string) ([]SelectRou
 }
 
 const selectRoundWithTxid = `-- name: SelectRoundWithTxid :many
-SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason, round.fees,
+SELECT round.id, round.starting_timestamp, round.ending_timestamp, round.ended, round.failed, round.stage_code, round.connector_address, round.version, round.swept, round.vtxo_tree_expiration, round.fail_reason, round.fees, round.epoch_expiry,
     round_intents_vw.id, round_intents_vw.round_id, round_intents_vw.proof, round_intents_vw.message, round_intents_vw.txid,
     round_txs_vw.txid, round_txs_vw.tx, round_txs_vw.round_id, round_txs_vw.type, round_txs_vw.position, round_txs_vw.children
 FROM round
@@ -1678,6 +1679,7 @@ func (q *Queries) SelectRoundWithTxid(ctx context.Context, txid string) ([]Selec
 			&i.Round.VtxoTreeExpiration,
 			&i.Round.FailReason,
 			&i.Round.Fees,
+			&i.Round.EpochExpiry,
 			&i.RoundIntentsVw.ID,
 			&i.RoundIntentsVw.RoundID,
 			&i.RoundIntentsVw.Proof,
@@ -1817,7 +1819,7 @@ func (q *Queries) SelectScheduledSweeps(ctx context.Context, maxResults interfac
 }
 
 const selectSettings = `-- name: SelectSettings :one
-SELECT id, session_duration, unrolled_vtxo_min_expiry_margin, ban_threshold, ban_duration, unilateral_exit_delay, public_unilateral_exit_delay, checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry, round_min_participants_count, round_max_participants_count, vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount, settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date, max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio, note_uri_prefix, scheduled_session_start_time, scheduled_session_end_time, scheduled_session_period, scheduled_session_duration, scheduled_session_round_min_participants_count, scheduled_session_round_max_participants_count, batch_onchain_input_fee, batch_offchain_input_fee, batch_onchain_output_fee, batch_offchain_output_fee, build_version_header, build_version_header_required, digest_header_required, updated_at, batch_trigger FROM settings WHERE id = 1
+SELECT id, session_duration, unrolled_vtxo_min_expiry_margin, ban_threshold, ban_duration, unilateral_exit_delay, public_unilateral_exit_delay, checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry, round_min_participants_count, round_max_participants_count, vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount, settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date, max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio, note_uri_prefix, scheduled_session_start_time, scheduled_session_end_time, scheduled_session_period, scheduled_session_duration, scheduled_session_round_min_participants_count, scheduled_session_round_max_participants_count, batch_onchain_input_fee, batch_offchain_input_fee, batch_onchain_output_fee, batch_offchain_output_fee, build_version_header, build_version_header_required, digest_header_required, updated_at, batch_trigger, epoch_expiry_enabled, epoch_anchor, epoch_length, rollover_window, settlement_cutoff, unroll_grace FROM settings WHERE id = 1
 `
 
 func (q *Queries) SelectSettings(ctx context.Context) (Setting, error) {
@@ -1861,6 +1863,12 @@ func (q *Queries) SelectSettings(ctx context.Context) (Setting, error) {
 		&i.DigestHeaderRequired,
 		&i.UpdatedAt,
 		&i.BatchTrigger,
+		&i.EpochExpiryEnabled,
+		&i.EpochAnchor,
+		&i.EpochLength,
+		&i.RolloverWindow,
+		&i.SettlementCutoff,
+		&i.UnrollGrace,
 	)
 	return i, err
 }
@@ -3081,6 +3089,8 @@ INSERT INTO settings (
     batch_onchain_output_fee, batch_offchain_output_fee,
     build_version_header, build_version_header_required,digest_header_required,
     batch_trigger,
+    epoch_expiry_enabled, epoch_anchor, epoch_length,
+    rollover_window, settlement_cutoff, unroll_grace,
     updated_at
 ) VALUES (
     1,
@@ -3101,7 +3111,9 @@ INSERT INTO settings (
     ?30, ?31,
     ?32, ?33, ?34,
     ?35,
-    ?36
+    ?36, ?37, ?38,
+    ?39, ?40, ?41,
+    ?42
 )
 ON CONFLICT(id) DO UPDATE SET
     session_duration = EXCLUDED.session_duration,
@@ -3141,6 +3153,12 @@ ON CONFLICT(id) DO UPDATE SET
     build_version_header_required = EXCLUDED.build_version_header_required,
     digest_header_required = EXCLUDED.digest_header_required,
     batch_trigger = EXCLUDED.batch_trigger,
+    epoch_expiry_enabled = EXCLUDED.epoch_expiry_enabled,
+    epoch_anchor = EXCLUDED.epoch_anchor,
+    epoch_length = EXCLUDED.epoch_length,
+    rollover_window = EXCLUDED.rollover_window,
+    settlement_cutoff = EXCLUDED.settlement_cutoff,
+    unroll_grace = EXCLUDED.unroll_grace,
     updated_at = EXCLUDED.updated_at
 `
 
@@ -3180,6 +3198,12 @@ type UpsertSettingsParams struct {
 	BuildVersionHeaderRequired                bool
 	DigestHeaderRequired                      bool
 	BatchTrigger                              string
+	EpochExpiryEnabled                        bool
+	EpochAnchor                               int64
+	EpochLength                               int64
+	RolloverWindow                            int64
+	SettlementCutoff                          int64
+	UnrollGrace                               int64
 	UpdatedAt                                 int64
 }
 
@@ -3220,6 +3244,12 @@ func (q *Queries) UpsertSettings(ctx context.Context, arg UpsertSettingsParams) 
 		arg.BuildVersionHeaderRequired,
 		arg.DigestHeaderRequired,
 		arg.BatchTrigger,
+		arg.EpochExpiryEnabled,
+		arg.EpochAnchor,
+		arg.EpochLength,
+		arg.RolloverWindow,
+		arg.SettlementCutoff,
+		arg.UnrollGrace,
 		arg.UpdatedAt,
 	)
 	return err
