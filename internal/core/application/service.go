@@ -1828,14 +1828,15 @@ func (s *service) RegisterIntent(
 			continue
 		}
 
-		if settlementMinExpiryGap > 0 && !vtxo.Swept {
-			// reject if expires after now + settlementMinExpiryGap
-			expiresAt := time.Unix(vtxo.ExpiresAt, 0)
-			limit := time.Now().Add(settlementMinExpiryGap)
-			if expiresAt.After(limit) {
+		// A swept vtxo is exempt: settling one is how recovery works, and the
+		// operator already holds the funds onchain.
+		if !vtxo.Swept {
+			if err := checkSettlementExpiryGap(
+				time.Unix(vtxo.ExpiresAt, 0), time.Now(), settlementMinExpiryGap,
+			); err != nil {
 				return "", errors.INVALID_PSBT_INPUT.New(
-					"vtxo %s expires after %s (minExpiryGap: %s)",
-					vtxo.Outpoint.String(), limit, settlementMinExpiryGap,
+					"vtxo %s: %s (minExpiryGap: %s)",
+					vtxo.Outpoint.String(), err, settlementMinExpiryGap,
 				).WithMetadata(errors.InputMetadata{
 					Txid:       proofTxid,
 					InputIndex: int(outpoint.Index),

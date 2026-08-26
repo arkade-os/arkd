@@ -476,3 +476,39 @@ func makeP2TRLeafTx(t *testing.T, outputs []testOutput) string {
 	require.NoError(t, err)
 	return b64
 }
+
+// TestCheckSettlementExpiryGap pins the direction of the settlement expiry gap:
+// the setting is documented as "the min expiry gap in seconds required to settle
+// a vtxo" (cmd/arkd/flags.go), i.e. a floor on remaining life. A vtxo with almost
+// no life left must be rejected, a healthy one accepted.
+func TestCheckSettlementExpiryGap(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	gap := 24 * time.Hour
+
+	t.Run("healthy vtxo with plenty of life is accepted", func(t *testing.T) {
+		expiresAt := now.Add(7 * 24 * time.Hour)
+		require.NoError(t, checkSettlementExpiryGap(expiresAt, now, gap))
+	})
+
+	t.Run("vtxo expiring inside the gap is rejected", func(t *testing.T) {
+		expiresAt := now.Add(1 * time.Hour)
+		err := checkSettlementExpiryGap(expiresAt, now, gap)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "expires too soon")
+	})
+
+	t.Run("vtxo exactly at the boundary is accepted", func(t *testing.T) {
+		expiresAt := now.Add(gap)
+		require.NoError(t, checkSettlementExpiryGap(expiresAt, now, gap))
+	})
+
+	t.Run("already expired vtxo is rejected", func(t *testing.T) {
+		expiresAt := now.Add(-1 * time.Hour)
+		require.Error(t, checkSettlementExpiryGap(expiresAt, now, gap))
+	})
+
+	t.Run("zero gap disables the check", func(t *testing.T) {
+		expiresAt := now.Add(-1 * time.Hour)
+		require.NoError(t, checkSettlementExpiryGap(expiresAt, now, 0))
+	})
+}
