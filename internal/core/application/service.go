@@ -3169,12 +3169,7 @@ func (s *service) startFinalization(
 	flatVtxoTree := make(tree.FlatTxTree, 0)
 	if vtxoTree != nil {
 
-		sweepClosure := script.CSVMultisigClosure{
-			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{forfeitPubkey}},
-			Locktime:        vtxoTreeExpiry,
-		}
-
-		sweepScript, err := sweepClosure.Script()
+		root, _, err := tree.BuildLegacySweepTapTreeRoot(forfeitPubkey, vtxoTreeExpiry)
 		if err != nil {
 			return
 		}
@@ -3184,10 +3179,6 @@ func (s *service) startFinalization(
 			return
 		}
 		batchOutputAmount := commitmentPtx.UnsignedTx.TxOut[0].Value
-
-		sweepLeaf := txscript.NewBaseTapLeaf(sweepScript)
-		sweepTapTree := txscript.AssembleTaprootScriptTree(sweepLeaf)
-		root := sweepTapTree.RootNode.TapHash()
 
 		coordinator, err := tree.NewTreeCoordinatorSession(
 			root.CloneBytes(), batchOutputAmount, vtxoTree,

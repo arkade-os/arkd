@@ -30,9 +30,8 @@ var (
 	// input. Its presence marks the tree as an epoch batch; absence means the
 	// legacy relative-CSV scheme under ArkFieldTreeExpiry.
 	//
-	// Deliberately not named "batchexpiry": containsArkPsbtKey matches with
-	// bytes.Contains, so any name containing "expiry" would also be matched by
-	// VtxoTreeExpiryField, which would then BIP68-decode an absolute timestamp.
+	// Named for what it is - a date, not a duration - which also keeps it clear
+	// of ArkFieldTreeExpiry. Key matching is exact, so the two cannot collide.
 	ArkFieldBatchExpiry = []byte("epochdate")
 )
 
