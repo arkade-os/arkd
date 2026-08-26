@@ -17,11 +17,48 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
+// sweepInputLocktime derives the nSequence and the required nLockTime for a
+// sweep input from its tapscript leaf.
+//
+// A legacy CSV leaf needs only a BIP68 sequence. An epoch leaf needs that plus an
+// nLockTime at or after its expiry date. Both sequences are BIP68-encoded and so
+// are non-final, which is also what CHECKLOCKTIMEVERIFY requires of its input.
+func sweepInputLocktime(tapscript []byte) (sequence uint32, lockTime uint32, err error) {
+	epoch := script.CLTVCSVMultisigClosure{}
+	if valid, decodeErr := epoch.Decode(tapscript); decodeErr == nil && valid {
+		seq, err := arklib.BIP68Sequence(epoch.UnrollGrace)
+		if err != nil {
+			return 0, 0, err
+		}
+		return seq, uint32(epoch.ExpiryDate), nil
+	}
+
+	legacy := script.CSVMultisigClosure{}
+	valid, err := legacy.Decode(tapscript)
+	if err != nil {
+		return 0, 0, err
+	}
+	if !valid {
+		return 0, 0, fmt.Errorf("unsupported sweep tapscript, cannot build sweep transaction")
+	}
+
+	seq, err := arklib.BIP68Sequence(legacy.Locktime)
+	if err != nil {
+		return 0, 0, err
+	}
+	return seq, 0, nil
+}
+
 func sweepTransaction(
 	ctx context.Context, wallet ports.WalletService, inputs []ports.TxInput,
 ) (txid string, txhex string, err error) {
 	ins := make([]*wire.OutPoint, 0)
 	sequences := make([]uint32, 0)
+
+	// One transaction carries one nLockTime, so it must satisfy the latest expiry
+	// date among its inputs. Callers group inputs by maturity class: mixing a
+	// future-dated epoch input into a batch of ready ones would stall them all.
+	maxLockTime := uint32(0)
 
 	for _, input := range inputs {
 		hash, err := chainhash.NewHashFromStr(input.Txid)
@@ -42,26 +79,21 @@ func sweepTransaction(
 				return "", "", err
 			}
 
-			sweepClosure := script.CSVMultisigClosure{}
-			valid, err := sweepClosure.Decode(tapscriptBytes)
+			seq, lockTime, err := sweepInputLocktime(tapscriptBytes)
 			if err != nil {
 				return "", "", err
 			}
 
-			if !valid {
-				return "", "", fmt.Errorf("invalid csv script, cannot build sweep transaction")
-			}
-
-			sequence, err = arklib.BIP68Sequence(sweepClosure.Locktime)
-			if err != nil {
-				return "", "", err
+			sequence = seq
+			if lockTime > maxLockTime {
+				maxLockTime = lockTime
 			}
 		}
 
 		sequences = append(sequences, sequence)
 	}
 
-	ptx, err := psbt.New(ins, nil, 2, 0, sequences)
+	ptx, err := psbt.New(ins, nil, 2, maxLockTime, sequences)
 	if err != nil {
 		return "", "", err
 	}
