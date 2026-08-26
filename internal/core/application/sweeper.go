@@ -11,7 +11,6 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
-	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -530,45 +529,6 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			return nil
 		}
 
-		scheduleForSubTree := func(txid string, tree *tree.TxTree) {
-			vtxoTreeExpiry, err := s.getVtxoTreeExpiry(vtxoTree)
-			if err != nil {
-				log.WithError(err).
-					Errorf("failed to get vtxo tree expiry for batch %s", commitmentTxid)
-				return
-			}
-
-			// schedule AFTER the root input is confirmed
-			rootInput := vtxoTree.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
-			blockTimestamp, err := waitForConfirmation(context.Background(), rootInput, s.wallet)
-			if err != nil {
-				log.WithError(err).Warnf(
-					"failed to wait for confirmation of batch input tx %s, schedule task time "+
-						"may be inaccurate", rootInput,
-				)
-				blockTimestamp = &ports.BlockTimestamp{Time: time.Now().Unix()}
-			}
-
-			var expirationTimestamp int64
-			var skipExpiryUpdate bool
-			if s.scheduler.Unit() == ports.BlockHeight {
-				expirationTimestamp = int64(blockTimestamp.Height) + int64(vtxoTreeExpiry.Value)
-				skipExpiryUpdate = true
-			} else {
-				expirationTimestamp = blockTimestamp.Time + vtxoTreeExpiry.Seconds()
-			}
-
-			if err := s.scheduleBatchSweep(
-				expirationTimestamp, txid, tree.Root.UnsignedTx.TxID(), skipExpiryUpdate,
-			); err != nil {
-				log.WithError(err).Errorf(
-					"failed to schedule sweep for vtxo tree %s of batch %s",
-					tree.Root.UnsignedTx.TxID(), commitmentTxid,
-				)
-				return
-			}
-		}
-
 		for expiresAt, inputs := range batchOutputs {
 			// if the batch outputs are not expired, schedule a sweep task for it
 			if s.scheduler.AfterNow(expiresAt) {
@@ -579,7 +539,26 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 				}
 
 				for _, subTree := range subtrees {
-					go scheduleForSubTree(commitmentTxid, subTree)
+					// Reuse the maturity findSweepableOutputs already derived from this
+					// subtree's own sweep leaf and the confirmation of the node above it.
+					//
+					// Deriving it again here got two things wrong. It measured from the
+					// batch root's parent, which is the wrong node once part of the tree
+					// has been unrolled; and it read the relative psbt field as a tree
+					// expiry, which for an epoch batch carries the unroll grace instead -
+					// so an epoch sweep was scheduled a grace period after the commitment
+					// confirmed rather than at the epoch date, and the same wrong value
+					// was written onto every leaf vtxo's expiry. This runs on every
+					// restart for every live batch, so it was not a corner case.
+					if err := s.scheduleBatchSweep(
+						expiresAt, commitmentTxid, subTree.Root.UnsignedTx.TxID(),
+						s.scheduler.Unit() == ports.BlockHeight,
+					); err != nil {
+						log.WithError(err).Errorf(
+							"failed to schedule sweep for vtxo tree %s of batch %s",
+							subTree.Root.UnsignedTx.TxID(), commitmentTxid,
+						)
+					}
 				}
 
 				continue
@@ -912,25 +891,6 @@ func (s *sweeper) updateVtxoExpirationTime(
 	}
 
 	return s.repoManager.Vtxos().UpdateVtxosExpiration(context.Background(), vtxos, expirationTime)
-}
-
-func (s *sweeper) getVtxoTreeExpiry(vtxoTree *tree.TxTree) (*arklib.RelativeLocktime, error) {
-	// get expiry relative locktime from the psbt ark fields
-	vtxoTreeExpiryFields, err := txutils.GetArkPsbtFields(
-		vtxoTree.Root,
-		0,
-		txutils.VtxoTreeExpiryField,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if len(vtxoTreeExpiryFields) <= 0 {
-		return nil, fmt.Errorf(
-			"no vtxo tree expiry field found in vtxo tree, cannot schedule sweep",
-		)
-	}
-	vtxoTreeExpiry := vtxoTreeExpiryFields[0]
-	return &vtxoTreeExpiry, nil
 }
 
 func computeSubTrees(
