@@ -452,10 +452,42 @@ func (s *adminService) ListIntents(
 }
 
 func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) error {
+	// Drop the conflict-domain claims these intents hold before removing them,
+	// otherwise their vtxos stay claimed and become unspendable. ViewAll with no
+	// ids returns every intent, which is what the delete-all case needs.
+	s.releaseClaimsOfIntents(ctx, intentIds)
+
 	if len(intentIds) == 0 {
 		return s.liveStore.Intents().DeleteAll(ctx)
 	}
 	return s.liveStore.Intents().Delete(ctx, intentIds)
+}
+
+// releaseClaimsOfIntents releases the claims held by the given intents, or by
+// every queued intent when ids is empty. Failures are logged, not returned: the
+// delete proceeds either way and a stale claim is not worth failing the call.
+func (s *adminService) releaseClaimsOfIntents(ctx context.Context, ids []string) {
+	intents, err := s.liveStore.Intents().ViewAll(ctx, ids)
+	if err != nil {
+		log.WithError(err).Warnf("failed to view intents %v to release their claims", ids)
+		return
+	}
+	for _, intent := range intents {
+		outpoints := make([]domain.Outpoint, 0, len(intent.Inputs))
+		for _, in := range intent.Inputs {
+			outpoints = append(outpoints, in.Outpoint)
+		}
+		if len(outpoints) <= 0 {
+			continue
+		}
+		if err := s.liveStore.OffchainTxs().ReleaseOutpoints(
+			ctx, intent.Id, outpoints,
+		); err != nil {
+			log.WithError(err).Warnf(
+				"failed to release conflict-domain claims of intent %s", intent.Id,
+			)
+		}
+	}
 }
 
 func (s *adminService) GetBatchFees(ctx context.Context) (*domain.BatchFees, error) {

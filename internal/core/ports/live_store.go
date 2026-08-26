@@ -73,8 +73,8 @@ const (
 //
 // The conflict domain is owner-tagged: every registered outpoint records the
 // arkTxid that claimed it. A claim by a different owner conflicts; the same
-// owner re-claiming is idempotent (which retries and, once offchainTxMu is
-// gone, cross-process double-submits rely on). Registration and the conflict
+// owner re-claiming is idempotent, which retries and cross-process double-submits
+// rely on. Registration and the conflict
 // check are one atomic step per backend (inmemory under a single lock, redis
 // via a Lua script), so off-chain Add and on-chain ClaimOutpoints are mutually
 // exclusive across processes.

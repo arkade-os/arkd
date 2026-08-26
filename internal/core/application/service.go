@@ -66,10 +66,6 @@ type service struct {
 	stop func()
 	ctx  context.Context
 	wg   *sync.WaitGroup
-	// offchainTxMu serialises the RegisterIntent conflict-domain check against a
-	// concurrent SubmitOffchainTx (ArkLabsHQ/arkd#62). Kept only so this merge
-	// does not drop that fix; the owner-tagged claim replaces it.
-	offchainTxMu *sync.Mutex
 	// global mtx for the fraud.go coinselection
 	feeBumpMtx sync.Mutex
 }
@@ -160,7 +156,6 @@ func NewService(
 		stop:                     cancel,
 		ctx:                      ctx,
 		wg:                       &sync.WaitGroup{},
-		offchainTxMu:             &sync.Mutex{},
 		alerts:                   alerts,
 		feeManager:               feeManager,
 	}
@@ -1597,6 +1592,52 @@ func (s *service) GetPendingOffchainTxs(
 	return acceptedOffchainTxs, nil
 }
 
+// releaseIntentClaims drops the conflict-domain claims an intent holds. Releasing
+// is per-owner and idempotent, so a claim already gone, or one since taken by
+// someone else, is left alone. Failure is logged rather than returned: the caller
+// is always on a path that drops the intent regardless, and a lost release only
+// leaves a stale claim, which is worse to turn into a caller-visible error.
+func (s *service) releaseIntentClaims(
+	ctx context.Context, owner string, outpoints []domain.Outpoint,
+) {
+	if len(outpoints) <= 0 {
+		return
+	}
+	if err := s.cache.OffchainTxs().ReleaseOutpoints(ctx, owner, outpoints); err != nil {
+		log.WithError(err).Warnf("failed to release conflict-domain claims of intent %s", owner)
+	}
+}
+
+// releaseClaimsOfIntents releases the claims of each given intent, keyed by its
+// own id, since the conflict domain is owner-tagged.
+func (s *service) releaseClaimsOfIntents(ctx context.Context, intents []domain.Intent) {
+	for _, intent := range intents {
+		outpoints := make([]domain.Outpoint, 0, len(intent.Inputs))
+		for _, in := range intent.Inputs {
+			outpoints = append(outpoints, in.Outpoint)
+		}
+		s.releaseIntentClaims(ctx, intent.Id, outpoints)
+	}
+}
+
+// releaseClaimsOfIntentIds looks the intents up so their inputs can be released,
+// for callers that only hold ids.
+func (s *service) releaseClaimsOfIntentIds(ctx context.Context, ids []string) {
+	if len(ids) <= 0 {
+		return
+	}
+	timed, err := s.cache.Intents().ViewAll(ctx, ids)
+	if err != nil {
+		log.WithError(err).Warnf("failed to view intents %v to release their claims", ids)
+		return
+	}
+	intents := make([]domain.Intent, 0, len(timed))
+	for _, t := range timed {
+		intents = append(intents, t.Intent)
+	}
+	s.releaseClaimsOfIntents(ctx, intents)
+}
+
 func (s *service) RegisterIntent(
 	ctx context.Context, proof intent.Proof, message intent.RegisterMessage,
 ) (string, errors.Error) {
@@ -2257,27 +2298,44 @@ func (s *service) RegisterIntent(
 		}
 	}
 
-	s.offchainTxMu.Lock()
-	defer s.offchainTxMu.Unlock()
-
+	// Claim the vtxo inputs in the shared conflict domain, replacing the
+	// offchainTxMu-guarded check this used to do (ArkLabsHQ/arkd#62). The claim is
+	// atomic across processes, as Add is, and reserves rather than only checking,
+	// so it also stops two intents registering the same vtxo.
+	//
+	// Every claim taken here is released again: on round completion, on delete by
+	// proof, and on admin delete. That holds because every registered intent is
+	// eventually selected by Pop and so appears in the finished round. Pop skips
+	// intents carrying no receivers, but RegisterIntent cannot produce one, since
+	// Intent.validate rejects an empty output set. If receivers ever become
+	// optional (see the commented-out IntentStore.Update), such an intent would
+	// never be selected, never reach a release path, and its claim would leak
+	// here, leaving the vtxos permanently unspendable.
+	claimedOutpoints := make([]domain.Outpoint, 0, len(vtxoInputs))
 	for _, vtxo := range vtxoInputs {
-		isSpent, err := s.cache.OffchainTxs().Includes(ctx, vtxo.Outpoint)
+		claimedOutpoints = append(claimedOutpoints, vtxo.Outpoint)
+	}
+
+	if len(claimedOutpoints) > 0 {
+		status, conflict, err := s.cache.OffchainTxs().ClaimOutpoints(
+			ctx, intent.Id, claimedOutpoints,
+		)
 		if err != nil {
-			log.WithError(err).
-				Errorf("failed to check again spent status of input against tx in cache")
+			log.WithError(err).Errorf("failed to claim intent inputs in the conflict domain")
 			return "", errors.INTERNAL_ERROR.New("something went wrong").
-				WithMetadata(map[string]any{"vtxo": vtxo.Outpoint.String()})
+				WithMetadata(map[string]any{"vtxos": claimedOutpoints})
 		}
-		if isSpent {
+		if status == ports.ClaimConflict {
 			return "", errors.VTXO_ALREADY_SPENT.New(
-				"vtxo %s is currently being spent", vtxo.Outpoint.String(),
-			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+				"vtxo %s is currently being spent", conflict.String(),
+			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: conflict.String()})
 		}
 	}
 
 	if err := s.cache.Intents().Push(
 		ctx, *intent, boardingInputs, message.CosignersPublicKeys,
 	); err != nil {
+		s.releaseIntentClaims(ctx, intent.Id, claimedOutpoints)
 		return "", errors.INTERNAL_ERROR.New("failed to push intent: %w", err).
 			WithMetadata(map[string]any{
 				"intent":                intent,
@@ -2490,6 +2548,8 @@ func (s *service) DeleteIntentsByProof(
 	for _, m := range matches {
 		idsToDelete = append(idsToDelete, m.Id)
 	}
+
+	s.releaseClaimsOfIntentIds(ctx, idsToDelete)
 
 	if deleteErr := s.cache.Intents().Delete(ctx, idsToDelete); deleteErr != nil {
 		return errors.INTERNAL_ERROR.New("failed to delete intents: %w", deleteErr).
@@ -2728,6 +2788,14 @@ func (s *service) startRound() {
 				"failed to delete forfeit txs from cache for round %s", existingRound.Id,
 			)
 		}
+		// The round holds every intent Pop selected, so their claims are released
+		// here by owner; intents still queued for a later round keep theirs.
+		roundIntents := make([]domain.Intent, 0, len(existingRound.Intents))
+		for _, intent := range existingRound.Intents {
+			roundIntents = append(roundIntents, intent)
+		}
+		s.releaseClaimsOfIntents(ctx, roundIntents)
+
 		if err := s.cache.Intents().DeleteVtxos(ctx); err != nil {
 			log.WithError(err).Warnf(
 				"failed to delete spent vtxos from cache after round %s", existingRound.Id,
