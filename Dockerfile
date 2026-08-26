@@ -30,7 +30,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-X 'm
 RUN cd pkg/ark-cli && CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-X 'main.Version=${VERSION}'" -o ../../bin/ark main.go
 
 # Second image, running the arkd executable
-FROM alpine:3.24
+FROM alpine:3.24 AS runtime
 
 RUN apk update && apk upgrade
 
