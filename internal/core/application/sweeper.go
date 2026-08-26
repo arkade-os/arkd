@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -699,8 +698,10 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			}
 
 			err = nil
-			// retry until the tx is broadcasted or the error is not BIP68 final
-			for len(txid) == 0 && (err == nil || errors.Is(err, ports.ErrNonFinalBIP68)) {
+			// retry until the tx is broadcasted or the error is not a timelock
+			// one. Both kinds matter: batch outputs can be gated by a relative
+			// sequence, an absolute nLockTime, or both.
+			for len(txid) == 0 && (err == nil || ports.IsNonFinal(err)) {
 				select {
 				case <-s.ctx.Done():
 					return nil

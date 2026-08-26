@@ -391,14 +391,32 @@ func (w *walletDaemonClient) BroadcastTransaction(
 		ctx, &arkwalletv1.BroadcastTransactionRequest{Txs: txs},
 	)
 	if err != nil {
-		// handle non-final BIP68 error and return the appropriate error
-		if strings.Contains(
-			strings.ToLower(err.Error()), "non-bip68-final") {
-			return "", ports.ErrNonFinalBIP68
+		// map timelock rejections to typed errors the sweeper can retry on
+		if classified := classifyBroadcastError(err); classified != nil {
+			return "", classified
 		}
 		return "", err
 	}
 	return resp.GetTxid(), nil
+}
+
+// classifyBroadcastError maps a node's mempool rejection reason to a typed port
+// error, or nil when the failure is not a timelock problem. Bitcoin Core reports
+// "non-BIP68-final" for a premature relative timelock and "non-final" for a
+// premature nLockTime; the two are disjoint, but BIP68 is checked first so the
+// narrower reason can never be swallowed by the broader one.
+func classifyBroadcastError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "non-bip68-final") {
+		return ports.ErrNonFinalBIP68
+	}
+	if strings.Contains(msg, "non-final") {
+		return ports.ErrNonFinalCLTV
+	}
+	return nil
 }
 
 func (w *walletDaemonClient) EstimateFees(ctx context.Context, psbt string) (uint64, error) {
