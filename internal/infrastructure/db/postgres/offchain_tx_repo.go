@@ -7,6 +7,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
+	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 )
 
 type offchainTxRepository struct {
@@ -77,14 +78,102 @@ func (v *offchainTxRepository) GetOffchainTx(
 		return nil, err
 	}
 	if len(rows) == 0 {
-		return nil, fmt.Errorf("offchain tx %s not found", txid)
+		return nil, arkerrors.OFFCHAIN_TX_NOT_FOUND.
+			New("offchain tx %s not found", txid).
+			WithMetadata(arkerrors.OffchainTxNotFoundMetadata{Txid: txid})
 	}
-	vt := rows[0].OffchainTxVw
+	vws := make([]queries.OffchainTxVw, 0, len(rows))
+	for _, row := range rows {
+		vws = append(vws, row.OffchainTxVw)
+	}
+	return rowsToOffchainTx(vws), nil
+}
+
+func (v *offchainTxRepository) GetAnyOffchainTx(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	rows, err := v.querier.SelectAnyOffchainTx(ctx, txid)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, arkerrors.OFFCHAIN_TX_NOT_FOUND.
+			New("offchain tx %s not found", txid).
+			WithMetadata(arkerrors.OffchainTxNotFoundMetadata{Txid: txid})
+	}
+	vws := make([]queries.OffchainTxVw, 0, len(rows))
+	for _, row := range rows {
+		vws = append(vws, row.OffchainTxVw)
+	}
+	return rowsToOffchainTx(vws), nil
+}
+
+func (v *offchainTxRepository) GetOffchainTxsInRange(
+	ctx context.Context, after, before int64, onlyFailed, onlyCompleted bool, limit int64,
+) ([]*domain.OffchainTx, error) {
+	rows, err := v.querier.SelectOffchainTxsInRange(ctx, queries.SelectOffchainTxsInRangeParams{
+		After:          after,
+		Before:         before,
+		OnlyFailed:     onlyFailed,
+		OnlyCompleted:  onlyCompleted,
+		FinalizedStage: int32(domain.OffchainTxFinalizedStage),
+		MaxResults:     limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// The LIMIT is applied by the ordered subquery, but the outer IN (...) does not
+	// preserve its order; callers sort the result.
+	grouped := make(map[string][]queries.OffchainTxVw)
+	for _, row := range rows {
+		grouped[row.OffchainTxVw.Txid] = append(grouped[row.OffchainTxVw.Txid], row.OffchainTxVw)
+	}
+
+	txs := make([]*domain.OffchainTx, 0, len(grouped))
+	for _, vws := range grouped {
+		txs = append(txs, rowsToOffchainTx(vws))
+	}
+	return txs, nil
+}
+
+func (v *offchainTxRepository) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	if len(txids) == 0 {
+		return []*domain.OffchainTx{}, nil
+	}
+
+	rows, err := v.querier.SelectOffchainTxsByTxids(ctx, txids)
+	if err != nil {
+		return nil, err
+	}
+
+	grouped := make(map[string][]queries.OffchainTxVw)
+	for _, row := range rows {
+		grouped[row.OffchainTxVw.Txid] = append(grouped[row.OffchainTxVw.Txid], row.OffchainTxVw)
+	}
+
+	txs := make([]*domain.OffchainTx, 0, len(grouped))
+	for _, vws := range grouped {
+		txs = append(txs, rowsToOffchainTx(vws))
+	}
+
+	return txs, nil
+}
+
+func (v *offchainTxRepository) Close() {
+	_ = v.db.Close()
+}
+
+// rowsToOffchainTx folds the offchain_tx_vw rows of a single offchain tx (one row per
+// checkpoint tx) into the domain aggregate.
+func rowsToOffchainTx(vws []queries.OffchainTxVw) *domain.OffchainTx {
+	vt := vws[0]
 	checkpointTxs := make(map[string]string)
 	commitmentTxids := make(map[string]string)
 	rootCommitmentTxId := ""
-	for _, row := range rows {
-		vw := row.OffchainTxVw
+	for _, vw := range vws {
 		if vw.CheckpointTxid.Valid && vw.CheckpointTx.Valid {
 			checkpointTxs[vw.CheckpointTxid.String] = vw.CheckpointTx.String
 			commitmentTxids[vw.CheckpointTxid.String] = vw.CommitmentTxid.String
@@ -111,9 +200,5 @@ func (v *offchainTxRepository) GetOffchainTx(
 		CheckpointTxs:      checkpointTxs,
 		CommitmentTxids:    commitmentTxids,
 		RootCommitmentTxId: rootCommitmentTxId,
-	}, nil
-}
-
-func (v *offchainTxRepository) Close() {
-	_ = v.db.Close()
+	}
 }

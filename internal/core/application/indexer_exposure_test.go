@@ -2,18 +2,17 @@ package application
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	arkscript "github.com/arkade-os/arkd/pkg/ark-lib/script"
 	arktree "github.com/arkade-os/arkd/pkg/ark-lib/tree"
@@ -530,7 +529,7 @@ func TestGetVtxoChain(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		t.Run("private, token covers tree tx outpoints", func(t *testing.T) {
 			// Build a 2-node PSBT tree: root_tx → vtxo_tx (leaf).
-			// buildVtxoChain collects allOutpoints = [vtxoOutpoint, vtxoOutpoint (dup),
+			// walkVtxoChain collects allOutpoints = [vtxoOutpoint, vtxoOutpoint (dup),
 			// rootTxid:0, vtxoTxid:0] so the auth token covers both the vtxo and the tree tx.
 			rootTxid, vtxoTxid, flatTree := buildTestTreeTxs(t)
 
@@ -553,7 +552,7 @@ func TestGetVtxoChain(t *testing.T) {
 
 			// Build chain first to collect allOutpoints.
 			// allOutpoints includes vtxoOutpoint and the tree tx outpoints.
-			_, allOutpoints, err := indexer.buildVtxoChain(t.Context(), vtxoOutpoint)
+			_, allOutpoints, _, err := indexer.walkVtxoChain(t.Context(), []domain.Outpoint{vtxoOutpoint}, math.MaxInt32)
 			require.NoError(t, err)
 
 			// Verify allOutpoints covers both the vtxo and the root tree tx.
@@ -569,7 +568,7 @@ func TestGetVtxoChain(t *testing.T) {
 			require.NoError(t, err)
 
 			// GetVtxoChain with the token — auth check passes and chain is returned.
-			resp, err := indexer.GetVtxoChain(t.Context(), token, vtxoOutpoint, nil)
+			resp, err := indexer.GetVtxoChain(t.Context(), token, vtxoOutpoint, nil, "")
 			require.NoError(t, err)
 			require.NotEmpty(t, resp.Chain)
 
@@ -582,6 +581,71 @@ func TestGetVtxoChain(t *testing.T) {
 			require.True(t, chainByType[IndexerChainedTxTypeCommitment])
 
 			rounds.AssertExpectations(t)
+			vtxos.AssertExpectations(t)
+		})
+
+		t.Run("preconfirmed chain bulk-loads offchain txs", func(t *testing.T) {
+			vtxoOutpoint := Outpoint{Txid: testTxids[0], VOut: 0}
+			offchainTxid := vtxoOutpoint.Txid
+			checkpointB64 := buildCheckpointTxSpending(t, vtxoOutpoint.Txid, vtxoOutpoint.VOut)
+
+			vtxos := &mockedVtxoRepo{}
+			vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{vtxoOutpoint}).
+				Return([]domain.Vtxo{{
+					Outpoint:     domain.Outpoint{Txid: vtxoOutpoint.Txid, VOut: vtxoOutpoint.VOut},
+					Preconfirmed: true,
+				}}, nil)
+
+			offchainRepo := &mockedOffchainTxRepo{}
+			offchainRepo.On("GetOffchainTxsByTxids", mock.Anything, []string{offchainTxid}).
+				Return([]*domain.OffchainTx{{
+					ArkTxid: offchainTxid,
+					CheckpointTxs: map[string]string{
+						"cp": checkpointB64,
+					},
+				}}, nil)
+
+			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, vtxos, nil, offchainRepo)
+
+			chain, _, _, err := indexer.walkVtxoChain(t.Context(), []domain.Outpoint{vtxoOutpoint}, 1000)
+			require.NoError(t, err)
+			require.NotEmpty(t, chain)
+
+			offchainRepo.AssertNotCalled(t, "GetOffchainTx", mock.Anything, offchainTxid)
+			offchainRepo.AssertExpectations(t)
+			vtxos.AssertExpectations(t)
+		})
+
+		t.Run("preconfirmed chain falls back to single fetch on cache miss", func(t *testing.T) {
+			vtxoOutpoint := Outpoint{Txid: testTxids[0], VOut: 0}
+			offchainTxid := vtxoOutpoint.Txid
+			checkpointB64 := buildCheckpointTxSpending(t, vtxoOutpoint.Txid, vtxoOutpoint.VOut)
+
+			vtxos := &mockedVtxoRepo{}
+			vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{vtxoOutpoint}).
+				Return([]domain.Vtxo{{
+					Outpoint:     domain.Outpoint{Txid: vtxoOutpoint.Txid, VOut: vtxoOutpoint.VOut},
+					Preconfirmed: true,
+				}}, nil)
+
+			offchainRepo := &mockedOffchainTxRepo{}
+			offchainRepo.On("GetOffchainTxsByTxids", mock.Anything, []string{offchainTxid}).
+				Return([]*domain.OffchainTx{}, nil)
+			offchainRepo.On("GetOffchainTx", mock.Anything, offchainTxid).
+				Return(&domain.OffchainTx{
+					ArkTxid: offchainTxid,
+					CheckpointTxs: map[string]string{
+						"cp": checkpointB64,
+					},
+				}, nil)
+
+			indexer := newTestIndexer(t, privkey, exposurePrivate, nil, vtxos, nil, offchainRepo)
+
+			chain, _, _, err := indexer.walkVtxoChain(t.Context(), []domain.Outpoint{vtxoOutpoint}, 1000)
+			require.NoError(t, err)
+			require.NotEmpty(t, chain)
+
+			offchainRepo.AssertExpectations(t)
 			vtxos.AssertExpectations(t)
 		})
 	})
@@ -657,7 +721,7 @@ func TestGetVtxoChain(t *testing.T) {
 				indexer := newTestIndexer(t, privkey, tc.exposure, nil, nil, nil)
 				token := tc.makeToken(t, indexer)
 
-				_, err := indexer.GetVtxoChain(t.Context(), token, tc.outpoint, nil)
+				_, err := indexer.GetVtxoChain(t.Context(), token, tc.outpoint, nil, "")
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.errContains)
 			})
@@ -695,7 +759,7 @@ func TestGetVtxoChainByIntent(t *testing.T) {
 			rounds := &mockedRoundRepo{}
 			vtxos := &mockedVtxoRepo{}
 
-			// GetVtxos is called twice: validateIntent + buildVtxoChain.
+			// GetVtxos is called twice: validateIntent + walkVtxoChain.
 			vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{{Txid: leafTxid, VOut: 0}}).
 				Return([]domain.Vtxo{vtxoData}, nil)
 			rounds.On("GetRoundVtxoTree", mock.Anything, commitmentTxid).
@@ -708,7 +772,7 @@ func TestGetVtxoChainByIntent(t *testing.T) {
 
 			// GetVtxoChainByIntent validates the intent, builds the chain, and
 			// returns a token covering all outpoints in the chain.
-			chainResp, err := indexer.GetVtxoChainByIntent(t.Context(), vtxoIntent, nil)
+			chainResp, err := indexer.GetVtxoChainByIntent(t.Context(), vtxoIntent)
 			require.NoError(t, err)
 			require.NotEmpty(t, chainResp.Chain)
 			require.NotEmpty(t, chainResp.AuthToken)
@@ -804,7 +868,7 @@ func TestGetVtxoChainByIntent(t *testing.T) {
 
 				indexer := newTestIndexer(t, privkey, tc.exposure, nil, vtxos, wallet)
 
-				_, err := indexer.GetVtxoChainByIntent(t.Context(), tc.makeIntent(), nil)
+				_, err := indexer.GetVtxoChainByIntent(t.Context(), tc.makeIntent())
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.errContains)
 
@@ -1122,6 +1186,7 @@ func TestRevokeTokens(t *testing.T) {
 func newTestIndexer(
 	t *testing.T, privkey *btcec.PrivateKey, exposure exposure,
 	rounds *mockedRoundRepo, vtxos *mockedVtxoRepo, wallet *mockedWallet,
+	offchainRepos ...*mockedOffchainTxRepo,
 ) *indexerService {
 	t.Helper()
 
@@ -1134,6 +1199,9 @@ func newTestIndexer(
 	}
 	if vtxos != nil {
 		repo.On("Vtxos").Return(vtxos)
+	}
+	if len(offchainRepos) > 0 && offchainRepos[0] != nil {
+		repo.On("OffchainTxs").Return(offchainRepos[0])
 	}
 
 	cache := newTokenCache(defaultAuthTokenTTL)
@@ -1188,6 +1256,25 @@ func buildTestTreeTxs(t *testing.T) (rootTxid, leafTxid string, flatTree arktree
 		{Txid: leafTxid, Tx: leafB64, Children: nil},
 	}
 	return
+}
+
+func buildCheckpointTxSpending(t *testing.T, prevTxid string, prevVout uint32) string {
+	t.Helper()
+
+	prevHash, err := chainhash.NewHashFromStr(prevTxid)
+	require.NoError(t, err)
+
+	ptx, err := psbt.New(
+		[]*wire.OutPoint{{Hash: *prevHash, Index: prevVout}},
+		[]*wire.TxOut{{Value: 1000, PkScript: []byte{txscript.OP_TRUE}}},
+		2, 0, []uint32{wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+
+	b64, err := ptx.B64Encode()
+	require.NoError(t, err)
+
+	return b64
 }
 
 // buildTestIntent creates a valid signed intent proof that passes intent.Verify.
@@ -1288,67 +1375,4 @@ func buildExpiredToken(t *testing.T, privkey *btcec.PrivateKey, outpoints []Outp
 	require.NoError(t, err)
 
 	return base64.StdEncoding.EncodeToString(append(msg, sig.Serialize()...))
-}
-
-type mockedRoundRepo struct {
-	mock.Mock
-	domain.RoundRepository // unimplemented methods panic on call
-}
-
-func (m *mockedRoundRepo) GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error) {
-	args := m.Called(ctx, txids)
-	if v := args.Get(0); v != nil {
-		return v.([]string), args.Error(1)
-	}
-	return nil, args.Error(1)
-}
-
-func (m *mockedRoundRepo) GetRoundVtxoTree(ctx context.Context, txid string) (arktree.FlatTxTree, error) {
-	args := m.Called(ctx, txid)
-	if v := args.Get(0); v != nil {
-		return v.(arktree.FlatTxTree), args.Error(1)
-	}
-	return nil, args.Error(1)
-}
-
-type mockedVtxoRepo struct {
-	mock.Mock
-	domain.VtxoRepository // unimplemented methods panic on call
-}
-
-func (m *mockedVtxoRepo) GetVtxos(ctx context.Context, outpoints []domain.Outpoint) ([]domain.Vtxo, error) {
-	args := m.Called(ctx, outpoints)
-	if v := args.Get(0); v != nil {
-		return v.([]domain.Vtxo), args.Error(1)
-	}
-	return nil, args.Error(1)
-}
-
-type mockedRepoManager struct {
-	mock.Mock
-	ports.RepoManager // unimplemented methods panic on call
-}
-
-func (m *mockedRepoManager) Rounds() domain.RoundRepository {
-	if v := m.Called().Get(0); v != nil {
-		return v.(domain.RoundRepository)
-	}
-	return nil
-}
-
-func (m *mockedRepoManager) Vtxos() domain.VtxoRepository {
-	if v := m.Called().Get(0); v != nil {
-		return v.(domain.VtxoRepository)
-	}
-	return nil
-}
-
-type mockedWallet struct {
-	mock.Mock
-	ports.WalletService // unimplemented methods panic on call
-}
-
-func (m *mockedWallet) GetTransaction(ctx context.Context, txid string) (string, error) {
-	args := m.Called(ctx, txid)
-	return args.String(0), args.Error(1)
 }

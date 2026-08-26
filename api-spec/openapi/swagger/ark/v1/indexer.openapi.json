@@ -781,6 +781,14 @@
             }
           },
           {
+            "name": "pageToken",
+            "in": "query",
+            "description": "Opaque cursor returned as next_page_token by a previous call. When set, the\nresponse resumes from where that page ended.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "page.size",
             "in": "query",
             "schema": {
@@ -872,7 +880,7 @@
           {
             "name": "spendableOnly",
             "in": "query",
-            "description": "Retrieve only spendable vtxos",
+            "description": "The spendable_only, spent_only, recoverable_only, pending_only and\nrenewable_only filters are mutually exclusive, and are applied only when\nthe scripts filter is used. They are ignored when querying by outpoints.\nRetrieve only spendable vtxos",
             "schema": {
               "type": "boolean"
             }
@@ -888,7 +896,7 @@
           {
             "name": "recoverableOnly",
             "in": "query",
-            "description": "Retrieve only recoverable vtxos (notes, subdust or swept vtxos).\nThe 3 filters are mutually exclusive,",
+            "description": "Retrieve only recoverable vtxos (notes, subdust or swept vtxos).",
             "schema": {
               "type": "boolean"
             }
@@ -917,6 +925,14 @@
             "schema": {
               "type": "integer",
               "format": "int64"
+            }
+          },
+          {
+            "name": "renewableOnly",
+            "in": "query",
+            "description": "Retrieve the union of the spendable and recoverable vtxos.",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -1217,6 +1233,10 @@
           "page": {
             "$ref": "#/components/schemas/IndexerPageRequest"
           },
+          "pageToken": {
+            "type": "string",
+            "description": "Opaque cursor returned as next_page_token by a previous call. When set, the\nresponse resumes from where that page ended."
+          },
           "token": {
             "type": "string",
             "description": "Valid auth_token can also be used if the ownership has already been proved.\nA valid token obtained from GetVirtualTxs rpc can be recycled for this request."
@@ -1236,6 +1256,10 @@
             "items": {
               "$ref": "#/components/schemas/IndexerChain"
             }
+          },
+          "nextPageToken": {
+            "type": "string",
+            "description": "Opaque cursor for fetching the next page. Empty when there are no more pages."
           },
           "page": {
             "$ref": "#/components/schemas/IndexerPageResponse"
@@ -1326,7 +1350,11 @@
           },
           "recoverableOnly": {
             "type": "boolean",
-            "description": "Retrieve only recoverable vtxos (notes, subdust or swept vtxos).\nThe 3 filters are mutually exclusive,"
+            "description": "Retrieve only recoverable vtxos (notes, subdust or swept vtxos)."
+          },
+          "renewableOnly": {
+            "type": "boolean",
+            "description": "Retrieve the union of the spendable and recoverable vtxos."
           },
           "scripts": {
             "type": "array",
@@ -1337,7 +1365,7 @@
           },
           "spendableOnly": {
             "type": "boolean",
-            "description": "Retrieve only spendable vtxos"
+            "description": "The spendable_only, spent_only, recoverable_only, pending_only and\nrenewable_only filters are mutually exclusive, and are applied only when\nthe scripts filter is used. They are ignored when querying by outpoints.\nRetrieve only spendable vtxos"
           },
           "spentOnly": {
             "type": "boolean",
@@ -1625,6 +1653,10 @@
           "createdAt": {
             "type": "integer",
             "format": "int64"
+          },
+          "depth": {
+            "type": "integer",
+            "format": "uint32"
           },
           "expiresAt": {
             "type": "integer",

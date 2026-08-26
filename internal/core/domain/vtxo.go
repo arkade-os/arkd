@@ -62,6 +62,8 @@ type Vtxo struct {
 	Preconfirmed       bool
 	ExpiresAt          int64
 	CreatedAt          int64
+	Depth              uint32   // chain depth: 0 for vtxos from batch, increments on each chain
+	MarkerIDs          []string // marker IDs for DAG traversal optimization (supports multiple parent markers)
 	Assets             []AssetDenomination
 }
 
@@ -76,7 +78,7 @@ func (v Vtxo) IsNote() bool {
 }
 
 func (v Vtxo) RequiresForfeit() bool {
-	return !v.Swept && !v.IsExpired() && !v.IsNote() && !v.Unrolled
+	return !v.Swept && !v.IsNote() && !v.Unrolled
 }
 
 func (v Vtxo) IsSettled() bool {

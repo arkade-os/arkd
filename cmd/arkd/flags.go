@@ -13,6 +13,7 @@ const (
 	urlFlagName                       = "url"
 	datadirFlagName                   = "datadir"
 	macaroonFlagName                  = "macaroon"
+	timeoutFlagName                   = "timeout"
 	passwordFlagName                  = "password"
 	amountFlagName                    = "amount"
 	withdrawAllFlagName               = "all"
@@ -41,6 +42,10 @@ const (
 	completedFlagName                 = "completed"
 	failedFlagName                    = "failed"
 	withDetailsFlagName               = "with-details"
+	onlyFailedFlagName                = "only-failed"
+	onlyCompletedFlagName             = "only-completed"
+	limitFlagName                     = "limit"
+	txidFlagName                      = "txid"
 	sweepConnectorsFlagName           = "with-connectors"
 	sweepCommitmentTxidsFlagName      = "commitment-txids"
 	onchainInputFlagName              = "onchain-input"
@@ -69,6 +74,7 @@ const (
 	buildVersionHeaderFlagName            = "build-version-header"
 	buildVersionHeaderRequiredFlagName    = "build-version-header-required"
 	digestHeaderRequiredFlagName          = "digest-header-required"
+	batchTriggerFlagName                  = "batch-trigger"
 
 	dateFormat         = time.DateOnly
 	dateWithTimeFormat = time.DateTime
@@ -88,6 +94,11 @@ var (
 	macaroonFlag = &cli.StringFlag{
 		Name:  macaroonFlagName,
 		Usage: "macaroon in hex format used for authenticated requests",
+	}
+	timeoutFlag = &cli.DurationFlag{
+		Name:  timeoutFlagName,
+		Usage: "timeout for requests to the ark server",
+		Value: timeout,
 	}
 	passwordFlag = &cli.StringFlag{
 		Name:     passwordFlagName,
@@ -127,7 +138,7 @@ var (
 	}
 	roundIdFlag = &cli.StringFlag{
 		Name:     roundIdFlagName,
-		Usage:    "id of the round to get info",
+		Usage:    "id of the round to get info, its commitment txid works too",
 		Required: true,
 	}
 	beforeDateFlag = &cli.StringFlag{
@@ -231,6 +242,26 @@ var (
 		Name:  withDetailsFlagName,
 		Usage: "return detailed information for each round (like round-info command)",
 		Value: false,
+	}
+	onlyFailedFlag = &cli.BoolFlag{
+		Name:  onlyFailedFlagName,
+		Usage: "return only the failed results",
+		Value: false,
+	}
+	onlyCompletedFlag = &cli.BoolFlag{
+		Name:  onlyCompletedFlagName,
+		Usage: "return only the finalized results",
+		Value: false,
+	}
+	limitFlag = &cli.Int64Flag{
+		Name:  limitFlagName,
+		Usage: "max number of results to return, most recent first (0 means no limit)",
+		Value: 0,
+	}
+	txidFlag = &cli.StringFlag{
+		Name:     txidFlagName,
+		Usage:    "txid of the offchain tx to inspect",
+		Required: true,
 	}
 	sweepConnectorsFlag = &cli.BoolFlag{
 		Name:  sweepConnectorsFlagName,
@@ -363,5 +394,9 @@ var (
 		Name: digestHeaderRequiredFlagName,
 		Usage: "whether clients are required to send a valid digest header " +
 			"(true or false); omit to leave unchanged",
+	}
+	batchTriggerFlag = &cli.StringFlag{
+		Name:  batchTriggerFlagName,
+		Usage: "the formula to trigger batch execution",
 	}
 )

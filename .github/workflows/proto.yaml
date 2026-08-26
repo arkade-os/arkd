@@ -15,11 +15,16 @@ on:
 
 jobs:
   verify-proto:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Buf
         uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
@@ -32,5 +37,8 @@ jobs:
       - name: Check for breaking changes
         if: github.event_name == 'pull_request'
         run: |
-          # Compare against the target branch (usually master)
-          buf breaking --against "https://github.com/${{ github.repository }}.git#branch=${{ github.base_ref }},subdir=api-spec/protobuf"
+          # Compare against the target branch using the local checkout. A remote
+          # https input would make buf run its own unauthenticated git clone,
+          # which cannot read this private repository.
+          git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+          buf breaking --against ".git#ref=origin/${{ github.base_ref }},subdir=api-spec/protobuf"

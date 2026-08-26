@@ -1,7 +1,6 @@
 package wallet
 
 import (
-	"context"
 	"encoding/hex"
 	"strings"
 	"testing"
@@ -69,7 +68,8 @@ func TestSignTransaction(t *testing.T) {
 			b64 := signablePacket(t, owner, tt.leafSigner)
 
 			signed, err := tt.w.SignTransaction(
-				context.Background(), application.SignModeSigner, b64, false, nil)
+				t.Context(), application.SignModeSigner, b64, false, nil,
+			)
 			require.NoError(t, err)
 
 			out, err := psbt.NewFromRawBytes(strings.NewReader(signed), true)
@@ -131,4 +131,51 @@ func leafScript(t *testing.T, owner, signer *btcec.PublicKey) []byte {
 	s, err := closure.Script()
 	require.NoError(t, err)
 	return s
+}
+
+func TestSignTransactionRejectsPartialSigHashTypes(t *testing.T) {
+	owner, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	signer, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	w := &wallet{WalletOptions: WalletOptions{SignerKey: signer}}
+
+	sign := func(t *testing.T, hashType txscript.SigHashType) (string, error) {
+		t.Helper()
+		packet, err := psbt.NewFromRawBytes(
+			strings.NewReader(signablePacket(t, owner, signer.PubKey())), true,
+		)
+		require.NoError(t, err)
+		packet.Inputs[0].SighashType = hashType
+		b64, err := packet.B64Encode()
+		require.NoError(t, err)
+		return w.SignTransaction(t.Context(), application.SignModeSigner, b64, false, nil)
+	}
+
+	t.Run("full-commitment types are signed", func(t *testing.T) {
+		for _, hashType := range []txscript.SigHashType{
+			txscript.SigHashDefault, txscript.SigHashAll,
+		} {
+			signed, err := sign(t, hashType)
+			require.NoError(t, err)
+
+			out, err := psbt.NewFromRawBytes(strings.NewReader(signed), true)
+			require.NoError(t, err)
+			require.Len(t, out.Inputs[0].TaprootScriptSpendSig, 1)
+			require.Equal(t, hashType, out.Inputs[0].TaprootScriptSpendSig[0].SigHash)
+		}
+	})
+
+	t.Run("partial-commitment types are refused", func(t *testing.T) {
+		for _, hashType := range []txscript.SigHashType{
+			txscript.SigHashNone,
+			txscript.SigHashSingle,
+			txscript.SigHashAll | txscript.SigHashAnyOneCanPay,
+			txscript.SigHashNone | txscript.SigHashAnyOneCanPay,
+		} {
+			_, err := sign(t, hashType)
+			require.ErrorContains(t, err, "unsupported sighash type")
+		}
+	})
 }

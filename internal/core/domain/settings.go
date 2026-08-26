@@ -2,8 +2,10 @@ package domain
 
 import (
 	"fmt"
+	"math"
 	"time"
 
+	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
@@ -62,6 +64,7 @@ type Settings struct {
 	BuildVersionHeader            string
 	BuildVersionHeaderRequired    bool
 	DigestHeaderRequired          bool
+	BatchTrigger                  string
 	UpdatedAt                     time.Time
 }
 
@@ -75,6 +78,7 @@ func NewSettings(
 	maxTxWeight, maxOpReturnOutputs uint64,
 	assetTxMaxWeightRatio float32, noteUriPrefix, minVersionAccepted string,
 	minVersionRequired, digestHeaderRequired bool,
+	batchTrigger string,
 ) (*Settings, error) {
 	settings := &Settings{
 		SessionDuration:               time.Duration(sessionDuration) * time.Second,
@@ -101,6 +105,7 @@ func NewSettings(
 		BuildVersionHeader:            minVersionAccepted,
 		BuildVersionHeaderRequired:    minVersionRequired,
 		DigestHeaderRequired:          digestHeaderRequired,
+		BatchTrigger:                  batchTrigger,
 		UpdatedAt:                     time.Now(),
 	}
 	if err := settings.Validate(); err != nil {
@@ -126,6 +131,14 @@ func (s Settings) Validate() error {
 		return fmt.Errorf(
 			"invalid unrolled vtxo min expiry margin (%s), must be at least session duration (%s)",
 			s.UnrolledVtxoMinExpiryMargin, s.SessionDuration,
+		)
+	}
+	// The threshold is unsigned, so a negative input narrows to a value above
+	// MaxInt64 and would otherwise read as an enormous threshold rather than the
+	// value the operator typed.
+	if s.BanThreshold > math.MaxInt64 {
+		return fmt.Errorf(
+			"invalid ban threshold (%d), must not be negative", int64(s.BanThreshold),
 		)
 	}
 	if s.BanThreshold > 0 && s.BanDuration < minBanDuration {
@@ -237,6 +250,9 @@ func (s Settings) Validate() error {
 	if s.BuildVersionHeaderRequired && len(s.BuildVersionHeader) <= 0 {
 		return fmt.Errorf("build version header is required but no version is set")
 	}
+	if _, err := batchtrigger.New(s.BatchTrigger); err != nil {
+		return fmt.Errorf("invalid batch trigger program: %w", err)
+	}
 	return nil
 }
 
@@ -267,6 +283,7 @@ type SettingsUpdate struct {
 	BuildVersionHeader            *string
 	BuildVersionHeaderRequired    *bool
 	DigestHeaderRequired          *bool
+	BatchTrigger                  *string
 }
 
 // Update updates any field of Settings but ScheduledSession and BatchFees and returns a changelog
@@ -372,6 +389,10 @@ func (s *Settings) Update(u SettingsUpdate) ([]string, error) {
 		updated.DigestHeaderRequired = *u.DigestHeaderRequired
 		changelog = append(changelog, "digest_header_required")
 	}
+	if u.BatchTrigger != nil {
+		updated.BatchTrigger = *u.BatchTrigger
+		changelog = append(changelog, "batch_trigger")
+	}
 
 	if err := updated.Validate(); err != nil {
 		return nil, err
@@ -434,4 +455,15 @@ func (s Settings) MaxAssetsPerVtxo() int {
 
 func (s Settings) AllowCSVBlockType() bool {
 	return s.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock
+}
+
+func (s Settings) ShouldStartBatch(ctx batchtrigger.Context) (bool, error) {
+	trigger, err := batchtrigger.New(s.BatchTrigger)
+	if err != nil {
+		return false, err
+	}
+	if trigger == nil {
+		return true, nil
+	}
+	return trigger.Eval(ctx)
 }

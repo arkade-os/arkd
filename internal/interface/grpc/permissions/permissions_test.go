@@ -7,6 +7,7 @@ import (
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/arkade-os/arkd/internal/interface/grpc/permissions"
 	"github.com/stretchr/testify/require"
+	channelzgrpc "google.golang.org/grpc/channelz/grpc_channelz_v1"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -75,6 +76,12 @@ func TestWhitelistedMethods(t *testing.T) {
 	allMethods = append(allMethods, fmt.Sprintf(
 		"/%s/%s", grpchealth.Health_ServiceDesc.ServiceName, "Check",
 	))
+
+	for _, path := range channelzgrpc.Channelz_ServiceDesc.Methods {
+		allMethods = append(allMethods, fmt.Sprintf(
+			"/%s/%s", channelzgrpc.Channelz_ServiceDesc.ServiceName, path.MethodName,
+		))
+	}
 
 	whitelist := permissions.Whitelist()
 	for _, m := range allMethods {
