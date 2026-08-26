@@ -655,6 +655,7 @@ func calculateBoardingInputAmount(ptx *psbt.Packet) uint64 {
 func isBoardingInput(in psbt.PInput) bool {
 	return in.WitnessUtxo != nil && len(in.TaprootLeafScript) > 0
 }
+
 // checkSettlementExpiryGap rejects a vtxo that does not have at least gap of
 // remaining life. A vtxo settled with almost no life left leaves the operator no
 // forfeit-enforcement window, which is the risk class the setting exists to
