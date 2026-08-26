@@ -327,6 +327,7 @@ func TestOffchainTxHandler_WatchesCheckpointScripts(t *testing.T) {
 
 		svc := &service{
 			repoManager:         rm,
+			cache:               testLiveStore{offchainTxs: testOffchainTxStore{}},
 			scanner:             scn,
 			wallet:              wallet,
 			transactionEventsCh: make(chan TransactionEvent, 64),
@@ -361,6 +362,7 @@ func TestOffchainTxHandler_WatchesCheckpointScripts(t *testing.T) {
 
 		svc := &service{
 			repoManager:         rm,
+			cache:               testLiveStore{offchainTxs: testOffchainTxStore{}},
 			scanner:             scn,
 			transactionEventsCh: make(chan TransactionEvent, 64),
 			indexerTxEventsCh:   make(chan TransactionEvent, 64),
