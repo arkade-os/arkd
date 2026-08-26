@@ -175,6 +175,8 @@ func (s *service) Start() error {
 		return fmt.Errorf("failed to get settings: %s", err)
 	}
 
+	logEpochSchedule(settings.Settings)
+
 	forfeitPubkey, err := s.wallet.GetForfeitPubkey(s.ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch forfeit pubkey: %s", err)
@@ -3897,7 +3899,7 @@ func (s *service) propagateBatchStartedEvent(
 		// Legacy clients read BatchExpiry as a relative locktime, so an epoch
 		// batch leaves it carrying the unroll grace and advertises the shared
 		// date separately.
-		ev.BatchExpiryDate = uint32(*sweepParams.BatchExpiry)
+		ev.BatchExpiryDate = int64(*sweepParams.BatchExpiry)
 		ev.UnrollGrace = sweepParams.Expiry.Value
 	}
 	s.eventsCh <- []domain.Event{ev}

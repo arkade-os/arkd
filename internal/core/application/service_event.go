@@ -21,7 +21,10 @@ type BatchStarted struct {
 	// legacy batch. Carried separately from BatchExpiry because an old client
 	// reads that field as a relative locktime and would fail BIP68 encoding on an
 	// absolute timestamp - safe, but opaque.
-	BatchExpiryDate uint32
+	//
+	// int64 to match the wire type, so the value cannot be narrowed on its way to
+	// the proto. AbsoluteLocktime is a uint32, so it always fits.
+	BatchExpiryDate int64
 	// UnrollGrace mirrors BatchExpiry for epoch batches, named for what it is.
 	UnrollGrace uint32
 }

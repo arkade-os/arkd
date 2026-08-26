@@ -72,14 +72,20 @@ func findSweepableOutputs(
 				// blocktimeCache holds block heights under a block-height scheduler,
 				// and an epoch expiry is a unix timestamp. Comparing the two would
 				// schedule the sweep about 1.8 billion blocks out, i.e. never.
-				// Settings validation refuses this pairing; fail loudly if one ever
-				// slips through rather than silently stranding the batch.
+				// Settings validation refuses this pairing, so this is an invariant
+				// violation rather than a condition to handle: say so at error level
+				// and skip this tree. Returning an error here would abort the whole
+				// scan, so one misconfigured batch would stop every other batch from
+				// being swept too.
 				if schedulerUnit == ports.BlockHeight {
-					return false, fmt.Errorf(
+					log.Errorf(
 						"epoch batch %s cannot be swept by a block-height scheduler: "+
-							"epoch expiry requires seconds-based locktimes",
+							"epoch expiry requires seconds-based locktimes; skipping it, "+
+							"its outputs will not be swept while this deployment uses "+
+							"block-based locktimes",
 						g.Root.UnsignedTx.TxID(),
 					)
+					return false, nil
 				}
 				expirationTime = epochMaturity(
 					int64(*sweepParams.BatchExpiry),
@@ -707,6 +713,39 @@ func epochMaturity(epochDate, parentConfirmedAt, grace int64) int64 {
 		return withGrace
 	}
 	return epochDate
+}
+
+// logEpochSchedule reports where the operator sits on the boundary grid at
+// startup.
+//
+// The anchor is only a phase offset, so the factory default is a fixed date in
+// the past and stays correct forever - but an operator reading it back has no
+// way to tell a deliberate anchor from a stale one, and no way to see which
+// dates their batches will actually land on. Print the derived values instead of
+// making them work it out.
+func logEpochSchedule(settings domain.Settings) {
+	if !settings.EpochExpiryEnabled {
+		return
+	}
+
+	sched := settings.EpochSchedule()
+	now := time.Now()
+
+	next := sched.BoundaryAfter(now)
+	if next.IsZero() {
+		log.Errorf(
+			"epoch expiry is enabled but the schedule anchored at %s yields no "+
+				"representable boundary", sched.Anchor.UTC(),
+		)
+		return
+	}
+
+	log.Infof(
+		"epoch expiry enabled: epochs of %s anchored at %s; batches created now "+
+			"expire at %s (in %s); renewals admitted from %s, settles until %s",
+		sched.Length, sched.Anchor.UTC(), next.UTC(), next.Sub(now).Truncate(time.Second),
+		next.Add(-sched.RolloverWindow).UTC(), next.Add(-sched.SettlementCutoff).UTC(),
+	)
 }
 
 // epochUnrollGrace reads the unroll grace a batch actually committed to from its

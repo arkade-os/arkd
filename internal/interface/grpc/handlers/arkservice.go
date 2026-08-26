@@ -538,7 +538,7 @@ func (h *handler) listenToEvents() {
 							Id:              e.Id,
 							IntentIdHashes:  hashes,
 							BatchExpiry:     int64(e.BatchExpiry),
-							BatchExpiryDate: int64(e.BatchExpiryDate),
+							BatchExpiryDate: e.BatchExpiryDate,
 							UnrollGrace:     int64(e.UnrollGrace),
 						},
 					},

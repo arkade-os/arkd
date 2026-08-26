@@ -267,3 +267,23 @@ func TestSettingsUpdateFreezesEpochAnchor(t *testing.T) {
 		require.Contains(t, changelog, "rollover_window")
 	})
 }
+
+// TestBoundaryAfterRefusesToOverflow pins the guard on the boundary
+// multiplication. Reaching it needs an anchor centuries in the past, which a
+// validated schedule cannot have - the point is that wrapping would produce a
+// boundary in the past, the one failure here that would not look wrong.
+func TestBoundaryAfterRefusesToOverflow(t *testing.T) {
+	sched := domain.EpochSchedule{
+		Anchor:         time.Date(1600, 1, 1, 0, 0, 0, 0, time.UTC),
+		Length:         2 * time.Nanosecond,
+		RolloverWindow: time.Hour,
+	}
+
+	got := sched.BoundaryAfter(time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC))
+	require.True(t, got.IsZero(), "an overflowing boundary must not wrap")
+
+	// And the zero value fails closed through the existing range check rather
+	// than becoming a locktime in the past.
+	_, err := sched.ExpiryFor(time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC))
+	require.ErrorContains(t, err, "outside the representable")
+}

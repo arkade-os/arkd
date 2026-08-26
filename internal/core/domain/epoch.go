@@ -76,6 +76,14 @@ func (s EpochSchedule) BoundaryAfter(t time.Time) time.Time {
 		n++
 	}
 
+	// n*Length is bounded by elapsed+Length, and elapsed is a Duration, so this
+	// only bites if Sub saturated - which needs an anchor centuries in the past.
+	// Unreachable with a validated anchor, but silently wrapping into a boundary
+	// in the past is the one failure mode here that would not look wrong.
+	if n > math.MaxInt64/int64(s.Length) {
+		return time.Time{}
+	}
+
 	return s.Anchor.Add(time.Duration(n) * s.Length)
 }
 

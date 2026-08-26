@@ -16,6 +16,12 @@ import (
 // authored against the harness rather than verified by it. Treat the first run
 // as part of review, not as a regression check.
 //
+// A failure here is more likely to be design-level than flaky. These are the
+// only tests that exercise the maturity arithmetic against a real chain: every
+// unit test around it works in seconds, and a unit-mixing bug - block heights
+// compared against unix timestamps - survived all of them precisely because of
+// that. Read a failure as "the scheme may be wrong" before "the test is wrong".
+//
 // To run them on a Windows dev box: nigiri lives in WSL, but Docker Desktop's
 // WSL integration has to be enabled (Settings -> Resources -> WSL Integration)
 // or nigiri cannot reach the daemon. CI has its own nigiri stack and is
