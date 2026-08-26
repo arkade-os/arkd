@@ -196,7 +196,7 @@ func TestEpochBatchSweepsAtTheBoundary(t *testing.T) {
 	alice := setupClientWallet(t)
 	vtxo := faucetOffchain(t, alice, 0.0001)
 
-	waitUntil(t, vtxo.ExpiresAt)
+	sleepUntilBoundary(t, vtxo.ExpiresAt)
 
 	// Regtest MTP is the median of the last 11 block times, so several blocks are
 	// needed before it catches up with wall clock.
@@ -227,7 +227,7 @@ func vtxoIsSwept(t *testing.T, client wallet.Wallet, target clientlib.Vtxo) bool
 	return false
 }
 
-func waitUntil(t *testing.T, deadline time.Time) {
+func sleepUntilBoundary(t *testing.T, deadline time.Time) {
 	t.Helper()
 	if d := time.Until(deadline); d > 0 {
 		t.Logf("waiting %s for the epoch boundary", d.Round(time.Second))
