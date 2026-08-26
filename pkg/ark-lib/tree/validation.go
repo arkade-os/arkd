@@ -2,11 +2,13 @@ package tree
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -39,6 +41,7 @@ const batchOutputIndex = 0
 // - children spend from parent
 // - every control block and taproot output scripts
 // - each tx matches input and output amounts
+// - the batch output is spendable by the tree, ie. it pays to the root cosigners
 func ValidateVtxoTree(
 	vtxoTree *TxTree, commitmentTx *psbt.Packet,
 	signerPubkey *btcec.PublicKey, vtxoTreeExpiry arklib.RelativeLocktime,
@@ -85,6 +88,40 @@ func ValidateVtxoTree(
 	sweepLeaf := txscript.NewBaseTapLeaf(sweepScript)
 	tapTree := txscript.AssembleTaprootScriptTree(sweepLeaf)
 	tapTreeRoot := tapTree.RootNode.TapHash()
+
+	// Verify the batch output pays to the root cosigners
+	rootCosigners, err := txutils.ParseCosignerKeysFromArkPsbt(vtxoTree.Root, 0)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to extract cosigners from root tx %s: %w",
+			vtxoTree.Root.UnsignedTx.TxID(), err,
+		)
+	}
+	rootCosigners = uniqueCosigners(rootCosigners)
+
+	if len(rootCosigners) == 0 {
+		return ErrMissingCosignersPublicKeys
+	}
+
+	rootAggregatedKey, err := AggregateKeys(rootCosigners, tapTreeRoot.CloneBytes())
+	if err != nil {
+		return fmt.Errorf("unable to aggregate root keys: %w", err)
+	}
+
+	expectedBatchOutputScript, err := script.P2TRScript(rootAggregatedKey.FinalKey)
+	if err != nil {
+		return fmt.Errorf("unable to build expected batch output script: %w", err)
+	}
+
+	batchOutputScript := commitmentTx.UnsignedTx.TxOut[batchOutputIndex].PkScript
+	if !bytes.Equal(batchOutputScript, expectedBatchOutputScript) {
+		return errors.INVALID_BATCH_OUTPUT_SCRIPT.
+			New("batch output script does not match the vtxo tree root cosigners").
+			WithMetadata(errors.InvalidBatchOutputScriptMetadata{
+				ExpectedPkScript: hex.EncodeToString(expectedBatchOutputScript),
+				ActualPkScript:   hex.EncodeToString(batchOutputScript),
+			})
+	}
 
 	// Validate the vtxo tree.
 	if err := vtxoTree.Validate(); err != nil {

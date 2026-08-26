@@ -1,6 +1,6 @@
 module github.com/arkade-os/pkg/ark-cli
 
-go 1.26.5
+go 1.26.6
 
 replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.3
 
@@ -10,13 +10,16 @@ replace github.com/arkade-os/arkd/pkg/errors => ../errors
 
 replace github.com/arkade-os/arkd/pkg/client-lib => ../client-lib
 
+replace github.com/arkade-os/arkd/pkg/client-wallet => ../client-wallet
+
 replace github.com/arkade-os/arkd/api-spec => ../../api-spec
 
 require (
 	github.com/arkade-os/arkd/pkg/ark-lib v0.7.2-0.20251020193908-f401a905e83f
 	github.com/arkade-os/arkd/pkg/client-lib v0.0.0-00010101000000-000000000000
+	github.com/arkade-os/arkd/pkg/client-wallet v0.0.0-00010101000000-000000000000
 	github.com/urfave/cli/v2 v2.27.4
-	golang.org/x/term v0.43.0
+	golang.org/x/term v0.44.0
 )
 
 require (
@@ -39,7 +42,6 @@ require (
 	github.com/btcsuite/btcwallet/wtxmgr v1.5.3 // indirect
 	github.com/btcsuite/go-socks v0.0.0-20170105172521-4720035b7bfd // indirect
 	github.com/btcsuite/websocket v0.0.0-20150119174127-31079b680792 // indirect
-	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
@@ -61,9 +63,7 @@ require (
 	github.com/lightningnetwork/lnd/tlv v1.2.6 // indirect
 	github.com/ltcsuite/ltcd/chaincfg/chainhash v1.0.2 // indirect
 	github.com/meshapi/grpc-api-gateway v0.1.0 // indirect
-	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
@@ -71,12 +71,12 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
-	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	google.golang.org/genproto v0.0.0-20240812133136-8ffd90a71988 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect

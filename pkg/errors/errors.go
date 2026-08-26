@@ -510,6 +510,37 @@ var INVALID_TX_FILTER = Code[TxFilterMetadata]{
 	grpccodes.InvalidArgument,
 }
 
+type RoundNotFoundMetadata struct {
+	RoundId string `json:"round_id"`
+}
+
+var ROUND_NOT_FOUND = Code[RoundNotFoundMetadata]{
+	53,
+	"ROUND_NOT_FOUND",
+	grpccodes.NotFound,
+}
+
+type OffchainTxNotFoundMetadata struct {
+	Txid string `json:"txid"`
+}
+
+var OFFCHAIN_TX_NOT_FOUND = Code[OffchainTxNotFoundMetadata]{
+	54,
+	"OFFCHAIN_TX_NOT_FOUND",
+	grpccodes.NotFound,
+}
+
+type InvalidBatchOutputScriptMetadata struct {
+	ExpectedPkScript string `json:"expected_pkscript"`
+	ActualPkScript   string `json:"actual_pkscript"`
+}
+
+var INVALID_BATCH_OUTPUT_SCRIPT = Code[InvalidBatchOutputScriptMetadata]{
+	55,
+	"INVALID_BATCH_OUTPUT_SCRIPT",
+	grpccodes.InvalidArgument,
+}
+
 type RateLimitMetadata struct {
 	CooldownSecs string `json:"cooldown_secs"`
 	Inputs       string `json:"inputs"`
@@ -521,8 +552,10 @@ type InputRateLimitInfoMeta struct {
 	CooldownSecs int64 `json:"cooldown_secs"`
 }
 
+// 53 went to ROUND_NOT_FOUND on master while this branch was open, so this took
+// the next free code rather than shipping two errors on the same wire value.
 var RATE_LIMITED = Code[RateLimitMetadata]{
-	53,
+	56,
 	"RATE_LIMITED",
 	grpccodes.ResourceExhausted,
 }

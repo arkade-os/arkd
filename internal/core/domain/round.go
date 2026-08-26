@@ -256,7 +256,14 @@ func (r *Round) IsStarted() bool {
 }
 
 func (r *Round) IsEnded() bool {
-	return !r.IsFailed() && r.Stage.Code == int(RoundFinalizationStage) && r.Stage.Ended
+	return RoundEnded(r.Stage)
+}
+
+// RoundEnded is IsEnded for callers that hold the stage without the round, like the
+// repositories that project a summary straight from the db. Keeping the rule here is
+// what stops the projection and the aggregate from disagreeing.
+func RoundEnded(stage Stage) bool {
+	return !stage.Failed && stage.Code == int(RoundFinalizationStage) && stage.Ended
 }
 
 func (r *Round) IsFailed() bool {

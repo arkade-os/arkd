@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd
 
-go 1.26.5
+go 1.26.6
 
 replace github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.3
 
@@ -18,12 +18,15 @@ replace github.com/arkade-os/arkd/pkg/errors => ./pkg/errors
 
 replace github.com/arkade-os/arkd/pkg/client-lib => ./pkg/client-lib
 
+replace github.com/arkade-os/arkd/pkg/client-wallet => ./pkg/client-wallet
+
 require (
 	github.com/ThreeDotsLabs/watermill-sql/v3 v3.1.0
 	github.com/arkade-os/arkd/api-spec v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/ark-lib v0.8.1-0.20260210151408-67ee91bbd639
 	github.com/arkade-os/arkd/pkg/arkd-wallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/client-lib v0.0.0-00010101000000-000000000000
+	github.com/arkade-os/arkd/pkg/client-wallet v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/errors v0.0.0-00010101000000-000000000000
 	github.com/arkade-os/arkd/pkg/kvdb v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/arkade-os/arkd/pkg/macaroons v0.0.0-00010101000000-000000000000
@@ -136,6 +139,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/miekg/dns v1.1.61 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
+	github.com/moby/sys/user v0.4.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
@@ -175,11 +179,11 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/mod v0.35.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/term v0.43.0 // indirect
+	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/term v0.44.0 // indirect
 	golang.org/x/time v0.8.0 // indirect
-	golang.org/x/tools v0.44.0 // indirect
+	golang.org/x/tools v0.47.0 // indirect
 	google.golang.org/genproto v0.0.0-20241118233622-e639e219e697 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
 	gopkg.in/errgo.v1 v1.0.1 // indirect
@@ -224,11 +228,11 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
-	golang.org/x/net v0.55.0
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/net v0.56.0
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

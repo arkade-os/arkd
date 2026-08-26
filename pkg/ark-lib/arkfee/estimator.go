@@ -2,9 +2,11 @@ package arkfee
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee/celenv"
+	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/google/cel-go/cel"
 )
 
@@ -25,11 +27,19 @@ func (p *program) Eval(args map[string]any) (FeeAmount, error) {
 	if err != nil {
 		return 0, err
 	}
-	native, err := result.ConvertToNative(reflect.TypeOf(float64(0)))
+	native, err := result.ConvertToNative(reflect.TypeFor[float64]())
 	if err != nil {
 		return 0, err
 	}
-	return FeeAmount(native.(float64)), nil
+	fee := native.(float64)
+	// A program is free to compute any double, but only a finite, non-negative
+	// value that fits in an int64 is a usable fee: anything else may break ToSatoshis()
+	if math.IsNaN(fee) || math.IsInf(fee, 0) || fee < 0 || fee >= float64(math.MaxInt64) {
+		return 0, errors.INTENT_FEE_EVALUATION_FAILED.New(
+			"program %q returned invalid fee amount %v", p.txt, fee,
+		)
+	}
+	return FeeAmount(fee), nil
 }
 
 type Estimator struct {

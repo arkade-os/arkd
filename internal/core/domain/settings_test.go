@@ -436,6 +436,23 @@ func testNewSettings(t *testing.T) {
 			require.Nil(t, settings)
 		})
 
+		t.Run("negative ban threshold", func(t *testing.T) {
+			settings, err := domain.NewSettings(
+				sessionDuration, unrolledVtxoMinExpiryMargin, -1, banDuration,
+				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
+				batchMinParticipants, batchMaxParticipants,
+				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
+				unilateralExitDelay, pubUnilateralExitDelay, checkpointExitDelay,
+				boardingExitDelay, vtxoTreeExpiry,
+				maxTxWeight, maxOpReturnOutputs, assetTxMaxWeightRatio, noteUriPrefix,
+				buildVersionHeader, buildVersionHeaderRequired, digestHeaderRequired,
+				batchTrigger,
+				true, 0.28, 3600,
+			)
+			require.ErrorContains(t, err, "invalid ban threshold")
+			require.Nil(t, settings)
+		})
+
 		t.Run("required version without header", func(t *testing.T) {
 			settings, err := domain.NewSettings(
 				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,

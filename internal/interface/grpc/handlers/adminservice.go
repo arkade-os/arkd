@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/interface/grpc/interceptors"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/arkade-os/arkd/pkg/macaroons"
 	"github.com/go-macaroon-bakery/macaroonpb"
 	"google.golang.org/grpc/codes"
@@ -57,6 +59,18 @@ func NewAdminHandler(
 	}
 }
 
+// adminError keeps this file's default of reporting failures as Internal, but
+// lets a structured error through untouched so the error interceptor can map it
+// to its own grpc code. Without it a missing batch or offchain tx would be
+// reported as a server fault rather than a 404.
+func adminError(err error) error {
+	var structured arkerrors.Error
+	if errors.As(err, &structured) {
+		return err
+	}
+	return status.Errorf(codes.Internal, "%s", err.Error())
+}
+
 func (a *adminHandler) GetRoundDetails(
 	ctx context.Context, req *arkv1.GetRoundDetailsRequest,
 ) (*arkv1.GetRoundDetailsResponse, error) {
@@ -67,12 +81,12 @@ func (a *adminHandler) GetRoundDetails(
 
 	details, err := a.adminService.GetRoundDetails(ctx, id)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+		return nil, adminError(err)
 	}
 
 	return &arkv1.GetRoundDetailsResponse{
 		RoundId:          details.RoundId,
-		CommitmentTxid:   details.TxId,
+		CommitmentTxid:   details.CommitmentTxid,
 		ForfeitedAmount:  convertSatsToBTCStr(details.ForfeitedAmount),
 		TotalVtxosAmount: convertSatsToBTCStr(details.TotalVtxosAmount),
 		TotalExitAmount:  convertSatsToBTCStr(details.TotalExitAmount),
@@ -82,7 +96,29 @@ func (a *adminHandler) GetRoundDetails(
 		ExitAddresses:    details.ExitAddresses,
 		StartedAt:        details.StartedAt,
 		EndedAt:          details.EndedAt,
+		Stage:            details.Stage,
+		Ended:            details.Ended,
+		Failed:           details.Failed,
+		Swept:            details.Swept,
+		FailReason:       details.FailReason,
+		TotalIntents:     details.TotalIntents,
 	}, nil
+}
+
+func (a *adminHandler) GetRoundIntents(
+	ctx context.Context, req *arkv1.GetRoundIntentsRequest,
+) (*arkv1.GetRoundIntentsResponse, error) {
+	id := req.GetRoundId()
+	if len(id) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing round id")
+	}
+
+	intents, err := a.adminService.GetRoundIntents(ctx, id)
+	if err != nil {
+		return nil, adminError(err)
+	}
+
+	return &arkv1.GetRoundIntentsResponse{Intents: intentsInfo(intents).toProto()}, nil
 }
 
 func (a *adminHandler) GetRounds(
@@ -92,6 +128,8 @@ func (a *adminHandler) GetRounds(
 	startBefore := req.GetBefore()
 	withFailed := req.GetWithFailed()
 	withCompleted := req.GetWithCompleted()
+	onlyFailed := req.GetOnlyFailed()
+	limit := req.GetLimit()
 
 	if startAfter < 0 {
 		return nil, status.Error(codes.InvalidArgument, "invalid after (must be >= 0)")
@@ -105,12 +143,106 @@ func (a *adminHandler) GetRounds(
 		return nil, status.Error(codes.InvalidArgument, "invalid range")
 	}
 
-	rounds, err := a.adminService.GetRounds(ctx, startAfter, startBefore, withFailed, withCompleted)
+	if limit < 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid limit (must be >= 0)")
+	}
+
+	summaries, err := a.adminService.GetRounds(
+		ctx, startAfter, startBefore, withFailed, withCompleted, onlyFailed, limit,
+	)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	return &arkv1.GetRoundsResponse{Rounds: rounds}, nil
+	// rounds is deprecated but still populated: dropping it would silently break
+	// clients reading the pre-summaries response.
+	roundIds := make([]string, 0, len(summaries))
+	for _, summary := range summaries {
+		roundIds = append(roundIds, summary.RoundId)
+	}
+
+	return &arkv1.GetRoundsResponse{
+		Rounds:    roundIds,
+		Summaries: roundSummaries(summaries).toProto(),
+	}, nil
+}
+
+func (a *adminHandler) GetOffchainTxs(
+	ctx context.Context, req *arkv1.GetOffchainTxsRequest,
+) (*arkv1.GetOffchainTxsResponse, error) {
+	after := req.GetAfter()
+	before := req.GetBefore()
+	limit := req.GetLimit()
+
+	if after < 0 || before < 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid range (must be >= 0)")
+	}
+
+	if before > 0 && after >= before {
+		return nil, status.Error(codes.InvalidArgument, "invalid range")
+	}
+
+	if limit < 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid limit (must be >= 0)")
+	}
+
+	if req.GetOnlyFailed() && req.GetOnlyCompleted() {
+		return nil, status.Error(
+			codes.InvalidArgument, "only_failed and only_completed are mutually exclusive",
+		)
+	}
+
+	txs, err := a.adminService.GetOffchainTxs(
+		ctx, after, before, req.GetOnlyFailed(), req.GetOnlyCompleted(), limit,
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.GetOffchainTxsResponse{Txs: offchainTxsInfo(txs).toProto()}, nil
+}
+
+func (a *adminHandler) GetOffchainTxDetails(
+	ctx context.Context, req *arkv1.GetOffchainTxDetailsRequest,
+) (*arkv1.GetOffchainTxDetailsResponse, error) {
+	txid := req.GetTxid()
+	if len(txid) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing txid")
+	}
+
+	tx, err := a.adminService.GetOffchainTxDetails(ctx, txid)
+	if err != nil {
+		return nil, adminError(err)
+	}
+
+	return &arkv1.GetOffchainTxDetailsResponse{
+		Txid:               tx.ArkTxid,
+		Stage:              domain.OffchainTxStage(tx.Stage.Code).String(),
+		Ended:              tx.IsFinalized(),
+		Failed:             tx.IsFailed(),
+		FailReason:         tx.FailReason,
+		StartedAt:          tx.StartingTimestamp,
+		EndedAt:            tx.EndingTimestamp,
+		ExpiresAt:          tx.ExpiryTimestamp,
+		ArkTx:              tx.ArkTx,
+		RootCommitmentTxid: tx.RootCommitmentTxId,
+		CheckpointTxs:      tx.CheckpointTxs,
+		CommitmentTxids:    tx.CommitmentTxids,
+	}, nil
+}
+
+func (a *adminHandler) GetFeeRate(
+	ctx context.Context, _ *arkv1.GetFeeRateRequest,
+) (*arkv1.GetFeeRateResponse, error) {
+	satPerKvByte, err := a.adminService.GetFeeRate(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.GetFeeRateResponse{
+		SatPerKvbyte: satPerKvByte,
+		SatPerVbyte:  float64(satPerKvByte) / 1000,
+	}, nil
 }
 
 func (a *adminHandler) GetExpiringLiquidity(
@@ -150,30 +282,26 @@ func (a *adminHandler) GetRecoverableLiquidity(
 }
 
 func (a *adminHandler) GetScheduledSweep(
-	ctx context.Context, _ *arkv1.GetScheduledSweepRequest,
+	ctx context.Context, req *arkv1.GetScheduledSweepRequest,
 ) (*arkv1.GetScheduledSweepResponse, error) {
-	scheduledSweeps, err := a.adminService.GetScheduledSweeps(ctx)
+	limit := req.GetLimit()
+	if limit < 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid limit (must be >= 0)")
+	}
+
+	scheduledSweeps, err := a.adminService.GetScheduledSweeps(ctx, limit)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	sweeps := make([]*arkv1.ScheduledSweep, 0)
+	sweeps := make([]*arkv1.ScheduledSweep, 0, len(scheduledSweeps))
 	for _, sweep := range scheduledSweeps {
-		outputs := make([]*arkv1.SweepableOutput, 0)
-
-		for _, output := range sweep.SweepableOutputs {
-			outputs = append(outputs, &arkv1.SweepableOutput{
-				Txid:        output.TxInput.Txid,
-				Vout:        output.TxInput.Index,
-				ScheduledAt: output.ScheduledAt,
-				Amount:      convertSatsToBTCStr(output.TxInput.Value),
-			})
-		}
-
 		sweeps = append(sweeps, &arkv1.ScheduledSweep{
-			RoundId:   sweep.RoundId,
-			Confirmed: sweep.Confirmed,
-			Outputs:   outputs,
+			RoundId:        sweep.RoundId,
+			CommitmentTxid: sweep.CommitmentTxid,
+			SweepAt:        sweep.SweepAt,
+			TotalAmount:    sweep.TotalAmount,
+			VtxoCount:      sweep.VtxoCount,
 		})
 	}
 
@@ -425,9 +553,15 @@ func (a *adminHandler) GetConvictionsByRound(
 func (a *adminHandler) GetActiveScriptConvictions(
 	ctx context.Context, req *arkv1.GetActiveScriptConvictionsRequest,
 ) (*arkv1.GetActiveScriptConvictionsResponse, error) {
-	script := req.GetScript()
+	script := strings.ToLower(req.GetScript())
+
 	if len(script) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "missing script")
+	}
+
+	if err := parseScript(script); err != nil {
+		return nil, arkerrors.INVALID_PKSCRIPT.Wrap(err).
+			WithMetadata(arkerrors.InvalidPkScriptMetadata{Script: req.GetScript()})
 	}
 
 	conviction, err := a.adminService.GetActiveScriptConvictions(ctx, script)
@@ -469,9 +603,15 @@ func (a *adminHandler) PardonConviction(
 func (a *adminHandler) BanScript(
 	ctx context.Context, req *arkv1.BanScriptRequest,
 ) (*arkv1.BanScriptResponse, error) {
-	script := req.GetScript()
-	if len(script) == 0 {
+	script := strings.ToLower(req.GetScript())
+
+	if len(req.GetScript()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "missing script")
+	}
+
+	if err := parseScript(script); err != nil {
+		return nil, arkerrors.INVALID_PKSCRIPT.Wrap(err).
+			WithMetadata(arkerrors.InvalidPkScriptMetadata{Script: req.GetScript()})
 	}
 
 	banDuration := req.GetBanDuration()
@@ -874,6 +1014,11 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		rateLimitMaxCooldownSecs                         *int64
 	)
 	if settings.BanThreshold != nil {
+		if settings.GetBanThreshold() < 0 {
+			return nil, fmt.Errorf(
+				"invalid ban threshold (%d), must not be negative", settings.GetBanThreshold(),
+			)
+		}
 		t := uint64(settings.GetBanThreshold())
 		banThreshold = &t
 	}
@@ -882,6 +1027,12 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		maxTxWeight = &t
 	}
 	if settings.MaxOpReturnOutputs != nil {
+		if settings.GetMaxOpReturnOutputs() < 0 {
+			return nil, fmt.Errorf(
+				"invalid max op return outputs (%d), must not be negative",
+				settings.GetMaxOpReturnOutputs(),
+			)
+		}
 		t := uint64(settings.GetMaxOpReturnOutputs())
 		maxOpReturnOutputs = &t
 	}
@@ -946,16 +1097,37 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		rateLimitMaxCooldownSecs = &t
 	}
 
+	unilateralExitDelay, err := parseLocktime(settings.UnilateralExitDelay)
+	if err != nil {
+		return nil, err
+	}
+	publicUnilateralExitDelay, err := parseLocktime(settings.PublicUnilateralExitDelay)
+	if err != nil {
+		return nil, err
+	}
+	checkpointExitDelay, err := parseLocktime(settings.CheckpointExitDelay)
+	if err != nil {
+		return nil, err
+	}
+	boardingExitDelay, err := parseLocktime(settings.BoardingExitDelay)
+	if err != nil {
+		return nil, err
+	}
+	vtxoTreeExpiry, err := parseLocktime(settings.VtxoTreeExpiry)
+	if err != nil {
+		return nil, err
+	}
+
 	return &domain.SettingsUpdate{
 		SessionDuration:               parseDuration(settings.SessionDuration),
 		UnrolledVtxoMinExpiryMargin:   parseDuration(settings.UnrolledVtxoMinExpiryMargin),
 		BanThreshold:                  banThreshold,
 		BanDuration:                   parseDuration(settings.BanDuration),
-		UnilateralExitDelay:           parseLocktime(settings.UnilateralExitDelay),
-		PublicUnilateralExitDelay:     parseLocktime(settings.PublicUnilateralExitDelay),
-		CheckpointExitDelay:           parseLocktime(settings.CheckpointExitDelay),
-		BoardingExitDelay:             parseLocktime(settings.BoardingExitDelay),
-		VtxoTreeExpiry:                parseLocktime(settings.VtxoTreeExpiry),
+		UnilateralExitDelay:           unilateralExitDelay,
+		PublicUnilateralExitDelay:     publicUnilateralExitDelay,
+		CheckpointExitDelay:           checkpointExitDelay,
+		BoardingExitDelay:             boardingExitDelay,
+		VtxoTreeExpiry:                vtxoTreeExpiry,
 		RoundMinParticipantsCount:     batchMinParticipants,
 		RoundMaxParticipantsCount:     batchMaxParticipants,
 		VtxoMinAmount:                 vtxoMinAmount,
@@ -991,12 +1163,19 @@ func formatDuration(duration time.Duration) *int64 {
 	return &t
 }
 
-func parseLocktime(delay *int64) *arklib.RelativeLocktime {
+// parseLocktime rejects out of range values because narrowing them to uint32
+// inverts their meaning: -1 becomes a ~136 years delay, 2^32 becomes no delay.
+func parseLocktime(delay *int64) (*arklib.RelativeLocktime, error) {
 	if delay == nil {
-		return nil
+		return nil, nil
+	}
+	if *delay < 0 || *delay > math.MaxUint32 {
+		return nil, fmt.Errorf(
+			"invalid locktime (%d), must be between 0 and %d", *delay, uint32(math.MaxUint32),
+		)
 	}
 	t, _ := arklib.ParseRelativeLocktime(uint32(*delay))
-	return &t
+	return &t, nil
 }
 
 func formatLocktime(delay arklib.RelativeLocktime) *int64 {

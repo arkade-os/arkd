@@ -140,6 +140,14 @@ func (s Settings) Validate() error {
 			s.UnrolledVtxoMinExpiryMargin, s.SessionDuration,
 		)
 	}
+	// The threshold is unsigned, so a negative input narrows to a value above
+	// MaxInt64 and would otherwise read as an enormous threshold rather than the
+	// value the operator typed.
+	if s.BanThreshold > math.MaxInt64 {
+		return fmt.Errorf(
+			"invalid ban threshold (%d), must not be negative", int64(s.BanThreshold),
+		)
+	}
 	if s.BanThreshold > 0 && s.BanDuration < minBanDuration {
 		return fmt.Errorf(
 			"invalid ban duration (%s), must be at least %s", s.BanDuration, minBanDuration,

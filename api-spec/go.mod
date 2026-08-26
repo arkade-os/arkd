@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd/api-spec
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/meshapi/grpc-api-gateway v0.1.0
@@ -10,9 +10,9 @@ require (
 
 require (
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	google.golang.org/genproto v0.0.0-20231106174013-bbf56f31fb17 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect

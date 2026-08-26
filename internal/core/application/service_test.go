@@ -2,6 +2,8 @@ package application
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"fmt"
 	"testing"
 	"time"
@@ -10,16 +12,46 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
+	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 const testDust uint64 = 546
+
+func TestEstimateIntentFeeRejectsNegativeBoardingAmount(t *testing.T) {
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(wire.NewTxIn(&wire.OutPoint{}, nil, nil))
+	boardingOutpoint := wire.OutPoint{Index: 1}
+	tx.AddTxIn(wire.NewTxIn(&boardingOutpoint, nil, nil))
+	tx.AddTxOut(wire.NewTxOut(0, []byte{txscript.OP_RETURN}))
+
+	packet, err := psbt.NewFromUnsignedTx(tx)
+	require.NoError(t, err)
+	packet.Inputs[1].WitnessUtxo = wire.NewTxOut(-1, nil)
+
+	ctx := t.Context()
+	vtxos := &mockedVtxoRepo{}
+	vtxos.On("GetVtxos", ctx, []domain.Outpoint{{
+		Txid: boardingOutpoint.Hash.String(), VOut: boardingOutpoint.Index,
+	}}).Return(nil, nil)
+	repos := &mockedRepoManager{}
+	repos.On("Vtxos").Return(vtxos)
+
+	svc := &service{repoManager: repos}
+	_, appErr := svc.EstimateIntentFee(
+		ctx, intent.Proof{Packet: *packet}, intent.EstimateIntentFeeMessage{},
+	)
+	require.ErrorContains(t, appErr, "invalid amount for input 1: -1")
+}
 
 func TestNextScheduledSession(t *testing.T) {
 	scheduledSessionStartTime := parseTime(t, "2023-10-10 13:00:00")
@@ -746,6 +778,66 @@ func TestCollectTriggerContext(t *testing.T) {
 	}
 }
 
+func TestRegisterIntent(t *testing.T) {
+	// the receiver pubkey of an offchain output is read by slicing the pkscript
+	// at [2:], non-taproot scripts must be rejected before that.
+	t.Run("reject non-taproot offchain output", func(t *testing.T) {
+		p2wpkhScript, err := txscript.NewScriptBuilder().
+			AddOp(txscript.OP_0).
+			AddData(make([]byte, 20)).
+			Script()
+		require.NoError(t, err)
+
+		tests := []struct {
+			description string
+			pkScript    []byte
+		}{
+			{"script shorter than 2 bytes", []byte{txscript.OP_TRUE}},
+			{"p2wpkh script", p2wpkhScript},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.description, func(t *testing.T) {
+				ctx := t.Context()
+				message := intent.RegisterMessage{
+					BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
+				}
+				encodedMessage, err := message.Encode()
+				require.NoError(t, err)
+
+				proof := testNoteIntentProof(t, encodedMessage, &wire.TxOut{
+					Value: int64(testDust) * 2, PkScript: tt.pkScript,
+				})
+
+				vtxos := &mockedVtxoRepo{}
+				vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return(nil, nil)
+				repos := &mockedRepoManager{}
+				repos.On("Vtxos").Return(vtxos)
+
+				svc := &service{
+					repoManager: repos,
+					cache: testLiveStore{
+						settings: testSettingsStore{settings: &ports.Settings{
+							Settings: domain.Settings{
+								VtxoMaxAmount: -1,
+								UtxoMaxAmount: -1,
+								MaxTxWeight:   400_000,
+							},
+							DustAmount:   testDust,
+							SignerPubkey: testPubkey(t),
+						}},
+						offchainTxs: testOffchainTxStore{},
+					},
+				}
+
+				_, appErr := svc.RegisterIntent(ctx, *proof, message)
+				require.Error(t, appErr)
+				require.Equal(t, errors.INVALID_PKSCRIPT.Code, appErr.Code())
+			})
+		}
+	})
+}
+
 func parseTime(t *testing.T, value string) time.Time {
 	tm, err := time.ParseInLocation(time.DateTime, value, time.UTC)
 	require.NoError(t, err)
@@ -795,9 +887,62 @@ func testExtensionScript(t *testing.T) []byte {
 	return s
 }
 
+// testNoteIntentProof builds an intent proof whose only ownership input is a
+// note closure, ie. a hash-lock requiring the preimage instead of a signature.
+func testNoteIntentProof(t *testing.T, message string, out *wire.TxOut) *intent.Proof {
+	t.Helper()
+
+	preimage := make([]byte, 32)
+	_, err := rand.Read(preimage)
+	require.NoError(t, err)
+
+	noteClosure := &note.NoteClosure{PreimageHash: sha256.Sum256(preimage)}
+	noteScript, err := noteClosure.Script()
+	require.NoError(t, err)
+
+	leaf := txscript.NewBaseTapLeaf(noteScript)
+	tapTree := txscript.AssembleTaprootScriptTree(leaf)
+	root := tapTree.RootNode.TapHash()
+
+	unspendableKey := script.UnspendableKey()
+	p2trScript, err := script.P2TRScript(
+		txscript.ComputeTaprootOutputKey(unspendableKey, root[:]),
+	)
+	require.NoError(t, err)
+
+	leafIndex := tapTree.LeafProofIndex[leaf.TapHash()]
+	cb := tapTree.LeafMerkleProofs[leafIndex].ToControlBlock(unspendableKey)
+	controlBlock, err := cb.ToBytes()
+	require.NoError(t, err)
+
+	var prevHash [32]byte
+	_, err = rand.Read(prevHash[:])
+	require.NoError(t, err)
+
+	proof, err := intent.New(message, []intent.Input{{
+		OutPoint:    &wire.OutPoint{Hash: prevHash, Index: 0},
+		WitnessUtxo: &wire.TxOut{Value: out.Value, PkScript: p2trScript},
+	}}, []*wire.TxOut{out})
+	require.NoError(t, err)
+
+	leafScript := []*psbt.TaprootTapLeafScript{{
+		ControlBlock: controlBlock,
+		Script:       noteScript,
+		LeafVersion:  txscript.BaseLeafVersion,
+	}}
+	// index 0 is the toSpend input, index 1 is the ownership input
+	proof.Inputs[0].TaprootLeafScript = leafScript
+	proof.Inputs[1].TaprootLeafScript = leafScript
+
+	require.NoError(t, txutils.SetArkPsbtField(
+		&proof.Packet, 1, txutils.ConditionWitnessField, wire.TxWitness{preimage},
+	))
+
+	return proof
+}
+
 // The stubs below embed the port interfaces so they satisfy them with nil
-// method sets, overriding only what collectTriggerContext actually calls:
-// wallet.FeeRate and cache.Intents().ViewAll.
+// method sets, overriding only the methods the tests actually call.
 
 type testWallet struct {
 	ports.WalletService
@@ -811,10 +956,37 @@ func (w testWallet) FeeRate(context.Context) (uint64, error) {
 
 type testLiveStore struct {
 	ports.LiveStore
-	intents ports.IntentStore
+	intents     ports.IntentStore
+	settings    ports.SettingsStore
+	offchainTxs ports.OffChainTxStore
 }
 
 func (s testLiveStore) Intents() ports.IntentStore { return s.intents }
+
+func (s testLiveStore) Settings() ports.SettingsStore { return s.settings }
+
+func (s testLiveStore) OffchainTxs() ports.OffChainTxStore { return s.offchainTxs }
+
+type testSettingsStore struct {
+	ports.SettingsStore
+	settings *ports.Settings
+}
+
+func (s testSettingsStore) Get(context.Context) (*ports.Settings, error) {
+	return s.settings, nil
+}
+
+type testOffchainTxStore struct {
+	ports.OffChainTxStore
+}
+
+func (s testOffchainTxStore) Remove(context.Context, string) error { return nil }
+
+func (s testOffchainTxStore) Includes(
+	context.Context, domain.Outpoint,
+) (bool, error) {
+	return false, nil
+}
 
 type testIntentStore struct {
 	ports.IntentStore
