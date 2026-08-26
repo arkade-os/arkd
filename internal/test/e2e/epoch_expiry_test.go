@@ -12,10 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// NOTE: these tests have never been executed. nigiri was not available in the
-// environment they were written in, so every assertion below is authored against
-// the harness rather than verified by it. Treat the first run as part of review,
-// not as a regression check.
+// NOTE: these tests have never been executed, so every assertion below is
+// authored against the harness rather than verified by it. Treat the first run
+// as part of review, not as a regression check.
+//
+// To run them on a Windows dev box: nigiri lives in WSL, but Docker Desktop's
+// WSL integration has to be enabled (Settings -> Resources -> WSL Integration)
+// or nigiri cannot reach the daemon. CI has its own nigiri stack and is
+// unaffected.
 //
 // Epoch expiry is deliberately timestamp-based - a calendar epoch wants a
 // calendar unit - and settings validation refuses to enable it on a block-height
