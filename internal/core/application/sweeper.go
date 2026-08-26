@@ -408,12 +408,60 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 		}
 		s.locker.Unlock()
 
+		// Release the dedup slot before running: scheduledTasks guards against
+		// registering the same task twice, so holding the id past execution would
+		// block every later schedule for this tree, including our own retries.
 		s.removeTask(task.id)
 
-		if err := task.execute(); err != nil {
-			log.WithError(err).Errorf("failed to execute sweep of tx %s", task.id)
-		}
+		s.executeWithRetry(task)
 	})
+}
+
+var (
+	// sweepRetryDelay is how long to wait before re-attempting a sweep whose
+	// execution failed. A failure is usually a mempool conflict or a transient
+	// node error, neither of which clears in milliseconds.
+	sweepRetryDelay = time.Minute
+	// sweepRetryAttempts bounds the in-process retries. Beyond this the sweep is
+	// left for the next process start, which rebuilds tasks from the repository.
+	sweepRetryAttempts = 10
+)
+
+// executeWithRetry runs a sweep task, re-attempting it on failure. Without this a
+// single failed broadcast left the batch outputs unswept until an operator
+// restart, which is the window an attacker racing the sweep needs.
+func (s *sweeper) executeWithRetry(task sweeperTask) {
+	ctx := s.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	err := task.execute()
+	if err == nil {
+		return
+	}
+
+	for attempt := 1; attempt <= sweepRetryAttempts; attempt++ {
+		log.WithError(err).Warnf(
+			"sweeper: sweep of tx %s failed, retrying in %s (attempt %d/%d)",
+			task.id, sweepRetryDelay, attempt, sweepRetryAttempts,
+		)
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(sweepRetryDelay):
+		}
+
+		if err = task.execute(); err == nil {
+			return
+		}
+	}
+
+	log.WithError(err).Errorf(
+		"sweeper: giving up on sweep of tx %s after %d attempts, outputs remain unswept "+
+			"until the next restart", task.id, sweepRetryAttempts,
+	)
 }
 
 // createBatchSweepTask returns a function passed as handler in the scheduler

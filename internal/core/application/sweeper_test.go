@@ -685,3 +685,126 @@ func newTestSweeper(t *testing.T) (
 	s := newSweeper(wallet, repoManager, builder, scheduler)
 	return wallet, vtxoRepo, markerRepo, builder, s
 }
+
+// controllableScheduler captures the scheduled closure so a test can fire it on
+// demand. mockScheduler above is a no-op and cannot drive scheduleTask.
+type controllableScheduler struct {
+	fn func()
+}
+
+func (s *controllableScheduler) Start()               {}
+func (s *controllableScheduler) Stop()                {}
+func (s *controllableScheduler) Unit() ports.TimeUnit { return ports.UnixTime }
+func (s *controllableScheduler) AfterNow(expiry int64) bool {
+	return true // always "in the future" so scheduleTask registers rather than running inline
+}
+func (s *controllableScheduler) ScheduleTaskOnce(at int64, task func()) error {
+	s.fn = task
+	return nil
+}
+func (s *controllableScheduler) fire() {
+	if s.fn != nil {
+		s.fn()
+	}
+}
+
+// newSchedulableSweeper builds a sweeper wired to a scheduler the test controls.
+// newTestSweeper above uses mockScheduler, whose ScheduleTaskOnce is a no-op.
+func newSchedulableSweeper(sched ports.SchedulerService) *sweeper {
+	s := newSweeper(&mockWalletService{}, &mockRepoManager{}, &mockTxBuilder{}, sched)
+	s.ctx = context.Background()
+	return s
+}
+
+// TestScheduleTaskRetriesFailedExecution pins that a sweep whose broadcast fails
+// is re-attempted rather than silently dropped. Before this, a single mempool
+// conflict left the batch unswept until an operator restart.
+func TestScheduleTaskRetriesFailedExecution(t *testing.T) {
+	prevDelay, prevAttempts := sweepRetryDelay, sweepRetryAttempts
+	sweepRetryDelay, sweepRetryAttempts = time.Millisecond, 3
+	t.Cleanup(func() { sweepRetryDelay, sweepRetryAttempts = prevDelay, prevAttempts })
+
+	sched := &controllableScheduler{}
+	s := newSchedulableSweeper(sched)
+
+	calls := 0
+	require.NoError(t, s.scheduleTask(sweeperTask{
+		id: "task-fail",
+		at: time.Now().Add(time.Hour).Unix(),
+		execute: func() error {
+			calls++
+			return fmt.Errorf("broadcast rejected")
+		},
+	}))
+
+	sched.fire()
+
+	// one initial attempt plus sweepRetryAttempts retries
+	require.Equal(t, 1+3, calls, "a failed sweep must be retried, not dropped")
+}
+
+// TestScheduleTaskStopsRetryingOnSuccess pins that a retry that succeeds ends the
+// loop instead of burning the remaining attempts.
+func TestScheduleTaskStopsRetryingOnSuccess(t *testing.T) {
+	prevDelay, prevAttempts := sweepRetryDelay, sweepRetryAttempts
+	sweepRetryDelay, sweepRetryAttempts = time.Millisecond, 5
+	t.Cleanup(func() { sweepRetryDelay, sweepRetryAttempts = prevDelay, prevAttempts })
+
+	sched := &controllableScheduler{}
+	s := newSchedulableSweeper(sched)
+
+	calls := 0
+	require.NoError(t, s.scheduleTask(sweeperTask{
+		id: "task-eventually-ok",
+		at: time.Now().Add(time.Hour).Unix(),
+		execute: func() error {
+			calls++
+			if calls < 3 {
+				return fmt.Errorf("still conflicting")
+			}
+			return nil
+		},
+	}))
+
+	sched.fire()
+	require.Equal(t, 3, calls, "retrying must stop as soon as the sweep succeeds")
+}
+
+// TestScheduleTaskFreesDedupSlot pins that the id is released once the task has
+// run, so a later schedule for the same tree is accepted. scheduledTasks is a
+// dedup guard: holding the id past execution would block re-scheduling entirely.
+func TestScheduleTaskFreesDedupSlot(t *testing.T) {
+	prevDelay, prevAttempts := sweepRetryDelay, sweepRetryAttempts
+	sweepRetryDelay, sweepRetryAttempts = time.Millisecond, 1
+	t.Cleanup(func() { sweepRetryDelay, sweepRetryAttempts = prevDelay, prevAttempts })
+
+	sched := &controllableScheduler{}
+	s := newSchedulableSweeper(sched)
+
+	at := time.Now().Add(time.Hour).Unix()
+	failing := sweeperTask{
+		id: "task-slot", at: at,
+		execute: func() error { return fmt.Errorf("broadcast rejected") },
+	}
+	require.NoError(t, s.scheduleTask(failing))
+
+	s.locker.Lock()
+	_, registered := s.scheduledTasks["task-slot"]
+	s.locker.Unlock()
+	require.True(t, registered, "task must occupy the dedup slot while pending")
+
+	sched.fire()
+
+	s.locker.Lock()
+	_, stillHeld := s.scheduledTasks["task-slot"]
+	s.locker.Unlock()
+	require.False(t, stillHeld, "dedup slot must be released so the id can be re-scheduled")
+
+	second := 0
+	require.NoError(t, s.scheduleTask(sweeperTask{
+		id: "task-slot", at: at,
+		execute: func() error { second++; return nil },
+	}))
+	sched.fire()
+	require.Equal(t, 1, second, "a fresh schedule for the same id must be accepted")
+}
