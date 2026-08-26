@@ -1,7 +1,6 @@
 package e2e_test
 
 import (
-	"flag"
 	"strconv"
 	"strings"
 	"testing"
@@ -32,8 +31,14 @@ import (
 // deployment. So these tests cannot mine their way to a boundary the way a CSV
 // test can; they wait real seconds. The epoch parameters are therefore set as
 // small as the validation constraints allow (0 < cutoff < rollover < length).
-
-var runEpoch = flag.Bool("epoch", false, "run the epoch expiry e2e tests")
+//
+// They run as part of the normal integration suite rather than behind a flag.
+// They were gated behind -epoch at first, which make integrationtest never
+// passes, so they would have been skipped in CI while looking present - and the
+// boundary sweep test below is the only one that exercises the path where two
+// scheduling bugs were found by reading rather than by testing. Waiting for a
+// real boundary costs this package several minutes; that is the price of the
+// only coverage the epoch sweep path has.
 
 const (
 	// Tiny so the tests finish. Production defaults are 28 days, 7 days and
@@ -43,16 +48,6 @@ const (
 	epochTestCutoff   = 60  // 1 minute
 	epochTestGrace    = 512 // BIP68 seconds granularity
 )
-
-func skipUnlessEpoch(t *testing.T) {
-	t.Helper()
-	if !flag.Parsed() {
-		flag.Parse()
-	}
-	if !*runEpoch {
-		t.Skip("skip epoch expiry e2e test (pass -epoch to run)")
-	}
-}
 
 // enableEpochExpiry switches the running arkd over to epoch expiry and restores
 // the previous mode on cleanup. Returns the anchor it configured.
@@ -105,7 +100,6 @@ func expectedBoundary(anchor, at int64) int64 {
 // minted in the same window carry the same expiry, which is what makes them
 // expiry-fungible and what stops consolidation stranding time value.
 func TestEpochVtxosShareAnExpiryDate(t *testing.T) {
-	skipUnlessEpoch(t)
 	anchor := enableEpochExpiry(t)
 
 	alice := setupClientWallet(t)
@@ -129,7 +123,6 @@ func TestEpochVtxosShareAnExpiryDate(t *testing.T) {
 // hand back the same date while still making the operator fund a second batch
 // output against a still-locked one.
 func TestEpochRenewalOutsideRolloverWindowIsRefused(t *testing.T) {
-	skipUnlessEpoch(t)
 	enableEpochExpiry(t)
 
 	alice := setupClientWallet(t)
@@ -148,7 +141,6 @@ func TestEpochRenewalOutsideRolloverWindowIsRefused(t *testing.T) {
 // the upper bound applies only to renewals, so a collaborative exit stays
 // available for the whole epoch.
 func TestEpochExitIsAllowedOutsideRolloverWindow(t *testing.T) {
-	skipUnlessEpoch(t)
 	enableEpochExpiry(t)
 
 	alice := setupClientWallet(t)
@@ -169,7 +161,6 @@ func TestEpochExitIsAllowedOutsideRolloverWindow(t *testing.T) {
 // before the flag was flipped keeps its own relative schedule while new ones use
 // the shared date, and the sweeper has to handle both at once.
 func TestLegacyAndEpochBatchesCoexist(t *testing.T) {
-	skipUnlessEpoch(t)
 
 	// minted while epoch expiry is still off
 	legacyClient := setupClientWallet(t)
@@ -196,7 +187,6 @@ func TestLegacyAndEpochBatchesCoexist(t *testing.T) {
 // confirm at the boundary instant even though it is scheduled there. This is the
 // behaviour the ErrNonFinalCLTV retry exists to survive.
 func TestEpochBatchSweepsAtTheBoundary(t *testing.T) {
-	skipUnlessEpoch(t)
 	enableEpochExpiry(t)
 
 	alice := setupClientWallet(t)
