@@ -196,6 +196,15 @@ message GetInfoResponse {
   string digest = 19;
   int64 max_tx_weight = 20;
   int64 max_op_return_outputs = 21;
+  // Epoch expiry. When epoch_expiry_enabled is false the rest are zero and
+  // batches expire on a per-batch relative timelock instead.
+  bool epoch_expiry_enabled = 22;
+  int64 epoch_length = 23;
+  int64 rollover_window = 24;
+  // The next shared expiry date a batch started now would commit to, unix
+  // seconds. Wallets need this to show a renewal deadline before joining a
+  // session; zero when epoch expiry is disabled.
+  int64 next_epoch_expiry = 25;
 }
 
 message RegisterIntentRequest {

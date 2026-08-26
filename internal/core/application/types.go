@@ -85,6 +85,13 @@ type ServiceInfo struct {
 	Fees                 FeeInfo
 	MaxTxWeight          int64
 	MaxOpReturnOutputs   int64
+	EpochExpiryEnabled   bool
+	EpochLength          int64
+	RolloverWindow       int64
+	// NextEpochExpiry is the shared date a batch started now would commit to,
+	// unix seconds. Zero when epoch expiry is disabled. Wallets need it to show
+	// a renewal deadline before joining a session.
+	NextEpochExpiry int64
 	Digest               string
 }
 

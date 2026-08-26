@@ -74,6 +74,8 @@ type defaultHandler struct {
 
 	batchSessionId string
 	batchExpiry    arklib.RelativeLocktime
+	// set only for an epoch batch; nil means the legacy relative scheme
+	batchExpiryDate *arklib.AbsoluteLocktime
 	// internal count to handle TreeNoncesEvent
 	countSigningDone int
 }
@@ -103,6 +105,15 @@ func (h *defaultHandler) OnBatchStarted(
 				return false, -1, err
 			}
 			h.batchSessionId = event.Id
+			if event.BatchExpiryDate > 0 {
+				// An epoch batch: BatchExpiry carries the unroll grace and the
+				// shared date arrives separately.
+				date := arklib.AbsoluteLocktime(event.BatchExpiryDate)
+				h.batchExpiryDate = &date
+				h.batchExpiry = getBatchExpiryLocktime(uint32(event.UnrollGrace))
+				return false, time.Until(time.Unix(event.BatchExpiryDate, 0)), nil
+			}
+			h.batchExpiryDate = nil
 			h.batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
 			expiry := time.Duration(event.BatchExpiry) * time.Second
 			if h.batchExpiry.Type == arklib.LocktimeTypeBlock {
@@ -162,9 +173,7 @@ func (h *defaultHandler) OnTreeSigningStarted(
 		return false, fmt.Errorf("not all signers found in cosigner list")
 	}
 
-	root, _, err := tree.BuildLegacySweepTapTreeRoot(
-		h.ServerParams.ForfeitPubKey, h.batchExpiry,
-	)
+	root, _, err := h.sweepParams().Root(h.ServerParams.ForfeitPubKey)
 	if err != nil {
 		return false, err
 	}
@@ -441,8 +450,7 @@ func (h *defaultHandler) validateVtxoTree(
 	// validate the vtxo tree is well formed
 	if !isOnchainOnly(h.Receivers) {
 		if err := tree.ValidateVtxoTree(
-			vtxoTree, commitmentPtx, h.ServerParams.ForfeitPubKey,
-			tree.SweepParams{Expiry: h.batchExpiry},
+			vtxoTree, commitmentPtx, h.ServerParams.ForfeitPubKey, h.sweepParams(),
 		); err != nil {
 			return err
 		}
@@ -628,4 +636,9 @@ func (h *defaultHandler) createAndSignForfeits(
 	}
 
 	return signedForfeitTxs, nil
+}
+
+// sweepParams returns the sweep scheme this batch session was told to expect.
+func (h *defaultHandler) sweepParams() tree.SweepParams {
+	return tree.SweepParams{Expiry: h.batchExpiry, BatchExpiry: h.batchExpiryDate}
 }

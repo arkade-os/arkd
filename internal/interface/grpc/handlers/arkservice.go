@@ -80,6 +80,10 @@ func (h *handler) GetInfo(
 		CheckpointTapscript: info.CheckpointTapscript,
 		MaxTxWeight:         info.MaxTxWeight,
 		MaxOpReturnOutputs:  info.MaxOpReturnOutputs,
+		EpochExpiryEnabled:  info.EpochExpiryEnabled,
+		EpochLength:         info.EpochLength,
+		RolloverWindow:      info.RolloverWindow,
+		NextEpochExpiry:     info.NextEpochExpiry,
 		Fees:                fees(info.Fees).toProto(),
 		ScheduledSession:    scheduledSession{info.NextScheduledSession}.toProto(),
 		Digest:              info.Digest,
@@ -531,9 +535,11 @@ func (h *handler) listenToEvents() {
 				ev := &arkv1.GetEventStreamResponse{
 					Event: &arkv1.GetEventStreamResponse_BatchStarted{
 						BatchStarted: &arkv1.BatchStartedEvent{
-							Id:             e.Id,
-							IntentIdHashes: hashes,
-							BatchExpiry:    int64(e.BatchExpiry),
+							Id:              e.Id,
+							IntentIdHashes:  hashes,
+							BatchExpiry:     int64(e.BatchExpiry),
+							BatchExpiryDate: int64(e.BatchExpiryDate),
+							UnrollGrace:     int64(e.UnrollGrace),
 						},
 					},
 				}

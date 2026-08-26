@@ -2467,7 +2467,18 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		}
 	}
 
-	return &ServiceInfo{
+		// Published so wallets can show a renewal deadline before joining a session;
+	// GetInfo carries no expiry at all otherwise.
+	nextEpochExpiry := int64(0)
+	if settings.EpochExpiryEnabled {
+		if e, err := settings.EpochSchedule().ExpiryFor(time.Now()); err == nil {
+			nextEpochExpiry = int64(e)
+		} else {
+			log.WithError(err).Warn("failed to compute next epoch expiry for GetInfo")
+		}
+	}
+
+return &ServiceInfo{
 		SignerPubKey:         signerPubkey,
 		DeprecatedSignerKeys: deprecatedSignerKeys,
 		ForfeitPubKey:        forfeitPubkey,
@@ -2485,6 +2496,10 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		CheckpointTapscript:  checkpointTapscript,
 		MaxTxWeight:          int64(maxTxWeight),
 		MaxOpReturnOutputs:   int64(maxOpReturnOutputs),
+		EpochExpiryEnabled:   settings.EpochExpiryEnabled,
+		EpochLength:          int64(settings.EpochLength.Seconds()),
+		RolloverWindow:       int64(settings.RolloverWindow.Seconds()),
+		NextEpochExpiry:      nextEpochExpiry,
 		Fees: FeeInfo{
 			IntentFees: batchFees,
 		},
