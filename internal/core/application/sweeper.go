@@ -44,6 +44,8 @@ type sweeper struct {
 	// TODO move the scheduled task map to LiveStore port
 	scheduledTasks map[string]struct{}
 	ctx            context.Context
+
+	onSweepCheckpoint func(TransactionEvent)
 }
 
 func newSweeper(
@@ -599,12 +601,19 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 					}
 
 					for _, leaf := range vtxosLeaves {
-						vtxo := domain.Outpoint{
-							Txid: leaf.UnsignedTx.TxID(),
-							VOut: 0,
+						// The VTXO is the first non-anchor output; leaf txs can
+						// carry an anchor at vout 0, so the VTXO is not always
+						// at vout 0. extractVtxoOutpoint handles that.
+						vtxo, err := extractVtxoOutpoint(leaf)
+						if err != nil {
+							log.WithError(err).Errorf(
+								"failed to extract vtxo outpoint from leaf %s",
+								leaf.UnsignedTx.TxID(),
+							)
+							continue
 						}
 
-						sweepableVtxos = append(sweepableVtxos, vtxo)
+						sweepableVtxos = append(sweepableVtxos, *vtxo)
 					}
 
 					if len(sweepableVtxos) <= 0 {
@@ -770,7 +779,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 				// get all vtxos related to the leaf swept
 				seen := make(map[string]struct{})
 				for _, leafVtxo := range leafVtxoKeys {
-					children, childErr := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
+					children, childErr := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo)
 					if childErr != nil {
 						log.WithError(childErr).Error("error while getting children vtxos")
 						continue
@@ -819,7 +828,7 @@ func (s *sweeper) createCheckpointSweepTask(
 		checkpointTxid := toSweep.Txid
 		log.Debugf("sweeper: start sweeping checkpoint %s", checkpointTxid)
 
-		_, sweepTx, err := buildAndSignSweepTx(
+		sweepTxid, sweepTx, err := buildAndSignSweepTx(
 			s.builder, s.signingWallets(), []ports.TxInput{toSweep},
 		)
 		if err != nil {
@@ -835,15 +844,39 @@ func (s *sweeper) createCheckpointSweepTask(
 			log.Debugf("sweeper: checkpoint %s swept by: %s", checkpointTxid, txid)
 		}
 
-		// mark all vtxos linked to the unrolled vtxo as swept
-		childrenVtxos, err := s.repoManager.Vtxos().GetAllChildrenVtxos(ctx, vtxo.Txid)
+		// Mark all vtxos descending from this checkpoint output as swept.
+		// Use per-outpoint sweeping instead of marker-based sweeping here
+		// because markers can be shared across independent subtrees when
+		// offchain txs consolidate inputs from different lineages. Sweeping
+		// by marker would over-reach and incorrectly mark unrelated VTXOs.
+		childrenVtxos, err := s.repoManager.Vtxos().GetAllChildrenVtxos(ctx, vtxo)
 		if err != nil {
 			return err
 		}
 
-		_, err = s.repoManager.Vtxos().SweepVtxos(ctx, childrenVtxos)
-		log.Debugf("swept %d vtxos", len(childrenVtxos))
-		return err
+		if len(childrenVtxos) == 0 {
+			return nil
+		}
+
+		sweptAt := time.Now().Unix()
+		if err := s.repoManager.Markers().SweepVtxoOutpoints(
+			ctx, childrenVtxos, sweptAt,
+		); err != nil {
+			return err
+		}
+
+		log.Debugf("swept %d vtxo outpoints for checkpoint %s", len(childrenVtxos), checkpointTxid)
+
+		// notify clients of the checkpoint sweep tx
+		if s.onSweepCheckpoint != nil {
+			s.onSweepCheckpoint(TransactionEvent{
+				TxData:     TxData{Tx: sweepTx, Txid: sweepTxid},
+				Type:       SweepTxType,
+				SweptVtxos: childrenVtxos,
+			})
+		}
+
+		return nil
 	}
 }
 

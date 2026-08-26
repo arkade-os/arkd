@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
@@ -161,9 +162,29 @@ type roundInfo struct {
 	ExitAddresses    []string `json:"exitAddresses"`
 	StartedAt        string   `json:"startedAt"`
 	EndedAt          string   `json:"endedAt"`
+	Stage            string   `json:"stage"`
+	Ended            bool     `json:"ended"`
+	Failed           bool     `json:"failed"`
+	Swept            bool     `json:"swept"`
+	FailReason       string   `json:"failReason"`
+	TotalIntents     string   `json:"totalIntents"`
 }
 
 func getRoundInfo(targetURL, macaroon string, tlsConfig *tls.Config) (*roundInfo, error) {
+	buf, err := getBody(targetURL, macaroon, tlsConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &roundInfo{}
+	if err := json.Unmarshal(buf, result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// getBody GETs the given admin endpoint and returns the raw response body.
+func getBody(targetURL, macaroon string, tlsConfig *tls.Config) ([]byte, error) {
 	if err := validateHTTPURL(targetURL); err != nil {
 		return nil, err
 	}
@@ -193,15 +214,24 @@ func getRoundInfo(targetURL, macaroon string, tlsConfig *tls.Config) (*roundInfo
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("%s", buf)
-		return nil, err
+		return nil, fmt.Errorf("%s", buf)
+	}
+	return buf, nil
+}
+
+// printJSON GETs the given admin endpoint and prints its response body indented.
+func printJSON(targetURL, macaroon string, tlsConfig *tls.Config) error {
+	buf, err := getBody(targetURL, macaroon, tlsConfig)
+	if err != nil {
+		return err
 	}
 
-	result := &roundInfo{}
-	if err := json.Unmarshal(buf, result); err != nil {
-		return nil, err
+	var out bytes.Buffer
+	if err := json.Indent(&out, buf, "", "  "); err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
 	}
-	return result, nil
+	fmt.Println(out.String())
+	return nil
 }
 
 func getCredentials(ctx *cli.Context) (macaroon string, tlsConfig *tls.Config, err error) {

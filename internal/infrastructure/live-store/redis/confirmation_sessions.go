@@ -19,7 +19,6 @@ package redislivestore
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -95,41 +94,24 @@ func (s *confirmationSessionsStore) Init(ctx context.Context, intentIDsHashes []
 	return fmt.Errorf("failed to init confirmation session after max num of retries: %v", err)
 }
 
+// confirmScript atomically marks an intent as confirmed + increments the counter
+// using a Lua script ensure both operations are atomic
+var confirmScript = redis.NewScript(`
+local current = redis.call('HGET', KEYS[1], ARGV[1])
+if current == false then return redis.error_reply('intent hash not found') end
+if current == '1' then return 0 end
+redis.call('HSET', KEYS[1], ARGV[1], '1')
+redis.call('INCR', KEYS[2])
+return 1`)
+
 func (s *confirmationSessionsStore) Confirm(ctx context.Context, intentId string) error {
-	hash := sha256.Sum256([]byte(intentId))
-	hashKey := string(hash[:])
-
-	confirmed, err := s.rdb.HGet(ctx, confirmationIntentsKey, hashKey).Int()
-	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			return fmt.Errorf("intent hash not found")
-		}
-		return fmt.Errorf("failed to get intent %s: %v", intentId, err)
-	}
-	if confirmed == 1 {
-		return nil
-	}
-
 	keys := []string{confirmationIntentsKey, confirmationNumConfirmedKey}
-	for range s.numOfRetries {
-		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			numConfirmed, err := tx.Get(ctx, confirmationNumConfirmedKey).Int()
-			if err != nil && !errors.Is(err, redis.Nil) {
-				return fmt.Errorf("failed to get number of confirmed intents: %v", err)
-			}
-			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				pipe.HSet(ctx, confirmationIntentsKey, hashKey, 1)
-				pipe.Set(ctx, confirmationNumConfirmedKey, numConfirmed+1, 0)
+	hash := sha256.Sum256([]byte(intentId))
 
-				return nil
-			})
-			return err
-		}, keys...); err == nil {
-			return nil
-		}
-		time.Sleep(s.retryDelay)
+	if err := confirmScript.Run(ctx, s.rdb, keys, string(hash[:])).Err(); err != nil {
+		return fmt.Errorf("failed to confirm intent %s: %v", intentId, err)
 	}
-	return fmt.Errorf("failed to confirm intent after retries: %v", err)
+	return nil
 }
 
 func (s *confirmationSessionsStore) Get(ctx context.Context) (*ports.ConfirmationSessions, error) {

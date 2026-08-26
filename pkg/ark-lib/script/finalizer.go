@@ -22,17 +22,15 @@ func FinalizeVtxoScript(ptx *psbt.Packet, inputIndex int) error {
 		return err
 	}
 
-	arkConditionWitnessFields, err := txutils.GetArkPsbtFields(ptx, inputIndex, txutils.ConditionWitnessField)
+	conditionWitness, err := txutils.GetArkPsbtConditionWitness(ptx, inputIndex)
 	if err != nil {
 		return err
 	}
 
 	args := make(map[string][]byte)
-	if len(arkConditionWitnessFields) > 0 {
+	if conditionWitness != nil {
 		var conditionWitnessBytes bytes.Buffer
-		if err := psbt.WriteTxWitness(
-			&conditionWitnessBytes, arkConditionWitnessFields[0],
-		); err != nil {
+		if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitness); err != nil {
 			return err
 		}
 		args[string(txutils.ArkFieldConditionWitness)] = conditionWitnessBytes.Bytes()

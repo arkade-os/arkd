@@ -484,7 +484,7 @@ func (w *wallet) selectCoins(
 		availableUtxos = append(availableUtxos, coin{utxo})
 	}
 
-	coins, err := newCoinSelector(minChangeAmount).CoinSelect(btcutil.Amount(amount), availableUtxos)
+	coins, err := economicalCoinSelector{minChangeAmount}.CoinSelect(btcutil.Amount(amount), availableUtxos)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -547,7 +547,7 @@ func (w *wallet) selectCoinsForWithdraw(
 		})
 	}
 
-	coins, err := newCoinSelector(0).CoinSelect(btcutil.Amount(amount+base), availableUtxos)
+	coins, err := consolidateFirstCoinSelector{0}.CoinSelect(btcutil.Amount(amount+base), availableUtxos)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -668,10 +668,18 @@ func (w *wallet) SignTransaction(
 			continue
 		}
 
+		// this comes from the submitted psbt, so without the check a caller can steer
+		// what our own signature commits to.
+		if err := script.CheckSigHashType(input.SighashType); err != nil {
+			return "", fmt.Errorf("input %d: %w", inputIndex, err)
+		}
+
 		if len(input.TaprootLeafScript) > 0 {
-			signingKey := w.keyMgr.forfeitPrvkey
+			var signingKey *btcec.PrivateKey
 			if signMode == application.SignModeSigner {
-				signingKey  = w.signerKeyForLeaf(input.TaprootLeafScript[0].Script)
+				signingKey = w.signerKeyForLeaf(input.TaprootLeafScript[0].Script)
+			} else {
+				signingKey = w.keyMgr.forfeitPrvkey
 			}
 
 			tapLeaf := txscript.NewBaseTapLeaf(input.TaprootLeafScript[0].Script)
@@ -733,15 +741,15 @@ func (w *wallet) SignTransaction(
 					return "", err
 				}
 
-				conditionWitnessFields, err := txutils.GetArkPsbtFields(ptx, i, txutils.ConditionWitnessField)
+				conditionWitness, err := txutils.GetArkPsbtConditionWitness(ptx, i)
 				if err != nil {
 					return "", err
 				}
 
 				args := make(map[string][]byte)
-				if len(conditionWitnessFields) > 0 {
+				if conditionWitness != nil {
 					var conditionWitnessBytes bytes.Buffer
-					if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitnessFields[0]); err != nil {
+					if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitness); err != nil {
 						return "", err
 					}
 					args[string(txutils.ArkFieldConditionWitness)] = conditionWitnessBytes.Bytes()
@@ -808,7 +816,7 @@ func (w *wallet) signerKeyForLeaf(leafScript []byte) *btcec.PrivateKey {
 	default:
 		return w.SignerKey
 	}
-	
+
 	for _, k := range w.DeprecatedSignerKeys {
 		want := schnorr.SerializePubKey(k.Key.PubKey())
 		for _, pubkey := range leafKeys {

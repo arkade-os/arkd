@@ -15,19 +15,17 @@ func FinalizeNoteClosure(ptx *psbt.Packet, inputIndex int, tapleaf *psbt.Taproot
 	var noteClosure NoteClosure
 	valid, err := noteClosure.Decode(tapleaf.Script)
 	if valid && err == nil {
-		arkConditionWitnessFields, err := txutils.GetArkPsbtFields(
-			ptx, inputIndex, txutils.ConditionWitnessField,
-		)
+		conditionWitness, err := txutils.GetArkPsbtConditionWitness(ptx, inputIndex)
 		if err != nil {
 			return err
 		}
 
-		if len(arkConditionWitnessFields) != 1 || len(arkConditionWitnessFields[0]) == 0 {
+		if len(conditionWitness) == 0 {
 			return fmt.Errorf("invalid condition witness, expected 1 witness for note vtxo")
 		}
 
 		witness, err := noteClosure.Witness(tapleaf.ControlBlock, map[string][]byte{
-			"preimage": arkConditionWitnessFields[0][0],
+			"preimage": conditionWitness[0],
 		})
 		if err != nil {
 			return err
