@@ -153,9 +153,10 @@ func validDecodeClosureVectors() []decodeClosureFixture {
 				exPubKey1 +
 				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
 		},
+
 		{
 			name: "cltv multisig closure 2 byte locktime",
-			script: "02abcd" +
+			script: "02f401" + // 500
 				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
 				fmt.Sprintf("%x", txscript.OP_DROP) +
 				fmt.Sprintf("%x", txscript.OP_DATA_32) +
@@ -164,7 +165,7 @@ func validDecodeClosureVectors() []decodeClosureFixture {
 		},
 		{
 			name: "cltv multisig closure 3 byte locktime",
-			script: "03aabbcc" +
+			script: "03a08601" + // 100_000
 				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
 				fmt.Sprintf("%x", txscript.OP_DROP) +
 				fmt.Sprintf("%x", txscript.OP_DATA_32) +
@@ -173,7 +174,7 @@ func validDecodeClosureVectors() []decodeClosureFixture {
 		},
 		{
 			name: "cltv multisig closure 4 byte locktime",
-			script: "04fff6adaa" +
+			script: "040065cd1d" + // 500_000_000
 				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
 				fmt.Sprintf("%x", txscript.OP_DROP) +
 				fmt.Sprintf("%x", txscript.OP_DATA_32) +
@@ -182,16 +183,7 @@ func validDecodeClosureVectors() []decodeClosureFixture {
 		},
 		{
 			name: "cltv multisig closure 5 byte locktime",
-			script: "05efae91fff6" +
-				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
-				fmt.Sprintf("%x", txscript.OP_DROP) +
-				fmt.Sprintf("%x", txscript.OP_DATA_32) +
-				exPubKey1 +
-				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
-		},
-		{
-			name: "cltv multisig closure 6 byte locktime",
-			script: "06efae91fff6af" +
+			script: "05ffffffff00" + // max uint32 nLockTime
 				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
 				fmt.Sprintf("%x", txscript.OP_DROP) +
 				fmt.Sprintf("%x", txscript.OP_DATA_32) +
@@ -256,6 +248,65 @@ func validDecodeClosureVectors() []decodeClosureFixture {
 // extracted as a helper function in order to seed fuzz test
 func invalidDecodeClosureVectors() []decodeClosureFixture {
 	return []decodeClosureFixture{
+		{
+			name: "condition multisig closure with CLTV in the condition",
+			script: "040065cd1d" + // 500_000_000
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_VERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "condition csv multisig closure with CSV in the condition",
+			script: fmt.Sprintf("%x", txscript.OP_10) +
+				fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_VERIFY) +
+				fmt.Sprintf("%x", txscript.OP_10) +
+				fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure OP_NOP locktime",
+			script: fmt.Sprintf("%x", txscript.OP_NOP) +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure negative locktime",
+			// -19883: BIP65 fails outright on a negative locktime
+			script: "02abcd" +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "cltv multisig closure locktime above uint32",
+			// 4294967296 (2^32): smallest positive value above uint32
+			script: "050000000001" +
+				fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
+		{
+			name: "csv multisig closure OP_NOP sequence",
+			script: fmt.Sprintf("%x", txscript.OP_NOP) +
+				fmt.Sprintf("%x", txscript.OP_CHECKSEQUENCEVERIFY) +
+				fmt.Sprintf("%x", txscript.OP_DROP) +
+				fmt.Sprintf("%x", txscript.OP_DATA_32) +
+				exPubKey1 +
+				fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+		},
 		{
 			name: "multisig closure missing OP_CHECKSIG",
 			script: fmt.Sprintf("%x", txscript.OP_DATA_32) +
@@ -1273,6 +1324,13 @@ func executeBoolScriptFixtures(tb testing.TB) []executeBoolScriptFixture {
 			returnValue: false,
 			expectErr:   true,
 		},
+		{
+			name:        "script too large",
+			script:      bytes.Repeat([]byte{txscript.OP_TRUE}, txscript.MaxScriptSize+1),
+			witness:     wire.TxWitness{},
+			returnValue: false,
+			expectErr:   true,
+		},
 	}
 }
 
@@ -1436,4 +1494,47 @@ func parseVtxoScriptFixtures(t *testing.T) []vtxoScriptFixtures {
 	require.NoError(t, err)
 
 	return fixtures
+}
+
+// The decoded locktime must be the one the script enforces. Small ints used to
+// be derived with byte arithmetic that wrapped for OP_0, and larger values went
+// through Int32, which saturates.
+func TestCLTVDecodeLocktimeValue(t *testing.T) {
+	tests := []struct {
+		name     string
+		locktime string
+		want     arklib.AbsoluteLocktime
+	}{
+		{"OP_0", fmt.Sprintf("%02x", txscript.OP_0), 0},
+		{"OP_1", fmt.Sprintf("%x", txscript.OP_1), 1},
+		{"OP_16", fmt.Sprintf("%x", txscript.OP_16), 16},
+		{"two bytes", "02f401", 500},
+		{"four bytes", "040065cd1d", 500_000_000},
+		{"max uint32", "05ffffffff00", 4_294_967_295},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := hex.DecodeString(
+				tt.locktime +
+					fmt.Sprintf("%x", txscript.OP_CHECKLOCKTIMEVERIFY) +
+					fmt.Sprintf("%x", txscript.OP_DROP) +
+					fmt.Sprintf("%x", txscript.OP_DATA_32) +
+					exPubKey1 +
+					fmt.Sprintf("%x", txscript.OP_CHECKSIG),
+			)
+			require.NoError(t, err)
+
+			closure, err := script.DecodeClosure(raw)
+			require.NoError(t, err)
+
+			cltv, ok := closure.(*script.CLTVMultisigClosure)
+			require.True(t, ok, "expected CLTVMultisigClosure, got %T", closure)
+			require.Equal(t, tt.want, cltv.Locktime)
+
+			rebuilt, err := cltv.Script()
+			require.NoError(t, err)
+			require.Equal(t, raw, rebuilt)
+		})
+	}
 }

@@ -329,7 +329,8 @@ func (i *indexerService) GetVtxos(
 		if renewableOnly {
 			// Renewable is the union of the spendable and recoverable sets: an
 			// unspent, non-unrolled vtxo is spendable when not swept, and
-			// recoverable otherwise (RequiresForfeit is false once swept).
+			// recoverable otherwise (RequiresForfeit is false for swept, note,
+			// and unrolled vtxos).
 			renewableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
 			for _, vtxo := range allVtxos {
 				if !vtxo.Spent && !vtxo.Unrolled {
@@ -1468,7 +1469,7 @@ func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {
 	if params == nil {
 		return items, PageResp{}
 	}
-	if params.PageSize <= 0 {
+	if params.PageSize <= 0 || params.PageSize > maxSize {
 		params.PageSize = maxSize
 	}
 	if params.PageNum <= 0 {
@@ -1477,7 +1478,10 @@ func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {
 
 	totalCount := int32(len(items))
 	totalPages := int32(math.Ceil(float64(totalCount) / float64(params.PageSize)))
-	next := min(params.PageNum+1, totalPages)
+	next := totalPages
+	if params.PageNum < totalPages {
+		next = params.PageNum + 1
+	}
 
 	resp := PageResp{
 		Current: params.PageNum,
@@ -1485,20 +1489,14 @@ func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {
 		Total:   totalPages,
 	}
 
-	if params.PageNum > totalPages && totalCount > 0 {
+	if params.PageNum > totalPages {
 		return []T{}, resp
 	}
 
+	// The guard above bounds PageNum by totalPages, so (PageNum-1)*PageSize
+	// stays below totalCount and cannot wrap.
 	startIndex := (params.PageNum - 1) * params.PageSize
-	endIndex := startIndex + params.PageSize
-
-	if startIndex >= totalCount {
-		return []T{}, resp
-	}
-
-	if endIndex > totalCount {
-		endIndex = totalCount
-	}
+	endIndex := min(startIndex+params.PageSize, totalCount)
 
 	return items[startIndex:endIndex], resp
 }
@@ -1524,10 +1522,7 @@ func (i *indexerService) chainCursorPage(
 		return &VtxoChainResp{Chain: []ChainTx{}}
 	}
 
-	end := offset + pageSize
-	if end > total {
-		end = total
-	}
+	end := min(offset+pageSize, total)
 
 	hasMore := moreBeyondChain || end < total
 	var nextToken string

@@ -197,8 +197,12 @@ func (s *treeSigningSessionsStore) Delete(ctx context.Context, roundId string) e
 func (s *treeSigningSessionsStore) AddNonces(
 	ctx context.Context, roundId string, pubkey string, nonces tree.TreeNonces,
 ) error {
-	if err := s.checkSessionExists(ctx, roundId); err != nil {
+	cosigners, err := s.getSessionCosigners(ctx, roundId)
+	if err != nil {
 		return err
+	}
+	if _, ok := cosigners[pubkey]; !ok {
+		return fmt.Errorf(`cosigner %s not found for round "%s"`, pubkey, roundId)
 	}
 
 	noncesKey := fmt.Sprintf(treeSessNoncesKeyFmt, roundId)
@@ -208,13 +212,27 @@ func (s *treeSigningSessionsStore) AddNonces(
 	}
 
 	for range s.numOfRetries {
+		var alreadySubmitted bool
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			exists, err := tx.HExists(ctx, noncesKey, pubkey).Result()
+			if err != nil {
+				return err
+			}
+			if exists {
+				alreadySubmitted = true
+				return nil
+			}
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				pipe.HSet(ctx, noncesKey, pubkey, val)
 				return nil
 			})
 			return err
 		}, noncesKey); err == nil {
+			if alreadySubmitted {
+				return fmt.Errorf(
+					`nonces already submitted for cosigner %s in round "%s"`, pubkey, roundId,
+				)
+			}
 			return nil
 		}
 		time.Sleep(s.retryDelay)
@@ -225,8 +243,12 @@ func (s *treeSigningSessionsStore) AddNonces(
 func (s *treeSigningSessionsStore) AddSignatures(
 	ctx context.Context, roundId string, pubkey string, sigs tree.TreePartialSigs,
 ) error {
-	if err := s.checkSessionExists(ctx, roundId); err != nil {
+	cosigners, err := s.getSessionCosigners(ctx, roundId)
+	if err != nil {
 		return err
+	}
+	if _, ok := cosigners[pubkey]; !ok {
+		return fmt.Errorf(`cosigner %s not found for round "%s"`, pubkey, roundId)
 	}
 
 	sigsKey := fmt.Sprintf(treeSessSigsKeyFmt, roundId)
@@ -364,15 +386,20 @@ func (s *treeSigningSessionsStore) watchSigsCollected(ctx context.Context, round
 	}
 }
 
-func (s *treeSigningSessionsStore) checkSessionExists(ctx context.Context, roundId string) error {
-	// check if metadata exists
+func (s *treeSigningSessionsStore) getSessionCosigners(
+	ctx context.Context, roundId string,
+) (map[string]struct{}, error) {
 	metaKey := fmt.Sprintf(treeSessMetaKeyFmt, roundId)
 	meta, err := s.rdb.HGetAll(ctx, metaKey).Result()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(meta) == 0 {
-		return fmt.Errorf("signing session not found for round %s", roundId)
+		return nil, fmt.Errorf("signing session not found for round %s", roundId)
 	}
-	return nil
+	var cosigners map[string]struct{}
+	if err := json.Unmarshal([]byte(meta["Cosigners"]), &cosigners); err != nil {
+		return nil, fmt.Errorf("malformed cosigners in storage: %v", err)
+	}
+	return cosigners, nil
 }

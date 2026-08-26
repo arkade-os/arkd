@@ -160,23 +160,37 @@ AND EXISTS (
     WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
 );
 
--- name: SelectRoundIdsInTimeRange :many
-SELECT id FROM round WHERE starting_timestamp > @start_ts AND starting_timestamp < @end_ts;
 
--- name: SelectAllRoundIds :many
-SELECT id FROM round;
 
--- name: SelectRoundIdsWithFilters :many
-SELECT id FROM round 
-WHERE (@with_failed = 1 OR failed = 0)
-  AND (@with_completed = 1 OR ended = 0);
 
--- name: SelectRoundIdsInTimeRangeWithFilters :many
-SELECT id FROM round 
-WHERE starting_timestamp > @start_ts 
-  AND starting_timestamp < @end_ts
-  AND (@with_failed = 1 OR failed = 0)
-  AND (@with_completed = 1 OR ended = 0);
+
+-- Batch listing for the admin API. Everything the listing renders is produced by
+-- this one query: filtering, ordering, the limit, the commitment txid and the
+-- intent count. Listing N batches costs one round trip instead of loading every
+-- round in full. Callers pass max_results = 0 for "no limit".
+-- The intent count is a correlated subquery, not a join against a GROUP BY over
+-- the whole intent table, so the limit bounds how many counts get computed.
+-- name: SelectRoundSummaries :many
+SELECT
+    r.id,
+    r.starting_timestamp,
+    r.ending_timestamp,
+    r.ended,
+    r.failed,
+    r.swept,
+    r.stage_code,
+    r.fail_reason,
+    COALESCE(t.txid, '') AS commitment_txid,
+    (SELECT COUNT(*) FROM intent i WHERE i.round_id = r.id) AS total_intents
+FROM round r
+LEFT JOIN tx t ON t.round_id = r.id AND t.type = 'commitment'
+WHERE (@start_ts = 0 OR r.starting_timestamp > @start_ts)
+  AND (@end_ts = 0 OR r.starting_timestamp < @end_ts)
+  AND (@with_failed = 1 OR r.failed = 0)
+  AND (@with_completed = 1 OR r.ended = 0)
+  AND (@only_failed = 0 OR r.failed = 1)
+ORDER BY r.starting_timestamp DESC
+LIMIT (CASE WHEN @max_results = 0 THEN -1 ELSE @max_results END);
 
 -- name: SelectRoundsWithTxids :many
 SELECT txid FROM tx WHERE type = 'commitment' AND tx.txid IN (sqlc.slice('txids'));
@@ -343,6 +357,23 @@ UPDATE offchain_tx SET packets = @packets WHERE txid = @txid AND packets IS NULL
 
 -- name: SelectOffchainTxsByTxids :many
 SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid IN (sqlc.slice('txids')) AND COALESCE(fail_reason, '') = '';
+
+-- Admin-only lookup: unlike SelectOffchainTx it does not filter by stage, so offchain
+-- txs that failed before being accepted can be inspected too.
+-- name: SelectAnyOffchainTx :many
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
+
+-- name: SelectOffchainTxsInRange :many
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid IN (
+    SELECT o.txid FROM offchain_tx o
+    WHERE (@after = 0 OR o.starting_timestamp > @after)
+      AND (@before = 0 OR o.starting_timestamp < @before)
+      AND (@only_failed = 0 OR COALESCE(o.fail_reason, '') <> '')
+      AND (@only_completed = 0
+           OR (o.stage_code = @finalized_stage AND COALESCE(o.fail_reason, '') = ''))
+    ORDER BY o.starting_timestamp DESC
+    LIMIT (CASE WHEN @max_results = 0 THEN -1 ELSE @max_results END)
+);
 
 -- name: SelectVtxoPubKeysByCommitmentTxid :many
 SELECT DISTINCT v.pubkey
@@ -543,8 +574,6 @@ VALUES (@id, @is_immutable, @metadata_hash, @metadata, @control_asset_id);
 INSERT INTO asset_projection (asset_id, txid, vout, amount)
 VALUES (@asset_id, @txid, @vout, @amount);
 
--- name: UpdateRoundCollectedFees :exec
-UPDATE round SET fees = sqlc.arg('fees') WHERE id = sqlc.arg('id');
 
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id IN (sqlc.slice('ids'));
@@ -663,3 +692,52 @@ ON CONFLICT(id) DO UPDATE SET
 
 -- name: SelectSettings :one
 SELECT * FROM settings WHERE id = 1;
+
+-- Collected fees for the admin API. One indexed aggregate replaces loading
+-- every round in the window in full.
+-- name: SelectCollectedFeesInRange :one
+SELECT
+    CAST(COALESCE(SUM(fees), 0) AS BIGINT) AS total
+FROM round
+WHERE ended = true AND failed = false
+  AND (@start_ts = 0 OR starting_timestamp > @start_ts)
+  AND (@end_ts = 0 OR starting_timestamp < @end_ts);
+
+
+-- Scheduled sweeps for the admin API. The due time is a plain column
+-- expression (same as SelectExpiredRounds), so this needs no chain access at
+-- all -- unlike findSweepableOutputs, which the sweeper itself still uses
+-- because it builds a real transaction.
+-- The aggregates are correlated subqueries against the already-limited CTE, so
+-- the limit bounds how many of them get computed.
+-- name: SelectScheduledSweeps :many
+WITH due AS (
+    SELECT r.id, r.txid,
+           CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS sweep_at
+    FROM round_with_commitment_tx_vw r
+    WHERE r.swept = false AND r.ended = true AND r.failed = false
+    AND EXISTS (
+        SELECT 1 FROM tx tree_tx
+        WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
+    )
+    AND EXISTS (
+        SELECT 1 FROM vtxo_vw v
+        WHERE v.commitment_txid = r.txid
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false AND v.unrolled = false
+    )
+    ORDER BY sweep_at ASC
+    LIMIT (CASE WHEN @max_results = 0 THEN -1 ELSE @max_results END)
+)
+SELECT d.id, d.txid, d.sweep_at,
+    CAST(COALESCE((
+        SELECT SUM(v.amount) FROM vtxo_vw v
+        WHERE v.commitment_txid = d.txid
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false AND v.unrolled = false
+    ), 0) AS BIGINT) AS total_amount,
+    CAST((
+        SELECT COUNT(*) FROM vtxo_vw v
+        WHERE v.commitment_txid = d.txid
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false AND v.unrolled = false
+    ) AS BIGINT) AS vtxo_count
+FROM due d
+ORDER BY d.sweep_at ASC;

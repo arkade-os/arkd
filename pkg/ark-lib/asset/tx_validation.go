@@ -135,6 +135,12 @@ func validateReissuance(
 			WithMetadata(errors.AssetValidationMetadata{AssetID: ctrlAssetID})
 	}
 
+	if len(controlAssetGroup.Inputs) == 0 {
+		return errors.CONTROL_ASSET_INVALID.New(
+			"control asset %s is not spent in the tx", ctrlAssetID,
+		).WithMetadata(errors.ControlAssetMetadata{AssetID: ctrlAssetID})
+	}
+
 	return nil
 }
 

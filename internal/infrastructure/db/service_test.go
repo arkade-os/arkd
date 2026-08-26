@@ -22,12 +22,14 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	grpccodes "google.golang.org/grpc/codes"
 )
 
 const (
@@ -148,16 +150,17 @@ func TestMain(m *testing.M) {
 
 func TestService(t *testing.T) {
 	dbDir := t.TempDir()
-	badgerDir := t.TempDir()
 	pgDns := "postgresql://root:secret@127.0.0.1:5432/projection?sslmode=disable"
 	pgEventDns := "postgresql://root:secret@127.0.0.1:5432/event?sslmode=disable"
 	tests := []struct {
 		name   string
 		config db.ServiceConfig
-		// badger fails several of the other repo suites for reasons
-		// unrelated to offchain txs, e.g. badgerhold cannot gob-encode the
-		// big.Int asset supply. Run only the offchain tx suite there, which
-		// is the one that pins the cross-backend filter semantics.
+		// Ran only the offchain tx suite for a backend, used by the badger
+		// case this branch added and has since dropped: db.initBadgerArkRepository
+		// memoizes the ark repository in a package-level var (badger locks its
+		// directory, so all repos share one store), and other tests in this
+		// package already build and close badger services, leaving a closed
+		// handle behind. sqlite and postgres pin the same filter semantics.
 		offchainTxOnly bool
 	}{
 		{
@@ -180,17 +183,6 @@ func TestService(t *testing.T) {
 				Settings:         validSettings(),
 			},
 		},
-		{
-			name: "repo_manager_with_badger_stores",
-			config: db.ServiceConfig{
-				EventStoreType:   "badger",
-				DataStoreType:    "badger",
-				EventStoreConfig: []interface{}{"", nil},
-				DataStoreConfig:  []interface{}{badgerDir, nil},
-				Settings:         validSettings(),
-			},
-			offchainTxOnly: true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -209,9 +201,14 @@ func TestService(t *testing.T) {
 			// records are added before the asset ones, and vtxos are added after assets.
 			testEventRepository(t, svc)
 			testRoundRepository(t, svc)
+			testRoundSummaries(t, svc)
+			testCollectedFees(t, svc)
 			testOffchainTxRepository(t, svc)
 			testAssetRepository(t, svc)
 			testVtxoRepository(t, svc)
+			// After testVtxoRepository: the sweeps aggregate joins leaf vtxos, so
+			// the vtxo tables must exist and be writable by now.
+			testScheduledSweeps(t, svc)
 			testMarkerBasicOperations(t, svc)
 			testMarkerSweep(t, svc)
 			testVtxoMarkerAssociation(t, svc)
@@ -678,11 +675,6 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.Len(t, sweepTxs, 1)
 		require.Equal(t, sweepTx, sweepTxs[sweepTxid])
 
-		roundsIds, err := svc.Rounds().GetRoundIds(ctx, 0, 0, false, true)
-		require.NoError(t, err)
-		require.Len(t, roundsIds, 1)
-		require.Equal(t, roundId, roundsIds[0])
-
 		failedRound := domain.NewRound()
 		failedRound.Id = uuid.New().String()
 		failedRound.Stage.Code = int(domain.RoundFinalizationStage)
@@ -691,21 +683,6 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		err = svc.Rounds().AddOrUpdateRound(ctx, *failedRound)
 		require.NoError(t, err)
 
-		onlyFailedIds, err := svc.Rounds().GetRoundIds(ctx, 0, 0, true, false)
-		require.NoError(t, err)
-		require.Len(t, onlyFailedIds, 1)
-		require.Equal(t, failedRound.Id, onlyFailedIds[0])
-
-		onlyCompletedIds, err := svc.Rounds().GetRoundIds(ctx, 0, 0, false, true)
-		require.NoError(t, err)
-		require.Len(t, onlyCompletedIds, 1)
-		require.Equal(t, roundId, onlyCompletedIds[0])
-
-		allRoundsIds, err := svc.Rounds().GetRoundIds(ctx, 0, 0, true, true)
-		require.NoError(t, err)
-		require.Len(t, allRoundsIds, 2)
-		require.Contains(t, allRoundsIds, roundId)
-		require.Contains(t, allRoundsIds, failedRound.Id)
 		roundWithoutVtxoTree := domain.NewRound()
 		roundWithoutVtxoTree.Stage.Code = int(domain.RoundFinalizationStage)
 		roundWithoutVtxoTree.CommitmentTxid = randomString(32)
@@ -719,58 +696,6 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		// - first round has been swept
 		// - second round has no vtxo tree
 		require.Empty(t, sweepableRounds)
-	})
-
-	t.Run("test_patch_collected_fees", func(t *testing.T) {
-		ctx := context.Background()
-		repo := svc.Rounds()
-
-		// Create two completed rounds with zero (unpersisted) collected fees.
-		patches := map[string]uint64{}
-		for _, fee := range []uint64{1500, 2500} {
-			id := uuid.New().String()
-			patches[id] = fee
-			round := domain.NewRoundFromEvents([]domain.Event{
-				domain.RoundStarted{
-					RoundEvent: domain.RoundEvent{
-						Id:   id,
-						Type: domain.EventTypeRoundStarted,
-					},
-					Timestamp: 100,
-				},
-				domain.RoundFinalizationStarted{
-					RoundEvent: domain.RoundEvent{
-						Id:   id,
-						Type: domain.EventTypeRoundFinalizationStarted,
-					},
-					CommitmentTxid: randomString(32),
-					CommitmentTx:   emptyTx,
-				},
-				domain.RoundFinalized{
-					RoundEvent: domain.RoundEvent{
-						Id:   id,
-						Type: domain.EventTypeRoundFinalized,
-					},
-					FinalCommitmentTx: emptyTx,
-					Fees:              0,
-					Timestamp:         110,
-				},
-			})
-			require.NoError(t, repo.AddOrUpdateRound(ctx, *round))
-
-			// sanity: stored fee is zero before patching
-			stored, err := repo.GetRoundWithId(ctx, id)
-			require.NoError(t, err)
-			require.Zero(t, stored.CollectedFees)
-		}
-
-		require.NoError(t, repo.PatchCollectedFees(ctx, patches))
-
-		for id, want := range patches {
-			round, err := repo.GetRoundWithId(ctx, id)
-			require.NoError(t, err)
-			require.Equal(t, want, round.CollectedFees)
-		}
 	})
 
 }
@@ -3638,6 +3563,70 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 			for _, tx := range scanned {
 				require.NotEqual(t, requestedTxid, tx.ArkTxid)
 			}
+		})
+
+		t.Run("admin lookup of a tx failed at request stage", func(t *testing.T) {
+			// A tx that failed before being accepted must stay invisible to
+			// the filtered lookup, otherwise it would be treated as a duplicate and could
+			// not be retried. GetAnyOffchainTx is the admin escape hatch.
+			failedTxid := "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+			startedAt := now.Unix() + 1000
+
+			offchainTx := domain.NewOffchainTxFromEvents([]domain.Event{
+				domain.OffchainTxRequested{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   failedTxid,
+						Type: domain.EventTypeOffchainTxRequested,
+					},
+					ArkTx:                 "unsigned-ark-tx",
+					UnsignedCheckpointTxs: map[string]string{},
+					StartingTimestamp:     startedAt,
+				},
+				domain.OffchainTxFailed{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   failedTxid,
+						Type: domain.EventTypeOffchainTxFailed,
+					},
+					Reason:    "boom",
+					Timestamp: startedAt,
+				},
+			})
+			require.NoError(t, repo.AddOrUpdateOffchainTx(ctx, offchainTx))
+
+			hidden, err := repo.GetOffchainTxs(
+				ctx, domain.OffchainTxFilter{WithTxids: []string{failedTxid}},
+			)
+			require.NoError(t, err)
+			require.Empty(t, hidden)
+
+			gotOffchainTx, err := repo.GetAnyOffchainTx(ctx, failedTxid)
+			require.NoError(t, err)
+			require.True(t, gotOffchainTx.IsFailed())
+			require.Equal(t, "boom", gotOffchainTx.FailReason)
+			require.Equal(t, int(domain.OffchainTxRequestedStage), gotOffchainTx.Stage.Code)
+
+			// A tx that simply is not there is a 404, not a server fault.
+			_, err = repo.GetAnyOffchainTx(ctx, fmt.Sprintf("%064x", 0xDEAD))
+			require.Error(t, err)
+			var structured arkerrors.Error
+			require.ErrorAs(t, err, &structured)
+			require.Equal(t, grpccodes.NotFound, structured.GrpcCode())
+			require.Equal(t, arkerrors.OFFCHAIN_TX_NOT_FOUND.Name, structured.CodeName())
+
+			// The same tx must show up in the failed-only range query.
+			failedTxs, err := repo.GetOffchainTxsInRange(
+				ctx, startedAt-1, startedAt+1, true, false, 0,
+			)
+			require.NoError(t, err)
+			require.Len(t, failedTxs, 1)
+			require.Equal(t, failedTxid, failedTxs[0].ArkTxid)
+
+			// ...and be excluded from the completed-only one.
+			completedTxs, err := repo.GetOffchainTxsInRange(
+				ctx, startedAt-1, startedAt+1, false, true, 0,
+			)
+			require.NoError(t, err)
+			require.Empty(t, completedTxs)
 		})
 	})
 }
