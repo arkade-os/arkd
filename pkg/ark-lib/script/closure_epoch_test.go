@@ -247,3 +247,23 @@ func TestCLTVCSVMultisigClosureWitness(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+// TestZeroLocktimeYieldsZeroSequence documents why a zero vtxo tree expiry has to
+// be refused rather than merely avoided: BIP68Sequence accepts it and returns
+// sequence 0, so the resulting CSV imposes no delay at all and the batch output
+// is sweepable the instant it confirms.
+func TestZeroLocktimeYieldsZeroSequence(t *testing.T) {
+	seq, err := arklib.BIP68Sequence(
+		arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 0},
+	)
+	require.NoError(t, err, "a zero locktime is accepted, which is the hazard")
+
+	// The encoding is not literally zero - it carries the is-seconds flag - but
+	// the delay it encodes is, so the CSV imposes no wait whatsoever.
+	require.Zero(t, seq&arklib.SEQUENCE_LOCKTIME_MASK,
+		"the encoded delay is zero, so the CSV imposes no wait")
+
+	// Aside, pre-existing and out of scope here: BIP68DecodeSequence computes
+	// (0 << 9) - 1 for this sequence and wraps to uint32 max, so a zero-delay
+	// sequence decodes as ~136 years. Not exercised by any epoch code path.
+}

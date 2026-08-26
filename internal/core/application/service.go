@@ -3123,6 +3123,21 @@ func (s *service) startFinalization(
 	if sweepParams.IsEpoch() {
 		epochExpiry = int64(*sweepParams.BatchExpiry)
 	}
+
+	// The pinned params reach here through a deferred dispatch, so an unassigned
+	// value would arrive as the zero locktime. BIP68Sequence accepts that and
+	// yields sequence 0 - a CSV of zero, leaving the batch output sweepable by
+	// the operator the instant it confirms. Every path that skips the assignment
+	// currently aborts the round before dispatch, but that is a control-flow
+	// invariant one edit away from breaking, and the failure would be silent
+	// and total.
+	if vtxoTreeExpiry.Value == 0 {
+		log.Error(
+			"refusing to build a batch with a zero vtxo tree expiry, aborting round",
+		)
+		return
+	}
+
 	var banDuration *time.Duration
 	if settings.BanDuration > 0 {
 		banDuration = &settings.BanDuration
