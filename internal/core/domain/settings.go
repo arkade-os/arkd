@@ -459,7 +459,24 @@ func (s *Settings) Update(u SettingsUpdate) ([]string, error) {
 		updated.EpochExpiryEnabled = *u.EpochExpiryEnabled
 		changelog = append(changelog, "epoch_expiry_enabled")
 	}
-	if u.EpochAnchor != nil {
+	if u.EpochAnchor != nil && !u.EpochAnchor.Equal(updated.EpochAnchor) {
+		// The anchor fixes the phase of the whole boundary grid. Moving it while
+		// batches are being minted against the old grid does not touch those
+		// batches - they carry their date on the round and in their own sweep
+		// leaves - but new batches would land on a different set of dates, so more
+		// than two expiry dates go live at once and vtxos minted either side stop
+		// being expiry-fungible. That is the property the scheme exists to provide.
+		//
+		// Setting it while epoch expiry is off is the go-live path and stays
+		// allowed, including in the same update that turns the flag on. Changing it
+		// afterwards means first turning epoch expiry off and waiting for the
+		// batches on the old grid to drain.
+		if s.EpochExpiryEnabled {
+			return nil, fmt.Errorf(
+				"epoch_anchor cannot be changed while epoch_expiry_enabled is true: " +
+					"batches are already committing to the current boundaries",
+			)
+		}
 		updated.EpochAnchor = *u.EpochAnchor
 		changelog = append(changelog, "epoch_anchor")
 	}

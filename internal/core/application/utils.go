@@ -749,13 +749,23 @@ func epochUnrollGrace(vtxoTree tree.FlatTxTree) (arklib.RelativeLocktime, error)
 //
 // Swept vtxos are exempt: the operator already holds those funds onchain, no
 // forfeit is needed, and settling one is exactly how recovery works.
+//
+// Vtxos from pre-cutover batches are exempt too. They expire on their own
+// relative schedule, so the rollover bound would reject renewing one for as long
+// as it has more life left than the window - which on the day the flag is
+// flipped is every legacy vtxo in existence, and renewal is how they migrate onto
+// the epoch schedule in the first place.
 func checkEpochAdmission(
 	sched domain.EpochSchedule, vtxo domain.Vtxo, now time.Time, isRenewal bool,
 ) error {
 	if vtxo.Swept {
 		return nil
 	}
-	return sched.AdmitsSettle(arklib.AbsoluteLocktime(vtxo.ExpiresAt), now, isRenewal)
+	expiry := arklib.AbsoluteLocktime(vtxo.ExpiresAt)
+	if !sched.Governs(expiry) {
+		return nil
+	}
+	return sched.AdmitsSettle(expiry, now, isRenewal)
 }
 
 // intentHasOffchainOutput reports whether an intent produces at least one vtxo,

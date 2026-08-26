@@ -91,6 +91,31 @@ func (s EpochSchedule) ExpiryFor(t time.Time) (arklib.AbsoluteLocktime, error) {
 	return arklib.AbsoluteLocktime(boundary), nil
 }
 
+// Governs reports whether a vtxo expiring at expiry is on this schedule.
+//
+// Every vtxo minted by an epoch batch inherits the batch's expiry date, and that
+// date is always an epoch boundary, so landing on the grid is an exact test for
+// "this vtxo was minted under epoch expiry". A vtxo from a pre-cutover batch
+// expires at parentConfirmedAt+VtxoTreeExpiry, an arbitrary instant, and is not
+// governed by the epoch windows: it never had the option of renewing into the
+// same date, so the rollover bound would just refuse it for weeks after the flag
+// is flipped, and renewing is exactly how such a vtxo migrates onto the schedule.
+//
+// A legacy vtxo landing on a boundary by coincidence is possible at second
+// resolution and harmless: it is then held to the epoch windows, which is the
+// stricter of the two policies.
+func (s EpochSchedule) Governs(expiry arklib.AbsoluteLocktime) bool {
+	if s.Length <= 0 {
+		return false
+	}
+
+	expiresAt := time.Unix(int64(expiry), 0)
+	if expiresAt.Before(s.Anchor) {
+		return false
+	}
+	return expiresAt.Sub(s.Anchor)%s.Length == 0
+}
+
 // AdmitsSettle reports whether a vtxo expiring at expiry may be settled at now.
 //
 // The lower bound is a safety bound and applies to every vtxo input including

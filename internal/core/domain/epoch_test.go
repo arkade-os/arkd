@@ -205,3 +205,65 @@ func TestEpochScheduleAdmitsSettle(t *testing.T) {
 		require.NoError(t, s.AdmitsSettle(expiry, testAnchor.Add(-7*day), true))
 	})
 }
+
+// TestSettingsUpdateFreezesEpochAnchor pins that the anchor cannot drift once
+// batches are committing to the boundary grid it defines.
+func TestSettingsUpdateFreezesEpochAnchor(t *testing.T) {
+	anchor := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	moved := anchor.Add(72 * time.Hour)
+
+	base := func(enabled bool) domain.Settings {
+		s := validSettings
+		s.EpochExpiryEnabled = enabled
+		s.EpochAnchor = anchor
+		s.EpochLength = 28 * 24 * time.Hour
+		s.RolloverWindow = 7 * 24 * time.Hour
+		s.SettlementCutoff = 24 * time.Hour
+		s.UnrollGrace = arklib.RelativeLocktime{
+			Type: arklib.LocktimeTypeSecond, Value: 7168,
+		}
+		return s
+	}
+
+	t.Run("settable while epoch expiry is off", func(t *testing.T) {
+		s := base(false)
+		changelog, err := s.Update(domain.SettingsUpdate{EpochAnchor: &moved})
+		require.NoError(t, err)
+		require.Contains(t, changelog, "epoch_anchor")
+		require.True(t, s.EpochAnchor.Equal(moved))
+	})
+
+	t.Run("settable in the same update that turns the flag on", func(t *testing.T) {
+		s := base(false)
+		enabled := true
+		changelog, err := s.Update(domain.SettingsUpdate{
+			EpochAnchor: &moved, EpochExpiryEnabled: &enabled,
+		})
+		require.NoError(t, err)
+		require.Contains(t, changelog, "epoch_anchor")
+		require.True(t, s.EpochAnchor.Equal(moved))
+	})
+
+	t.Run("frozen once epoch expiry is on", func(t *testing.T) {
+		s := base(true)
+		_, err := s.Update(domain.SettingsUpdate{EpochAnchor: &moved})
+		require.ErrorContains(t, err, "epoch_anchor cannot be changed")
+		require.True(t, s.EpochAnchor.Equal(anchor), "the receiver must be untouched")
+	})
+
+	t.Run("resubmitting the same anchor is a no-op, not an error", func(t *testing.T) {
+		s := base(true)
+		same := anchor
+		changelog, err := s.Update(domain.SettingsUpdate{EpochAnchor: &same})
+		require.NoError(t, err)
+		require.NotContains(t, changelog, "epoch_anchor")
+	})
+
+	t.Run("other epoch settings stay tunable while on", func(t *testing.T) {
+		s := base(true)
+		window := 5 * 24 * time.Hour
+		changelog, err := s.Update(domain.SettingsUpdate{RolloverWindow: &window})
+		require.NoError(t, err)
+		require.Contains(t, changelog, "rollover_window")
+	})
+}

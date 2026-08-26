@@ -682,3 +682,85 @@ func TestEpochUnrollGrace(t *testing.T) {
 		require.ErrorContains(t, err, "not found in tree")
 	})
 }
+
+// TestCheckEpochAdmissionExemptsLegacyVtxos pins the cutover behaviour: on the
+// day epoch expiry is switched on, every vtxo already in circulation expires on
+// its own relative schedule and must stay renewable. Holding those to the
+// rollover window would reject them for as long as they have more life left than
+// the window, which is exactly when a user would want to migrate one onto the
+// epoch schedule.
+func TestCheckEpochAdmissionExemptsLegacyVtxos(t *testing.T) {
+	anchor := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	sched := domain.EpochSchedule{
+		Anchor:           anchor,
+		Length:           28 * 24 * time.Hour,
+		RolloverWindow:   7 * 24 * time.Hour,
+		SettlementCutoff: 24 * time.Hour,
+	}
+
+	now := anchor.Add(30 * 24 * time.Hour)
+	boundary := sched.BoundaryAfter(now)
+
+	t.Run("an epoch vtxo is held to the rollover window", func(t *testing.T) {
+		// Far outside the window: renewing would hand back the same date.
+		vtxo := domain.Vtxo{ExpiresAt: boundary.Unix()}
+		require.True(t, sched.Governs(arklib.AbsoluteLocktime(vtxo.ExpiresAt)))
+
+		err := checkEpochAdmission(sched, vtxo, now, true)
+		require.ErrorContains(t, err, "too early")
+	})
+
+	t.Run("a legacy vtxo is exempt", func(t *testing.T) {
+		// A pre-cutover vtxo with 20 days left: further out than the 7 day window,
+		// so the epoch rule would reject it, but it is not on the epoch grid.
+		legacy := domain.Vtxo{ExpiresAt: now.Add(20 * 24 * time.Hour).Unix()}
+		require.False(t, sched.Governs(arklib.AbsoluteLocktime(legacy.ExpiresAt)))
+
+		require.NoError(t, checkEpochAdmission(sched, legacy, now, true))
+	})
+
+	t.Run("a legacy vtxo may still be exited", func(t *testing.T) {
+		legacy := domain.Vtxo{ExpiresAt: now.Add(20 * 24 * time.Hour).Unix()}
+		require.NoError(t, checkEpochAdmission(sched, legacy, now, false))
+	})
+
+	t.Run("swept vtxos stay exempt", func(t *testing.T) {
+		vtxo := domain.Vtxo{ExpiresAt: boundary.Unix(), Swept: true}
+		require.NoError(t, checkEpochAdmission(sched, vtxo, now, true))
+	})
+}
+
+// TestEpochScheduleGoverns pins the grid test itself.
+func TestEpochScheduleGoverns(t *testing.T) {
+	anchor := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	sched := domain.EpochSchedule{
+		Anchor:           anchor,
+		Length:           28 * 24 * time.Hour,
+		RolloverWindow:   7 * 24 * time.Hour,
+		SettlementCutoff: 24 * time.Hour,
+	}
+
+	t.Run("the anchor itself is on the grid", func(t *testing.T) {
+		require.True(t, sched.Governs(arklib.AbsoluteLocktime(anchor.Unix())))
+	})
+
+	t.Run("every boundary is on the grid", func(t *testing.T) {
+		for n := 1; n <= 20; n++ {
+			at := anchor.Add(time.Duration(n) * sched.Length)
+			require.True(
+				t, sched.Governs(arklib.AbsoluteLocktime(at.Unix())),
+				"boundary %d must be recognised", n,
+			)
+		}
+	})
+
+	t.Run("one second off the grid is not governed", func(t *testing.T) {
+		at := anchor.Add(sched.Length).Add(time.Second)
+		require.False(t, sched.Governs(arklib.AbsoluteLocktime(at.Unix())))
+	})
+
+	t.Run("a date before the anchor is not governed", func(t *testing.T) {
+		at := anchor.Add(-sched.Length)
+		require.False(t, sched.Governs(arklib.AbsoluteLocktime(at.Unix())))
+	})
+}
