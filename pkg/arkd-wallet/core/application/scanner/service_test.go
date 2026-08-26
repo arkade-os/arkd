@@ -87,6 +87,26 @@ func TestConnection(t *testing.T) {
 		require.GreaterOrEqual(t, fake.calls(), 2)
 	})
 
+	t.Run("removes listener on ctx cancel", func(t *testing.T) {
+		fake := &fakeNbxplorer{}
+		s := startScanner(t, fake, defaultInitialBackoff, defaultMaxBackoff)
+
+		cancelledCtx, cancel := context.WithCancel(t.Context())
+		s.GetNotificationChannel(cancelledCtx)
+		s.GetNotificationChannel(t.Context())
+
+		cancel()
+
+		listenerCount := func() int {
+			s.lock.RLock()
+			defer s.lock.RUnlock()
+			return len(s.notificationListeners)
+		}
+		require.Eventually(t, func() bool {
+			return listenerCount() == 1
+		}, time.Second, 10*time.Millisecond)
+	})
+
 	t.Run("reconnects multiple times", func(t *testing.T) {
 		ch1 := make(chan []ports.Utxo)
 		ch2 := make(chan []ports.Utxo)

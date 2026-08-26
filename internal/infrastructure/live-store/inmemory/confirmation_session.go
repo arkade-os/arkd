@@ -37,6 +37,7 @@ func (c *confirmationSessionsStore) Init(_ context.Context, intentIDsHashes [][3
 	c.sessionCompleteCh = make(chan struct{})
 	c.intentsHashes = hashes
 	c.numIntents = len(intentIDsHashes)
+	c.numConfirmedIntents = 0
 	c.initialized = true
 	return nil
 }

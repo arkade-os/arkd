@@ -205,6 +205,7 @@ func (m *intentStore) DeleteAll(_ context.Context) error {
 
 	m.intents = make(map[string]*ports.TimedIntent)
 	m.vtxos = make(map[string]struct{})
+	m.vtxosToRemove = make([]string, 0)
 	m.selectedIntents = make([]ports.TimedIntent, 0)
 	return nil
 }

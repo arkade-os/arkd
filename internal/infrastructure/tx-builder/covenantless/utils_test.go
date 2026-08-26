@@ -3,11 +3,13 @@ package txbuilder_test
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/ports"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -45,6 +47,43 @@ func newTwoKeyVtxoSetup(t *testing.T, signerKey *btcec.PrivateKey) vtxoSetup {
 	)
 }
 
+// newConditionCSVVtxoSetup builds a ConditionCSVMultisigClosure over closureKey
+// and signerKey, gated by a sha256 preimage condition. It returns the setup and
+// the condition witness that satisfies it.
+func newConditionCSVVtxoSetup(
+	t *testing.T, signerKey *btcec.PrivateKey, preimage []byte,
+) (vtxoSetup, wire.TxWitness) {
+	t.Helper()
+
+	closureKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	hash := sha256.Sum256(preimage)
+	condition, err := txscript.NewScriptBuilder().
+		AddOp(txscript.OP_SHA256).AddData(hash[:]).AddOp(txscript.OP_EQUAL).Script()
+	require.NoError(t, err)
+
+	closureScript, err := (&script.ConditionCSVMultisigClosure{
+		Condition: condition,
+		CSVMultisigClosure: script.CSVMultisigClosure{
+			MultisigClosure: script.MultisigClosure{
+				PubKeys: []*btcec.PublicKey{closureKey.PubKey(), signerKey.PubKey()},
+				Type:    script.MultisigTypeChecksig,
+			},
+			Locktime: arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 10},
+		},
+	}).Script()
+	require.NoError(t, err)
+
+	// Pin the premise: the leaf must decode back to the closure under test.
+	decoded, err := script.DecodeClosure(closureScript)
+	require.NoError(t, err)
+	require.IsType(t, &script.ConditionCSVMultisigClosure{}, decoded)
+
+	setup := buildVtxoSetupFromScript(t, closureKey, signerKey, closureScript)
+	return setup, wire.TxWitness{preimage}
+}
+
 func buildVtxoSetup(
 	t *testing.T, closureKey, signerKey *btcec.PrivateKey, pubkeys []*btcec.PublicKey,
 ) vtxoSetup {
@@ -53,6 +92,14 @@ func buildVtxoSetup(
 	closure := &script.MultisigClosure{PubKeys: pubkeys, Type: script.MultisigTypeChecksig}
 	closureScript, err := closure.Script()
 	require.NoError(t, err)
+
+	return buildVtxoSetupFromScript(t, closureKey, signerKey, closureScript)
+}
+
+func buildVtxoSetupFromScript(
+	t *testing.T, closureKey, signerKey *btcec.PrivateKey, closureScript []byte,
+) vtxoSetup {
+	t.Helper()
 
 	leaf := txscript.NewBaseTapLeaf(closureScript)
 	tapTree := txscript.AssembleTaprootScriptTree(leaf)

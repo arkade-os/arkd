@@ -231,7 +231,8 @@ func (w *wallet) sendExpiredBoardingUtxos(ctx context.Context, to string) (strin
 	}
 	feeAmount := uint64(math.Ceil(float64(vbytes)*feeRate) + 50)
 
-	if targetAmount-feeAmount <= w.Dust {
+	// the fee is checked first to prevent the uint64 subtraction from wrapping.
+	if feeAmount >= targetAmount || targetAmount-feeAmount <= w.Dust {
 		return "", fmt.Errorf("not enough funds to cover network fees")
 	}
 

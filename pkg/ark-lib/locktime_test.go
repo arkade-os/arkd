@@ -229,6 +229,12 @@ func TestBIP68DecodeSequenceFromBytes(t *testing.T) {
 			{"block based", []byte{0x64}, block(100)},
 			// 0x400001 = SEQUENCE_LOCKTIME_TYPE_FLAG | 1 -> (1 << 9) seconds.
 			{"seconds based", []byte{0x01, 0x00, 0x40}, seconds(512)},
+			// 0x010000 = 65536 blocks; consensus masks to 0, so must we.
+			{"block based above mask", []byte{0x00, 0x00, 0x01}, block(0)},
+			// 0x00010064: bits above the mask dropped, low bits kept.
+			{"block based high bits dropped", []byte{0x64, 0x00, 0x01}, block(100)},
+			// 0x410000 = TYPE_FLAG | bit 16; masks to 0 seconds (already masked).
+			{"seconds based above mask", []byte{0x00, 0x00, 0x41}, seconds(0)},
 		}
 
 		for _, tt := range tests {

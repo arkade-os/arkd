@@ -8,6 +8,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -87,7 +88,10 @@ func CoinSelect(
 			if err != nil {
 				return nil, nil, 0, err
 			}
-			amount += uint64(fees.ToSatoshis())
+			amount, err = addFee(amount, fees)
+			if err != nil {
+				return nil, nil, 0, err
+			}
 		}
 	}
 
@@ -114,7 +118,10 @@ func CoinSelect(
 			if err != nil {
 				return nil, nil, 0, err
 			}
-			amount += uint64(fees.ToSatoshis())
+			amount, err = addFee(amount, fees)
+			if err != nil {
+				return nil, nil, 0, err
+			}
 		}
 	}
 
@@ -132,7 +139,10 @@ func CoinSelect(
 			if err != nil {
 				return nil, nil, 0, err
 			}
-			amount += uint64(feesForInput.ToSatoshis())
+			amount, err = addFee(amount, feesForInput)
+			if err != nil {
+				return nil, nil, 0, err
+			}
 		}
 	}
 
@@ -142,6 +152,10 @@ func CoinSelect(
 
 	change := selectedAmount - amount
 
+	// deficit carries the part of a fee that the change could not cover, so that
+	// an input folded in below still pays it.
+	deficit := uint64(0)
+
 	if feeEstimator != nil {
 		fees, err := feeEstimator.EvalOffchainOutput(arkfee.Output{
 			Amount: change,
@@ -149,7 +163,12 @@ func CoinSelect(
 		if err != nil {
 			return nil, nil, 0, err
 		}
-		change -= uint64(fees.ToSatoshis())
+		// The change output's own fee was never reserved in amount, so it may
+		// exceed the residual change: clamp instead of wrapping the uint64.
+		change, deficit, err = subFee(change, deficit, fees)
+		if err != nil {
+			return nil, nil, 0, err
+		}
 	}
 
 	if change < dust {
@@ -162,7 +181,12 @@ func CoinSelect(
 				if err != nil {
 					return nil, nil, 0, err
 				}
-				change -= uint64(fees.ToSatoshis())
+				// Only one input is ever folded in, so any deficit left after it
+				// has nothing else to draw on and drops with the change.
+				change, _, err = subFee(change, deficit, fees)
+				if err != nil {
+					return nil, nil, 0, err
+				}
 			}
 		} else if len(notSelectedBoarding) > 0 {
 			selectedBoarding = append(selectedBoarding, notSelectedBoarding[0])
@@ -173,7 +197,10 @@ func CoinSelect(
 				if err != nil {
 					return nil, nil, 0, err
 				}
-				change -= uint64(fees.ToSatoshis())
+				change, _, err = subFee(change, deficit, fees)
+				if err != nil {
+					return nil, nil, 0, err
+				}
 			}
 		} else {
 			change = 0
@@ -181,6 +208,46 @@ func CoinSelect(
 	}
 
 	return selectedBoarding, selected, change, nil
+}
+
+// feeToSats converts an evaluated fee to sats. A negative fee is rejected
+// because converting it to uint64 would turn it into a huge amount.
+func feeToSats(fees arkfee.FeeAmount) (uint64, error) {
+	sats := fees.ToSatoshis()
+	if sats < 0 {
+		return 0, errors.INTENT_FEE_EVALUATION_FAILED.New("negative fee amount %d", sats)
+	}
+	return uint64(sats), nil
+}
+
+func addFee(amount uint64, fees arkfee.FeeAmount) (uint64, error) {
+	sats, err := feeToSats(fees)
+	if err != nil {
+		return 0, err
+	}
+	if amount+sats < amount {
+		return 0, errors.INTENT_FEE_EVALUATION_FAILED.New(
+			"fee amount %d overflows total amount %d", sats, amount,
+		)
+	}
+	return amount + sats, nil
+}
+
+func subFee(change, deficit uint64, fees arkfee.FeeAmount) (uint64, uint64, error) {
+	sats, err := feeToSats(fees)
+	if err != nil {
+		return 0, 0, err
+	}
+	owed := sats + deficit
+	if owed < sats {
+		return 0, 0, errors.INTENT_FEE_EVALUATION_FAILED.New(
+			"fee amount %d overflows pending fee deficit %d", sats, deficit,
+		)
+	}
+	if owed >= change {
+		return 0, owed - change, nil
+	}
+	return change - owed, 0, nil
 }
 
 // CoinSelectAsset picks vtxos that, combined, hold at least `amount` units of the asset identified

@@ -75,10 +75,11 @@ func TestPaginatedFetch(t *testing.T) {
 
 	t.Run("invalid", func(t *testing.T) {
 		tests := []struct {
-			name    string
-			ctx     context.Context
-			fetch   func(context.Context, *arkv1.IndexerPageRequest) ([]int, *arkv1.IndexerPageResponse, error)
-			wantErr string
+			name     string
+			ctx      context.Context
+			fetch    func(context.Context, *arkv1.IndexerPageRequest) ([]int, *arkv1.IndexerPageResponse, error)
+			wantErr  string
+			throttle time.Duration
 		}{
 			{
 				name: "fetch error propagates",
@@ -115,6 +116,8 @@ func TestPaginatedFetch(t *testing.T) {
 					}, nil
 				},
 				wantErr: "too many pages",
+				// Walking every page at the real interval would sleep for minutes.
+				throttle: time.Millisecond,
 			},
 			{
 				name: "context cancelled during throttle",
@@ -139,6 +142,12 @@ func TestPaginatedFetch(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
+				if tt.throttle > 0 {
+					prev := throttleInterval
+					throttleInterval = tt.throttle
+					defer func() { throttleInterval = prev }()
+				}
+
 				resp, err := paginatedFetch(tt.ctx, tt.fetch)
 				require.Error(t, err)
 				require.ErrorContains(t, err, tt.wantErr)

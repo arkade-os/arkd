@@ -196,10 +196,15 @@ func TestAdminService_Settings(t *testing.T) {
 type mockRepoManager struct {
 	ports.RepoManager
 	settingsRepo domain.SettingsRepository
+	roundsRepo   domain.RoundRepository
 }
 
 func (m *mockRepoManager) Settings() domain.SettingsRepository {
 	return m.settingsRepo
+}
+
+func (m *mockRepoManager) Rounds() domain.RoundRepository {
+	return m.roundsRepo
 }
 
 type mockSettingsRepository struct {
@@ -315,3 +320,44 @@ func (r *serializeProbeRepo) Upsert(
 func (r *serializeProbeRepo) RegisterUpdatesHandler(_ func(domain.Settings, []string)) {}
 
 func (r *serializeProbeRepo) Close() {}
+
+// TestAdminService_GetRounds pins the argument wiring. The filtering, ordering
+// and limit semantics live in SQL now and are covered against both sqlite and
+// postgres by testRoundRepository; what can still break here is the order of
+// the seven parameters, so that is what this asserts.
+func TestAdminService_GetRounds(t *testing.T) {
+	ctx := context.Background()
+	repo := &mockRepoManager{roundsRepo: &mockRoundRepository{}}
+	svc := application.NewAdminService(nil, repo, nil, nil, ports.UnixTime, nil)
+
+	want := []domain.RoundSummary{{RoundId: "r1", FailReason: "boom", Failed: true}}
+	rounds := repo.roundsRepo.(*mockRoundRepository)
+	rounds.summaries = want
+
+	got, err := svc.GetRounds(ctx, 100, 200, true, false, true, 25)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+
+	require.Equal(t, int64(100), rounds.gotAfter)
+	require.Equal(t, int64(200), rounds.gotBefore)
+	require.True(t, rounds.gotWithFailed)
+	require.False(t, rounds.gotWithCompleted)
+	require.True(t, rounds.gotOnlyFailed)
+	require.Equal(t, int64(25), rounds.gotLimit)
+}
+
+type mockRoundRepository struct {
+	domain.RoundRepository
+	summaries []domain.RoundSummary
+
+	gotAfter, gotBefore, gotLimit                  int64
+	gotWithFailed, gotWithCompleted, gotOnlyFailed bool
+}
+
+func (m *mockRoundRepository) GetRoundSummaries(
+	_ context.Context, after, before int64, withFailed, withCompleted, onlyFailed bool, limit int64,
+) ([]domain.RoundSummary, error) {
+	m.gotAfter, m.gotBefore, m.gotLimit = after, before, limit
+	m.gotWithFailed, m.gotWithCompleted, m.gotOnlyFailed = withFailed, withCompleted, onlyFailed
+	return m.summaries, nil
+}

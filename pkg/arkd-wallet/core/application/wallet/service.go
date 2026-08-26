@@ -668,6 +668,12 @@ func (w *wallet) SignTransaction(
 			continue
 		}
 
+		// this comes from the submitted psbt, so without the check a caller can steer
+		// what our own signature commits to.
+		if err := script.CheckSigHashType(input.SighashType); err != nil {
+			return "", fmt.Errorf("input %d: %w", inputIndex, err)
+		}
+
 		if len(input.TaprootLeafScript) > 0 {
 			var signingKey *btcec.PrivateKey
 			if signMode == application.SignModeSigner {
@@ -741,15 +747,15 @@ func (w *wallet) SignTransaction(
 					return "", err
 				}
 
-				conditionWitnessFields, err := txutils.GetArkPsbtFields(ptx, i, txutils.ConditionWitnessField)
+				conditionWitness, err := txutils.GetArkPsbtConditionWitness(ptx, i)
 				if err != nil {
 					return "", err
 				}
 
 				args := make(map[string][]byte)
-				if len(conditionWitnessFields) > 0 {
+				if conditionWitness != nil {
 					var conditionWitnessBytes bytes.Buffer
-					if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitnessFields[0]); err != nil {
+					if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitness); err != nil {
 						return "", err
 					}
 					args[string(txutils.ArkFieldConditionWitness)] = conditionWitnessBytes.Bytes()

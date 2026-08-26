@@ -25,6 +25,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const (
+	// Hard caps on page-number pagination: index*size must stay below MaxInt32
+	// so the offset computed downstream can never wrap.
+	maxPageRequestSize  = 1000
+	maxPageRequestIndex = 1_000_000
+)
+
 type indexerService struct {
 	indexerSvc application.IndexerService
 	eventsCh   <-chan application.TransactionEvent
@@ -242,8 +249,7 @@ func (e *indexerService) GetVtxos(
 
 	pubkeys := make([]string, 0, len(request.GetScripts()))
 	for _, script := range request.GetScripts() {
-		script, err := parseScript(script)
-		if err != nil {
+		if err := parseScript(script); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 		pubkeys = append(pubkeys, script[4:])
@@ -913,10 +919,10 @@ func parsePage(page *arkv1.IndexerPageRequest) (*application.Page, error) {
 	if page == nil {
 		return nil, nil
 	}
-	if page.Size <= 0 {
+	if page.Size <= 0 || page.Size > maxPageRequestSize {
 		return nil, fmt.Errorf("invalid page size")
 	}
-	if page.Index < 0 {
+	if page.Index < 0 || page.Index > maxPageRequestIndex {
 		return nil, fmt.Errorf("invalid page index")
 	}
 	return &application.Page{
@@ -955,28 +961,28 @@ func parseScripts(scripts []string) ([]string, error) {
 	}
 
 	for _, script := range scripts {
-		if _, err := parseScript(script); err != nil {
+		if err := parseScript(script); err != nil {
 			return nil, err
 		}
 	}
 	return scripts, nil
 }
 
-func parseScript(script string) (string, error) {
+func parseScript(script string) error {
 	if len(script) <= 0 {
-		return "", fmt.Errorf("missing script")
+		return fmt.Errorf("missing script")
 	}
 	buf, err := hex.DecodeString(script)
 	if err != nil {
-		return "", fmt.Errorf("invalid script format, must be hex")
+		return fmt.Errorf("invalid script format, must be hex")
 	}
 	if !txscript.IsPayToTaproot(buf) {
-		return "", fmt.Errorf("invalid script, must be P2TR")
+		return fmt.Errorf("invalid script, must be P2TR")
 	}
 	if _, err := schnorr.ParsePubKey(buf[2:]); err != nil {
-		return "", fmt.Errorf("invalid script, failed to extract tapkey: %s", err)
+		return fmt.Errorf("invalid script, failed to extract tapkey: %s", err)
 	}
-	return script, nil
+	return nil
 }
 
 func parseTimeRange(after, before int64) (int64, int64, error) {
