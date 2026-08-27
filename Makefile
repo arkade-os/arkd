@@ -64,6 +64,16 @@ docker-run-light:
 	@echo "Running dockerized arkd and arkd wallet in test mode on regtest (light mode)..."
 	@docker compose -f docker-compose.regtest.yml up --build -d
 
+## docker-run-epoch: start docker test environment with seconds-based locktimes
+## Epoch expiry needs a time-based sweep scheduler, and that is chosen once at
+## startup from the configured locktime type - so it cannot be reached by
+## updating settings on the default block-based stack. Values are multiples of
+## 512, the granularity BIP68 gives a seconds-based sequence, and satisfy the
+## same-type and ordering rules config validation applies to the delays.
+docker-run-epoch:
+	@echo "Running dockerized arkd and arkd wallet on regtest with seconds-based locktimes..."
+	@set -a && . envs/arkd.dev.docker.env && set +a && 		ARKD_VTXO_TREE_EXPIRY=1024 		ARKD_UNILATERAL_EXIT_DELAY=512 		ARKD_PUBLIC_UNILATERAL_EXIT_DELAY=1024 		ARKD_BOARDING_EXIT_DELAY=1536 		ARKD_CHECKPOINT_EXIT_DELAY=512 		docker compose -f docker-compose.regtest.yml up --build -d
+
 ## docker-stop: tear down docker test environment
 docker-stop:
 	@echo "Stopping dockerized arkd and arkd wallet in test mode on regtest..."
@@ -90,6 +100,14 @@ help:
 integrationtest:
 	@echo "Running integration tests..."
 	@go test -v -count 1 -timeout 3600s github.com/arkade-os/arkd/internal/test/e2e
+
+## epochtest: run the epoch expiry integration tests (needs make docker-run-epoch)
+## Separate from integrationtest because they need a seconds-based deployment,
+## and because waiting for a real epoch boundary is minutes of wall clock that
+## the rest of the suite should not pay.
+epochtest:
+	@echo "Running epoch expiry integration tests..."
+	@go test -v -count 1 -timeout 3600s github.com/arkade-os/arkd/internal/test/e2e 		-run 'TestEpoch|TestLegacyAndEpochBatchesCoexist'
 
 ## lint: lint codebase
 lint:

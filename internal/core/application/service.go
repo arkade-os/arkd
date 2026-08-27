@@ -3995,6 +3995,20 @@ func (s *service) scheduleSweepBatchOutput(round domain.Round) {
 	var skipExpiryUpdate bool
 	switch {
 	case round.EpochExpiry > 0:
+		// An epoch date is a unix timestamp. A block-height scheduler would read it
+		// as a block roughly 1.8 billion ahead, so the task would never come due and
+		// the batch would silently go unswept. Settings validation and the admin API
+		// both refuse the pairing, so reaching here is an invariant violation - say
+		// so rather than scheduling something that can never fire. Mirrors the guard
+		// in findSweepableOutputs.
+		if s.sweeper.scheduler.Unit() == ports.BlockHeight {
+			log.Errorf(
+				"batch %s carries an epoch expiry but the sweep scheduler is "+
+					"block-height; refusing to schedule a sweep that could never come due",
+				round.CommitmentTxid,
+			)
+			return
+		}
 		// Take both the date and the grace the batch actually committed to from the
 		// batch itself, never from live settings: a settings change between
 		// finalization and this call must not move an existing batch's sweep

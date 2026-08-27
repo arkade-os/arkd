@@ -741,6 +741,25 @@ func (a *adminService) UpdateSettings(
 		return nil, fmt.Errorf("no settings found")
 	}
 
+	// The sweep scheduler is picked once at startup from the configured locktime
+	// type; changing vtxo_tree_expiry at runtime does not move it. Settings.Validate
+	// only sees the settings value, so on a deployment that booted block-based an
+	// operator could switch the expiry to seconds, enable epoch expiry, pass
+	// validation, and still be left with a scheduler reading an epoch date as a
+	// block height roughly 1.8 billion ahead - batches that never sweep. Check the
+	// unit the sweeper is actually running on.
+	enabling := settings.EpochExpiryEnabled
+	if updates.EpochExpiryEnabled != nil {
+		enabling = *updates.EpochExpiryEnabled
+	}
+	if enabling && a.sweeperTimeUnit == ports.BlockHeight {
+		return nil, fmt.Errorf(
+			"epoch expiry requires a time-based sweep scheduler, but this deployment " +
+				"started with block-based locktimes; restart arkd with seconds-based " +
+				"delays before enabling it",
+		)
+	}
+
 	changelog, err := settings.Update(updates)
 	if err != nil {
 		return nil, err

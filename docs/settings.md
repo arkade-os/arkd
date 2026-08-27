@@ -173,8 +173,24 @@ Three constraints are enforced at startup and on every settings update:
 - `epoch_anchor` must be at least `500000000`, because an `nLockTime` below that
   is read as a block height rather than a timestamp
 
-`epoch_anchor` can never be changed once batches exist against it: every live
-batch has already committed its date on chain.
+`epoch_anchor` is rejected by the admin API whenever `epoch_expiry_enabled` is
+already true, not only once batches exist. Setting it while the flag is off is
+the go-live path and stays allowed, including in the same update that turns the
+flag on, and re-submitting the value it already has is a no-op rather than an
+error.
+
+The rule is deliberately blunt. The anchor only sets the phase of the boundary
+grid, so moving it does not disturb batches already built — they carry their date
+on the round and in their own sweep leaves — but new batches would land on a
+different set of dates, putting more than two expiry dates in flight and breaking
+the fungibility the scheme exists to provide. To change it, disable epoch expiry,
+let the batches on the old grid drain, then set the new anchor and re-enable.
+
+Enabling `epoch_expiry_enabled` is also refused unless arkd is running a
+time-based sweep scheduler. That scheduler is chosen once at startup from the
+configured locktime type, so switching `vtxo_tree_expiry` to seconds at runtime
+is not enough — a deployment that booted with block-based delays has to be
+restarted with seconds-based ones first.
 
 Settles are only accepted inside `[expiry - rollover_window, expiry -
 settlement_cutoff]`. The lower bound applies to every vtxo input; the upper bound
