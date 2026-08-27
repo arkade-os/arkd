@@ -513,8 +513,6 @@ VALUES (@asset_id, @txid, @vout, @amount);
 SELECT * FROM asset WHERE asset.id = ANY($1::varchar[]);
 
 
--- name: UpdateForfeitTx :execrows
-UPDATE tx SET tx = @tx WHERE txid = @txid AND type = 'forfeit';
 
 -- name: SelectAssetsWithUnspentAmountsByIds :many
 SELECT

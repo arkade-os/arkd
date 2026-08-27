@@ -40,11 +40,6 @@ type RoundRepository interface {
 	GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error)
 	GetRoundsWithCommitmentTxids(ctx context.Context, txids []string) (map[string]any, error)
 	GetIntentByTxid(ctx context.Context, txid string) (*Intent, error)
-	// PatchForfeitTxs replaces the stored tx (PSBT) of the given forfeit txs,
-	// keyed by txid. Used to backfill the operator signature on forfeit txs that
-	// were persisted before collection-time signing was introduced. Signing only
-	// adds witness data, so the txid is unchanged and safely keys the update.
-	PatchForfeitTxs(ctx context.Context, txByTxid map[string]string) error
 	// SumCollectedFees totals the fees recorded against batches that finalized in
 	// the given range (0 means unbounded). It reports what storage holds: batches
 	// finalized before fees were persisted count as zero.

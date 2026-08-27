@@ -472,9 +472,6 @@ func (s *service) bumpAnchorTx(
 // matches the given vtxo outpoint. If successful, it returns the forfeit tx and the connector
 // outpoint. If it can't find the forfeit tx, it returns an error.
 //
-// A trimmed copy lives in internal/backfill (findForfeitTx), which cannot import
-// this package; keep the two in sync.
-//
 // If the input spending the vtxo is at index 0, the connector outpoint is at index 1
 // and vice versa.
 func findForfeitTx(

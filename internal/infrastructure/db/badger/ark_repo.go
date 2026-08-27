@@ -88,25 +88,6 @@ func (r *arkRepository) GetRoundWithId(
 	return round, nil
 }
 
-// PatchForfeitTxs replaces the stored tx bytes of the given forfeit txs, keyed by
-// txid. Forfeit txs are persisted as standalone Tx records (see addTxs), so the
-// patch updates each record in place under the same txid.
-func (r *arkRepository) PatchForfeitTxs(
-	ctx context.Context, txByTxid map[string]string,
-) error {
-	for txid, tx := range txByTxid {
-		// Update, not Upsert: a missing txid must fail, not insert a stray record.
-		// Txids are unique, so unlike SQL there is no need to also assert the type.
-		if err := r.store.Update(txid, Tx{Txid: txid, Tx: tx}); err != nil {
-			if errors.Is(err, badgerhold.ErrNotFound) {
-				return fmt.Errorf("forfeit tx %s not found", txid)
-			}
-			return fmt.Errorf("failed to patch forfeit tx %s: %w", txid, err)
-		}
-	}
-	return nil
-}
-
 func (r *arkRepository) GetRoundWithCommitmentTxid(
 	ctx context.Context, txid string,
 ) (*domain.Round, error) {
