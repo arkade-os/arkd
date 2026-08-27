@@ -202,15 +202,25 @@ type settingsDTO struct {
 	ScheduledSession              scheduledSessionDTO
 	BatchFees                     batchFeesDTO
 	BatchTrigger                  string
-	Network                       string
-	DustAmount                    uint64
-	SignerPubkey                  string
-	DeprecatedSignerPubkeys       []deprecatedSignerDTO
-	ForfeitPubkey                 string
-	ForfeitAddress                string
-	CheckpointTapscript           string
-	LastBatchAt                   int64
-	LastBatchId                   string
+	// Epoch expiry. Omitted here originally, which silently disabled the feature
+	// on any redis-backed deployment: the admin API writes the repository and
+	// reports success, but a round reads this cache, so the flag arrived back as
+	// false and every batch kept its relative expiry.
+	EpochExpiryEnabled      bool
+	EpochAnchor             int64
+	EpochLength             int64
+	RolloverWindow          int64
+	SettlementCutoff        int64
+	UnrollGrace             int64
+	Network                 string
+	DustAmount              uint64
+	SignerPubkey            string
+	DeprecatedSignerPubkeys []deprecatedSignerDTO
+	ForfeitPubkey           string
+	ForfeitAddress          string
+	CheckpointTapscript     string
+	LastBatchAt             int64
+	LastBatchId             string
 }
 
 func newSettingsDTO(settings ports.Settings) settingsDTO {
@@ -247,6 +257,13 @@ func newSettingsDTO(settings ports.Settings) settingsDTO {
 		lastBatchAt = settings.LastBatchAt.Unix()
 	}
 
+	// Zero rather than the unix epoch for an unset anchor, so a round trip of
+	// settings that never configured one does not invent a date.
+	var epochAnchor int64
+	if !settings.EpochAnchor.IsZero() {
+		epochAnchor = settings.EpochAnchor.Unix()
+	}
+
 	return settingsDTO{
 		SessionDuration:               int64(settings.SessionDuration.Seconds()),
 		UnrolledVtxoMinExpiryMargin:   int64(settings.UnrolledVtxoMinExpiryMargin.Seconds()),
@@ -274,6 +291,12 @@ func newSettingsDTO(settings ports.Settings) settingsDTO {
 		DigestHeaderRequired:          settings.DigestHeaderRequired,
 		BatchFees:                     settings.BatchFees,
 		BatchTrigger:                  settings.BatchTrigger,
+		EpochExpiryEnabled:            settings.EpochExpiryEnabled,
+		EpochAnchor:                   epochAnchor,
+		EpochLength:                   int64(settings.EpochLength.Seconds()),
+		RolloverWindow:                int64(settings.RolloverWindow.Seconds()),
+		SettlementCutoff:              int64(settings.SettlementCutoff.Seconds()),
+		UnrollGrace:                   int64(settings.UnrollGrace.Value),
 		Network:                       settings.Network.Name,
 		DustAmount:                    settings.DustAmount,
 		SignerPubkey:                  signerPubkey,
@@ -335,6 +358,11 @@ func (s settingsDTO) parse() (*ports.Settings, error) {
 	if s.LastBatchAt > 0 {
 		lastBatchAt = time.Unix(s.LastBatchAt, 0)
 	}
+	var epochAnchor time.Time
+	if s.EpochAnchor > 0 {
+		epochAnchor = time.Unix(s.EpochAnchor, 0)
+	}
+	unrollGrace, _ := arklib.ParseRelativeLocktime(uint32(s.UnrollGrace))
 	return &ports.Settings{
 		Settings: domain.Settings{
 			SessionDuration:               time.Duration(s.SessionDuration) * time.Second,
@@ -364,6 +392,12 @@ func (s settingsDTO) parse() (*ports.Settings, error) {
 			ScheduledSession:              s.ScheduledSession.parse(),
 			BatchFees:                     s.BatchFees,
 			BatchTrigger:                  s.BatchTrigger,
+			EpochExpiryEnabled:            s.EpochExpiryEnabled,
+			EpochAnchor:                   epochAnchor,
+			EpochLength:                   time.Duration(s.EpochLength) * time.Second,
+			RolloverWindow:                time.Duration(s.RolloverWindow) * time.Second,
+			SettlementCutoff:              time.Duration(s.SettlementCutoff) * time.Second,
+			UnrollGrace:                   unrollGrace,
 		},
 		Network:                 networkFromString(s.Network),
 		DustAmount:              s.DustAmount,
