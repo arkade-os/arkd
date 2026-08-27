@@ -11,9 +11,9 @@ import (
 	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
-	wallet "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/arkade-os/arkd/pkg/client-lib/store"
-	"github.com/arkade-os/arkd/pkg/client-lib/types"
+	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	wallet "github.com/arkade-os/arkd/pkg/client-wallet"
+	"github.com/arkade-os/arkd/pkg/client-wallet/store"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -46,7 +46,7 @@ func TestRateLimitRejectsFastChain(t *testing.T) {
 	setRateLimit(t, true, 0.001, 3600)
 	t.Cleanup(func() { setRateLimit(t, false, 0.28, 3600) })
 
-	appDataStore, err := store.NewStore(store.Config{ConfigStoreType: types.InMemoryStore})
+	appDataStore, err := store.NewStore(wallet.InMemoryStore, "")
 	require.NoError(t, err)
 
 	client, err := wallet.NewWallet(appDataStore)
@@ -107,7 +107,7 @@ func TestRateLimitRejectsFastChain(t *testing.T) {
 			_, _ = client.NotifyIncomingFunds(notifyCtx, offchainAddr.Address)
 		})
 
-		res, sendErr := client.SendOffChain(ctx, []types.Receiver{{
+		res, sendErr := client.SendOffChain(ctx, []clientlib.Receiver{{
 			To:     offchainAddr.Address,
 			Amount: amount,
 		}})
