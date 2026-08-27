@@ -13,17 +13,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// NOTE: no assertion below has yet been reached. The first CI runs failed in
-// enableEpochExpiry - first because the admin CLI could not encode the flag at
-// all, then because the deployment is block-based - so the bodies are still
-// authored against the harness rather than verified by it. Treat the first run
-// that gets past setup as part of review, not as a regression check.
-//
 // A failure here is more likely to be design-level than flaky. These are the
 // only tests that exercise the maturity arithmetic against a real chain: every
 // unit test around it works in seconds, and a unit-mixing bug - block heights
 // compared against unix timestamps - survived all of them precisely because of
 // that. Read a failure as "the scheme may be wrong" before "the test is wrong".
+//
+// Their history is worth knowing. The first three runs never reached an
+// assertion: the admin CLI could not encode the enable flag, then the
+// deployment was block-based, then the redis cache dropped every epoch setting
+// so the tests were quietly measuring legacy batches. Two of those made the
+// feature inert in production, not just in CI, and nothing else found them.
+//
+// KNOWN GAP, deliberately left: no test here unrolls a branch within a grace of
+// the boundary and watches it survive past E while its siblings sweep at E.
+// That is the design's unilateral-exit claim and the source of its griefing
+// bound. The scheduler's half is pinned in
+// TestBatchSweepTaskSchedulesUnrolledBranchAfterItsGrace; the onchain half is
+// argued, not observed. Closing it means unrolling near the boundary and then
+// waiting past u+grace, and it should be done before the flag is flipped in any
+// environment where griefing matters.
 //
 // To run them on a Windows dev box: nigiri lives in WSL, but Docker Desktop's
 // WSL integration has to be enabled (Settings -> Resources -> WSL Integration)
@@ -79,8 +88,12 @@ const (
 // seventeen minutes of waiting is therefore the hard floor for this job, and
 // the rest of its runtime is stack setup and the four fast tests.
 //
-// The only way to make it cheaper is to run it less often - it is a separate
-// CI job precisely so that choice is available without touching these values.
+// The only way to make it cheaper is to run it less often, and that was
+// considered and declined: it runs on every PR deliberately. Three of the seven
+// defects found in this work were reachable only end to end, and two of them -
+// a flag the CI could not set at all, and a settings cache that dropped every
+// epoch field - left the feature inert while the whole unit suite stayed green.
+// Deferring this job to master merges would have found those after the fact.
 
 // enableEpochExpiry switches the running arkd over to epoch expiry and restores
 // the previous mode on cleanup. Returns the anchor it configured.
