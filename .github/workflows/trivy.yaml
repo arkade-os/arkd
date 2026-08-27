@@ -29,6 +29,13 @@ jobs:
           tags: arkd:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # Never serve the runtime stage from cache. It runs apk upgrade, so a
+          # cached layer pins whatever package versions were current when the
+          # entry was written and the scan then reports CVEs against an image
+          # staler than the one we ship: the release builds are uncached and do
+          # pick the fixes up. The builder stage stays cached, which is where
+          # the time goes.
+          no-cache-filters: runtime
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
