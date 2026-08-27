@@ -613,6 +613,15 @@ func TestIntentHasOffchainOutput(t *testing.T) {
 		require.False(t, intentHasOffchainOutput([]*wire.TxOut{onchainOut}, []int{0}))
 	})
 
+	// A partial collaborative exit - some sats onchain, the change kept offchain -
+	// lands here, and is therefore held to the rollover window like any renewal.
+	// That is the intended reading, not an oversight: the change output makes the
+	// operator fund a fresh batch output while the old one stays locked for the
+	// rest of the epoch, which is what the upper bound exists to discourage.
+	//
+	// Do not "fix" this by treating any onchain output as an exit. That would let
+	// anyone bypass the rollover window by attaching a dust onchain output to an
+	// ordinary renewal.
 	t.Run("mixed outputs count as a renewal", func(t *testing.T) {
 		require.True(t, intentHasOffchainOutput(
 			[]*wire.TxOut{onchainOut, vtxoOut}, []int{0},

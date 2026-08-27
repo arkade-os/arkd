@@ -203,6 +203,18 @@ restarted with seconds-based ones first.
 
 Settles are only accepted inside `[expiry - rollover_window, expiry -
 settlement_cutoff]`. The lower bound applies to every vtxo input; the upper bound
-applies only to renewals, since collaborative exits and boarding must stay
-available throughout the epoch. Swept vtxos are exempt from both, because
-settling one is how recovery works.
+applies only to renewals. Swept vtxos are exempt from both, because settling one
+is how recovery works.
+
+An intent counts as a renewal if **any** of its outputs is offchain. So a *full*
+collaborative exit stays available for the whole epoch, but a *partial* one —
+some sats onchain, the change kept offchain — is held to the upper bound and
+refused outside the rollover window.
+
+That is deliberate. The change output makes the operator fund a fresh batch
+output while the old one stays locked until the end of the epoch, which is
+precisely what the upper bound exists to discourage. And the alternative rule —
+treating any onchain output as an exit — would let anyone bypass the bound by
+attaching a dust onchain output to an ordinary renewal. The cost is real and
+worth stating: a user wanting part of their balance onchain mid-epoch must
+either exit in full or wait for the rollover window.
