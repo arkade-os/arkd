@@ -301,6 +301,25 @@ func (s Settings) Validate() error {
 		if s.UnrollGrace.Value == 0 {
 			return fmt.Errorf("unroll grace must be greater than 0")
 		}
+		// The grace has to be shorter than the rollover window, and this is not a
+		// tidiness rule - it is what makes the whole scheme work.
+		//
+		// A node matures at max(E, appearedAt+grace). Every batch is minted at
+		// least a rollover window before its date, so a grace under that window
+		// leaves an untouched node maturing exactly at E: one sweep for the epoch,
+		// one shared expiry, vtxos that are expiry-fungible. Let the grace exceed
+		// the window and the max flips for untouched nodes too - every batch then
+		// matures a grace period after its own commitment confirmed, so no two
+		// batches share a date and the vtxos land off the boundary grid entirely,
+		// where the settlement admission window stops recognising them. Both
+		// headline properties are lost silently, with nothing in the logs.
+		if grace := s.UnrollGrace.Seconds(); grace >= int64(s.RolloverWindow.Seconds()) {
+			return fmt.Errorf(
+				"unroll grace (%ds) must be shorter than the rollover window (%s), "+
+					"otherwise batches stop sharing an expiry date",
+				grace, s.RolloverWindow,
+			)
+		}
 		// A grace period that cannot be BIP68-encoded would only fail when a
 		// batch is already in flight and the sweep leaf is being built.
 		if _, err := arklib.BIP68Sequence(s.UnrollGrace); err != nil {

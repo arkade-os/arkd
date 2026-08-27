@@ -48,12 +48,23 @@ import (
 // rather than by testing.
 
 const (
-	// Tiny so the tests finish. Production defaults are 28 days, 7 days and
-	// 12 hours respectively.
-	epochTestLength   = 600 // 10 minutes
-	epochTestRollover = 300 // 5 minutes
-	epochTestCutoff   = 60  // 1 minute
-	epochTestGrace    = 512 // BIP68 seconds granularity
+	// As small as the constraints allow, so the tests finish. Production defaults
+	// are 28 days, 7 days and 12 hours respectively.
+	//
+	// The floor is the unroll grace: BIP68 encodes a seconds-based sequence in
+	// 512-second steps, so 512 is the smallest non-zero grace, and the grace has
+	// to be shorter than the rollover window or untouched batches stop maturing
+	// at their epoch date - which is what the first version of these constants
+	// got wrong, with a 512s grace against a 300s window.
+	epochTestLength   = 2048
+	epochTestRollover = 1024
+	epochTestCutoff   = 512
+	epochTestGrace    = 512
+
+	// Batches minted within this long of enableEpochExpiry share a boundary. The
+	// anchor is placed so the first boundary lands here, which both keeps the
+	// shared-date assertions honest and bounds what the sweep test waits.
+	epochTestMintWindow = 120
 )
 
 // enableEpochExpiry switches the running arkd over to epoch expiry and restores
@@ -71,10 +82,14 @@ func enableEpochExpiry(t *testing.T) int64 {
 
 	skipUnlessSecondsBased(t)
 
-	// Anchor on an exact multiple of the epoch length so boundaries are
-	// predictable from the test's own clock.
+	// Put boundary zero exactly one rollover window plus the mint margin ahead.
+	// BoundaryAfter returns the anchor itself for any t whose t+rollover has not
+	// passed it, so every batch minted inside the margin commits to this same
+	// date - which is what the shared-expiry assertions are about - and the
+	// boundary sweep test waits a predictable rollover+margin rather than
+	// anywhere up to a full epoch on top.
 	now := time.Now().Unix()
-	anchor := now - (now % epochTestLength)
+	anchor := now + epochTestRollover + epochTestMintWindow
 
 	out, err := runDockerExec(
 		"arkd", "arkd", "settings", "update",

@@ -287,3 +287,56 @@ func TestBoundaryAfterRefusesToOverflow(t *testing.T) {
 	_, err := sched.ExpiryFor(time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC))
 	require.ErrorContains(t, err, "outside the representable")
 }
+
+// TestSettingsRejectGraceAtOrAboveRolloverWindow pins the constraint that makes
+// the whole scheme work, and which nothing checked until an e2e run tripped over
+// it with a 512s grace against a 300s window.
+//
+// A node matures at max(E, appearedAt+grace). Every batch is minted at least a
+// rollover window before its date, so a grace under that window leaves an
+// untouched node maturing exactly at E. Let the grace exceed the window and the
+// max flips for untouched nodes too: every batch matures a grace period after
+// its own commitment confirmed, so no two share a date, and their vtxos land off
+// the boundary grid where the admission window stops recognising them.
+func TestSettingsRejectGraceAtOrAboveRolloverWindow(t *testing.T) {
+	base := func() domain.Settings {
+		s := validSettings
+		s.EpochExpiryEnabled = true
+		s.EpochAnchor = testAnchor
+		s.EpochLength = 28 * 24 * time.Hour
+		s.RolloverWindow = 7 * 24 * time.Hour
+		s.SettlementCutoff = 12 * time.Hour
+		s.UnrollGrace = arklib.RelativeLocktime{
+			Type: arklib.LocktimeTypeSecond, Value: 7168,
+		}
+		return s
+	}
+
+	t.Run("a grace below the window is accepted", func(t *testing.T) {
+		require.NoError(t, base().Validate())
+	})
+
+	t.Run("a grace above the window is rejected", func(t *testing.T) {
+		s := base()
+		s.RolloverWindow = time.Hour // shorter than the 7168s grace
+		require.ErrorContains(t, s.Validate(), "must be shorter than the rollover window")
+	})
+
+	t.Run("a grace equal to the window is rejected", func(t *testing.T) {
+		s := base()
+		s.RolloverWindow = 7168 * time.Second
+		require.ErrorContains(t, s.Validate(), "must be shorter than the rollover window")
+	})
+
+	// The e2e parameters have to satisfy it too, and got this wrong first time.
+	t.Run("the smallest workable parameters are accepted", func(t *testing.T) {
+		s := base()
+		s.EpochLength = 2048 * time.Second
+		s.RolloverWindow = 1024 * time.Second
+		s.SettlementCutoff = 512 * time.Second
+		s.UnrollGrace = arklib.RelativeLocktime{
+			Type: arklib.LocktimeTypeSecond, Value: 512,
+		}
+		require.NoError(t, s.Validate())
+	})
+}

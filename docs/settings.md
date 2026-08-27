@@ -170,6 +170,15 @@ Three constraints are enforced at startup and on every settings update:
 - `0 < settlement_cutoff < rollover_window < epoch_length`
 - `unroll_grace` must be non-zero and BIP68-representable (a multiple of 512 when
   expressed in seconds), and must be the same type as the other delays
+- `unroll_grace < rollover_window`. A node matures at
+  `max(expiry, appearedAt + unroll_grace)`, and every batch is minted at least a
+  rollover window before its date, so a grace under that window leaves an
+  untouched node maturing exactly at the epoch date. A grace above it flips the
+  `max` for untouched nodes too: every batch then matures a grace period after
+  its own commitment confirmed, so batches stop sharing a date and their vtxos
+  fall off the boundary grid, where the settlement admission window no longer
+  recognises them. Both properties the scheme exists for are lost, silently —
+  hence the check
 - `epoch_anchor` must be at least `500000000`, because an `nLockTime` below that
   is read as a block height rather than a timestamp
 
