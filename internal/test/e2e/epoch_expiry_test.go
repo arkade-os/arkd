@@ -67,6 +67,21 @@ const (
 	epochTestMintWindow = 120
 )
 
+// These constants are already at their floor - do not shrink them to speed the
+// job up, because they cannot go lower without breaking the scheme.
+//
+// The chain is forced: BIP68 encodes a seconds-based sequence in 512-second
+// steps, so 512 is the smallest non-zero unroll grace. The grace must be
+// strictly shorter than the rollover window, so the window cannot go below
+// 1024. A batch is minted at least a rollover window before its date, so
+// TestEpochBatchSweepsAtTheBoundary cannot wait less than ~1024 seconds no
+// matter how the anchor is placed - BoundaryAfter guarantees it. Roughly
+// seventeen minutes of waiting is therefore the hard floor for this job, and
+// the rest of its runtime is stack setup and the four fast tests.
+//
+// The only way to make it cheaper is to run it less often - it is a separate
+// CI job precisely so that choice is available without touching these values.
+
 // enableEpochExpiry switches the running arkd over to epoch expiry and restores
 // the previous mode on cleanup. Returns the anchor it configured.
 //
