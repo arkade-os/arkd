@@ -1,6 +1,8 @@
 package e2e_test
 
 import (
+	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
@@ -11,9 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// NOTE: these tests have never been executed, so every assertion below is
+// NOTE: no assertion below has yet been reached. The first CI runs failed in
+// enableEpochExpiry - first because the admin CLI could not encode the flag at
+// all, then because the deployment is block-based - so the bodies are still
 // authored against the harness rather than verified by it. Treat the first run
-// as part of review, not as a regression check.
+// that gets past setup as part of review, not as a regression check.
 //
 // A failure here is more likely to be design-level than flaky. These are the
 // only tests that exercise the maturity arithmetic against a real chain: every
@@ -49,17 +53,44 @@ const (
 	epochTestGrace    = 512 // BIP68 seconds granularity
 )
 
+// Seconds-based replacements for the deployment's block-based delays, applied
+// for the duration of an epoch test. All are multiples of 512, the granularity
+// BIP68 gives a seconds-based sequence, and they satisfy the cross-field rules
+// in Settings.Validate: every delay shares the vtxo tree expiry's type, the
+// public unilateral delay is at least the internal one, and the boarding delay
+// differs from the unilateral one.
+const (
+	epochTestTreeExpiry     = 1024
+	epochTestUnilateral     = 512
+	epochTestPublicExit     = 1024
+	epochTestBoardingExit   = 1536
+	epochTestCheckpointExit = 512
+)
+
 // enableEpochExpiry switches the running arkd over to epoch expiry and restores
 // the previous mode on cleanup. Returns the anchor it configured.
+//
+// The e2e stack is configured with block-based delays (ARKD_VTXO_TREE_EXPIRY=40
+// and exit delays of 10-30, all below MinAllowedSequence), and settings
+// validation refuses epoch expiry on such a deployment - an epoch date is a unix
+// timestamp, and a block-height sweep scheduler would read it as a block roughly
+// 1.8 billion ahead, so the batch would never be swept. So the delays have to
+// move to seconds first. That is one update rather than several because
+// Settings.Update validates a copy and commits only if the whole set is
+// coherent; changing them one at a time would be rejected at the first step for
+// mixing types.
 func enableEpochExpiry(t *testing.T) int64 {
 	t.Helper()
+
+	previous, err := getEpochTestDelays()
+	require.NoError(t, err, "failed to read the delays to restore")
 
 	// Anchor on an exact multiple of the epoch length so boundaries are
 	// predictable from the test's own clock.
 	now := time.Now().Unix()
 	anchor := now - (now % epochTestLength)
 
-	_, err := runDockerExec(
+	_, err = runDockerExec(
 		"arkd", "arkd", "settings", "update",
 		"--epoch-expiry-enabled",
 		"--epoch-anchor", strconv.FormatInt(anchor, 10),
@@ -67,12 +98,27 @@ func enableEpochExpiry(t *testing.T) int64 {
 		"--rollover-window", strconv.Itoa(epochTestRollover),
 		"--settlement-cutoff", strconv.Itoa(epochTestCutoff),
 		"--unroll-grace", strconv.Itoa(epochTestGrace),
+		"--vtxo-tree-expiry", strconv.Itoa(epochTestTreeExpiry),
+		"--unilateral-exit-delay", strconv.Itoa(epochTestUnilateral),
+		"--public-unilateral-exit-delay", strconv.Itoa(epochTestPublicExit),
+		"--boarding-exit-delay", strconv.Itoa(epochTestBoardingExit),
+		"--checkpoint-exit-delay", strconv.Itoa(epochTestCheckpointExit),
 	)
 	require.NoError(t, err, "failed to enable epoch expiry")
 
 	t.Cleanup(func() {
+		// Restore in one update for the same reason, and put the block-based
+		// delays back before any later test builds a batch against them.
 		if _, err := runDockerExec(
-			"arkd", "arkd", "settings", "update", "--epoch-expiry-enabled=false",
+			"arkd", "arkd", "settings", "update",
+			"--epoch-expiry-enabled=false",
+			"--vtxo-tree-expiry", strconv.FormatInt(previous.VtxoTreeExpiry, 10),
+			"--unilateral-exit-delay", strconv.FormatInt(previous.UnilateralExitDelay, 10),
+			"--public-unilateral-exit-delay",
+			strconv.FormatInt(previous.PublicUnilateralExitDelay, 10),
+			"--boarding-exit-delay", strconv.FormatInt(previous.BoardingExitDelay, 10),
+			"--checkpoint-exit-delay", strconv.FormatInt(previous.CheckpointExitDelay, 10),
+			"--unroll-grace", strconv.FormatInt(previous.UnrollGrace, 10),
 		); err != nil {
 			t.Logf("failed to restore non-epoch settings: %v", err)
 		}
@@ -229,4 +275,67 @@ func sleepUntilBoundary(t *testing.T, deadline time.Time) {
 		t.Logf("waiting %s for the epoch boundary", d.Round(time.Second))
 		time.Sleep(d)
 	}
+}
+
+// epochTestDelays are the locktime settings an epoch test has to move to
+// seconds and put back afterwards.
+type epochTestDelays struct {
+	VtxoTreeExpiry            int64
+	UnilateralExitDelay       int64
+	PublicUnilateralExitDelay int64
+	BoardingExitDelay         int64
+	CheckpointExitDelay       int64
+	UnrollGrace               int64
+}
+
+// epochDelaySettings mirrors only the locktime fields of the admin settings
+// response. Int64 proto fields are JSON-encoded as strings.
+type epochDelaySettings struct {
+	Settings struct {
+		VtxoTreeExpiry            string `json:"vtxoTreeExpiry"`
+		UnilateralExitDelay       string `json:"unilateralExitDelay"`
+		PublicUnilateralExitDelay string `json:"publicUnilateralExitDelay"`
+		BoardingExitDelay         string `json:"boardingExitDelay"`
+		CheckpointExitDelay       string `json:"checkpointExitDelay"`
+		UnrollGrace               string `json:"unrollGrace"`
+	} `json:"settings"`
+}
+
+// getEpochTestDelays reads the delays currently configured on the running arkd.
+func getEpochTestDelays() (*epochTestDelays, error) {
+	url := fmt.Sprintf("%s/v1/admin/settings", adminUrl)
+	resp, err := get[epochDelaySettings](
+		&http.Client{Timeout: 15 * time.Second}, url, "settings",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get settings: %w", err)
+	}
+
+	out := &epochTestDelays{}
+	// Every one of these is restored verbatim on cleanup, so an absent value is an
+	// error rather than a zero: restoring 0 would leave the deployment with no
+	// exit delay at all.
+	for _, f := range []struct {
+		name  string
+		value string
+		into  *int64
+	}{
+		{"vtxoTreeExpiry", resp.Settings.VtxoTreeExpiry, &out.VtxoTreeExpiry},
+		{"unilateralExitDelay", resp.Settings.UnilateralExitDelay, &out.UnilateralExitDelay},
+		{
+			"publicUnilateralExitDelay", resp.Settings.PublicUnilateralExitDelay,
+			&out.PublicUnilateralExitDelay,
+		},
+		{"boardingExitDelay", resp.Settings.BoardingExitDelay, &out.BoardingExitDelay},
+		{"checkpointExitDelay", resp.Settings.CheckpointExitDelay, &out.CheckpointExitDelay},
+		{"unrollGrace", resp.Settings.UnrollGrace, &out.UnrollGrace},
+	} {
+		parsed, err := parseSettingsInt(f.value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s: %w", f.name, err)
+		}
+		*f.into = parsed
+	}
+
+	return out, nil
 }
