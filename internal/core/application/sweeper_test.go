@@ -1028,3 +1028,94 @@ func buildEpochTestTree(
 		{Txid: leafTxid, Tx: leafB64, Children: nil},
 	}, rootTxid
 }
+
+// TestBatchSweepTaskSchedulesUnrolledBranchAfterItsGrace covers the design's
+// central claim about unilateral exit, and the half of it no unit test reached:
+// that the sweeper actually derives a mid-flight unroll's maturity from the node
+// that appeared, not from the batch.
+//
+// epochMaturity's arithmetic is pinned in TestEpochMaturity. What is pinned here
+// is the wiring - that findSweepableOutputs measures from the confirmation of
+// the node directly above the frontier. Both scheduling bugs found in this work
+// were wiring, not arithmetic: one measured from the batch root's parent, the
+// other read the wrong psbt field entirely.
+//
+// The tree here is one the user has begun to unroll: the root is confirmed (they
+// broadcast it), its child is not. So the child's batch output appeared at the
+// root's confirmation time, and if that is late enough in the epoch it matures
+// after the boundary rather than at it.
+func TestBatchSweepTaskSchedulesUnrolledBranchAfterItsGrace(t *testing.T) {
+	const (
+		commitmentTxid = "0000000000000000000000000000000000000000000000000000000000000abc"
+		graceSeconds   = 7168
+	)
+
+	now := time.Now().Unix()
+	epochDate := arklib.AbsoluteLocktime(now + 3600)
+	grace := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: graceSeconds}
+
+	// The unroll lands one minute before the boundary, so the new output's grace
+	// runs past it: max(E, u+grace) resolves to u+grace.
+	unrolledAt := int64(epochDate) - 60
+	wantAt := unrolledAt + graceSeconds
+	require.Greater(t, wantAt, int64(epochDate), "precondition: the grace must outlast the boundary")
+
+	flatTree, rootTxid := buildEpochTestTree(t, commitmentTxid, epochDate, grace)
+	leafTxid := flatTree[1].Txid
+
+	sched := &recordingScheduler{now: now}
+	wallet := &mockWalletService{}
+	vtxoRepo := &mockVtxoRepository{}
+	builder := &mockTxBuilder{}
+	rounds := &mockedRoundRepo{}
+	rounds.On("GetRoundVtxoTree", mock.Anything, commitmentTxid).Return(flatTree, nil)
+
+	s := newSweeper(wallet, &mockRepoManager{
+		vtxos: vtxoRepo, markers: &mockMarkerRepository{}, rounds: rounds,
+	}, builder, sched)
+
+	// The root is onchain; the leaf below it is not. That is a branch part-way
+	// through a unilateral exit.
+	wallet.isTxConfirmed = func(txid string) (bool, *ports.BlockTimestamp, error) {
+		switch txid {
+		case commitmentTxid:
+			return true, &ports.BlockTimestamp{Time: now - 86400, Height: 100}, nil
+		case rootTxid:
+			return true, &ports.BlockTimestamp{Time: unrolledAt, Height: 200}, nil
+		default:
+			return false, &ports.BlockTimestamp{}, nil
+		}
+	}
+
+	// The sweepable output is the leaf's input, i.e. the output the root created
+	// when it was broadcast.
+	builder.sweepableBatchOutputs = func(
+		g *tree.TxTree,
+	) (*tree.SweepParams, *ports.TxInput, error) {
+		require.Equal(
+			t, leafTxid, g.Root.UnsignedTx.TxID(),
+			"the frontier of a part-unrolled branch is the first unconfirmed node",
+		)
+		date := epochDate
+		return &tree.SweepParams{Expiry: grace, BatchExpiry: &date},
+			&ports.TxInput{Txid: rootTxid, Index: 0, Value: 10000}, nil
+	}
+
+	require.NoError(t, s.createBatchSweepTask(commitmentTxid, rootTxid)())
+
+	deadline := time.Now().Add(5 * time.Second)
+	for len(sched.scheduled()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	scheduled := sched.scheduled()
+	require.NotEmpty(t, scheduled, "the unrolled branch must still be scheduled")
+	for _, at := range scheduled {
+		require.NotEqual(
+			t, int64(epochDate), at,
+			"a branch unrolled inside the grace must not be swept at the epoch date - "+
+				"that is the window the exiting user is owed",
+		)
+		require.Equal(t, wantAt, at, "must mature a grace period after the node appeared")
+	}
+}
