@@ -1513,6 +1513,40 @@ func updateSettingsAction(ctx *cli.Context) error {
 		return err
 	}
 
+	settings, err := buildSettingsUpdate(ctx)
+	if err != nil {
+		return err
+	}
+
+	body, err := json.Marshal(map[string]any{"settings": settings})
+	if err != nil {
+		return fmt.Errorf("failed to encode request body: %s", err)
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/settings", baseURL)
+	changelog, err := post[[]string](url, string(body), "changeLog", macaroon, tlsConfig)
+	if err != nil {
+		return err
+	}
+
+	respJson, err := json.MarshalIndent(
+		map[string][]string{"changeLog": changelog}, "", "  ",
+	)
+	if err != nil {
+		return fmt.Errorf("failed to json encode response: %s", err)
+	}
+	fmt.Println(string(respJson))
+	return nil
+}
+
+// buildSettingsUpdate turns the flags that were explicitly set into the proto
+// JSON body of a settings update.
+//
+// Split out from the action so the mapping can be tested without a running
+// arkd. A flag listed under the wrong type here serialises to a value the
+// server rejects outright - a bool sent as 0 - and nothing short of an e2e run
+// against a real arkd would otherwise notice.
+func buildSettingsUpdate(ctx *cli.Context) (map[string]any, error) {
 	settings := map[string]any{}
 
 	// int64-valued settings: forwarded only when the flag was explicitly set, so
@@ -1538,7 +1572,6 @@ func updateSettingsAction(ctx *cli.Context) error {
 		{utxoMinAmountFlagName, "utxoMinAmount"},
 		{utxoMaxAmountFlagName, "utxoMaxAmount"},
 		{settlementMinExpiryGapFlagName, "settlementMinExpiryGap"},
-		{epochExpiryEnabledFlagName, "epochExpiryEnabled"},
 		{epochAnchorFlagName, "epochAnchor"},
 		{epochLengthFlagName, "epochLength"},
 		{rolloverWindowFlagName, "rolloverWindow"},
@@ -1566,7 +1599,7 @@ func updateSettingsAction(ctx *cli.Context) error {
 		raw := ctx.String(buildVersionHeaderRequiredFlagName)
 		required, err := strconv.ParseBool(raw)
 		if err != nil {
-			return fmt.Errorf(
+			return nil, fmt.Errorf(
 				"invalid --%s value %q, must be true or false",
 				buildVersionHeaderRequiredFlagName, raw,
 			)
@@ -1577,7 +1610,7 @@ func updateSettingsAction(ctx *cli.Context) error {
 		raw := ctx.String(digestHeaderRequiredFlagName)
 		required, err := strconv.ParseBool(raw)
 		if err != nil {
-			return fmt.Errorf(
+			return nil, fmt.Errorf(
 				"invalid --%s value %q, must be true or false",
 				digestHeaderRequiredFlagName, raw,
 			)
@@ -1589,29 +1622,18 @@ func updateSettingsAction(ctx *cli.Context) error {
 		settings["batchTrigger"] = raw
 	}
 
+	// A real bool, not ctx.Int. This flag sat in the int list, so enabling epoch
+	// expiry posted "epochExpiryEnabled":0 and the server rejected the whole
+	// update - the setting could not be turned on at all from the CLI.
+	if ctx.IsSet(epochExpiryEnabledFlagName) {
+		settings["epochExpiryEnabled"] = ctx.Bool(epochExpiryEnabledFlagName)
+	}
+
 	if len(settings) <= 0 {
-		return fmt.Errorf("no settings provided to update")
+		return nil, fmt.Errorf("no settings provided to update")
 	}
 
-	body, err := json.Marshal(map[string]any{"settings": settings})
-	if err != nil {
-		return fmt.Errorf("failed to encode request body: %s", err)
-	}
-
-	url := fmt.Sprintf("%s/v1/admin/settings", baseURL)
-	changelog, err := post[[]string](url, string(body), "changeLog", macaroon, tlsConfig)
-	if err != nil {
-		return err
-	}
-
-	respJson, err := json.MarshalIndent(
-		map[string][]string{"changeLog": changelog}, "", "  ",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to json encode response: %s", err)
-	}
-	fmt.Println(string(respJson))
-	return nil
+	return settings, nil
 }
 
 func getIntentFees(ctx *cli.Context) error {
