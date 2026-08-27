@@ -220,6 +220,11 @@ func TestEpochExitIsAllowedOutsideRolloverWindow(t *testing.T) {
 // before the flag was flipped keeps its own relative schedule while new ones use
 // the shared date, and the sweeper has to handle both at once.
 func TestLegacyAndEpochBatchesCoexist(t *testing.T) {
+	// Before anything else. This is the one epoch test that does real work before
+	// enabling the flag, so without an early check it would fund a wallet and mint
+	// a batch on the shared arkd and only then skip - paying for a test that never
+	// runs, on every integration job.
+	skipUnlessSecondsBased(t)
 
 	// minted while epoch expiry is still off
 	legacyClient := setupClientWallet(t)
