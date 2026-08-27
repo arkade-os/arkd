@@ -106,6 +106,25 @@ func enableEpochExpiry(t *testing.T) int64 {
 			"(make docker-run-epoch). output: %s", out,
 	)
 
+	// A round reads its settings once, when it starts, and the batch that mints a
+	// test's vtxo is very likely to be one already in flight when the flag flips -
+	// it would build against the pre-update settings and hand back a legacy
+	// relative expiry. Waiting a session duration is the same bound
+	// requirePairedBatch uses for the participant count, for the same reason.
+	//
+	// Without this the epoch tests fail in ways that look like epoch bugs: vtxos
+	// whose dates differ by the gap between two rounds, an admission window that
+	// never applies. They are just legacy batches.
+	roundSettings, err := getRoundSettings()
+	require.NoError(t, err, "failed to read the session duration")
+	time.Sleep(roundSettings.sessionDuration)
+
+	// Confirm the flag actually took, so a settings path that silently drops it
+	// fails here rather than as a puzzling assertion three tests later.
+	enabled, err := getEpochExpiryEnabledSetting()
+	require.NoError(t, err, "failed to read back the epoch settings")
+	require.True(t, enabled, "epoch expiry did not take effect: %s", out)
+
 	t.Cleanup(func() {
 		if _, err := runDockerExec(
 			"arkd", "arkd", "settings", "update", "--epoch-expiry-enabled=false",
@@ -315,4 +334,23 @@ func getVtxoTreeExpirySetting() (int64, error) {
 		return 0, fmt.Errorf("failed to get settings: %w", err)
 	}
 	return parseSettingsInt(resp.Settings.VtxoTreeExpiry)
+}
+
+// epochEnabledSetting mirrors the one settings field that says whether epoch
+// expiry is live. Bool proto fields are JSON-encoded as booleans.
+type epochEnabledSetting struct {
+	Settings struct {
+		EpochExpiryEnabled bool `json:"epochExpiryEnabled"`
+	} `json:"settings"`
+}
+
+func getEpochExpiryEnabledSetting() (bool, error) {
+	url := fmt.Sprintf("%s/v1/admin/settings", adminUrl)
+	resp, err := get[epochEnabledSetting](
+		&http.Client{Timeout: 15 * time.Second}, url, "settings",
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to get settings: %w", err)
+	}
+	return resp.Settings.EpochExpiryEnabled, nil
 }

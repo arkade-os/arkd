@@ -550,15 +550,23 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 					// confirmed rather than at the epoch date, and the same wrong value
 					// was written onto every leaf vtxo's expiry. This runs on every
 					// restart for every live batch, so it was not a corner case.
-					if err := s.scheduleBatchSweep(
-						expiresAt, commitmentTxid, subTree.Root.UnsignedTx.TxID(),
-						s.scheduler.Unit() == ports.BlockHeight,
-					); err != nil {
-						log.WithError(err).Errorf(
-							"failed to schedule sweep for vtxo tree %s of batch %s",
-							subTree.Root.UnsignedTx.TxID(), commitmentTxid,
-						)
-					}
+					//
+					// Still dispatched concurrently: scheduleBatchSweep also rewrites the
+					// leaf vtxo expiries, which is a repository round trip per subtree,
+					// and sweeper.start waits for this whole scan before arkd reports
+					// ready. Running it inline made restart latency grow with the number
+					// of live batches.
+					go func() {
+						if err := s.scheduleBatchSweep(
+							expiresAt, commitmentTxid, subTree.Root.UnsignedTx.TxID(),
+							s.scheduler.Unit() == ports.BlockHeight,
+						); err != nil {
+							log.WithError(err).Errorf(
+								"failed to schedule sweep for vtxo tree %s of batch %s",
+								subTree.Root.UnsignedTx.TxID(), commitmentTxid,
+							)
+						}
+					}()
 				}
 
 				continue

@@ -937,18 +937,30 @@ func TestBatchSweepTaskSchedulesEpochBatchAtItsDate(t *testing.T) {
 			&ports.TxInput{Txid: commitmentTxid, Index: 0, Value: 10000}, nil
 	}
 
-	var expiryWrites []int64
+	// Subtree scheduling is dispatched concurrently, so the expiry writes arrive
+	// on another goroutine.
+	var expiryMu sync.Mutex
+	var recorded []int64
 	vtxoRepo.onUpdateExpiration = func(_ []domain.Outpoint, expiresAt int64) {
-		expiryWrites = append(expiryWrites, expiresAt)
+		expiryMu.Lock()
+		defer expiryMu.Unlock()
+		recorded = append(recorded, expiresAt)
+	}
+	recordedExpiries := func() []int64 {
+		expiryMu.Lock()
+		defer expiryMu.Unlock()
+		return append([]int64(nil), recorded...)
 	}
 
 	require.NoError(t, s.createBatchSweepTask(commitmentTxid, rootTxid)())
 
-	// Scheduling is synchronous, so this returns on the first check. The bounded
-	// wait is here so a regression that schedules asynchronously still reports the
-	// wrong time rather than an empty slice.
-	deadline := time.Now().Add(2 * time.Second)
-	for len(sched.scheduled()) == 0 && time.Now().Before(deadline) {
+	// Subtrees are scheduled on their own goroutines, so wait for both the
+	// schedule and the expiry write rather than racing them.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(sched.scheduled()) > 0 && len(recordedExpiries()) > 0 {
+			break
+		}
 		time.Sleep(10 * time.Millisecond)
 	}
 
@@ -960,6 +972,7 @@ func TestBatchSweepTaskSchedulesEpochBatchAtItsDate(t *testing.T) {
 		require.Equal(t, int64(epochDate), at, "an epoch batch must sweep at its epoch date")
 	}
 
+	expiryWrites := recordedExpiries()
 	require.NotEmpty(t, expiryWrites, "leaf vtxo expiries must be updated")
 	for _, at := range expiryWrites {
 		require.Equal(
