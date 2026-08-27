@@ -551,12 +551,25 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 					// was written onto every leaf vtxo's expiry. This runs on every
 					// restart for every live batch, so it was not a corner case.
 					//
-					// Still dispatched concurrently: scheduleBatchSweep also rewrites the
-					// leaf vtxo expiries, which is a repository round trip per subtree,
-					// and sweeper.start waits for this whole scan before arkd reports
-					// ready. Running it inline made restart latency grow with the number
-					// of live batches.
+					// Still dispatched concurrently, and still behind the root input's
+					// confirmation. Both are load-bearing on the restart path, where this
+					// runs for every live batch at once: sweeper.start waits for the whole
+					// scan before arkd reports ready, and scheduleBatchSweep can rewrite
+					// every leaf vtxo's expiry. Doing it inline made restart latency grow
+					// with the number of batches; dropping the wait replaced a staggered
+					// set of schedules with one burst of them. Only the expiry value
+					// changed here, not when or how the work is dispatched.
 					go func() {
+						rootInput := vtxoTree.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
+						if _, err := waitForConfirmation(
+							context.Background(), rootInput, s.wallet,
+						); err != nil {
+							log.WithError(err).Warnf(
+								"failed to wait for confirmation of batch input tx %s before "+
+									"scheduling its sweep", rootInput,
+							)
+						}
+
 						if err := s.scheduleBatchSweep(
 							expiresAt, commitmentTxid, subTree.Root.UnsignedTx.TxID(),
 							s.scheduler.Unit() == ports.BlockHeight,
