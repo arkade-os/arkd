@@ -316,16 +316,25 @@ func TestSettingsRejectGraceAtOrAboveRolloverWindow(t *testing.T) {
 		require.NoError(t, base().Validate())
 	})
 
+	// Both of these narrow the rollover window below the grace, so the settlement
+	// cutoff has to come down with it: cutoff < rollover is checked first, and
+	// tripping that instead would never reach the grace check at all. The
+	// assertion is on the tail of the grace message rather than its first clause,
+	// which the cutoff error also uses.
+	const graceMessage = "otherwise batches stop sharing an expiry date"
+
 	t.Run("a grace above the window is rejected", func(t *testing.T) {
 		s := base()
 		s.RolloverWindow = time.Hour // shorter than the 7168s grace
-		require.ErrorContains(t, s.Validate(), "must be shorter than the rollover window")
+		s.SettlementCutoff = 30 * time.Minute
+		require.ErrorContains(t, s.Validate(), graceMessage)
 	})
 
 	t.Run("a grace equal to the window is rejected", func(t *testing.T) {
 		s := base()
 		s.RolloverWindow = 7168 * time.Second
-		require.ErrorContains(t, s.Validate(), "must be shorter than the rollover window")
+		s.SettlementCutoff = 3584 * time.Second
+		require.ErrorContains(t, s.Validate(), graceMessage)
 	})
 
 	// The e2e parameters have to satisfy it too, and got this wrong first time.

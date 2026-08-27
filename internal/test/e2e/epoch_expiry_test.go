@@ -126,10 +126,14 @@ func enableEpochExpiry(t *testing.T) int64 {
 	require.True(t, enabled, "epoch expiry did not take effect: %s", out)
 
 	t.Cleanup(func() {
-		if _, err := runDockerExec(
+		// Fail rather than log: this flips a setting shared by every other test in
+		// the package, so a restore that quietly failed would leave the rest of the
+		// suite running under epoch expiry while this test still reported success.
+		out, err := runDockerExec(
 			"arkd", "arkd", "settings", "update", "--epoch-expiry-enabled=false",
-		); err != nil {
-			t.Logf("failed to restore non-epoch settings: %v", err)
+		)
+		if err != nil {
+			t.Errorf("failed to restore non-epoch settings: %v (output: %s)", err, out)
 		}
 	})
 

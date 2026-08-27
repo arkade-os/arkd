@@ -1,7 +1,7 @@
 .PHONY: \
 	build build-all build-cli build-wallet clean cov \
-	docker-run docker-run-light docker-stop droppg droppgtest \
-	help integrationtest lint migrate pg pgmigrate pgsqlc pgtest \
+	docker-run docker-run-epoch docker-run-light docker-stop droppg droppgtest \
+	epochtest help integrationtest lint migrate pg pgmigrate pgsqlc pgtest \
 	pprof proto proto-lint psql \
 	redis-down redis-test-down redis-test-up redis-up \
 	run run-light run-signer run-simulation run-wallet run-wallet-nosigner \
