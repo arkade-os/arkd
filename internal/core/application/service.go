@@ -4041,27 +4041,58 @@ func (s *service) restoreWatchingVtxos() error {
 		return err
 	}
 
-	if len(commitmentTxIds) == 0 {
-		return nil
-	}
-
-	tapKeys, err := s.repoManager.Vtxos().
-		GetVtxoPubKeysByCommitmentTxids(ctx, commitmentTxIds, 0)
-	if err != nil {
-		return err
+	var tapKeys []string
+	if len(commitmentTxIds) > 0 {
+		tapKeys, err = s.repoManager.Vtxos().
+			GetVtxoPubKeysByCommitmentTxids(ctx, commitmentTxIds, 0)
+		if err != nil {
+			return err
+		}
 	}
 
 	scripts := make([]string, 0, len(tapKeys))
-	for _, key := range tapKeys {
+	seen := make(map[string]struct{}, len(tapKeys))
+	addKey := func(key string) {
 		// Skip values that are not a 32-byte x-only pubkey encoded as 64
 		// hex chars. arkd writes valid keys, but defending against a
 		// corrupted DB row here means a single bad pubkey cannot poison
 		// the entire WatchScripts gRPC payload at startup recovery.
 		decoded, err := hex.DecodeString(key)
 		if err != nil || len(decoded) != 32 {
+			return
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		scripts = append(scripts, fmt.Sprintf("5120%s", key))
+	}
+
+	for _, key := range tapKeys {
+		addKey(key)
+	}
+
+	// Unrolled vtxos are watched independently of any round. Their batch may
+	// no longer be sweepable, so the loop above would not restore them, and an
+	// unwatched script is invisible to onchain spend tracking twice over: no
+	// push notification arrives, and NBXplorer only records the matched inputs
+	// the reconciler reads for sources it was tracking when it indexed the
+	// spending transaction. Both directions are restored: still-unspent vtxos
+	// so a spend is seen, and already onchain-spent ones so a spend that is
+	// later reorged out can be retracted.
+	// Soft-fail: a DB error here must not block startup.
+	for _, load := range []func(context.Context) ([]domain.Vtxo, error){
+		s.repoManager.Vtxos().GetUnrolledUnspentVtxos,
+		s.repoManager.Vtxos().GetOnchainSpentVtxos,
+	} {
+		vtxos, err := load(ctx)
+		if err != nil {
+			log.WithError(err).Warn("failed to fetch unrolled vtxos for restore")
 			continue
 		}
-		scripts = append(scripts, fmt.Sprintf("5120%s", key))
+		for _, vtxo := range vtxos {
+			addKey(vtxo.PubKey)
+		}
 	}
 
 	if len(tapKeys) > 0 {
@@ -4085,7 +4116,7 @@ func (s *service) restoreWatchingVtxos() error {
 	}
 
 	log.Debugf(
-		"restored watching %d scripts (vtxo + checkpoint) from %d sweepable rounds",
+		"restored watching %d scripts (vtxo + checkpoint + unrolled) from %d sweepable rounds",
 		len(scripts), len(commitmentTxIds),
 	)
 	return nil

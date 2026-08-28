@@ -40,6 +40,8 @@ func TestRestoreWatchingVtxos(t *testing.T) {
 				{Txid: "txB", Str: checkpointPsbtB64(t, p2trScriptBytes(t, k4))},
 			}, nil)
 		rm.On("Rounds").Return(rounds)
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
 		rm.On("Vtxos").Return(vtxos)
 		scn.On("WatchScripts", mock.Anything, mock.Anything).Return(nil)
 
@@ -62,6 +64,8 @@ func TestRestoreWatchingVtxos(t *testing.T) {
 
 		rounds.On("GetSweepableRounds", mock.Anything).Return([]string{}, nil)
 		rm.On("Rounds").Return(rounds)
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
 		rm.On("Vtxos").Return(vtxos)
 
 		svc := &service{repoManager: rm, scanner: scn}
@@ -83,6 +87,8 @@ func TestRestoreWatchingVtxos(t *testing.T) {
 		vtxos.On("GetVtxoPubKeysByCommitmentTxids", mock.Anything, []string{"r1"}, uint64(0)).
 			Return([]string{}, nil)
 		rm.On("Rounds").Return(rounds)
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
 		rm.On("Vtxos").Return(vtxos)
 
 		svc := &service{repoManager: rm, scanner: scn}
@@ -108,6 +114,8 @@ func TestRestoreWatchingVtxos(t *testing.T) {
 		vtxos.On("GetCheckpointTxsByVtxoPubKeys", mock.Anything, mock.Anything).
 			Return(nil, fmt.Errorf("db down"))
 		rm.On("Rounds").Return(rounds)
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
 		rm.On("Vtxos").Return(vtxos)
 		scn.On("WatchScripts", mock.Anything, mock.Anything).Return(nil)
 
@@ -139,6 +147,8 @@ func TestRestoreWatchingVtxos(t *testing.T) {
 				{Txid: "good", Str: checkpointPsbtB64(t, p2trScriptBytes(t, k3))},
 			}, nil)
 		rm.On("Rounds").Return(rounds)
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
 		rm.On("Vtxos").Return(vtxos)
 		scn.On("WatchScripts", mock.Anything, mock.Anything).Return(nil)
 
@@ -169,6 +179,8 @@ func TestRestoreWatchingVtxos(t *testing.T) {
 				{Txid: "txA", Str: checkpointPsbtB64(t, p2trScriptBytes(t, k3))},
 			}, nil)
 		rm.On("Rounds").Return(rounds)
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
 		rm.On("Vtxos").Return(vtxos)
 		scn.On("WatchScripts", mock.Anything, mock.Anything).Return(nil)
 
@@ -195,6 +207,8 @@ func TestStopWatchingVtxos(t *testing.T) {
 			Return([]domain.Tx{
 				{Txid: "txA", Str: checkpointPsbtB64(t, p2trScriptBytes(t, k3))},
 			}, nil)
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
 		rm.On("Vtxos").Return(vtxos)
 		scn.On("UnwatchScripts", mock.Anything, mock.Anything).Return(nil)
 
@@ -217,6 +231,8 @@ func TestStopWatchingVtxos(t *testing.T) {
 
 		vtxos.On("GetCheckpointTxsByVtxoPubKeys", mock.Anything, mock.Anything).
 			Return(nil, fmt.Errorf("db down"))
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
 		rm.On("Vtxos").Return(vtxos)
 		scn.On("UnwatchScripts", mock.Anything, mock.Anything).Return(nil)
 
@@ -234,6 +250,8 @@ func TestStopWatchingVtxos(t *testing.T) {
 		rm := &mockedRepoManager{}
 		scn := &mockedScanner{}
 
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
 		rm.On("Vtxos").Return(vtxos)
 
 		svc := &service{repoManager: rm, scanner: scn}
@@ -257,6 +275,8 @@ func TestStopWatchingVtxos(t *testing.T) {
 				{Txid: "garbage", Str: "not-a-psbt"},
 				{Txid: "good", Str: checkpointPsbtB64(t, p2trScriptBytes(t, k3))},
 			}, nil)
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
 		rm.On("Vtxos").Return(vtxos)
 		scn.On("UnwatchScripts", mock.Anything, mock.Anything).Return(nil)
 
@@ -280,6 +300,8 @@ func TestStopWatchingVtxos(t *testing.T) {
 			Return([]domain.Tx{
 				{Txid: "txA", Str: checkpointPsbtB64(t, p2trScriptBytes(t, k3))},
 			}, nil)
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
 		rm.On("Vtxos").Return(vtxos)
 		// First call fails, second succeeds — retry loop sleeps 100ms then
 		// breaks.
@@ -323,6 +345,8 @@ func TestOffchainTxHandler_WatchesCheckpointScripts(t *testing.T) {
 			}}, nil)
 		wallet.On("GetDustAmount", mock.Anything).Return(uint64(330), nil)
 		scn.On("WatchScripts", mock.Anything, mock.Anything).Return(nil)
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
 		rm.On("Vtxos").Return(vtxos)
 
 		svc := &service{
@@ -358,6 +382,8 @@ func TestOffchainTxHandler_WatchesCheckpointScripts(t *testing.T) {
 		rm := &mockedRepoManager{}
 		scn := &mockedScanner{}
 
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
 		rm.On("Vtxos").Return(vtxos)
 
 		svc := &service{
@@ -436,6 +462,102 @@ func arkTxPsbtB64(t *testing.T, outputScripts [][]byte) string {
 
 // vtxoScriptHex matches the service's fmt.Sprintf("5120%s", key) for vtxo
 // tapkeys.
+// TestRestoreWatchingUnrolledVtxos covers the case the sweepable-rounds restore
+// misses. An unrolled vtxo's batch may no longer be sweepable, so nothing in
+// the round-driven path re-registers its script after a restart — and an
+// unwatched script is invisible to onchain spend tracking in both directions:
+// no push notification arrives, and NBXplorer only records the matched inputs
+// the reconciler reads for sources it was tracking when it indexed the spending
+// transaction. Before this, a restart could silently and permanently stop
+// tracking spends of vtxos that had already been unrolled.
+func TestRestoreWatchingUnrolledVtxos(t *testing.T) {
+	t.Run("watches unrolled vtxos with no sweepable rounds", func(t *testing.T) {
+		unspent := randomTapKey(t)
+		onchainSpent := randomTapKey(t)
+
+		rounds := &mockedRoundRepo{}
+		vtxos := &mockedVtxoRepo{}
+		rm := &mockedRepoManager{}
+		scn := &mockedScanner{}
+
+		rounds.On("GetSweepableRounds", mock.Anything).Return([]string{}, nil)
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).
+			Return([]domain.Vtxo{{PubKey: unspent}}, nil)
+		// Already onchain-spent vtxos stay watched too, so a spend that is later
+		// reorged out can be observed as unspent again and retracted.
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).
+			Return([]domain.Vtxo{{PubKey: onchainSpent}}, nil)
+		rm.On("Rounds").Return(rounds)
+		rm.On("Vtxos").Return(vtxos)
+		scn.On("WatchScripts", mock.Anything, mock.Anything).Return(nil)
+
+		svc := &service{repoManager: rm, scanner: scn}
+		require.NoError(t, svc.restoreWatchingVtxos())
+
+		require.ElementsMatch(t, []string{
+			vtxoScriptHex(unspent), vtxoScriptHex(onchainSpent),
+		}, scn.Watched())
+		// The round-driven lookups must not run when there are no sweepable
+		// rounds; the unrolled restore has to stand on its own.
+		vtxos.AssertNumberOfCalls(t, "GetVtxoPubKeysByCommitmentTxids", 0)
+	})
+
+	t.Run("deduplicates against sweepable round keys", func(t *testing.T) {
+		shared := randomTapKey(t)
+
+		rounds := &mockedRoundRepo{}
+		vtxos := &mockedVtxoRepo{}
+		rm := &mockedRepoManager{}
+		scn := &mockedScanner{}
+
+		rounds.On("GetSweepableRounds", mock.Anything).Return([]string{"r1"}, nil)
+		vtxos.On("GetVtxoPubKeysByCommitmentTxids", mock.Anything, []string{"r1"}, uint64(0)).
+			Return([]string{shared}, nil)
+		vtxos.On("GetCheckpointTxsByVtxoPubKeys", mock.Anything, mock.Anything).
+			Return([]domain.Tx{}, nil)
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).
+			Return([]domain.Vtxo{{PubKey: shared}}, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		rm.On("Rounds").Return(rounds)
+		rm.On("Vtxos").Return(vtxos)
+		scn.On("WatchScripts", mock.Anything, mock.Anything).Return(nil)
+
+		svc := &service{repoManager: rm, scanner: scn}
+		require.NoError(t, svc.restoreWatchingVtxos())
+
+		require.Equal(t, []string{vtxoScriptHex(shared)}, scn.Watched())
+	})
+
+	// A DB failure fetching unrolled vtxos must not stop the round-driven
+	// restore, which is the pre-existing behaviour for every other soft lookup
+	// in this function.
+	t.Run("soft-fails when the unrolled lookup errors", func(t *testing.T) {
+		k := randomTapKey(t)
+
+		rounds := &mockedRoundRepo{}
+		vtxos := &mockedVtxoRepo{}
+		rm := &mockedRepoManager{}
+		scn := &mockedScanner{}
+
+		rounds.On("GetSweepableRounds", mock.Anything).Return([]string{"r1"}, nil)
+		vtxos.On("GetVtxoPubKeysByCommitmentTxids", mock.Anything, []string{"r1"}, uint64(0)).
+			Return([]string{k}, nil)
+		vtxos.On("GetCheckpointTxsByVtxoPubKeys", mock.Anything, mock.Anything).
+			Return([]domain.Tx{}, nil)
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).
+			Return(nil, fmt.Errorf("db down"))
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		rm.On("Rounds").Return(rounds)
+		rm.On("Vtxos").Return(vtxos)
+		scn.On("WatchScripts", mock.Anything, mock.Anything).Return(nil)
+
+		svc := &service{repoManager: rm, scanner: scn}
+		require.NoError(t, svc.restoreWatchingVtxos())
+
+		require.Equal(t, []string{vtxoScriptHex(k)}, scn.Watched())
+	})
+}
+
 func vtxoScriptHex(tapKeyHex string) string {
 	return fmt.Sprintf("5120%s", tapKeyHex)
 }
