@@ -2,6 +2,7 @@ package nbxplorer
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -675,7 +676,7 @@ func (n *nbxplorer) UnwatchAddresses(ctx context.Context, addresses ...string) e
 	return nil
 }
 
-// GetAddressNotifications returns the channel where to listen for notifications about incoming 
+// GetAddressNotifications returns the channel where to listen for notifications about incoming
 // UTXOs for the watched addresses.
 // If no underlying group is set, an empty one will be created.
 func (n *nbxplorer) GetAddressNotifications(
@@ -1102,25 +1103,54 @@ func (n *nbxplorer) GetUnspentOutpoints(
 	return unspent, nil
 }
 
-// parseOutpoint reads NBXplorer's "<txid>-<index>" outpoint encoding, the same
-// form rescanUTXOs writes.
+// parseOutpoint reads an outpoint as NBXplorer serialises one in a response:
+// 36 bytes of hex, being the 32-byte hash in internal (reversed) byte order
+// followed by a little-endian uint32 index.
+//
+// This is NOT the "<txid>-<index>" form rescanUTXOs sends. That form is what
+// the rescan *request* accepts; responses use NBitcoin's OutPoint encoding.
+// Verified against NBXplorer 2.6.7, which returned
+// bca470...631900000000 for 19631d10...a4bc:0. Getting this wrong is silent:
+// every spent outpoint fails to parse, the unspent set is never reduced, and a
+// caller using it to retract spends undoes each mempool spend one tick after
+// recording it. The dashed form is still accepted so a caller that passes the
+// request encoding keeps working.
 func parseOutpoint(s string) (*wire.OutPoint, error) {
-	txid, index, found := strings.Cut(s, "-")
-	if !found {
-		return nil, fmt.Errorf("invalid outpoint %s", s)
+	if txid, index, found := strings.Cut(s, "-"); found {
+		hash, err := chainhash.NewHashFromStr(txid)
+		if err != nil {
+			return nil, fmt.Errorf("invalid outpoint txid %s: %w", txid, err)
+		}
+
+		vout, err := strconv.ParseUint(index, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid outpoint index %s: %w", index, err)
+		}
+
+		return &wire.OutPoint{Hash: *hash, Index: uint32(vout)}, nil
 	}
 
-	hash, err := chainhash.NewHashFromStr(txid)
+	raw, err := hex.DecodeString(s)
 	if err != nil {
-		return nil, fmt.Errorf("invalid outpoint txid %s: %w", txid, err)
+		return nil, fmt.Errorf("invalid outpoint %s: %w", s, err)
+	}
+	if len(raw) != chainhash.HashSize+4 {
+		return nil, fmt.Errorf(
+			"invalid outpoint %s: got %d bytes, want %d", s, len(raw), chainhash.HashSize+4,
+		)
 	}
 
-	vout, err := strconv.ParseUint(index, 10, 32)
+	// NewHash takes the internal byte order, which is what the wire encoding
+	// carries, so no reversal is needed here.
+	hash, err := chainhash.NewHash(raw[:chainhash.HashSize])
 	if err != nil {
-		return nil, fmt.Errorf("invalid outpoint index %s: %w", index, err)
+		return nil, fmt.Errorf("invalid outpoint hash in %s: %w", s, err)
 	}
 
-	return &wire.OutPoint{Hash: *hash, Index: uint32(vout)}, nil
+	return &wire.OutPoint{
+		Hash:  *hash,
+		Index: binary.LittleEndian.Uint32(raw[chainhash.HashSize:]),
+	}, nil
 }
 
 func castUtxo(u utxoResponse) (ports.Utxo, error) {

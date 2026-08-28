@@ -118,3 +118,53 @@ func TestGetTxSpendsServerError(t *testing.T) {
 	require.NotErrorIs(t, err, application.ErrTransactionNotFound)
 	require.Empty(t, spends)
 }
+
+// TestParseOutpoint uses the exact encoding NBXplorer 2.6.7 returned on a live
+// regtest instance. Responses serialise an outpoint as 36 bytes of hex — the
+// hash in internal (reversed) byte order followed by a little-endian index —
+// not the "<txid>-<index>" form the rescan *request* accepts. Confusing the two
+// fails silently in the worst way: every spent outpoint is skipped, the unspent
+// set is never reduced, and a caller using it to retract spends undoes each
+// mempool spend one tick after recording it.
+func TestParseOutpoint(t *testing.T) {
+	// Observed live: funding tx 19631d10...a4bc vout 0 appeared in
+	// unconfirmed.spentOutpoints as the value below once its spend hit the
+	// mempool.
+	const (
+		wireEncoded = "bca470cd7c7cfb8f48abbd4e153bf088efd57daa4ed92b98d71714d0101d631900000000"
+		wantTxid    = "19631d10d01417d7982bd94eaa7dd5ef88f03b154ebdab488ffb7c7ccd70a4bc"
+	)
+
+	t.Run("wire encoding from a response", func(t *testing.T) {
+		out, err := parseOutpoint(wireEncoded)
+
+		require.NoError(t, err)
+		require.Equal(t, wantTxid, out.Hash.String())
+		require.EqualValues(t, 0, out.Index)
+	})
+
+	t.Run("non-zero index is little endian", func(t *testing.T) {
+		out, err := parseOutpoint(wireEncoded[:64] + "02000000")
+
+		require.NoError(t, err)
+		require.Equal(t, wantTxid, out.Hash.String())
+		require.EqualValues(t, 2, out.Index)
+	})
+
+	// The dashed form is what rescanUTXOs sends; still accepted so a caller
+	// passing the request encoding keeps working.
+	t.Run("dashed request encoding", func(t *testing.T) {
+		out, err := parseOutpoint(wantTxid + "-3")
+
+		require.NoError(t, err)
+		require.Equal(t, wantTxid, out.Hash.String())
+		require.EqualValues(t, 3, out.Index)
+	})
+
+	t.Run("rejects malformed input", func(t *testing.T) {
+		for _, s := range []string{"", "zzzz", wireEncoded[:60], wantTxid} {
+			_, err := parseOutpoint(s)
+			require.Error(t, err, "expected %q to be rejected", s)
+		}
+	})
+}
