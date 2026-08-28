@@ -3,9 +3,11 @@ package arklib
 import (
 	"fmt"
 
+	btcaddress "github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/address/v2/bech32"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 )
 
@@ -49,6 +51,19 @@ func (a *Address) EncodeV0() (string, error) {
 		return "", err
 	}
 	return bech32.EncodeM(a.HRP, grp)
+}
+
+// DecodeBitcoinAddress preserves the behavior Ark used before address/v2
+// added support for pay-to-anchor addresses.
+func DecodeBitcoinAddress(addr string, defaultNet *chaincfg.Params) (btcaddress.Address, error) {
+	decoded, err := btcaddress.DecodeAddress(addr, defaultNet)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := decoded.(*btcaddress.AddressPayToAnchor); ok {
+		return nil, btcaddress.UnsupportedWitnessProgLenError(2)
+	}
+	return decoded, nil
 }
 
 // DecodeAddressV0 parses a bech32m encoded address string and returns an Address struct.

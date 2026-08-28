@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/arkade-os/arkd/pkg/client-lib/unroll"
-	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
@@ -129,7 +129,7 @@ func (w *wallet) WithdrawFromAllExpiredBoardings(
 
 		to = onchainAddr.Address
 	}
-	if _, err := address.DecodeAddress(to, nil); err != nil {
+	if _, err := arklib.DecodeBitcoinAddress(to, nil); err != nil {
 		return "", fmt.Errorf("invalid receiver address '%s': must be onchain", to)
 	}
 

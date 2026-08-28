@@ -52,7 +52,6 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
@@ -372,7 +371,7 @@ func (e *explorerSvc) SubscribeForAddresses(addresses []string) error {
 		if _, ok := e.subscribedMap[addr]; ok {
 			continue
 		}
-		decoded, err := address.DecodeAddress(addr, nil)
+		decoded, err := arklib.DecodeBitcoinAddress(addr, nil)
 		if err != nil {
 			e.subscribedMu.Unlock()
 			return fmt.Errorf("invalid address: %s", err)
@@ -517,7 +516,7 @@ func (e *explorerSvc) GetUtxos(addresses []string) ([]clientlib.ExplorerUtxo, er
 
 	addrs := make(map[string]string)
 	for _, addr := range addresses {
-		decoded, err := address.DecodeAddress(addr, nil)
+		decoded, err := arklib.DecodeBitcoinAddress(addr, nil)
 		if err != nil {
 			return nil, fmt.Errorf("invalid address: %s", err)
 		}

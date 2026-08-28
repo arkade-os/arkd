@@ -5,8 +5,22 @@ import (
 	"testing"
 
 	common "github.com/arkade-os/arkd/pkg/ark-lib"
+	btcaddress "github.com/btcsuite/btcd/address/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDecodeBitcoinAddressRejectsPayToAnchor(t *testing.T) {
+	const payToAnchor = "bc1pfeessrawgf"
+
+	decoded, err := btcaddress.DecodeAddress(payToAnchor, &chaincfg.MainNetParams)
+	require.NoError(t, err)
+	require.IsType(t, &btcaddress.AddressPayToAnchor{}, decoded)
+
+	decoded, err = common.DecodeBitcoinAddress(payToAnchor, &chaincfg.MainNetParams)
+	require.Equal(t, btcaddress.UnsupportedWitnessProgLenError(2), err)
+	require.Nil(t, decoded)
+}
 
 func TestAddressEncoding(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
