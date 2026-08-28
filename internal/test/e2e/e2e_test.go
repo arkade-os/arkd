@@ -7729,3 +7729,93 @@ func TestUnrolledVtxoOnchainSpend(t *testing.T) {
 		},
 	)
 }
+
+// TestUnrolledVtxoOnchainSpendBackfill proves the reconciler, which is the half
+// of onchain spend tracking the push path cannot cover.
+//
+// TestUnrolledVtxoOnchainSpend exercises a spend that happens while arkd is
+// listening. Here the spend happens while arkd is stopped, so no notification is
+// ever delivered for it: the only way the vtxo can end up correctly marked is
+// the unwindowed reconcile pass arkd runs at startup. That pass exists because a
+// windowed query would never reach a spend older than the window, which is
+// exactly how a vtxo stays wrongly unspent forever.
+//
+// arkd-wallet deliberately keeps running, so NBXplorer still has the script
+// tracked and records the matched input for the spending transaction. A spend
+// that happens while the script itself is untracked is not recoverable and is
+// out of scope here.
+func TestUnrolledVtxoOnchainSpendBackfill(t *testing.T) {
+	ctx := t.Context()
+	alice := setupClientWallet(t)
+
+	faucet(t, alice, 0.00021)
+
+	spendable, _, err := alice.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, spendable)
+	target := spendable[0].Outpoint
+
+	res, err := alice.Unroll(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, res)
+
+	require.NoError(t, generateBlocks(1))
+	require.NotNil(t, waitForUnrolledOnchainFunds(t, alice))
+
+	require.NoError(t, generateBlocks(20))
+	waitForMatureOnchainFunds(t, alice)
+
+	// Stop arkd so the spend below cannot be observed by the push path. The
+	// client claims through the explorer and signs locally, so it does not need
+	// arkd to be up.
+	_, err = runCommand("docker", "container", "stop", "arkd")
+	require.NoError(t, err)
+
+	spendTxid, err := alice.CompleteUnroll(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, spendTxid)
+
+	require.NoError(t, generateBlocks(1))
+
+	// Bring arkd back. Its startup reconcile pass is now the only thing that can
+	// discover the spend.
+	_, err = runCommand("docker", "container", "start", "arkd")
+	require.NoError(t, err)
+
+	adminHttpClient := &http.Client{Timeout: 15 * time.Second}
+	require.NoError(t, unlockArkd(adminHttpClient))
+	require.NoError(t, waitUntilReady(adminHttpClient))
+	require.NoError(t, waitUntilArkServiceReady())
+
+	waitUntil(
+		t, indexerWait, "the reconciler to backfill the onchain spend",
+		func(ctx context.Context) error {
+			_, spent, err := alice.ListVtxos(ctx)
+			if err != nil {
+				return err
+			}
+			for _, vtxo := range spent {
+				if vtxo.Outpoint != target {
+					continue
+				}
+				if !vtxo.Spent {
+					return fmt.Errorf("vtxo %s is still reported unspent", target)
+				}
+				if vtxo.SpentBy != spendTxid {
+					return fmt.Errorf(
+						"vtxo %s reports spent_by %q, want the onchain spender %s",
+						target, vtxo.SpentBy, spendTxid,
+					)
+				}
+				if vtxo.ArkTxid != "" {
+					return fmt.Errorf(
+						"vtxo %s wrongly carries ark txid %s for an onchain spend",
+						target, vtxo.ArkTxid,
+					)
+				}
+				return nil
+			}
+			return fmt.Errorf("vtxo %s not found among %d spent vtxos", target, len(spent))
+		},
+	)
+}
