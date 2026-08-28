@@ -7787,8 +7787,13 @@ func TestUnrolledVtxoOnchainSpendBackfill(t *testing.T) {
 	require.NoError(t, waitUntilReady(adminHttpClient))
 	require.NoError(t, waitUntilArkServiceReady())
 
+	// serverWait rather than indexerWait: unlike the push test, a short deadline
+	// carries no meaning here. There push is the only thing that can meet it, so
+	// the deadline is part of the assertion; here push is impossible and the
+	// startup reconcile is the only candidate, so a tighter bound would only add
+	// flap risk on a loaded runner.
 	waitUntil(
-		t, indexerWait, "the reconciler to backfill the onchain spend",
+		t, serverWait, "the reconciler to backfill the onchain spend",
 		func(ctx context.Context) error {
 			_, spent, err := alice.ListVtxos(ctx)
 			if err != nil {
@@ -7797,6 +7802,12 @@ func TestUnrolledVtxoOnchainSpendBackfill(t *testing.T) {
 			for _, vtxo := range spent {
 				if vtxo.Outpoint != target {
 					continue
+				}
+				// Asserted for parity with the push test: recording an onchain
+				// spend must not clear the flag that marks the vtxo unrolled,
+				// which is half of the onchain-spend discriminator.
+				if !vtxo.Unrolled {
+					return fmt.Errorf("vtxo %s is no longer marked unrolled", target)
 				}
 				if !vtxo.Spent {
 					return fmt.Errorf("vtxo %s is still reported unspent", target)
