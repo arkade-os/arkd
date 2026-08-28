@@ -7645,3 +7645,87 @@ func TestDeprecatedSignerKey(t *testing.T) {
 		require.ErrorContains(t, err, "is a deprecated key since")
 	})
 }
+
+// TestUnrolledVtxoOnchainSpend is the end-to-end proof of onchain spend
+// tracking. Every other test for it sits at unit, repository or
+// NBXplorer-contract level, and none of those exercises the whole path: a real
+// spend on the chain, through the wallet's notification stream, into the vtxo
+// the indexer serves.
+//
+// Before this tracking existed the vtxo asserted on here stayed reported as
+// unspent indefinitely, because a transaction that spends a watched output
+// creates no new UTXO at that script and so produced no notification at all.
+func TestUnrolledVtxoOnchainSpend(t *testing.T) {
+	ctx := t.Context()
+	alice := setupClientWallet(t)
+
+	// Offchain funds plus a little onchain to cover the unroll fees.
+	faucet(t, alice, 0.00021)
+
+	// Captured before the unroll: this outpoint is what appears onchain
+	// afterwards, and it is the row the indexer must end up reporting as spent.
+	spendable, _, err := alice.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, spendable)
+	target := spendable[0].Outpoint
+
+	res, err := alice.Unroll(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, res)
+
+	require.NoError(t, generateBlocks(1))
+	require.NotNil(t, waitForUnrolledOnchainFunds(t, alice))
+
+	// Mature the unilateral exit CSV so the onchain output can be claimed.
+	require.NoError(t, generateBlocks(20))
+	waitForMatureOnchainFunds(t, alice)
+
+	// Claiming the matured funds spends the unrolled outpoint onchain. This is
+	// precisely the event arkd used to be blind to.
+	spendTxid, err := alice.CompleteUnroll(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, spendTxid)
+
+	require.NoError(t, generateBlocks(1))
+
+	// The push path should carry this within seconds. The periodic reconciler
+	// runs far less often, so a deadline this short also asserts that the spend
+	// was noticed by the notification path rather than swept up much later.
+	waitUntil(
+		t, indexerWait, "the unrolled vtxo to be reported spent onchain",
+		func(ctx context.Context) error {
+			_, spent, err := alice.ListVtxos(ctx)
+			if err != nil {
+				return err
+			}
+			for _, vtxo := range spent {
+				if vtxo.Outpoint != target {
+					continue
+				}
+				if !vtxo.Unrolled {
+					return fmt.Errorf("vtxo %s is no longer marked unrolled", target)
+				}
+				if !vtxo.Spent {
+					return fmt.Errorf("vtxo %s is still reported unspent", target)
+				}
+				if vtxo.SpentBy != spendTxid {
+					return fmt.Errorf(
+						"vtxo %s reports spent_by %q, want the onchain spender %s",
+						target, vtxo.SpentBy, spendTxid,
+					)
+				}
+				// An onchain spend must never be attributed to an Arkade
+				// transaction: the absence of ark_txid is the discriminator the
+				// sweeper and the fraud reaction both key off.
+				if vtxo.ArkTxid != "" {
+					return fmt.Errorf(
+						"vtxo %s wrongly carries ark txid %s for an onchain spend",
+						target, vtxo.ArkTxid,
+					)
+				}
+				return nil
+			}
+			return fmt.Errorf("vtxo %s not found among %d spent vtxos", target, len(spent))
+		},
+	)
+}
