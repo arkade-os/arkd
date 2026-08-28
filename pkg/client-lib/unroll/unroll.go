@@ -8,9 +8,9 @@ import (
 	"math"
 	"strings"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chainhash/v2"
@@ -57,7 +57,7 @@ func (a UnrollArgs) validate() error {
 		return fmt.Errorf("missing bump address")
 	}
 	netParams := clientlib.ToBitcoinNetwork(a.ServerParams.Network)
-	if _, err := address.DecodeAddress(a.BumpAddr, &netParams); err != nil {
+	if _, err := arklib.DecodeBitcoinAddress(a.BumpAddr, &netParams); err != nil {
 		return fmt.Errorf("invalid bump address")
 	}
 	return nil

@@ -594,7 +594,7 @@ func (b *txBuilder) BuildCommitmentTx(
 			return "", nil, "", nil, err
 		}
 
-		connectorAddress, err := address.DecodeAddress(nextConnectorAddress, b.onchainNetwork())
+		connectorAddress, err := arklib.DecodeBitcoinAddress(nextConnectorAddress, b.onchainNetwork())
 		if err != nil {
 			return "", nil, "", nil, err
 		}
@@ -857,7 +857,7 @@ func (b *txBuilder) createCommitmentTx(
 			return nil, err
 		}
 
-		changeAddress, err := address.DecodeAddress(changeAddresses[0], b.onchainNetwork())
+		changeAddress, err := arklib.DecodeBitcoinAddress(changeAddresses[0], b.onchainNetwork())
 		if err != nil {
 			return nil, err
 		}
@@ -1275,7 +1275,7 @@ func (b *txBuilder) getForfeitScript() ([]byte, error) {
 		return nil, err
 	}
 
-	addr, err := address.DecodeAddress(forfeitAddr.String(), nil)
+	addr, err := arklib.DecodeBitcoinAddress(forfeitAddr.String(), nil)
 	if err != nil {
 		return nil, err
 	}

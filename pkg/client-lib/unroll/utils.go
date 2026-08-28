@@ -9,7 +9,6 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
@@ -26,7 +25,7 @@ func computeVSize(tx *wire.MsgTx) lntypes.VByte {
 
 func toOutputScript(onchainAddress string, network arklib.Network) ([]byte, error) {
 	netParams := clientlib.ToBitcoinNetwork(network)
-	rcvAddr, err := address.DecodeAddress(onchainAddress, &netParams)
+	rcvAddr, err := arklib.DecodeBitcoinAddress(onchainAddress, &netParams)
 	if err != nil {
 		return nil, err
 	}

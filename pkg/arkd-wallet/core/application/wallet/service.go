@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
-	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/v2"
@@ -831,7 +831,7 @@ func (w *wallet) signerKeyForLeaf(leafScript []byte) *btcec.PrivateKey {
 
 // WithdrawAll withdraws all available balance including connectors account funds
 func (w *wallet) WithdrawAll(ctx context.Context, destinationAddress string) (string, error) {
-	destinationAddr, err := address.DecodeAddress(destinationAddress, w.chainParams())
+	destinationAddr, err := arklib.DecodeBitcoinAddress(destinationAddress, w.chainParams())
 	if err != nil {
 		return "", fmt.Errorf("invalid address: %w", err)
 	}
@@ -876,7 +876,7 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 	}
 
 	// validate the destination address
-	destinationAddr, err := address.DecodeAddress(destinationAddress, w.chainParams())
+	destinationAddr, err := arklib.DecodeBitcoinAddress(destinationAddress, w.chainParams())
 	if err != nil {
 		return "", fmt.Errorf("invalid address: %w", err)
 	}
@@ -1016,7 +1016,7 @@ func (w *wallet) withdrawPartially(ctx context.Context, feeRate chainfee.SatPerK
 			return nil, fmt.Errorf("failed to generate change address: %w", err)
 		}
 
-		changeAddr, err := address.DecodeAddress(changeAddress, w.chainParams())
+		changeAddr, err := arklib.DecodeBitcoinAddress(changeAddress, w.chainParams())
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode change address: %w", err)
 		}

@@ -8,7 +8,6 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
-	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chainhash/v2"
@@ -134,7 +133,7 @@ func sweepTransaction(
 		return "", "", err
 	}
 
-	addr, err := address.DecodeAddress(sweepAddress[0], nil)
+	addr, err := arklib.DecodeBitcoinAddress(sweepAddress[0], nil)
 	if err != nil {
 		return "", "", err
 	}

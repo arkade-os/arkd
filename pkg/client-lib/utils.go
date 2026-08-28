@@ -9,7 +9,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/errors"
-	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
@@ -314,7 +313,7 @@ func CoinSelectAsset(
 func ParseBitcoinAddress(addr string, net chaincfg.Params) (
 	bool, []byte, error,
 ) {
-	btcAddr, err := address.DecodeAddress(addr, &net)
+	btcAddr, err := arklib.DecodeBitcoinAddress(addr, &net)
 	if err != nil {
 		return false, nil, nil
 	}
