@@ -91,9 +91,6 @@ func (m *intentStore) Push(
 		CosignersPublicKeys: cosignersPubkeys,
 	}
 	for _, vtxo := range intent.Inputs {
-		if vtxo.IsNote() {
-			continue
-		}
 		m.vtxos[vtxo.Outpoint.String()] = struct{}{}
 	}
 	return nil
