@@ -29,8 +29,11 @@ type scanner struct {
 	lock                  sync.RWMutex
 	notificationListeners []chan map[string][]application.Utxo
 	spendListeners        []chan []application.Spend
-	initialBackoff        time.Duration
-	maxBackoff            time.Duration
+	// inFlight counts fan-out deliveries that have been started but not yet
+	// completed, so Close can wait for them before closing listener channels.
+	inFlight       sync.WaitGroup
+	initialBackoff time.Duration
+	maxBackoff     time.Duration
 }
 
 // New creates a new BlockchainScanner service
@@ -115,10 +118,17 @@ func (s *scanner) start(ctx context.Context) error {
 
 				spends := castSpends(notification.Spends)
 
+				// Each delivery is registered on inFlight before the goroutine
+				// starts, while the lock is held. Close waits on inFlight before
+				// closing the listener channels, because a select whose Done
+				// case and send case are both ready may still pick the send —
+				// and a send on a closed channel panics the whole process.
 				s.lock.RLock()
 				if len(notificationsMap) > 0 {
 					for _, listener := range s.notificationListeners {
+						s.inFlight.Add(1)
 						go func(listener chan map[string][]application.Utxo) {
+							defer s.inFlight.Done()
 							select {
 							case <-ctx.Done():
 								return
@@ -129,7 +139,9 @@ func (s *scanner) start(ctx context.Context) error {
 				}
 				if len(spends) > 0 {
 					for _, listener := range s.spendListeners {
+						s.inFlight.Add(1)
 						go func(listener chan []application.Spend) {
+							defer s.inFlight.Done()
 							select {
 							case <-ctx.Done():
 								return
@@ -267,6 +279,10 @@ func (s *scanner) GetOutpointStatus(ctx context.Context, outpoint wire.OutPoint)
 
 func (s *scanner) Close() {
 	s.cancel()
+	// Cancelling is not enough to make the fan-out goroutines stop before the
+	// channels close: their select can still choose a ready send over a ready
+	// Done. Wait for them, then close.
+	s.inFlight.Wait()
 	s.lock.Lock()
 	for _, listener := range s.notificationListeners {
 		close(listener)

@@ -11,12 +11,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// reconcileLookback bounds the transactions window the reconciler asks the
+// reconcileLookback bounds the transactions window the periodic passes ask the
 // wallet for. The unfiltered endpoint returns a wallet's entire history, so a
-// window keeps each tick cheap. It only needs to cover spends the push
-// notifications missed, which in practice means the downtime of an arkd restart;
-// a spend older than this is still handled, because a vtxo only leaves the
-// candidate set once it is recorded as spent.
+// window keeps each tick cheap. It only has to cover what the push
+// notifications could have missed, which is bounded by how long arkd was down;
+// the unwindowed first pass at startup is what catches anything older.
 const reconcileLookback = 30 * 24 * time.Hour
 
 // watchOnchainSpends consumes spends pushed by the wallet and records them.
@@ -27,10 +26,21 @@ const reconcileLookback = 30 * 24 * time.Hour
 // arrives while arkd is down, and nothing here ever retracts a spend that fails
 // to confirm. reconcileOnchainSpends covers both.
 func (s *service) watchOnchainSpends() {
-	ctx := context.Background()
-	for spends := range s.scanner.GetSpendNotificationChannel(ctx) {
-		if err := s.applyOnchainSpends(ctx, spends); err != nil {
-			log.WithError(err).Warn("failed to apply onchain spends")
+	// s.ctx rather than context.Background: the scanner drops its listener when
+	// the context it was given is cancelled, and selecting on Done lets this
+	// goroutine exit on shutdown instead of blocking on a channel nobody feeds.
+	ch := s.scanner.GetSpendNotificationChannel(s.ctx)
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case spends, ok := <-ch:
+			if !ok {
+				return
+			}
+			if err := s.applyOnchainSpends(s.ctx, spends); err != nil {
+				log.WithError(err).Warn("failed to apply onchain spends")
+			}
 		}
 	}
 }
@@ -96,25 +106,28 @@ func (s *service) applyOnchainSpends(ctx context.Context, spends []ports.Spend) 
 // while arkd was down, and retract a spend whose transaction was replaced or
 // evicted without ever confirming.
 func (s *service) reconcileOnchainSpends(interval time.Duration) {
-	ctx := context.Background()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	// Run once at startup so a restart does not wait a full interval to notice
-	// what happened while arkd was down.
-	s.reconcileOnchainSpendsOnce(ctx)
+	// The first pass is unwindowed. A vtxo spent onchain long ago is still in
+	// the candidate set, and a rolling window would never reach back far enough
+	// to see its spend, so it would stay wrongly unspent forever. Later passes
+	// only have to cover what the push notifications could have missed, which is
+	// bounded by how long arkd was down.
+	s.reconcileOnchainSpendsOnce(s.ctx, nil)
 
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
-			s.reconcileOnchainSpendsOnce(ctx)
+			from := time.Now().Add(-reconcileLookback)
+			s.reconcileOnchainSpendsOnce(s.ctx, &from)
 		}
 	}
 }
 
-func (s *service) reconcileOnchainSpendsOnce(ctx context.Context) {
+func (s *service) reconcileOnchainSpendsOnce(ctx context.Context, from *time.Time) {
 	candidates, err := s.repoManager.Vtxos().GetUnrolledUnspentVtxos(ctx)
 	if err != nil {
 		log.WithError(err).Warn("onchain spend reconcile: failed to load unrolled vtxos")
@@ -131,8 +144,7 @@ func (s *service) reconcileOnchainSpendsOnce(ctx context.Context) {
 		return
 	}
 
-	from := time.Now().Add(-reconcileLookback)
-	spends, err := s.scanner.GetSpends(ctx, &from)
+	spends, err := s.scanner.GetSpends(ctx, from)
 	if err != nil {
 		// An arkd-wallet older than this feature has no GetSpends. Push
 		// notifications from such a wallet are silent too, so arkd simply does

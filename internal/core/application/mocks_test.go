@@ -210,6 +210,7 @@ type mockedScanner struct {
 	spendCh    chan []ports.Spend
 	spends     []ports.Spend
 	spendsErr  error
+	spendsFrom []*time.Time
 	unspent    map[domain.Outpoint]struct{}
 	unspentErr error
 }
@@ -274,11 +275,20 @@ func (m *mockedScanner) GetSpendNotificationChannel(
 }
 
 func (m *mockedScanner) GetSpends(
-	_ context.Context, _ *time.Time,
+	_ context.Context, from *time.Time,
 ) ([]ports.Spend, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.spendsFrom = append(m.spendsFrom, from)
 	return m.spends, m.spendsErr
+}
+
+// SpendsFrom returns the `from` bound of every GetSpends call, so tests can
+// assert the first reconcile pass is unwindowed.
+func (m *mockedScanner) SpendsFrom() []*time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]*time.Time(nil), m.spendsFrom...)
 }
 
 func (m *mockedScanner) GetUnspentOutpoints(

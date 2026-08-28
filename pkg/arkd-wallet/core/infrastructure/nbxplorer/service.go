@@ -714,9 +714,16 @@ func (n *nbxplorer) GetAddressNotifications(
 						if err := json.Unmarshal(eventDataBytes, &newTxEvent); err == nil {
 							txid := newTxEvent.TransactionData.TransactionHash
 
+							// A failure here must not discard the spend half of
+							// the event: the two lookups are independent, and
+							// returning early would silently drop a spend the
+							// transaction-specific query could still resolve.
 							newUtxos, err := n.searchNewUTXOs(ctx, txid)
 							if err != nil {
-								continue
+								log.WithError(err).Warnf(
+									"failed to fetch new utxos for tx %s", txid,
+								)
+								newUtxos = nil
 							}
 
 							// The same event carries spends of watched outputs.

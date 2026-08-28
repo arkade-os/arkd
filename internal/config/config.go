@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,6 +37,9 @@ import (
 
 const (
 	bitcoinBlockWeight = 4_000_000
+	// maxDurationSeconds is the largest whole number of seconds representable as
+	// a time.Duration, whose unit is nanoseconds in an int64.
+	maxDurationSeconds = int64(math.MaxInt64 / int64(time.Second))
 )
 
 var (
@@ -399,6 +403,19 @@ func LoadConfig() (*Config, error) {
 		}
 	}
 
+	// time.NewTicker panics on a non-positive duration, which would take the
+	// process down from inside the reconcile goroutine, and seconds beyond
+	// maxDurationSeconds overflow the int64 nanosecond conversion into a
+	// negative duration that panics the same way.
+	onchainSpendReconcileInterval := viper.GetInt64(OnchainSpendReconcileInterval)
+	if onchainSpendReconcileInterval <= 0 ||
+		onchainSpendReconcileInterval > maxDurationSeconds {
+		return nil, fmt.Errorf(
+			"%s must be between 1 and %d seconds, got %d",
+			OnchainSpendReconcileInterval, maxDurationSeconds, onchainSpendReconcileInterval,
+		)
+	}
+
 	signerAddr := viper.GetString(SignerAddr)
 	if signerAddr == "" {
 		signerAddr = viper.GetString(WalletAddr)
@@ -499,7 +516,7 @@ func LoadConfig() (*Config, error) {
 		OtelPushInterval:              viper.GetInt64(OtelPushInterval),
 		PyroscopeServerURL:            viper.GetString(PyroscopeServerURL),
 		HeartbeatInterval:             viper.GetInt64(HeartbeatInterval),
-		OnchainSpendReconcileInterval: viper.GetInt64(OnchainSpendReconcileInterval),
+		OnchainSpendReconcileInterval: onchainSpendReconcileInterval,
 
 		RoundMaxParticipantsCount:     viper.GetUint64(RoundMaxParticipantsCount),
 		RoundMinParticipantsCount:     viper.GetUint64(RoundMinParticipantsCount),

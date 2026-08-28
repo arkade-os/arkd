@@ -109,23 +109,56 @@ func (r *VtxoRepository) UnrollVtxos(
 func (r *VtxoRepository) MarkVtxosOnchainSpent(
 	ctx context.Context, spentBy map[domain.Outpoint]string,
 ) error {
-	for outpoint, spendingTxid := range spentBy {
-		if err := r.markOnchainSpentVtxo(ctx, outpoint, spendingTxid); err != nil {
-			return err
+	return r.inRetryableTx(func(tx *badger.Txn) error {
+		for outpoint, spendingTxid := range spentBy {
+			if err := r.markOnchainSpentVtxo(tx, outpoint, spendingTxid); err != nil {
+				return err
+			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func (r *VtxoRepository) UnmarkVtxosOnchainSpent(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) error {
-	for _, outpoint := range outpoints {
-		if err := r.unmarkOnchainSpentVtxo(ctx, outpoint); err != nil {
-			return err
+	return r.inRetryableTx(func(tx *badger.Txn) error {
+		for _, outpoint := range outpoints {
+			if err := r.unmarkOnchainSpentVtxo(tx, outpoint); err != nil {
+				return err
+			}
 		}
+		return nil
+	})
+}
+
+// inRetryableTx runs fn inside a single badger transaction and retries the WHOLE
+// function on conflict. Retrying only the final write would re-apply a decision
+// taken from a snapshot that has since changed, which is the thing these guards
+// exist to prevent. badger tracks reads made in an update transaction, so a
+// concurrent write to a key read here surfaces as ErrConflict at commit.
+func (r *VtxoRepository) inRetryableTx(fn func(tx *badger.Txn) error) error {
+	var err error
+	for range maxRetries {
+		err = func() error {
+			tx := r.store.Badger().NewTransaction(true)
+			defer tx.Discard()
+
+			if err := fn(tx); err != nil {
+				return err
+			}
+			return tx.Commit()
+		}()
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, badger.ErrConflict) {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		return err
 	}
-	return nil
+	return err
 }
 
 func (r *VtxoRepository) GetVtxos(
@@ -748,16 +781,15 @@ func (r *VtxoRepository) unrollVtxo(
 // already onchain-spent one at a new spender when RBF replaces it. ArkTxid is
 // deliberately left empty: its absence is what identifies the spend as onchain.
 // A vtxo already spent inside the Ark is left alone, so this can never erase the
-// ArkTxid the sweeper and the fraud reaction depend on.
+// ArkTxid the sweeper and the fraud reaction depend on. The read and the write
+// share the caller's transaction, so that guard is evaluated against the state
+// actually being committed rather than a snapshot taken earlier.
 func (r *VtxoRepository) markOnchainSpentVtxo(
-	ctx context.Context, outpoint domain.Outpoint, spendingTxid string,
+	tx *badger.Txn, outpoint domain.Outpoint, spendingTxid string,
 ) error {
-	vtxo, err := r.getVtxo(ctx, outpoint)
-	if err != nil {
+	vtxo, err := r.getVtxoTx(tx, outpoint)
+	if err != nil || vtxo == nil || !vtxo.Unrolled {
 		return err
-	}
-	if vtxo == nil || !vtxo.Unrolled {
-		return nil
 	}
 	if vtxo.Spent && !vtxo.IsOnchainSpent() {
 		return nil
@@ -769,27 +801,45 @@ func (r *VtxoRepository) markOnchainSpentVtxo(
 	vtxo.Spent = true
 	vtxo.SpentBy = spendingTxid
 
-	return r.updateVtxo(ctx, vtxo)
+	return r.updateVtxoTx(tx, vtxo)
 }
 
 // unmarkOnchainSpentVtxo retracts an onchain spend whose transaction was evicted
 // or reorged out. Scoped to onchain-spent vtxos so an offchain spend or a
-// settlement can never be undone here.
+// settlement can never be undone here, and transactional for the same reason as
+// markOnchainSpentVtxo.
 func (r *VtxoRepository) unmarkOnchainSpentVtxo(
-	ctx context.Context, outpoint domain.Outpoint,
+	tx *badger.Txn, outpoint domain.Outpoint,
 ) error {
-	vtxo, err := r.getVtxo(ctx, outpoint)
-	if err != nil {
+	vtxo, err := r.getVtxoTx(tx, outpoint)
+	if err != nil || vtxo == nil || !vtxo.IsOnchainSpent() {
 		return err
-	}
-	if vtxo == nil || !vtxo.IsOnchainSpent() {
-		return nil
 	}
 
 	vtxo.Spent = false
 	vtxo.SpentBy = ""
 
-	return r.updateVtxo(ctx, vtxo)
+	return r.updateVtxoTx(tx, vtxo)
+}
+
+func (r *VtxoRepository) getVtxoTx(
+	tx *badger.Txn, outpoint domain.Outpoint,
+) (*domain.Vtxo, error) {
+	var dto vtxoDTO
+	if err := r.store.TxGet(tx, outpoint.String(), &dto); err != nil {
+		if errors.Is(err, badgerhold.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &dto.Vtxo, nil
+}
+
+func (r *VtxoRepository) updateVtxoTx(tx *badger.Txn, vtxo *domain.Vtxo) error {
+	return r.store.TxUpdate(tx, vtxo.Outpoint.String(), vtxoDTO{
+		Vtxo:      *vtxo,
+		UpdatedAt: time.Now().UnixMilli(),
+	})
 }
 
 func (r *VtxoRepository) findVtxos(

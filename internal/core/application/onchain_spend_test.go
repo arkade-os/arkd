@@ -238,7 +238,7 @@ func TestReconcileOnchainSpendsOnce(t *testing.T) {
 			},
 		}
 
-		svc.reconcileOnchainSpendsOnce(context.Background())
+		svc.reconcileOnchainSpendsOnce(context.Background(), nil)
 
 		vtxos.AssertCalled(
 			t, "MarkVtxosOnchainSpent", mock.Anything,
@@ -266,7 +266,7 @@ func TestReconcileOnchainSpendsOnce(t *testing.T) {
 		}
 
 		require.NotPanics(t, func() {
-			svc.reconcileOnchainSpendsOnce(context.Background())
+			svc.reconcileOnchainSpendsOnce(context.Background(), nil)
 		})
 		vtxos.AssertNotCalled(t, "MarkVtxosOnchainSpent", mock.Anything, mock.Anything)
 	})
@@ -284,10 +284,50 @@ func TestReconcileOnchainSpendsOnce(t *testing.T) {
 		svc := &service{repoManager: rm, scanner: scanner}
 
 		require.NotPanics(t, func() {
-			svc.reconcileOnchainSpendsOnce(context.Background())
+			svc.reconcileOnchainSpendsOnce(context.Background(), nil)
 		})
 		vtxos.AssertNotCalled(t, "MarkVtxosOnchainSpent", mock.Anything, mock.Anything)
 	})
+}
+
+// TestReconcileFirstPassIsUnwindowed guards the backfill of vtxos spent before
+// this tracking existed. Periodic passes only need to cover what push
+// notifications could have missed, so they window the query to keep it cheap —
+// but applying that window to the first pass would make a spend older than
+// reconcileLookback permanently invisible, leaving a vtxo usable whose onchain
+// outpoint is gone.
+func TestReconcileFirstPassIsUnwindowed(t *testing.T) {
+	out := outpoint(unrolledVtxoTxid, 0)
+
+	vtxos := &mockedVtxoRepo{}
+	vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).
+		Return([]domain.Vtxo{{Outpoint: out, Unrolled: true}}, nil)
+	vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+	vtxos.On("GetVtxos", mock.Anything, mock.Anything).
+		Return([]domain.Vtxo{{Outpoint: out, Unrolled: true}}, nil)
+	vtxos.On("MarkVtxosOnchainSpent", mock.Anything, mock.Anything).Return(nil)
+	rm := &mockedRepoManager{}
+	rm.On("Vtxos").Return(vtxos)
+
+	// A spend far older than the rolling window: only an unwindowed query
+	// reaches it.
+	scanner := &mockedScanner{spends: []ports.Spend{spendOf(out, spendingTxid, 5000)}}
+	ctx, cancel := context.WithCancel(context.Background())
+	svc := &service{repoManager: rm, scanner: scanner, ctx: ctx}
+
+	// A long interval means the ticker never fires; only the startup pass runs.
+	go svc.reconcileOnchainSpends(time.Hour)
+
+	require.Eventually(t, func() bool {
+		return len(scanner.SpendsFrom()) > 0
+	}, 2*time.Second, 10*time.Millisecond)
+	cancel()
+
+	require.Nil(t, scanner.SpendsFrom()[0], "the startup pass must not window the query")
+	vtxos.AssertCalled(
+		t, "MarkVtxosOnchainSpent", mock.Anything,
+		map[domain.Outpoint]string{out: spendingTxid},
+	)
 }
 
 func TestWatchOnchainSpends(t *testing.T) {
@@ -305,7 +345,11 @@ func TestWatchOnchainSpends(t *testing.T) {
 	rm.On("Vtxos").Return(vtxos)
 
 	spendCh := make(chan []ports.Spend, 1)
-	svc := &service{repoManager: rm, scanner: &mockedScanner{spendCh: spendCh}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	svc := &service{
+		repoManager: rm, scanner: &mockedScanner{spendCh: spendCh}, ctx: ctx,
+	}
 
 	go svc.watchOnchainSpends()
 	spendCh <- []ports.Spend{spendOf(out, spendingTxid, 0)}
