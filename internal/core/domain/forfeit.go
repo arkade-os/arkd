@@ -11,23 +11,9 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 )
 
-// ForfeitTxReadyToBroadcast reports whether a forfeit psbt already carries every
-// signature its finalizer needs, so it can be broadcast without calling the
-// signer. A forfeit spends two inputs: the vtxo, through a tapscript leaf, and
-// the connector, through the wallet key path.
-//
-// Readiness is keyed on the pubkeys the leaf itself commits to, not on the
-// operator's current signer key. A forfeit signed before a signer-key rotation
-// therefore stays recognized as ready, which is the property collection-time
-// signing exists to provide: the stored forfeit must remain broadcastable even
-// once the key that signed it is no longer the current one.
-//
-// A signature counts only when it is under a pubkey the leaf commits to and over
-// that same leaf. This still reports what the psbt carries, not whether those
-// signatures cryptographically verify, and not whether a condition closure's
-// witness is present. Presence is enough because SubmitForfeitTxs rejects a
-// forfeit that arrives already carrying an operator signature, so the only one a
-// stored forfeit holds is arkd's own.
+// ForfeitTxReadyToBroadcast reports whether a forfeit psbt carries every
+// signature its finalizer needs. It checks presence, not validity: a signature
+// counts when it is under a pubkey the leaf commits to and over that same leaf.
 func ForfeitTxReadyToBroadcast(ptx *psbt.Packet) bool {
 	if len(ptx.Inputs) <= 0 {
 		return false
@@ -71,12 +57,8 @@ func ForfeitTxReadyToBroadcast(ptx *psbt.Packet) bool {
 }
 
 // ForfeitTxCarriesOperatorSignature reports whether a submitted forfeit psbt
-// already carries a signature only the operator can produce: a tapscript spend
-// sig under one of operatorXOnlyKeys, or a key spend sig on any input, which on a
-// forfeit can only be the connector the operator's wallet owns.
-//
-// A client has no way to produce either, so carrying one is always an attempt to
-// plant a signature rather than an honest submission.
+// carries a signature only the operator can produce: a tapscript spend sig under
+// one of operatorXOnlyKeys, or a key spend sig on any input.
 func ForfeitTxCarriesOperatorSignature(ptx *psbt.Packet, operatorXOnlyKeys [][]byte) bool {
 	for _, in := range ptx.Inputs {
 		if len(in.TaprootKeySpendSig) > 0 {

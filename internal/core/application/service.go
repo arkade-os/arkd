@@ -2306,10 +2306,6 @@ func (s *service) ConfirmRegistration(ctx context.Context, intentId string) erro
 	return nil
 }
 
-// signForfeitTxs adds the operator signature to each collected forfeit tx and
-// returns them as domain.ForfeitTx ready to be persisted. Signing only adds
-// witness data, so the txid is read from the signed psbt's unsigned tx and is
-// identical to the txid of the user-submitted forfeit tx.
 func (s *service) signForfeitTxs(
 	ctx context.Context, forfeitTxs []string,
 ) ([]domain.ForfeitTx, error) {
@@ -2366,14 +2362,6 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 		return nil
 	}
 
-	// A client signs only its own half of a forfeit: the operator's signature is
-	// added by arkd at collection time, and the connector is spent with a wallet
-	// key the client does not hold. A submitted forfeit that already carries
-	// either can only be an attempt to poison the psbt, and it is not harmless:
-	// a planted tapscript sig under an operator key over the same leaf makes the
-	// collection-time signer append a second entry for that (key, leaf) pair,
-	// yielding a duplicate-key psbt that fails to parse and takes the whole round
-	// down with it. Reject it here, before it is ever stored.
 	operatorKeys, keysErr := s.operatorXOnlyKeys(ctx)
 	if keysErr != nil {
 		log.WithError(keysErr).Error("failed to get operator signer keys")

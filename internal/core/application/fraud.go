@@ -216,11 +216,6 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 	// operator signature and produce an invalid PSBT (duplicate key), so we only
 	// sign here when a signature is still missing, as on a legacy forfeit stored
 	// without the operator's half.
-	//
-	// Readiness is decided from the psbt alone, without consulting the signer or
-	// the operator's current key set: a pre-signed forfeit must stay broadcastable
-	// even when the signer is down or its key has since been rotated away, which is
-	// the whole point of signing at collection time.
 	signedForfeitTx := forfeitTxB64
 	if !domain.ForfeitTxReadyToBroadcast(forfeitTx) {
 		signedForfeitTx, err = s.signer.SignTransactionTapscript(ctx, forfeitTxB64, nil)

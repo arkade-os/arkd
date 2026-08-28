@@ -7661,7 +7661,7 @@ func TestDeprecatedSignerKey(t *testing.T) {
 // the new key and the finalizer still picks the leaf's own key out of the psbt.
 // What it covers is the end-to-end outcome, that fraud is punished after a hard
 // rotation. That no live signing happens on the way is pinned by
-// TestForfeitTxs/broadcast_readiness, and was confirmed on regtest by observing
+// domain.TestForfeitTxReadyToBroadcast, and was confirmed on regtest by observing
 // the signer record no SignTransactionTapscript call in the fraud window.
 //
 // Stopping the signer to prove that here would need SIGNER_ADDR and WALLET_ADDR
