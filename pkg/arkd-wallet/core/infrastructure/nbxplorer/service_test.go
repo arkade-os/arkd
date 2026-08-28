@@ -100,3 +100,21 @@ func TestMakeRequestNotFoundMessage(t *testing.T) {
 	require.True(t, errors.Is(err, errNotFound))
 	require.Contains(t, err.Error(), "404")
 }
+
+// TestGetTxSpendsServerError documents the deliberate asymmetry between the two
+// failure modes. A 404 means the transaction touches nothing tracked and is
+// reported as "no spends"; any other status is a real failure and must surface
+// as one, because treating it as "no spends" would let a transient server error
+// look identical to a transaction that genuinely spent nothing. The caller in
+// the notification loop logs it and still delivers the UTXO half of the event.
+func TestGetTxSpendsServerError(t *testing.T) {
+	n := newTestNbxplorer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	spends, err := n.GetTxSpends(context.Background(), testTxid)
+
+	require.Error(t, err)
+	require.NotErrorIs(t, err, application.ErrTransactionNotFound)
+	require.Empty(t, spends)
+}

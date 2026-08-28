@@ -804,9 +804,11 @@ func (n *nbxplorer) makeRequest(ctx context.Context, method, endpoint string, bo
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode == http.StatusNotFound {
-			// The "HTTP 404" text is load-bearing: callers predating errNotFound
-			// detect a missing resource by substring. Keep it in the message so
-			// wrapping the sentinel stays behaviour-preserving for them.
+			// Callers should match errNotFound, not this text. The status stays
+			// in the message anyway, because dropping it is what silently broke
+			// GetTransaction once: it detected a missing transaction by looking
+			// for "404" here, and rewording the error turned every unseen
+			// transaction into an opaque failure several layers up.
 			return nil, fmt.Errorf(
 				"%w: HTTP %d: %s", errNotFound, resp.StatusCode, string(bodyBytes),
 			)
