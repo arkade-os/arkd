@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,8 +38,8 @@ type walletDaemonClient struct {
 	// slices and the started flag.
 	notifyMu       sync.Mutex
 	notifyStarted  bool
-	utxoListeners  []chan map[string][]ports.VtxoWithValue
-	spendListeners []chan []ports.Spend
+	utxoListeners  []notificationListener[map[string][]ports.VtxoWithValue]
+	spendListeners []notificationListener[[]ports.Spend]
 }
 
 // New creates a ports.WalletService backed by a gRPC client.
@@ -203,19 +204,40 @@ func (w *walletDaemonClient) SignMessage(ctx context.Context, message []byte) ([
 	return resp.GetSignature(), nil
 }
 
+// notificationListener pairs a consumer channel with the context that consumer
+// is bound to. The context is kept so a delivery can abandon a consumer that has
+// gone away: the dispatcher sends to every listener from one goroutine, so a
+// single abandoned channel with a full buffer would otherwise stall notifications
+// for everybody.
+type notificationListener[T any] struct {
+	ch  chan T
+	ctx context.Context
+}
+
 // GetNotificationChannel and GetSpendNotificationChannel are both fed by a
 // single NotificationStream RPC. One chain event carries its new UTXOs and its
 // spends in the same message, so opening a stream per consumer would duplicate
 // every dispatch, discard half of each, and allow a spend to be observed before
 // the UTXOs of the same event.
 func (w *walletDaemonClient) GetNotificationChannel(
-	_ context.Context,
+	ctx context.Context,
 ) <-chan map[string][]ports.VtxoWithValue {
 	ch := make(chan map[string][]ports.VtxoWithValue, notificationBufferSize)
 
 	w.notifyMu.Lock()
-	w.utxoListeners = append(w.utxoListeners, ch)
+	w.utxoListeners = append(
+		w.utxoListeners, notificationListener[map[string][]ports.VtxoWithValue]{ch, ctx},
+	)
 	w.notifyMu.Unlock()
+
+	go w.removeListenerOnDone(ctx, func() {
+		w.utxoListeners = slices.DeleteFunc(
+			w.utxoListeners,
+			func(l notificationListener[map[string][]ports.VtxoWithValue]) bool {
+				return l.ch == ch
+			},
+		)
+	})
 
 	w.startNotificationStream()
 	return ch
@@ -226,16 +248,34 @@ func (w *walletDaemonClient) GetNotificationChannel(
 // entries field, so an older arkd-wallet simply never populates it and this
 // channel stays silent; the reconcile loop is what keeps arkd correct then.
 func (w *walletDaemonClient) GetSpendNotificationChannel(
-	_ context.Context,
+	ctx context.Context,
 ) <-chan []ports.Spend {
 	ch := make(chan []ports.Spend, notificationBufferSize)
 
 	w.notifyMu.Lock()
-	w.spendListeners = append(w.spendListeners, ch)
+	w.spendListeners = append(w.spendListeners, notificationListener[[]ports.Spend]{ch, ctx})
 	w.notifyMu.Unlock()
+
+	go w.removeListenerOnDone(ctx, func() {
+		w.spendListeners = slices.DeleteFunc(
+			w.spendListeners,
+			func(l notificationListener[[]ports.Spend]) bool { return l.ch == ch },
+		)
+	})
 
 	w.startNotificationStream()
 	return ch
+}
+
+// removeListenerOnDone deregisters a listener once its consumer's context ends.
+// It deliberately does not close the channel: the dispatcher may be mid-send on
+// a snapshot of the listener slice, and closing under it would panic. A consumer
+// whose context is done is by definition no longer reading.
+func (w *walletDaemonClient) removeListenerOnDone(ctx context.Context, remove func()) {
+	<-ctx.Done()
+	w.notifyMu.Lock()
+	defer w.notifyMu.Unlock()
+	remove()
 }
 
 // startNotificationStream opens the shared stream on first use. It deliberately
@@ -263,6 +303,8 @@ func (w *walletDaemonClient) startNotificationStream() {
 	go func() {
 		// Closing every listener when the stream dies preserves the behaviour
 		// consumers already rely on: a range over the channel terminates.
+		// dispatchNotification and this teardown both run on this goroutine, so
+		// a send can never race the close.
 		defer w.closeNotificationListeners()
 
 		for {
@@ -288,8 +330,8 @@ func (w *walletDaemonClient) dispatchNotification(
 	resp *arkwalletv1.NotificationStreamResponse,
 ) {
 	w.notifyMu.Lock()
-	utxoListeners := append([]chan map[string][]ports.VtxoWithValue(nil), w.utxoListeners...)
-	spendListeners := append([]chan []ports.Spend(nil), w.spendListeners...)
+	utxoListeners := slices.Clone(w.utxoListeners)
+	spendListeners := slices.Clone(w.spendListeners)
 	w.notifyMu.Unlock()
 
 	if entries := resp.GetEntries(); len(entries) > 0 {
@@ -308,29 +350,39 @@ func (w *walletDaemonClient) dispatchNotification(
 			m[entry.Script] = vtxos
 		}
 		for _, listener := range utxoListeners {
-			listener <- m
+			select {
+			case listener.ch <- m:
+			case <-listener.ctx.Done():
+			}
 		}
 	}
 
 	if spends := castSpends(resp.GetSpends()); len(spends) > 0 {
 		for _, listener := range spendListeners {
-			listener <- spends
+			select {
+			case listener.ch <- spends:
+			case <-listener.ctx.Done():
+			}
 		}
 	}
 }
 
+// closeNotificationListeners tears down the current generation of listeners and
+// clears notifyStarted, so a consumer registering after the stream died can open
+// a fresh one instead of holding a channel that never receives and never closes.
 func (w *walletDaemonClient) closeNotificationListeners() {
 	w.notifyMu.Lock()
 	defer w.notifyMu.Unlock()
 
 	for _, listener := range w.utxoListeners {
-		close(listener)
+		close(listener.ch)
 	}
 	for _, listener := range w.spendListeners {
-		close(listener)
+		close(listener.ch)
 	}
 	w.utxoListeners = nil
 	w.spendListeners = nil
+	w.notifyStarted = false
 }
 
 func (w *walletDaemonClient) GetSpends(

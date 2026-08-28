@@ -250,3 +250,44 @@ func containsOutpoint(vtxos []domain.Vtxo, outpoint domain.Outpoint) bool {
 	}
 	return false
 }
+
+// TestOnchainSpendLargeBatch exercises a batch larger than the badger
+// transaction chunk size. badger rejects an oversized transaction with
+// ErrTxnTooBig and Discard then drops every buffered write, so an unbounded
+// batch would lose the whole set rather than part of it. The reconciler's first
+// pass after a restart is unwindowed by design and can carry exactly this kind
+// of backlog.
+func TestOnchainSpendLargeBatch(t *testing.T) {
+	ctx := context.Background()
+	const count = 450 // spans more than two chunks of 200
+
+	for name, repo := range newOnchainSpendRepos(t) {
+		t.Run(name, func(t *testing.T) {
+			vtxos := make([]domain.Vtxo, 0, count)
+			spentBy := make(map[domain.Outpoint]string, count)
+			outpoints := make([]domain.Outpoint, 0, count)
+			for i := 0; i < count; i++ {
+				vtxo := onchainSpendVtxo(randomString(32))
+				vtxos = append(vtxos, vtxo)
+				outpoints = append(outpoints, vtxo.Outpoint)
+				spentBy[vtxo.Outpoint] = "spendingtxid"
+			}
+
+			require.NoError(t, repo.AddVtxos(ctx, vtxos))
+			require.NoError(t, repo.UnrollVtxos(ctx, outpoints))
+			require.NoError(t, repo.MarkVtxosOnchainSpent(ctx, spentBy))
+
+			recorded, err := repo.GetOnchainSpentVtxos(ctx)
+			require.NoError(t, err)
+			for _, outpoint := range outpoints {
+				require.True(t, containsOutpoint(recorded, outpoint),
+					"every vtxo in an oversized batch must be recorded")
+			}
+
+			require.NoError(t, repo.UnmarkVtxosOnchainSpent(ctx, outpoints))
+			for _, outpoint := range outpoints {
+				require.False(t, getOnchainSpendVtxo(t, repo, outpoint).Spent)
+			}
+		})
+	}
+}

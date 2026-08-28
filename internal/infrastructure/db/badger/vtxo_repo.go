@@ -109,27 +109,56 @@ func (r *VtxoRepository) UnrollVtxos(
 func (r *VtxoRepository) MarkVtxosOnchainSpent(
 	ctx context.Context, spentBy map[domain.Outpoint]string,
 ) error {
-	return r.inRetryableTx(func(tx *badger.Txn) error {
-		for outpoint, spendingTxid := range spentBy {
-			if err := r.markOnchainSpentVtxo(tx, outpoint, spendingTxid); err != nil {
-				return err
-			}
-		}
-		return nil
+	outpoints := make([]domain.Outpoint, 0, len(spentBy))
+	for outpoint := range spentBy {
+		outpoints = append(outpoints, outpoint)
+	}
+
+	return r.inChunkedTx(outpoints, func(tx *badger.Txn, outpoint domain.Outpoint) error {
+		return r.markOnchainSpentVtxo(tx, outpoint, spentBy[outpoint])
 	})
 }
 
 func (r *VtxoRepository) UnmarkVtxosOnchainSpent(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) error {
-	return r.inRetryableTx(func(tx *badger.Txn) error {
-		for _, outpoint := range outpoints {
-			if err := r.unmarkOnchainSpentVtxo(tx, outpoint); err != nil {
-				return err
-			}
-		}
-		return nil
+	return r.inChunkedTx(outpoints, func(tx *badger.Txn, outpoint domain.Outpoint) error {
+		return r.unmarkOnchainSpentVtxo(tx, outpoint)
 	})
+}
+
+// onchainSpendTxChunkSize bounds how many vtxos share one badger transaction.
+// badger rejects a transaction whose buffered writes exceed its internal limit
+// with ErrTxnTooBig, and Discard then drops every buffered update, so an
+// unbounded batch would lose the whole set rather than part of it. The
+// reconciler's first pass after a restart is unwindowed by design and can carry
+// a large backlog, which is exactly the case that would hit the limit.
+const onchainSpendTxChunkSize = 200
+
+// inChunkedTx applies fn to each outpoint, batching them into transactions of a
+// bounded size. Each chunk keeps its reads, guards and writes together so the
+// atomicity the guards depend on is preserved within a chunk; chunks commit
+// independently, and a failure leaves earlier chunks applied, which the
+// reconciler corrects on its next pass.
+func (r *VtxoRepository) inChunkedTx(
+	outpoints []domain.Outpoint, fn func(tx *badger.Txn, outpoint domain.Outpoint) error,
+) error {
+	for start := 0; start < len(outpoints); start += onchainSpendTxChunkSize {
+		end := min(start+onchainSpendTxChunkSize, len(outpoints))
+
+		chunk := outpoints[start:end]
+		if err := r.inRetryableTx(func(tx *badger.Txn) error {
+			for _, outpoint := range chunk {
+				if err := fn(tx, outpoint); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // inRetryableTx runs fn inside a single badger transaction and retries the WHOLE
