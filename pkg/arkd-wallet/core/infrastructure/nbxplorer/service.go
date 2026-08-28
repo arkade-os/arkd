@@ -172,7 +172,12 @@ func (n *nbxplorer) GetTransaction(ctx context.Context, txid string) (*ports.Tra
 
 	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/transactions/%s", btcCryptoCode, txid), nil)
 	if err != nil {
-		if strings.Contains(err.Error(), "404") {
+		// Matched on the sentinel rather than the message. A transaction the
+		// node has not seen yet is an ordinary outcome, and the caller chain
+		// depends on it being reported as ErrTransactionNotFound: the gRPC
+		// handler turns that into "not confirmed", and the sweeper reads a
+		// failure here as "cannot schedule this sweep" instead.
+		if errors.Is(err, errNotFound) {
 			return nil, application.ErrTransactionNotFound
 		}
 		return nil, fmt.Errorf("failed to get transaction: %w", err)
@@ -799,7 +804,12 @@ func (n *nbxplorer) makeRequest(ctx context.Context, method, endpoint string, bo
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode == http.StatusNotFound {
-			return nil, fmt.Errorf("%w: %s", errNotFound, string(bodyBytes))
+			// The "HTTP 404" text is load-bearing: callers predating errNotFound
+			// detect a missing resource by substring. Keep it in the message so
+			// wrapping the sentinel stays behaviour-preserving for them.
+			return nil, fmt.Errorf(
+				"%w: HTTP %d: %s", errNotFound, resp.StatusCode, string(bodyBytes),
+			)
 		}
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(bodyBytes))
 	}
