@@ -65,7 +65,14 @@ func (s *scanner) start(ctx context.Context) error {
 		return err
 	}
 
+	// The dispatcher itself is tracked, not just the deliveries it launches.
+	// Otherwise inFlight.Wait() in Close can return between two batches, and the
+	// dispatcher then adds a fresh delivery goroutine after Close believed all
+	// senders were done but before it took the write lock.
+	s.inFlight.Add(1)
 	go func() {
+		defer s.inFlight.Done()
+
 		backoff := s.initialBackoff
 
 		connected := true

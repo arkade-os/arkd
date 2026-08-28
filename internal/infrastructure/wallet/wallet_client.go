@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -31,6 +32,13 @@ type walletDaemonClient struct {
 	// Only set explicitly by tests; production callers go through New() and
 	// always get the default.
 	chunkSize int
+
+	// One NotificationStream feeds every consumer. notifyMu guards the listener
+	// slices and the started flag.
+	notifyMu       sync.Mutex
+	notifyStarted  bool
+	utxoListeners  []chan map[string][]ports.VtxoWithValue
+	spendListeners []chan []ports.Spend
 }
 
 // New creates a ports.WalletService backed by a gRPC client.
@@ -112,6 +120,11 @@ func (w *walletDaemonClient) GetTransaction(ctx context.Context, txid string) (s
 // well under the default gRPC 4 MiB message cap.
 const defaultWatchScriptsChunkSize = 2000
 
+// notificationBufferSize buffers each consumer of the shared notification
+// stream. Buffering keeps one slow consumer from stalling the reader, and so
+// from delaying the other consumer, since both are fed from the same stream.
+const notificationBufferSize = 128
+
 // effectiveChunkSize returns the chunk size this client should use,
 // falling back to the package default if no explicit size was set.
 func (w *walletDaemonClient) effectiveChunkSize() int {
@@ -190,17 +203,68 @@ func (w *walletDaemonClient) SignMessage(ctx context.Context, message []byte) ([
 	return resp.GetSignature(), nil
 }
 
+// GetNotificationChannel and GetSpendNotificationChannel are both fed by a
+// single NotificationStream RPC. One chain event carries its new UTXOs and its
+// spends in the same message, so opening a stream per consumer would duplicate
+// every dispatch, discard half of each, and allow a spend to be observed before
+// the UTXOs of the same event.
 func (w *walletDaemonClient) GetNotificationChannel(
-	ctx context.Context,
+	_ context.Context,
 ) <-chan map[string][]ports.VtxoWithValue {
-	ch := make(chan map[string][]ports.VtxoWithValue)
-	stream, err := w.client.NotificationStream(ctx, &arkwalletv1.NotificationStreamRequest{})
-	if err != nil {
-		close(ch)
-		return ch
+	ch := make(chan map[string][]ports.VtxoWithValue, notificationBufferSize)
+
+	w.notifyMu.Lock()
+	w.utxoListeners = append(w.utxoListeners, ch)
+	w.notifyMu.Unlock()
+
+	w.startNotificationStream()
+	return ch
+}
+
+// GetSpendNotificationChannel streams spends of watched outputs pushed by the
+// wallet. The spends field was added to NotificationStreamResponse after the
+// entries field, so an older arkd-wallet simply never populates it and this
+// channel stays silent; the reconcile loop is what keeps arkd correct then.
+func (w *walletDaemonClient) GetSpendNotificationChannel(
+	_ context.Context,
+) <-chan []ports.Spend {
+	ch := make(chan []ports.Spend, notificationBufferSize)
+
+	w.notifyMu.Lock()
+	w.spendListeners = append(w.spendListeners, ch)
+	w.notifyMu.Unlock()
+
+	w.startNotificationStream()
+	return ch
+}
+
+// startNotificationStream opens the shared stream on first use. It deliberately
+// does not take a caller's context: the stream outlives any single consumer, and
+// tying it to whichever consumer registered first would silently stop feeding
+// the others once that one went away.
+func (w *walletDaemonClient) startNotificationStream() {
+	w.notifyMu.Lock()
+	if w.notifyStarted {
+		w.notifyMu.Unlock()
+		return
 	}
+	w.notifyStarted = true
+	w.notifyMu.Unlock()
+
+	stream, err := w.client.NotificationStream(
+		context.Background(), &arkwalletv1.NotificationStreamRequest{},
+	)
+	if err != nil {
+		log.WithError(err).Warn("failed to open wallet notification stream")
+		w.closeNotificationListeners()
+		return
+	}
+
 	go func() {
-		defer close(ch)
+		// Closing every listener when the stream dies preserves the behaviour
+		// consumers already rely on: a range over the channel terminates.
+		defer w.closeNotificationListeners()
+
 		for {
 			resp, err := stream.Recv()
 			if err != nil {
@@ -214,69 +278,59 @@ func (w *walletDaemonClient) GetNotificationChannel(
 				log.WithError(err).Warnf("failed to receive notification")
 				return
 			}
-			m := make(map[string][]ports.VtxoWithValue)
-			for _, entry := range resp.Entries {
-				vtxos := make([]ports.VtxoWithValue, 0, len(entry.Vtxos))
-				for _, v := range entry.Vtxos {
-					vtxos = append(vtxos, ports.VtxoWithValue{
-						Outpoint: domain.Outpoint{
-							Txid: v.Txid,
-							VOut: v.Vout,
-						},
-						Value: v.Value,
-					})
-				}
-				m[entry.Script] = vtxos
-			}
-			ch <- m
+
+			w.dispatchNotification(resp)
 		}
 	}()
-	return ch
 }
 
-// GetSpendNotificationChannel streams spends of watched outputs pushed by the
-// wallet. The spends field was added to NotificationStreamResponse after the
-// entries field, so an older arkd-wallet simply never populates it and this
-// channel stays silent; the reconcile loop is what keeps arkd correct in that
-// case.
-func (w *walletDaemonClient) GetSpendNotificationChannel(
-	ctx context.Context,
-) <-chan []ports.Spend {
-	ch := make(chan []ports.Spend)
-	stream, err := w.client.NotificationStream(ctx, &arkwalletv1.NotificationStreamRequest{})
-	if err != nil {
-		close(ch)
-		return ch
-	}
-	go func() {
-		defer close(ch)
-		for {
-			resp, err := stream.Recv()
-			if err != nil {
-				if strings.Contains(err.Error(), "EOF") {
-					log.Error("connection closed by wallet")
-					return
-				}
-				if status.Code(err) == codes.Canceled {
-					return
-				}
-				log.WithError(err).Warnf("failed to receive spend notification")
-				return
-			}
+func (w *walletDaemonClient) dispatchNotification(
+	resp *arkwalletv1.NotificationStreamResponse,
+) {
+	w.notifyMu.Lock()
+	utxoListeners := append([]chan map[string][]ports.VtxoWithValue(nil), w.utxoListeners...)
+	spendListeners := append([]chan []ports.Spend(nil), w.spendListeners...)
+	w.notifyMu.Unlock()
 
-			spends := castSpends(resp.GetSpends())
-			if len(spends) == 0 {
-				continue
+	if entries := resp.GetEntries(); len(entries) > 0 {
+		m := make(map[string][]ports.VtxoWithValue, len(entries))
+		for _, entry := range entries {
+			vtxos := make([]ports.VtxoWithValue, 0, len(entry.Vtxos))
+			for _, v := range entry.Vtxos {
+				vtxos = append(vtxos, ports.VtxoWithValue{
+					Outpoint: domain.Outpoint{
+						Txid: v.Txid,
+						VOut: v.Vout,
+					},
+					Value: v.Value,
+				})
 			}
-
-			select {
-			case ch <- spends:
-			case <-ctx.Done():
-				return
-			}
+			m[entry.Script] = vtxos
 		}
-	}()
-	return ch
+		for _, listener := range utxoListeners {
+			listener <- m
+		}
+	}
+
+	if spends := castSpends(resp.GetSpends()); len(spends) > 0 {
+		for _, listener := range spendListeners {
+			listener <- spends
+		}
+	}
+}
+
+func (w *walletDaemonClient) closeNotificationListeners() {
+	w.notifyMu.Lock()
+	defer w.notifyMu.Unlock()
+
+	for _, listener := range w.utxoListeners {
+		close(listener)
+	}
+	for _, listener := range w.spendListeners {
+		close(listener)
+	}
+	w.utxoListeners = nil
+	w.spendListeners = nil
 }
 
 func (w *walletDaemonClient) GetSpends(
