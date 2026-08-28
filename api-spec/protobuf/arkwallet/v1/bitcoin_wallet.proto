@@ -197,7 +197,17 @@ service WalletService {
     option (meshapi.gateway.http) = {
       post: "/v1/wallet/rescan-utxos"
       body: "*"
-    }; 
+    };
+  }
+  rpc GetSpends(GetSpendsRequest) returns (GetSpendsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/wallet/spends"
+    };
+  }
+  rpc GetUnspentOutpoints(GetUnspentOutpointsRequest) returns (GetUnspentOutpointsResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/wallet/unspent-outpoints"
+    };
   }
 }
 
@@ -226,6 +236,33 @@ message NotificationStreamRequest {
 }
 message NotificationStreamResponse {
   repeated VtoxsPerScript entries = 1;
+  // Spends of watched outputs carried by the same chain event as entries. Added
+  // after entries, so an older client simply ignores it.
+  repeated SpendInfo spends = 2;
+}
+
+// SpendInfo identifies a watched output that has been spent and the transaction
+// spending it. confirmations is 0 while the spend is only in the mempool.
+message SpendInfo {
+  string spent_txid = 1;
+  uint32 spent_vout = 2;
+  string spending_txid = 3;
+  uint32 confirmations = 4;
+}
+
+message GetSpendsRequest {
+  // Unix timestamp in seconds. When set, only spends seen at or after this
+  // instant are returned, which keeps the response bounded on a wallet with a
+  // long history.
+  int64 from = 1;
+}
+message GetSpendsResponse {
+  repeated SpendInfo spends = 1;
+}
+
+message GetUnspentOutpointsRequest {}
+message GetUnspentOutpointsResponse {
+  repeated TxOutpoint outpoints = 1;
 }
 
 message VtoxsPerScript {

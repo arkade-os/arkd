@@ -85,6 +85,15 @@ func (v Vtxo) IsSettled() bool {
 	return v.SettledBy != ""
 }
 
+// IsOnchainSpent reports a vtxo that was unrolled and then spent onchain,
+// outside the Ark. There is no dedicated column: an in-Ark spend always sets
+// either ArkTxid (SpendVtxos, on an accepted offchain tx) or SettledBy
+// (SettleVtxos, at batch settlement), so their absence on a spent and unrolled
+// vtxo is what identifies the spend as onchain.
+func (v Vtxo) IsOnchainSpent() bool {
+	return v.Unrolled && v.Spent && v.SettledBy == "" && v.ArkTxid == ""
+}
+
 func (v Vtxo) TapKey() (*btcec.PublicKey, error) {
 	pubkeyBytes, err := hex.DecodeString(v.PubKey)
 	if err != nil {

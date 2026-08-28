@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
@@ -57,12 +58,30 @@ type BlockchainScanner interface {
 	WatchScripts(ctx context.Context, scripts []string) error
 	UnwatchScripts(ctx context.Context, scripts []string) error
 	GetNotificationChannel(ctx context.Context) <-chan map[string][]Utxo
+	// GetSpendNotificationChannel streams spends of watched outputs. It is kept
+	// separate from GetNotificationChannel so existing consumers of that channel
+	// are unaffected.
+	GetSpendNotificationChannel(ctx context.Context) <-chan []Spend
 	IsTransactionConfirmed(
 		ctx context.Context, txid string,
 	) (isConfirmed bool, blockHeight, blockTime int64, err error)
 	GetOutpointStatus(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error)
+	// GetSpends returns every watched output spent by a confirmed or unconfirmed
+	// transaction, windowed from the given instant when one is supplied.
+	GetSpends(ctx context.Context, from *time.Time) ([]Spend, error)
+	// GetUnspentOutpoints returns the watched outputs currently unspent.
+	GetUnspentOutpoints(ctx context.Context) (map[wire.OutPoint]struct{}, error)
 	RescanUtxos(ctx context.Context, outpoints []wire.OutPoint) error
 	Close()
+}
+
+// Spend is a watched output that has been spent, and the transaction spending
+// it. Confirmations is 0 while the spend is only in the mempool.
+type Spend struct {
+	Txid          string
+	Index         uint32
+	SpendingTxid  string
+	Confirmations uint32
 }
 
 type WalletStatus struct {

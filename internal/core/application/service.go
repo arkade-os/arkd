@@ -53,6 +53,10 @@ type service struct {
 	alerts        ports.Alerts
 	feeManager    ports.FeeManager
 
+	// how often the onchain spend reconciler re-derives the chain state of
+	// unrolled vtxos
+	onchainSpendReconcileInterval time.Duration
+
 	operatorPrvkey *btcec.PrivateKey
 	operatorPubkey *btcec.PublicKey
 
@@ -81,6 +85,7 @@ func NewService(
 	cache ports.LiveStore,
 	alerts ports.Alerts,
 	feeManager ports.FeeManager,
+	onchainSpendReconcileInterval time.Duration,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -160,6 +165,8 @@ func NewService(
 		offchainTxMu:             &sync.Mutex{},
 		alerts:                   alerts,
 		feeManager:               feeManager,
+
+		onchainSpendReconcileInterval: onchainSpendReconcileInterval,
 	}
 	svc.sweeper.onSweepCheckpoint = svc.propagateTransactionEvent
 	return svc, nil
@@ -215,6 +222,8 @@ func (s *service) Start() error {
 	}
 
 	go s.listenToScannerNotifications()
+	go s.watchOnchainSpends()
+	go s.reconcileOnchainSpends(s.onchainSpendReconcileInterval)
 
 	log.Debug("starting sweeper service...")
 	s.sweeperCancel = s.stop
@@ -3697,7 +3706,14 @@ func (s *service) listenToScannerNotifications() {
 							}()
 						}
 
-						if vtxo.Spent {
+						// Fraud here means the vtxo was spent inside the Ark and
+						// then redeemed onchain, which reactToFraud answers by
+						// broadcasting the checkpoint or forfeit tx recorded
+						// against SpentBy. A vtxo spent onchain has no such tx:
+						// its SpentBy is the spending txid, so reacting would
+						// only log a failure against a checkpoint that never
+						// existed.
+						if vtxo.Spent && !vtxo.IsOnchainSpent() {
 							log.Infof("fraud detected on vtxo %s", vtxo.Outpoint.String())
 							go func() {
 								if err := s.reactToFraud(ctx, vtxo, locks); err != nil {
@@ -4195,6 +4211,12 @@ func (s *service) processBoardingInputs(
 	unilateralExitDelay := settings.UnilateralExitDelay
 
 	scripts := make([]string, 0)
+	// Scripts to unwatch once this intent has been processed. An unrolled vtxo's
+	// script is deliberately excluded: it is watched for the whole lifetime of
+	// the vtxo so onchain spends of it keep being reported, and unwatching it
+	// here would blind that tracking from the moment its owner tried to register
+	// it in an intent.
+	transientScripts := make([]string, 0)
 	outpoints := make([]wire.OutPoint, 0)
 
 	// extract the scripts and outpoints from the boarding utxos
@@ -4211,6 +4233,9 @@ func (s *service) processBoardingInputs(
 			})
 		}
 		scripts = append(scripts, hex.EncodeToString(script))
+		if !input.isUnrolledVtxo {
+			transientScripts = append(transientScripts, hex.EncodeToString(script))
+		}
 
 		txHash, err := chainhash.NewHashFromStr(input.Txid)
 		if err != nil {
@@ -4230,7 +4255,10 @@ func (s *service) processBoardingInputs(
 	}
 
 	defer func() {
-		if err := s.scanner.UnwatchScripts(ctx, scripts); err != nil {
+		if len(transientScripts) == 0 {
+			return
+		}
+		if err := s.scanner.UnwatchScripts(ctx, transientScripts); err != nil {
 			log.WithError(err).Warnf(
 				"failed to unwatch boarding scripts for intent %s", intentTxid,
 			)

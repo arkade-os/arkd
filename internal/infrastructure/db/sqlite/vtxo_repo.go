@@ -133,6 +133,44 @@ func (v *vtxoRepository) GetAllSweepableUnrolledVtxos(
 	return readRows(rows)
 }
 
+func (v *vtxoRepository) GetUnrolledUnspentVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	var res []queries.SelectUnrolledUnspentVtxosRow
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		res, err = q.SelectUnrolledUnspentVtxos(ctx)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+
+	rows := make([]queries.VtxoVw, 0, len(res))
+	for _, row := range res {
+		rows = append(rows, row.VtxoVw)
+	}
+	return readRows(rows)
+}
+
+func (v *vtxoRepository) GetOnchainSpentVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	var res []queries.SelectOnchainSpentVtxosRow
+	if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+		var err error
+		res, err = q.SelectOnchainSpentVtxos(ctx)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+
+	rows := make([]queries.VtxoVw, 0, len(res))
+	for _, row := range res {
+		rows = append(rows, row.VtxoVw)
+	}
+	return readRows(rows)
+}
+
 func (v *vtxoRepository) GetAllNonUnrolledVtxos(
 	ctx context.Context, pubkey string,
 ) ([]domain.Vtxo, []domain.Vtxo, error) {
@@ -379,6 +417,71 @@ func (v *vtxoRepository) SpendVtxos(
 					ArkTxid: sql.NullString{String: arkTxid, Valid: len(arkTxid) > 0},
 					Txid:    vtxo.Txid,
 					Vout:    int64(vtxo.VOut),
+				},
+			); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	return execTx(ctx, v.db.Write(), txBody)
+}
+
+// MarkVtxosOnchainSpent issues both the initial mark and the RBF re-point. The
+// two statements are complementary rather than redundant: UpdateVtxoOnchainSpent
+// only fires while spent = false, so once a vtxo is recorded as onchain-spent it
+// is UpdateVtxoOnchainSpentBy that keeps spent_by pointing at the current
+// spender. Running both makes the call idempotent whichever state the row is in.
+func (v *vtxoRepository) MarkVtxosOnchainSpent(
+	ctx context.Context, spentBy map[domain.Outpoint]string,
+) error {
+	txBody := func(querierWithTx *queries.Queries) error {
+		for vtxo, spendingTxid := range spentBy {
+			if err := querierWithTx.UpdateVtxoOnchainSpent(
+				ctx,
+				queries.UpdateVtxoOnchainSpentParams{
+					SpentBy: sql.NullString{
+						String: spendingTxid, Valid: len(spendingTxid) > 0,
+					},
+					Txid: vtxo.Txid,
+					Vout: int64(vtxo.VOut),
+				},
+			); err != nil {
+				return err
+			}
+
+			if err := querierWithTx.UpdateVtxoOnchainSpentBy(
+				ctx,
+				queries.UpdateVtxoOnchainSpentByParams{
+					SpentBy: sql.NullString{
+						String: spendingTxid, Valid: len(spendingTxid) > 0,
+					},
+					Txid: vtxo.Txid,
+					Vout: int64(vtxo.VOut),
+				},
+			); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	return execTx(ctx, v.db.Write(), txBody)
+}
+
+func (v *vtxoRepository) UnmarkVtxosOnchainSpent(
+	ctx context.Context, outpoints []domain.Outpoint,
+) error {
+	txBody := func(querierWithTx *queries.Queries) error {
+		for _, vtxo := range outpoints {
+			if err := querierWithTx.UpdateVtxoOnchainUnspent(
+				ctx,
+				queries.UpdateVtxoOnchainUnspentParams{
+					Txid: vtxo.Txid,
+					Vout: int64(vtxo.VOut),
 				},
 			); err != nil {
 				return err

@@ -986,6 +986,47 @@
         }
       }
     },
+    "/v1/wallet/spends": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GetSpends",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Unix timestamp in seconds. When set, only spends seen at or after this\ninstant are returned, which keeps the response bounded on a wallet with a\nlong history.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSpendsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/wallet/status": {
       "get": {
         "tags": [
@@ -1117,6 +1158,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnlockResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/unspent-outpoints": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GetUnspentOutpoints",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetUnspentOutpointsResponse"
                 }
               }
             }
@@ -1561,6 +1632,29 @@
           }
         }
       },
+      "GetSpendsRequest": {
+        "title": "GetSpendsRequest",
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "integer",
+            "description": "Unix timestamp in seconds. When set, only spends seen at or after this\ninstant are returned, which keeps the response bounded on a wallet with a\nlong history.",
+            "format": "int64"
+          }
+        }
+      },
+      "GetSpendsResponse": {
+        "title": "GetSpendsResponse",
+        "type": "object",
+        "properties": {
+          "spends": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpendInfo"
+            }
+          }
+        }
+      },
       "GetTransactionRequest": {
         "title": "GetTransactionRequest",
         "type": "object",
@@ -1576,6 +1670,22 @@
         "properties": {
           "txHex": {
             "type": "string"
+          }
+        }
+      },
+      "GetUnspentOutpointsRequest": {
+        "title": "GetUnspentOutpointsRequest",
+        "type": "object"
+      },
+      "GetUnspentOutpointsResponse": {
+        "title": "GetUnspentOutpointsResponse",
+        "type": "object",
+        "properties": {
+          "outpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TxOutpoint"
+            }
           }
         }
       },
@@ -1697,6 +1807,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/VtoxsPerScript"
+            }
+          },
+          "spends": {
+            "type": "array",
+            "description": "Spends of watched outputs carried by the same chain event as entries. Added\nafter entries, so an older client simply ignores it.",
+            "items": {
+              "$ref": "#/components/schemas/SpendInfo"
             }
           }
         }
@@ -1828,6 +1945,27 @@
         "properties": {
           "signedTx": {
             "type": "string"
+          }
+        }
+      },
+      "SpendInfo": {
+        "title": "SpendInfo",
+        "type": "object",
+        "description": "SpendInfo identifies a watched output that has been spent and the transaction\nspending it. confirmations is 0 while the spend is only in the mempool.",
+        "properties": {
+          "confirmations": {
+            "type": "integer",
+            "format": "uint32"
+          },
+          "spendingTxid": {
+            "type": "string"
+          },
+          "spentTxid": {
+            "type": "string"
+          },
+          "spentVout": {
+            "type": "integer",
+            "format": "uint32"
           }
         }
       },

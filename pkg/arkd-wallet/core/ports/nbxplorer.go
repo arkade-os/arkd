@@ -2,6 +2,7 @@ package ports
 
 import (
 	"context"
+	"time"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -39,6 +40,22 @@ type ScanUtxoSetProgress struct {
 	Done     bool
 }
 
+// Spend is a tracked output that has been spent, together with the transaction
+// spending it. Confirmations is 0 while the spend is only in the mempool.
+type Spend struct {
+	wire.OutPoint
+	SpendingTxid  string
+	Confirmations uint32
+}
+
+// ChainNotification is one transaction's effect on the tracked scripts: the
+// outputs it created, and the tracked outputs it spent. Both halves come from
+// the same event, so a caller sees them together.
+type ChainNotification struct {
+	Utxos  []Utxo
+	Spends []Spend
+}
+
 // Nbxplorer acts as the "backend" for the wallet Service
 type Nbxplorer interface {
 	GetBitcoinStatus(ctx context.Context) (*BitcoinStatus, error)
@@ -53,9 +70,21 @@ type Nbxplorer interface {
 	RescanUtxos(ctx context.Context, outpoints []wire.OutPoint) error
 
 	IsSpent(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error)
+	// GetSpends returns every tracked output spent by a confirmed or unconfirmed
+	// transaction. When from is non-nil the query is windowed from that instant,
+	// which keeps the response bounded on a group with a long history.
+	GetSpends(ctx context.Context, from *time.Time) ([]Spend, error)
+	// GetTxSpends returns the tracked outputs spent by a single transaction. It
+	// returns no spends, and no error, for a transaction that touches nothing
+	// tracked.
+	GetTxSpends(ctx context.Context, txid string) ([]Spend, error)
+	// GetUnspentOutpoints returns the tracked outputs currently unspent. Presence
+	// here is positive evidence both that an outpoint is unspent and that its
+	// script is still tracked, which is what makes it safe to retract a spend.
+	GetUnspentOutpoints(ctx context.Context) (map[wire.OutPoint]struct{}, error)
 	WatchAddresses(ctx context.Context, addresses ...string) error
 	UnwatchAddresses(ctx context.Context, addresses ...string) error
-	GetAddressNotifications(ctx context.Context) (<-chan []Utxo, error)
+	GetAddressNotifications(ctx context.Context) (<-chan ChainNotification, error)
 
 	Close() error
 }

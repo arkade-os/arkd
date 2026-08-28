@@ -106,6 +106,28 @@ func (r *VtxoRepository) UnrollVtxos(
 	return nil
 }
 
+func (r *VtxoRepository) MarkVtxosOnchainSpent(
+	ctx context.Context, spentBy map[domain.Outpoint]string,
+) error {
+	for outpoint, spendingTxid := range spentBy {
+		if err := r.markOnchainSpentVtxo(ctx, outpoint, spendingTxid); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *VtxoRepository) UnmarkVtxosOnchainSpent(
+	ctx context.Context, outpoints []domain.Outpoint,
+) error {
+	for _, outpoint := range outpoints {
+		if err := r.unmarkOnchainSpentVtxo(ctx, outpoint); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *VtxoRepository) GetVtxos(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) ([]domain.Vtxo, error) {
@@ -157,6 +179,12 @@ func (r *VtxoRepository) GetAllNonUnrolledVtxos(
 	return unspentVtxos, spentVtxos, nil
 }
 
+// GetAllSweepableUnrolledVtxos returns vtxos spent inside the Ark and then
+// unrolled, whose SpentBy the sweeper resolves as a checkpoint txid. ArkTxid is
+// always set by SpendVtxos on an accepted offchain tx, so requiring it excludes
+// vtxos spent onchain, whose SpentBy is a spending txid with no checkpoint tx
+// behind it. The ArkTxid predicate is a no-op for every vtxo written before
+// onchain-spend tracking existed.
 func (r *VtxoRepository) GetAllSweepableUnrolledVtxos(
 	ctx context.Context,
 ) ([]domain.Vtxo, error) {
@@ -167,7 +195,35 @@ func (r *VtxoRepository) GetAllSweepableUnrolledVtxos(
 		And("SettledBy").
 		Eq("").
 		And("Spent").
-		Eq(true)
+		Eq(true).
+		And("ArkTxid").
+		Ne("")
+	return r.findVtxos(ctx, query)
+}
+
+func (r *VtxoRepository) GetUnrolledUnspentVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	query := badgerhold.Where("Unrolled").
+		Eq(true).
+		And("Spent").
+		Eq(false).
+		And("Swept").
+		Eq(false)
+	return r.findVtxos(ctx, query)
+}
+
+func (r *VtxoRepository) GetOnchainSpentVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	query := badgerhold.Where("Unrolled").
+		Eq(true).
+		And("Spent").
+		Eq(true).
+		And("SettledBy").
+		Eq("").
+		And("ArkTxid").
+		Eq("")
 	return r.findVtxos(ctx, query)
 }
 
@@ -686,6 +742,54 @@ func (r *VtxoRepository) unrollVtxo(
 		return nil, err
 	}
 	return vtxo, nil
+}
+
+// markOnchainSpentVtxo records an unrolled vtxo as spent onchain, or re-points an
+// already onchain-spent one at a new spender when RBF replaces it. ArkTxid is
+// deliberately left empty: its absence is what identifies the spend as onchain.
+// A vtxo already spent inside the Ark is left alone, so this can never erase the
+// ArkTxid the sweeper and the fraud reaction depend on.
+func (r *VtxoRepository) markOnchainSpentVtxo(
+	ctx context.Context, outpoint domain.Outpoint, spendingTxid string,
+) error {
+	vtxo, err := r.getVtxo(ctx, outpoint)
+	if err != nil {
+		return err
+	}
+	if vtxo == nil || !vtxo.Unrolled {
+		return nil
+	}
+	if vtxo.Spent && !vtxo.IsOnchainSpent() {
+		return nil
+	}
+	if vtxo.Spent && vtxo.SpentBy == spendingTxid {
+		return nil
+	}
+
+	vtxo.Spent = true
+	vtxo.SpentBy = spendingTxid
+
+	return r.updateVtxo(ctx, vtxo)
+}
+
+// unmarkOnchainSpentVtxo retracts an onchain spend whose transaction was evicted
+// or reorged out. Scoped to onchain-spent vtxos so an offchain spend or a
+// settlement can never be undone here.
+func (r *VtxoRepository) unmarkOnchainSpentVtxo(
+	ctx context.Context, outpoint domain.Outpoint,
+) error {
+	vtxo, err := r.getVtxo(ctx, outpoint)
+	if err != nil {
+		return err
+	}
+	if vtxo == nil || !vtxo.IsOnchainSpent() {
+		return nil
+	}
+
+	vtxo.Spent = false
+	vtxo.SpentBy = ""
+
+	return r.updateVtxo(ctx, vtxo)
 }
 
 func (r *VtxoRepository) findVtxos(

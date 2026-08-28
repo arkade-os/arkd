@@ -158,6 +158,44 @@ type utxosResponse struct {
 	} `json:"confirmed"`
 }
 
+// matchedInput is one tracked output that a transaction spends. NBXplorer
+// populates it in Backend/Repository.cs as
+//
+//	InputIndex    = input index in the SPENDING tx
+//	Index         = vout of the SPENT output
+//	TransactionId = txid of the SPENT output
+//
+// so TransactionId/Index together identify the outpoint being spent, while the
+// enclosing transactionInformation.TransactionId is the transaction spending it.
+type matchedInput struct {
+	TransactionId string `json:"transactionId"`
+	Index         uint32 `json:"index"`
+	InputIndex    int    `json:"inputIndex"`
+}
+
+type transactionInformation struct {
+	TransactionId string         `json:"transactionId"`
+	Confirmations int64          `json:"confirmations"`
+	Height        *int64         `json:"height,omitempty"`
+	Inputs        []matchedInput `json:"inputs"`
+}
+
+type transactionInformationSet struct {
+	Transactions []transactionInformation `json:"transactions"`
+}
+
+// transactionsResponse mirrors NBXplorer's GetTransactionsResponse. Only the
+// confirmed and unconfirmed sets are consumed: replacedTransactions holds
+// transactions superseded by RBF, and reading them would re-point a vtxo at a
+// spender that no longer exists.
+type transactionsResponse struct {
+	Height                  int64                     `json:"height"`
+	ConfirmedTransactions   transactionInformationSet `json:"confirmedTransactions"`
+	UnconfirmedTransactions transactionInformationSet `json:"unconfirmedTransactions"`
+	ReplacedTransactions    transactionInformationSet `json:"replacedTransactions"`
+	ImmatureTransactions    transactionInformationSet `json:"immatureTransactions"`
+}
+
 type broadcastResult struct {
 	Success        bool   `json:"success"`
 	RPCCode        *int   `json:"rpcCode,omitempty"`

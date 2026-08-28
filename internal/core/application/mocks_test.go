@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -69,6 +70,38 @@ func (m *mockedVtxoRepo) GetVtxoPubKeysByCommitmentTxids(
 	args := m.Called(ctx, commitmentTxids, withMinimumAmount)
 	if v := args.Get(0); v != nil {
 		return v.([]string), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+func (m *mockedVtxoRepo) MarkVtxosOnchainSpent(
+	ctx context.Context, spentBy map[domain.Outpoint]string,
+) error {
+	return m.Called(ctx, spentBy).Error(0)
+}
+
+func (m *mockedVtxoRepo) UnmarkVtxosOnchainSpent(
+	ctx context.Context, outpoints []domain.Outpoint,
+) error {
+	return m.Called(ctx, outpoints).Error(0)
+}
+
+func (m *mockedVtxoRepo) GetUnrolledUnspentVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	args := m.Called(ctx)
+	if v := args.Get(0); v != nil {
+		return v.([]domain.Vtxo), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+func (m *mockedVtxoRepo) GetOnchainSpentVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	args := m.Called(ctx)
+	if v := args.Get(0); v != nil {
+		return v.([]domain.Vtxo), args.Error(1)
 	}
 	return nil, args.Error(1)
 }
@@ -172,6 +205,13 @@ type mockedScanner struct {
 	watched   []string
 	unwatched []string
 	mu        sync.Mutex
+
+	// onchain-spend fixtures, read by the reconcile tests
+	spendCh    chan []ports.Spend
+	spends     []ports.Spend
+	spendsErr  error
+	unspent    map[domain.Outpoint]struct{}
+	unspentErr error
 }
 
 func (m *mockedScanner) WatchScripts(
@@ -222,4 +262,29 @@ func (m *mockedScanner) IsTransactionConfirmed(
 
 func (m *mockedScanner) RescanUtxos(_ context.Context, _ []wire.OutPoint) error {
 	return nil
+}
+
+func (m *mockedScanner) GetSpendNotificationChannel(
+	_ context.Context,
+) <-chan []ports.Spend {
+	if m.spendCh == nil {
+		return nil
+	}
+	return m.spendCh
+}
+
+func (m *mockedScanner) GetSpends(
+	_ context.Context, _ *time.Time,
+) ([]ports.Spend, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.spends, m.spendsErr
+}
+
+func (m *mockedScanner) GetUnspentOutpoints(
+	_ context.Context,
+) (map[domain.Outpoint]struct{}, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.unspent, m.unspentErr
 }

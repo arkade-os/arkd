@@ -991,6 +991,62 @@ func (q *Queries) SelectOffchainTxsInRange(ctx context.Context, arg SelectOffcha
 	return items, nil
 }
 
+const selectOnchainSpentVtxos = `-- name: SelectOnchainSpentVtxos :many
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE unrolled = true AND spent = true
+  AND COALESCE(settled_by, '') = '' AND COALESCE(ark_txid, '') = ''
+`
+
+type SelectOnchainSpentVtxosRow struct {
+	VtxoVw VtxoVw
+}
+
+// Vtxos we currently record as spent onchain, so the reconciler can re-point
+// them on RBF or retract them if the spend disappears.
+func (q *Queries) SelectOnchainSpentVtxos(ctx context.Context) ([]SelectOnchainSpentVtxosRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectOnchainSpentVtxos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectOnchainSpentVtxosRow
+	for rows.Next() {
+		var i SelectOnchainSpentVtxosRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.Markers,
+			&i.VtxoVw.Commitments,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.AssetID,
+			&i.VtxoVw.AssetAmount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectPendingSpentVtxo = `-- name: SelectPendingSpentVtxo :many
 SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.depth, v.markers, v.commitments, v.swept, v.asset_id, v.asset_amount
 FROM vtxo_vw v
@@ -1862,13 +1918,19 @@ func (q *Queries) SelectSweepableRounds(ctx context.Context) ([]string, error) {
 }
 
 const selectSweepableUnrolledVtxos = `-- name: SelectSweepableUnrolledVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND COALESCE(settled_by, '') = ''
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND COALESCE(settled_by, '') = '' AND COALESCE(ark_txid, '') <> ''
 `
 
 type SelectSweepableUnrolledVtxosRow struct {
 	VtxoVw VtxoVw
 }
 
+// The sweeper reads spent_by here as a checkpoint txid, so this must only return
+// vtxos spent inside the Ark and then unrolled. ark_txid is always set by
+// SpendVtxos on an accepted offchain tx, so requiring it excludes vtxos spent
+// onchain, whose spent_by is a spending txid the sweeper could not resolve. The
+// ark_txid predicate is a no-op for every row written before onchain-spend
+// tracking existed.
 func (q *Queries) SelectSweepableUnrolledVtxos(ctx context.Context) ([]SelectSweepableUnrolledVtxosRow, error) {
 	rows, err := q.db.QueryContext(ctx, selectSweepableUnrolledVtxos)
 	if err != nil {
@@ -2028,6 +2090,61 @@ func (q *Queries) SelectTxs(ctx context.Context, dollar_1 []string) ([]SelectTxs
 	for rows.Next() {
 		var i SelectTxsRow
 		if err := rows.Scan(&i.Txid, &i.Data); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectUnrolledUnspentVtxos = `-- name: SelectUnrolledUnspentVtxos :many
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE unrolled = true AND spent = false AND swept = false
+`
+
+type SelectUnrolledUnspentVtxosRow struct {
+	VtxoVw VtxoVw
+}
+
+// Candidates for onchain-spend reconciliation: unrolled vtxos we currently
+// believe are unspent.
+func (q *Queries) SelectUnrolledUnspentVtxos(ctx context.Context) ([]SelectUnrolledUnspentVtxosRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectUnrolledUnspentVtxos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectUnrolledUnspentVtxosRow
+	for rows.Next() {
+		var i SelectUnrolledUnspentVtxosRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.Markers,
+			&i.VtxoVw.Commitments,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.AssetID,
+			&i.VtxoVw.AssetAmount,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -2580,6 +2697,66 @@ type UpdateVtxoMarkersParams struct {
 
 func (q *Queries) UpdateVtxoMarkers(ctx context.Context, arg UpdateVtxoMarkersParams) error {
 	_, err := q.db.ExecContext(ctx, updateVtxoMarkers, arg.Markers, arg.Txid, arg.Vout)
+	return err
+}
+
+const updateVtxoOnchainSpent = `-- name: UpdateVtxoOnchainSpent :exec
+UPDATE vtxo SET spent = true, spent_by = $1, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+WHERE txid = $2 AND vout = $3 AND unrolled = true AND spent = false
+`
+
+type UpdateVtxoOnchainSpentParams struct {
+	SpentBy sql.NullString
+	Txid    string
+	Vout    int32
+}
+
+// Records an unrolled vtxo spent onchain, outside the Ark. ark_txid is left
+// untouched (NULL) on purpose: its absence is what marks the spend as onchain.
+// The spent = false guard makes the write idempotent and prevents it clobbering
+// an offchain spend that lands concurrently, which would erase that vtxo's
+// ark_txid and hide a genuine fraud case from the sweeper.
+func (q *Queries) UpdateVtxoOnchainSpent(ctx context.Context, arg UpdateVtxoOnchainSpentParams) error {
+	_, err := q.db.ExecContext(ctx, updateVtxoOnchainSpent, arg.SpentBy, arg.Txid, arg.Vout)
+	return err
+}
+
+const updateVtxoOnchainSpentBy = `-- name: UpdateVtxoOnchainSpentBy :exec
+UPDATE vtxo SET spent_by = $1, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+WHERE txid = $2 AND vout = $3 AND unrolled = true AND spent = true
+  AND COALESCE(settled_by, '') = '' AND COALESCE(ark_txid, '') = ''
+`
+
+type UpdateVtxoOnchainSpentByParams struct {
+	SpentBy sql.NullString
+	Txid    string
+	Vout    int32
+}
+
+// Re-points an already onchain-spent vtxo at a new spending tx, for when RBF
+// replaces the spender. Scoped to rows that are onchain-spent so it can never
+// rewrite the spent_by of an offchain spend or a settlement.
+func (q *Queries) UpdateVtxoOnchainSpentBy(ctx context.Context, arg UpdateVtxoOnchainSpentByParams) error {
+	_, err := q.db.ExecContext(ctx, updateVtxoOnchainSpentBy, arg.SpentBy, arg.Txid, arg.Vout)
+	return err
+}
+
+const updateVtxoOnchainUnspent = `-- name: UpdateVtxoOnchainUnspent :exec
+UPDATE vtxo SET spent = false, spent_by = NULL, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+WHERE txid = $1 AND vout = $2 AND unrolled = true AND spent = true
+  AND COALESCE(settled_by, '') = '' AND COALESCE(ark_txid, '') = ''
+`
+
+type UpdateVtxoOnchainUnspentParams struct {
+	Txid string
+	Vout int32
+}
+
+// Retracts an onchain spend whose transaction was evicted or reorged out. Same
+// scoping as the re-point: an offchain spend or a settlement can never be undone
+// by this statement.
+func (q *Queries) UpdateVtxoOnchainUnspent(ctx context.Context, arg UpdateVtxoOnchainUnspentParams) error {
+	_, err := q.db.ExecContext(ctx, updateVtxoOnchainUnspent, arg.Txid, arg.Vout)
 	return err
 }
 

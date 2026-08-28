@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
@@ -231,6 +232,101 @@ func (w *walletDaemonClient) GetNotificationChannel(
 		}
 	}()
 	return ch
+}
+
+// GetSpendNotificationChannel streams spends of watched outputs pushed by the
+// wallet. The spends field was added to NotificationStreamResponse after the
+// entries field, so an older arkd-wallet simply never populates it and this
+// channel stays silent; the reconcile loop is what keeps arkd correct in that
+// case.
+func (w *walletDaemonClient) GetSpendNotificationChannel(
+	ctx context.Context,
+) <-chan []ports.Spend {
+	ch := make(chan []ports.Spend)
+	stream, err := w.client.NotificationStream(ctx, &arkwalletv1.NotificationStreamRequest{})
+	if err != nil {
+		close(ch)
+		return ch
+	}
+	go func() {
+		defer close(ch)
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				if strings.Contains(err.Error(), "EOF") {
+					log.Error("connection closed by wallet")
+					return
+				}
+				if status.Code(err) == codes.Canceled {
+					return
+				}
+				log.WithError(err).Warnf("failed to receive spend notification")
+				return
+			}
+
+			spends := castSpends(resp.GetSpends())
+			if len(spends) == 0 {
+				continue
+			}
+
+			select {
+			case ch <- spends:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return ch
+}
+
+func (w *walletDaemonClient) GetSpends(
+	ctx context.Context, from *time.Time,
+) ([]ports.Spend, error) {
+	req := &arkwalletv1.GetSpendsRequest{}
+	if from != nil {
+		req.From = from.Unix()
+	}
+
+	resp, err := w.client.GetSpends(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return castSpends(resp.GetSpends()), nil
+}
+
+func (w *walletDaemonClient) GetUnspentOutpoints(
+	ctx context.Context,
+) (map[domain.Outpoint]struct{}, error) {
+	resp, err := w.client.GetUnspentOutpoints(
+		ctx, &arkwalletv1.GetUnspentOutpointsRequest{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	unspent := make(map[domain.Outpoint]struct{}, len(resp.GetOutpoints()))
+	for _, outpoint := range resp.GetOutpoints() {
+		unspent[domain.Outpoint{
+			Txid: outpoint.GetTxid(),
+			VOut: outpoint.GetIndex(),
+		}] = struct{}{}
+	}
+	return unspent, nil
+}
+
+func castSpends(spends []*arkwalletv1.SpendInfo) []ports.Spend {
+	out := make([]ports.Spend, 0, len(spends))
+	for _, spend := range spends {
+		out = append(out, ports.Spend{
+			Outpoint: domain.Outpoint{
+				Txid: spend.GetSpentTxid(),
+				VOut: spend.GetSpentVout(),
+			},
+			SpendingTxid:  spend.GetSpendingTxid(),
+			Confirmations: spend.GetConfirmations(),
+		})
+	}
+	return out
 }
 
 func (w *walletDaemonClient) IsTransactionConfirmed(

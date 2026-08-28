@@ -180,6 +180,51 @@ func TestVtxo_RequiresForfeit(t *testing.T) {
 	}
 }
 
+// TestVtxo_IsOnchainSpent pins the discriminator that separates a vtxo spent
+// onchain, outside the Ark, from one spent inside it. There is no dedicated
+// column: an in-Ark spend always carries either ArkTxid (set by SpendVtxos when
+// an offchain tx is accepted) or SettledBy (set by SettleVtxos at batch
+// settlement), so their absence on a spent+unrolled vtxo is what identifies an
+// onchain spend. The sweeper and the fraud reaction both key off this.
+func TestVtxo_IsOnchainSpent(t *testing.T) {
+	fixtures := []struct {
+		name     string
+		vtxo     domain.Vtxo
+		expected bool
+	}{
+		{
+			name:     "true (unrolled, spent onchain)",
+			vtxo:     domain.Vtxo{Unrolled: true, Spent: true},
+			expected: true,
+		},
+		{
+			name:     "false (unrolled but not spent)",
+			vtxo:     domain.Vtxo{Unrolled: true},
+			expected: false,
+		},
+		{
+			name:     "false (spent but never unrolled)",
+			vtxo:     domain.Vtxo{Spent: true},
+			expected: false,
+		},
+		{
+			name:     "false (spent offchain, then unrolled)",
+			vtxo:     domain.Vtxo{Unrolled: true, Spent: true, ArkTxid: "arktxid"},
+			expected: false,
+		},
+		{
+			name:     "false (settled in a batch, then unrolled)",
+			vtxo:     domain.Vtxo{Unrolled: true, Spent: true, SettledBy: "commitmenttxid"},
+			expected: false,
+		},
+	}
+	for _, f := range fixtures {
+		t.Run(f.name, func(t *testing.T) {
+			require.Equal(t, f.expected, f.vtxo.IsOnchainSpent())
+		})
+	}
+}
+
 func TestVtxo_TapKey(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		v := domain.Vtxo{PubKey: validVtxoPubkey}
