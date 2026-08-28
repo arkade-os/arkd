@@ -1004,7 +1004,7 @@ func faucetOffchainWithAddress(t *testing.T, addr string, amount float64) client
 	return incomingFunds[0]
 }
 
-func settleVtxo(t *testing.T, ctx context.Context, client wallet.Wallet, offchainAddr string) {
+func settleVtxo(t *testing.T, ctx context.Context, client wallet.Wallet, offchainAddr string) string {
 	t.Helper()
 
 	wg := &sync.WaitGroup{}
@@ -1016,7 +1016,7 @@ func settleVtxo(t *testing.T, ctx context.Context, client wallet.Wallet, offchai
 		wg.Done()
 	}()
 
-	_, err := settleBounded(ctx, client)
+	res, err := settleBounded(ctx, client)
 	require.NoError(t, err)
 
 	wg.Wait()
@@ -1024,6 +1024,7 @@ func settleVtxo(t *testing.T, ctx context.Context, client wallet.Wallet, offchai
 	require.NotEmpty(t, incomingFunds)
 
 	waitForVtxosInIndexer(t, client, incomingFunds[0])
+	return res.CommitmentTxid
 }
 
 func getBatchExpiryLocktime(batchExpiry uint32) arklib.RelativeLocktime {

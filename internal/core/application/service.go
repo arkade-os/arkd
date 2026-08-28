@@ -2520,6 +2520,45 @@ func (s *service) RegisterCosignerNonces(
 func (s *service) RegisterCosignerSignatures(
 	ctx context.Context, roundId string, pubkey string, sigs tree.TreePartialSigs,
 ) errors.Error {
+	session, err := s.cache.TreeSigingSessions().Get(ctx, roundId)
+	if err != nil || session == nil {
+		return errors.INTERNAL_ERROR.New("signing session not found for round %s", roundId)
+	}
+	if session.SigningContext.AggregatedNonces == nil {
+		return errors.INVALID_SIGNATURE.New(
+			"cannot verify signatures for round %s, nonces not aggregated yet", roundId,
+		)
+	}
+	cosignerNonces, ok := session.Nonces[pubkey]
+	if !ok {
+		return errors.INVALID_SIGNATURE.New(
+			"no nonces submitted by cosigner %s in round %s", pubkey, roundId,
+		)
+	}
+
+	buf, err := hex.DecodeString(pubkey)
+	if err != nil {
+		return errors.INVALID_SIGNATURE.New("invalid cosigner pubkey: %s", err)
+	}
+	pk, err := btcec.ParsePubKey(buf)
+	if err != nil {
+		return errors.INVALID_SIGNATURE.New("invalid cosigner pubkey: %s", err)
+	}
+
+	vtxoTree, err := tree.NewTxTree(session.SigningContext.VtxoTree)
+	if err != nil {
+		return errors.INTERNAL_ERROR.New("failed to deserialize vtxo tree: %s", err)
+	}
+
+	if _, err := tree.VerifyTreePartialSigs(
+		session.SigningContext.ScriptRoot, session.SigningContext.BatchOutAmount, vtxoTree,
+		pk, cosignerNonces, session.SigningContext.AggregatedNonces, sigs,
+	); err != nil {
+		return errors.INVALID_SIGNATURE.New(
+			"invalid tree signatures for cosigner %s: %s", pubkey, err,
+		)
+	}
+
 	if err := s.cache.TreeSigingSessions().AddSignatures(ctx, roundId, pubkey, sigs); err != nil {
 		return errors.INTERNAL_ERROR.New("failed to add signatures: %w", err).
 			WithMetadata(map[string]any{
@@ -3212,7 +3251,20 @@ func (s *service) startFinalization(
 
 		coordinator.AddNonce(s.operatorPubkey, nonces)
 
-		if err := s.cache.TreeSigingSessions().New(ctx, roundId, uniqueSignerPubkeys); err != nil {
+		unsignedFlatVtxoTree, err := vtxoTree.Serialize()
+		if err != nil {
+			round.Fail(errors.INTERNAL_ERROR.New("failed to serialize vtxo tree: %s", err))
+			return
+		}
+
+		if err := s.cache.TreeSigingSessions().New(
+			ctx, roundId, uniqueSignerPubkeys,
+			ports.SigningContext{
+				ScriptRoot:     root.CloneBytes(),
+				BatchOutAmount: batchOutputAmount,
+				VtxoTree:       unsignedFlatVtxoTree,
+			},
+		); err != nil {
 			round.Fail(errors.INTERNAL_ERROR.New("failed to create signing session: %s", err))
 			return
 		}
@@ -3235,18 +3287,28 @@ func (s *service) startFinalization(
 		select {
 		case <-time.After(thirdOfRemainingDuration):
 			signingSession, _ := s.cache.TreeSigingSessions().Get(ctx, roundId)
-			round.Fail(errors.SIGNING_SESSION_TIMED_OUT.New(
-				"musig2 signing session timed out (nonce collection), collected %d/%d nonces",
-				len(signingSession.Nonces), len(uniqueSignerPubkeys),
-			))
-			// ban all the scripts that didn't submitted their nonces
-			go s.banNoncesCollectionTimeout(
-				ctx, roundId, banDuration, signingSession, registeredIntents,
-			)
+			msg := "musig2 signing session timed out (nonce collection)"
+			if signingSession != nil {
+				msg = fmt.Sprintf(
+					"%s, collected %d/%d nonces", msg,
+					len(signingSession.Nonces), len(uniqueSignerPubkeys),
+				)
+				// ban all the scripts that didn't submitted their nonces
+				go s.banNoncesCollectionTimeout(
+					ctx, roundId, banDuration, signingSession, registeredIntents,
+				)
+			}
+			round.Fail(errors.SIGNING_SESSION_TIMED_OUT.New("%s", msg))
 			return
 		case _, ok := <-s.cache.TreeSigingSessions().NoncesCollected(roundId):
 			if ok {
-				signingSession, _ := s.cache.TreeSigingSessions().Get(ctx, roundId)
+				signingSession, err := s.cache.TreeSigingSessions().Get(ctx, roundId)
+				if err != nil || signingSession == nil {
+					round.Fail(errors.INTERNAL_ERROR.New(
+						"signing session not found for round %s: %v", roundId, err,
+					))
+					return
+				}
 				for pubkey, nonce := range signingSession.Nonces {
 					buf, _ := hex.DecodeString(pubkey)
 					pk, _ := btcec.ParsePubKey(buf)
@@ -3263,6 +3325,13 @@ func (s *service) startFinalization(
 			return
 		}
 		operatorSignerSession.SetAggregatedNonces(aggregatedNonces)
+
+		if err := s.cache.TreeSigingSessions().SetAggregatedNonces(
+			ctx, roundId, aggregatedNonces,
+		); err != nil {
+			round.Fail(errors.INTERNAL_ERROR.New("failed to store aggregated nonces: %s", err))
+			return
+		}
 
 		log.Debugf("nonces aggregated for round %s", roundId)
 
@@ -3294,52 +3363,31 @@ func (s *service) startFinalization(
 					"%s, collected %d/%d signatures", msg,
 					len(signingSession.Signatures), len(uniqueSignerPubkeys),
 				)
+				// ban all the scripts that didn't submit their signatures
+				go s.banSignaturesCollectionTimeout(
+					ctx, roundId, banDuration, signingSession, registeredIntents,
+				)
 			}
 			round.Fail(errors.SIGNING_SESSION_TIMED_OUT.New("%s", msg))
-
-			// ban all the scripts that didn't submit their signatures
-			go s.banSignaturesCollectionTimeout(
-				ctx, roundId, banDuration, signingSession, registeredIntents,
-			)
 			return
 		case _, ok := <-s.cache.TreeSigingSessions().SignaturesCollected(roundId):
 			if ok {
-				signingSession, _ := s.cache.TreeSigingSessions().Get(ctx, roundId)
-				cosignersToBan := make(map[string]domain.Crime)
-
+				signingSession, err := s.cache.TreeSigingSessions().Get(ctx, roundId)
+				if err != nil || signingSession == nil {
+					round.Fail(errors.INTERNAL_ERROR.New(
+						"signing session not found for round %s: %v", roundId, err,
+					))
+					return
+				}
 				for pubkey, sig := range signingSession.Signatures {
 					buf, _ := hex.DecodeString(pubkey)
 					pk, _ := btcec.ParsePubKey(buf)
-					shouldBan, err := coordinator.AddSignatures(pk, sig)
-					if err != nil && !shouldBan {
-						// an unexpected error occurred during the signature validation, batch fails
+					if _, err := coordinator.AddSignatures(pk, sig); err != nil {
 						round.Fail(
 							errors.INTERNAL_ERROR.New("failed to validate signatures: %s", err),
 						)
 						return
 					}
-
-					if shouldBan {
-						reason := fmt.Sprintf("invalid signature for cosigner pubkey %s", pubkey)
-						if err != nil {
-							reason = err.Error()
-						}
-
-						cosignersToBan[pubkey] = domain.Crime{
-							Type:    domain.CrimeTypeMusig2InvalidSignature,
-							RoundID: roundId,
-							Reason:  reason,
-						}
-					}
-
-				}
-
-				// if some cosigners have to be banned, it means invalid signatures occured
-				// the round fails and those cosigners are banned
-				if len(cosignersToBan) > 0 {
-					round.Fail(errors.INTERNAL_ERROR.New("some musig2 signatures are invalid"))
-					go s.banCosignerInputs(ctx, banDuration, cosignersToBan, registeredIntents)
-					return
 				}
 			}
 		}

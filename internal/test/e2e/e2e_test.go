@@ -5802,7 +5802,6 @@ func TestUnauthenticatedCosignerSubmission(t *testing.T) {
 	})
 
 	t.Run("signatures", func(t *testing.T) {
-		t.Skip("TODO: need validation on submit signature")
 		res := runCosignerOverwrite(t, overwriteSignatures)
 
 		require.True(t, res.forged, "mallory never reached signing, nothing was verified")
@@ -7525,7 +7524,9 @@ func TestDeprecatedSignerKey(t *testing.T) {
 	faucetOnchainAndWait(t, aliceBoardingAddr.Address, 0.00021)
 
 	// settle boarding utxo into a VTXO locked to the OLD signer pubkey
-	settleVtxo(t, ctx, alice, aliceOffchainAddr.Address)
+	commitmentTxid := settleVtxo(t, ctx, alice, aliceOffchainAddr.Address)
+	waitForOutspendsIndexed(t, testExplorer, commitmentTxid, 0)
+	require.NoError(t, generateBlocks(1))
 
 	balBefore, err := alice.Balance(ctx)
 	require.NoError(t, err)

@@ -570,7 +570,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		var uniqueSigners map[string]struct{}
 		err := json.Unmarshal([]byte(uniqueSignersJSON), &uniqueSigners)
 		require.NoError(t, err)
-		err = store.TreeSigingSessions().New(ctx, roundId1, uniqueSigners)
+		err = store.TreeSigingSessions().New(ctx, roundId1, uniqueSigners, ports.SigningContext{})
 		require.NoError(t, err)
 
 		// Get
@@ -635,6 +635,22 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.Error(t, doSubmitNonces(unknown, roundId1))
 		require.Error(t, doSubmitSigs(unknown, roundId1))
 
+		stopReads := make(chan struct{})
+		go func() {
+			for {
+				select {
+				case <-stopReads:
+					return
+				default:
+					session, err := store.TreeSigingSessions().Get(ctx, roundId1)
+					if err == nil && session != nil {
+						for range session.Nonces {
+						}
+					}
+				}
+			}
+		}()
+
 		for _, signer := range signers {
 			go func() {
 				err := doSubmitNonces(signer, roundId1)
@@ -649,6 +665,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			require.Fail(t, "signing session not completed")
 		case <-doneCh:
 		}
+		close(stopReads)
 
 		// Delete
 		err = store.TreeSigingSessions().Delete(ctx, roundId1)
@@ -662,7 +679,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		roundId2 := uuid.New().String()
 
 		// redo the signing process but with delete in the middle
-		err = store.TreeSigingSessions().New(ctx, roundId2, uniqueSigners)
+		err = store.TreeSigingSessions().New(ctx, roundId2, uniqueSigners, ports.SigningContext{})
 		require.NoError(t, err)
 		noncesCollectedCh = store.TreeSigingSessions().NoncesCollected(roundId2)
 		signaturesCollectedCh = store.TreeSigingSessions().SignaturesCollected(roundId2)
@@ -700,7 +717,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		// cosigner overwriting its own entry leaves the count unchanged, while the
 		// coordinator receives at most once. Submitting again must not block.
 		roundId3 := uuid.New().String()
-		require.NoError(t, store.TreeSigingSessions().New(ctx, roundId3, uniqueSigners))
+		require.NoError(t, store.TreeSigingSessions().New(ctx, roundId3, uniqueSigners, ports.SigningContext{}))
 
 		collected := make(chan struct{})
 		go func() {
