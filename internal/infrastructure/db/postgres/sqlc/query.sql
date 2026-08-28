@@ -513,7 +513,6 @@ VALUES (@asset_id, @txid, @vout, @amount);
 SELECT * FROM asset WHERE asset.id = ANY($1::varchar[]);
 
 
-
 -- name: SelectAssetsWithUnspentAmountsByIds :many
 SELECT
   a.id,
