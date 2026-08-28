@@ -254,6 +254,12 @@ message GetSpendsRequest {
   // Unix timestamp in seconds. When set, only spends seen at or after this
   // instant are returned, which keeps the response bounded on a wallet with a
   // long history.
+  //
+  // Zero means unbounded, and is deliberate rather than a missing default: the
+  // reconciler's first pass after a restart must reach spends older than any
+  // rolling window, or a vtxo spent long ago stays wrongly unspent forever.
+  // Callers that do not need that should always set a bound, because the
+  // response grows with the wallet's whole history.
   int64 from = 1;
 }
 message GetSpendsResponse {

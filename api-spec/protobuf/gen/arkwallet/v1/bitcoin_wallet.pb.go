@@ -467,6 +467,12 @@ type GetSpendsRequest struct {
 	// Unix timestamp in seconds. When set, only spends seen at or after this
 	// instant are returned, which keeps the response bounded on a wallet with a
 	// long history.
+	//
+	// Zero means unbounded, and is deliberate rather than a missing default: the
+	// reconciler's first pass after a restart must reach spends older than any
+	// rolling window, or a vtxo spent long ago stays wrongly unspent forever.
+	// Callers that do not need that should always set a bound, because the
+	// response grows with the wallet's whole history.
 	From          int64 `protobuf:"varint,1,opt,name=from,proto3" json:"from,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

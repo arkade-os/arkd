@@ -305,6 +305,13 @@ func (w *walletDaemonClient) startNotificationStream() {
 		// consumers already rely on: a range over the channel terminates.
 		// dispatchNotification and this teardown both run on this goroutine, so
 		// a send can never race the close.
+		//
+		// There is deliberately no reconnect here, which matches what the
+		// per-consumer streams did before they were muxed: consumers observe the
+		// close and stop, and nothing re-registers on its own. Push is the
+		// latency path, not the correctness one — the reconcile loop is what
+		// keeps arkd correct while the stream is down, and clearing
+		// notifyStarted lets a later registration open a fresh stream.
 		defer w.closeNotificationListeners()
 
 		for {

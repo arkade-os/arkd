@@ -996,7 +996,7 @@
           {
             "name": "from",
             "in": "query",
-            "description": "Unix timestamp in seconds. When set, only spends seen at or after this\ninstant are returned, which keeps the response bounded on a wallet with a\nlong history.",
+            "description": "Unix timestamp in seconds. When set, only spends seen at or after this\ninstant are returned, which keeps the response bounded on a wallet with a\nlong history.\n\nZero means unbounded, and is deliberate rather than a missing default: the\nreconciler's first pass after a restart must reach spends older than any\nrolling window, or a vtxo spent long ago stays wrongly unspent forever.\nCallers that do not need that should always set a bound, because the\nresponse grows with the wallet's whole history.",
             "schema": {
               "type": "integer",
               "format": "int64"
@@ -1638,7 +1638,7 @@
         "properties": {
           "from": {
             "type": "integer",
-            "description": "Unix timestamp in seconds. When set, only spends seen at or after this\ninstant are returned, which keeps the response bounded on a wallet with a\nlong history.",
+            "description": "Unix timestamp in seconds. When set, only spends seen at or after this\ninstant are returned, which keeps the response bounded on a wallet with a\nlong history.\n\nZero means unbounded, and is deliberate rather than a missing default: the\nreconciler's first pass after a restart must reach spends older than any\nrolling window, or a vtxo spent long ago stays wrongly unspent forever.\nCallers that do not need that should always set a bound, because the\nresponse grows with the wallet's whole history.",
             "format": "int64"
           }
         }
