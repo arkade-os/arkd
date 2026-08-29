@@ -236,6 +236,14 @@ func newAssetGroupFromReader(r *bytes.Reader) (*AssetGroup, error) {
 		return nil, err
 	}
 
+	// Canonical encoding: only the three defined presence bits may be set.
+	const definedPresenceMask = maskAssetId | maskControlAsset | maskMetadata
+	if presence&^definedPresenceMask != 0 {
+		return nil, fmt.Errorf(
+			"non-canonical asset group: undefined presence bits set in 0x%02x", presence,
+		)
+	}
+
 	var assetId *AssetId
 	var controlAsset *AssetRef
 	var metadata []Metadata
@@ -262,6 +270,11 @@ func newAssetGroupFromReader(r *bytes.Reader) (*AssetGroup, error) {
 		metadata, err = newMetadataListFromReader(r)
 		if err != nil {
 			return nil, err
+		}
+		if len(metadata) == 0 {
+			return nil, fmt.Errorf(
+				"non-canonical asset group: metadata flag set but list is empty",
+			)
 		}
 	}
 

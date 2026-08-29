@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 
+	"github.com/arkade-os/arkd/pkg/ark-lib/internal/varint"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 )
 
@@ -62,9 +63,10 @@ func deserializeUint16(r *bytes.Reader) (uint16, error) {
 	return binary.LittleEndian.Uint16(buf[:]), nil
 }
 
-// deserializeVarUint reads a variable-length unsigned integer (uint64) from the reader.
+// deserializeVarUint reads a canonical LEB128 unsigned integer from the reader,
+// rejecting non-minimal (non-canonical) encodings. See varint.ReadCanonical.
 func deserializeVarUint(r *bytes.Reader) (uint64, error) {
-	return binary.ReadUvarint(r)
+	return varint.ReadCanonical(r)
 }
 
 // deserializeSlice reads exactly size bytes from the reader into a new slice.
@@ -81,7 +83,7 @@ func deserializeSlice(r *bytes.Reader, size int) ([]byte, error) {
 
 // deserializeVarSlice reads a varint length prefix followed by that many bytes from the reader.
 func deserializeVarSlice(r *bytes.Reader) ([]byte, error) {
-	l, err := binary.ReadUvarint(r)
+	l, err := deserializeVarUint(r)
 	if err != nil {
 		return nil, err
 	}
