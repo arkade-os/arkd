@@ -127,6 +127,7 @@ pprof:
 proto: proto-lint
 	@echo "Compiling stubs..."
 	@docker run --rm --volume "$(shell pwd):/workspace" --workdir /workspace buf generate
+	@go run ./scripts/normalize-openapi
 
 ## proto-lint: lint protos
 proto-lint: buf
