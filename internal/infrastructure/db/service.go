@@ -1012,6 +1012,8 @@ func newBadgerRoundRepository(args ...interface{}) (domain.RoundRepository, erro
 	return badgerdb.NewArkRepository(args...)
 }
 
+// Registered so the offchainTxStoreTypes lookup succeeds for badger, but never
+// called: NewService assigns the round store to both slots.
 func newBadgerOffchainTxRepository(args ...interface{}) (domain.OffchainTxRepository, error) {
 	return badgerdb.NewArkRepository(args...)
 }
