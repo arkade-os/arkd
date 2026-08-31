@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -383,7 +382,11 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 			"sweeper: trying to schedule task in the past for tx %s, executing it immediately",
 			task.id,
 		)
-		return task.execute()
+		// Same retry policy as the scheduled path. This is the branch a restart
+		// takes for a batch that expired while the service was down, so it is the
+		// one that most needs retrying: nothing re-arms the task until the next
+		// restart.
+		return s.executeWithRetry(task)
 	}
 
 	s.locker.Lock()
@@ -408,12 +411,65 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 		}
 		s.locker.Unlock()
 
+		// Release the dedup slot before running: scheduledTasks guards against
+		// registering the same task twice, so holding the id past execution would
+		// block every later schedule for this tree, including our own retries.
 		s.removeTask(task.id)
 
-		if err := task.execute(); err != nil {
-			log.WithError(err).Errorf("failed to execute sweep of tx %s", task.id)
-		}
+		// Nothing to return the error to from a scheduler callback; executeWithRetry
+		// has already logged the give-up.
+		_ = s.executeWithRetry(task)
 	})
+}
+
+var (
+	// sweepRetryDelay is how long to wait before re-attempting a sweep whose
+	// execution failed. A failure is usually a mempool conflict or a transient
+	// node error, neither of which clears in milliseconds.
+	sweepRetryDelay = time.Minute
+	// sweepRetryAttempts bounds the in-process retries. Beyond this the sweep is
+	// left for the next process start, which rebuilds tasks from the repository.
+	sweepRetryAttempts = 10
+)
+
+// executeWithRetry runs a sweep task, re-attempting it on failure. Without this a
+// single failed broadcast left the batch outputs unswept until an operator
+// restart, which is the window an attacker racing the sweep needs.
+// Returns the last error if every attempt failed, so callers running a task
+// inline still learn it did not succeed.
+func (s *sweeper) executeWithRetry(task sweeperTask) error {
+	ctx := s.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	err := task.execute()
+	if err == nil {
+		return nil
+	}
+
+	for attempt := 1; attempt <= sweepRetryAttempts; attempt++ {
+		log.WithError(err).Warnf(
+			"sweeper: sweep of tx %s failed, retrying in %s (attempt %d/%d)",
+			task.id, sweepRetryDelay, attempt, sweepRetryAttempts,
+		)
+
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(sweepRetryDelay):
+		}
+
+		if err = task.execute(); err == nil {
+			return nil
+		}
+	}
+
+	log.WithError(err).Errorf(
+		"sweeper: giving up on sweep of tx %s after %d attempts, outputs remain unswept "+
+			"until the next restart", task.id, sweepRetryAttempts,
+	)
+	return err
 }
 
 // createBatchSweepTask returns a function passed as handler in the scheduler
@@ -651,8 +707,10 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			}
 
 			err = nil
-			// retry until the tx is broadcasted or the error is not BIP68 final
-			for len(txid) == 0 && (err == nil || errors.Is(err, ports.ErrNonFinalBIP68)) {
+			// retry until the tx is broadcasted or the error is not a timelock
+			// one. Both kinds matter: batch outputs can be gated by a relative
+			// sequence, an absolute nLockTime, or both.
+			for len(txid) == 0 && (err == nil || ports.IsNonFinal(err)) {
 				select {
 				case <-s.ctx.Done():
 					return nil

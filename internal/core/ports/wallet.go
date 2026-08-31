@@ -12,7 +12,17 @@ import (
 var (
 	// ErrNonFinalBIP68 is returned when a transaction spending a CSV-locked output is not final.
 	ErrNonFinalBIP68 = errors.New("non-final BIP68 sequence")
+	// ErrNonFinalCLTV is returned when a transaction's nLockTime has not yet been
+	// reached according to the chain's median-time-past.
+	ErrNonFinalCLTV = errors.New("non-final nLockTime")
 )
+
+// IsNonFinal reports whether err means "too early, try again later" for either
+// timelock kind. Broadcast loops waiting on a timelock should retry on this
+// rather than treating it as a permanent failure.
+func IsNonFinal(err error) bool {
+	return errors.Is(err, ErrNonFinalBIP68) || errors.Is(err, ErrNonFinalCLTV)
+}
 
 type WalletService interface {
 	BlockchainScanner

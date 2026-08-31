@@ -548,17 +548,10 @@ func (b *txBuilder) BuildCommitmentTx(
 		return "", nil, "", nil, err
 	}
 
-	sweepScript, err := (&script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{signerPubkey},
-		},
-		Locktime: vtxoTreeExpiry,
-	}).Script()
+	sweepTapscriptRoot, _, err := tree.BuildLegacySweepTapTreeRoot(signerPubkey, vtxoTreeExpiry)
 	if err != nil {
 		return "", nil, "", nil, err
 	}
-
-	sweepTapscriptRoot := txscript.NewBaseTapLeaf(sweepScript).TapHash()
 
 	if !intents.HaveOnlyOnchainOutput() {
 		batchOutputScript, batchOutputAmount, err = tree.BuildBatchOutput(
@@ -1213,20 +1206,10 @@ func (b *txBuilder) extractSweepLeaf(ptx *psbt.Packet, inputIndex int) (
 
 	vtxoTreeExpiry := vtxoTreeExpiryFields[0]
 
-	sweepClosure := &script.CSVMultisigClosure{
-		Locktime: vtxoTreeExpiry,
-		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{sweeperPubkey},
-		},
-	}
-
-	sweepScript, err := sweepClosure.Script()
+	sweepRoot, sweepScript, err := tree.BuildLegacySweepTapTreeRoot(sweeperPubkey, vtxoTreeExpiry)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-
-	sweepTapTree := txscript.AssembleTaprootScriptTree(txscript.NewBaseTapLeaf(sweepScript))
-	sweepRoot := sweepTapTree.RootNode.TapHash()
 
 	cosignerPubkeys, err := txutils.ParseCosignerKeysFromArkPsbt(ptx, inputIndex)
 	if err != nil {
@@ -1246,6 +1229,8 @@ func (b *txBuilder) extractSweepLeaf(ptx *psbt.Packet, inputIndex int) (
 	}
 	internalKey := aggregatedKey.PreTweakedKey
 
+	// single-leaf tree, so the proof carries no merkle path
+	sweepTapTree := txscript.AssembleTaprootScriptTree(txscript.NewBaseTapLeaf(sweepScript))
 	sweepLeafMerkleProof := sweepTapTree.LeafMerkleProofs[0]
 	sweepLeafControlBlock := sweepLeafMerkleProof.ToControlBlock(internalKey)
 	sweepLeafControlBlockBytes, err := sweepLeafControlBlock.ToBytes()

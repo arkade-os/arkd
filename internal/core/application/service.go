@@ -1789,14 +1789,15 @@ func (s *service) RegisterIntent(
 			continue
 		}
 
-		if settlementMinExpiryGap > 0 && !vtxo.Swept {
-			// reject if expires after now + settlementMinExpiryGap
-			expiresAt := time.Unix(vtxo.ExpiresAt, 0)
-			limit := time.Now().Add(settlementMinExpiryGap)
-			if expiresAt.After(limit) {
+		// A swept vtxo is exempt: settling one is how recovery works, and the
+		// operator already holds the funds onchain.
+		if !vtxo.Swept {
+			if err := checkSettlementExpiryGap(
+				time.Unix(vtxo.ExpiresAt, 0), time.Now(), settlementMinExpiryGap,
+			); err != nil {
 				return "", errors.INVALID_PSBT_INPUT.New(
-					"vtxo %s expires after %s (minExpiryGap: %s)",
-					vtxo.Outpoint.String(), limit, settlementMinExpiryGap,
+					"vtxo %s: %s (minExpiryGap: %s)",
+					vtxo.Outpoint.String(), err, settlementMinExpiryGap,
 				).WithMetadata(errors.InputMetadata{
 					Txid:       proofTxid,
 					InputIndex: int(outpoint.Index),
@@ -3228,12 +3229,7 @@ func (s *service) startFinalization(
 	flatVtxoTree := make(tree.FlatTxTree, 0)
 	if vtxoTree != nil {
 
-		sweepClosure := script.CSVMultisigClosure{
-			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{forfeitPubkey}},
-			Locktime:        vtxoTreeExpiry,
-		}
-
-		sweepScript, err := sweepClosure.Script()
+		root, _, err := tree.BuildLegacySweepTapTreeRoot(forfeitPubkey, vtxoTreeExpiry)
 		if err != nil {
 			return
 		}
@@ -3243,10 +3239,6 @@ func (s *service) startFinalization(
 			return
 		}
 		batchOutputAmount := commitmentPtx.UnsignedTx.TxOut[0].Value
-
-		sweepLeaf := txscript.NewBaseTapLeaf(sweepScript)
-		sweepTapTree := txscript.AssembleTaprootScriptTree(sweepLeaf)
-		root := sweepTapTree.RootNode.TapHash()
 
 		coordinator, err := tree.NewTreeCoordinatorSession(
 			root.CloneBytes(), batchOutputAmount, vtxoTree,

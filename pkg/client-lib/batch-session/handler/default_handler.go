@@ -16,7 +16,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -163,14 +162,9 @@ func (h *defaultHandler) OnTreeSigningStarted(
 		return false, fmt.Errorf("not all signers found in cosigner list")
 	}
 
-	sweepClosure := script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{
-			h.ServerParams.ForfeitPubKey,
-		}},
-		Locktime: h.batchExpiry,
-	}
-
-	script, err := sweepClosure.Script()
+	root, _, err := tree.BuildLegacySweepTapTreeRoot(
+		h.ServerParams.ForfeitPubKey, h.batchExpiry,
+	)
 	if err != nil {
 		return false, err
 	}
@@ -182,10 +176,6 @@ func (h *defaultHandler) OnTreeSigningStarted(
 
 	batchOutput := commitmentTx.UnsignedTx.TxOut[0]
 	batchOutputAmount := batchOutput.Value
-
-	sweepTapLeaf := txscript.NewBaseTapLeaf(script)
-	sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
-	root := sweepTapTree.RootNode.TapHash()
 
 	generateAndSendNonces := func(session tree.SignerSession) error {
 		if err := session.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {

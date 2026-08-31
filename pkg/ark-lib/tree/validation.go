@@ -13,7 +13,6 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
 )
 
 var (
@@ -75,19 +74,10 @@ func ValidateVtxoTree(
 		return ErrNoLeaves
 	}
 
-	sweepClosure := &script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{signerPubkey}},
-		Locktime:        vtxoTreeExpiry,
-	}
-
-	sweepScript, err := sweepClosure.Script()
+	tapTreeRoot, _, err := BuildLegacySweepTapTreeRoot(signerPubkey, vtxoTreeExpiry)
 	if err != nil {
 		return err
 	}
-
-	sweepLeaf := txscript.NewBaseTapLeaf(sweepScript)
-	tapTree := txscript.AssembleTaprootScriptTree(sweepLeaf)
-	tapTreeRoot := tapTree.RootNode.TapHash()
 
 	// Verify the batch output pays to the root cosigners
 	rootCosigners, err := txutils.ParseCosignerKeysFromArkPsbt(vtxoTree.Root, 0)
