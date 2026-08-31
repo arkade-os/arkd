@@ -81,8 +81,17 @@ type GetInfoResponse struct {
 	Digest              string                 `protobuf:"bytes,19,opt,name=digest,proto3" json:"digest,omitempty"`
 	MaxTxWeight         int64                  `protobuf:"varint,20,opt,name=max_tx_weight,json=maxTxWeight,proto3" json:"max_tx_weight,omitempty"`
 	MaxOpReturnOutputs  int64                  `protobuf:"varint,21,opt,name=max_op_return_outputs,json=maxOpReturnOutputs,proto3" json:"max_op_return_outputs,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Epoch expiry. When epoch_expiry_enabled is false the rest are zero and
+	// batches expire on a per-batch relative timelock instead.
+	EpochExpiryEnabled bool  `protobuf:"varint,22,opt,name=epoch_expiry_enabled,json=epochExpiryEnabled,proto3" json:"epoch_expiry_enabled,omitempty"`
+	EpochLength        int64 `protobuf:"varint,23,opt,name=epoch_length,json=epochLength,proto3" json:"epoch_length,omitempty"`
+	RolloverWindow     int64 `protobuf:"varint,24,opt,name=rollover_window,json=rolloverWindow,proto3" json:"rollover_window,omitempty"`
+	// The next shared expiry date a batch started now would commit to, unix
+	// seconds. Wallets need this to show a renewal deadline before joining a
+	// session; zero when epoch expiry is disabled.
+	NextEpochExpiry int64 `protobuf:"varint,25,opt,name=next_epoch_expiry,json=nextEpochExpiry,proto3" json:"next_epoch_expiry,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *GetInfoResponse) Reset() {
@@ -258,6 +267,34 @@ func (x *GetInfoResponse) GetMaxTxWeight() int64 {
 func (x *GetInfoResponse) GetMaxOpReturnOutputs() int64 {
 	if x != nil {
 		return x.MaxOpReturnOutputs
+	}
+	return 0
+}
+
+func (x *GetInfoResponse) GetEpochExpiryEnabled() bool {
+	if x != nil {
+		return x.EpochExpiryEnabled
+	}
+	return false
+}
+
+func (x *GetInfoResponse) GetEpochLength() int64 {
+	if x != nil {
+		return x.EpochLength
+	}
+	return 0
+}
+
+func (x *GetInfoResponse) GetRolloverWindow() int64 {
+	if x != nil {
+		return x.RolloverWindow
+	}
+	return 0
+}
+
+func (x *GetInfoResponse) GetNextEpochExpiry() int64 {
+	if x != nil {
+		return x.NextEpochExpiry
 	}
 	return 0
 }
@@ -2006,7 +2043,7 @@ var File_ark_v1_service_proto protoreflect.FileDescriptor
 const file_ark_v1_service_proto_rawDesc = "" +
 	"\n" +
 	"\x14ark/v1/service.proto\x12\x06ark.v1\x1a!meshapi/gateway/annotations.proto\x1a\x12ark/v1/types.proto\"\x10\n" +
-	"\x0eGetInfoRequest\"\xe9\a\n" +
+	"\x0eGetInfoRequest\"\x93\t\n" +
 	"\x0fGetInfoResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12#\n" +
 	"\rsigner_pubkey\x18\x02 \x01(\tR\fsignerPubkey\x12%\n" +
@@ -2029,7 +2066,11 @@ const file_ark_v1_service_proto_rawDesc = "" +
 	"\x0eservice_status\x18\x12 \x03(\v2*.ark.v1.GetInfoResponse.ServiceStatusEntryR\rserviceStatus\x12\x16\n" +
 	"\x06digest\x18\x13 \x01(\tR\x06digest\x12\"\n" +
 	"\rmax_tx_weight\x18\x14 \x01(\x03R\vmaxTxWeight\x121\n" +
-	"\x15max_op_return_outputs\x18\x15 \x01(\x03R\x12maxOpReturnOutputs\x1a@\n" +
+	"\x15max_op_return_outputs\x18\x15 \x01(\x03R\x12maxOpReturnOutputs\x120\n" +
+	"\x14epoch_expiry_enabled\x18\x16 \x01(\bR\x12epochExpiryEnabled\x12!\n" +
+	"\fepoch_length\x18\x17 \x01(\x03R\vepochLength\x12'\n" +
+	"\x0frollover_window\x18\x18 \x01(\x03R\x0erolloverWindow\x12*\n" +
+	"\x11next_epoch_expiry\x18\x19 \x01(\x03R\x0fnextEpochExpiry\x1a@\n" +
 	"\x12ServiceStatusEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"?\n" +

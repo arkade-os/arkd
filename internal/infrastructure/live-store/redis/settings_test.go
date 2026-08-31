@@ -18,6 +18,7 @@ import (
 // guard.
 func TestSettingsDTORoundTrip(t *testing.T) {
 	exit, _ := arklib.ParseRelativeLocktime(512)
+	grace, _ := arklib.ParseRelativeLocktime(7168)
 	tree, _ := arklib.ParseRelativeLocktime(1024)
 	boarding, _ := arklib.ParseRelativeLocktime(1536)
 
@@ -42,6 +43,12 @@ func TestSettingsDTORoundTrip(t *testing.T) {
 			BuildVersionHeader:         "0.9.7",
 			BuildVersionHeaderRequired: true,
 			DigestHeaderRequired:       true,
+			EpochExpiryEnabled:         true,
+			EpochAnchor:                time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC),
+			EpochLength:                28 * 24 * time.Hour,
+			RolloverWindow:             7 * 24 * time.Hour,
+			SettlementCutoff:           12 * time.Hour,
+			UnrollGrace:                grace,
 		},
 		Network:        arklib.Bitcoin,
 		DustAmount:     354,
@@ -65,6 +72,28 @@ func TestSettingsDTORoundTrip(t *testing.T) {
 	require.Equal(t, "0.9.7", out.BuildVersionHeader)
 	require.True(t, out.BuildVersionHeaderRequired)
 	require.True(t, out.DigestHeaderRequired)
+
+	// The epoch settings regressed the same way, and worse: the admin API writes
+	// the repository and reports success, but a round reads this cache, so the
+	// flag came back false and epoch expiry silently never activated on any
+	// redis-backed deployment.
+	require.True(t, out.EpochExpiryEnabled)
+	require.True(t, in.EpochAnchor.Equal(out.EpochAnchor))
+	require.Equal(t, in.EpochLength, out.EpochLength)
+	require.Equal(t, in.RolloverWindow, out.RolloverWindow)
+	require.Equal(t, in.SettlementCutoff, out.SettlementCutoff)
+	require.Equal(t, in.UnrollGrace, out.UnrollGrace)
+
+	// An unset anchor must stay unset rather than becoming the unix epoch.
+	bare := in
+	bare.EpochAnchor = time.Time{}
+	bareData, err := json.Marshal(newSettingsDTO(bare))
+	require.NoError(t, err)
+	var bareDTO settingsDTO
+	require.NoError(t, json.Unmarshal(bareData, &bareDTO))
+	bareOut, err := bareDTO.parse()
+	require.NoError(t, err)
+	require.True(t, bareOut.EpochAnchor.IsZero())
 
 	// Spot-check a few other fields to ensure the round-trip is otherwise intact.
 	require.Equal(t, in.SessionDuration, out.SessionDuration)

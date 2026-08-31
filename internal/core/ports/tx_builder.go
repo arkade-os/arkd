@@ -2,7 +2,6 @@ package ports
 
 import (
 	"github.com/arkade-os/arkd/internal/core/domain"
-	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -50,7 +49,7 @@ type TxBuilder interface {
 	// Returns the commitment tx, the vtxo tree, the connector tree and its root address.
 	BuildCommitmentTx(
 		signerPubkey *btcec.PublicKey, intents domain.Intents, boardingInputs []BoardingInput,
-		cosigners [][]string, vtxoTreeExpiry arklib.RelativeLocktime,
+		cosigners [][]string, sweepParams tree.SweepParams,
 	) (
 		commitmentTx string, vtxoTree *tree.TxTree,
 		connectorAddress string, connectors *tree.TxTree, err error,
@@ -62,7 +61,7 @@ type TxBuilder interface {
 	) (valid map[domain.Outpoint]ValidForfeitTx, err error)
 	BuildSweepTx(inputs []TxInput) (txid string, signedSweepTx string, err error)
 	GetSweepableBatchOutputs(vtxoTree *tree.TxTree) (
-		vtxoTreeExpiry *arklib.RelativeLocktime, batchOutputs *TxInput, err error,
+		sweepParams *tree.SweepParams, batchOutputs *TxInput, err error,
 	)
 	FinalizeAndExtract(tx string) (txhex string, err error)
 	VerifyVtxoTapscriptSigs(

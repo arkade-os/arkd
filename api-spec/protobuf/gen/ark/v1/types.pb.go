@@ -878,9 +878,21 @@ type BatchStartedEvent struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	IntentIdHashes []string               `protobuf:"bytes,2,rep,name=intent_id_hashes,json=intentIdHashes,proto3" json:"intent_id_hashes,omitempty"`
-	BatchExpiry    int64                  `protobuf:"varint,3,opt,name=batch_expiry,json=batchExpiry,proto3" json:"batch_expiry,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// A relative locktime. For a legacy batch this is the vtxo tree expiry; for
+	// an epoch batch it carries the per-level unroll grace instead.
+	BatchExpiry int64 `protobuf:"varint,3,opt,name=batch_expiry,json=batchExpiry,proto3" json:"batch_expiry,omitempty"`
+	// Absolute epoch expiry, unix seconds. Zero for a legacy batch.
+	//
+	// Carried separately rather than reusing field 3: a client that predates
+	// epoch expiry reads that field as a relative locktime and would fail BIP68
+	// encoding on an absolute timestamp. Leaving it as the grace keeps old
+	// clients failing closed on the tree validation instead, which is the same
+	// outcome with a clearer cause.
+	BatchExpiryDate int64 `protobuf:"varint,4,opt,name=batch_expiry_date,json=batchExpiryDate,proto3" json:"batch_expiry_date,omitempty"`
+	// Relative unroll grace for an epoch batch. Zero for a legacy batch.
+	UnrollGrace   int64 `protobuf:"varint,5,opt,name=unroll_grace,json=unrollGrace,proto3" json:"unroll_grace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BatchStartedEvent) Reset() {
@@ -930,6 +942,20 @@ func (x *BatchStartedEvent) GetIntentIdHashes() []string {
 func (x *BatchStartedEvent) GetBatchExpiry() int64 {
 	if x != nil {
 		return x.BatchExpiry
+	}
+	return 0
+}
+
+func (x *BatchStartedEvent) GetBatchExpiryDate() int64 {
+	if x != nil {
+		return x.BatchExpiryDate
+	}
+	return 0
+}
+
+func (x *BatchStartedEvent) GetUnrollGrace() int64 {
+	if x != nil {
+		return x.UnrollGrace
 	}
 	return 0
 }
@@ -1657,11 +1683,13 @@ const file_ark_v1_types_proto_rawDesc = "" +
 	"\x10DeprecatedSigner\x12\x16\n" +
 	"\x06pubkey\x18\x01 \x01(\tR\x06pubkey\x12\x1f\n" +
 	"\vcutoff_date\x18\x02 \x01(\x03R\n" +
-	"cutoffDate\"p\n" +
+	"cutoffDate\"\xbf\x01\n" +
 	"\x11BatchStartedEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12(\n" +
 	"\x10intent_id_hashes\x18\x02 \x03(\tR\x0eintentIdHashes\x12!\n" +
-	"\fbatch_expiry\x18\x03 \x01(\x03R\vbatchExpiry\"M\n" +
+	"\fbatch_expiry\x18\x03 \x01(\x03R\vbatchExpiry\x12*\n" +
+	"\x11batch_expiry_date\x18\x04 \x01(\x03R\x0fbatchExpiryDate\x12!\n" +
+	"\funroll_grace\x18\x05 \x01(\x03R\vunrollGrace\"M\n" +
 	"\x16BatchFinalizationEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12#\n" +
 	"\rcommitment_tx\x18\x02 \x01(\tR\fcommitmentTx\"N\n" +

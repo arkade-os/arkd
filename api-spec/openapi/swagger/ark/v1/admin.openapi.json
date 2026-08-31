@@ -2530,6 +2530,27 @@
               "null"
             ]
           },
+          "epochAnchor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "epochExpiryEnabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Epoch expiry. While epoch_expiry_enabled is false the rest are ignored\nand batches expire on a per-batch relative timelock instead."
+          },
+          "epochLength": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "maxOpReturnOutputs": {
             "type": [
               "integer",
@@ -2557,6 +2578,13 @@
             ],
             "format": "int64"
           },
+          "rolloverWindow": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "roundMaxParticipantsCount": {
             "type": [
               "integer",
@@ -2578,6 +2606,13 @@
             ],
             "format": "int64"
           },
+          "settlementCutoff": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
           "settlementMinExpiryGap": {
             "type": [
               "integer",
@@ -2586,6 +2621,13 @@
             "format": "int64"
           },
           "unilateralExitDelay": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "unrollGrace": {
             "type": [
               "integer",
               "null"

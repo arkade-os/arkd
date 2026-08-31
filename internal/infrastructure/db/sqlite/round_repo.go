@@ -92,6 +92,7 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 				StartingTimestamp:  round.StartingTimestamp,
 				EndingTimestamp:    round.EndingTimestamp,
 				VtxoTreeExpiration: round.VtxoTreeExpiration,
+				EpochExpiry:        round.EpochExpiry,
 				Ended:              round.Stage.Ended,
 				Failed:             round.Stage.Failed,
 				StageCode:          int64(round.Stage.Code),
@@ -699,6 +700,7 @@ func rowsToRounds(rows []combinedRow) ([]*domain.Round, error) {
 				Swept:              v.round.Swept,
 				Intents:            make(map[string]domain.Intent),
 				VtxoTreeExpiration: v.round.VtxoTreeExpiration,
+				EpochExpiry:        v.round.EpochExpiry,
 				CollectedFees:      uint64(v.round.Fees),
 				FailReason:         v.round.FailReason.String,
 			}

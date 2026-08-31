@@ -10,6 +10,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/psbt"
@@ -475,4 +476,300 @@ func makeP2TRLeafTx(t *testing.T, outputs []testOutput) string {
 	b64, err := ptx.B64Encode()
 	require.NoError(t, err)
 	return b64
+}
+
+// TestCheckSettlementExpiryGap pins the direction of the settlement expiry gap:
+// the setting is documented as "the min expiry gap in seconds required to settle
+// a vtxo" (cmd/arkd/flags.go), i.e. a floor on remaining life. A vtxo with almost
+// no life left must be rejected, a healthy one accepted.
+func TestCheckSettlementExpiryGap(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	gap := 24 * time.Hour
+
+	t.Run("healthy vtxo with plenty of life is accepted", func(t *testing.T) {
+		expiresAt := now.Add(7 * 24 * time.Hour)
+		require.NoError(t, checkSettlementExpiryGap(expiresAt, now, gap))
+	})
+
+	t.Run("vtxo expiring inside the gap is rejected", func(t *testing.T) {
+		expiresAt := now.Add(1 * time.Hour)
+		err := checkSettlementExpiryGap(expiresAt, now, gap)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "expires too soon")
+	})
+
+	t.Run("vtxo exactly at the boundary is accepted", func(t *testing.T) {
+		expiresAt := now.Add(gap)
+		require.NoError(t, checkSettlementExpiryGap(expiresAt, now, gap))
+	})
+
+	t.Run("already expired vtxo is rejected", func(t *testing.T) {
+		expiresAt := now.Add(-1 * time.Hour)
+		require.Error(t, checkSettlementExpiryGap(expiresAt, now, gap))
+	})
+
+	t.Run("zero gap disables the check", func(t *testing.T) {
+		expiresAt := now.Add(-1 * time.Hour)
+		require.NoError(t, checkSettlementExpiryGap(expiresAt, now, 0))
+	})
+}
+
+// TestEpochMaturity pins the hybrid sweep closure's whole point: an untouched
+// batch node matures at exactly the epoch date, so one transaction can sweep the
+// entire epoch, while a node created by a mid-flight unroll matures a grace
+// period after it appeared. Compare the legacy formula, where a partial unroll
+// restarted a full expiry period for the whole subtree.
+func TestEpochMaturity(t *testing.T) {
+	const (
+		epochDate = int64(1_788_134_400)
+		grace     = int64(7168)
+	)
+
+	t.Run("untouched node matures at the epoch date", func(t *testing.T) {
+		parentConfirmed := epochDate - 20*86400
+		require.Equal(t, epochDate, epochMaturity(epochDate, parentConfirmed, grace))
+	})
+
+	t.Run("node created by a late unroll matures a grace period after it", func(t *testing.T) {
+		parentConfirmed := epochDate - 60 // unrolled one minute before the boundary
+		require.Equal(t, parentConfirmed+grace, epochMaturity(epochDate, parentConfirmed, grace))
+	})
+
+	t.Run("node created after the boundary still gets its grace", func(t *testing.T) {
+		parentConfirmed := epochDate + 3600
+		require.Equal(t, parentConfirmed+grace, epochMaturity(epochDate, parentConfirmed, grace))
+	})
+
+	t.Run("exactly one grace before the boundary matures at the boundary", func(t *testing.T) {
+		parentConfirmed := epochDate - grace
+		require.Equal(t, epochDate, epochMaturity(epochDate, parentConfirmed, grace))
+	})
+
+	// The bound the design claims: griefing is capped at depth*grace past the
+	// epoch date, not depth*expiry as it was with the relative-only scheme.
+	t.Run("worst case over a deep tree is bounded by depth times grace", func(t *testing.T) {
+		at := epochDate - 1
+		for depth := 0; depth < 15; depth++ {
+			at = epochMaturity(epochDate, at, grace)
+		}
+		require.LessOrEqual(t, at, epochDate+15*grace)
+	})
+}
+
+// TestCheckEpochAdmission pins the two-sided settlement window. The lower bound
+// is a safety bound on every vtxo input; the upper bound applies only to
+// renewals, since exits and boarding must stay available all epoch.
+func TestCheckEpochAdmission(t *testing.T) {
+	anchor := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	sched := domain.EpochSchedule{
+		Anchor:           anchor,
+		Length:           28 * 24 * time.Hour,
+		RolloverWindow:   7 * 24 * time.Hour,
+		SettlementCutoff: 12 * time.Hour,
+	}
+	vtxo := domain.Vtxo{ExpiresAt: anchor.Unix()}
+	day := 24 * time.Hour
+
+	t.Run("renewal inside the rollover window is admitted", func(t *testing.T) {
+		require.NoError(t, checkEpochAdmission(sched, vtxo, anchor.Add(-3*day), true))
+	})
+
+	t.Run("renewal outside the rollover window is refused", func(t *testing.T) {
+		err := checkEpochAdmission(sched, vtxo, anchor.Add(-21*day), true)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "too early")
+	})
+
+	t.Run("exit outside the rollover window is admitted", func(t *testing.T) {
+		require.NoError(t, checkEpochAdmission(sched, vtxo, anchor.Add(-21*day), false))
+	})
+
+	t.Run("nothing is admitted inside the cutoff", func(t *testing.T) {
+		require.Error(t, checkEpochAdmission(sched, vtxo, anchor.Add(-time.Hour), true))
+		require.Error(t, checkEpochAdmission(sched, vtxo, anchor.Add(-time.Hour), false))
+	})
+
+	// Recovery must keep working: the operator already holds these funds onchain,
+	// so no forfeit is needed and the window does not apply.
+	t.Run("swept vtxos bypass the window entirely", func(t *testing.T) {
+		swept := domain.Vtxo{ExpiresAt: anchor.Unix(), Swept: true}
+		require.NoError(t, checkEpochAdmission(sched, swept, anchor.Add(time.Hour), false))
+		require.NoError(t, checkEpochAdmission(sched, swept, anchor.Add(-21*day), true))
+	})
+}
+
+// TestIntentHasOffchainOutput pins how renewal is distinguished from exit. It is
+// decided by what the intent produces, not what it spends: the admission
+// window's upper bound applies to renewals only.
+func TestIntentHasOffchainOutput(t *testing.T) {
+	vtxoOut := &wire.TxOut{Value: 1000, PkScript: []byte{0x51, 0x20, 0x01}}
+	onchainOut := &wire.TxOut{Value: 2000, PkScript: []byte{0x00, 0x14, 0x02}}
+
+	t.Run("a vtxo output makes it a renewal", func(t *testing.T) {
+		require.True(t, intentHasOffchainOutput([]*wire.TxOut{vtxoOut}, nil))
+	})
+
+	t.Run("only onchain outputs is an exit", func(t *testing.T) {
+		require.False(t, intentHasOffchainOutput([]*wire.TxOut{onchainOut}, []int{0}))
+	})
+
+	// A partial collaborative exit - some sats onchain, the change kept offchain -
+	// lands here, and is therefore held to the rollover window like any renewal.
+	// That is the intended reading, not an oversight: the change output makes the
+	// operator fund a fresh batch output while the old one stays locked for the
+	// rest of the epoch, which is what the upper bound exists to discourage.
+	//
+	// Do not "fix" this by treating any onchain output as an exit. That would let
+	// anyone bypass the rollover window by attaching a dust onchain output to an
+	// ordinary renewal.
+	t.Run("mixed outputs count as a renewal", func(t *testing.T) {
+		require.True(t, intentHasOffchainOutput(
+			[]*wire.TxOut{onchainOut, vtxoOut}, []int{0},
+		))
+	})
+
+	t.Run("no outputs at all is not a renewal", func(t *testing.T) {
+		require.False(t, intentHasOffchainOutput(nil, nil))
+	})
+}
+
+// TestEpochUnrollGrace pins that the grace used to schedule a sweep comes from
+// the batch's own tree rather than from live settings. The two agree until an
+// operator changes the setting, and from then on only the tree matches the CSV
+// constraint actually committed to onchain.
+func TestEpochUnrollGrace(t *testing.T) {
+	buildTree := func(t *testing.T, setExpiry bool, grace arklib.RelativeLocktime) tree.FlatTxTree {
+		t.Helper()
+
+		rootPtx, err := psbt.New(
+			[]*wire.OutPoint{{Hash: chainhash.Hash{0x07}, Index: 0}},
+			[]*wire.TxOut{{Value: 1000, PkScript: []byte{0x51}}},
+			2, 0, []uint32{wire.MaxTxInSequenceNum},
+		)
+		require.NoError(t, err)
+
+		if setExpiry {
+			require.NoError(t, txutils.SetArkPsbtField(
+				rootPtx, 0, txutils.VtxoTreeExpiryField, grace,
+			))
+		}
+
+		b64, err := rootPtx.B64Encode()
+		require.NoError(t, err)
+
+		return tree.FlatTxTree{{Txid: rootPtx.UnsignedTx.TxID(), Tx: b64}}
+	}
+
+	baked := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 7168}
+
+	t.Run("reads the grace baked into the tree", func(t *testing.T) {
+		got, err := epochUnrollGrace(buildTree(t, true, baked))
+		require.NoError(t, err)
+		require.Equal(t, baked, got)
+	})
+
+	t.Run("a settings change does not move it", func(t *testing.T) {
+		vtxoTree := buildTree(t, true, baked)
+
+		// What a live settings change would look like: a different value that must
+		// not be the one the sweep is scheduled against.
+		changed := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512}
+		require.NotEqual(t, baked, changed)
+
+		got, err := epochUnrollGrace(vtxoTree)
+		require.NoError(t, err)
+		require.Equal(t, baked, got, "the grace must come from the tree, not settings")
+	})
+
+	t.Run("errors rather than guessing when the field is absent", func(t *testing.T) {
+		_, err := epochUnrollGrace(buildTree(t, false, baked))
+		require.ErrorContains(t, err, "carries no expiry field")
+	})
+
+	t.Run("errors on an empty tree", func(t *testing.T) {
+		_, err := epochUnrollGrace(tree.FlatTxTree{})
+		require.ErrorContains(t, err, "not found in tree")
+	})
+}
+
+// TestCheckEpochAdmissionExemptsLegacyVtxos pins the cutover behaviour: on the
+// day epoch expiry is switched on, every vtxo already in circulation expires on
+// its own relative schedule and must stay renewable. Holding those to the
+// rollover window would reject them for as long as they have more life left than
+// the window, which is exactly when a user would want to migrate one onto the
+// epoch schedule.
+func TestCheckEpochAdmissionExemptsLegacyVtxos(t *testing.T) {
+	anchor := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	sched := domain.EpochSchedule{
+		Anchor:           anchor,
+		Length:           28 * 24 * time.Hour,
+		RolloverWindow:   7 * 24 * time.Hour,
+		SettlementCutoff: 24 * time.Hour,
+	}
+
+	now := anchor.Add(30 * 24 * time.Hour)
+	boundary := sched.BoundaryAfter(now)
+
+	t.Run("an epoch vtxo is held to the rollover window", func(t *testing.T) {
+		// Far outside the window: renewing would hand back the same date.
+		vtxo := domain.Vtxo{ExpiresAt: boundary.Unix()}
+		require.True(t, sched.Governs(arklib.AbsoluteLocktime(vtxo.ExpiresAt)))
+
+		err := checkEpochAdmission(sched, vtxo, now, true)
+		require.ErrorContains(t, err, "too early")
+	})
+
+	t.Run("a legacy vtxo is exempt", func(t *testing.T) {
+		// A pre-cutover vtxo with 20 days left: further out than the 7 day window,
+		// so the epoch rule would reject it, but it is not on the epoch grid.
+		legacy := domain.Vtxo{ExpiresAt: now.Add(20 * 24 * time.Hour).Unix()}
+		require.False(t, sched.Governs(arklib.AbsoluteLocktime(legacy.ExpiresAt)))
+
+		require.NoError(t, checkEpochAdmission(sched, legacy, now, true))
+	})
+
+	t.Run("a legacy vtxo may still be exited", func(t *testing.T) {
+		legacy := domain.Vtxo{ExpiresAt: now.Add(20 * 24 * time.Hour).Unix()}
+		require.NoError(t, checkEpochAdmission(sched, legacy, now, false))
+	})
+
+	t.Run("swept vtxos stay exempt", func(t *testing.T) {
+		vtxo := domain.Vtxo{ExpiresAt: boundary.Unix(), Swept: true}
+		require.NoError(t, checkEpochAdmission(sched, vtxo, now, true))
+	})
+}
+
+// TestEpochScheduleGoverns pins the grid test itself.
+func TestEpochScheduleGoverns(t *testing.T) {
+	anchor := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	sched := domain.EpochSchedule{
+		Anchor:           anchor,
+		Length:           28 * 24 * time.Hour,
+		RolloverWindow:   7 * 24 * time.Hour,
+		SettlementCutoff: 24 * time.Hour,
+	}
+
+	t.Run("the anchor itself is on the grid", func(t *testing.T) {
+		require.True(t, sched.Governs(arklib.AbsoluteLocktime(anchor.Unix())))
+	})
+
+	t.Run("every boundary is on the grid", func(t *testing.T) {
+		for n := 1; n <= 20; n++ {
+			at := anchor.Add(time.Duration(n) * sched.Length)
+			require.True(
+				t, sched.Governs(arklib.AbsoluteLocktime(at.Unix())),
+				"boundary %d must be recognised", n,
+			)
+		}
+	})
+
+	t.Run("one second off the grid is not governed", func(t *testing.T) {
+		at := anchor.Add(sched.Length).Add(time.Second)
+		require.False(t, sched.Governs(arklib.AbsoluteLocktime(at.Unix())))
+	})
+
+	t.Run("a date before the anchor is not governed", func(t *testing.T) {
+		at := anchor.Add(-sched.Length)
+		require.False(t, sched.Governs(arklib.AbsoluteLocktime(at.Unix())))
+	})
 }

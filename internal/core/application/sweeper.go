@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
-	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -42,6 +40,11 @@ type sweeper struct {
 	scheduledTasks map[string]struct{}
 	ctx            context.Context
 
+	// retry policy for a sweep whose execution failed; fields rather than
+	// package vars so tests can shrink them without mutating shared state
+	retryDelay    time.Duration
+	retryAttempts int
+
 	onSweepCheckpoint func(TransactionEvent)
 }
 
@@ -50,7 +53,14 @@ func newSweeper(
 	scheduler ports.SchedulerService,
 ) *sweeper {
 	return &sweeper{
-		wallet, repoManager, builder, scheduler, &sync.Mutex{}, make(map[string]struct{}), nil, nil,
+		wallet:         wallet,
+		repoManager:    repoManager,
+		builder:        builder,
+		scheduler:      scheduler,
+		locker:         &sync.Mutex{},
+		scheduledTasks: make(map[string]struct{}),
+		retryDelay:     defaultSweepRetryDelay,
+		retryAttempts:  defaultSweepRetryAttempts,
 	}
 }
 
@@ -383,7 +393,11 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 			"sweeper: trying to schedule task in the past for tx %s, executing it immediately",
 			task.id,
 		)
-		return task.execute()
+		// Same retry policy as the scheduled path. This is the branch a restart
+		// takes for a batch that expired while the service was down, so it is the
+		// one that most needs retrying: nothing re-arms the task until the next
+		// restart.
+		return s.executeWithRetry(task)
 	}
 
 	s.locker.Lock()
@@ -408,12 +422,66 @@ func (s *sweeper) scheduleTask(task sweeperTask) error {
 		}
 		s.locker.Unlock()
 
+		// Release the dedup slot before running: scheduledTasks guards against
+		// registering the same task twice, so holding the id past execution would
+		// block every later schedule for this tree, including our own retries.
 		s.removeTask(task.id)
 
-		if err := task.execute(); err != nil {
-			log.WithError(err).Errorf("failed to execute sweep of tx %s", task.id)
-		}
+		// Nothing to return the error to from a scheduler callback; executeWithRetry
+		// has already logged the give-up.
+		_ = s.executeWithRetry(task)
 	})
+}
+
+const (
+	// defaultSweepRetryDelay is how long to wait before re-attempting a sweep
+	// whose execution failed. A failure is usually a mempool conflict or a
+	// transient node error, neither of which clears in milliseconds.
+	defaultSweepRetryDelay = time.Minute
+	// defaultSweepRetryAttempts bounds the in-process retries. Beyond this the
+	// sweep is left for the next process start, which rebuilds tasks from the
+	// repository.
+	defaultSweepRetryAttempts = 10
+)
+
+// executeWithRetry runs a sweep task, re-attempting it on failure. Without this a
+// single failed broadcast left the batch outputs unswept until an operator
+// restart, which is the window an attacker racing the sweep needs.
+// Returns the last error if every attempt failed, so callers running a task
+// inline still learn it did not succeed.
+func (s *sweeper) executeWithRetry(task sweeperTask) error {
+	ctx := s.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	err := task.execute()
+	if err == nil {
+		return nil
+	}
+
+	for attempt := 1; attempt <= s.retryAttempts; attempt++ {
+		log.WithError(err).Warnf(
+			"sweeper: sweep of tx %s failed, retrying in %s (attempt %d/%d)",
+			task.id, s.retryDelay, attempt, s.retryAttempts,
+		)
+
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(s.retryDelay):
+		}
+
+		if err = task.execute(); err == nil {
+			return nil
+		}
+	}
+
+	log.WithError(err).Errorf(
+		"sweeper: giving up on sweep of tx %s after %d attempts, outputs remain unswept "+
+			"until the next restart", task.id, s.retryAttempts,
+	)
+	return err
 }
 
 // createBatchSweepTask returns a function passed as handler in the scheduler
@@ -461,45 +529,6 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			return nil
 		}
 
-		scheduleForSubTree := func(txid string, tree *tree.TxTree) {
-			vtxoTreeExpiry, err := s.getVtxoTreeExpiry(vtxoTree)
-			if err != nil {
-				log.WithError(err).
-					Errorf("failed to get vtxo tree expiry for batch %s", commitmentTxid)
-				return
-			}
-
-			// schedule AFTER the root input is confirmed
-			rootInput := vtxoTree.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
-			blockTimestamp, err := waitForConfirmation(context.Background(), rootInput, s.wallet)
-			if err != nil {
-				log.WithError(err).Warnf(
-					"failed to wait for confirmation of batch input tx %s, schedule task time "+
-						"may be inaccurate", rootInput,
-				)
-				blockTimestamp = &ports.BlockTimestamp{Time: time.Now().Unix()}
-			}
-
-			var expirationTimestamp int64
-			var skipExpiryUpdate bool
-			if s.scheduler.Unit() == ports.BlockHeight {
-				expirationTimestamp = int64(blockTimestamp.Height) + int64(vtxoTreeExpiry.Value)
-				skipExpiryUpdate = true
-			} else {
-				expirationTimestamp = blockTimestamp.Time + vtxoTreeExpiry.Seconds()
-			}
-
-			if err := s.scheduleBatchSweep(
-				expirationTimestamp, txid, tree.Root.UnsignedTx.TxID(), skipExpiryUpdate,
-			); err != nil {
-				log.WithError(err).Errorf(
-					"failed to schedule sweep for vtxo tree %s of batch %s",
-					tree.Root.UnsignedTx.TxID(), commitmentTxid,
-				)
-				return
-			}
-		}
-
 		for expiresAt, inputs := range batchOutputs {
 			// if the batch outputs are not expired, schedule a sweep task for it
 			if s.scheduler.AfterNow(expiresAt) {
@@ -510,7 +539,47 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 				}
 
 				for _, subTree := range subtrees {
-					go scheduleForSubTree(commitmentTxid, subTree)
+					// Reuse the maturity findSweepableOutputs already derived from this
+					// subtree's own sweep leaf and the confirmation of the node above it.
+					//
+					// Deriving it again here got two things wrong. It measured from the
+					// batch root's parent, which is the wrong node once part of the tree
+					// has been unrolled; and it read the relative psbt field as a tree
+					// expiry, which for an epoch batch carries the unroll grace instead -
+					// so an epoch sweep was scheduled a grace period after the commitment
+					// confirmed rather than at the epoch date, and the same wrong value
+					// was written onto every leaf vtxo's expiry. This runs on every
+					// restart for every live batch, so it was not a corner case.
+					//
+					// Still dispatched concurrently, and still behind the root input's
+					// confirmation. Both are load-bearing on the restart path, where this
+					// runs for every live batch at once: sweeper.start waits for the whole
+					// scan before arkd reports ready, and scheduleBatchSweep can rewrite
+					// every leaf vtxo's expiry. Doing it inline made restart latency grow
+					// with the number of batches; dropping the wait replaced a staggered
+					// set of schedules with one burst of them. Only the expiry value
+					// changed here, not when or how the work is dispatched.
+					go func() {
+						rootInput := vtxoTree.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
+						if _, err := waitForConfirmation(
+							context.Background(), rootInput, s.wallet,
+						); err != nil {
+							log.WithError(err).Warnf(
+								"failed to wait for confirmation of batch input tx %s before "+
+									"scheduling its sweep", rootInput,
+							)
+						}
+
+						if err := s.scheduleBatchSweep(
+							expiresAt, commitmentTxid, subTree.Root.UnsignedTx.TxID(),
+							s.scheduler.Unit() == ports.BlockHeight,
+						); err != nil {
+							log.WithError(err).Errorf(
+								"failed to schedule sweep for vtxo tree %s of batch %s",
+								subTree.Root.UnsignedTx.TxID(), commitmentTxid,
+							)
+						}
+					}()
 				}
 
 				continue
@@ -651,8 +720,10 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			}
 
 			err = nil
-			// retry until the tx is broadcasted or the error is not BIP68 final
-			for len(txid) == 0 && (err == nil || errors.Is(err, ports.ErrNonFinalBIP68)) {
+			// retry until the tx is broadcasted or the error is not a timelock
+			// one. Both kinds matter: batch outputs can be gated by a relative
+			// sequence, an absolute nLockTime, or both.
+			for len(txid) == 0 && (err == nil || ports.IsNonFinal(err)) {
 				select {
 				case <-s.ctx.Done():
 					return nil
@@ -841,25 +912,6 @@ func (s *sweeper) updateVtxoExpirationTime(
 	}
 
 	return s.repoManager.Vtxos().UpdateVtxosExpiration(context.Background(), vtxos, expirationTime)
-}
-
-func (s *sweeper) getVtxoTreeExpiry(vtxoTree *tree.TxTree) (*arklib.RelativeLocktime, error) {
-	// get expiry relative locktime from the psbt ark fields
-	vtxoTreeExpiryFields, err := txutils.GetArkPsbtFields(
-		vtxoTree.Root,
-		0,
-		txutils.VtxoTreeExpiryField,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if len(vtxoTreeExpiryFields) <= 0 {
-		return nil, fmt.Errorf(
-			"no vtxo tree expiry field found in vtxo tree, cannot schedule sweep",
-		)
-	}
-	vtxoTreeExpiry := vtxoTreeExpiryFields[0]
-	return &vtxoTreeExpiry, nil
 }
 
 func computeSubTrees(

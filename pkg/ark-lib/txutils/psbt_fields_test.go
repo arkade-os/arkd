@@ -157,3 +157,94 @@ func TestPsbtCustomUnknownFields(t *testing.T) {
 		}
 	})
 }
+
+// TestBatchExpiryField covers the absolute epoch expiry field. Its presence on a
+// tree tx marks the tree as an epoch batch; absence means the legacy relative-CSV
+// scheme under ArkFieldTreeExpiry.
+func TestBatchExpiryField(t *testing.T) {
+	newPacket := func(t *testing.T) *psbt.Packet {
+		t.Helper()
+		ptx, err := psbt.New(nil, nil, 2, 0, nil)
+		require.NoError(t, err)
+		ptx.UnsignedTx.TxIn = []*wire.TxIn{{PreviousOutPoint: wire.OutPoint{}}}
+		ptx.Inputs = []psbt.PInput{{}}
+		return ptx
+	}
+
+	t.Run("round trip", func(t *testing.T) {
+		ptx := newPacket(t)
+		want := common.AbsoluteLocktime(1788134400)
+		require.NoError(t, txutils.SetArkPsbtField(ptx, 0, txutils.BatchExpiryField, want))
+
+		got, err := txutils.GetArkPsbtFields(ptx, 0, txutils.BatchExpiryField)
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		require.Equal(t, want, got[0])
+	})
+
+	t.Run("absent on a legacy packet", func(t *testing.T) {
+		ptx := newPacket(t)
+		require.NoError(t, txutils.SetArkPsbtField(
+			ptx, 0, txutils.VtxoTreeExpiryField,
+			common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 604672},
+		))
+
+		got, err := txutils.GetArkPsbtFields(ptx, 0, txutils.BatchExpiryField)
+		require.NoError(t, err)
+		require.Empty(t, got, "legacy packets must not look like epoch packets")
+	})
+
+	// containsArkPsbtKey matches with bytes.Contains, so a key naming collision is
+	// silent: the tree-expiry decoder would match the epoch field and BIP68-decode
+	// an absolute timestamp. Pin that neither field sees the other.
+	t.Run("does not collide with the relative expiry field", func(t *testing.T) {
+		ptx := newPacket(t)
+		require.NoError(t, txutils.SetArkPsbtField(
+			ptx, 0, txutils.BatchExpiryField, common.AbsoluteLocktime(1788134400),
+		))
+
+		rel, err := txutils.GetArkPsbtFields(ptx, 0, txutils.VtxoTreeExpiryField)
+		require.NoError(t, err)
+		require.Empty(t, rel, "epoch field must not be read as a relative locktime")
+
+		other := newPacket(t)
+		require.NoError(t, txutils.SetArkPsbtField(
+			other, 0, txutils.VtxoTreeExpiryField,
+			common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 7168},
+		))
+		abs, err := txutils.GetArkPsbtFields(other, 0, txutils.BatchExpiryField)
+		require.NoError(t, err)
+		require.Empty(t, abs, "relative field must not be read as an epoch date")
+	})
+
+	t.Run("both fields coexist on one input", func(t *testing.T) {
+		ptx := newPacket(t)
+		require.NoError(t, txutils.SetArkPsbtField(
+			ptx, 0, txutils.BatchExpiryField, common.AbsoluteLocktime(1788134400),
+		))
+		require.NoError(t, txutils.SetArkPsbtField(
+			ptx, 0, txutils.VtxoTreeExpiryField,
+			common.RelativeLocktime{Type: common.LocktimeTypeSecond, Value: 7168},
+		))
+
+		rel, err := txutils.GetArkPsbtFields(ptx, 0, txutils.VtxoTreeExpiryField)
+		require.NoError(t, err)
+		require.Len(t, rel, 1)
+		require.Equal(t, uint32(7168), rel[0].Value)
+
+		abs, err := txutils.GetArkPsbtFields(ptx, 0, txutils.BatchExpiryField)
+		require.NoError(t, err)
+		require.Len(t, abs, 1)
+		require.Equal(t, common.AbsoluteLocktime(1788134400), abs[0])
+	})
+
+	t.Run("rejects a malformed value", func(t *testing.T) {
+		ptx := newPacket(t)
+		ptx.Inputs[0].Unknowns = []*psbt.Unknown{{
+			Key:   append([]byte{222}, []byte("epochdate")...),
+			Value: []byte{0x01, 0x02},
+		}}
+		_, err := txutils.GetArkPsbtFields(ptx, 0, txutils.BatchExpiryField)
+		require.Error(t, err)
+	})
+}

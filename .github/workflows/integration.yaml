@@ -19,8 +19,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # sqlite/badger only on master merges, PRs run postgres/redis only
-        include: ${{ github.event_name == 'push' && fromJSON('[{"env_target":"docker-run","env_name":"postgres/redis"},{"env_target":"docker-run-light","env_name":"sqlite/badger"}]') || fromJSON('[{"env_target":"docker-run","env_name":"postgres/redis"}]') }}
+        # sqlite/badger only on master merges, PRs run postgres/redis and epoch.
+        # epoch needs its own entry because epoch expiry requires a time-based
+        # sweep scheduler, which is fixed at startup from the locktime type - so
+        # it cannot be reached from the block-based stack the other jobs use.
+        include: ${{ github.event_name == 'push' && fromJSON('[{"env_target":"docker-run","env_name":"postgres/redis","test_target":"integrationtest"},{"env_target":"docker-run-light","env_name":"sqlite/badger","test_target":"integrationtest"},{"env_target":"docker-run-epoch","env_name":"epoch","test_target":"epochtest"}]') || fromJSON('[{"env_target":"docker-run","env_name":"postgres/redis","test_target":"integrationtest"},{"env_target":"docker-run-epoch","env_name":"epoch","test_target":"epochtest"}]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
@@ -37,7 +40,7 @@ jobs:
         run: make ${{ matrix.env_target }}
 
       - name: Run test
-        run: make integrationtest
+        run: make ${{ matrix.test_target }}
 
       # arkd fails whenever any of its dependencies does, so its own log usually
       # only shows the symptom. Capturing the whole stack is what distinguishes

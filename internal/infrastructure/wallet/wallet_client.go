@@ -391,14 +391,60 @@ func (w *walletDaemonClient) BroadcastTransaction(
 		ctx, &arkwalletv1.BroadcastTransactionRequest{Txs: txs},
 	)
 	if err != nil {
-		// handle non-final BIP68 error and return the appropriate error
-		if strings.Contains(
-			strings.ToLower(err.Error()), "non-bip68-final") {
-			return "", ports.ErrNonFinalBIP68
+		// map timelock rejections to typed errors the sweeper can retry on
+		if classified := classifyBroadcastError(err); classified != nil {
+			return "", classified
 		}
 		return "", err
 	}
 	return resp.GetTxid(), nil
+}
+
+// classifyBroadcastError maps a node's mempool rejection reason to a typed port
+// error, or nil when the failure is not a timelock problem. Bitcoin Core reports
+// "non-BIP68-final" for a premature relative timelock and "non-final" for a
+// premature nLockTime; the two are disjoint, but BIP68 is checked first so the
+// narrower reason can never be swallowed by the broader one.
+func classifyBroadcastError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := strings.ToLower(err.Error())
+	if namesReason(msg, "non-bip68-final") {
+		return ports.ErrNonFinalBIP68
+	}
+	if namesReason(msg, "non-final") {
+		return ports.ErrNonFinalCLTV
+	}
+	return nil
+}
+
+// namesReason reports whether msg gives reason as a rejection reason rather than
+// as the start of a longer word.
+//
+// A plain substring test also fires on "non-finalized" and friends, and a
+// misclassification is not free here: IsNonFinal marks the failure retryable, so
+// the sweeper would spend its whole retry budget on an error that was never
+// going to clear. Only the trailing edge is checked - Core prefixes reasons in
+// more than one way, and demanding a leading boundary too would reject
+// legitimate forms like "bad-txns-non-final".
+func namesReason(msg, reason string) bool {
+	for i := 0; i+len(reason) <= len(msg); {
+		j := strings.Index(msg[i:], reason)
+		if j < 0 {
+			return false
+		}
+		end := i + j + len(reason)
+		if end == len(msg) || !isReasonByte(msg[end]) {
+			return true
+		}
+		i = end
+	}
+	return false
+}
+
+func isReasonByte(b byte) bool {
+	return b == '-' || b == '_' || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9')
 }
 
 func (w *walletDaemonClient) EstimateFees(ctx context.Context, psbt string) (uint64, error) {

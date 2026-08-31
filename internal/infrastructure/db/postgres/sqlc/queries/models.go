@@ -166,6 +166,7 @@ type Round struct {
 	VtxoTreeExpiration int64
 	FailReason         sql.NullString
 	Fees               int64
+	EpochExpiry        int64
 }
 
 type RoundIntentsVw struct {
@@ -197,6 +198,8 @@ type RoundWithCommitmentTxVw struct {
 	Swept              bool
 	VtxoTreeExpiration int64
 	FailReason         sql.NullString
+	Fees               int64
+	EpochExpiry        int64
 	Txid               string
 	Tx                 string
 	RoundID            string
@@ -254,6 +257,12 @@ type Setting struct {
 	DigestHeaderRequired                      bool
 	UpdatedAt                                 int64
 	BatchTrigger                              string
+	EpochExpiryEnabled                        bool
+	EpochAnchor                               int64
+	EpochLength                               int64
+	RolloverWindow                            int64
+	SettlementCutoff                          int64
+	UnrollGrace                               int64
 }
 
 type SettingsHistory struct {

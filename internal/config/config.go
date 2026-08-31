@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -128,6 +129,12 @@ type Config struct {
 	VtxoMaxAmount               int64
 	VtxoMinAmount               int64
 	SettlementMinExpiryGap      int64
+	EpochExpiryEnabled          bool
+	EpochAnchor                 int64
+	EpochLength                 int64
+	RolloverWindow              int64
+	SettlementCutoff            int64
+	UnrollGrace                 arklib.RelativeLocktime
 	UnrolledVtxoMinExpiryMargin int64
 	MaxTxWeight                 uint64
 	AssetTxMaxWeightRatio       float32
@@ -231,6 +238,12 @@ var (
 	VtxoMinAmount             = "VTXO_MIN_AMOUNT"
 	HeartbeatInterval         = "HEARTBEAT_INTERVAL"
 	SettlementMinExpiryGap    = "SETTLEMENT_MIN_EXPIRY_GAP"
+	EpochExpiryEnabled        = "EPOCH_EXPIRY_ENABLED"
+	EpochAnchor               = "EPOCH_ANCHOR"
+	EpochLength               = "EPOCH_LENGTH"
+	RolloverWindow            = "ROLLOVER_WINDOW"
+	SettlementCutoff          = "SETTLEMENT_CUTOFF"
+	UnrollGrace               = "UNROLL_GRACE"
 	// Minimum remaining CSV time (in seconds) for an unrolled VTXO to be accepted into a batch.
 	// 0 means fallback to session duration.
 	UnrolledVtxoMinExpiryMargin = "UNROLLED_VTXO_MIN_EXPIRY_MARGIN"
@@ -288,12 +301,20 @@ var (
 	defaultVtxoMinAmount       = -1 // -1 means native dust limit (default)
 	defaultVtxoMaxAmount       = -1 // -1 means no limit (default)
 
-	defaultRoundMaxParticipantsCount     = 128
-	defaultRoundMinParticipantsCount     = 1
-	defaultOtelPushInterval              = 10  // seconds
-	defaultHeartbeatInterval             = 60  // seconds
-	defaultSettlementMinExpiryGap        = 0   // disabled by default
-	defaultUnrolledVtxoMinExpiryMargin   = 300 // 5 minutes in seconds
+	defaultRoundMaxParticipantsCount = 128
+	defaultRoundMinParticipantsCount = 1
+	defaultOtelPushInterval          = 10 // seconds
+	defaultHeartbeatInterval         = 60 // seconds
+	defaultSettlementMinExpiryGap    = 0  // disabled by default
+	defaultEpochExpiryEnabled        = false
+	// 2026-01-05 00:00:00 UTC, a Monday. A 28-day epoch keeps every later
+	// boundary on the same weekday and hour forever, which 30 days would not.
+	defaultEpochAnchor                   = 1767571200
+	defaultEpochLength                   = 2419200 // 28 days
+	defaultRolloverWindow                = 604800  // 7 days
+	defaultSettlementCutoff              = 43200   // 12 hours
+	defaultUnrollGrace                   = 7168    // 2 hours, a multiple of 512 for BIP68
+	defaultUnrolledVtxoMinExpiryMargin   = 300     // 5 minutes in seconds
 	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
 	defaultAssetTxMaxWeightRatio         = 0.5
 	defaultVtxoNoCsvValidationCutoffDate = 0 // disabled by default
@@ -347,6 +368,12 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
+	viper.SetDefault(EpochExpiryEnabled, defaultEpochExpiryEnabled)
+	viper.SetDefault(EpochAnchor, defaultEpochAnchor)
+	viper.SetDefault(EpochLength, defaultEpochLength)
+	viper.SetDefault(RolloverWindow, defaultRolloverWindow)
+	viper.SetDefault(SettlementCutoff, defaultSettlementCutoff)
+	viper.SetDefault(UnrollGrace, defaultUnrollGrace)
 	viper.SetDefault(UnrolledVtxoMinExpiryMargin, defaultUnrolledVtxoMinExpiryMargin)
 	viper.SetDefault(MaxTxWeight, defaultMaxTxWeight)
 	viper.SetDefault(AssetTxMaxWeightRatio, defaultAssetTxMaxWeightRatio)
@@ -407,6 +434,13 @@ func LoadConfig() (*Config, error) {
 		log.Debugf(
 			"vtxo tree expiry must be a multiple of %d, rounded to %d",
 			arklib.MinAllowedSequence, vtxoTreeExpiry,
+		)
+	}
+	unrollGrace, rounded := arklib.ParseRelativeLocktime(viper.GetUint32(UnrollGrace))
+	if rounded {
+		log.Debugf(
+			"unroll grace must be a multiple of %d, rounded to %d",
+			arklib.MinAllowedSequence, unrollGrace,
 		)
 	}
 	unilateralExitDelay, rounded := arklib.ParseRelativeLocktime(
@@ -499,6 +533,12 @@ func LoadConfig() (*Config, error) {
 		VtxoMaxAmount:                 viper.GetInt64(VtxoMaxAmount),
 		VtxoMinAmount:                 viper.GetInt64(VtxoMinAmount),
 		SettlementMinExpiryGap:        viper.GetInt64(SettlementMinExpiryGap),
+		EpochExpiryEnabled:            viper.GetBool(EpochExpiryEnabled),
+		EpochAnchor:                   viper.GetInt64(EpochAnchor),
+		EpochLength:                   viper.GetInt64(EpochLength),
+		RolloverWindow:                viper.GetInt64(RolloverWindow),
+		SettlementCutoff:              viper.GetInt64(SettlementCutoff),
+		UnrollGrace:                   unrollGrace,
 		UnrolledVtxoMinExpiryMargin:   viper.GetInt64(UnrolledVtxoMinExpiryMargin),
 		MaxTxWeight:                   viper.GetUint64(MaxTxWeight),
 		AssetTxMaxWeightRatio:         float32(viper.GetFloat64(AssetTxMaxWeightRatio)),
@@ -985,6 +1025,24 @@ func (c *Config) getSettings() (*domain.Settings, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Applied through Update rather than NewSettings: that constructor already
+	// takes 24 positional parameters and six more would make it unreadable.
+	epochAnchor := time.Unix(c.EpochAnchor, 0).UTC()
+	epochLength := time.Duration(c.EpochLength) * time.Second
+	rolloverWindow := time.Duration(c.RolloverWindow) * time.Second
+	settlementCutoff := time.Duration(c.SettlementCutoff) * time.Second
+	if _, err := settings.Update(domain.SettingsUpdate{
+		EpochExpiryEnabled: &c.EpochExpiryEnabled,
+		EpochAnchor:        &epochAnchor,
+		EpochLength:        &epochLength,
+		RolloverWindow:     &rolloverWindow,
+		SettlementCutoff:   &settlementCutoff,
+		UnrollGrace:        &c.UnrollGrace,
+	}); err != nil {
+		return nil, fmt.Errorf("invalid epoch settings: %w", err)
+	}
+
 	c.settings = settings
 	return settings, nil
 }

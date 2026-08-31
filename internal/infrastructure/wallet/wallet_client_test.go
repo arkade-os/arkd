@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
+	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
@@ -241,4 +242,84 @@ func TestWalletClientUnwatchScriptsChunking(t *testing.T) {
 		require.ErrorIs(t, err, boom)
 		require.Len(t, fake.unwatchCalls, 1)
 	})
+}
+
+// TestClassifyBroadcastError pins that both timelock rejections are recognised.
+// The mapping is a substring match on the node's rejection reason: Core says
+// "non-BIP68-final" for a premature relative timelock and "non-final" for a
+// premature nLockTime. Only the first was handled, so a CLTV-too-early sweep
+// returned a bare error and the sweeper's retry loop skipped it.
+func TestClassifyBroadcastError(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want error
+	}{
+		{"bip68", "rpc error: non-BIP68-final", ports.ErrNonFinalBIP68},
+		{"bip68 lowercase", "non-bip68-final", ports.ErrNonFinalBIP68},
+		{"cltv", "rpc error: non-final", ports.ErrNonFinalCLTV},
+		{"cltv mixed case", "Non-Final", ports.ErrNonFinalCLTV},
+		{"unrelated", "insufficient fee", nil},
+		{"nil", "", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var in error
+			if tt.in != "" {
+				in = errors.New(tt.in)
+			}
+			got := classifyBroadcastError(in)
+			if tt.want == nil {
+				require.Nil(t, got)
+				return
+			}
+			require.ErrorIs(t, got, tt.want)
+		})
+	}
+}
+
+// TestClassifyBroadcastErrorPrecedence pins that a BIP68 rejection is never
+// misread as a CLTV one. The two reason strings are disjoint today; this test
+// keeps a future edit from reordering them into ambiguity.
+func TestClassifyBroadcastErrorPrecedence(t *testing.T) {
+	got := classifyBroadcastError(errors.New("non-BIP68-final"))
+	require.ErrorIs(t, got, ports.ErrNonFinalBIP68)
+	require.NotErrorIs(t, got, ports.ErrNonFinalCLTV)
+}
+
+func TestIsNonFinal(t *testing.T) {
+	require.True(t, ports.IsNonFinal(ports.ErrNonFinalBIP68))
+	require.True(t, ports.IsNonFinal(ports.ErrNonFinalCLTV))
+	require.False(t, ports.IsNonFinal(errors.New("insufficient fee")))
+	require.False(t, ports.IsNonFinal(nil))
+}
+
+// TestClassifyBroadcastErrorWordBoundary pins that a longer word merely
+// containing a reason is not read as that reason. Misclassifying one marks the
+// failure retryable, and the sweeper then burns its whole retry budget on an
+// error that will never clear.
+func TestClassifyBroadcastErrorWordBoundary(t *testing.T) {
+	tests := []struct {
+		msg  string
+		want error
+	}{
+		{"non-final", ports.ErrNonFinalCLTV},
+		{"bad-txns-non-final", ports.ErrNonFinalCLTV},
+		{"error: non-final, rejecting", ports.ErrNonFinalCLTV},
+		{"non-BIP68-final", ports.ErrNonFinalBIP68},
+		{"non-finalized channel state", nil},
+		{"transaction is non-finality-locked", nil},
+		{"rate limited", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.msg, func(t *testing.T) {
+			got := classifyBroadcastError(errors.New(tt.msg))
+			if tt.want == nil {
+				require.NoError(t, got)
+				return
+			}
+			require.ErrorIs(t, got, tt.want)
+		})
+	}
 }

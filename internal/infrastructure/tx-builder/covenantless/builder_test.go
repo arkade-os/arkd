@@ -87,7 +87,8 @@ func TestBuildCommitmentTx(t *testing.T) {
 				boardingInputs := newBoardingInputs(t, f.BoardingAmounts)
 
 				commitmentTx, vtxoTree, connAddr, _, err := builder.BuildCommitmentTx(
-					pubkey, f.Intents, boardingInputs, cosignersPublicKeys, vtxoTreeExpiry,
+					pubkey, f.Intents, boardingInputs, cosignersPublicKeys,
+					tree.SweepParams{Expiry: vtxoTreeExpiry},
 				)
 				require.NoError(t, err)
 				require.NotEmpty(t, commitmentTx)
@@ -99,7 +100,7 @@ func TestBuildCommitmentTx(t *testing.T) {
 				require.NoError(t, err)
 
 				err = tree.ValidateVtxoTree(
-					vtxoTree, roundPtx, pubkey, vtxoTreeExpiry,
+					vtxoTree, roundPtx, pubkey, tree.SweepParams{Expiry: vtxoTreeExpiry},
 				)
 				require.NoError(t, err)
 
@@ -128,7 +129,7 @@ func TestBuildCommitmentTx(t *testing.T) {
 
 				commitmentTx, vtxoTree, connAddr, _, err := builder.BuildCommitmentTx(
 					pubkey, f.Intents, []ports.BoardingInput{}, cosignersPublicKeys,
-					vtxoTreeExpiry,
+					tree.SweepParams{Expiry: vtxoTreeExpiry},
 				)
 				require.EqualError(t, err, f.ExpectedErr)
 				require.Empty(t, commitmentTx)
@@ -181,7 +182,8 @@ func TestBuildCommitmentTx(t *testing.T) {
 
 				commitmentTx, _, _, _, err := builder.BuildCommitmentTx(
 					pubkey, f.Intents, boardingInputs,
-					newCosignerKeys(t, len(f.Intents)), vtxoTreeExpiry,
+					newCosignerKeys(t, len(f.Intents)),
+					tree.SweepParams{Expiry: vtxoTreeExpiry},
 				)
 				require.NoError(t, err)
 
@@ -242,7 +244,8 @@ func TestBuildCommitmentTxUsesVtxoTreeExpiryArg(t *testing.T) {
 	require.NotEqual(t, vtxoTreeExpiry, usedExpiry)
 
 	commitmentTx, vtxoTree, _, _, err := builder.BuildCommitmentTx(
-		pubkey, f.Intents, []ports.BoardingInput{}, cosignersPublicKeys, usedExpiry,
+		pubkey, f.Intents, []ports.BoardingInput{}, cosignersPublicKeys,
+		tree.SweepParams{Expiry: usedExpiry},
 	)
 	require.NoError(t, err)
 
@@ -251,8 +254,8 @@ func TestBuildCommitmentTxUsesVtxoTreeExpiryArg(t *testing.T) {
 
 	// The tree validates against the expiry it was built with, and not against
 	// a different one, proving the argument determined the tree's timelock.
-	require.NoError(t, tree.ValidateVtxoTree(vtxoTree, roundPtx, pubkey, usedExpiry))
-	require.Error(t, tree.ValidateVtxoTree(vtxoTree, roundPtx, pubkey, vtxoTreeExpiry))
+	require.NoError(t, tree.ValidateVtxoTree(vtxoTree, roundPtx, pubkey, tree.SweepParams{Expiry: usedExpiry}))
+	require.Error(t, tree.ValidateVtxoTree(vtxoTree, roundPtx, pubkey, tree.SweepParams{Expiry: vtxoTreeExpiry}))
 }
 
 func TestVerifyVtxoTapscriptSigs(t *testing.T) {
@@ -577,4 +580,57 @@ func clonePacket(t *testing.T, p *psbt.Packet) *psbt.Packet {
 	clone, err := psbt.NewFromRawBytes(strings.NewReader(encodeTx(t, p)), true)
 	require.NoError(t, err)
 	return clone
+}
+
+// TestBuildCommitmentTxEmitsEpochSweepRoot pins that epoch sweep params reach the
+// batch output and the vtxo tree: the tree must validate against the same params
+// and be rejected by legacy ones, and its root must carry the absolute expiry
+// field the sweeper keys on.
+func TestBuildCommitmentTxEmitsEpochSweepRoot(t *testing.T) {
+	builder := txbuilder.NewTxBuilder(wallet, nil, arklib.Bitcoin)
+
+	fixtures, err := parseCommitmentTxFixtures()
+	require.NoError(t, err)
+	require.NotEmpty(t, fixtures.Valid)
+
+	// a multi-leaf fixture, or the root-derived taproot key is never exercised
+	best := 0
+	for i, cand := range fixtures.Valid {
+		if cand.ExpectedNumOfLeaves > fixtures.Valid[best].ExpectedNumOfLeaves {
+			best = i
+		}
+	}
+	f := fixtures.Valid[best]
+	require.Greater(t, f.ExpectedNumOfLeaves, 1)
+
+	cosignersPublicKeys := make([][]string, 0, len(f.Intents))
+	for range f.Intents {
+		randKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		cosignersPublicKeys = append(cosignersPublicKeys, []string{
+			hex.EncodeToString(randKey.PubKey().SerializeCompressed()),
+		})
+	}
+
+	date := arklib.AbsoluteLocktime(1788134400)
+	grace := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 7168}
+	epochParams := tree.SweepParams{Expiry: grace, BatchExpiry: &date}
+
+	commitmentTx, vtxoTree, _, _, err := builder.BuildCommitmentTx(
+		pubkey, f.Intents, []ports.BoardingInput{}, cosignersPublicKeys, epochParams,
+	)
+	require.NoError(t, err)
+
+	roundPtx, err := psbt.NewFromRawBytes(strings.NewReader(commitmentTx), true)
+	require.NoError(t, err)
+
+	require.NoError(t, tree.ValidateVtxoTree(vtxoTree, roundPtx, pubkey, epochParams))
+	require.Error(t, tree.ValidateVtxoTree(
+		vtxoTree, roundPtx, pubkey, tree.SweepParams{Expiry: vtxoTreeExpiry},
+	))
+
+	abs, err := txutils.GetArkPsbtFields(vtxoTree.Root, 0, txutils.BatchExpiryField)
+	require.NoError(t, err)
+	require.Len(t, abs, 1)
+	require.Equal(t, date, abs[0])
 }

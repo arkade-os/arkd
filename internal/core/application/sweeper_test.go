@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,8 +11,10 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -249,6 +252,9 @@ func TestCreateCheckpointSweepTask(t *testing.T) {
 
 type mockWalletService struct {
 	mock.Mock
+	// isTxConfirmed lets a test drive confirmation state without converting the
+	// whole stub to a testify mock.
+	isTxConfirmed func(txid string) (bool, *ports.BlockTimestamp, error)
 }
 
 func (m *mockWalletService) BroadcastTransaction(
@@ -280,7 +286,10 @@ func (m *mockWalletService) Status(ctx context.Context) (ports.WalletStatus, err
 	return nil, nil
 }
 func (m *mockWalletService) GetNetwork(ctx context.Context) (*arklib.Network, error) {
-	return nil, nil
+	// A nil network is never valid - callers read network.Name - so return one
+	// rather than handing back something that can only panic.
+	network := arklib.BitcoinRegTest
+	return &network, nil
 }
 func (m *mockWalletService) GetForfeitPubkey(ctx context.Context) (*btcec.PublicKey, error) {
 	return nil, nil
@@ -368,6 +377,9 @@ func (m *mockWalletService) GetNotificationChannel(
 func (m *mockWalletService) IsTransactionConfirmed(
 	ctx context.Context, txid string,
 ) (bool, *ports.BlockTimestamp, error) {
+	if m.isTxConfirmed != nil {
+		return m.isTxConfirmed(txid)
+	}
 	return false, nil, nil
 }
 func (m *mockWalletService) RescanUtxos(ctx context.Context, outpoints []wire.OutPoint) error {
@@ -376,6 +388,7 @@ func (m *mockWalletService) RescanUtxos(ctx context.Context, outpoints []wire.Ou
 
 type mockVtxoRepository struct {
 	mock.Mock
+	onUpdateExpiration func(outpoints []domain.Outpoint, expiresAt int64)
 }
 
 func (m *mockVtxoRepository) GetAllChildrenVtxos(
@@ -457,6 +470,9 @@ func (m *mockVtxoRepository) GetRecoverableLiquidity(ctx context.Context) (uint6
 func (m *mockVtxoRepository) UpdateVtxosExpiration(
 	ctx context.Context, outpoints []domain.Outpoint, expiresAt int64,
 ) error {
+	if m.onUpdateExpiration != nil {
+		m.onUpdateExpiration(outpoints, expiresAt)
+	}
 	return nil
 }
 
@@ -584,6 +600,7 @@ func (m *mockMarkerRepository) Close() {}
 
 type mockTxBuilder struct {
 	mock.Mock
+	sweepableBatchOutputs func(*tree.TxTree) (*tree.SweepParams, *ports.TxInput, error)
 }
 
 func (m *mockTxBuilder) BuildSweepTx(inputs []ports.TxInput) (string, string, error) {
@@ -595,7 +612,7 @@ func (m *mockTxBuilder) BuildSweepTx(inputs []ports.TxInput) (string, string, er
 func (m *mockTxBuilder) BuildCommitmentTx(
 	signerPubkey *btcec.PublicKey, intents domain.Intents,
 	boardingInputs []ports.BoardingInput, cosigners [][]string,
-	vtxoTreeExpiry arklib.RelativeLocktime,
+	sweepParams tree.SweepParams,
 ) (string, *tree.TxTree, string, *tree.TxTree, error) {
 	return "", nil, "", nil, nil
 }
@@ -608,7 +625,10 @@ func (m *mockTxBuilder) VerifyForfeitTxs(
 
 func (m *mockTxBuilder) GetSweepableBatchOutputs(
 	vtxoTree *tree.TxTree,
-) (*arklib.RelativeLocktime, *ports.TxInput, error) {
+) (*tree.SweepParams, *ports.TxInput, error) {
+	if m.sweepableBatchOutputs != nil {
+		return m.sweepableBatchOutputs(vtxoTree)
+	}
 	return nil, nil, nil
 }
 func (m *mockTxBuilder) FinalizeAndExtract(tx string) (string, error) { return "", nil }
@@ -628,13 +648,14 @@ func (m *mockTxBuilder) VerifyBoardingTapscriptSigs(
 type mockRepoManager struct {
 	vtxos   *mockVtxoRepository
 	markers *mockMarkerRepository
+	rounds  domain.RoundRepository
 }
 
 func (m *mockRepoManager) Events() domain.EventRepository {
 	return nil
 }
 func (m *mockRepoManager) Rounds() domain.RoundRepository {
-	return nil
+	return m.rounds
 }
 func (m *mockRepoManager) Vtxos() domain.VtxoRepository {
 	return m.vtxos
@@ -684,4 +705,417 @@ func newTestSweeper(t *testing.T) (
 	scheduler := &mockScheduler{}
 	s := newSweeper(wallet, repoManager, builder, scheduler)
 	return wallet, vtxoRepo, markerRepo, builder, s
+}
+
+// controllableScheduler captures the scheduled closure so a test can fire it on
+// demand. mockScheduler above is a no-op and cannot drive scheduleTask.
+type controllableScheduler struct {
+	fn func()
+}
+
+func (s *controllableScheduler) Start()               {}
+func (s *controllableScheduler) Stop()                {}
+func (s *controllableScheduler) Unit() ports.TimeUnit { return ports.UnixTime }
+func (s *controllableScheduler) AfterNow(expiry int64) bool {
+	return true // always "in the future" so scheduleTask registers rather than running inline
+}
+func (s *controllableScheduler) ScheduleTaskOnce(at int64, task func()) error {
+	s.fn = task
+	return nil
+}
+func (s *controllableScheduler) fire() {
+	if s.fn != nil {
+		s.fn()
+	}
+}
+
+// newSchedulableSweeper builds a sweeper wired to a scheduler the test controls.
+// newTestSweeper above uses mockScheduler, whose ScheduleTaskOnce is a no-op.
+func newSchedulableSweeper(sched ports.SchedulerService, attempts int) *sweeper {
+	s := newSweeper(&mockWalletService{}, &mockRepoManager{}, &mockTxBuilder{}, sched)
+	s.ctx = context.Background()
+	// per-instance, so shrinking the policy cannot race another test
+	s.retryDelay = time.Millisecond
+	s.retryAttempts = attempts
+	return s
+}
+
+// TestScheduleTaskRetriesFailedExecution pins that a sweep whose broadcast fails
+// is re-attempted rather than silently dropped. Before this, a single mempool
+// conflict left the batch unswept until an operator restart.
+func TestScheduleTaskRetriesFailedExecution(t *testing.T) {
+	sched := &controllableScheduler{}
+	s := newSchedulableSweeper(sched, 3)
+
+	calls := 0
+	require.NoError(t, s.scheduleTask(sweeperTask{
+		id: "task-fail",
+		at: time.Now().Add(time.Hour).Unix(),
+		execute: func() error {
+			calls++
+			return fmt.Errorf("broadcast rejected")
+		},
+	}))
+
+	sched.fire()
+
+	// one initial attempt plus sweepRetryAttempts retries
+	require.Equal(t, 1+3, calls, "a failed sweep must be retried, not dropped")
+}
+
+// TestScheduleTaskStopsRetryingOnSuccess pins that a retry that succeeds ends the
+// loop instead of burning the remaining attempts.
+func TestScheduleTaskStopsRetryingOnSuccess(t *testing.T) {
+	sched := &controllableScheduler{}
+	s := newSchedulableSweeper(sched, 5)
+
+	calls := 0
+	require.NoError(t, s.scheduleTask(sweeperTask{
+		id: "task-eventually-ok",
+		at: time.Now().Add(time.Hour).Unix(),
+		execute: func() error {
+			calls++
+			if calls < 3 {
+				return fmt.Errorf("still conflicting")
+			}
+			return nil
+		},
+	}))
+
+	sched.fire()
+	require.Equal(t, 3, calls, "retrying must stop as soon as the sweep succeeds")
+}
+
+// TestScheduleTaskFreesDedupSlot pins that the id is released once the task has
+// run, so a later schedule for the same tree is accepted. scheduledTasks is a
+// dedup guard: holding the id past execution would block re-scheduling entirely.
+func TestScheduleTaskFreesDedupSlot(t *testing.T) {
+	sched := &controllableScheduler{}
+	s := newSchedulableSweeper(sched, 1)
+
+	at := time.Now().Add(time.Hour).Unix()
+	failing := sweeperTask{
+		id: "task-slot", at: at,
+		execute: func() error { return fmt.Errorf("broadcast rejected") },
+	}
+	require.NoError(t, s.scheduleTask(failing))
+
+	s.locker.Lock()
+	_, registered := s.scheduledTasks["task-slot"]
+	s.locker.Unlock()
+	require.True(t, registered, "task must occupy the dedup slot while pending")
+
+	sched.fire()
+
+	s.locker.Lock()
+	_, stillHeld := s.scheduledTasks["task-slot"]
+	s.locker.Unlock()
+	require.False(t, stillHeld, "dedup slot must be released so the id can be re-scheduled")
+
+	second := 0
+	require.NoError(t, s.scheduleTask(sweeperTask{
+		id: "task-slot", at: at,
+		execute: func() error { second++; return nil },
+	}))
+	sched.fire()
+	require.Equal(t, 1, second, "a fresh schedule for the same id must be accepted")
+}
+
+// TestScheduleTaskRetriesAlreadyDueTask covers the path a restart takes. When a
+// batch expired while the service was down, AfterNow is false and scheduleTask
+// runs the task inline rather than handing it to the scheduler. That path must
+// use the same bounded retry policy - it is the case that most needs it, since
+// nothing will re-arm the task until the next restart.
+func TestScheduleTaskRetriesAlreadyDueTask(t *testing.T) {
+	sched := &immediateScheduler{}
+	s := newSchedulableSweeper(sched, 3)
+
+	calls := 0
+	err := s.scheduleTask(sweeperTask{
+		id: "already-due",
+		at: time.Now().Add(-time.Hour).Unix(),
+		execute: func() error {
+			calls++
+			return fmt.Errorf("broadcast rejected")
+		},
+	})
+
+	require.Error(t, err, "the final failure must still reach the caller")
+	require.Equal(t, 1+3, calls, "an already-due task must retry like a scheduled one")
+}
+
+// immediateScheduler reports every task as already due, which is what a restart
+// looks like for a batch that expired while the service was down.
+type immediateScheduler struct{}
+
+func (s *immediateScheduler) Start()                               {}
+func (s *immediateScheduler) Stop()                                {}
+func (s *immediateScheduler) Unit() ports.TimeUnit                 { return ports.UnixTime }
+func (s *immediateScheduler) AfterNow(expiry int64) bool           { return false }
+func (s *immediateScheduler) ScheduleTaskOnce(int64, func()) error { return nil }
+
+// recordingScheduler records what each task was scheduled for, so a test can
+// assert on the time rather than only on the fact that something was scheduled.
+type recordingScheduler struct {
+	mu   sync.Mutex
+	at   []int64
+	unit ports.TimeUnit
+	now  int64
+}
+
+func (s *recordingScheduler) Start() {}
+func (s *recordingScheduler) Stop()  {}
+func (s *recordingScheduler) Unit() ports.TimeUnit {
+	if s.unit == 0 {
+		return ports.UnixTime
+	}
+	return s.unit
+}
+func (s *recordingScheduler) AfterNow(expiry int64) bool { return expiry > s.now }
+func (s *recordingScheduler) ScheduleTaskOnce(at int64, task func()) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.at = append(s.at, at)
+	return nil
+}
+func (s *recordingScheduler) scheduled() []int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]int64(nil), s.at...)
+}
+
+// TestBatchSweepTaskSchedulesEpochBatchAtItsDate covers the path every restart
+// takes: sweeper.start runs the batch sweep task immediately for each live
+// batch, finds the batch output is not yet mature, and reschedules it.
+//
+// The reschedule used to derive its own time instead of reusing the maturity
+// findSweepableOutputs had just computed, reading the relative psbt field as a
+// tree expiry. For an epoch batch that field carries the unroll grace, so the
+// sweep was scheduled a grace period after the commitment confirmed - hours
+// rather than weeks - and the same wrong value was written onto every leaf
+// vtxo's expiry.
+func TestBatchSweepTaskSchedulesEpochBatchAtItsDate(t *testing.T) {
+	const (
+		commitmentTxid = "0000000000000000000000000000000000000000000000000000000000000abc"
+		graceSeconds   = 7168 // ~2h, the unroll grace an epoch tree carries in field 3
+	)
+
+	now := time.Now().Unix()
+	commitmentConfirmedAt := now - 60
+	// The epoch date: weeks out, nothing like commitmentConfirmedAt+grace.
+	epochDate := arklib.AbsoluteLocktime(now + 21*24*3600)
+	grace := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: graceSeconds}
+
+	flatTree, rootTxid := buildEpochTestTree(t, commitmentTxid, epochDate, grace)
+
+	sched := &recordingScheduler{now: now}
+	wallet := &mockWalletService{}
+	vtxoRepo := &mockVtxoRepository{}
+	builder := &mockTxBuilder{}
+	rounds := &mockedRoundRepo{}
+	rounds.On("GetRoundVtxoTree", mock.Anything, commitmentTxid).Return(flatTree, nil)
+
+	repoManager := &mockRepoManager{
+		vtxos: vtxoRepo, markers: &mockMarkerRepository{}, rounds: rounds,
+	}
+	s := newSweeper(wallet, repoManager, builder, sched)
+
+	// The batch root is unconfirmed; the commitment above it is confirmed. That is
+	// what an untouched, still-live batch looks like.
+	wallet.isTxConfirmed = func(txid string) (bool, *ports.BlockTimestamp, error) {
+		if txid == commitmentTxid {
+			return true, &ports.BlockTimestamp{Time: commitmentConfirmedAt, Height: 100}, nil
+		}
+		return false, &ports.BlockTimestamp{}, nil
+	}
+
+	builder.sweepableBatchOutputs = func(
+		*tree.TxTree,
+	) (*tree.SweepParams, *ports.TxInput, error) {
+		date := epochDate
+		return &tree.SweepParams{Expiry: grace, BatchExpiry: &date},
+			&ports.TxInput{Txid: commitmentTxid, Index: 0, Value: 10000}, nil
+	}
+
+	// Subtree scheduling is dispatched concurrently, so the expiry writes arrive
+	// on another goroutine.
+	var expiryMu sync.Mutex
+	var recorded []int64
+	vtxoRepo.onUpdateExpiration = func(_ []domain.Outpoint, expiresAt int64) {
+		expiryMu.Lock()
+		defer expiryMu.Unlock()
+		recorded = append(recorded, expiresAt)
+	}
+	recordedExpiries := func() []int64 {
+		expiryMu.Lock()
+		defer expiryMu.Unlock()
+		return append([]int64(nil), recorded...)
+	}
+
+	require.NoError(t, s.createBatchSweepTask(commitmentTxid, rootTxid)())
+
+	// Subtrees are scheduled on their own goroutines, so wait for both the
+	// schedule and the expiry write rather than racing them.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(sched.scheduled()) > 0 && len(recordedExpiries()) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	wrong := commitmentConfirmedAt + graceSeconds
+	scheduled := sched.scheduled()
+	require.NotEmpty(t, scheduled, "the batch sweep must be rescheduled, not dropped")
+	for _, at := range scheduled {
+		require.NotEqual(t, wrong, at, "scheduled at commitment+grace instead of the epoch date")
+		require.Equal(t, int64(epochDate), at, "an epoch batch must sweep at its epoch date")
+	}
+
+	expiryWrites := recordedExpiries()
+	require.NotEmpty(t, expiryWrites, "leaf vtxo expiries must be updated")
+	for _, at := range expiryWrites {
+		require.Equal(
+			t, int64(epochDate), at,
+			"leaf vtxos must carry the epoch date, not commitment+grace",
+		)
+	}
+}
+
+// buildEpochTestTree returns a two-node tree whose root spends the commitment's
+// batch output and carries the epoch psbt fields, plus the root txid.
+func buildEpochTestTree(
+	t *testing.T, commitmentTxid string, date arklib.AbsoluteLocktime,
+	grace arklib.RelativeLocktime,
+) (tree.FlatTxTree, string) {
+	t.Helper()
+
+	commitmentHash, err := chainhash.NewHashFromStr(commitmentTxid)
+	require.NoError(t, err)
+
+	rootPtx, err := psbt.New(
+		[]*wire.OutPoint{{Hash: *commitmentHash, Index: 0}},
+		[]*wire.TxOut{{Value: 10000, PkScript: append([]byte{0x51, 0x20}, make([]byte, 32)...)}},
+		2, 0, []uint32{wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+	require.NoError(t, txutils.SetArkPsbtField(
+		rootPtx, 0, txutils.VtxoTreeExpiryField, grace,
+	))
+	require.NoError(t, txutils.SetArkPsbtField(
+		rootPtx, 0, txutils.BatchExpiryField, date,
+	))
+	rootTxid := rootPtx.UnsignedTx.TxID()
+	rootB64, err := rootPtx.B64Encode()
+	require.NoError(t, err)
+
+	rootHash, err := chainhash.NewHashFromStr(rootTxid)
+	require.NoError(t, err)
+	leafScript := append([]byte{0x51, 0x20}, make([]byte, 32)...)
+	leafScript[2] = 0x01
+	leafPtx, err := psbt.New(
+		[]*wire.OutPoint{{Hash: *rootHash, Index: 0}},
+		[]*wire.TxOut{{Value: 10000, PkScript: leafScript}},
+		2, 0, []uint32{wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+	leafTxid := leafPtx.UnsignedTx.TxID()
+	leafB64, err := leafPtx.B64Encode()
+	require.NoError(t, err)
+
+	return tree.FlatTxTree{
+		{Txid: rootTxid, Tx: rootB64, Children: map[uint32]string{0: leafTxid}},
+		{Txid: leafTxid, Tx: leafB64, Children: nil},
+	}, rootTxid
+}
+
+// TestBatchSweepTaskSchedulesUnrolledBranchAfterItsGrace covers the design's
+// central claim about unilateral exit, and the half of it no unit test reached:
+// that the sweeper actually derives a mid-flight unroll's maturity from the node
+// that appeared, not from the batch.
+//
+// epochMaturity's arithmetic is pinned in TestEpochMaturity. What is pinned here
+// is the wiring - that findSweepableOutputs measures from the confirmation of
+// the node directly above the frontier. Both scheduling bugs found in this work
+// were wiring, not arithmetic: one measured from the batch root's parent, the
+// other read the wrong psbt field entirely.
+//
+// The tree here is one the user has begun to unroll: the root is confirmed (they
+// broadcast it), its child is not. So the child's batch output appeared at the
+// root's confirmation time, and if that is late enough in the epoch it matures
+// after the boundary rather than at it.
+func TestBatchSweepTaskSchedulesUnrolledBranchAfterItsGrace(t *testing.T) {
+	const (
+		commitmentTxid = "0000000000000000000000000000000000000000000000000000000000000abc"
+		graceSeconds   = 7168
+	)
+
+	now := time.Now().Unix()
+	epochDate := arklib.AbsoluteLocktime(now + 3600)
+	grace := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: graceSeconds}
+
+	// The unroll lands one minute before the boundary, so the new output's grace
+	// runs past it: max(E, u+grace) resolves to u+grace.
+	unrolledAt := int64(epochDate) - 60
+	wantAt := unrolledAt + graceSeconds
+	require.Greater(t, wantAt, int64(epochDate), "precondition: the grace must outlast the boundary")
+
+	flatTree, rootTxid := buildEpochTestTree(t, commitmentTxid, epochDate, grace)
+	leafTxid := flatTree[1].Txid
+
+	sched := &recordingScheduler{now: now}
+	wallet := &mockWalletService{}
+	vtxoRepo := &mockVtxoRepository{}
+	builder := &mockTxBuilder{}
+	rounds := &mockedRoundRepo{}
+	rounds.On("GetRoundVtxoTree", mock.Anything, commitmentTxid).Return(flatTree, nil)
+
+	s := newSweeper(wallet, &mockRepoManager{
+		vtxos: vtxoRepo, markers: &mockMarkerRepository{}, rounds: rounds,
+	}, builder, sched)
+
+	// The root is onchain; the leaf below it is not. That is a branch part-way
+	// through a unilateral exit.
+	wallet.isTxConfirmed = func(txid string) (bool, *ports.BlockTimestamp, error) {
+		switch txid {
+		case commitmentTxid:
+			return true, &ports.BlockTimestamp{Time: now - 86400, Height: 100}, nil
+		case rootTxid:
+			return true, &ports.BlockTimestamp{Time: unrolledAt, Height: 200}, nil
+		default:
+			return false, &ports.BlockTimestamp{}, nil
+		}
+	}
+
+	// The sweepable output is the leaf's input, i.e. the output the root created
+	// when it was broadcast.
+	builder.sweepableBatchOutputs = func(
+		g *tree.TxTree,
+	) (*tree.SweepParams, *ports.TxInput, error) {
+		require.Equal(
+			t, leafTxid, g.Root.UnsignedTx.TxID(),
+			"the frontier of a part-unrolled branch is the first unconfirmed node",
+		)
+		date := epochDate
+		return &tree.SweepParams{Expiry: grace, BatchExpiry: &date},
+			&ports.TxInput{Txid: rootTxid, Index: 0, Value: 10000}, nil
+	}
+
+	require.NoError(t, s.createBatchSweepTask(commitmentTxid, rootTxid)())
+
+	deadline := time.Now().Add(5 * time.Second)
+	for len(sched.scheduled()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	scheduled := sched.scheduled()
+	require.NotEmpty(t, scheduled, "the unrolled branch must still be scheduled")
+	for _, at := range scheduled {
+		require.NotEqual(
+			t, int64(epochDate), at,
+			"a branch unrolled inside the grace must not be swept at the epoch date - "+
+				"that is the window the exiting user is owed",
+		)
+		require.Equal(t, wantAt, at, "must mature a grace period after the node appeared")
+	}
 }

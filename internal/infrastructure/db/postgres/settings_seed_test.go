@@ -92,6 +92,12 @@ CREATE TABLE settings (
     build_version_header_required BOOLEAN NOT NULL DEFAULT FALSE,
     digest_header_required BOOLEAN NOT NULL DEFAULT FALSE,
     batch_trigger TEXT NOT NULL DEFAULT '',
+    epoch_expiry_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    epoch_anchor BIGINT NOT NULL DEFAULT 0,
+    epoch_length BIGINT NOT NULL DEFAULT 0,
+    rollover_window BIGINT NOT NULL DEFAULT 0,
+    settlement_cutoff BIGINT NOT NULL DEFAULT 0,
+    unroll_grace BIGINT NOT NULL DEFAULT 0,
     updated_at BIGINT NOT NULL
 );
 CREATE TABLE intent_fees (

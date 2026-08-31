@@ -361,3 +361,66 @@ func (m *mockRoundRepository) GetRoundSummaries(
 	m.gotWithFailed, m.gotWithCompleted, m.gotOnlyFailed = withFailed, withCompleted, onlyFailed
 	return m.summaries, nil
 }
+
+// TestUpdateSettingsRefusesEpochOnBlockScheduler covers a gap that
+// Settings.Validate cannot close on its own.
+//
+// The sweep scheduler is chosen once at startup from the configured locktime
+// type. Validate only sees the settings value, so on a deployment that booted
+// block-based an operator could switch vtxo_tree_expiry to seconds, enable epoch
+// expiry, pass validation, and still be left with a scheduler that reads an
+// epoch date as a block height roughly 1.8 billion ahead - batches that silently
+// never sweep. The admin service checks the unit the sweeper is actually on.
+func TestUpdateSettingsRefusesEpochOnBlockScheduler(t *testing.T) {
+	ctx := context.Background()
+
+	seed := validSettings()
+	seed.EpochAnchor = time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+	seed.EpochLength = 28 * 24 * time.Hour
+	seed.RolloverWindow = 7 * 24 * time.Hour
+	seed.SettlementCutoff = 24 * time.Hour
+	seed.UnrollGrace = arklib.RelativeLocktime{
+		Type: arklib.LocktimeTypeSecond, Value: 7168,
+	}
+
+	newSvc := func(t *testing.T, unit ports.TimeUnit) application.AdminService {
+		t.Helper()
+		repo := &mockRepoManager{settingsRepo: &mockSettingsRepository{}}
+		require.NoError(t, repo.settingsRepo.Upsert(ctx, seed, nil))
+		return application.NewAdminService(nil, repo, nil, nil, unit, nil)
+	}
+
+	enabled := true
+
+	t.Run("refused on a block-height sweeper", func(t *testing.T) {
+		svc := newSvc(t, ports.BlockHeight)
+
+		_, err := svc.UpdateSettings(ctx, domain.SettingsUpdate{
+			EpochExpiryEnabled: &enabled,
+		})
+		require.ErrorContains(t, err, "time-based sweep scheduler")
+	})
+
+	t.Run("allowed on a time-based sweeper", func(t *testing.T) {
+		svc := newSvc(t, ports.UnixTime)
+
+		changelog, err := svc.UpdateSettings(ctx, domain.SettingsUpdate{
+			EpochExpiryEnabled: &enabled,
+		})
+		require.NoError(t, err)
+		require.Contains(t, changelog, "epoch_expiry_enabled")
+	})
+
+	// The guard must not block unrelated updates on a block-height deployment,
+	// which is every deployment that exists today.
+	t.Run("unrelated updates still work on a block-height sweeper", func(t *testing.T) {
+		svc := newSvc(t, ports.BlockHeight)
+
+		count := int64(2)
+		changelog, err := svc.UpdateSettings(ctx, domain.SettingsUpdate{
+			RoundMinParticipantsCount: &count,
+		})
+		require.NoError(t, err)
+		require.Contains(t, changelog, "round_min_participants_count")
+	})
+}

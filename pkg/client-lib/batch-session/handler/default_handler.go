@@ -16,7 +16,6 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -75,6 +74,8 @@ type defaultHandler struct {
 
 	batchSessionId string
 	batchExpiry    arklib.RelativeLocktime
+	// set only for an epoch batch; nil means the legacy relative scheme
+	batchExpiryDate *arklib.AbsoluteLocktime
 	// internal count to handle TreeNoncesEvent
 	countSigningDone int
 }
@@ -104,6 +105,15 @@ func (h *defaultHandler) OnBatchStarted(
 				return false, -1, err
 			}
 			h.batchSessionId = event.Id
+			if event.BatchExpiryDate > 0 {
+				// An epoch batch: BatchExpiry carries the unroll grace and the
+				// shared date arrives separately.
+				date := arklib.AbsoluteLocktime(event.BatchExpiryDate)
+				h.batchExpiryDate = &date
+				h.batchExpiry = getBatchExpiryLocktime(uint32(event.UnrollGrace))
+				return false, time.Until(time.Unix(event.BatchExpiryDate, 0)), nil
+			}
+			h.batchExpiryDate = nil
 			h.batchExpiry = getBatchExpiryLocktime(uint32(event.BatchExpiry))
 			expiry := time.Duration(event.BatchExpiry) * time.Second
 			if h.batchExpiry.Type == arklib.LocktimeTypeBlock {
@@ -163,14 +173,7 @@ func (h *defaultHandler) OnTreeSigningStarted(
 		return false, fmt.Errorf("not all signers found in cosigner list")
 	}
 
-	sweepClosure := script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{
-			h.ServerParams.ForfeitPubKey,
-		}},
-		Locktime: h.batchExpiry,
-	}
-
-	script, err := sweepClosure.Script()
+	root, _, err := h.sweepParams().Root(h.ServerParams.ForfeitPubKey)
 	if err != nil {
 		return false, err
 	}
@@ -182,10 +185,6 @@ func (h *defaultHandler) OnTreeSigningStarted(
 
 	batchOutput := commitmentTx.UnsignedTx.TxOut[0]
 	batchOutputAmount := batchOutput.Value
-
-	sweepTapLeaf := txscript.NewBaseTapLeaf(script)
-	sweepTapTree := txscript.AssembleTaprootScriptTree(sweepTapLeaf)
-	root := sweepTapTree.RootNode.TapHash()
 
 	generateAndSendNonces := func(session tree.SignerSession) error {
 		if err := session.Init(root.CloneBytes(), batchOutputAmount, vtxoTree); err != nil {
@@ -451,7 +450,7 @@ func (h *defaultHandler) validateVtxoTree(
 	// validate the vtxo tree is well formed
 	if !isOnchainOnly(h.Receivers) {
 		if err := tree.ValidateVtxoTree(
-			vtxoTree, commitmentPtx, h.ServerParams.ForfeitPubKey, h.batchExpiry,
+			vtxoTree, commitmentPtx, h.ServerParams.ForfeitPubKey, h.sweepParams(),
 		); err != nil {
 			return err
 		}
@@ -637,4 +636,9 @@ func (h *defaultHandler) createAndSignForfeits(
 	}
 
 	return signedForfeitTxs, nil
+}
+
+// sweepParams returns the sweep scheme this batch session was told to expect.
+func (h *defaultHandler) sweepParams() tree.SweepParams {
+	return tree.SweepParams{Expiry: h.batchExpiry, BatchExpiry: h.batchExpiryDate}
 }

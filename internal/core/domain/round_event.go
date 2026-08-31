@@ -27,6 +27,7 @@ type RoundFinalizationStarted struct {
 	CommitmentTxid     string
 	CommitmentTx       string
 	VtxoTreeExpiration int64
+	EpochExpiry        int64
 }
 
 type RoundFinalized struct {

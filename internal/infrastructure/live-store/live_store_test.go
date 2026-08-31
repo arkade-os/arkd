@@ -1236,12 +1236,12 @@ func (m *mockedTxBuilder) VerifyForfeitTxs(
 
 func (m *mockedTxBuilder) BuildCommitmentTx(
 	signerPubkey *btcec.PublicKey, intents domain.Intents, boardingInputs []ports.BoardingInput,
-	cosignerPubkeys [][]string, vtxoTreeExpiry arklib.RelativeLocktime,
+	cosignerPubkeys [][]string, sweepParams tree.SweepParams,
 ) (
 	commitmentTx string, vtxoTree *tree.TxTree,
 	connectorAddress string, connectors *tree.TxTree, err error,
 ) {
-	args := m.Called(signerPubkey, intents, boardingInputs, cosignerPubkeys, vtxoTreeExpiry)
+	args := m.Called(signerPubkey, intents, boardingInputs, cosignerPubkeys, sweepParams)
 	res0 := args.Get(0).(string)
 	res1 := args.Get(1).(*tree.TxTree)
 	res2 := args.Get(2).(string)
@@ -1260,9 +1260,9 @@ func (m *mockedTxBuilder) BuildSweepTx(
 
 func (m *mockedTxBuilder) GetSweepableBatchOutputs(
 	vtxoTree *tree.TxTree,
-) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput *ports.TxInput, err error) {
+) (sweepParams *tree.SweepParams, sweepInput *ports.TxInput, err error) {
 	args := m.Called(vtxoTree)
-	res0 := args.Get(0).(*arklib.RelativeLocktime)
+	res0 := args.Get(0).(*tree.SweepParams)
 	res1 := args.Get(1).(*ports.TxInput)
 	return res0, res1, args.Error(2)
 }

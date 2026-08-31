@@ -61,6 +61,12 @@
         "properties": {
           "batchExpiry": {
             "type": "integer",
+            "description": "A relative locktime. For a legacy batch this is the vtxo tree expiry; for\nan epoch batch it carries the per-level unroll grace instead.",
+            "format": "int64"
+          },
+          "batchExpiryDate": {
+            "type": "integer",
+            "description": "Absolute epoch expiry, unix seconds. Zero for a legacy batch.\n\nCarried separately rather than reusing field 3: a client that predates\nepoch expiry reads that field as a relative locktime and would fail BIP68\nencoding on an absolute timestamp. Leaving it as the grace keeps old\nclients failing closed on the tree validation instead, which is the same\noutcome with a clearer cause.",
             "format": "int64"
           },
           "id": {
@@ -71,6 +77,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "unrollGrace": {
+            "type": "integer",
+            "description": "Relative unroll grace for an epoch batch. Zero for a legacy batch.",
+            "format": "int64"
           }
         }
       },

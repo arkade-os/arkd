@@ -66,6 +66,26 @@ type Settings struct {
 	DigestHeaderRequired          bool
 	BatchTrigger                  string
 	UpdatedAt                     time.Time
+
+	// Epoch expiry. While EpochExpiryEnabled is false the rest are ignored and
+	// batches keep using VtxoTreeExpiry as a relative CSV, exactly as before.
+	EpochExpiryEnabled bool
+	EpochAnchor        time.Time
+	EpochLength        time.Duration
+	RolloverWindow     time.Duration
+	SettlementCutoff   time.Duration
+	UnrollGrace        arklib.RelativeLocktime
+}
+
+// EpochSchedule projects the epoch-related settings into the value type that owns
+// the boundary arithmetic.
+func (s Settings) EpochSchedule() EpochSchedule {
+	return EpochSchedule{
+		Anchor:           s.EpochAnchor,
+		Length:           s.EpochLength,
+		RolloverWindow:   s.RolloverWindow,
+		SettlementCutoff: s.SettlementCutoff,
+	}
 }
 
 func NewSettings(
@@ -253,6 +273,60 @@ func (s Settings) Validate() error {
 	if _, err := batchtrigger.New(s.BatchTrigger); err != nil {
 		return fmt.Errorf("invalid batch trigger program: %w", err)
 	}
+
+	if s.EpochExpiryEnabled {
+		// An epoch date is a unix timestamp. A block-type deployment measures every
+		// other delay in blocks and runs a block-height sweep scheduler, which
+		// would read that timestamp as a block height roughly 1.8 billion blocks
+		// away - the batch would simply never be swept. Refuse the combination
+		// rather than accept a configuration that silently strands funds.
+		if s.VtxoTreeExpiry.Type == arklib.LocktimeTypeBlock {
+			return fmt.Errorf(
+				"epoch expiry requires seconds-based locktimes, but this deployment " +
+					"uses block-based ones",
+			)
+		}
+		if err := s.EpochSchedule().Validate(); err != nil {
+			return fmt.Errorf("invalid epoch schedule: %w", err)
+		}
+		// The unroll grace joins the existing same-type rule: mixing block- and
+		// time-based delays in one deployment is already rejected above.
+		if s.UnrollGrace.Type != s.VtxoTreeExpiry.Type {
+			return fmt.Errorf(
+				"all delays must be above or below value %d "+
+					"(unroll grace and vtxo tree expiry type mismatch)",
+				arklib.MinAllowedSequence,
+			)
+		}
+		if s.UnrollGrace.Value == 0 {
+			return fmt.Errorf("unroll grace must be greater than 0")
+		}
+		// The grace has to be shorter than the rollover window, and this is not a
+		// tidiness rule - it is what makes the whole scheme work.
+		//
+		// A node matures at max(E, appearedAt+grace). Every batch is minted at
+		// least a rollover window before its date, so a grace under that window
+		// leaves an untouched node maturing exactly at E: one sweep for the epoch,
+		// one shared expiry, vtxos that are expiry-fungible. Let the grace exceed
+		// the window and the max flips for untouched nodes too - every batch then
+		// matures a grace period after its own commitment confirmed, so no two
+		// batches share a date and the vtxos land off the boundary grid entirely,
+		// where the settlement admission window stops recognising them. Both
+		// headline properties are lost silently, with nothing in the logs.
+		if grace := s.UnrollGrace.Seconds(); grace >= int64(s.RolloverWindow.Seconds()) {
+			return fmt.Errorf(
+				"unroll grace (%ds) must be shorter than the rollover window (%s), "+
+					"otherwise batches stop sharing an expiry date",
+				grace, s.RolloverWindow,
+			)
+		}
+		// A grace period that cannot be BIP68-encoded would only fail when a
+		// batch is already in flight and the sweep leaf is being built.
+		if _, err := arklib.BIP68Sequence(s.UnrollGrace); err != nil {
+			return fmt.Errorf("invalid unroll grace: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -284,6 +358,13 @@ type SettingsUpdate struct {
 	BuildVersionHeaderRequired    *bool
 	DigestHeaderRequired          *bool
 	BatchTrigger                  *string
+
+	EpochExpiryEnabled *bool
+	EpochAnchor        *time.Time
+	EpochLength        *time.Duration
+	RolloverWindow     *time.Duration
+	SettlementCutoff   *time.Duration
+	UnrollGrace        *arklib.RelativeLocktime
 }
 
 // Update updates any field of Settings but ScheduledSession and BatchFees and returns a changelog
@@ -392,6 +473,47 @@ func (s *Settings) Update(u SettingsUpdate) ([]string, error) {
 	if u.BatchTrigger != nil {
 		updated.BatchTrigger = *u.BatchTrigger
 		changelog = append(changelog, "batch_trigger")
+	}
+	if u.EpochExpiryEnabled != nil {
+		updated.EpochExpiryEnabled = *u.EpochExpiryEnabled
+		changelog = append(changelog, "epoch_expiry_enabled")
+	}
+	if u.EpochAnchor != nil && !u.EpochAnchor.Equal(updated.EpochAnchor) {
+		// The anchor fixes the phase of the whole boundary grid. Moving it while
+		// batches are being minted against the old grid does not touch those
+		// batches - they carry their date on the round and in their own sweep
+		// leaves - but new batches would land on a different set of dates, so more
+		// than two expiry dates go live at once and vtxos minted either side stop
+		// being expiry-fungible. That is the property the scheme exists to provide.
+		//
+		// Setting it while epoch expiry is off is the go-live path and stays
+		// allowed, including in the same update that turns the flag on. Changing it
+		// afterwards means first turning epoch expiry off and waiting for the
+		// batches on the old grid to drain.
+		if s.EpochExpiryEnabled {
+			return nil, fmt.Errorf(
+				"epoch_anchor cannot be changed while epoch_expiry_enabled is true: " +
+					"batches are already committing to the current boundaries",
+			)
+		}
+		updated.EpochAnchor = *u.EpochAnchor
+		changelog = append(changelog, "epoch_anchor")
+	}
+	if u.EpochLength != nil {
+		updated.EpochLength = *u.EpochLength
+		changelog = append(changelog, "epoch_length")
+	}
+	if u.RolloverWindow != nil {
+		updated.RolloverWindow = *u.RolloverWindow
+		changelog = append(changelog, "rollover_window")
+	}
+	if u.SettlementCutoff != nil {
+		updated.SettlementCutoff = *u.SettlementCutoff
+		changelog = append(changelog, "settlement_cutoff")
+	}
+	if u.UnrollGrace != nil {
+		updated.UnrollGrace = *u.UnrollGrace
+		changelog = append(changelog, "unroll_grace")
 	}
 
 	if err := updated.Validate(); err != nil {

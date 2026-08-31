@@ -101,11 +101,16 @@ services:
       # First-boot seed overrides so the DB-backed settings are short enough
       # for the e2e harness. Only consulted when the settings table is empty.
       # Values match master's regtest defaults (all block-based, same type).
+      # Overridable together so the epoch suite can boot a seconds-based
+      # deployment: the sweep scheduler is chosen at startup from the locktime
+      # type, and epoch expiry is refused on a block-height one. All five have to
+      # move at once - config validation requires them to share a type. See
+      # make docker-run-epoch.
       - ARKD_VTXO_TREE_EXPIRY=${ARKD_VTXO_TREE_EXPIRY:-40}
-      - ARKD_UNILATERAL_EXIT_DELAY=20
-      - ARKD_PUBLIC_UNILATERAL_EXIT_DELAY=20
-      - ARKD_BOARDING_EXIT_DELAY=30
-      - ARKD_CHECKPOINT_EXIT_DELAY=10
+      - ARKD_UNILATERAL_EXIT_DELAY=${ARKD_UNILATERAL_EXIT_DELAY:-20}
+      - ARKD_PUBLIC_UNILATERAL_EXIT_DELAY=${ARKD_PUBLIC_UNILATERAL_EXIT_DELAY:-20}
+      - ARKD_BOARDING_EXIT_DELAY=${ARKD_BOARDING_EXIT_DELAY:-30}
+      - ARKD_CHECKPOINT_EXIT_DELAY=${ARKD_CHECKPOINT_EXIT_DELAY:-10}
       - ARKD_ROUND_MIN_PARTICIPANTS_COUNT=${ARKD_ROUND_MIN_PARTICIPANTS_COUNT:-1}
       - ARKD_ROUND_MAX_PARTICIPANTS_COUNT=${ARKD_ROUND_MAX_PARTICIPANTS_COUNT:-128}
       - ARKD_VTXO_MIN_AMOUNT=1

@@ -538,7 +538,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 func (b *txBuilder) BuildCommitmentTx(
 	signerPubkey *btcec.PublicKey, intents domain.Intents,
 	boardingInputs []ports.BoardingInput,
-	cosignersPublicKeys [][]string, vtxoTreeExpiry arklib.RelativeLocktime,
+	cosignersPublicKeys [][]string, sweepParams tree.SweepParams,
 ) (string, *tree.TxTree, string, *tree.TxTree, error) {
 	var batchOutputScript []byte
 	var batchOutputAmount int64
@@ -548,17 +548,10 @@ func (b *txBuilder) BuildCommitmentTx(
 		return "", nil, "", nil, err
 	}
 
-	sweepScript, err := (&script.CSVMultisigClosure{
-		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{signerPubkey},
-		},
-		Locktime: vtxoTreeExpiry,
-	}).Script()
+	sweepTapscriptRoot, _, err := sweepParams.Root(signerPubkey)
 	if err != nil {
 		return "", nil, "", nil, err
 	}
-
-	sweepTapscriptRoot := txscript.NewBaseTapLeaf(sweepScript).TapHash()
 
 	if !intents.HaveOnlyOnchainOutput() {
 		batchOutputScript, batchOutputAmount, err = tree.BuildBatchOutput(
@@ -669,7 +662,7 @@ func (b *txBuilder) BuildCommitmentTx(
 		}
 
 		vtxoTree, err = tree.BuildVtxoTree(
-			initialOutpoint, receivers, sweepTapscriptRoot[:], vtxoTreeExpiry,
+			initialOutpoint, receivers, sweepTapscriptRoot[:], sweepParams,
 		)
 		if err != nil {
 			return "", nil, "", nil, err
@@ -698,7 +691,7 @@ func (b *txBuilder) BuildCommitmentTx(
 
 func (b *txBuilder) GetSweepableBatchOutputs(
 	vtxoTree *tree.TxTree,
-) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput *ports.TxInput, err error) {
+) (sweepParams *tree.SweepParams, sweepInput *ports.TxInput, err error) {
 	if len(vtxoTree.Root.UnsignedTx.TxIn) != 1 {
 		return nil, nil, fmt.Errorf(
 			"invalid node psbt, expect 1 input, got %d", len(vtxoTree.Root.UnsignedTx.TxIn),
@@ -709,7 +702,7 @@ func (b *txBuilder) GetSweepableBatchOutputs(
 	txid := input.PreviousOutPoint.Hash
 	index := input.PreviousOutPoint.Index
 
-	sweepLeaf, internalKey, vtxoTreeExpiry, err := b.extractSweepLeaf(vtxoTree.Root, 0)
+	sweepLeaf, internalKey, sweepParams, err := b.extractSweepLeaf(vtxoTree.Root, 0)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -752,7 +745,7 @@ func (b *txBuilder) GetSweepableBatchOutputs(
 		},
 	}
 
-	return vtxoTreeExpiry, sweepInput, nil
+	return sweepParams, sweepInput, nil
 }
 
 func (b *txBuilder) createCommitmentTx(
@@ -1182,8 +1175,14 @@ func (b *txBuilder) onchainNetwork() *chaincfg.Params {
 	}
 }
 
+// extractSweepLeaf rebuilds the sweep tapscript leaf committed to by a tree node.
+//
+// The scheme is read from the node's own psbt fields rather than from settings:
+// a batch built before the epoch cutover must keep sweeping on its original
+// terms no matter what the operator's current configuration says. Presence of
+// the absolute expiry field is the discriminator.
 func (b *txBuilder) extractSweepLeaf(ptx *psbt.Packet, inputIndex int) (
-	*psbt.TaprootTapLeafScript, *btcec.PublicKey, *arklib.RelativeLocktime, error,
+	*psbt.TaprootTapLeafScript, *btcec.PublicKey, *tree.SweepParams, error,
 ) {
 	if len(ptx.Inputs) <= inputIndex {
 		return nil, nil, nil, fmt.Errorf(
@@ -1211,22 +1210,24 @@ func (b *txBuilder) extractSweepLeaf(ptx *psbt.Packet, inputIndex int) (
 		return nil, nil, nil, fmt.Errorf("no vtxo tree expiry found")
 	}
 
-	vtxoTreeExpiry := vtxoTreeExpiryFields[0]
+	sweepParams := &tree.SweepParams{Expiry: vtxoTreeExpiryFields[0]}
 
-	sweepClosure := &script.CSVMultisigClosure{
-		Locktime: vtxoTreeExpiry,
-		MultisigClosure: script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{sweeperPubkey},
-		},
-	}
-
-	sweepScript, err := sweepClosure.Script()
+	batchExpiryFields, err := txutils.GetArkPsbtFields(
+		ptx,
+		inputIndex,
+		txutils.BatchExpiryField,
+	)
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	if len(batchExpiryFields) > 0 {
+		sweepParams.BatchExpiry = &batchExpiryFields[0]
+	}
 
-	sweepTapTree := txscript.AssembleTaprootScriptTree(txscript.NewBaseTapLeaf(sweepScript))
-	sweepRoot := sweepTapTree.RootNode.TapHash()
+	sweepRoot, sweepScript, err := sweepParams.Root(sweeperPubkey)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	cosignerPubkeys, err := txutils.ParseCosignerKeysFromArkPsbt(ptx, inputIndex)
 	if err != nil {
@@ -1246,6 +1247,8 @@ func (b *txBuilder) extractSweepLeaf(ptx *psbt.Packet, inputIndex int) (
 	}
 	internalKey := aggregatedKey.PreTweakedKey
 
+	// single-leaf tree, so the proof carries no merkle path
+	sweepTapTree := txscript.AssembleTaprootScriptTree(txscript.NewBaseTapLeaf(sweepScript))
 	sweepLeafMerkleProof := sweepTapTree.LeafMerkleProofs[0]
 	sweepLeafControlBlock := sweepLeafMerkleProof.ToControlBlock(internalKey)
 	sweepLeafControlBlockBytes, err := sweepLeafControlBlock.ToBytes()
@@ -1259,7 +1262,7 @@ func (b *txBuilder) extractSweepLeaf(ptx *psbt.Packet, inputIndex int) (
 		LeafVersion:  txscript.BaseLeafVersion,
 	}
 
-	return sweepLeaf, internalKey, &vtxoTreeExpiry, nil
+	return sweepLeaf, internalKey, sweepParams, nil
 }
 
 // TODO: Encode pubkey directly to segwit v1 out script.

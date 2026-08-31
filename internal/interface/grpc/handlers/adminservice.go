@@ -866,6 +866,12 @@ func (a *adminHandler) GetSettings(
 			BuildVersionHeaderRequired:    &settings.BuildVersionHeaderRequired,
 			DigestHeaderRequired:          &settings.DigestHeaderRequired,
 			BatchTrigger:                  &settings.BatchTrigger,
+			EpochExpiryEnabled:            &settings.EpochExpiryEnabled,
+			EpochAnchor:                   int64Ptr(settings.EpochAnchor.Unix()),
+			EpochLength:                   int64Ptr(int64(settings.EpochLength.Seconds())),
+			RolloverWindow:                int64Ptr(int64(settings.RolloverWindow.Seconds())),
+			SettlementCutoff:              int64Ptr(int64(settings.SettlementCutoff.Seconds())),
+			UnrollGrace:                   int64Ptr(int64(settings.UnrollGrace.Value)),
 			UpdatedAt:                     formatTime(settings.UpdatedAt),
 		}
 	}
@@ -1078,6 +1084,16 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		t := settings.GetBatchTrigger()
 		batchTrigger = &t
 	}
+	var epochExpiryEnabled *bool
+	if settings.EpochExpiryEnabled != nil {
+		t := settings.GetEpochExpiryEnabled()
+		epochExpiryEnabled = &t
+	}
+	var epochAnchor *time.Time
+	if settings.EpochAnchor != nil {
+		t := time.Unix(settings.GetEpochAnchor(), 0).UTC()
+		epochAnchor = &t
+	}
 
 	unilateralExitDelay, err := parseLocktime(settings.UnilateralExitDelay)
 	if err != nil {
@@ -1096,6 +1112,10 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		return nil, err
 	}
 	vtxoTreeExpiry, err := parseLocktime(settings.VtxoTreeExpiry)
+	if err != nil {
+		return nil, err
+	}
+	unrollGrace, err := parseLocktime(settings.UnrollGrace)
 	if err != nil {
 		return nil, err
 	}
@@ -1126,6 +1146,12 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		BuildVersionHeaderRequired:    buildVersionHeaderRequired,
 		DigestHeaderRequired:          digestHeaderRequired,
 		BatchTrigger:                  batchTrigger,
+		EpochExpiryEnabled:            epochExpiryEnabled,
+		EpochAnchor:                   epochAnchor,
+		EpochLength:                   parseDuration(settings.EpochLength),
+		RolloverWindow:                parseDuration(settings.RolloverWindow),
+		SettlementCutoff:              parseDuration(settings.SettlementCutoff),
+		UnrollGrace:                   unrollGrace,
 	}, nil
 }
 
@@ -1174,3 +1200,5 @@ func formatTime(tm time.Time) *string {
 	t := tm.Format(time.RFC3339)
 	return &t
 }
+
+func int64Ptr(v int64) *int64 { return &v }

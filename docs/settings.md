@@ -65,6 +65,12 @@ is unset on first boot.
 | `ARKD_UTXO_MIN_AMOUNT`                   | `utxo_min_amount`                | sats (`-1` = native dust limit)                                     | `-1`        |
 | `ARKD_UTXO_MAX_AMOUNT`                   | `utxo_max_amount`                | sats (`-1` = no limit, `0` = boarding disabled)                     | `-1`        |
 | `ARKD_SETTLEMENT_MIN_EXPIRY_GAP`         | `settlement_min_expiry_gap`      | seconds (`0` = disabled)                                            | `0`         |
+| `ARKD_EPOCH_EXPIRY_ENABLED`              | `epoch_expiry_enabled`           | bool; batches share an epoch expiry date instead of a per-batch relative timelock | `false`     |
+| `ARKD_EPOCH_ANCHOR`                      | `epoch_anchor`                   | unix timestamp defining epoch boundary 0; must never change once live | `1767571200` |
+| `ARKD_EPOCH_LENGTH`                      | `epoch_length`                   | seconds between epoch boundaries                                    | `2419200`   |
+| `ARKD_ROLLOVER_WINDOW`                   | `rollover_window`                | seconds; a batch expires at the first boundary at least this far away | `604800`    |
+| `ARKD_SETTLEMENT_CUTOFF`                 | `settlement_cutoff`              | seconds; no settles accepted this close to the boundary              | `43200`     |
+| `ARKD_UNROLL_GRACE`                      | `unroll_grace`                   | seconds; per-tree-level grace for a unilateral exit already underway | `7168`      |
 | `ARKD_VTXO_NO_CSV_VALIDATION_CUTOFF_DATE`| `vtxo_no_csv_validation_cutoff_date` | unix timestamp (`0` = disabled)                                 | `0`         |
 | `ARKD_MAX_TX_WEIGHT`                     | `max_tx_weight`                  | weight units                                                        | `40000`     |
 | `ARKD_MAX_OP_RETURN_OUTS`                | `max_op_return_outputs`          | count (floored to a minimum of `1`)                                 | `3`         |
@@ -139,3 +145,76 @@ If you are upgrading from a build that stored fees in the `intent_fees` table or
 in the `scheduled_session` table, their latest values are carried over into the unified settings
 row during the first-boot seed, so no configuration is lost. 
 Those legacy tables are then emptied and will be dropped in a future release.
+
+
+## Epoch expiry
+
+When `epoch_expiry_enabled` is false (the default) each batch expires on its own
+relative timelock, `vtxo_tree_expiry` counted from the batch's confirmation.
+
+When it is true, a batch instead commits to a shared **epoch boundary**:
+
+```
+expiry = the first boundary at least `rollover_window` away
+boundaries are at `epoch_anchor + n * epoch_length`
+```
+
+Batches created near the end of an epoch therefore roll into the next one rather
+than minting vtxos that expire almost immediately. With `rollover_window` shorter
+than `epoch_length` there are never more than two live expiry dates at once,
+which is what lets vtxos from different batches be consolidated without stranding
+time value.
+
+Three constraints are enforced at startup and on every settings update:
+
+- `0 < settlement_cutoff < rollover_window < epoch_length`
+- `unroll_grace` must be non-zero and BIP68-representable (a multiple of 512 when
+  expressed in seconds), and must be the same type as the other delays
+- `unroll_grace < rollover_window`. A node matures at
+  `max(expiry, appearedAt + unroll_grace)`, and every batch is minted at least a
+  rollover window before its date, so a grace under that window leaves an
+  untouched node maturing exactly at the epoch date. A grace above it flips the
+  `max` for untouched nodes too: every batch then matures a grace period after
+  its own commitment confirmed, so batches stop sharing a date and their vtxos
+  fall off the boundary grid, where the settlement admission window no longer
+  recognises them. Both properties the scheme exists for are lost, silently —
+  hence the check
+- `epoch_anchor` must be at least `500000000`, because an `nLockTime` below that
+  is read as a block height rather than a timestamp
+
+`epoch_anchor` is rejected by the admin API whenever `epoch_expiry_enabled` is
+already true, not only once batches exist. Setting it while the flag is off is
+the go-live path and stays allowed, including in the same update that turns the
+flag on, and re-submitting the value it already has is a no-op rather than an
+error.
+
+The rule is deliberately blunt. The anchor only sets the phase of the boundary
+grid, so moving it does not disturb batches already built — they carry their date
+on the round and in their own sweep leaves — but new batches would land on a
+different set of dates, putting more than two expiry dates in flight and breaking
+the fungibility the scheme exists to provide. To change it, disable epoch expiry,
+let the batches on the old grid drain, then set the new anchor and re-enable.
+
+Enabling `epoch_expiry_enabled` is also refused unless arkd is running a
+time-based sweep scheduler. That scheduler is chosen once at startup from the
+configured locktime type, so switching `vtxo_tree_expiry` to seconds at runtime
+is not enough — a deployment that booted with block-based delays has to be
+restarted with seconds-based ones first.
+
+Settles are only accepted inside `[expiry - rollover_window, expiry -
+settlement_cutoff]`. The lower bound applies to every vtxo input; the upper bound
+applies only to renewals. Swept vtxos are exempt from both, because settling one
+is how recovery works.
+
+An intent counts as a renewal if **any** of its outputs is offchain. So a *full*
+collaborative exit stays available for the whole epoch, but a *partial* one —
+some sats onchain, the change kept offchain — is held to the upper bound and
+refused outside the rollover window.
+
+That is deliberate. The change output makes the operator fund a fresh batch
+output while the old one stays locked until the end of the epoch, which is
+precisely what the upper bound exists to discourage. And the alternative rule —
+treating any onchain output as an exit — would let anyone bypass the bound by
+attaching a dust onchain output to an ordinary renewal. The cost is real and
+worth stating: a user wanting part of their balance onchain mid-epoch must
+either exit in full or wait for the rollover window.

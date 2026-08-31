@@ -722,6 +722,12 @@
         "properties": {
           "batchExpiry": {
             "type": "integer",
+            "description": "A relative locktime. For a legacy batch this is the vtxo tree expiry; for\nan epoch batch it carries the per-level unroll grace instead.",
+            "format": "int64"
+          },
+          "batchExpiryDate": {
+            "type": "integer",
+            "description": "Absolute epoch expiry, unix seconds. Zero for a legacy batch.\n\nCarried separately rather than reusing field 3: a client that predates\nepoch expiry reads that field as a relative locktime and would fail BIP68\nencoding on an absolute timestamp. Leaving it as the grace keeps old\nclients failing closed on the tree validation instead, which is the same\noutcome with a clearer cause.",
             "format": "int64"
           },
           "id": {
@@ -732,6 +738,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "unrollGrace": {
+            "type": "integer",
+            "description": "Relative unroll grace for an epoch batch. Zero for a legacy batch.",
+            "format": "int64"
           }
         }
       },
@@ -904,6 +915,14 @@
             "type": "integer",
             "format": "int64"
           },
+          "epochExpiryEnabled": {
+            "type": "boolean",
+            "description": "Epoch expiry. When epoch_expiry_enabled is false the rest are zero and\nbatches expire on a per-batch relative timelock instead."
+          },
+          "epochLength": {
+            "type": "integer",
+            "format": "int64"
+          },
           "fees": {
             "$ref": "#/components/schemas/FeeInfo"
           },
@@ -923,6 +942,15 @@
           },
           "network": {
             "type": "string"
+          },
+          "nextEpochExpiry": {
+            "type": "integer",
+            "description": "The next shared expiry date a batch started now would commit to, unix\nseconds. Wallets need this to show a renewal deadline before joining a\nsession; zero when epoch expiry is disabled.",
+            "format": "int64"
+          },
+          "rolloverWindow": {
+            "type": "integer",
+            "format": "int64"
           },
           "scheduledSession": {
             "$ref": "#/components/schemas/ScheduledSession"

@@ -216,6 +216,10 @@ type BatchStartedEvent struct {
 	Id              string
 	HashedIntentIds []string
 	BatchExpiry     int64
+	// BatchExpiryDate is the absolute epoch expiry in unix seconds, zero for a
+	// legacy batch. When set, BatchExpiry carries the unroll grace instead.
+	BatchExpiryDate int64
+	UnrollGrace     int64
 }
 
 type TransactionEvent struct {

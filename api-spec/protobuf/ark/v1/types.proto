@@ -97,7 +97,19 @@ message DeprecatedSigner {
 message BatchStartedEvent {
   string id = 1;
   repeated string intent_id_hashes = 2;
+  // A relative locktime. For a legacy batch this is the vtxo tree expiry; for
+  // an epoch batch it carries the per-level unroll grace instead.
   int64 batch_expiry = 3;
+  // Absolute epoch expiry, unix seconds. Zero for a legacy batch.
+  //
+  // Carried separately rather than reusing field 3: a client that predates
+  // epoch expiry reads that field as a relative locktime and would fail BIP68
+  // encoding on an absolute timestamp. Leaving it as the grace keeps old
+  // clients failing closed on the tree validation instead, which is the same
+  // outcome with a clearer cause.
+  int64 batch_expiry_date = 4;
+  // Relative unroll grace for an epoch batch. Zero for a legacy batch.
+  int64 unroll_grace = 5;
 }
 
 message BatchFinalizationEvent {

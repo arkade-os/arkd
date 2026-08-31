@@ -72,6 +72,7 @@ func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) 
 	checkpoint, _ := arklib.ParseRelativeLocktime(uint32(row.CheckpointExitDelay))
 	boarding, _ := arklib.ParseRelativeLocktime(uint32(row.BoardingExitDelay))
 	vtxoTreeExpiry, _ := arklib.ParseRelativeLocktime(uint32(row.VtxoTreeExpiry))
+	unrollGrace, _ := arklib.ParseRelativeLocktime(uint32(row.UnrollGrace))
 
 	return &domain.Settings{
 		SessionDuration:               time.Duration(row.SessionDuration) * time.Second,
@@ -99,6 +100,12 @@ func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) 
 		BuildVersionHeaderRequired:    row.BuildVersionHeaderRequired,
 		DigestHeaderRequired:          row.DigestHeaderRequired,
 		BatchTrigger:                  row.BatchTrigger,
+		EpochExpiryEnabled:            row.EpochExpiryEnabled,
+		EpochAnchor:                   timeFromUnix(row.EpochAnchor),
+		EpochLength:                   time.Duration(row.EpochLength) * time.Second,
+		RolloverWindow:                time.Duration(row.RolloverWindow) * time.Second,
+		SettlementCutoff:              time.Duration(row.SettlementCutoff) * time.Second,
+		UnrollGrace:                   unrollGrace,
 		ScheduledSession:              scheduledSession,
 		BatchFees: domain.BatchFees{
 			OnchainInputFee:   row.BatchOnchainInputFee,
@@ -142,6 +149,12 @@ func (r *settingsRepository) Upsert(
 		BuildVersionHeaderRequired:    settings.BuildVersionHeaderRequired,
 		DigestHeaderRequired:          settings.DigestHeaderRequired,
 		BatchTrigger:                  settings.BatchTrigger,
+		EpochExpiryEnabled:            settings.EpochExpiryEnabled,
+		EpochAnchor:                   timeToUnix(settings.EpochAnchor),
+		EpochLength:                   int64(settings.EpochLength.Seconds()),
+		RolloverWindow:                int64(settings.RolloverWindow.Seconds()),
+		SettlementCutoff:              int64(settings.SettlementCutoff.Seconds()),
+		UnrollGrace:                   int64(settings.UnrollGrace.Value),
 		BatchOnchainInputFee:          settings.BatchFees.OnchainInputFee,
 		BatchOffchainInputFee:         settings.BatchFees.OffchainInputFee,
 		BatchOnchainOutputFee:         settings.BatchFees.OnchainOutputFee,

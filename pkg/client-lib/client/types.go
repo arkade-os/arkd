@@ -46,6 +46,8 @@ func (e event) toBatchEvent() (any, error) {
 			Id:              ee.GetId(),
 			HashedIntentIds: ee.GetIntentIdHashes(),
 			BatchExpiry:     ee.GetBatchExpiry(),
+			BatchExpiryDate: ee.GetBatchExpiryDate(),
+			UnrollGrace:     ee.GetUnrollGrace(),
 		}, nil
 	}
 

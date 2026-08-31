@@ -175,6 +175,8 @@ func (s *service) Start() error {
 		return fmt.Errorf("failed to get settings: %s", err)
 	}
 
+	logEpochSchedule(settings.Settings)
+
 	forfeitPubkey, err := s.wallet.GetForfeitPubkey(s.ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch forfeit pubkey: %s", err)
@@ -1681,6 +1683,13 @@ func (s *service) RegisterIntent(
 	network := settings.Network
 	maxAssetsPerVtxo := settings.MaxAssetsPerVtxo()
 
+	// A property of the intent, not of any one input: an intent that creates a
+	// vtxo is a renewal, one that only pays onchain is an exit. The epoch
+	// admission window's upper bound applies to the former only.
+	isRenewalIntent := intentHasOffchainOutput(
+		proof.UnsignedTx.TxOut, message.OnchainOutputIndexes,
+	)
+
 	for i, outpoint := range outpoints {
 		if _, seen := seenOutpoints[outpoint]; seen {
 			return "", errors.INVALID_INTENT_PROOF.New(
@@ -1789,14 +1798,28 @@ func (s *service) RegisterIntent(
 			continue
 		}
 
-		if settlementMinExpiryGap > 0 && !vtxo.Swept {
-			// reject if expires after now + settlementMinExpiryGap
-			expiresAt := time.Unix(vtxo.ExpiresAt, 0)
-			limit := time.Now().Add(settlementMinExpiryGap)
-			if expiresAt.After(limit) {
+		if settings.EpochExpiryEnabled {
+			if err := checkEpochAdmission(
+				settings.EpochSchedule(), vtxo, time.Now(), isRenewalIntent,
+			); err != nil {
 				return "", errors.INVALID_PSBT_INPUT.New(
-					"vtxo %s expires after %s (minExpiryGap: %s)",
-					vtxo.Outpoint.String(), limit, settlementMinExpiryGap,
+					"vtxo %s: %s", vtxo.Outpoint.String(), err,
+				).WithMetadata(errors.InputMetadata{
+					Txid:       proofTxid,
+					InputIndex: int(outpoint.Index),
+				})
+			}
+		}
+
+		// A swept vtxo is exempt: settling one is how recovery works, and the
+		// operator already holds the funds onchain.
+		if !vtxo.Swept {
+			if err := checkSettlementExpiryGap(
+				time.Unix(vtxo.ExpiresAt, 0), time.Now(), settlementMinExpiryGap,
+			); err != nil {
+				return "", errors.INVALID_PSBT_INPUT.New(
+					"vtxo %s: %s (minExpiryGap: %s)",
+					vtxo.Outpoint.String(), err, settlementMinExpiryGap,
 				).WithMetadata(errors.InputMetadata{
 					Txid:       proofTxid,
 					InputIndex: int(outpoint.Index),
@@ -2456,6 +2479,17 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		}
 	}
 
+	// Published so wallets can show a renewal deadline before joining a session;
+	// GetInfo carries no expiry at all otherwise.
+	nextEpochExpiry := int64(0)
+	if settings.EpochExpiryEnabled {
+		if e, err := settings.EpochSchedule().ExpiryFor(time.Now()); err == nil {
+			nextEpochExpiry = int64(e)
+		} else {
+			log.WithError(err).Warn("failed to compute next epoch expiry for GetInfo")
+		}
+	}
+
 	return &ServiceInfo{
 		SignerPubKey:         signerPubkey,
 		DeprecatedSignerKeys: deprecatedSignerKeys,
@@ -2474,6 +2508,10 @@ func (s *service) GetInfo(ctx context.Context) (*ServiceInfo, errors.Error) {
 		CheckpointTapscript:  checkpointTapscript,
 		MaxTxWeight:          int64(maxTxWeight),
 		MaxOpReturnOutputs:   int64(maxOpReturnOutputs),
+		EpochExpiryEnabled:   settings.EpochExpiryEnabled,
+		EpochLength:          int64(settings.EpochLength.Seconds()),
+		RolloverWindow:       int64(settings.RolloverWindow.Seconds()),
+		NextEpochExpiry:      nextEpochExpiry,
 		Fees: FeeInfo{
 			IntentFees: batchFees,
 		},
@@ -2911,6 +2949,8 @@ func (s *service) startConfirmation(
 	}
 
 	var registeredIntents []ports.TimedIntent
+	// pinned once below and carried into finalization; never recomputed
+	var sweepParams tree.SweepParams
 	roundAborted := false
 
 	log.Debugf("started confirmation stage for round: %s", round.Id)
@@ -2932,7 +2972,9 @@ func (s *service) startConfirmation(
 			return
 		}
 
-		go s.startFinalization(round.Id, roundTiming, registeredIntents, settings)
+		go s.startFinalization(
+			round.Id, roundTiming, registeredIntents, settings, sweepParams,
+		)
 	}()
 
 	num, err := s.cache.Intents().Len(ctx)
@@ -3024,7 +3066,23 @@ func (s *service) startConfirmation(
 		return
 	}
 
-	s.propagateBatchStartedEvent(ctx, roundId, intents, settings.VtxoTreeExpiry)
+	// Compute the epoch expiry exactly once, here, and carry it for the rest of
+	// the round. Re-deriving it from the clock at each use would let a round that
+	// straddles a boundary advertise, build and schedule against different dates.
+	sweepParams = tree.SweepParams{Expiry: settings.VtxoTreeExpiry}
+	if settings.EpochExpiryEnabled {
+		epochExpiry, err := settings.EpochSchedule().ExpiryFor(time.Now())
+		if err != nil {
+			roundAborted = true
+			log.WithError(err).Error("failed to compute epoch expiry, aborting round")
+			return
+		}
+		sweepParams = tree.SweepParams{
+			Expiry: settings.UnrollGrace, BatchExpiry: &epochExpiry,
+		}
+	}
+
+	s.propagateBatchStartedEvent(ctx, roundId, intents, sweepParams)
 
 	confirmedIntents := make([]ports.TimedIntent, 0)
 	notConfirmedIntents := make([]ports.TimedIntent, 0)
@@ -3109,6 +3167,7 @@ func (s *service) startConfirmation(
 func (s *service) startFinalization(
 	roundId string, roundTiming roundTiming,
 	registeredIntents []ports.TimedIntent, settings ports.Settings,
+	sweepParams tree.SweepParams,
 ) {
 	defer s.wg.Done()
 
@@ -3120,7 +3179,28 @@ func (s *service) startFinalization(
 
 	ctx := context.Background()
 	forfeitPubkey := settings.ForfeitPubkey
-	vtxoTreeExpiry := settings.VtxoTreeExpiry
+	// Derived from the params pinned at round start, not re-read from settings:
+	// a round straddling an epoch boundary must use one date throughout.
+	vtxoTreeExpiry := sweepParams.Expiry
+	epochExpiry := int64(0)
+	if sweepParams.IsEpoch() {
+		epochExpiry = int64(*sweepParams.BatchExpiry)
+	}
+
+	// The pinned params reach here through a deferred dispatch, so an unassigned
+	// value would arrive as the zero locktime. BIP68Sequence accepts that and
+	// yields sequence 0 - a CSV of zero, leaving the batch output sweepable by
+	// the operator the instant it confirms. Every path that skips the assignment
+	// currently aborts the round before dispatch, but that is a control-flow
+	// invariant one edit away from breaking, and the failure would be silent
+	// and total.
+	if vtxoTreeExpiry.Value == 0 {
+		log.Error(
+			"refusing to build a batch with a zero vtxo tree expiry, aborting round",
+		)
+		return
+	}
+
 	var banDuration *time.Duration
 	if settings.BanDuration > 0 {
 		banDuration = &settings.BanDuration
@@ -3189,7 +3269,7 @@ func (s *service) startFinalization(
 	log.Debugf("building tx for round %s", roundId)
 
 	commitmentTx, vtxoTree, connectorAddress, connectors, err := s.builder.BuildCommitmentTx(
-		forfeitPubkey, intents, boardingInputs, cosignersPublicKeys, settings.VtxoTreeExpiry,
+		forfeitPubkey, intents, boardingInputs, cosignersPublicKeys, sweepParams,
 	)
 	if err != nil {
 		round.Fail(errors.INTERNAL_ERROR.New("failed to create commitment tx: %s", err))
@@ -3228,13 +3308,16 @@ func (s *service) startFinalization(
 	flatVtxoTree := make(tree.FlatTxTree, 0)
 	if vtxoTree != nil {
 
-		sweepClosure := script.CSVMultisigClosure{
-			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{forfeitPubkey}},
-			Locktime:        vtxoTreeExpiry,
-		}
-
-		sweepScript, err := sweepClosure.Script()
+		// Must be the same root BuildCommitmentTx used, so it has to come from the
+		// pinned params rather than from the relative expiry alone. This root is
+		// the taproot tweak for the tree's aggregate key, and the coordinator
+		// derives the batch output's pkScript from it to build the sighash prevout
+		// for the root tx. Seeding it with a legacy root while the batch output
+		// commits to an epoch one signs every node against a script the commitment
+		// tx does not contain.
+		root, _, err := sweepParams.Root(forfeitPubkey)
 		if err != nil {
+			round.Fail(errors.INTERNAL_ERROR.New("failed to build sweep tap tree root: %s", err))
 			return
 		}
 
@@ -3243,10 +3326,6 @@ func (s *service) startFinalization(
 			return
 		}
 		batchOutputAmount := commitmentPtx.UnsignedTx.TxOut[0].Value
-
-		sweepLeaf := txscript.NewBaseTapLeaf(sweepScript)
-		sweepTapTree := txscript.AssembleTaprootScriptTree(sweepLeaf)
-		root := sweepTapTree.RootNode.TapHash()
 
 		coordinator, err := tree.NewTreeCoordinatorSession(
 			root.CloneBytes(), batchOutputAmount, vtxoTree,
@@ -3433,7 +3512,7 @@ func (s *service) startFinalization(
 
 	if _, err := round.StartFinalization(
 		connectorAddress, flatConnectors, flatVtxoTree,
-		round.CommitmentTxid, round.CommitmentTx, vtxoTreeExpiry.Seconds(),
+		round.CommitmentTxid, round.CommitmentTx, vtxoTreeExpiry.Seconds(), epochExpiry,
 	); err != nil {
 		round.Fail(errors.INTERNAL_ERROR.New("failed to start finalization: %s", err))
 		return
@@ -3873,7 +3952,7 @@ func (s *service) propagateEvents(ctx context.Context, round domain.Round) {
 
 func (s *service) propagateBatchStartedEvent(
 	ctx context.Context,
-	roundId string, intents []ports.TimedIntent, vtxoTreeExpiry arklib.RelativeLocktime,
+	roundId string, intents []ports.TimedIntent, sweepParams tree.SweepParams,
 ) {
 	hashedIntentIds := make([][32]byte, 0, len(intents))
 	for _, intent := range intents {
@@ -3892,7 +3971,14 @@ func (s *service) propagateBatchStartedEvent(
 			Type: domain.EventTypeUndefined,
 		},
 		IntentIdsHashes: hashedIntentIds,
-		BatchExpiry:     vtxoTreeExpiry.Value,
+		BatchExpiry:     sweepParams.Expiry.Value,
+	}
+	if sweepParams.IsEpoch() {
+		// Legacy clients read BatchExpiry as a relative locktime, so an epoch
+		// batch leaves it carrying the unroll grace and advertises the shared
+		// date separately.
+		ev.BatchExpiryDate = int64(*sweepParams.BatchExpiry)
+		ev.UnrollGrace = sweepParams.Expiry.Value
 	}
 	s.eventsCh <- []domain.Event{ev}
 }
@@ -3977,10 +4063,42 @@ func (s *service) scheduleSweepBatchOutput(round domain.Round) {
 
 	var expirationTimestamp int64
 	var skipExpiryUpdate bool
-	if s.sweeper.scheduler.Unit() == ports.BlockHeight {
+	switch {
+	case round.EpochExpiry > 0:
+		// An epoch date is a unix timestamp. A block-height scheduler would read it
+		// as a block roughly 1.8 billion ahead, so the task would never come due and
+		// the batch would silently go unswept. Settings validation and the admin API
+		// both refuse the pairing, so reaching here is an invariant violation - say
+		// so rather than scheduling something that can never fire. Mirrors the guard
+		// in findSweepableOutputs.
+		if s.sweeper.scheduler.Unit() == ports.BlockHeight {
+			log.Errorf(
+				"batch %s carries an epoch expiry but the sweep scheduler is "+
+					"block-height; refusing to schedule a sweep that could never come due",
+				round.CommitmentTxid,
+			)
+			return
+		}
+		// Take both the date and the grace the batch actually committed to from the
+		// batch itself, never from live settings: a settings change between
+		// finalization and this call must not move an existing batch's sweep
+		// schedule. The date is pinned on the round; the grace is baked into every
+		// sweep leaf, so read it back from the tree.
+		grace, err := epochUnrollGrace(round.VtxoTree)
+		if err != nil {
+			log.WithError(err).Errorf(
+				"failed to read the unroll grace of batch %s, cannot schedule its sweep",
+				round.CommitmentTxid,
+			)
+			return
+		}
+		expirationTimestamp = epochMaturity(
+			round.EpochExpiry, blockTimestamp.Time, int64(grace.Value),
+		)
+	case s.sweeper.scheduler.Unit() == ports.BlockHeight:
 		expirationTimestamp = int64(blockTimestamp.Height) + int64(vtxoTreeExpiry.Value)
 		skipExpiryUpdate = true
-	} else {
+	default:
 		expirationTimestamp = blockTimestamp.Time + vtxoTreeExpiry.Seconds()
 	}
 
