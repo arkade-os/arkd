@@ -540,3 +540,22 @@ var INVALID_BATCH_OUTPUT_SCRIPT = Code[InvalidBatchOutputScriptMetadata]{
 	"INVALID_BATCH_OUTPUT_SCRIPT",
 	grpccodes.InvalidArgument,
 }
+
+type RateLimitMetadata struct {
+	CooldownSecs string `json:"cooldown_secs"`
+	Inputs       string `json:"inputs"`
+}
+
+type InputRateLimitInfoMeta struct {
+	Depth        int   `json:"depth"`
+	MarkerDepth  int   `json:"marker_depth"`
+	CooldownSecs int64 `json:"cooldown_secs"`
+}
+
+// 53 went to ROUND_NOT_FOUND on master while this branch was open, so this took
+// the next free code rather than shipping two errors on the same wire value.
+var RATE_LIMITED = Code[RateLimitMetadata]{
+	56,
+	"RATE_LIMITED",
+	grpccodes.ResourceExhausted,
+}

@@ -73,6 +73,9 @@ is unset on first boot.
 | `ARKD_MIN_BUILD_VERSION_HEADER`          | `build_version_header`           | min accepted client build version, semver (e.g. `v2.3.4`); empty = no minimum | `""`        |
 | `ARKD_MIN_BUILD_VERSION_HEADER_REQUIRED` | `build_version_header_required`  | bool; if `true`, clients must send a valid `X-Build-Version` header (requires `build_version_header`) | `false`     |
 | `ARKD_DIGEST_HEADER_REQUIRED`            | `digest_header_required`         | bool; if `true`, clients must send a matching `X-Digest` header     | `false`     |
+| `ARKD_RATE_LIMIT_ENABLED`                | `rate_limit_enabled`             | bool; enable the velocity rate limiter (rejects fast-growing VTXO chains) | `false`     |
+| `ARKD_RATE_LIMIT_MAX_VELOCITY`           | `rate_limit_max_velocity`        | max VTXO chain growth in depths per second before rejecting, must be `> 0` when enabled. `0.28` is roughly 1000 txs per hour per chain | `0.28`      |
+| `ARKD_RATE_LIMIT_MAX_COOLDOWN_SECS`      | `rate_limit_max_cooldown_secs`   | seconds; cap on the cooldown suggested to rejected clients (must be `> 0` when enabled) | `3600`      |
 
 ### Notes on specific values
 

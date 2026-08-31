@@ -866,6 +866,9 @@ func (a *adminHandler) GetSettings(
 			BuildVersionHeaderRequired:    &settings.BuildVersionHeaderRequired,
 			DigestHeaderRequired:          &settings.DigestHeaderRequired,
 			BatchTrigger:                  &settings.BatchTrigger,
+			RateLimitEnabled:              &settings.RateLimitEnabled,
+			RateLimitMaxVelocity:          &settings.RateLimitMaxVelocity,
+			RateLimitMaxCooldownSecs:      &settings.RateLimitMaxCooldownSecs,
 			UpdatedAt:                     formatTime(settings.UpdatedAt),
 		}
 	}
@@ -1006,6 +1009,9 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		buildVersionHeader                               *string
 		buildVersionHeaderRequired, digestHeaderRequired *bool
 		batchTrigger                                     *string
+		rateLimitEnabled                                 *bool
+		rateLimitMaxVelocity                             *float64
+		rateLimitMaxCooldownSecs                         *int64
 	)
 	if settings.BanThreshold != nil {
 		if settings.GetBanThreshold() < 0 {
@@ -1078,6 +1084,18 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		t := settings.GetBatchTrigger()
 		batchTrigger = &t
 	}
+	if settings.RateLimitEnabled != nil {
+		t := settings.GetRateLimitEnabled()
+		rateLimitEnabled = &t
+	}
+	if settings.RateLimitMaxVelocity != nil {
+		t := settings.GetRateLimitMaxVelocity()
+		rateLimitMaxVelocity = &t
+	}
+	if settings.RateLimitMaxCooldownSecs != nil {
+		t := settings.GetRateLimitMaxCooldownSecs()
+		rateLimitMaxCooldownSecs = &t
+	}
 
 	unilateralExitDelay, err := parseLocktime(settings.UnilateralExitDelay)
 	if err != nil {
@@ -1126,6 +1144,9 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		BuildVersionHeaderRequired:    buildVersionHeaderRequired,
 		DigestHeaderRequired:          digestHeaderRequired,
 		BatchTrigger:                  batchTrigger,
+		RateLimitEnabled:              rateLimitEnabled,
+		RateLimitMaxVelocity:          rateLimitMaxVelocity,
+		RateLimitMaxCooldownSecs:      rateLimitMaxCooldownSecs,
 	}, nil
 }
 

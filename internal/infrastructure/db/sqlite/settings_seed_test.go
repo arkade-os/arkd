@@ -226,6 +226,9 @@ CREATE TABLE IF NOT EXISTS settings (
     build_version_header_required BOOLEAN NOT NULL DEFAULT FALSE,
     digest_header_required BOOLEAN NOT NULL DEFAULT FALSE,
     batch_trigger TEXT NOT NULL DEFAULT '',
+    rate_limit_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    rate_limit_max_velocity REAL NOT NULL DEFAULT 0.28,
+    rate_limit_max_cooldown_secs BIGINT NOT NULL DEFAULT 3600,
     updated_at BIGINT NOT NULL
 );`)
 	require.NoError(t, err)
