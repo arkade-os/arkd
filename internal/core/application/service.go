@@ -1454,6 +1454,16 @@ func (s *service) GetPendingOffchainTxs(
 		return nil, errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
 	}
 
+	encodedMessage, err := message.Encode()
+	if err != nil {
+		return nil, errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
+			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
+	}
+
+	if _, err := s.verifyIntentProof(proof, encodedMessage, settings); err != nil {
+		return nil, err
+	}
+
 	outpoints := proof.GetOutpoints()
 	proofTxid := proof.UnsignedTx.TxID()
 
@@ -1481,11 +1491,6 @@ func (s *service) GetPendingOffchainTxs(
 
 	for i, outpoint := range outpoints {
 		psbtInput := proof.Inputs[i+1]
-
-		if len(psbtInput.TaprootLeafScript) == 0 {
-			return nil, errors.INVALID_PSBT_INPUT.New("missing taproot leaf script on input %d", i+1).
-				WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
-		}
 
 		vtxoOutpoint := domain.Outpoint{
 			Txid: outpoint.Hash.String(),
@@ -1537,34 +1542,6 @@ func (s *service) GetPendingOffchainTxs(
 				pkScript,
 			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
 		}
-	}
-
-	encodedMessage, err := message.Encode()
-	if err != nil {
-		return nil, errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
-			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
-	}
-
-	encodedProof, err := proof.B64Encode()
-	if err != nil {
-		return nil, errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", err).
-			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
-	}
-
-	if err := intent.Verify(
-		encodedProof,
-		encodedMessage,
-		allSignerPubkeys(settings),
-	); err != nil {
-		log.
-			WithField("proof", encodedProof).
-			WithField("message", encodedMessage).
-			Tracef("failed to verify intent proof: %s", err)
-		return nil, errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
-			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   encodedProof,
-				Message: encodedMessage,
-			})
 	}
 
 	// intent is valid, we can retrieve the pending offchain transactions for each outpoints
@@ -1676,24 +1653,23 @@ func (s *service) RegisterIntent(
 
 	proofTxid := proof.UnsignedTx.TxID()
 
+	settings, err := s.cache.Settings().Get(ctx)
+	if err != nil {
+		return "", errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
+	}
+
 	encodedMessage, err := message.Encode()
 	if err != nil {
 		return "", errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
 			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
 	}
 
-	encodedProof, err := proof.B64Encode()
-	if err != nil {
-		return "", errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", err).
-			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+	encodedProof, appErr := s.verifyIntentProof(proof, encodedMessage, settings)
+	if appErr != nil {
+		return "", appErr
 	}
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
-
-	settings, err := s.cache.Settings().Get(ctx)
-	if err != nil {
-		return "", errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
-	}
 
 	banThreshold := settings.BanThreshold
 	settlementMinExpiryGap := settings.SettlementMinExpiryGap
@@ -1717,21 +1693,6 @@ func (s *service) RegisterIntent(
 		seenOutpoints[outpoint] = struct{}{}
 
 		psbtInput := proof.Inputs[i+1]
-
-		if len(psbtInput.TaprootLeafScript) == 0 {
-			return "", errors.INVALID_PSBT_INPUT.New(
-				"missing taproot leaf script on input %d", i+1,
-			).WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
-		}
-
-		if psbtInput.WitnessUtxo == nil {
-			return "", errors.INVALID_PSBT_INPUT.New(
-				"missing witness utxo for input %s", outpoint.String(),
-			).WithMetadata(errors.InputMetadata{
-				Txid:       proofTxid,
-				InputIndex: int(outpoint.Index)},
-			)
-		}
 
 		vtxoOutpoint := domain.Outpoint{
 			Txid: outpoint.Hash.String(),
@@ -1914,22 +1875,6 @@ func (s *service) RegisterIntent(
 		if len(vtxo.Assets) > 0 {
 			assetInputs[i+1] = vtxo.Assets
 		}
-	}
-
-	if err := intent.Verify(
-		encodedProof,
-		encodedMessage,
-		allSignerPubkeys(settings),
-	); err != nil {
-		log.
-			WithField("proof", encodedProof).
-			WithField("message", encodedMessage).
-			Tracef("failed to verify intent proof: %s", err)
-		return "", errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
-			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   encodedProof,
-				Message: encodedMessage,
-			})
 	}
 
 	signedProofPtx, err := psbt.NewFromRawBytes(strings.NewReader(encodedProof), true)
@@ -2673,14 +2618,26 @@ func (s *service) EstimateIntentFee(
 			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
 	}
 
+	settings, err := s.cache.Settings().Get(ctx)
+	if err != nil {
+		return 0, errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
+	}
+
+	encodedMessage, err := message.Encode()
+	if err != nil {
+		return 0, errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
+			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.BaseMessage})
+	}
+
+	if _, err := s.verifyIntentProof(proof, encodedMessage, settings); err != nil {
+		return 0, err
+	}
+
 	offchainInputs := make([]domain.Vtxo, 0, len(outpoints))
 	onchainInputs := make([]wire.TxOut, 0, len(outpoints))
 
 	for i, outpoint := range outpoints {
 		psbtInput := proof.Inputs[i+1]
-		if psbtInput.WitnessUtxo == nil {
-			continue
-		}
 
 		vtxoOutpoint := domain.Outpoint{
 			Txid: outpoint.Hash.String(),
@@ -4735,14 +4692,6 @@ func (s *service) GetIntentByProofs(
 	return result, nil
 }
 
-// intentProofMessage is an interface for intent messages that support
-// proof-of-ownership validation (expiration check + encode for signing).
-type intentProofMessage interface {
-	Encode() (string, error)
-	GetExpireAt() int64
-	GetBaseMessage() intent.BaseMessage
-}
-
 // verifyIntentProofAndFindMatches validates proof-of-ownership inputs, signs and
 // verifies the proof, then returns all cached intents whose inputs overlap with
 // the proof outpoints.
@@ -4765,17 +4714,22 @@ func (s *service) verifyIntentProofAndFindMatches(
 		}
 	}
 
+	encodedMessage, err := message.Encode()
+	if err != nil {
+		return nil, errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
+			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.GetBaseMessage()})
+	}
+
+	if _, err := s.verifyIntentProof(proof, encodedMessage, settings); err != nil {
+		return nil, err
+	}
+
 	outpoints := proof.GetOutpoints()
 	proofTxid := proof.UnsignedTx.TxID()
 
 	boardingTxs := make(map[string]wire.MsgTx)
 	for i, outpoint := range outpoints {
 		psbtInput := proof.Inputs[i+1]
-
-		if len(psbtInput.TaprootLeafScript) == 0 {
-			return nil, errors.INVALID_PSBT_INPUT.New("missing taproot leaf script on input %d", i+1).
-				WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
-		}
 
 		vtxoOutpoint := domain.Outpoint{
 			Txid: outpoint.Hash.String(),
@@ -4874,32 +4828,6 @@ func (s *service) verifyIntentProofAndFindMatches(
 		}
 	}
 
-	encodedMessage, err := message.Encode()
-	if err != nil {
-		return nil, errors.INVALID_INTENT_MESSAGE.New("failed to encode message: %w", err).
-			WithMetadata(errors.InvalidIntentMessageMetadata{Message: message.GetBaseMessage()})
-	}
-
-	encodedProof, err := proof.B64Encode()
-	if err != nil {
-		return nil, errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", err).
-			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
-	}
-
-	if err := intent.Verify(
-		encodedProof, encodedMessage, allSignerPubkeys(settings),
-	); err != nil {
-		log.
-			WithField("proof", encodedProof).
-			WithField("message", encodedMessage).
-			Tracef("failed to verify intent proof: %s", err)
-		return nil, errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", err).
-			WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   encodedProof,
-				Message: encodedMessage,
-			})
-	}
-
 	allIntents, err := s.cache.Intents().ViewAll(ctx, nil)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to view all intents: %w", err)
@@ -4921,6 +4849,35 @@ func (s *service) verifyIntentProofAndFindMatches(
 	}
 
 	return matches, nil
+}
+
+// verifyIntentProof checks the BIP-322 proof against the message before any
+// per-input DB or wallet lookup, so an unauthenticated caller can't fan out I/O
+// with an unsigned proof.
+func (s *service) verifyIntentProof(
+	proof intent.Proof, encodedMessage string, settings *ports.Settings,
+) (encodedProof string, err errors.Error) {
+	encodedProof, encErr := proof.B64Encode()
+	if encErr != nil {
+		return "", errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", encErr).
+			WithMetadata(errors.PsbtMetadata{Tx: proof.UnsignedTx.TxID()})
+	}
+
+	if verifyErr := intent.Verify(
+		encodedProof, encodedMessage, allSignerPubkeys(settings),
+	); verifyErr != nil {
+		log.
+			WithField("proof", encodedProof).
+			WithField("message", encodedMessage).
+			Tracef("failed to verify intent proof: %s", verifyErr)
+		return "", errors.INVALID_INTENT_PROOF.New("invalid intent proof: %w", verifyErr).
+			WithMetadata(errors.InvalidIntentProofMetadata{
+				Proof:   encodedProof,
+				Message: encodedMessage,
+			})
+	}
+
+	return encodedProof, nil
 }
 
 // allSignerPubkeys returns the current signer pubkey plus every deprecated one regardless of cutoff date.
@@ -5139,4 +5096,12 @@ func (s *service) propagateTransactionEvent(event TransactionEvent) {
 	go func() {
 		s.transactionEventsCh <- event
 	}()
+}
+
+// intentProofMessage is an interface for intent messages that support
+// proof-of-ownership validation (expiration check + encode for signing).
+type intentProofMessage interface {
+	Encode() (string, error)
+	GetExpireAt() int64
+	GetBaseMessage() intent.BaseMessage
 }

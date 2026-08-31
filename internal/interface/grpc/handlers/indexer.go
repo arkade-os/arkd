@@ -602,10 +602,10 @@ func (h *indexerService) applyFilter(
 	exprs := filter.GetExpressions()
 	scripts := filter.GetScripts()
 
-	// Validate all inputs upfront before any mutation. A bad expression is
-	// returned as the structured INVALID_TX_FILTER code. Cap enforcement on
-	// the compiled set is the broker's responsibility (see installTxFilters
-	// below) and surfaces as the structured TX_FILTERS_LIMIT_EXCEEDED code.
+	if len(exprs) > MaxTxFiltersPerListener {
+		return txFiltersLimitErr(subscriptionID, len(exprs))
+	}
+
 	compiledExprs, err := compileTxFilters(exprs)
 	if err != nil {
 		return err
@@ -629,15 +629,6 @@ func (h *indexerService) applyFilter(
 
 	// Mutate: expressions first (literal overwrite), then scripts.
 	if err := h.scriptSubsHandler.installTxFilters(subscriptionID, compiledExprs); err != nil {
-		if errors.Is(err, ErrTxFiltersLimitExceeded) {
-			return arkdErrors.TX_FILTERS_LIMIT_EXCEEDED.
-				New("%s", err.Error()).
-				WithMetadata(arkdErrors.TxFiltersLimitMetadata{
-					SubscriptionId: subscriptionID,
-					MaxTxFilters:   MaxTxFiltersPerListener,
-					GotTxFilters:   len(compiledExprs),
-				})
-		}
 		return subscriptionErr(subscriptionID, err)
 	}
 
@@ -1046,4 +1037,14 @@ func parseIndexerIntent(i *arkv1.IndexerIntent) (*application.Intent, error) {
 		return nil, err
 	}
 	return &application.Intent{Proof: proof, Message: message}, nil
+}
+
+func txFiltersLimitErr(subscriptionID string, got int) error {
+	return arkdErrors.TX_FILTERS_LIMIT_EXCEEDED.
+		New("%s", ErrTxFiltersLimitExceeded.Error()).
+		WithMetadata(arkdErrors.TxFiltersLimitMetadata{
+			SubscriptionId: subscriptionID,
+			MaxTxFilters:   MaxTxFiltersPerListener,
+			GotTxFilters:   got,
+		})
 }

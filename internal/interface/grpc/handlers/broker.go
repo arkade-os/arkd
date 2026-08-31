@@ -329,13 +329,10 @@ func (h *broker[T]) getTxFilters(id string) []string {
 }
 
 // installTxFilters atomically replaces the listener's tx filter set with
-// pre-compiled filters. Enforces MaxTxFiltersPerListener; the caller
+// pre-compiled filters. The caller enforces MaxTxFiltersPerListener and
 // compiles upfront so that compile-time CEL errors can be raised
 // alongside other input validation before any mutation.
 func (h *broker[T]) installTxFilters(id string, filters map[string]txfilter.Filter) error {
-	if len(filters) > MaxTxFiltersPerListener {
-		return ErrTxFiltersLimitExceeded
-	}
 	h.lock.RLock()
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
