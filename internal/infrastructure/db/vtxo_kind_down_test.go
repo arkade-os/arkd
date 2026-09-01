@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const addVtxoKindMigrationVersion = 20260724000000
+const addVtxoKindMigrationVersion = 20260901000000
 
 // TestAddVtxoKindDownMigration verifies the add_vtxo_kind migration is
 // reversible: up adds the vtxo_kind column and surfaces it through vtxo_vw,
