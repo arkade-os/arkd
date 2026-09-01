@@ -1336,8 +1336,11 @@ func recreateArkdWallet(signerKey, deprecated string) error {
 func unlockArkdWallet() error {
 	httpClient := &http.Client{Timeout: 15 * time.Second}
 	url := fmt.Sprintf("%s/v1/wallet/unlock", walletUrl)
-	body := fmt.Sprintf(`{"password": "%s"}`, password)
-	return postWithRetry(httpClient, url, body, "unlock wallet", time.Minute)
+	body, err := json.Marshal(map[string]string{"password": password})
+	if err != nil {
+		return fmt.Errorf("failed to encode unlock wallet body: %s", err)
+	}
+	return postWithRetry(httpClient, url, string(body), "unlock wallet", time.Minute)
 }
 
 func setupArkd() error {
