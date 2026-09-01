@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/chainhash/v2"
 )
 
 // TX_HASH_SIZE is the size of a transaction hash in bytes.
