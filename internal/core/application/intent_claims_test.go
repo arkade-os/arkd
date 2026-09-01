@@ -2,11 +2,15 @@ package application
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -98,6 +102,51 @@ func TestIntentClaimRelease(t *testing.T) {
 		s.releaseClaimsOfSelectedIntents(ctx)
 
 		require.Empty(t, rec.released())
+	})
+
+	t.Run("delete by proof releases the matching intents", func(t *testing.T) {
+		message := intent.DeleteMessage{
+			BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeDelete},
+		}
+		encodedMessage, err := message.Encode()
+		require.NoError(t, err)
+		proof := testNoteIntentProof(t, encodedMessage, &wire.TxOut{
+			Value: int64(testDust) * 2, PkScript: testP2TRScript(t),
+		})
+
+		// Serve the proof's ownership input as a vtxo whose pubkey matches its
+		// witness utxo, so the proof verifies and matches the queued intent.
+		witness := proof.Inputs[1].WitnessUtxo
+		op := proof.GetOutpoints()[0]
+		vtxo := domain.Vtxo{
+			Outpoint: domain.Outpoint{Txid: op.Hash.String(), VOut: op.Index},
+			Amount:   uint64(witness.Value),
+			PubKey:   hex.EncodeToString(witness.PkScript[2:]),
+		}
+		vtxos := &mockedVtxoRepo{}
+		vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return([]domain.Vtxo{vtxo}, nil)
+		repos := &mockedRepoManager{}
+		repos.On("Vtxos").Return(vtxos)
+
+		rec := &recordingOffchainTxStore{}
+		intents := &claimIntentStore{all: []ports.TimedIntent{
+			{Intent: domain.Intent{Id: "intent-a", Inputs: []domain.Vtxo{vtxo}}},
+		}}
+		s := &service{
+			repoManager: repos,
+			cache: testLiveStore{
+				settings:    testSettingsStore{settings: &ports.Settings{SignerPubkey: testPubkey(t)}},
+				offchainTxs: rec,
+				intents:     intents,
+			},
+		}
+
+		require.NoError(t, s.DeleteIntentsByProof(ctx, *proof, message))
+
+		require.Equal(t, map[string][]string{
+			"intent-a": {vtxo.Outpoint.String()},
+		}, rec.released())
+		require.Equal(t, []string{"intent-a"}, intents.deleted)
 	})
 
 	t.Run("admin delete releases the named intents", func(t *testing.T) {

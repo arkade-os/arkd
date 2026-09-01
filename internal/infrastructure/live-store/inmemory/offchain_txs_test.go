@@ -100,6 +100,7 @@ func TestOffChainTxStoreClaimOutpoints(t *testing.T) {
 
 		const n = 64
 		var fresh, conflicts int64
+		errs := make(chan error, n)
 		var wg sync.WaitGroup
 		wg.Add(n)
 		for i := 0; i < n; i++ {
@@ -107,7 +108,10 @@ func TestOffChainTxStoreClaimOutpoints(t *testing.T) {
 			go func(owner string) {
 				defer wg.Done()
 				status, _, err := store.ClaimOutpoints(ctx, owner, []domain.Outpoint{x})
-				require.NoError(t, err)
+				if err != nil {
+					errs <- err
+					return
+				}
 				switch status {
 				case ports.ClaimFresh:
 					atomic.AddInt64(&fresh, 1)
@@ -117,6 +121,10 @@ func TestOffChainTxStoreClaimOutpoints(t *testing.T) {
 			}(owner)
 		}
 		wg.Wait()
+		close(errs)
+		for err := range errs {
+			require.NoError(t, err)
+		}
 
 		require.Equal(t, int64(1), fresh, "exactly one distinct owner must win")
 		require.Equal(t, int64(n-1), conflicts)
@@ -130,19 +138,27 @@ func TestOffChainTxStoreClaimOutpoints(t *testing.T) {
 
 		const n = 64
 		var conflicts int64
+		errs := make(chan error, n)
 		var wg sync.WaitGroup
 		wg.Add(n)
 		for i := 0; i < n; i++ {
 			go func() {
 				defer wg.Done()
 				status, _, err := store.ClaimOutpoints(ctx, ownerA, []domain.Outpoint{x})
-				require.NoError(t, err)
+				if err != nil {
+					errs <- err
+					return
+				}
 				if status == ports.ClaimConflict {
 					atomic.AddInt64(&conflicts, 1)
 				}
 			}()
 		}
 		wg.Wait()
+		close(errs)
+		for err := range errs {
+			require.NoError(t, err)
+		}
 
 		require.Equal(t, int64(0), conflicts, "same-owner claims must never conflict")
 	})
