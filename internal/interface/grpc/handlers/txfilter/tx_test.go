@@ -10,7 +10,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/interface/grpc/handlers/txfilter"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/require"
 )
 

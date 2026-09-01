@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/chainhash/v2"
 )
 
 // AssetInputType distinguishes how an asset input references its source.
