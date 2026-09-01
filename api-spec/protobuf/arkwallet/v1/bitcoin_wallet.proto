@@ -116,6 +116,11 @@ service WalletService {
       get: "/v1/wallet/connector-utxos"
     };
   }
+  rpc GetMainAccountUtxos(GetMainAccountUtxosRequest) returns (GetMainAccountUtxosResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/wallet/main-account-utxos"
+    };
+  }
   rpc MainAccountBalance(MainAccountBalanceRequest) returns (MainAccountBalanceResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/wallet/main-account-balance"
@@ -339,10 +344,15 @@ message FeeRateResponse {
 }
 
 message ListConnectorUtxosRequest {
-  string connector_address = 1;
+  repeated string connector_addresses = 1;
 }
 message ListConnectorUtxosResponse {
   repeated TxInput utxos = 1;
+}
+
+message GetMainAccountUtxosRequest {}
+message GetMainAccountUtxosResponse {
+  repeated WalletUtxo utxos = 1;
 }
 
 message MainAccountBalanceRequest {}
@@ -431,6 +441,16 @@ message TxInput {
   uint32 index = 2;
   string script = 3;
   uint64 value = 4;
+}
+
+message WalletUtxo {
+  string txid = 1;
+  uint32 vout = 2;
+  uint64 value = 3;
+  string script = 4;
+  string address = 5;
+  uint32 confirmations = 6;
+  bool locked = 7;
 }
 
 message TxOutpoint {

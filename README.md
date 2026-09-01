@@ -55,15 +55,17 @@ In this documentation, you'll learn how to install and use `arkd`, a Bitcoin ser
 
 ### Configuration Options
 
-The `arkd` server can be configured using environment variables.
+The `arkd` server can be configured using environment variables and the admin settings API.
+
+#### Environment Variables
 
 | Environment Variable                | Description                                                                     | Default                        |
 |-------------------------------------|---------------------------------------------------------------------------------|--------------------------------|
 | `ARKD_DATADIR`                      | Directory to store data                                                         | App data directory             |
 | `ARKD_PORT`                         | Port (public) to listen on                                                      | `7070`                         |
 | `ARKD_ADMIN_PORT`                   | Admin port (private) to listen on, fallback to service port if 0                | `7071`                         |
+| `ARKD_ENABLE_CHANNELZ`              | Expose gRPC channelz introspection; query via `grpc_cli` on the admin port      | `false`                        |
 | `ARKD_LOG_LEVEL`                    | Logging level (0-6, where 6 is trace)                                           | `4` (info)                     |
-| `ARKD_SESSION_DURATION`             | How long a batch session lasts (in seconds) before timing out once it started   | `30`                           |
 | `ARKD_DB_TYPE`                      | Database type (postgres, sqlite, badger)                                        | `postgres`                     |
 | `ARKD_PG_DB_URL`                    | Postgres connection url if `ARKD_DB_TYPE` is set to `postgres`                  | -                              |
 | `ARKD_EVENT_DB_TYPE`                | Event database type (postgres, badger)                                          | `postgres`                     |
@@ -77,10 +79,9 @@ The `arkd` server can be configured using environment variables.
 | `ARKD_LIVE_STORE_TYPE`              | Cache service type (redis, inmemory)                                            | `redis`                        |
 | `ARKD_REDIS_URL`                    | Redis db connection url if `ARKD_LIVE_STORE_TYPE` is set to `redis`             | -                              |
 | `ARKD_REDIS_NUM_OF_RETRIES`         | Maximum number of retries for Redis write operations in case of conflicts       | -                              |
-| `ARKD_VTXO_TREE_EXPIRY`             | VTXO tree expiry in seconds. Values below `512` are allowed only on regtest                                                     | `604672` (7 days)              |
-| `ARKD_UNILATERAL_EXIT_DELAY`        | Unilateral exit delay in seconds                                                | `86400` (24 hours)             |
-| `ARKD_BOARDING_EXIT_DELAY`          | Boarding exit delay in seconds                                                  | `7776000` (3 months)           |
 | `ARKD_ESPLORA_URL`                  | Esplora API URL                                                                 | `https://blockstream.info/api` |
+| `ARKD_ARKADE_EXPLORER_URL`          | Arkade explorer URL                                                             | `https://arkade.space`         |
+| `ARKD_ALERT_MANAGER_URL`            | AlertManager URL for pushing alerts                                             | -                              |
 | `ARKD_WALLET_ADDR`                  | The arkd wallet address to connect to in the form `host:port`                   | -                              |
 | `ARKD_SIGNER_ADDR`                  | The signer address to connect to in the form `host:port`                        | value of `ARKD_WALLET_ADDR`    |
 | `ARKD_NO_MACAROONS`                 | Disable macaroon authentication                                                 | `false`                        |
@@ -88,31 +89,57 @@ The `arkd` server can be configured using environment variables.
 | `ARKD_UNLOCKER_TYPE`                | Wallet unlocker type (env, file) to enable auto-unlock                          | -                              |
 | `ARKD_UNLOCKER_FILE_PATH`           | Path to unlocker file                                                           | -                              |
 | `ARKD_UNLOCKER_PASSWORD`            | Wallet unlocker password                                                        | -                              |
-| `ARKD_ROUND_MAX_PARTICIPANTS_COUNT` | Maximum number of participants per round                                        | `128`                          |
-| `ARKD_ROUND_MIN_PARTICIPANTS_COUNT` | Minimum number of participants per round                                        | `1`                            |
-| `ARKD_UTXO_MAX_AMOUNT`              | The maximum allowed amount for boarding or collaborative exit                   | `-1` (unset)                   |
-| `ARKD_UTXO_MIN_AMOUNT`              | The minimum allowed amount for boarding or collaborative exit                   | `-1` (dust)                    |
-| `ARKD_VTXO_MAX_AMOUNT`              | The maximum allowed amount for vtxos                                            | `-1` (unset)                   |
-| `ARKD_VTXO_MIN_AMOUNT`              | The minimum allowed amount for vtxos                                            | `-1` (dust)                    |
-| `ARKD_BAN_DURATION`                | Ban duration in seconds                                                         | `300` (5 minutes)              |
-| `ARKD_BAN_THRESHOLD`               | Number of crimes to trigger a ban                                               | `3`                            |
-| `ARKD_CHECKPOINT_EXIT_DELAY`       | Checkpoint exit delay in seconds                                                | `86400` (24 hours)             |
 | `ARKD_TLS_EXTRA_IP`                | Extra IP addresses for TLS (comma-separated)                                   | -                              |
 | `ARKD_TLS_EXTRA_DOMAIN`            | Extra domains for TLS (comma-separated)                                         | -                              |
-| `ARKD_NOTE_URI_PREFIX`             | Note URI prefix                                                                 | -                              |
-| `ARKD_SCHEDULED_SESSION_START_TIME` | Scheduled session start time (Unix timestamp)                                 | -                              |
-| `ARKD_SCHEDULED_SESSION_END_TIME`   | Scheduled session end time (Unix timestamp)                                    | -                              |
-| `ARKD_SCHEDULED_SESSION_PERIOD`    | Scheduled session period in minutes                                             | -                              |
-| `ARKD_SCHEDULED_SESSION_DURATION`  | Scheduled session duration in seconds                                           | -                              |
-| `ARKD_SCHEDULED_SESSION_MIN_ROUND_PARTICIPANTS_COUNT` | Min participants for scheduled sessions        | -                              |
-| `ARKD_SCHEDULED_SESSION_MAX_ROUND_PARTICIPANTS_COUNT` | Max participants for scheduled sessions        | -                              |
 | `ARKD_OTEL_COLLECTOR_ENDPOINT`     | OpenTelemetry collector endpoint                                                | -                              |
 | `ARKD_OTEL_PUSH_INTERVAL`          | OpenTelemetry push interval in seconds                                          | `10`                           |
+| `ARKD_PYROSCOPE_SERVER_URL`        | Pyroscope server URL for continuous profiling                                   | -                              |
+| `ARKD_ENABLE_PPROF`                | Expose pprof endpoints on the admin port                                        | `false`                        |
 | `ARKD_HEARTBEAT_INTERVAL`          | Heartbeat interval in seconds                                                   | `60`                           |
-| `ARKD_ROUND_REPORT_ENABLED`        | Enable round report service                                                     | `false`                        |
-| `ARKD_INDEXER_EXPOSURE`.           | Require intent for getting vtxo chain (public, private, withheld)               | `public`                       |
+| `ARKD_MAX_CONCURRENT_STREAMS`      | Max concurrent gRPC streams per connection                                      | `1000`                         |
+| `ARKD_STREAM_CONN_POOL_SIZE`       | Number of gRPC connections in the stream pool                                   | `4`                            |
+| `ARKD_INDEXER_EXPOSURE`            | Require intent for getting vtxo chain (public, private, withheld)               | `public`                       |
 | `ARKD_INDEXER_SIGNING_PRIVKEY`     | Hex-encoded private key for indexer auth token signing (sensitive)              | -                              |
 | `ARKD_INDEXER_AUTH_TOKEN_EXPIRY`   | Auth token TTL in seconds                                                       | `300` (5 minutes)              |
+| `ARKD_BATCH_TRIGGER`               | Optional CEL formula returning `bool`. When set, the server only starts a new batch round when the formula evaluates to `true`. See [`pkg/ark-lib/batchtrigger/README.md`](pkg/ark-lib/batchtrigger/README.md) for the available variables and examples. | - (always start)               |
+
+#### Admin Settings
+
+The following settings are persisted in the database and managed via the admin API.
+
+> Default values are seeded from `ARKD_*` environment variables on the **first startup only**. After that, those environment variables are ignored and settings are managed exclusively via the admin API. See [Settings: first-boot seeding and runtime management](docs/settings.md) for the full list of seed variables, units, defaults, and how to change settings at runtime.
+
+| Endpoint                          | Method | Description                              |
+|-----------------------------------|--------|------------------------------------------|
+| `/v1/admin/settings`              | GET    | Retrieve current settings                |
+| `/v1/admin/settings`              | POST   | Update settings (partial; only provided fields change)           |
+
+| Setting                              | Description                                                  | Default                        |
+|--------------------------------------|--------------------------------------------------------------|--------------------------------|
+| `session_duration`                   | How long a batch session lasts (in seconds) before timing out once it started | `30`          |
+| `vtxo_tree_expiry`                   | VTXO tree expiry (relative locktime: ≥ 512 = seconds, < 512 = blocks) | `604672`              |
+| `unilateral_exit_delay`              | Unilateral exit delay in seconds                             | `86400` (24 hours)             |
+| `public_unilateral_exit_delay`       | Public unilateral exit delay in seconds                      | `86400` (24 hours)             |
+| `checkpoint_exit_delay`              | Checkpoint exit delay (blocks or seconds)                    | `86400` (24 hours)             |
+| `boarding_exit_delay`                | Boarding exit delay in seconds                               | `7776000` (3 months)           |
+| `unrolled_vtxo_min_expiry_margin`    | Min expiry margin for unrolled vtxos in seconds              | `300` (5 minutes)              |
+| `round_min_participants_count`       | Minimum number of participants per round                     | `1`                            |
+| `round_max_participants_count`       | Maximum number of participants per round                     | `128`                          |
+| `vtxo_min_amount`                    | Minimum allowed amount for vtxos                             | `-1` (dust)                    |
+| `vtxo_max_amount`                    | Maximum allowed amount for vtxos                             | `-1` (unset)                   |
+| `utxo_min_amount`                    | Minimum allowed amount for boarding or collaborative exit    | `-1` (dust)                    |
+| `utxo_max_amount`                    | Maximum allowed amount for boarding or collaborative exit    | `-1` (unset)                   |
+| `ban_duration`                       | Ban duration in seconds                                      | `300` (5 minutes)              |
+| `ban_threshold`                      | Number of crimes to trigger a ban                            | `3`                            |
+| `max_tx_weight`                      | Max transaction weight                                       | `40000`                        |
+| `max_op_return_outputs`              | Max OP_RETURN outputs per transaction                        | `3`                            |
+| `asset_tx_max_weight_ratio`          | Max weight ratio for asset transactions, in `(0, 1)`         | `0.5`                          |
+| `settlement_min_expiry_gap`          | Minimum gap between settlement and VTXO expiry in seconds    | `0`                            |
+| `vtxo_no_csv_validation_cutoff_date` | Unix timestamp after which CSV validation is enforced        | `0` (disabled)                 |
+| `note_uri_prefix`                    | Note URI prefix                                              | `""`                           |
+| `build_version_header`               | Min accepted client build version (semver, e.g. `v2.3.4`)    | `""` (no minimum)              |
+| `build_version_header_required`      | Require clients to send a valid `X-Build-Version` header     | `false`                        |
+| `digest_header_required`             | Require clients to send a matching `X-Digest` header         | `false`                        |
 
 ## Provisioning
 
@@ -236,6 +263,9 @@ For a complete list of available commands and options:
   - [`ark-lib`](./pkg/ark-lib): collection of data structures and functions reusable by arkd and sdk.
   - [`arkd-wallet`](./pkg/arkd-wallet): bitcoin wallet service used as liquidity provider and signer.
   - [`ark-cli`](./pkg/ark-cli): ark offchain and onchain wallet as command line interface.
+  - [`client-lib`](./pkg/client-lib): Go client library to interact with arkd (transport, explorer, batch sessions).
+  - [`client-wallet`](./pkg/client-wallet): client-side wallet built on top of `client-lib`.
+  - [`errors`](./pkg/errors): shared error types and codes.
 - [`internal`](./internal): arkd implementation.
   - [`core`](./internal/core): contains the core business logic of arkd.
     - [`application`](./internal/core/application/): contains the implementation of the service responsible for the [core operations](https://github.com/arkade-os/arkd/tree/master/README.md#L19-L22).
@@ -265,7 +295,7 @@ To compile the `arkd` binary from source, you can use the following Make command
 
 ### Local Development Setup
 
-1. Install Go (version 1.23 or later)
+1. Install Go (version 1.26 or later)
 2. Install [Nigiri](https://nigiri.vulpem.com/) for local Bitcoin networks
 3. Start Nigiri to setup a regtest Bitcoin environment:
 

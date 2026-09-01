@@ -684,12 +684,14 @@ type GetVtxosRequest struct {
 	Scripts []string `protobuf:"bytes,1,rep,name=scripts,proto3" json:"scripts,omitempty"`
 	// Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.
 	Outpoints []string `protobuf:"bytes,2,rep,name=outpoints,proto3" json:"outpoints,omitempty"`
+	// The spendable_only, spent_only, recoverable_only, pending_only and
+	// renewable_only filters are mutually exclusive, and are applied only when
+	// the scripts filter is used. They are ignored when querying by outpoints.
 	// Retrieve only spendable vtxos
 	SpendableOnly bool `protobuf:"varint,3,opt,name=spendable_only,json=spendableOnly,proto3" json:"spendable_only,omitempty"`
 	// Retrieve only spent vtxos.
 	SpentOnly bool `protobuf:"varint,4,opt,name=spent_only,json=spentOnly,proto3" json:"spent_only,omitempty"`
 	// Retrieve only recoverable vtxos (notes, subdust or swept vtxos).
-	// The 3 filters are mutually exclusive,
 	RecoverableOnly bool                `protobuf:"varint,5,opt,name=recoverable_only,json=recoverableOnly,proto3" json:"recoverable_only,omitempty"`
 	Page            *IndexerPageRequest `protobuf:"bytes,6,opt,name=page,proto3" json:"page,omitempty"`
 	// Include only spent vtxos that are not finalized.
@@ -699,7 +701,9 @@ type GetVtxosRequest struct {
 	After int64 `protobuf:"varint,8,opt,name=after,proto3" json:"after,omitempty"`
 	// Include only vtxos with last update before the given unix time in milliseconds,
 	// greater value than the after when specified. A value of 0 means no upper bound.
-	Before        int64 `protobuf:"varint,9,opt,name=before,proto3" json:"before,omitempty"`
+	Before int64 `protobuf:"varint,9,opt,name=before,proto3" json:"before,omitempty"`
+	// Retrieve the union of the spendable and recoverable vtxos.
+	RenewableOnly bool `protobuf:"varint,10,opt,name=renewable_only,json=renewableOnly,proto3" json:"renewable_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -797,6 +801,13 @@ func (x *GetVtxosRequest) GetBefore() int64 {
 	return 0
 }
 
+func (x *GetVtxosRequest) GetRenewableOnly() bool {
+	if x != nil {
+		return x.RenewableOnly
+	}
+	return false
+}
+
 type GetVtxosResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Vtxos         []*IndexerVtxo         `protobuf:"bytes,1,rep,name=vtxos,proto3" json:"vtxos,omitempty"`
@@ -859,7 +870,10 @@ type GetVtxoChainRequest struct {
 	//
 	//	*GetVtxoChainRequest_Intent
 	//	*GetVtxoChainRequest_Token
-	Auth          isGetVtxoChainRequest_Auth `protobuf_oneof:"auth"`
+	Auth isGetVtxoChainRequest_Auth `protobuf_oneof:"auth"`
+	// Opaque cursor returned as next_page_token by a previous call. When set, the
+	// response resumes from where that page ended.
+	PageToken     string `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -933,6 +947,13 @@ func (x *GetVtxoChainRequest) GetToken() string {
 	return ""
 }
 
+func (x *GetVtxoChainRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type isGetVtxoChainRequest_Auth interface {
 	isGetVtxoChainRequest_Auth()
 }
@@ -957,7 +978,9 @@ type GetVtxoChainResponse struct {
 	Chain []*IndexerChain        `protobuf:"bytes,1,rep,name=chain,proto3" json:"chain,omitempty"`
 	Page  *IndexerPageResponse   `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	// Auth token can be used for other rpcs related to this vtxo/tx that require proof of ownership.
-	AuthToken     string `protobuf:"bytes,3,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
+	AuthToken string `protobuf:"bytes,3,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
+	// Opaque cursor for fetching the next page. Empty when there are no more pages.
+	NextPageToken string `protobuf:"bytes,4,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1009,6 +1032,13 @@ func (x *GetVtxoChainResponse) GetPage() *IndexerPageResponse {
 func (x *GetVtxoChainResponse) GetAuthToken() string {
 	if x != nil {
 		return x.AuthToken
+	}
+	return ""
+}
+
+func (x *GetVtxoChainResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
 	}
 	return ""
 }
@@ -1618,6 +1648,7 @@ type IndexerVtxo struct {
 	SettledBy       string                 `protobuf:"bytes,12,opt,name=settled_by,json=settledBy,proto3" json:"settled_by,omitempty"`
 	ArkTxid         string                 `protobuf:"bytes,13,opt,name=ark_txid,json=arkTxid,proto3" json:"ark_txid,omitempty"`
 	Assets          []*IndexerAsset        `protobuf:"bytes,14,rep,name=assets,proto3" json:"assets,omitempty"`
+	Depth           uint32                 `protobuf:"varint,15,opt,name=depth,proto3" json:"depth,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1748,6 +1779,13 @@ func (x *IndexerVtxo) GetAssets() []*IndexerAsset {
 		return x.Assets
 	}
 	return nil
+}
+
+func (x *IndexerVtxo) GetDepth() uint32 {
+	if x != nil {
+		return x.Depth
+	}
+	return 0
 }
 
 type IndexerAsset struct {
@@ -3018,7 +3056,7 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\"}\n" +
 	"\x19GetVtxoTreeLeavesResponse\x12/\n" +
 	"\x06leaves\x18\x01 \x03(\v2\x17.ark.v1.IndexerOutpointR\x06leaves\x12/\n" +
-	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"\xbb\x02\n" +
+	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"\xe2\x02\n" +
 	"\x0fGetVtxosRequest\x12\x18\n" +
 	"\ascripts\x18\x01 \x03(\tR\ascripts\x12\x1c\n" +
 	"\toutpoints\x18\x02 \x03(\tR\toutpoints\x12%\n" +
@@ -3029,21 +3067,26 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x04page\x18\x06 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\x12!\n" +
 	"\fpending_only\x18\a \x01(\bR\vpendingOnly\x12\x14\n" +
 	"\x05after\x18\b \x01(\x03R\x05after\x12\x16\n" +
-	"\x06before\x18\t \x01(\x03R\x06before\"n\n" +
+	"\x06before\x18\t \x01(\x03R\x06before\x12%\n" +
+	"\x0erenewable_only\x18\n" +
+	" \x01(\bR\rrenewableOnly\"n\n" +
 	"\x10GetVtxosResponse\x12)\n" +
 	"\x05vtxos\x18\x01 \x03(\v2\x13.ark.v1.IndexerVtxoR\x05vtxos\x12/\n" +
-	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"\xcb\x01\n" +
+	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"\xea\x01\n" +
 	"\x13GetVtxoChainRequest\x123\n" +
 	"\boutpoint\x18\x01 \x01(\v2\x17.ark.v1.IndexerOutpointR\boutpoint\x12.\n" +
 	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\x12/\n" +
 	"\x06intent\x18\x03 \x01(\v2\x15.ark.v1.IndexerIntentH\x00R\x06intent\x12\x16\n" +
-	"\x05token\x18\x04 \x01(\tH\x00R\x05tokenB\x06\n" +
-	"\x04auth\"\x92\x01\n" +
+	"\x05token\x18\x04 \x01(\tH\x00R\x05token\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\x05 \x01(\tR\tpageTokenB\x06\n" +
+	"\x04auth\"\xba\x01\n" +
 	"\x14GetVtxoChainResponse\x12*\n" +
 	"\x05chain\x18\x01 \x03(\v2\x14.ark.v1.IndexerChainR\x05chain\x12/\n" +
 	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\x12\x1d\n" +
 	"\n" +
-	"auth_token\x18\x03 \x01(\tR\tauthToken\"\xad\x01\n" +
+	"auth_token\x18\x03 \x01(\tR\tauthToken\x12&\n" +
+	"\x0fnext_page_token\x18\x04 \x01(\tR\rnextPageToken\"\xad\x01\n" +
 	"\x14GetVirtualTxsRequest\x12\x14\n" +
 	"\x05txids\x18\x01 \x03(\tR\x05txids\x12.\n" +
 	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\x12/\n" +
@@ -3083,7 +3126,7 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\bchildren\x18\x02 \x03(\v2!.ark.v1.IndexerNode.ChildrenEntryR\bchildren\x1a;\n" +
 	"\rChildrenEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\rR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xde\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xf4\x03\n" +
 	"\vIndexerVtxo\x123\n" +
 	"\boutpoint\x18\x01 \x01(\v2\x17.ark.v1.IndexerOutpointR\boutpoint\x12\x1d\n" +
 	"\n" +
@@ -3103,7 +3146,8 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\n" +
 	"settled_by\x18\f \x01(\tR\tsettledBy\x12\x19\n" +
 	"\bark_txid\x18\r \x01(\tR\aarkTxid\x12,\n" +
-	"\x06assets\x18\x0e \x03(\v2\x14.ark.v1.IndexerAssetR\x06assets\"A\n" +
+	"\x06assets\x18\x0e \x03(\v2\x14.ark.v1.IndexerAssetR\x06assets\x12\x14\n" +
+	"\x05depth\x18\x0f \x01(\rR\x05depth\"A\n" +
 	"\fIndexerAsset\x12\x19\n" +
 	"\basset_id\x18\x01 \x01(\tR\aassetId\x12\x16\n" +
 	"\x06amount\x18\x02 \x01(\x04R\x06amount\"\x8b\x01\n" +

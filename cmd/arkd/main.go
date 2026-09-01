@@ -44,6 +44,7 @@ func startAction(_ *cli.Context) error {
 		TLSExtraDomains:      cfg.TLSExtraDomains,
 		HeartbeatInterval:    cfg.HeartbeatInterval,
 		EnablePprof:          cfg.EnablePprof,
+		EnableChannelz:       cfg.EnableChannelz,
 		MaxConcurrentStreams: cfg.MaxConcurrentStreams,
 		StreamConnPoolSize:   cfg.StreamConnPoolSize,
 	}
@@ -90,9 +91,14 @@ func main() {
 		noteCmd,
 		intentsCmd,
 		scheduledSweepCmd,
+		expiredRoundsCmd,
 		sweepCmd,
+		walletUtxosCmd,
 		roundInfoCmd,
 		roundsInTimeRangeCmd,
+		offchainTxsCmd,
+		offchainTxInfoCmd,
+		feeRateCmd,
 		scheduledSessionCmd,
 		revokeAuthCmd,
 		convictionsCmd,
@@ -100,10 +106,15 @@ func main() {
 		liquidityRecoverableCmd,
 		liquidityReportCmd,
 		feesCmd,
+		settingsCmd,
 	)
 
 	app.DefaultCommand = startCmd.Name
-	app.Flags = append(app.Flags, urlFlag, datadirFlag, macaroonFlag)
+	app.Flags = append(app.Flags, urlFlag, datadirFlag, macaroonFlag, timeoutFlag)
+	app.Before = func(ctx *cli.Context) error {
+		timeout = ctx.Duration(timeoutFlagName)
+		return nil
+	}
 
 	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)

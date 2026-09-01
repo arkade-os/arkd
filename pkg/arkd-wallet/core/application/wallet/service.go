@@ -10,19 +10,20 @@ import (
 	"strings"
 	"time"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
 	"github.com/arkade-os/arkd/pkg/arkd-wallet/core/ports"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/coinset"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/btcutil/v2/coinset"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -44,11 +45,18 @@ var (
 const biggestInputSize = 148 + 182 // = 330 vbytes
 
 type WalletOptions struct {
-	SeedRepository ports.SeedRepository
-	Cypher         ports.Cypher
-	Nbxplorer      ports.Nbxplorer
-	Network        string
-	SignerKey      *btcec.PrivateKey
+	SeedRepository       ports.SeedRepository
+	Cypher               ports.Cypher
+	Nbxplorer            ports.Nbxplorer
+	Network              string
+	SignerKey            *btcec.PrivateKey
+	DeprecatedSignerKeys []DeprecatedSignerKey
+}
+
+type DeprecatedSignerKey struct {
+	Key *btcec.PrivateKey
+	// unix timestamp after which the key is no longer accepted, 0 if unset
+	CutoffDate int64
 }
 
 type wallet struct {
@@ -244,6 +252,19 @@ func (w *wallet) GetSignerPubkey(ctx context.Context) (string, error) {
 	return pubkey, nil
 }
 
+func (w *wallet) GetDeprecatedSignerPubkeys(
+	ctx context.Context,
+) ([]application.DeprecatedSignerPubkey, error) {
+	pubkeys := make([]application.DeprecatedSignerPubkey, 0, len(w.DeprecatedSignerKeys))
+	for _, k := range w.DeprecatedSignerKeys {
+		pubkeys = append(pubkeys, application.DeprecatedSignerPubkey{
+			Pubkey:     hex.EncodeToString(k.Key.PubKey().SerializeCompressed()),
+			CutoffDate: k.CutoffDate,
+		})
+	}
+	return pubkeys, nil
+}
+
 func (w *wallet) EstimateFees(ctx context.Context, rawTx string) (uint64, error) {
 	partial, err := psbt.NewFromRawBytes(
 		strings.NewReader(rawTx),
@@ -333,9 +354,16 @@ func (w *wallet) LockConnectorUtxos(ctx context.Context, utxos []wire.OutPoint) 
 	return w.locker.lock(ctx, utxos...)
 }
 
-func (w *wallet) ListConnectorUtxos(ctx context.Context, connectorAddress string) ([]application.Utxo, error) {
+func (w *wallet) ListConnectorUtxos(
+	ctx context.Context, connectorAddresses []string,
+) ([]application.Utxo, error) {
 	if w.keyMgr == nil {
 		return nil, ErrWalletLocked
+	}
+
+	addressSet := make(map[string]struct{}, len(connectorAddresses))
+	for _, addr := range connectorAddresses {
+		addressSet[addr] = struct{}{}
 	}
 
 	connectorAccountUtxos, err := w.Nbxplorer.GetUtxos(ctx, w.keyMgr.connectorAccountDerivationScheme)
@@ -356,7 +384,7 @@ func (w *wallet) ListConnectorUtxos(ctx context.Context, connectorAddress string
 			continue
 		}
 
-		if utxo.Address != connectorAddress {
+		if _, ok := addressSet[utxo.Address]; !ok {
 			continue
 		}
 		if _, isLocked := lockedOutpoints[utxo.OutPoint]; isLocked {
@@ -374,6 +402,40 @@ func (w *wallet) ListConnectorUtxos(ctx context.Context, connectorAddress string
 	return connectorUtxos, nil
 }
 
+// GetMainAccountUtxos lists the whole UTXO set of the main account, including
+// locked and unconfirmed UTXOs, each flagged with its lock status.
+func (w *wallet) GetMainAccountUtxos(ctx context.Context) ([]application.MainAccountUtxo, error) {
+	if w.keyMgr == nil {
+		return nil, ErrWalletLocked
+	}
+
+	mainAccountUtxos, err := w.Nbxplorer.GetUtxos(ctx, w.keyMgr.mainAccountDerivationScheme)
+	if err != nil {
+		return nil, err
+	}
+
+	lockedOutpoints, err := w.locker.get(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	utxos := make([]application.MainAccountUtxo, 0, len(mainAccountUtxos))
+	for _, utxo := range mainAccountUtxos {
+		_, locked := lockedOutpoints[utxo.OutPoint]
+		utxos = append(utxos, application.MainAccountUtxo{
+			Txid:          utxo.OutPoint.Hash.String(),
+			Vout:          utxo.OutPoint.Index,
+			Value:         utxo.Value,
+			Script:        utxo.Script,
+			Address:       utxo.Address,
+			Confirmations: utxo.Confirmations,
+			Locked:        locked,
+		})
+	}
+
+	return utxos, nil
+}
+
 func (w *wallet) GetCurrentBlockTime(ctx context.Context) (*application.BlockTimestamp, error) {
 	status, err := w.Nbxplorer.GetBitcoinStatus(ctx)
 	if err != nil {
@@ -387,6 +449,23 @@ func (w *wallet) GetCurrentBlockTime(ctx context.Context) (*application.BlockTim
 }
 
 func (w *wallet) SelectUtxos(ctx context.Context, amount uint64, confirmedOnly bool) ([]application.Utxo, uint64, error) {
+	selectedUtxos, totalValue, err := w.selectCoins(ctx, amount, confirmedOnly, defaultMinChangeAmount)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if err := w.lockUtxos(ctx, selectedUtxos); err != nil {
+		log.Error("failed to lock utxos", err)
+		// ignore error
+	}
+
+	return selectedUtxos, totalValue - amount, nil
+}
+
+// selectCoins picks a subset of the main account UTXOs covering amount
+func (w *wallet) selectCoins(
+	ctx context.Context, amount uint64, confirmedOnly bool, minChangeAmount btcutil.Amount,
+) ([]application.Utxo, uint64, error) {
 	if w.keyMgr == nil {
 		return nil, 0, ErrWalletLocked
 	}
@@ -414,14 +493,13 @@ func (w *wallet) SelectUtxos(ctx context.Context, amount uint64, confirmedOnly b
 		availableUtxos = append(availableUtxos, coin{utxo})
 	}
 
-	coins, err := coinSelector.CoinSelect(btcutil.Amount(amount), availableUtxos)
+	coins, err := economicalCoinSelector{minChangeAmount}.CoinSelect(btcutil.Amount(amount), availableUtxos)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	selected := coins.Coins()
 	selectedUtxos := make([]application.Utxo, 0, len(selected))
-	toLock := make([]wire.OutPoint, 0, len(selected))
 	totalValue := uint64(0)
 
 	for _, coin := range selected {
@@ -432,21 +510,101 @@ func (w *wallet) SelectUtxos(ctx context.Context, amount uint64, confirmedOnly b
 			Script: hex.EncodeToString(coin.PkScript()),
 			Value:  value,
 		})
-		toLock = append(toLock, wire.OutPoint{
-			Hash:  *coin.Hash(),
-			Index: coin.Index(),
-		})
 		totalValue += value
 	}
 
-	if err := w.locker.lock(ctx, toLock...); err != nil {
-		log.Error("failed to lock utxos", err)
-		// ignore error
+	return selectedUtxos, totalValue, nil
+}
+
+// selectCoinsForWithdraw selects main-account UTXOs to fund a withdrawal of
+// `amount` in a tx paying `feeRate`.
+func (w *wallet) selectCoinsForWithdraw(
+	ctx context.Context, amount uint64, feeRate chainfee.SatPerKVByte, destPkScript []byte,
+) ([]application.Utxo, uint64, error) {
+	if w.keyMgr == nil {
+		return nil, 0, ErrWalletLocked
 	}
 
-	change := totalValue - amount
+	mainAccountUtxos, err := w.Nbxplorer.GetUtxos(ctx, w.keyMgr.mainAccountDerivationScheme)
+	if err != nil {
+		return nil, 0, err
+	}
 
-	return selectedUtxos, change, nil
+	lockedOutpoints, err := w.locker.get(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// fee(n) = base + perInput*n, derived from the weight estimator.
+	feeOneInput := w.estimateWithdrawFee(feeRate, 1, destPkScript)
+	feeTwoInputs := w.estimateWithdrawFee(feeRate, 2, destPkScript)
+	perInput := feeTwoInputs - feeOneInput
+	base := feeOneInput - perInput
+
+	availableUtxos := make([]coinset.Coin, 0, len(mainAccountUtxos))
+	for _, utxo := range mainAccountUtxos {
+		if _, isLocked := lockedOutpoints[utxo.OutPoint]; isLocked {
+			continue
+		}
+		// skip UTXOs that cost at least as much to spend as they are worth
+		if utxo.Value <= perInput {
+			continue
+		}
+		availableUtxos = append(availableUtxos, effectiveValueCoin{
+			coin:           coin{utxo},
+			effectiveValue: btcutil.Amount(utxo.Value - perInput),
+		})
+	}
+
+	coins, err := consolidateFirstCoinSelector{0}.CoinSelect(btcutil.Amount(amount+base), availableUtxos)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	selected := coins.Coins()
+	selectedUtxos := make([]application.Utxo, 0, len(selected))
+	totalValue := uint64(0)
+	for _, c := range selected {
+		utxo := c.(effectiveValueCoin).coin.utxo
+		selectedUtxos = append(selectedUtxos, application.Utxo{
+			Txid:   utxo.OutPoint.Hash.String(),
+			Index:  utxo.OutPoint.Index,
+			Script: utxo.Script,
+			Value:  utxo.Value,
+		})
+		totalValue += utxo.Value
+	}
+
+	return selectedUtxos, totalValue, nil
+}
+
+// lockUtxos locks the given UTXOs so concurrent operations don't double-spend them.
+func (w *wallet) lockUtxos(ctx context.Context, utxos []application.Utxo) error {
+	toLock := make([]wire.OutPoint, 0, len(utxos))
+	for _, utxo := range utxos {
+		hash, err := chainhash.NewHashFromStr(utxo.Txid)
+		if err != nil {
+			return fmt.Errorf("failed to parse txid: %w", err)
+		}
+		toLock = append(toLock, wire.OutPoint{Hash: *hash, Index: utxo.Index})
+	}
+
+	return w.locker.lock(ctx, toLock...)
+}
+
+// unlockUtxos releases UTXOs previously locked by lockUtxos, e.g. when the tx
+// they were selected for ends up not being broadcast.
+func (w *wallet) unlockUtxos(ctx context.Context, utxos []application.Utxo) {
+	toUnlock := make([]wire.OutPoint, 0, len(utxos))
+	for _, utxo := range utxos {
+		hash, err := chainhash.NewHashFromStr(utxo.Txid)
+		if err != nil {
+			continue
+		}
+		toUnlock = append(toUnlock, wire.OutPoint{Hash: *hash, Index: utxo.Index})
+	}
+
+	w.locker.unlock(ctx, toUnlock...)
 }
 
 func (w *wallet) GetTransaction(ctx context.Context, txid string) (string, error) {
@@ -519,9 +677,17 @@ func (w *wallet) SignTransaction(
 			continue
 		}
 
+		// this comes from the submitted psbt, so without the check a caller can steer
+		// what our own signature commits to.
+		if err := script.CheckSigHashType(input.SighashType); err != nil {
+			return "", fmt.Errorf("input %d: %w", inputIndex, err)
+		}
+
 		if len(input.TaprootLeafScript) > 0 {
-			signingKey := w.SignerKey
-			if signMode == application.SignModeLiquidityProvider {
+			var signingKey *btcec.PrivateKey
+			if signMode == application.SignModeSigner {
+				signingKey = w.signerKeyForLeaf(input.TaprootLeafScript[0].Script)
+			} else {
 				signingKey = w.keyMgr.forfeitPrvkey
 			}
 
@@ -584,15 +750,15 @@ func (w *wallet) SignTransaction(
 					return "", err
 				}
 
-				conditionWitnessFields, err := txutils.GetArkPsbtFields(ptx, i, txutils.ConditionWitnessField)
+				conditionWitness, err := txutils.GetArkPsbtConditionWitness(ptx, i)
 				if err != nil {
 					return "", err
 				}
 
 				args := make(map[string][]byte)
-				if len(conditionWitnessFields) > 0 {
+				if conditionWitness != nil {
 					var conditionWitnessBytes bytes.Buffer
-					if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitnessFields[0]); err != nil {
+					if err := psbt.WriteTxWitness(&conditionWitnessBytes, conditionWitness); err != nil {
 						return "", err
 					}
 					args[string(txutils.ArkFieldConditionWitness)] = conditionWitnessBytes.Bytes()
@@ -637,9 +803,43 @@ func (w *wallet) SignTransaction(
 	return ptx.B64Encode()
 }
 
+// signerKeyForLeaf returns the deprecated signer key referenced by the leaf, or the current SignerKey.
+func (w *wallet) signerKeyForLeaf(leafScript []byte) *btcec.PrivateKey {
+	if len(w.DeprecatedSignerKeys) == 0 {
+		return w.SignerKey
+	}
+
+	closure, err := script.DecodeClosure(leafScript)
+	if err != nil {
+		return w.SignerKey
+	}
+
+	leafKeys := make([]*btcec.PublicKey, 0)
+	switch c := closure.(type) {
+	case *script.MultisigClosure:
+		leafKeys = c.PubKeys
+	case *script.CLTVMultisigClosure:
+		leafKeys = c.PubKeys
+	case *script.ConditionMultisigClosure:
+		leafKeys = c.PubKeys
+	default:
+		return w.SignerKey
+	}
+
+	for _, k := range w.DeprecatedSignerKeys {
+		want := schnorr.SerializePubKey(k.Key.PubKey())
+		for _, pubkey := range leafKeys {
+			if bytes.Equal(schnorr.SerializePubKey(pubkey), want) {
+				return k.Key
+			}
+		}
+	}
+	return w.SignerKey
+}
+
 // WithdrawAll withdraws all available balance including connectors account funds
 func (w *wallet) WithdrawAll(ctx context.Context, destinationAddress string) (string, error) {
-	destinationAddr, err := btcutil.DecodeAddress(destinationAddress, w.chainParams())
+	destinationAddr, err := arklib.DecodeBitcoinAddress(destinationAddress, w.chainParams())
 	if err != nil {
 		return "", fmt.Errorf("invalid address: %w", err)
 	}
@@ -684,7 +884,7 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 	}
 
 	// validate the destination address
-	destinationAddr, err := btcutil.DecodeAddress(destinationAddress, w.chainParams())
+	destinationAddr, err := arklib.DecodeBitcoinAddress(destinationAddress, w.chainParams())
 	if err != nil {
 		return "", fmt.Errorf("invalid address: %w", err)
 	}
@@ -718,6 +918,20 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 		}
 	}
 
+	// If signing or broadcasting fails, release the locks held on the inputs so
+	// the funds become spendable again instead of waiting for the lock expiry.
+	// (withdrawAll inputs aren't locked, so this is a no-op for that path.)
+	broadcasted := false
+	defer func() {
+		if !broadcasted {
+			outpoints := make([]wire.OutPoint, 0, len(ptx.UnsignedTx.TxIn))
+			for _, in := range ptx.UnsignedTx.TxIn {
+				outpoints = append(outpoints, in.PreviousOutPoint)
+			}
+			w.locker.unlock(ctx, outpoints...)
+		}
+	}()
+
 	psbtB64, err := ptx.B64Encode()
 	if err != nil {
 		return "", fmt.Errorf("failed to encode PSBT: %w", err)
@@ -729,7 +943,13 @@ func (w *wallet) Withdraw(ctx context.Context, destinationAddress string, amount
 		return "", fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
-	return w.BroadcastTransaction(ctx, signedTx)
+	txid, err := w.BroadcastTransaction(ctx, signedTx)
+	if err != nil {
+		return "", err
+	}
+
+	broadcasted = true
+	return txid, nil
 }
 
 func (w *wallet) LoadSignerKey(ctx context.Context, prvkey *btcec.PrivateKey) error {
@@ -741,7 +961,6 @@ func (w *wallet) LoadSignerKey(ctx context.Context, prvkey *btcec.PrivateKey) er
 	return nil
 }
 
-
 func (w *wallet) Close() {
 	// nolint:errcheck
 	w.Nbxplorer.Close()
@@ -751,18 +970,31 @@ func (w *wallet) Close() {
 }
 
 func (w *wallet) withdrawPartially(ctx context.Context, feeRate chainfee.SatPerKVByte, amount uint64, destPkScript []byte) (*psbt.Packet, error) {
-	// estimate fees for a typical 2-input withdraw
-	estimatedFee := w.estimateWithdrawFee(feeRate, 2, destPkScript)
-
-	selectedUtxos, _, err := w.SelectUtxos(ctx, amount+estimatedFee, false)
+	// Effective-value selection: the chosen UTXOs always cover amount + the fee
+	// for their actual input count, whatever that count is. This makes any
+	// fundable withdraw succeed without a re-selection loop.
+	selectedUtxos, totalInputValue, err := w.selectCoinsForWithdraw(ctx, amount, feeRate, destPkScript)
 	if err != nil {
 		return nil, fmt.Errorf("failed to select UTXOs: %w", err)
 	}
 
-	totalInputValue := uint64(0)
-	inputs := make([]*wire.OutPoint, 0)
+	if err := w.lockUtxos(ctx, selectedUtxos); err != nil {
+		log.Error("failed to lock utxos", err)
+		// ignore error
+	}
+
+	// Release the locked UTXOs if we fail to build the tx, so they don't stay
+	// locked until the lock expiry for nothing.
+	built := false
+	defer func() {
+		if !built {
+			w.unlockUtxos(ctx, selectedUtxos)
+		}
+	}()
+
+	inputs := make([]*wire.OutPoint, 0, len(selectedUtxos))
 	outputs := make([]*wire.TxOut, 0)
-	nSequences := make([]uint32, 0)
+	nSequences := make([]uint32, 0, len(selectedUtxos))
 
 	for _, utxo := range selectedUtxos {
 		hash, err := chainhash.NewHashFromStr(utxo.Txid)
@@ -770,12 +1002,16 @@ func (w *wallet) withdrawPartially(ctx context.Context, feeRate chainfee.SatPerK
 			return nil, fmt.Errorf("failed to parse txid: %w", err)
 		}
 		inputs = append(inputs, &wire.OutPoint{Hash: *hash, Index: utxo.Index})
-		totalInputValue += utxo.Value
 		nSequences = append(nSequences, wire.MaxTxInSequenceNum)
 	}
 
 	actualFee := w.estimateWithdrawFee(feeRate, len(selectedUtxos), destPkScript) // 2 outputs: destination + change
-	changeAmount := totalInputValue - amount - actualFee
+
+	surplus := totalInputValue - amount
+	changeAmount := uint64(0)
+	if surplus > actualFee {
+		changeAmount = surplus - actualFee
+	}
 
 	outputs = append(outputs, &wire.TxOut{
 		Value:    int64(amount),
@@ -788,7 +1024,7 @@ func (w *wallet) withdrawPartially(ctx context.Context, feeRate chainfee.SatPerK
 			return nil, fmt.Errorf("failed to generate change address: %w", err)
 		}
 
-		changeAddr, err := btcutil.DecodeAddress(changeAddress, w.chainParams())
+		changeAddr, err := arklib.DecodeBitcoinAddress(changeAddress, w.chainParams())
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode change address: %w", err)
 		}
@@ -830,6 +1066,7 @@ func (w *wallet) withdrawPartially(ctx context.Context, feeRate chainfee.SatPerK
 		}
 	}
 
+	built = true
 	return ptx, nil
 }
 

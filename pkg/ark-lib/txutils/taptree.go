@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 
-	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/txscript/v2"
 )
+
+const MaxLeaves = 400
 
 // TapTree is a wrapper around a list of tapscripts
 // it is used to encode and decode the taproot tree
@@ -16,15 +19,18 @@ type TapTree []string
 func (t TapTree) Encode() ([]byte, error) {
 	var tapscriptsBytes bytes.Buffer
 
-	for _, tapscript := range t {
+	size := len(t)
+	for i, tapscript := range t {
 		scriptBytes, err := hex.DecodeString(tapscript)
 		if err != nil {
 			return nil, err
 		}
 
-		// write depth (always 1)
-		// TODO: allow multiple depth
-		if err := tapscriptsBytes.WriteByte(1); err != nil {
+		// write depth as a DFS-ordered left caterpillar so the sequence
+		// forms a valid binary tree (leaf i at depth i+1, last leaf shares
+		// its parent; a lone leaf is at depth 0). 
+		depth := min(i+1, size-1)
+		if err := tapscriptsBytes.WriteByte(byte(depth)); err != nil {
 			return nil, err
 		}
 
@@ -66,6 +72,14 @@ func DecodeTapTree(data []byte) (TapTree, error) {
 			return nil, err
 		}
 
+		if scriptLen > uint64(buf.Len()) {
+			return nil, fmt.Errorf("script length %d exceeds remaining data %d", scriptLen, buf.Len())
+		}
+
+		if scriptLen > txscript.MaxScriptSize {
+			return nil, fmt.Errorf("script length %d exceeds max %d", scriptLen, txscript.MaxScriptSize)
+		}
+
 		// script bytes
 		scriptBytes := make([]byte, scriptLen)
 		if _, err := buf.Read(scriptBytes); err != nil {
@@ -73,6 +87,10 @@ func DecodeTapTree(data []byte) (TapTree, error) {
 		}
 
 		leaves = append(leaves, hex.EncodeToString(scriptBytes))
+
+		if len(leaves) > MaxLeaves {
+			return nil, fmt.Errorf("leaves length %d exceeds max %d", len(leaves), MaxLeaves)
+		}
 	}
 
 	return TapTree(leaves), nil

@@ -8,9 +8,9 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,26 +55,6 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 			require.Equal(t, []int{0}, signedInputs)
 		})
 
-		t.Run("non-taproot prevout is skipped", func(t *testing.T) {
-			setup := newSingleKeySetup(t)
-			packet, _ := buildTx(t, setup)
-
-			// Replace the prevout with a P2WPKH script (non-taproot).
-			p2wpkhScript, err := txscript.NewScriptBuilder().
-				AddOp(txscript.OP_0).
-				AddData(make([]byte, 20)).
-				Script()
-			require.NoError(t, err)
-
-			packet.Inputs[0].WitnessUtxo = &wire.TxOut{Value: 1_000, PkScript: p2wpkhScript}
-			prevoutFetcher, err := txutils.GetPrevOutputFetcher(packet)
-			require.NoError(t, err)
-
-			signedInputs, err := script.VerifyTapscriptSigs(packet, prevoutFetcher)
-			require.NoError(t, err)
-			require.Empty(t, signedInputs)
-		})
-
 		t.Run("note closure input is skipped", func(t *testing.T) {
 			setup := newSingleKeySetup(t)
 			packet, prevoutFetcher := buildTx(t, setup)
@@ -107,6 +87,41 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
+		// a taproot leaf script over a non-taproot prevout must be rejected,
+		// the pkscript is sliced at [2:] to read the taproot key from it.
+		t.Run("non-taproot prevout", func(t *testing.T) {
+			p2wpkhScript, err := txscript.NewScriptBuilder().
+				AddOp(txscript.OP_0).
+				AddData(make([]byte, 20)).
+				Script()
+			require.NoError(t, err)
+
+			tests := []struct {
+				description string
+				pkScript    []byte
+			}{
+				{"p2wpkh", p2wpkhScript},
+				{"script shorter than 2 bytes", []byte{txscript.OP_TRUE}},
+				{"empty script", []byte{}},
+			}
+
+			for _, tt := range tests {
+				t.Run(tt.description, func(t *testing.T) {
+					setup := newSingleKeySetup(t)
+					packet, _ := buildTx(t, setup)
+
+					packet.Inputs[0].WitnessUtxo = &wire.TxOut{
+						Value: 1_000, PkScript: tt.pkScript,
+					}
+					prevoutFetcher, err := txutils.GetPrevOutputFetcher(packet)
+					require.NoError(t, err)
+
+					_, err = script.VerifyTapscriptSigs(packet, prevoutFetcher)
+					require.ErrorContains(t, err, "non-taproot prevout")
+				})
+			}
+		})
+
 		t.Run("wrong parity bit in control block", func(t *testing.T) {
 			setup := newSingleKeySetup(t)
 			packet, prevoutFetcher := buildTx(t, setup)

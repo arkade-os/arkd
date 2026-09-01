@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,8 @@ import (
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/interface/grpc/interceptors"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/arkade-os/arkd/pkg/macaroons"
 	"github.com/go-macaroon-bakery/macaroonpb"
 	"google.golang.org/grpc/codes"
@@ -56,6 +59,18 @@ func NewAdminHandler(
 	}
 }
 
+// adminError keeps this file's default of reporting failures as Internal, but
+// lets a structured error through untouched so the error interceptor can map it
+// to its own grpc code. Without it a missing batch or offchain tx would be
+// reported as a server fault rather than a 404.
+func adminError(err error) error {
+	var structured arkerrors.Error
+	if errors.As(err, &structured) {
+		return err
+	}
+	return status.Errorf(codes.Internal, "%s", err.Error())
+}
+
 func (a *adminHandler) GetRoundDetails(
 	ctx context.Context, req *arkv1.GetRoundDetailsRequest,
 ) (*arkv1.GetRoundDetailsResponse, error) {
@@ -66,12 +81,12 @@ func (a *adminHandler) GetRoundDetails(
 
 	details, err := a.adminService.GetRoundDetails(ctx, id)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+		return nil, adminError(err)
 	}
 
 	return &arkv1.GetRoundDetailsResponse{
 		RoundId:          details.RoundId,
-		CommitmentTxid:   details.TxId,
+		CommitmentTxid:   details.CommitmentTxid,
 		ForfeitedAmount:  convertSatsToBTCStr(details.ForfeitedAmount),
 		TotalVtxosAmount: convertSatsToBTCStr(details.TotalVtxosAmount),
 		TotalExitAmount:  convertSatsToBTCStr(details.TotalExitAmount),
@@ -81,7 +96,29 @@ func (a *adminHandler) GetRoundDetails(
 		ExitAddresses:    details.ExitAddresses,
 		StartedAt:        details.StartedAt,
 		EndedAt:          details.EndedAt,
+		Stage:            details.Stage,
+		Ended:            details.Ended,
+		Failed:           details.Failed,
+		Swept:            details.Swept,
+		FailReason:       details.FailReason,
+		TotalIntents:     details.TotalIntents,
 	}, nil
+}
+
+func (a *adminHandler) GetRoundIntents(
+	ctx context.Context, req *arkv1.GetRoundIntentsRequest,
+) (*arkv1.GetRoundIntentsResponse, error) {
+	id := req.GetRoundId()
+	if len(id) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing round id")
+	}
+
+	intents, err := a.adminService.GetRoundIntents(ctx, id)
+	if err != nil {
+		return nil, adminError(err)
+	}
+
+	return &arkv1.GetRoundIntentsResponse{Intents: intentsInfo(intents).toProto()}, nil
 }
 
 func (a *adminHandler) GetRounds(
@@ -91,6 +128,8 @@ func (a *adminHandler) GetRounds(
 	startBefore := req.GetBefore()
 	withFailed := req.GetWithFailed()
 	withCompleted := req.GetWithCompleted()
+	onlyFailed := req.GetOnlyFailed()
+	limit := req.GetLimit()
 
 	if startAfter < 0 {
 		return nil, status.Error(codes.InvalidArgument, "invalid after (must be >= 0)")
@@ -104,12 +143,106 @@ func (a *adminHandler) GetRounds(
 		return nil, status.Error(codes.InvalidArgument, "invalid range")
 	}
 
-	rounds, err := a.adminService.GetRounds(ctx, startAfter, startBefore, withFailed, withCompleted)
+	if limit < 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid limit (must be >= 0)")
+	}
+
+	summaries, err := a.adminService.GetRounds(
+		ctx, startAfter, startBefore, withFailed, withCompleted, onlyFailed, limit,
+	)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	return &arkv1.GetRoundsResponse{Rounds: rounds}, nil
+	// rounds is deprecated but still populated: dropping it would silently break
+	// clients reading the pre-summaries response.
+	roundIds := make([]string, 0, len(summaries))
+	for _, summary := range summaries {
+		roundIds = append(roundIds, summary.RoundId)
+	}
+
+	return &arkv1.GetRoundsResponse{
+		Rounds:    roundIds,
+		Summaries: roundSummaries(summaries).toProto(),
+	}, nil
+}
+
+func (a *adminHandler) GetOffchainTxs(
+	ctx context.Context, req *arkv1.GetOffchainTxsRequest,
+) (*arkv1.GetOffchainTxsResponse, error) {
+	after := req.GetAfter()
+	before := req.GetBefore()
+	limit := req.GetLimit()
+
+	if after < 0 || before < 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid range (must be >= 0)")
+	}
+
+	if before > 0 && after >= before {
+		return nil, status.Error(codes.InvalidArgument, "invalid range")
+	}
+
+	if limit < 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid limit (must be >= 0)")
+	}
+
+	if req.GetOnlyFailed() && req.GetOnlyCompleted() {
+		return nil, status.Error(
+			codes.InvalidArgument, "only_failed and only_completed are mutually exclusive",
+		)
+	}
+
+	txs, err := a.adminService.GetOffchainTxs(
+		ctx, after, before, req.GetOnlyFailed(), req.GetOnlyCompleted(), limit,
+	)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.GetOffchainTxsResponse{Txs: offchainTxsInfo(txs).toProto()}, nil
+}
+
+func (a *adminHandler) GetOffchainTxDetails(
+	ctx context.Context, req *arkv1.GetOffchainTxDetailsRequest,
+) (*arkv1.GetOffchainTxDetailsResponse, error) {
+	txid := req.GetTxid()
+	if len(txid) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing txid")
+	}
+
+	tx, err := a.adminService.GetOffchainTxDetails(ctx, txid)
+	if err != nil {
+		return nil, adminError(err)
+	}
+
+	return &arkv1.GetOffchainTxDetailsResponse{
+		Txid:               tx.ArkTxid,
+		Stage:              domain.OffchainTxStage(tx.Stage.Code).String(),
+		Ended:              tx.IsFinalized(),
+		Failed:             tx.IsFailed(),
+		FailReason:         tx.FailReason,
+		StartedAt:          tx.StartingTimestamp,
+		EndedAt:            tx.EndingTimestamp,
+		ExpiresAt:          tx.ExpiryTimestamp,
+		ArkTx:              tx.ArkTx,
+		RootCommitmentTxid: tx.RootCommitmentTxId,
+		CheckpointTxs:      tx.CheckpointTxs,
+		CommitmentTxids:    tx.CommitmentTxids,
+	}, nil
+}
+
+func (a *adminHandler) GetFeeRate(
+	ctx context.Context, _ *arkv1.GetFeeRateRequest,
+) (*arkv1.GetFeeRateResponse, error) {
+	satPerKvByte, err := a.adminService.GetFeeRate(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	return &arkv1.GetFeeRateResponse{
+		SatPerKvbyte: satPerKvByte,
+		SatPerVbyte:  float64(satPerKvByte) / 1000,
+	}, nil
 }
 
 func (a *adminHandler) GetExpiringLiquidity(
@@ -149,34 +282,50 @@ func (a *adminHandler) GetRecoverableLiquidity(
 }
 
 func (a *adminHandler) GetScheduledSweep(
-	ctx context.Context, _ *arkv1.GetScheduledSweepRequest,
+	ctx context.Context, req *arkv1.GetScheduledSweepRequest,
 ) (*arkv1.GetScheduledSweepResponse, error) {
-	scheduledSweeps, err := a.adminService.GetScheduledSweeps(ctx)
+	limit := req.GetLimit()
+	if limit < 0 {
+		return nil, status.Error(codes.InvalidArgument, "invalid limit (must be >= 0)")
+	}
+
+	scheduledSweeps, err := a.adminService.GetScheduledSweeps(ctx, limit)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	sweeps := make([]*arkv1.ScheduledSweep, 0)
+	sweeps := make([]*arkv1.ScheduledSweep, 0, len(scheduledSweeps))
 	for _, sweep := range scheduledSweeps {
-		outputs := make([]*arkv1.SweepableOutput, 0)
-
-		for _, output := range sweep.SweepableOutputs {
-			outputs = append(outputs, &arkv1.SweepableOutput{
-				Txid:        output.TxInput.Txid,
-				Vout:        output.TxInput.Index,
-				ScheduledAt: output.ScheduledAt,
-				Amount:      convertSatsToBTCStr(output.TxInput.Value),
-			})
-		}
-
 		sweeps = append(sweeps, &arkv1.ScheduledSweep{
-			RoundId:   sweep.RoundId,
-			Confirmed: sweep.Confirmed,
-			Outputs:   outputs,
+			RoundId:        sweep.RoundId,
+			CommitmentTxid: sweep.CommitmentTxid,
+			SweepAt:        sweep.SweepAt,
+			TotalAmount:    sweep.TotalAmount,
+			VtxoCount:      sweep.VtxoCount,
 		})
 	}
 
 	return &arkv1.GetScheduledSweepResponse{Sweeps: sweeps}, nil
+}
+
+func (a *adminHandler) GetExpiredRounds(
+	ctx context.Context, _ *arkv1.GetExpiredRoundsRequest,
+) (*arkv1.GetExpiredRoundsResponse, error) {
+	expiredRounds, err := a.adminService.GetExpiredRounds(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	rounds := make([]*arkv1.ExpiredRound, 0, len(expiredRounds))
+	for _, round := range expiredRounds {
+		rounds = append(rounds, &arkv1.ExpiredRound{
+			RoundId:        round.RoundId,
+			CommitmentTxid: round.CommitmentTxid,
+			ExpiredAt:      round.ExpiredAt,
+		})
+	}
+
+	return &arkv1.GetExpiredRoundsResponse{Rounds: rounds}, nil
 }
 
 func (a *adminHandler) CreateNote(
@@ -211,7 +360,7 @@ func (a *adminHandler) CreateNote(
 func (a *adminHandler) GetScheduledSessionConfig(
 	ctx context.Context, _ *arkv1.GetScheduledSessionConfigRequest,
 ) (*arkv1.GetScheduledSessionConfigResponse, error) {
-	scheduledSession, err := a.adminService.GetScheduledSessionConfig(ctx)
+	scheduledSession, err := a.adminService.GetScheduledSession(ctx)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -219,8 +368,8 @@ func (a *adminHandler) GetScheduledSessionConfig(
 	var config *arkv1.ScheduledSessionConfig
 	if scheduledSession != nil {
 		config = &arkv1.ScheduledSessionConfig{
-			StartTime:                 scheduledSession.StartTime.Unix(),
-			EndTime:                   scheduledSession.EndTime.Unix(),
+			StartTime:                 *formatTime(scheduledSession.StartTime),
+			EndTime:                   *formatTime(scheduledSession.EndTime),
 			Period:                    int64(scheduledSession.Period.Minutes()),
 			Duration:                  int64(scheduledSession.Duration.Seconds()),
 			RoundMinParticipantsCount: scheduledSession.RoundMinParticipantsCount,
@@ -238,8 +387,14 @@ func (a *adminHandler) UpdateScheduledSessionConfig(
 	if cfg == nil {
 		return nil, status.Error(codes.InvalidArgument, "missing scheduled session config")
 	}
-	startTime := parseTime(cfg.GetStartTime())
-	endTime := parseTime(cfg.GetEndTime())
+	startTime, err := parseTime(cfg.GetStartTime())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid start time: %s", err)
+	}
+	endTime, err := parseTime(cfg.GetEndTime())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid end time: %s", err)
+	}
 	period := time.Duration(cfg.GetPeriod()) * time.Minute
 	duration := time.Duration(cfg.GetDuration()) * time.Second
 	roundMinParticipantsCount := cfg.GetRoundMinParticipantsCount()
@@ -252,10 +407,15 @@ func (a *adminHandler) UpdateScheduledSessionConfig(
 		)
 	}
 
-	if err := a.adminService.UpdateScheduledSessionConfig(
-		ctx, startTime, endTime, period, duration,
-		roundMinParticipantsCount, roundMaxParticipantsCount,
-	); err != nil {
+	updates := domain.ScheduledSessionUpdate{
+		StartTime:                 startTime,
+		EndTime:                   endTime,
+		Period:                    &period,
+		Duration:                  &duration,
+		RoundMinParticipantsCount: &roundMinParticipantsCount,
+		RoundMaxParticipantsCount: &roundMaxParticipantsCount,
+	}
+	if err := a.adminService.UpdateScheduledSession(ctx, updates); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -265,7 +425,7 @@ func (a *adminHandler) UpdateScheduledSessionConfig(
 func (a *adminHandler) ClearScheduledSessionConfig(
 	ctx context.Context, req *arkv1.ClearScheduledSessionConfigRequest,
 ) (*arkv1.ClearScheduledSessionConfigResponse, error) {
-	if err := a.adminService.ClearScheduledSessionConfig(ctx); err != nil {
+	if err := a.adminService.ClearScheduledSession(ctx); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -393,9 +553,15 @@ func (a *adminHandler) GetConvictionsByRound(
 func (a *adminHandler) GetActiveScriptConvictions(
 	ctx context.Context, req *arkv1.GetActiveScriptConvictionsRequest,
 ) (*arkv1.GetActiveScriptConvictionsResponse, error) {
-	script := req.GetScript()
+	script := strings.ToLower(req.GetScript())
+
 	if len(script) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "missing script")
+	}
+
+	if err := parseScript(script); err != nil {
+		return nil, arkerrors.INVALID_PKSCRIPT.Wrap(err).
+			WithMetadata(arkerrors.InvalidPkScriptMetadata{Script: req.GetScript()})
 	}
 
 	conviction, err := a.adminService.GetActiveScriptConvictions(ctx, script)
@@ -437,9 +603,15 @@ func (a *adminHandler) PardonConviction(
 func (a *adminHandler) BanScript(
 	ctx context.Context, req *arkv1.BanScriptRequest,
 ) (*arkv1.BanScriptResponse, error) {
-	script := req.GetScript()
-	if len(script) == 0 {
+	script := strings.ToLower(req.GetScript())
+
+	if len(req.GetScript()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "missing script")
+	}
+
+	if err := parseScript(script); err != nil {
+		return nil, arkerrors.INVALID_PKSCRIPT.Wrap(err).
+			WithMetadata(arkerrors.InvalidPkScriptMetadata{Script: req.GetScript()})
 	}
 
 	banDuration := req.GetBanDuration()
@@ -496,6 +668,30 @@ func (a *adminHandler) Sweep(
 		Txid: txid,
 		Hex:  hex,
 	}, nil
+}
+
+func (a *adminHandler) GetMainAccountUtxos(
+	ctx context.Context, _ *arkv1.GetMainAccountUtxosRequest,
+) (*arkv1.GetMainAccountUtxosResponse, error) {
+	utxos, err := a.adminService.GetMainAccountUtxos(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	resp := make([]*arkv1.WalletUtxo, 0, len(utxos))
+	for _, u := range utxos {
+		resp = append(resp, &arkv1.WalletUtxo{
+			Txid:          u.Txid,
+			Vout:          u.Vout,
+			Value:         u.Value,
+			Script:        u.Script,
+			Address:       u.Address,
+			Confirmations: u.Confirmations,
+			Locked:        u.Locked,
+		})
+	}
+
+	return &arkv1.GetMainAccountUtxosResponse{Utxos: resp}, nil
 }
 
 func (a *adminHandler) RevokeAuth(
@@ -594,7 +790,7 @@ func (a *adminHandler) RevokeTokens(
 func (a *adminHandler) GetIntentFees(
 	ctx context.Context, req *arkv1.GetIntentFeesRequest,
 ) (*arkv1.GetIntentFeesResponse, error) {
-	fees, err := a.adminService.GetIntentFees(ctx)
+	fees, err := a.adminService.GetBatchFees(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
@@ -612,19 +808,12 @@ func (a *adminHandler) GetIntentFees(
 func (a *adminHandler) UpdateIntentFees(
 	ctx context.Context, req *arkv1.UpdateIntentFeesRequest,
 ) (*arkv1.UpdateIntentFeesResponse, error) {
-	feesProto := req.GetFees()
-	if feesProto == nil {
-		return nil, status.Error(codes.InvalidArgument, "missing intent fees")
+	updates, err := parseFees(req.GetFees())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	fees := domain.IntentFees{
-		OffchainInputFee:  feesProto.GetOffchainInputFee(),
-		OnchainInputFee:   feesProto.GetOnchainInputFee(),
-		OffchainOutputFee: feesProto.GetOffchainOutputFee(),
-		OnchainOutputFee:  feesProto.GetOnchainOutputFee(),
-	}
-
-	if err := a.adminService.UpdateIntentFees(ctx, fees); err != nil {
+	if err := a.adminService.UpdateBatchFees(ctx, *updates); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
@@ -634,11 +823,70 @@ func (a *adminHandler) UpdateIntentFees(
 func (a *adminHandler) ClearIntentFees(
 	ctx context.Context, req *arkv1.ClearIntentFeesRequest,
 ) (*arkv1.ClearIntentFeesResponse, error) {
-	if err := a.adminService.ClearIntentFees(ctx); err != nil {
+	if err := a.adminService.ClearBatchFees(ctx); err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
 	return &arkv1.ClearIntentFeesResponse{}, nil
+}
+
+func (a *adminHandler) GetSettings(
+	ctx context.Context, _ *arkv1.GetSettingsRequest,
+) (*arkv1.GetSettingsResponse, error) {
+	settings, err := a.adminService.GetSettings(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err.Error())
+	}
+
+	var protoSettings *arkv1.Settings
+	if settings != nil {
+		protoSettings = &arkv1.Settings{
+			SessionDuration:               formatDuration(settings.SessionDuration),
+			UnrolledVtxoMinExpiryMargin:   formatDuration(settings.UnrolledVtxoMinExpiryMargin),
+			BanThreshold:                  formatUint64(settings.BanThreshold),
+			BanDuration:                   formatDuration(settings.BanDuration),
+			UnilateralExitDelay:           formatLocktime(settings.UnilateralExitDelay),
+			PublicUnilateralExitDelay:     formatLocktime(settings.PublicUnilateralExitDelay),
+			CheckpointExitDelay:           formatLocktime(settings.CheckpointExitDelay),
+			BoardingExitDelay:             formatLocktime(settings.BoardingExitDelay),
+			VtxoTreeExpiry:                formatLocktime(settings.VtxoTreeExpiry),
+			RoundMinParticipantsCount:     &settings.RoundMinParticipantsCount,
+			RoundMaxParticipantsCount:     &settings.RoundMaxParticipantsCount,
+			VtxoMinAmount:                 &settings.VtxoMinAmount,
+			VtxoMaxAmount:                 &settings.VtxoMaxAmount,
+			UtxoMinAmount:                 &settings.UtxoMinAmount,
+			UtxoMaxAmount:                 &settings.UtxoMaxAmount,
+			SettlementMinExpiryGap:        formatDuration(settings.SettlementMinExpiryGap),
+			VtxoNoCsvValidationCutoffDate: formatTime(settings.VtxoNoCsvValidationCutoffDate),
+			MaxTxWeight:                   formatUint64(settings.MaxTxWeight),
+			MaxOpReturnOutputs:            formatUint64(settings.MaxOpReturnOutputs),
+			AssetTxMaxWeightRatio:         &settings.AssetTxMaxWeightRatio,
+			NoteUriPrefix:                 &settings.NoteUriPrefix,
+			BuildVersionHeader:            &settings.BuildVersionHeader,
+			BuildVersionHeaderRequired:    &settings.BuildVersionHeaderRequired,
+			DigestHeaderRequired:          &settings.DigestHeaderRequired,
+			BatchTrigger:                  &settings.BatchTrigger,
+			UpdatedAt:                     formatTime(settings.UpdatedAt),
+		}
+	}
+
+	return &arkv1.GetSettingsResponse{Settings: protoSettings}, nil
+}
+
+func (a *adminHandler) UpdateSettings(
+	ctx context.Context, req *arkv1.UpdateSettingsRequest,
+) (*arkv1.UpdateSettingsResponse, error) {
+	updates, err := parseSettings(req.GetSettings())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	changelog, err := a.adminService.UpdateSettings(ctx, *updates)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &arkv1.UpdateSettingsResponse{ChangeLog: changelog}, nil
 }
 
 func convertConvictionToProto(conviction domain.Conviction) (*arkv1.Conviction, error) {
@@ -670,11 +918,15 @@ func convertConvictionToProto(conviction domain.Conviction) (*arkv1.Conviction, 
 	return protoConviction, nil
 }
 
-func parseTime(t int64) time.Time {
-	if t <= 0 {
-		return time.Time{}
+func parseTime(t string) (*time.Time, error) {
+	if len(t) <= 0 {
+		return nil, nil
 	}
-	return time.Unix(t, 0)
+	tm, err := time.Parse(time.RFC3339, t)
+	if err != nil {
+		return nil, err
+	}
+	return &tm, nil
 }
 
 func parseMacaroon(mac string) (string, []byte, []bakery.Op, error) {
@@ -707,4 +959,218 @@ func parseMacaroon(mac string) (string, []byte, []bakery.Op, error) {
 		}
 	}
 	return mac, macId.GetStorageId(), ops, nil
+}
+
+func parseFees(fees *arkv1.IntentFees) (*domain.BatchFeesUpdate, error) {
+	if fees == nil {
+		return nil, fmt.Errorf("missing batch fees")
+	}
+
+	var offchainInputFee, offchainOutputFee, onchainInputFee, onchainOutputFee *string
+	if program := fees.GetOffchainInputFee(); len(program) > 0 {
+		offchainInputFee = &program
+	}
+	if program := fees.GetOnchainInputFee(); len(program) > 0 {
+		onchainInputFee = &program
+	}
+	if program := fees.GetOffchainOutputFee(); len(program) > 0 {
+		offchainOutputFee = &program
+	}
+	if program := fees.GetOnchainOutputFee(); len(program) > 0 {
+		onchainOutputFee = &program
+	}
+	return &domain.BatchFeesUpdate{
+		OffchainInputFee:  offchainInputFee,
+		OffchainOutputFee: offchainOutputFee,
+		OnchainInputFee:   onchainInputFee,
+		OnchainOutputFee:  onchainOutputFee,
+	}, nil
+}
+
+func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
+	if settings == nil {
+		return nil, fmt.Errorf("missing settings")
+	}
+
+	vtxoNoCsvValidationCutoffDate, err := parseTime(settings.GetVtxoNoCsvValidationCutoffDate())
+	if err != nil {
+		return nil, fmt.Errorf("failed to ")
+	}
+
+	var (
+		banThreshold, maxTxWeight, maxOpReturnOutputs *uint64
+		batchMinParticipants, batchMaxParticipants,
+		vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount *int64
+		assetTxMaxWeightRatio                            *float32
+		noteUriPrefix                                    *string
+		buildVersionHeader                               *string
+		buildVersionHeaderRequired, digestHeaderRequired *bool
+		batchTrigger                                     *string
+	)
+	if settings.BanThreshold != nil {
+		if settings.GetBanThreshold() < 0 {
+			return nil, fmt.Errorf(
+				"invalid ban threshold (%d), must not be negative", settings.GetBanThreshold(),
+			)
+		}
+		t := uint64(settings.GetBanThreshold())
+		banThreshold = &t
+	}
+	if settings.MaxTxWeight != nil {
+		t := uint64(settings.GetMaxTxWeight())
+		maxTxWeight = &t
+	}
+	if settings.MaxOpReturnOutputs != nil {
+		if settings.GetMaxOpReturnOutputs() < 0 {
+			return nil, fmt.Errorf(
+				"invalid max op return outputs (%d), must not be negative",
+				settings.GetMaxOpReturnOutputs(),
+			)
+		}
+		t := uint64(settings.GetMaxOpReturnOutputs())
+		maxOpReturnOutputs = &t
+	}
+	if settings.RoundMinParticipantsCount != nil {
+		t := int64(settings.GetRoundMinParticipantsCount())
+		batchMinParticipants = &t
+	}
+	if settings.RoundMaxParticipantsCount != nil {
+		t := int64(settings.GetRoundMaxParticipantsCount())
+		batchMaxParticipants = &t
+	}
+	if settings.VtxoMinAmount != nil {
+		t := int64(settings.GetVtxoMinAmount())
+		vtxoMinAmount = &t
+	}
+	if settings.VtxoMaxAmount != nil {
+		t := int64(settings.GetVtxoMaxAmount())
+		vtxoMaxAmount = &t
+	}
+	if settings.UtxoMinAmount != nil {
+		t := int64(settings.GetUtxoMinAmount())
+		utxoMinAmount = &t
+	}
+	if settings.UtxoMaxAmount != nil {
+		t := int64(settings.GetUtxoMaxAmount())
+		utxoMaxAmount = &t
+	}
+	if settings.AssetTxMaxWeightRatio != nil {
+		t := float32(settings.GetAssetTxMaxWeightRatio())
+		assetTxMaxWeightRatio = &t
+	}
+	if settings.NoteUriPrefix != nil {
+		t := settings.GetNoteUriPrefix()
+		noteUriPrefix = &t
+	}
+	if settings.BuildVersionHeader != nil {
+		t := settings.GetBuildVersionHeader()
+		buildVersionHeader = &t
+	}
+	if settings.BuildVersionHeaderRequired != nil {
+		t := settings.GetBuildVersionHeaderRequired()
+		buildVersionHeaderRequired = &t
+	}
+	if settings.DigestHeaderRequired != nil {
+		t := settings.GetDigestHeaderRequired()
+		digestHeaderRequired = &t
+	}
+	if settings.BatchTrigger != nil {
+		t := settings.GetBatchTrigger()
+		batchTrigger = &t
+	}
+
+	unilateralExitDelay, err := parseLocktime(settings.UnilateralExitDelay)
+	if err != nil {
+		return nil, err
+	}
+	publicUnilateralExitDelay, err := parseLocktime(settings.PublicUnilateralExitDelay)
+	if err != nil {
+		return nil, err
+	}
+	checkpointExitDelay, err := parseLocktime(settings.CheckpointExitDelay)
+	if err != nil {
+		return nil, err
+	}
+	boardingExitDelay, err := parseLocktime(settings.BoardingExitDelay)
+	if err != nil {
+		return nil, err
+	}
+	vtxoTreeExpiry, err := parseLocktime(settings.VtxoTreeExpiry)
+	if err != nil {
+		return nil, err
+	}
+
+	return &domain.SettingsUpdate{
+		SessionDuration:               parseDuration(settings.SessionDuration),
+		UnrolledVtxoMinExpiryMargin:   parseDuration(settings.UnrolledVtxoMinExpiryMargin),
+		BanThreshold:                  banThreshold,
+		BanDuration:                   parseDuration(settings.BanDuration),
+		UnilateralExitDelay:           unilateralExitDelay,
+		PublicUnilateralExitDelay:     publicUnilateralExitDelay,
+		CheckpointExitDelay:           checkpointExitDelay,
+		BoardingExitDelay:             boardingExitDelay,
+		VtxoTreeExpiry:                vtxoTreeExpiry,
+		RoundMinParticipantsCount:     batchMinParticipants,
+		RoundMaxParticipantsCount:     batchMaxParticipants,
+		VtxoMinAmount:                 vtxoMinAmount,
+		VtxoMaxAmount:                 vtxoMaxAmount,
+		UtxoMinAmount:                 utxoMinAmount,
+		UtxoMaxAmount:                 utxoMaxAmount,
+		SettlementMinExpiryGap:        parseDuration(settings.SettlementMinExpiryGap),
+		VtxoNoCsvValidationCutoffDate: vtxoNoCsvValidationCutoffDate,
+		MaxTxWeight:                   maxTxWeight,
+		MaxOpReturnOutputs:            maxOpReturnOutputs,
+		AssetTxMaxWeightRatio:         assetTxMaxWeightRatio,
+		NoteUriPrefix:                 noteUriPrefix,
+		BuildVersionHeader:            buildVersionHeader,
+		BuildVersionHeaderRequired:    buildVersionHeaderRequired,
+		DigestHeaderRequired:          digestHeaderRequired,
+		BatchTrigger:                  batchTrigger,
+	}, nil
+}
+
+func parseDuration(duration *int64) *time.Duration {
+	if duration == nil {
+		return nil
+	}
+	t := time.Duration(*duration) * time.Second
+	return &t
+}
+
+func formatDuration(duration time.Duration) *int64 {
+	t := int64(duration.Seconds())
+	return &t
+}
+
+// parseLocktime rejects out of range values because narrowing them to uint32
+// inverts their meaning: -1 becomes a ~136 years delay, 2^32 becomes no delay.
+func parseLocktime(delay *int64) (*arklib.RelativeLocktime, error) {
+	if delay == nil {
+		return nil, nil
+	}
+	if *delay < 0 || *delay > math.MaxUint32 {
+		return nil, fmt.Errorf(
+			"invalid locktime (%d), must be between 0 and %d", *delay, uint32(math.MaxUint32),
+		)
+	}
+	t, _ := arklib.ParseRelativeLocktime(uint32(*delay))
+	return &t, nil
+}
+
+func formatLocktime(delay arklib.RelativeLocktime) *int64 {
+	t := delay.Seconds()
+	return &t
+}
+
+func formatUint64(val uint64) *int64 {
+	t := int64(val)
+	return &t
+}
+
+func formatTime(tm time.Time) *string {
+	if tm.IsZero() {
+		return nil
+	}
+	t := tm.Format(time.RFC3339)
+	return &t
 }

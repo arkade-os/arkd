@@ -10,14 +10,14 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee"
 	"github.com/arkade-os/arkd/pkg/ark-lib/arkfee/celenv"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 type arkFeeManager struct {
-	repo domain.FeeRepository
+	settingsStore domain.SettingsRepository
 }
 
-func NewArkFeeManager(repo domain.FeeRepository) (ports.FeeManager, error) {
+func NewArkFeeManager(repo domain.SettingsRepository) (ports.FeeManager, error) {
 	return &arkFeeManager{repo}, nil
 }
 
@@ -27,16 +27,17 @@ func (a *arkFeeManager) ComputeIntentFees(
 	boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,
 	onchainOutputs []wire.TxOut, offchainOutputs []wire.TxOut,
 ) (int64, error) {
-	currIntentFees, err := a.repo.GetIntentFees(ctx)
+	settings, err := a.settingsStore.Get(ctx)
 	if err != nil {
 		return -1, err
 	}
+	currFees := settings.BatchFees
 
 	config := arkfee.Config{
-		IntentOffchainInputProgram:  currIntentFees.OffchainInputFee,
-		IntentOnchainInputProgram:   currIntentFees.OnchainInputFee,
-		IntentOffchainOutputProgram: currIntentFees.OffchainOutputFee,
-		IntentOnchainOutputProgram:  currIntentFees.OnchainOutputFee,
+		IntentOffchainInputProgram:  currFees.OffchainInputFee,
+		IntentOnchainInputProgram:   currFees.OnchainInputFee,
+		IntentOffchainOutputProgram: currFees.OffchainOutputFee,
+		IntentOnchainOutputProgram:  currFees.OnchainOutputFee,
 	}
 	estimator, err := arkfee.New(config)
 	if err != nil {
@@ -75,7 +76,7 @@ func (a *arkFeeManager) ComputeIntentFees(
 	return fee.ToSatoshis(), nil
 }
 
-func (a *arkFeeManager) Validate(fees domain.IntentFees) error {
+func (a *arkFeeManager) Validate(fees domain.BatchFees) error {
 	if fees.OnchainInputFee != "" {
 		if _, err := arkfee.Parse(fees.OnchainInputFee, celenv.IntentOnchainInputEnv); err != nil {
 			return fmt.Errorf("invalid onchain input fee program: %w", err)

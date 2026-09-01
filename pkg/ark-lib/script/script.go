@@ -5,8 +5,8 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 const (
@@ -40,14 +40,8 @@ var forbiddenOpcodes = []byte{
 // EvaluateScriptToBool executes the script with the provided witness as argument and returns a
 // boolean result that can be evaluated by OP_IF / OP_NOIF opcodes.
 func EvaluateScriptToBool(script []byte, witness wire.TxWitness) (bool, error) {
-	// make sure the script doesn't contain any introspections opcodes (sig or locktime)
-	tokenizer := txscript.MakeScriptTokenizer(0, script)
-	for tokenizer.Next() {
-		for _, opcode := range forbiddenOpcodes {
-			if tokenizer.OpcodePosition() != -1 && tokenizer.Opcode() == opcode {
-				return false, fmt.Errorf("forbidden opcode %x", opcode)
-			}
-		}
+	if err := validateConditionScript(script); err != nil {
+		return false, err
 	}
 
 	// Create a fake transaction with minimal required fields
@@ -137,6 +131,19 @@ func IsSubDustScript(script []byte) bool {
 	return data != nil && len(data) == schnorr.PubKeyBytesLen
 }
 
+// CheckSigHashType rejects sighash types that don't commit to every output.
+func CheckSigHashType(sigHashType txscript.SigHashType) error {
+	switch sigHashType {
+	case txscript.SigHashDefault, txscript.SigHashAll:
+		return nil
+	default:
+		return fmt.Errorf(
+			"unsupported sighash type %#x: only SIGHASH_DEFAULT and SIGHASH_ALL are allowed",
+			uint32(sigHashType),
+		)
+	}
+}
+
 func EncodeTaprootSignature(sig []byte, sigHashType txscript.SigHashType) []byte {
 	if sigHashType == txscript.SigHashDefault {
 		return sig
@@ -170,4 +177,29 @@ func ParseTaprootSignature(rawSig []byte) (*schnorr.Signature, txscript.SigHashT
 	}
 
 	return nil, 0, fmt.Errorf("invalid sig len: %v", len(rawSig))
+}
+
+// validateConditionScript makes sure the script doesn't contain any forbidden opcodes.
+// it also verify the condition script is not too large.
+func validateConditionScript(script []byte) error {
+	if len(script) > txscript.MaxScriptSize {
+		return fmt.Errorf(
+			"condition script too large: %d bytes, max %d",
+			len(script), txscript.MaxScriptSize,
+		)
+	}
+
+	tokenizer := txscript.MakeScriptTokenizer(0, script)
+	for tokenizer.Next() {
+		for _, opcode := range forbiddenOpcodes {
+			if tokenizer.Opcode() == opcode {
+				return fmt.Errorf("forbidden opcode %x in condition script", opcode)
+			}
+		}
+	}
+	// a truncated push would hide the opcodes following it from the scan above
+	if err := tokenizer.Err(); err != nil {
+		return fmt.Errorf("failed to parse condition script: %w", err)
+	}
+	return nil
 }

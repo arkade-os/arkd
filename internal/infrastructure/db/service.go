@@ -53,11 +53,6 @@ var (
 		"sqlite":   sqlitedb.NewVtxoRepository,
 		"postgres": pgdb.NewVtxoRepository,
 	}
-	scheduledSessionStoreTypes = map[string]func(...interface{}) (domain.ScheduledSessionRepo, error){
-		"badger":   badgerdb.NewScheduledSessionRepository,
-		"sqlite":   sqlitedb.NewScheduledSessionRepository,
-		"postgres": pgdb.NewScheduledSessionRepository,
-	}
 	offchainTxStoreTypes = map[string]func(...interface{}) (domain.OffchainTxRepository, error){
 		"badger":   newBadgerOffchainTxRepository,
 		"sqlite":   sqlitedb.NewOffchainTxRepository,
@@ -73,16 +68,19 @@ var (
 		"badger":   badgerdb.NewAssetRepository,
 		"postgres": pgdb.NewAssetRepository,
 	}
-	intentFeesStoreTypes = map[string]func(...interface{}) (domain.FeeRepository, error){
-		"badger":   badgerdb.NewIntentFeesRepository,
-		"sqlite":   sqlitedb.NewIntentFeesRepository,
-		"postgres": pgdb.NewIntentFeesRepository,
+	settingsStoreTypes = map[string]func(...interface{}) (domain.SettingsRepository, error){
+		"badger":   badgerdb.NewSettingsRepository,
+		"sqlite":   sqlitedb.NewSettingsRepository,
+		"postgres": pgdb.NewSettingsRepository,
+	}
+	markerStoreTypes = map[string]func(...interface{}) (domain.MarkerRepository, error){
+		"badger":   badgerdb.NewMarkerRepository,
+		"sqlite":   sqlitedb.NewMarkerRepository,
+		"postgres": pgdb.NewMarkerRepository,
 	}
 )
 
-const (
-	sqliteDbFile = "sqlite.db"
-)
+const sqliteDbFile = "sqlite.db"
 
 type ServiceConfig struct {
 	EventStoreType string
@@ -90,20 +88,24 @@ type ServiceConfig struct {
 
 	EventStoreConfig []interface{}
 	DataStoreConfig  []interface{}
+
+	// Settings is the config-built default settings used to seed the settings
+	// table on first boot (see handleSettingsSeed).
+	Settings domain.Settings
 }
 
 type service struct {
-	eventStore              domain.EventRepository
-	roundStore              domain.RoundRepository
-	vtxoStore               domain.VtxoRepository
-	scheduledSessionStore   domain.ScheduledSessionRepo
-	offchainTxStore         domain.OffchainTxRepository
-	convictionStore         domain.ConvictionRepository
-	assetStore              domain.AssetRepository
-	intentFeesStore         domain.FeeRepository
-	txDecoder               ports.TxDecoder
-	batchUpdateHandler      *updateHandler[domain.Round]
-	offchainTxUpdateHandler *updateHandler[domain.OffchainTx]
+	eventStore             domain.EventRepository
+	roundStore             domain.RoundRepository
+	vtxoStore              domain.VtxoRepository
+	markerStore            domain.MarkerRepository
+	offchainTxStore        domain.OffchainTxRepository
+	convictionStore        domain.ConvictionRepository
+	assetStore             domain.AssetRepository
+	settingsStore          domain.SettingsRepository
+	txDecoder              ports.TxDecoder
+	batchEventHandler      *updateHandler[domain.Round]
+	offchainTxEventHandler *updateHandler[domain.OffchainTx]
 }
 
 func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoManager, error) {
@@ -119,10 +121,6 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	if !ok {
 		return nil, fmt.Errorf("vtxo store type not supported")
 	}
-	scheduledSessionStoreFactory, ok := scheduledSessionStoreTypes[config.DataStoreType]
-	if !ok {
-		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
-	}
 	offchainTxStoreFactory, ok := offchainTxStoreTypes[config.DataStoreType]
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
@@ -135,20 +133,22 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
-
-	intentFeesStoreFactory, ok := intentFeesStoreTypes[config.DataStoreType]
+	settingsStoreFactory, ok := settingsStoreTypes[config.DataStoreType]
 	if !ok {
 		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
 	}
-
+	markerStoreFactory, ok := markerStoreTypes[config.DataStoreType]
+	if !ok {
+		return nil, fmt.Errorf("invalid data store type: %s", config.DataStoreType)
+	}
 	var eventStore domain.EventRepository
 	var roundStore domain.RoundRepository
 	var vtxoStore domain.VtxoRepository
-	var scheduledSessionStore domain.ScheduledSessionRepo
+	var markerStore domain.MarkerRepository
 	var offchainTxStore domain.OffchainTxRepository
 	var convictionStore domain.ConvictionRepository
 	var assetStore domain.AssetRepository
-	var intentFeesStore domain.FeeRepository
+	var settingsStore domain.SettingsRepository
 	var err error
 
 	switch config.EventStoreType {
@@ -196,13 +196,11 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to open round store: %s", err)
 		}
-		vtxoStore, err = vtxoStoreFactory(config.DataStoreConfig...)
+		arkStore := roundStore.(badgerdb.ArkRepository).Store()
+		vtxoStoreConfig := append(config.DataStoreConfig, arkStore)
+		vtxoStore, err = vtxoStoreFactory(vtxoStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
-		}
-		scheduledSessionStore, err = scheduledSessionStoreFactory(config.DataStoreConfig...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create scheduled session store: %w", err)
 		}
 		offchainTxStore, err = offchainTxStoreFactory(config.DataStoreConfig...)
 		if err != nil {
@@ -217,10 +215,54 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}
-		intentFeesStore, err = intentFeesStoreFactory(config.DataStoreConfig...)
+		settingsStore, err = settingsStoreFactory(config.DataStoreConfig...)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
+			return nil, fmt.Errorf("failed to create settings store: %w", err)
 		}
+		// Badger has no legacy SQL tables, so its seed is just the config
+		// defaults when the store is empty (no backfill).
+		existingSettings, err := settingsStore.Get(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("failed to read settings for seed: %w", err)
+		}
+		if existingSettings == nil {
+			if err := settingsStore.Upsert(
+				context.Background(), config.Settings, nil,
+			); err != nil {
+				return nil, fmt.Errorf("failed to seed settings: %w", err)
+			}
+		}
+		// Pass the vtxo store to the marker repository so they share the same data
+		badgerVtxoRepo, ok := vtxoStore.(*badgerdb.VtxoRepository)
+		if !ok {
+			return nil, fmt.Errorf("failed to get badger vtxo repository")
+		}
+		markerConfig := make(
+			[]interface{},
+			len(config.DataStoreConfig),
+			len(config.DataStoreConfig)+1,
+		)
+		copy(markerConfig, config.DataStoreConfig)
+		markerConfig = append(markerConfig, badgerVtxoRepo.GetStore())
+		markerStore, err = markerStoreFactory(markerConfig...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create marker store: %w", err)
+		}
+		// Badger has no SQL migration path, so rebuild the vtxo marker DAG here
+		// on startup. The internal completion-latch guard makes this a cheap
+		// no-op after the first successful run.
+		markerAccessor, ok := markerStore.(badgerdb.MarkerStoreAccessor)
+		if !ok {
+			return nil, fmt.Errorf("failed to get badger marker store accessor")
+		}
+		if err := badgerdb.BackfillVtxoMarkers(
+			context.Background(),
+			badgerVtxoRepo.GetStore(),
+			markerAccessor.GetMarkerStore(),
+		); err != nil {
+			return nil, fmt.Errorf("failed to backfill vtxo markers: %w", err)
+		}
+
 	case "postgres":
 		if len(config.DataStoreConfig) != 3 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
@@ -266,8 +308,19 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to handle intent txid migration: %w", err)
 		}
 
+		err = handleVtxoMarkersMigration(m, db, config.DataStoreType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to handle vtxo markers migration: %w", err)
+		}
+
 		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 			return nil, fmt.Errorf("failed to run postgres migrations: %s", err)
+		}
+
+		if err := handleSettingsSeed(
+			context.Background(), db, config.DataStoreType, config.Settings,
+		); err != nil {
+			return nil, fmt.Errorf("failed to seed settings: %w", err)
 		}
 
 		roundStore, err = roundStoreFactory(db)
@@ -278,11 +331,6 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		vtxoStore, err = vtxoStoreFactory(db)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
-		}
-
-		scheduledSessionStore, err = scheduledSessionStoreFactory(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create scheduled session store: %w", err)
 		}
 
 		offchainTxStore, err = offchainTxStoreFactory(db)
@@ -297,10 +345,15 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}
-		intentFeesStore, err = intentFeesStoreFactory(db)
+		settingsStore, err = settingsStoreFactory(db)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
+			return nil, fmt.Errorf("failed to create settings store: %w", err)
 		}
+		markerStore, err = markerStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create marker store: %w", err)
+		}
+
 	case "sqlite":
 		if len(config.DataStoreConfig) != 1 {
 			return nil, fmt.Errorf("invalid data store config")
@@ -312,12 +365,16 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		}
 
 		dbFile := filepath.Join(baseDir, sqliteDbFile)
-		db, err := sqlitedb.OpenDb(dbFile)
+		db, err := sqlitedb.OpenDb(
+			dbFile,
+			sqlitedb.WithJournalModeWAL(),
+			sqlitedb.WithBusyTimeout(5*time.Second),
+		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open db: %s", err)
 		}
 
-		driver, err := sqlitemigrate.WithInstance(db, &sqlitemigrate.Config{})
+		driver, err := sqlitemigrate.WithInstance(db.Write(), &sqlitemigrate.Config{})
 		if err != nil {
 			return nil, fmt.Errorf("failed to init driver: %s", err)
 		}
@@ -332,13 +389,24 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to create migration instance: %s", err)
 		}
 
-		err = handleIntentTxidMigration(m, db, config.DataStoreType)
+		err = handleIntentTxidMigration(m, db.Write(), config.DataStoreType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to handle intent txid migration: %w", err)
 		}
 
+		err = handleVtxoMarkersMigration(m, db.Write(), config.DataStoreType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to handle vtxo markers migration: %w", err)
+		}
+
 		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 			return nil, fmt.Errorf("failed to run migrations: %s", err)
+		}
+
+		if err := handleSettingsSeed(
+			context.Background(), db.Write(), config.DataStoreType, config.Settings,
+		); err != nil {
+			return nil, fmt.Errorf("failed to seed settings: %w", err)
 		}
 
 		roundStore, err = roundStoreFactory(db)
@@ -348,10 +416,6 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		vtxoStore, err = vtxoStoreFactory(db)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
-		}
-		scheduledSessionStore, err = scheduledSessionStoreFactory(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create scheduled session store: %w", err)
 		}
 		offchainTxStore, err = offchainTxStoreFactory(db)
 		if err != nil {
@@ -365,24 +429,28 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to create asset store: %w", err)
 		}
-		intentFeesStore, err = intentFeesStoreFactory(db)
+		settingsStore, err = settingsStoreFactory(db)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create intent fees store: %w", err)
+			return nil, fmt.Errorf("failed to create settings store: %w", err)
+		}
+		markerStore, err = markerStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create marker store: %w", err)
 		}
 	}
 
 	svc := &service{
-		eventStore:              eventStore,
-		roundStore:              roundStore,
-		vtxoStore:               vtxoStore,
-		scheduledSessionStore:   scheduledSessionStore,
-		offchainTxStore:         offchainTxStore,
-		txDecoder:               txDecoder,
-		convictionStore:         convictionStore,
-		assetStore:              assetStore,
-		intentFeesStore:         intentFeesStore,
-		batchUpdateHandler:      newUpdateHandler[domain.Round](),
-		offchainTxUpdateHandler: newUpdateHandler[domain.OffchainTx](),
+		eventStore:             eventStore,
+		roundStore:             roundStore,
+		vtxoStore:              vtxoStore,
+		markerStore:            markerStore,
+		offchainTxStore:        offchainTxStore,
+		txDecoder:              txDecoder,
+		convictionStore:        convictionStore,
+		assetStore:             assetStore,
+		settingsStore:          settingsStore,
+		batchEventHandler:      newUpdateHandler[domain.Round](),
+		offchainTxEventHandler: newUpdateHandler[domain.OffchainTx](),
 	}
 
 	// Register handlers that take care of keeping the projection store up-to-date.
@@ -412,8 +480,8 @@ func (s *service) Vtxos() domain.VtxoRepository {
 	return s.vtxoStore
 }
 
-func (s *service) ScheduledSession() domain.ScheduledSessionRepo {
-	return s.scheduledSessionStore
+func (s *service) Markers() domain.MarkerRepository {
+	return s.markerStore
 }
 
 func (s *service) OffchainTxs() domain.OffchainTxRepository {
@@ -424,25 +492,30 @@ func (s *service) Convictions() domain.ConvictionRepository {
 	return s.convictionStore
 }
 
-func (s *service) Fees() domain.FeeRepository {
-	return s.intentFeesStore
+func (s *service) Settings() domain.SettingsRepository {
+	return s.settingsStore
 }
 
 func (s *service) RegisterBatchUpdateHandler(handler func(data domain.Round)) {
-	s.batchUpdateHandler.set(handler)
+	s.batchEventHandler.set(handler)
 }
 
 func (s *service) RegisterOffchainTxUpdateHandler(handler func(data domain.OffchainTx)) {
-	s.offchainTxUpdateHandler.set(handler)
+	s.offchainTxEventHandler.set(handler)
+}
+
+func (s *service) RegisterSettingsUpdateHandler(handler func(domain.Settings, []string)) {
+	s.settingsStore.RegisterUpdatesHandler(handler)
 }
 
 func (s *service) Close() {
 	s.eventStore.Close()
 	s.roundStore.Close()
 	s.vtxoStore.Close()
-	s.scheduledSessionStore.Close()
+	s.markerStore.Close()
 	s.offchainTxStore.Close()
 	s.convictionStore.Close()
+	s.settingsStore.Close()
 }
 
 func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
@@ -465,12 +538,19 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		if lastEvent.GetType() == domain.EventTypeBatchSwept {
 			event := lastEvent.(domain.BatchSwept)
 			allSweptVtxos := append(event.LeafVtxos, event.PreconfirmedVtxos...)
-			sweptCount, err := repo.SweepVtxos(ctx, allSweptVtxos)
-			if err != nil {
-				log.WithError(err).Warn("failed to sweep vtxos, retrying...")
+			// Per-outpoint sweeping avoids marker over-reach: markers can be shared
+			// across independent subtrees when offchain txs consolidate inputs from
+			// different lineages. Sweeping by marker would incorrectly mark unrelated
+			// VTXOs as swept (same reason the checkpoint path uses SweepVtxoOutpoints).
+			sweptAt := time.Now().Unix()
+			if err := s.markerStore.SweepVtxoOutpoints(ctx, allSweptVtxos, sweptAt); err != nil {
+				log.WithError(err).Warn(
+					"failed to sweep vtxo outpoints for batch, aborting round projection " +
+						"(update not dispatched, not retried)",
+				)
 				return false
 			}
-			log.Debugf("swept %d vtxos", sweptCount)
+			log.Debugf("swept %d vtxo outpoints for batch", len(allSweptVtxos))
 
 			if event.FullySwept {
 				log.WithField("commitment_txid", round.CommitmentTxid).Debugf(
@@ -485,7 +565,10 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 
 		if len(spentVtxos) > 0 {
 			if err := repo.SettleVtxos(ctx, spentVtxos, round.CommitmentTxid); err != nil {
-				log.WithError(err).Warn("failed to spend vtxos, retrying...")
+				log.WithError(err).Warn(
+					"failed to spend vtxos, aborting round projection " +
+						"(update not dispatched, not retried)",
+				)
 				return false
 			}
 			log.Debugf("spent %d vtxos", len(spentVtxos))
@@ -494,19 +577,29 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 		if len(newVtxos) > 0 {
 			// this will take care of updating asset projections as well
 			if err := repo.AddVtxos(ctx, newVtxos); err != nil {
-				log.WithError(err).Warn("failed to add new vtxos, retrying soon")
+				log.WithError(err).Warn(
+					"failed to add new vtxos, aborting round projection " +
+						"(update not dispatched, not retried)",
+				)
 				return false
 			}
-
 			log.Debugf("added %d new vtxos", len(newVtxos))
 
+			// Create root markers for batch VTXOs (depth 0 is always at marker boundary).
+			if err := s.markerStore.CreateRootMarkersForVtxos(ctx, newVtxos); err != nil {
+				log.WithError(err).Warnf(
+					"failed to create root markers for %d vtxos", len(newVtxos),
+				)
+				return false
+			}
+			log.Debugf("created root markers for %d vtxos", len(newVtxos))
 		}
 		return true
 	}
 
 	dispatch := updateFn()
 	if dispatch {
-		go s.batchUpdateHandler.dispatch(*round)
+		go s.batchEventHandler.dispatch(*round)
 	}
 }
 
@@ -540,14 +633,38 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				log.WithError(err).Warn("failed to spend vtxos")
 				return false
 			}
-			if len(spentVtxos) > 0 {
-				log.Debugf("spent %d vtxos", len(spentVtxos))
-			}
+			log.Debugf("spent %d vtxos", len(spentVtxos))
 		case offchainTx.IsFinalized():
 			txid, _, outs, err := s.txDecoder.DecodeTx(offchainTx.ArkTx)
 			if err != nil {
 				log.WithError(err).Warn("failed to decode ark tx")
 				return false
+			}
+
+			// Depth and parent marker IDs are carried by the OffchainTxAccepted event,
+			// computed in SubmitOffchainTx from the spent VTXOs.
+			newDepth := offchainTx.Depth
+			parentMarkerIDs := offchainTx.ParentMarkerIDs
+
+			// Create marker if at boundary depth, or inherit parent markers
+			var markerIDs []string
+			marker, ids := domain.NewMarker(txid, newDepth, parentMarkerIDs)
+			if marker != nil {
+				if err := s.markerStore.AddMarker(ctx, *marker); err != nil {
+					log.WithError(err).
+						Warn("failed to create marker for chained vtxo, falling back to parent markers")
+					// Fall back to parent markers so VTXOs are still sweepable.
+					// Without this, markerIDs stays nil and the VTXOs become
+					// permanently unsweepable — the swept column was removed and
+					// swept status is now derived from whether any of a VTXO's
+					// markers appear in the swept_marker table.
+					markerIDs = parentMarkerIDs
+				} else {
+					log.Debugf("created marker %s at depth %d", marker.ID, newDepth)
+					markerIDs = ids
+				}
+			} else {
+				markerIDs = ids
 			}
 
 			issuances, assets, err := getAssetsFromTxOuts(txid, outs)
@@ -567,6 +684,8 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 			// once the offchain tx is finalized, the user signed the checkpoint txs
 			// thus, we can create the new vtxos in the db.
 			newVtxos := make([]domain.Vtxo, 0, len(outs))
+			createdDustMarkerIDs := make([]string, 0)
+			sweptOutpoints := make([]domain.Outpoint, 0)
 			for outIndex, out := range outs {
 				// ignore anchor and extension
 				if bytes.Equal(out.PkScript, txutils.ANCHOR_PKSCRIPT) ||
@@ -584,11 +703,49 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 					outputSwept = script.IsSubDustScript(out.PkScript)
 				}
 
+				outpoint := domain.Outpoint{
+					Txid: txid,
+					VOut: uint32(outIndex),
+				}
+
+				vtxoMarkerIDs := markerIDs
+				isDust := script.IsSubDustScript(out.PkScript)
+				if txSwept && !isDust {
+					// The swept column no longer exists, so the Swept flag set on
+					// the vtxo struct below is not persisted by AddVtxos. Collect
+					// non-dust outpoints to sweep them (via swept_vtxo) before insert.
+					// Dust outputs are covered by their swept dust markers.
+					sweptOutpoints = append(sweptOutpoints, outpoint)
+				}
+				if isDust {
+					// Dust VTXOs get their own outpoint-based marker so they can be
+					// swept individually without affecting sibling non-dust VTXOs
+					// that share the same inherited parent markers.
+					dustMarkerID := outpoint.String()
+					if err := s.markerStore.AddMarker(ctx, domain.Marker{
+						ID:              dustMarkerID,
+						Depth:           newDepth,
+						ParentMarkerIDs: markerIDs,
+					}); err != nil {
+						// Sub-dust vtxos can't be spent offchain (OP_RETURN outputs):
+						// they can only be collected until they sum to a non-sub-dust
+						// amount (> 330 sats) and settled into a batch. We mark them
+						// swept so they fall in the same bucket as expired (swept)
+						// vtxos, the only other vtxos with that same "not spendable
+						// offchain" trait. If the dust marker can't be persisted the
+						// vtxo would instead look like a normal spendable vtxo
+						// (postgres/sqlite have no swept column), so we abort the
+						// projection rather than store a mis-categorized vtxo; the
+						// event is not dispatched.
+						log.WithError(err).Warnf("failed to create dust marker %s", dustMarkerID)
+						return false
+					}
+					createdDustMarkerIDs = append(createdDustMarkerIDs, dustMarkerID)
+					vtxoMarkerIDs = append(append([]string{}, markerIDs...), dustMarkerID)
+				}
+
 				newVtxos = append(newVtxos, domain.Vtxo{
-					Outpoint: domain.Outpoint{
-						Txid: txid,
-						VOut: uint32(outIndex),
-					},
+					Outpoint:           outpoint,
 					PubKey:             hex.EncodeToString(out.PkScript[2:]),
 					Amount:             uint64(out.Amount),
 					ExpiresAt:          offchainTx.ExpiryTimestamp,
@@ -599,8 +756,13 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 					// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
 					// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
 					// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
-					Swept:  outputSwept,
-					Assets: assets[uint32(outIndex)],
+					// Only badger persists this field directly. Postgres and sqlite
+					// have no swept column, so for them it is persisted via the dust
+					// marker sweep and the swept outpoints insert below.
+					Swept:     outputSwept,
+					Depth:     newDepth,
+					MarkerIDs: vtxoMarkerIDs,
+					Assets:    assets[uint32(outIndex)],
 				})
 			}
 
@@ -620,21 +782,53 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				}
 			}
 
+			// Persist swept state BEFORE creating the vtxos, so a failed swept write
+			// aborts the projection instead of leaving a spendable vtxo behind. Both
+			// tables are independent of the vtxo row: swept_marker references the dust
+			// markers created above, and swept_vtxo is keyed by outpoint — neither
+			// needs the vtxo to exist yet.
+
+			// Mark dust VTXOs as swept via their markers.
+			// Dust vtxos are below dust limit and can't be spent again in future offchain tx.
+			// Because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
+			if len(createdDustMarkerIDs) > 0 {
+				sweptAt := time.Now().Unix()
+				if err := s.markerStore.BulkSweepMarkers(
+					ctx,
+					createdDustMarkerIDs,
+					sweptAt,
+				); err != nil {
+					log.WithError(err).
+						Warnf("failed to sweep %d dust vtxo markers", len(createdDustMarkerIDs))
+					return false
+				}
+			}
+
+			// Persist swept status for non-dust outputs of a swept/expired tx,
+			// per-outpoint like the batch and checkpoint sweep paths.
+			if len(sweptOutpoints) > 0 {
+				sweptAt := time.Now().Unix()
+				if err := s.markerStore.SweepVtxoOutpoints(
+					ctx, sweptOutpoints, sweptAt,
+				); err != nil {
+					log.WithError(err).
+						Warnf("failed to sweep %d vtxo outpoints of swept tx", len(sweptOutpoints))
+					return false
+				}
+			}
+
 			if err := s.vtxoStore.AddVtxos(ctx, newVtxos); err != nil {
 				log.WithError(err).Warn("failed to add vtxos")
 				return false
 			}
-			if len(newVtxos) > 0 {
-				log.Debugf("added %d vtxos", len(newVtxos))
-			}
+			log.Debugf("added %d vtxos at depth %d", len(newVtxos), newDepth)
 		}
-
 		return true
 	}
 
 	dispatch := updateFn()
 	if dispatch {
-		go s.offchainTxUpdateHandler.dispatch(*offchainTx)
+		go s.offchainTxEventHandler.dispatch(*offchainTx)
 	}
 }
 
@@ -702,14 +896,17 @@ func getNewVtxosFromRound(round domain.Round, txDecoder ports.TxDecoder) []domai
 			}
 
 			vtxoPubkey := hex.EncodeToString(schnorr.SerializePubKey(vtxoTapKey))
+			outpoint := domain.Outpoint{Txid: txid, VOut: uint32(i)}
 			vtxos = append(vtxos, domain.Vtxo{
-				Outpoint:           domain.Outpoint{Txid: txid, VOut: uint32(i)},
+				Outpoint:           outpoint,
 				PubKey:             vtxoPubkey,
 				Amount:             out.Amount,
 				CommitmentTxids:    []string{round.CommitmentTxid},
 				RootCommitmentTxid: round.CommitmentTxid,
 				CreatedAt:          round.EndingTimestamp,
 				ExpiresAt:          round.ExpiryTimestamp(),
+				Depth:              0,
+				MarkerIDs:          []string{outpoint.String()},
 				Assets:             assets[uint32(i)],
 			})
 		}
@@ -756,38 +953,44 @@ func getAssetsFromTxOuts(txid string, txOuts []ports.TxOut) (
 	issuances := make([]domain.Asset, 0)
 	assetDenominations := make(map[uint32][]domain.AssetDenomination)
 	for grpIndex, ast := range assetPacket {
-		for _, out := range ast.Outputs {
-			assetId := ""
+		if len(ast.Outputs) == 0 {
+			continue
+		}
 
-			if ast.IsIssuance() {
-				var err error
-				assetId, err = getAssetId(uint16(grpIndex))
-				if err != nil {
-					return nil, nil, err
-				}
+		assetId := ""
 
-				issuance := domain.Asset{
-					Id:       assetId,
-					Metadata: ast.Metadata,
-				}
-
-				if ast.ControlAsset != nil {
-					switch ast.ControlAsset.Type {
-					case asset.AssetRefByID:
-						issuance.ControlAssetId = ast.ControlAsset.AssetId.String()
-					case asset.AssetRefByGroup:
-						issuance.ControlAssetId, err = getAssetId(ast.ControlAsset.GroupIndex)
-						if err != nil {
-							return nil, nil, err
-						}
-					}
-				}
-
-				issuances = append(issuances, issuance)
-			} else {
-				assetId = ast.AssetId.String()
+		// the id of an issuance derives from the group index alone, so it is identical for
+		// every output of the group and must be collected once per group.
+		if ast.IsIssuance() {
+			var err error
+			assetId, err = getAssetId(uint16(grpIndex))
+			if err != nil {
+				return nil, nil, err
 			}
 
+			issuance := domain.Asset{
+				Id:       assetId,
+				Metadata: ast.Metadata,
+			}
+
+			if ast.ControlAsset != nil {
+				switch ast.ControlAsset.Type {
+				case asset.AssetRefByID:
+					issuance.ControlAssetId = ast.ControlAsset.AssetId.String()
+				case asset.AssetRefByGroup:
+					issuance.ControlAssetId, err = getAssetId(ast.ControlAsset.GroupIndex)
+					if err != nil {
+						return nil, nil, err
+					}
+				}
+			}
+
+			issuances = append(issuances, issuance)
+		} else {
+			assetId = ast.AssetId.String()
+		}
+
+		for _, out := range ast.Outputs {
 			assetDenominations[uint32(out.Vout)] = append(
 				assetDenominations[uint32(out.Vout)], domain.AssetDenomination{
 					AssetId: assetId,
@@ -852,4 +1055,60 @@ func handleIntentTxidMigration(m *migrate.Migrate, db *sql.DB, dbType string) er
 	}
 
 	return nil
+}
+
+// stepwise migration for the vtxo marker DAG backfill (real BFS depths +
+// boundary markers). Gated at 20260701000000, the marker-DAG schema migration.
+// Unlike the intent-txid precedent, the backfill dispatch runs on every startup
+// (outside the version gate): its internal data guard makes it a cheap no-op
+// once topology exists and re-runs an interrupted (rolled-back) backfill that
+// left the version advanced but no data written.
+func handleVtxoMarkersMigration(m *migrate.Migrate, db *sql.DB, dbType string) error {
+	vtxoMarkersMigrationBegin := uint(20260701000000)
+	version, dirty, verr := m.Version()
+	if verr != nil && !errors.Is(verr, migrate.ErrNilVersion) {
+		return fmt.Errorf("failed to read migration version: %w", verr)
+	}
+	if dirty {
+		return fmt.Errorf(
+			"database is in a dirty migration state; manual intervention required",
+		)
+	}
+	if version < vtxoMarkersMigrationBegin {
+		if err := m.Migrate(vtxoMarkersMigrationBegin); err != nil &&
+			!errors.Is(err, migrate.ErrNoChange) {
+			return fmt.Errorf("failed to run migrations: %s", err)
+		}
+	}
+
+	switch dbType {
+	case "postgres":
+		if err := pgdb.BackfillVtxoMarkers(context.Background(), db); err != nil {
+			return fmt.Errorf("failed to backfill vtxo markers: %w", err)
+		}
+	case "sqlite":
+		if err := sqlitedb.BackfillVtxoMarkers(context.Background(), db); err != nil {
+			return fmt.Errorf("failed to backfill vtxo markers: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported db type for vtxo markers migration: %s", dbType)
+	}
+
+	return nil
+}
+
+// handleSettingsSeed seeds the settings table from the config-built defaults on
+// first boot, carrying over any legacy intent_fees / scheduled_session rows. It is
+// a no-op once the settings row exists. Mirrors handleIntentTxidMigration's dispatch.
+func handleSettingsSeed(
+	ctx context.Context, db *sql.DB, dbType string, defaults domain.Settings,
+) error {
+	switch dbType {
+	case "postgres":
+		return pgdb.SeedSettings(ctx, db, defaults)
+	case "sqlite":
+		return sqlitedb.SeedSettings(ctx, db, defaults)
+	default:
+		return fmt.Errorf("unsupported db type for settings seed: %s", dbType)
+	}
 }

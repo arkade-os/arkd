@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/timshannon/badgerhold/v4"
 )
@@ -22,6 +24,7 @@ type arkRepository struct {
 type ArkRepository interface {
 	domain.RoundRepository
 	domain.OffchainTxRepository
+	Store() *badgerhold.Store
 }
 
 type IntentIndex struct {
@@ -77,26 +80,12 @@ func (r *arkRepository) GetRoundWithId(
 		return nil, err
 	}
 	if len(rounds) <= 0 {
-		return nil, fmt.Errorf("round with id %s not found", id)
+		return nil, arkerrors.ROUND_NOT_FOUND.
+			New("round with id %s not found", id).
+			WithMetadata(arkerrors.RoundNotFoundMetadata{RoundId: id})
 	}
 	round := &rounds[0]
 	return round, nil
-}
-
-func (r *arkRepository) PatchCollectedFees(
-	ctx context.Context, feesByRoundId map[string]uint64,
-) error {
-	for id, fees := range feesByRoundId {
-		round, err := r.GetRoundWithId(ctx, id)
-		if err != nil {
-			return fmt.Errorf("failed to get round %s: %w", id, err)
-		}
-		round.CollectedFees = fees
-		if err := r.addOrUpdateRound(ctx, *round); err != nil {
-			return fmt.Errorf("failed to patch collected fees for round %s: %w", id, err)
-		}
-	}
-	return nil
 }
 
 func (r *arkRepository) GetRoundWithCommitmentTxid(
@@ -108,7 +97,9 @@ func (r *arkRepository) GetRoundWithCommitmentTxid(
 		return nil, err
 	}
 	if len(rounds) <= 0 {
-		return nil, fmt.Errorf("round with txid %s not found", txid)
+		return nil, arkerrors.ROUND_NOT_FOUND.
+			New("round with commitment txid %s not found", txid).
+			WithMetadata(arkerrors.RoundNotFoundMetadata{RoundId: txid})
 	}
 	round := &rounds[0]
 	return round, nil
@@ -131,6 +122,101 @@ func (r *arkRepository) GetSweepableRounds(
 		}
 	}
 	return txids, nil
+}
+
+func (r *arkRepository) GetScheduledSweeps(
+	ctx context.Context, limit int64,
+) ([]domain.ScheduledSweep, error) {
+	query := badgerhold.Where("Stage.Code").Eq(int(domain.RoundFinalizationStage)).
+		And("Stage.Ended").Eq(true).And("Swept").Eq(false)
+	rounds, err := r.findRound(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	sweeps := make([]domain.ScheduledSweep, 0, len(rounds))
+	for _, round := range rounds {
+		// skip non-sweepable rounds (no vtxo tree)
+		if len(round.VtxoTree) == 0 {
+			continue
+		}
+		// ExpiryTimestamp returns -1 for failed/not-ended rounds.
+		sweepAt := round.ExpiryTimestamp()
+		if sweepAt <= 0 {
+			continue
+		}
+		sweeps = append(sweeps, domain.ScheduledSweep{
+			RoundId:        round.Id,
+			CommitmentTxid: round.CommitmentTxid,
+			SweepAt:        sweepAt,
+			TotalAmount:    0,
+			VtxoCount:      0,
+		})
+	}
+
+	sort.Slice(sweeps, func(i, j int) bool { return sweeps[i].SweepAt < sweeps[j].SweepAt })
+	if limit > 0 && int64(len(sweeps)) > limit {
+		sweeps = sweeps[:limit]
+	}
+	return sweeps, nil
+}
+
+func (r *arkRepository) SumCollectedFees(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	rounds, err := r.findRound(ctx, r.finalizedRoundsInRange(after, before))
+	if err != nil {
+		return 0, err
+	}
+
+	var total uint64
+	for _, round := range rounds {
+		total += round.CollectedFees
+	}
+	return total, nil
+}
+
+// finalizedRoundsInRange matches ended, non-failed rounds started in the given
+// window; 0 means unbounded on either side.
+func (r *arkRepository) finalizedRoundsInRange(after, before int64) *badgerhold.Query {
+	query := badgerhold.Where("Stage.Ended").Eq(true).And("Stage.Failed").Eq(false)
+	if after > 0 {
+		query = query.And("StartingTimestamp").Gt(after)
+	}
+	if before > 0 {
+		query = query.And("StartingTimestamp").Lt(before)
+	}
+	return query
+}
+
+func (r *arkRepository) GetExpiredRounds(
+	ctx context.Context, expiredBefore int64,
+) ([]domain.ExpiredRound, error) {
+	query := badgerhold.Where("Stage.Code").Eq(int(domain.RoundFinalizationStage)).
+		And("Stage.Ended").Eq(true).And("Swept").Eq(false)
+	rounds, err := r.findRound(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	expiredRounds := make([]domain.ExpiredRound, 0, len(rounds))
+	for _, round := range rounds {
+		// skip non-sweepable rounds (no vtxo tree)
+		if len(round.VtxoTree) == 0 {
+			continue
+		}
+		// ExpiryTimestamp returns -1 for failed/not-ended rounds.
+		expiredAt := round.ExpiryTimestamp()
+		if expiredAt <= 0 || expiredAt >= expiredBefore {
+			continue
+		}
+		expiredRounds = append(expiredRounds, domain.ExpiredRound{
+			RoundId:        round.Id,
+			CommitmentTxid: round.CommitmentTxid,
+			ExpiredAt:      expiredAt,
+		})
+	}
+	return expiredRounds, nil
 }
 
 func (r *arkRepository) GetRoundStats(
@@ -177,25 +263,36 @@ func (r *arkRepository) GetSweptRoundsConnectorAddress(
 	return txids, nil
 }
 
-func (r *arkRepository) GetRoundIds(
-	ctx context.Context, startedAfter, startedBefore int64, withFailed, withCompleted bool,
-) ([]string, error) {
-	query := badgerhold.Where("Id").Ne("") // Base query to get all rounds
+func (r *arkRepository) GetRoundSummaries(
+	ctx context.Context, startedAfter, startedBefore int64,
+	withFailed, withCompleted, onlyFailed bool, limit int64,
+) ([]domain.RoundSummary, error) {
+	query := badgerhold.Where("Id").Ne("")
 
 	if startedAfter > 0 {
 		query = query.And("StartingTimestamp").Gt(startedAfter)
 	}
-
 	if startedBefore > 0 {
 		query = query.And("StartingTimestamp").Lt(startedBefore)
 	}
-
+	// Same order as the SQL predicates: only_failed narrows on top of the two
+	// include filters, it does not replace them.
+	if onlyFailed {
+		withFailed = true
+	}
 	if !withFailed {
 		query = query.And("Stage.Failed").Eq(false)
 	}
-
 	if !withCompleted {
 		query = query.And("Stage.Ended").Eq(false)
+	}
+	if onlyFailed {
+		query = query.And("Stage.Failed").Eq(true)
+	}
+
+	query = query.SortBy("StartingTimestamp").Reverse()
+	if limit > 0 {
+		query = query.Limit(int(limit))
 	}
 
 	rounds, err := r.findRound(ctx, query)
@@ -203,12 +300,23 @@ func (r *arkRepository) GetRoundIds(
 		return nil, err
 	}
 
-	ids := make([]string, 0, len(rounds))
-	for _, round := range rounds {
-		ids = append(ids, round.Id)
+	summaries := make([]domain.RoundSummary, 0, len(rounds))
+	for i := range rounds {
+		round := rounds[i]
+		summaries = append(summaries, domain.RoundSummary{
+			RoundId:        round.Id,
+			CommitmentTxid: round.CommitmentTxid,
+			StartedAt:      round.StartingTimestamp,
+			EndedAt:        round.EndingTimestamp,
+			Stage:          domain.RoundStage(round.Stage.Code).String(),
+			Ended:          round.IsEnded(),
+			Failed:         round.IsFailed(),
+			Swept:          round.Swept,
+			FailReason:     round.FailReason,
+			TotalIntents:   int64(len(round.Intents)),
+		})
 	}
-
-	return ids, nil
+	return summaries, nil
 }
 
 func (r *arkRepository) GetRoundVtxoTree(
@@ -256,9 +364,87 @@ func (r *arkRepository) GetOffchainTx(
 	return r.getOffchainTx(ctx, txid)
 }
 
+// GetAnyOffchainTx is the same as GetOffchainTx: badger stores the whole aggregate, so
+// the lookup never filtered by stage in the first place.
+func (r *arkRepository) GetAnyOffchainTx(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	return r.getOffchainTx(ctx, txid)
+}
+
+func (r *arkRepository) GetOffchainTxsInRange(
+	ctx context.Context, after, before int64, onlyFailed, onlyCompleted bool, limit int64,
+) ([]*domain.OffchainTx, error) {
+	query := badgerhold.Where("ArkTxid").Ne("")
+
+	if after > 0 {
+		query = query.And("StartingTimestamp").Gt(after)
+	}
+	if before > 0 {
+		query = query.And("StartingTimestamp").Lt(before)
+	}
+	if onlyFailed {
+		query = query.And("Stage.Failed").Eq(true)
+	}
+	// Mirrors OffchainTx.IsFinalized, and the stage_code predicate the SQL repos use.
+	if onlyCompleted {
+		query = query.And("Stage.Code").Eq(int(domain.OffchainTxFinalizedStage)).
+			And("Stage.Failed").Eq(false)
+	}
+
+	query = query.SortBy("StartingTimestamp").Reverse()
+	if limit > 0 {
+		query = query.Limit(int(limit))
+	}
+
+	var offchainTxs []domain.OffchainTx
+	var err error
+	if ctx.Value("tx") != nil {
+		tx := ctx.Value("tx").(*badger.Txn)
+		err = r.store.TxFind(tx, &offchainTxs, query)
+	} else {
+		err = r.store.Find(&offchainTxs, query)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	txs := make([]*domain.OffchainTx, 0, len(offchainTxs))
+	for i := range offchainTxs {
+		txs = append(txs, &offchainTxs[i])
+	}
+	return txs, nil
+}
+
+func (r *arkRepository) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	if len(txids) == 0 {
+		return []*domain.OffchainTx{}, nil
+	}
+
+	txs := make([]*domain.OffchainTx, 0, len(txids))
+	for _, txid := range txids {
+		tx, err := r.getOffchainTx(ctx, txid)
+		if err != nil {
+			if errors.Is(err, badgerhold.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		txs = append(txs, tx)
+	}
+
+	return txs, nil
+}
+
 func (r *arkRepository) Close() {
-	// nolint
+	// nolint:all
 	r.store.Close()
+}
+
+func (r *arkRepository) Store() *badgerhold.Store {
+	return r.store
 }
 
 func (r *arkRepository) findRound(
@@ -297,6 +483,7 @@ func (r *arkRepository) addOrUpdateRound(
 		VtxoTreeExpiration: round.VtxoTreeExpiration,
 		SweepTxs:           round.SweepTxs,
 		CollectedFees:      round.CollectedFees,
+		FailReason:         round.FailReason,
 	}
 	var upsertFn func() error
 	if ctx.Value("tx") != nil {
@@ -369,10 +556,14 @@ func (r *arkRepository) getOffchainTx(
 		err = r.store.Get(txid, &offchainTx)
 	}
 	if err != nil && err == badgerhold.ErrNotFound {
-		return nil, fmt.Errorf("offchain tx %s not found", txid)
+		return nil, arkerrors.OFFCHAIN_TX_NOT_FOUND.
+			New("offchain tx %s not found", txid).
+			WithMetadata(arkerrors.OffchainTxNotFoundMetadata{Txid: txid})
 	}
 	if offchainTx.Stage.Code == int(domain.OffchainTxUndefinedStage) {
-		return nil, fmt.Errorf("offchain tx %s not found", txid)
+		return nil, arkerrors.OFFCHAIN_TX_NOT_FOUND.
+			New("offchain tx %s not found", txid).
+			WithMetadata(arkerrors.OffchainTxNotFoundMetadata{Txid: txid})
 	}
 
 	return &offchainTx, nil

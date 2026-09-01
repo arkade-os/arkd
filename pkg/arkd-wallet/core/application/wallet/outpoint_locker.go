@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 type outpointLocker struct {
@@ -50,6 +50,21 @@ func (l *outpointLocker) lock(ctx context.Context, outpoints ...wire.OutPoint) e
 	}
 
 	return nil
+}
+
+// unlock releases the given outpoints so they can be selected again. Unlocking
+// an outpoint that isn't locked is a no-op.
+func (l *outpointLocker) unlock(_ context.Context, outpoints ...wire.OutPoint) {
+	if len(outpoints) == 0 {
+		return
+	}
+
+	l.locker.Lock()
+	defer l.locker.Unlock()
+
+	for _, outpoint := range outpoints {
+		delete(l.lockedOutpoints, outpoint)
+	}
 }
 
 func (l *outpointLocker) get(_ context.Context) (map[wire.OutPoint]struct{}, error) {

@@ -7,8 +7,8 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/errors"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 // Asset represents a specific asset amount held by a transaction input.
@@ -133,6 +133,12 @@ func validateReissuance(
 	if controlAssetGroup == nil {
 		return errors.ASSET_NOT_FOUND.New("control asset %s not found in the packet", ctrlAssetID).
 			WithMetadata(errors.AssetValidationMetadata{AssetID: ctrlAssetID})
+	}
+
+	if len(controlAssetGroup.Inputs) == 0 {
+		return errors.CONTROL_ASSET_INVALID.New(
+			"control asset %s is not spent in the tx", ctrlAssetID,
+		).WithMetadata(errors.ControlAssetMetadata{AssetID: ctrlAssetID})
 	}
 
 	return nil

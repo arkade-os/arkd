@@ -311,6 +311,37 @@
         }
       }
     },
+    "/v1/admin/feeRate": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "description": "GetFeeRate returns the fee rate the wallet currently uses to estimate the fees\nof the onchain txs it builds, like the commitment tx.",
+        "operationId": "AdminService_GetFeeRate",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetFeeRateResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/fees/collected": {
       "get": {
         "tags": [
@@ -673,15 +704,16 @@
         }
       }
     },
-    "/v1/admin/round/{round_id}": {
+    "/v1/admin/offchainTx/{txid}": {
       "get": {
         "tags": [
           "AdminService"
         ],
-        "operationId": "AdminService_GetRoundDetails",
+        "description": "GetOffchainTxDetails returns the full details of an offchain tx at any stage,\nincluding txs that failed before being accepted.",
+        "operationId": "AdminService_GetOffchainTxDetails",
         "parameters": [
           {
-            "name": "roundId",
+            "name": "txid",
             "in": "path",
             "required": true,
             "schema": {
@@ -695,7 +727,166 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "$ref": "#/components/schemas/GetOffchainTxDetailsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/offchainTxs": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "description": "GetOffchainTxs returns the offchain txs started in the given time range, most\nrecent first, including the failed ones and their fail reason.",
+        "operationId": "AdminService_GetOffchainTxs",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Unix timestamp (exclusive). 0 means no lower bound.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Unix timestamp (exclusive). 0 means no upper bound.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "onlyFailed",
+            "in": "query",
+            "description": "Return only the failed offchain txs.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "onlyCompleted",
+            "in": "query",
+            "description": "Return only the finalized offchain txs.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max number of txs to return, most recent first. 0 means no limit.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetOffchainTxsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/round/{round_id}": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetRoundDetails",
+        "parameters": [
+          {
+            "name": "roundId",
+            "in": "path",
+            "description": "Either the batch id or its commitment txid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
                   "$ref": "#/components/schemas/GetRoundDetailsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/round/{round_id}/intents": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "description": "GetRoundIntents returns the intents registered in a batch as they were persisted,\nso they can be inspected even if the batch failed.",
+        "operationId": "AdminService_GetRoundIntents",
+        "parameters": [
+          {
+            "name": "roundId",
+            "in": "path",
+            "description": "Either the batch id or its commitment txid.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetRoundIntentsResponse"
                 }
               }
             }
@@ -749,6 +940,23 @@
             "schema": {
               "type": "boolean"
             }
+          },
+          {
+            "name": "onlyFailed",
+            "in": "query",
+            "description": "Return only the failed batches.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max number of batches to return, most recent first. 0 means no limit.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
           }
         ],
         "responses": {
@@ -758,6 +966,37 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GetRoundsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/rounds/expired": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "description": "GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose\nbatch outputs have expired but have not been swept yet. It is meant to surface\nrounds for which the sweep should have happened but likely failed.",
+        "operationId": "AdminService_GetExpiredRounds",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetExpiredRoundsResponse"
                 }
               }
             }
@@ -883,6 +1122,74 @@
         }
       }
     },
+    "/v1/admin/settings": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetSettings",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetSettingsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_UpdateSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateSettingsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/sweep": {
       "post": {
         "tags": [
@@ -929,6 +1236,17 @@
           "AdminService"
         ],
         "operationId": "AdminService_GetScheduledSweep",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Max batches to return, soonest due first. 0 means no limit.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "a successful response.",
@@ -1016,6 +1334,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RevokeTokensResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/wallet/utxos": {
+      "get": {
+        "tags": [
+          "AdminService"
+        ],
+        "operationId": "AdminService_GetMainAccountUtxos",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetMainAccountUtxosResponse"
                 }
               }
             }
@@ -1186,6 +1534,23 @@
         "title": "DeleteIntentsResponse",
         "type": "object"
       },
+      "ExpiredRound": {
+        "title": "ExpiredRound",
+        "type": "object",
+        "properties": {
+          "commitmentTxid": {
+            "type": "string"
+          },
+          "expiredAt": {
+            "type": "integer",
+            "description": "Unix timestamp at which the round's batch outputs expired.",
+            "format": "int64"
+          },
+          "roundId": {
+            "type": "string"
+          }
+        }
+      },
       "FeeInfo": {
         "title": "FeeInfo",
         "type": "object",
@@ -1319,6 +1684,22 @@
           }
         }
       },
+      "GetExpiredRoundsRequest": {
+        "title": "GetExpiredRoundsRequest",
+        "type": "object"
+      },
+      "GetExpiredRoundsResponse": {
+        "title": "GetExpiredRoundsResponse",
+        "type": "object",
+        "properties": {
+          "rounds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExpiredRound"
+            }
+          }
+        }
+      },
       "GetExpiringLiquidityRequest": {
         "title": "GetExpiringLiquidityRequest",
         "type": "object",
@@ -1345,6 +1726,24 @@
           }
         }
       },
+      "GetFeeRateRequest": {
+        "title": "GetFeeRateRequest",
+        "type": "object"
+      },
+      "GetFeeRateResponse": {
+        "title": "GetFeeRateResponse",
+        "type": "object",
+        "properties": {
+          "satPerKvbyte": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "satPerVbyte": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "GetIntentFeesRequest": {
         "title": "GetIntentFeesRequest",
         "type": "object"
@@ -1355,6 +1754,126 @@
         "properties": {
           "fees": {
             "$ref": "#/components/schemas/IntentFees"
+          }
+        }
+      },
+      "GetMainAccountUtxosRequest": {
+        "title": "GetMainAccountUtxosRequest",
+        "type": "object"
+      },
+      "GetMainAccountUtxosResponse": {
+        "title": "GetMainAccountUtxosResponse",
+        "type": "object",
+        "properties": {
+          "utxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WalletUtxo"
+            }
+          }
+        }
+      },
+      "GetOffchainTxDetailsRequest": {
+        "title": "GetOffchainTxDetailsRequest",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "GetOffchainTxDetailsResponse": {
+        "title": "GetOffchainTxDetailsResponse",
+        "type": "object",
+        "properties": {
+          "arkTx": {
+            "type": "string"
+          },
+          "checkpointTxs": {
+            "type": "object",
+            "description": "Checkpoint txid -\u003e checkpoint tx.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "commitmentTxids": {
+            "type": "object",
+            "description": "Checkpoint txid -\u003e commitment txid.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "ended": {
+            "type": "boolean"
+          },
+          "endedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failReason": {
+            "type": "string",
+            "description": "Only set for failed offchain txs."
+          },
+          "failed": {
+            "type": "boolean"
+          },
+          "rootCommitmentTxid": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
+      "GetOffchainTxsRequest": {
+        "title": "GetOffchainTxsRequest",
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": "integer",
+            "description": "Unix timestamp (exclusive). 0 means no lower bound.",
+            "format": "int64"
+          },
+          "before": {
+            "type": "integer",
+            "description": "Unix timestamp (exclusive). 0 means no upper bound.",
+            "format": "int64"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max number of txs to return, most recent first. 0 means no limit.",
+            "format": "int64"
+          },
+          "onlyCompleted": {
+            "type": "boolean",
+            "description": "Return only the finalized offchain txs."
+          },
+          "onlyFailed": {
+            "type": "boolean",
+            "description": "Return only the failed offchain txs."
+          }
+        }
+      },
+      "GetOffchainTxsResponse": {
+        "title": "GetOffchainTxsResponse",
+        "type": "object",
+        "properties": {
+          "txs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OffchainTxSummary"
+            }
           }
         }
       },
@@ -1377,7 +1896,8 @@
         "type": "object",
         "properties": {
           "roundId": {
-            "type": "string"
+            "type": "string",
+            "description": "Either the batch id or its commitment txid."
           }
         }
       },
@@ -1388,6 +1908,9 @@
           "commitmentTxid": {
             "type": "string"
           },
+          "ended": {
+            "type": "boolean"
+          },
           "endedAt": {
             "type": "integer",
             "format": "int64"
@@ -1397,6 +1920,13 @@
             "items": {
               "type": "string"
             }
+          },
+          "failReason": {
+            "type": "string",
+            "description": "Only set for failed batches."
+          },
+          "failed": {
+            "type": "boolean"
           },
           "forfeitedAmount": {
             "type": "string"
@@ -1416,9 +1946,15 @@
           "roundId": {
             "type": "string"
           },
+          "stage": {
+            "type": "string"
+          },
           "startedAt": {
             "type": "integer",
             "format": "int64"
+          },
+          "swept": {
+            "type": "boolean"
           },
           "totalExitAmount": {
             "type": "string"
@@ -1426,8 +1962,34 @@
           "totalFeeAmount": {
             "type": "string"
           },
+          "totalIntents": {
+            "type": "integer",
+            "format": "int64"
+          },
           "totalVtxosAmount": {
             "type": "string"
+          }
+        }
+      },
+      "GetRoundIntentsRequest": {
+        "title": "GetRoundIntentsRequest",
+        "type": "object",
+        "properties": {
+          "roundId": {
+            "type": "string",
+            "description": "Either the batch id or its commitment txid."
+          }
+        }
+      },
+      "GetRoundIntentsResponse": {
+        "title": "GetRoundIntentsResponse",
+        "type": "object",
+        "properties": {
+          "intents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntentInfo"
+            }
           }
         }
       },
@@ -1443,6 +2005,15 @@
             "type": "integer",
             "format": "int64"
           },
+          "limit": {
+            "type": "integer",
+            "description": "Max number of batches to return, most recent first. 0 means no limit.",
+            "format": "int64"
+          },
+          "onlyFailed": {
+            "type": "boolean",
+            "description": "Return only the failed batches."
+          },
           "withCompleted": {
             "type": "boolean"
           },
@@ -1457,8 +2028,16 @@
         "properties": {
           "rounds": {
             "type": "array",
+            "description": "Deprecated: the plain list of batch ids, kept populated so existing clients\nkeep working. It carries none of the listing fields, read summaries instead.",
             "items": {
               "type": "string"
+            },
+            "deprecated": true
+          },
+          "summaries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoundSummary"
             }
           }
         }
@@ -1478,7 +2057,14 @@
       },
       "GetScheduledSweepRequest": {
         "title": "GetScheduledSweepRequest",
-        "type": "object"
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Max batches to return, soonest due first. 0 means no limit.",
+            "format": "int64"
+          }
+        }
       },
       "GetScheduledSweepResponse": {
         "title": "GetScheduledSweepResponse",
@@ -1489,6 +2075,19 @@
             "items": {
               "$ref": "#/components/schemas/ScheduledSweep"
             }
+          }
+        }
+      },
+      "GetSettingsRequest": {
+        "title": "GetSettingsRequest",
+        "type": "object"
+      },
+      "GetSettingsResponse": {
+        "title": "GetSettingsResponse",
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
           }
         }
       },
@@ -1654,6 +2253,43 @@
           }
         }
       },
+      "OffchainTxSummary": {
+        "title": "OffchainTxSummary",
+        "type": "object",
+        "properties": {
+          "ended": {
+            "type": "boolean"
+          },
+          "endedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failReason": {
+            "type": "string",
+            "description": "Only set for failed offchain txs."
+          },
+          "failed": {
+            "type": "boolean"
+          },
+          "rootCommitmentTxid": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "totalCheckpoints": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "txid": {
+            "type": "string"
+          }
+        }
+      },
       "Output": {
         "title": "Output",
         "type": "object",
@@ -1733,6 +2369,46 @@
           }
         }
       },
+      "RoundSummary": {
+        "title": "RoundSummary",
+        "type": "object",
+        "properties": {
+          "commitmentTxid": {
+            "type": "string"
+          },
+          "ended": {
+            "type": "boolean"
+          },
+          "endedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failReason": {
+            "type": "string",
+            "description": "Only set for failed batches."
+          },
+          "failed": {
+            "type": "boolean"
+          },
+          "roundId": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "swept": {
+            "type": "boolean"
+          },
+          "totalIntents": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "ScheduledSessionConfig": {
         "title": "ScheduledSessionConfig",
         "type": "object",
@@ -1742,8 +2418,7 @@
             "format": "int64"
           },
           "endTime": {
-            "type": "integer",
-            "format": "int64"
+            "type": "string"
           },
           "fees": {
             "$ref": "#/components/schemas/FeeInfo"
@@ -1761,8 +2436,7 @@
             "format": "int64"
           },
           "startTime": {
-            "type": "integer",
-            "format": "int64"
+            "type": "string"
           }
         }
       },
@@ -1770,17 +2444,207 @@
         "title": "ScheduledSweep",
         "type": "object",
         "properties": {
-          "confirmed": {
-            "type": "boolean"
-          },
-          "outputs": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SweepableOutput"
-            }
+          "commitmentTxid": {
+            "type": "string"
           },
           "roundId": {
             "type": "string"
+          },
+          "sweepAt": {
+            "type": "integer",
+            "description": "When the batch outputs fall due, derived from the batch's ending timestamp\nplus its vtxo tree expiry. No chain access is needed to answer this.",
+            "format": "int64"
+          },
+          "totalAmount": {
+            "type": "integer",
+            "description": "Unswept leaf value still carried by the batch, in satoshis.",
+            "format": "uint64"
+          },
+          "vtxoCount": {
+            "type": "integer",
+            "description": "Number of unswept leaf vtxos backing total_amount.",
+            "format": "int64"
+          }
+        }
+      },
+      "Settings": {
+        "title": "Settings",
+        "type": "object",
+        "properties": {
+          "assetTxMaxWeightRatio": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "banDuration": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "banThreshold": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "batchTrigger": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "boardingExitDelay": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "buildVersionHeader": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "buildVersionHeaderRequired": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "checkpointExitDelay": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "digestHeaderRequired": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "maxOpReturnOutputs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "maxTxWeight": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "noteUriPrefix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publicUnilateralExitDelay": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "roundMaxParticipantsCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "roundMinParticipantsCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "sessionDuration": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "settlementMinExpiryGap": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "unilateralExitDelay": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "unrolledVtxoMinExpiryMargin": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "utxoMaxAmount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "utxoMinAmount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "vtxoMaxAmount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "vtxoMinAmount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "vtxoNoCsvValidationCutoffDate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "vtxoTreeExpiry": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -1830,26 +2694,6 @@
           }
         }
       },
-      "SweepableOutput": {
-        "title": "SweepableOutput",
-        "type": "object",
-        "properties": {
-          "amount": {
-            "type": "string"
-          },
-          "scheduledAt": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "txid": {
-            "type": "string"
-          },
-          "vout": {
-            "type": "integer",
-            "format": "uint32"
-          }
-        }
-      },
       "TokenInfo": {
         "title": "TokenInfo",
         "type": "object",
@@ -1896,6 +2740,57 @@
       "UpdateScheduledSessionConfigResponse": {
         "title": "UpdateScheduledSessionConfigResponse",
         "type": "object"
+      },
+      "UpdateSettingsRequest": {
+        "title": "UpdateSettingsRequest",
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          }
+        }
+      },
+      "UpdateSettingsResponse": {
+        "title": "UpdateSettingsResponse",
+        "type": "object",
+        "properties": {
+          "changeLog": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "WalletUtxo": {
+        "title": "WalletUtxo",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "confirmations": {
+            "type": "integer",
+            "format": "uint32"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "script": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
       }
     }
   },

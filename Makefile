@@ -89,7 +89,7 @@ help:
 ## integrationtest: run integration tests
 integrationtest:
 	@echo "Running integration tests..."
-	@go test -v -count 1 -timeout 1200s github.com/arkade-os/arkd/internal/test/e2e
+	@go test -v -count 1 -timeout 3600s github.com/arkade-os/arkd/internal/test/e2e
 
 ## lint: lint codebase
 lint:
@@ -181,26 +181,15 @@ run-signer:
 	@go run ./cmd/arkd-wallet
 
 ## run-simulation: run the multi-VTXO batch settlement test
-## Usage: make run-simulation [CLIENTS=n] [MIN=n] [MAX=n]
+## Usage: make run-simulation [CLIENTS=n]
 # Examples:
-#   make run-simulation                  # Default: 5 clients, min=5, max=128
-#   make run-simulation CLIENTS=10       # 10 clients, min=10, max=128
-#   make run-simulation CLIENTS=10 MAX=10  # 10 clients, exact batch size of 10
-#   make run-simulation CLIENTS=20 MIN=5   # 20 clients, minimum batch size of 5
+#   make run-simulation                  # Default: 5 clients
+#   make run-simulation CLIENTS=10       # 10 clients
 run-simulation:
 	@echo "Stopping any existing Docker environment..."
 	@docker compose -f docker-compose.regtest.yml down -v 2>/dev/null || true
-	@echo "Starting Docker environment with batch configuration..."
-	@bash -c '\
-		CLIENTS="$${CLIENTS:-5}"; \
-		MIN="$${MIN:-$$CLIENTS}"; \
-		MAX="$${MAX:-128}"; \
-		echo "Configuration: CLIENTS=$$CLIENTS, MIN=$$MIN, MAX=$$MAX"; \
-		ARKD_ROUND_MIN_PARTICIPANTS_COUNT=$$MIN \
-		ARKD_ROUND_MAX_PARTICIPANTS_COUNT=$$MAX \
-		ARKD_SESSION_DURATION=60 \
-		docker compose -f docker-compose.regtest.yml up --build -d; \
-	'
+	@echo "Starting Docker environment..."
+	@ARKD_SESSION_DURATION=60 docker compose -f docker-compose.regtest.yml up --build -d
 	@echo "Waiting for services to start..."
 	@sleep 30
 	@bash -c '\
@@ -212,6 +201,25 @@ run-simulation:
 	'
 	@echo "Test completed. Docker environment will remain running."
 	@echo "Run 'make docker-stop' to shut down the environment when finished."
+
+## run-vtxo-chain-simulation: run the vtxo chain smoke test
+## Usage: make run-vtxo-chain-simulation [CHAIN_LENGTH=n]
+# Examples:
+#   make run-vtxo-chain-simulation                  # Default: 50 chained offchain txs 
+#   make run-vtxo-chain-simulation CHAIN_LENGTH=100       # 100 chained offchain txs
+run-vtxo-chain-simulation:
+	@echo "Stopping any existing Docker environment..."
+	@docker compose -f docker-compose.regtest.yml down -v 2>/dev/null || true
+	@echo "Starting Docker environment..."
+	@ARKD_VTXO_TREE_EXPIRY=500 docker compose -f docker-compose.regtest.yml up --build -d
+	@echo "Waiting for services to start..."
+	@sleep 30
+	@bash -c '\
+		CHAIN_LENGTH=$${CHAIN_LENGTH:-50}; \
+		echo "Creating a chain of $$CHAIN_LENGTH offchain offchain txs and testing GetVtxoChain performance..."; \
+		go test -v -count=1 -timeout 20m github.com/arkade-os/arkd/internal/test/e2e -run TestVtxoChain -args -smoke -chain-length=$$CHAIN_LENGTH; \
+	'
+	@echo "Test completed."
 
 ## run-wallet: run arkd wallet based on nbxplorer in dev mode on regtest with a pre-loaded signer private key
 run-wallet:
@@ -243,7 +251,12 @@ test: pgtest redis-test-up
 
 ## test-pkg: run unit tests for all packages in pkg/
 test-pkg:
-	@find ./pkg -name go.mod -execdir go test -v ./... \;
+	@failed=0; \
+	for dir in $$(find ./pkg -name go.mod -exec dirname {} \;); do \
+		echo "Testing $$dir..."; \
+		(cd $$dir && go test -v -count=1 ./...) || failed=1; \
+	done; \
+	exit $$failed
 
 ## vet: run code analysis
 vet:

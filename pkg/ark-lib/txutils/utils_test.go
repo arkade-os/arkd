@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -78,4 +80,51 @@ func TestReadTxWitness(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestExtractWithAnchors(t *testing.T) {
+	t.Run("invalid", func(t *testing.T) {
+		testCases := []struct {
+			name    string
+			witness string
+		}{
+			{
+				// A witness count of 2^32 sizes a [][]byte at ~103GB, which is a fatal
+				// OOM rather than a panic the recovery interceptor could trap.
+				name:    "witness count exceeds remaining bytes",
+				witness: "ff0000000001000000",
+			},
+			{
+				name:    "truncated witness item",
+				witness: "0102",
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				witness, err := hex.DecodeString(tc.witness)
+				require.NoError(t, err)
+
+				packet := packetWithFinalWitness(t, witness)
+				_, err = txutils.ExtractWithAnchors(packet)
+				require.Error(t, err)
+			})
+		}
+	})
+}
+
+// packetWithFinalWitness builds a single-input psbt carrying witness verbatim as
+// the input's FinalScriptWitness.
+func packetWithFinalWitness(t *testing.T, witness []byte) *psbt.Packet {
+	t.Helper()
+
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(wire.NewTxIn(&wire.OutPoint{Index: 0}, nil, nil))
+	tx.AddTxOut(wire.NewTxOut(1000, []byte{0x51}))
+
+	packet, err := psbt.NewFromUnsignedTx(tx)
+	require.NoError(t, err)
+
+	packet.Inputs[0].FinalScriptWitness = witness
+	return packet
 }

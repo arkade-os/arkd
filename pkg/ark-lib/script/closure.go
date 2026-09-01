@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"strings"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 type Closure interface {
@@ -355,14 +356,20 @@ func (d *CSVMultisigClosure) Decode(script []byte) (bool, error) {
 	}
 
 	var sequence []byte
-	if txscript.IsSmallInt(tokenizer.Opcode()) {
-		if tokenizer.Opcode() == txscript.OP_0 {
-			// minimal encoding for a zero scriptnum is an empty slice
-			sequence = []byte{}
+
+	scriptNumOpcode := tokenizer.Opcode()
+	// small int (0-16) are encoded with 1 OP_x opcode
+	if txscript.IsSmallInt(scriptNumOpcode) {
+		if scriptNumOpcode == txscript.OP_0 {
+			sequence = []byte{} // minimal encoding policy forces empty byte slice for OP_0
 		} else {
-			sequence = []byte{tokenizer.Opcode()}
+			sequence = []byte{scriptNumOpcode - (txscript.OP_1 - 1)}
 		}
 	} else {
+		// if bigger than 16, int is encoded as pushdata byte slice
+		if !isDataPush(scriptNumOpcode) {
+			return false, nil
+		}
 		sequence = tokenizer.Data()
 	}
 
@@ -460,16 +467,25 @@ func (d *CLTVMultisigClosure) Decode(script []byte) (bool, error) {
 		return false, nil
 	}
 
-	var locktime int32
+	var locktime uint32
 	isSmallInt := txscript.IsSmallInt(tokenizer.Opcode())
 	if isSmallInt {
-		locktime = int32(tokenizer.Opcode() - txscript.OP_1 + 1)
+		locktime = uint32(txscript.AsSmallInt(tokenizer.Opcode()))
 	} else {
+		// if bigger than 16, int is encoded as pushdata byte slice
+		if !isDataPush(tokenizer.Opcode()) {
+			return false, nil
+		}
+
 		locktimeValue, err := txscript.MakeScriptNum(tokenizer.Data(), true, 6)
 		if err != nil {
 			return false, err
 		}
-		locktime = locktimeValue.Int32()
+
+		if locktimeValue < 0 || int64(locktimeValue) > math.MaxUint32 {
+			return false, nil
+		}
+		locktime = uint32(locktimeValue)
 		if locktime > 0 && locktime <= 16 {
 			return false, fmt.Errorf("expected minimal encoding OP_%d for locktime value %d", locktime, locktime)
 		}
@@ -539,6 +555,10 @@ func (f *ConditionMultisigClosure) Decode(script []byte) (bool, error) {
 				condition = append(condition, tokenizer.Data()...)
 			}
 		}
+	}
+
+	if err := validateConditionScript(condition); err != nil {
+		return false, err
 	}
 
 	f.Condition = condition
@@ -639,6 +659,10 @@ func (f *ConditionCSVMultisigClosure) Decode(script []byte) (bool, error) {
 		}
 	}
 
+	if err := validateConditionScript(condition); err != nil {
+		return false, err
+	}
+
 	f.Condition = condition
 
 	// Decode multisig closure
@@ -692,4 +716,8 @@ func (f *ConditionCSVMultisigClosure) Witness(
 	witness = append(witness, controlBlock)
 
 	return witness, nil
+}
+
+func isDataPush(opcode byte) bool {
+	return opcode >= txscript.OP_DATA_1 && opcode <= txscript.OP_PUSHDATA4
 }

@@ -113,10 +113,15 @@
         "operationId": "WalletService_ListConnectorUtxos",
         "parameters": [
           {
-            "name": "connectorAddress",
+            "name": "connectorAddresses",
             "in": "query",
+            "style": "simple",
             "schema": {
-              "type": "string"
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         ],
@@ -477,6 +482,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MainAccountBalanceResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallet/main-account-utxos": {
+      "get": {
+        "tags": [
+          "WalletService"
+        ],
+        "operationId": "WalletService_GetMainAccountUtxos",
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetMainAccountUtxosResponse"
                 }
               }
             }
@@ -1462,6 +1497,22 @@
           }
         }
       },
+      "GetMainAccountUtxosRequest": {
+        "title": "GetMainAccountUtxosRequest",
+        "type": "object"
+      },
+      "GetMainAccountUtxosResponse": {
+        "title": "GetMainAccountUtxosResponse",
+        "type": "object",
+        "properties": {
+          "utxos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WalletUtxo"
+            }
+          }
+        }
+      },
       "GetNetworkRequest": {
         "title": "GetNetworkRequest",
         "type": "object"
@@ -1558,8 +1609,11 @@
         "title": "ListConnectorUtxosRequest",
         "type": "object",
         "properties": {
-          "connectorAddress": {
-            "type": "string"
+          "connectorAddresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -1945,6 +1999,36 @@
       "WaitForSyncResponse": {
         "title": "WaitForSyncResponse",
         "type": "object"
+      },
+      "WalletUtxo": {
+        "title": "WalletUtxo",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "confirmations": {
+            "type": "integer",
+            "format": "uint32"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "script": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
       },
       "WatchScriptsRequest": {
         "title": "WatchScriptsRequest",

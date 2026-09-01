@@ -3,20 +3,126 @@ package application
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/arkade-os/arkd/internal/core/ports"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/require"
 )
+
+// TestGetNewVtxosFromRound verifies that getNewVtxosFromRound turns the leaves of a VTXO tree into
+// VTXOs:
+// assigning Depth=0 and a self-referencing MarkerID to each, propagating commitment references,
+// amounts, pubkeys and sequential VOut indices, and returning nil when there is no tree.
+func TestGetNewVtxosFromRound(t *testing.T) {
+	privKey1, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	privKey2, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	multiOutputLeaf := makeP2TRLeafTx(t, []testOutput{
+		{pubkey: privKey1.PubKey(), amount: 50000},
+		{pubkey: privKey2.PubKey(), amount: 30000},
+	})
+
+	singleOutputLeaf := makeP2TRLeafTx(t, []testOutput{
+		{pubkey: privKey1.PubKey(), amount: 100000},
+	})
+
+	tests := []struct {
+		name   string
+		round  domain.Round
+		assert func(t *testing.T, vtxos []domain.Vtxo)
+	}{
+		{
+			name: "leaf with many outputs",
+			round: domain.Round{
+				CommitmentTxid:     "test-commitment-txid",
+				VtxoTreeExpiration: 3600,
+				EndingTimestamp:    1700000000,
+				Stage:              domain.Stage{Code: int(domain.RoundFinalizationStage), Ended: true},
+				VtxoTree: tree.FlatTxTree{
+					{Txid: "leaf-tx-id", Tx: multiOutputLeaf, Children: nil},
+				},
+			},
+			assert: func(t *testing.T, vtxos []domain.Vtxo) {
+				require.Len(t, vtxos, 2)
+
+				for i, vtxo := range vtxos {
+					// All batch VTXOs must have Depth = 0.
+					require.Equal(t, uint32(0), vtxo.Depth, "vtxo %d should have depth 0", i)
+					// MarkerIDs must be exactly []string{outpoint.String()}.
+					require.Equal(t, []string{vtxo.Outpoint.String()}, vtxo.MarkerIDs,
+						"vtxo %d MarkerIDs should be [outpoint.String()]", i)
+					// CommitmentTxids should reference the round's commitment.
+					require.Equal(t, []string{"test-commitment-txid"}, vtxo.CommitmentTxids)
+					require.Equal(t, "test-commitment-txid", vtxo.RootCommitmentTxid)
+					require.NotEmpty(t, vtxo.PubKey)
+				}
+
+				// Amounts match, VOut is sequential, both share the PSBT's txid.
+				require.Equal(t, uint64(50000), vtxos[0].Amount)
+				require.Equal(t, uint64(30000), vtxos[1].Amount)
+				require.Equal(t, uint32(0), vtxos[0].VOut)
+				require.Equal(t, uint32(1), vtxos[1].VOut)
+				require.Equal(t, vtxos[0].Txid, vtxos[1].Txid)
+			},
+		},
+		{
+			name: "leaf with single output",
+			round: domain.Round{
+				CommitmentTxid:     "single-output-commitment",
+				VtxoTreeExpiration: 7200,
+				EndingTimestamp:    1700000000,
+				Stage:              domain.Stage{Code: int(domain.RoundFinalizationStage), Ended: true},
+				VtxoTree: tree.FlatTxTree{
+					{Txid: "single-leaf", Tx: singleOutputLeaf, Children: nil},
+				},
+			},
+			assert: func(t *testing.T, vtxos []domain.Vtxo) {
+				require.Len(t, vtxos, 1)
+
+				vtxo := vtxos[0]
+				require.Equal(t, uint32(0), vtxo.Depth)
+				require.Equal(t, []string{vtxo.Outpoint.String()}, vtxo.MarkerIDs)
+				require.Equal(t, uint64(100000), vtxo.Amount)
+				require.Equal(t, uint32(0), vtxo.VOut)
+			},
+		},
+		{
+			name: "empty vtxo tree",
+			round: domain.Round{
+				CommitmentTxid: "empty-round",
+				VtxoTree:       nil,
+			},
+			assert: func(t *testing.T, vtxos []domain.Vtxo) {
+				require.Empty(t, vtxos)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			vtxos := getNewVtxosFromRound(tc.round)
+			tc.assert(t, vtxos)
+		})
+	}
+}
 
 const bitcoinBlockWeight = 4_000_000
 
 func TestMaxAssetsPerVtxo(t *testing.T) {
 	tests := []struct {
 		maxTxWeight uint64
-		threshold   float64
+		threshold   float32
 		expected    int
 	}{
 		{maxTxWeight: 0.01 * bitcoinBlockWeight, threshold: 0.5, expected: 110},
@@ -31,8 +137,11 @@ func TestMaxAssetsPerVtxo(t *testing.T) {
 		t.Run(
 			fmt.Sprintf("maxTxWeight_%d_threshold_%.2f", test.maxTxWeight, test.threshold),
 			func(t *testing.T) {
-				got := maxAssetsPerVtxo(test.maxTxWeight, test.threshold)
-				require.Equal(t, test.expected, got)
+				s := domain.Settings{
+					MaxTxWeight:           test.maxTxWeight,
+					AssetTxMaxWeightRatio: test.threshold,
+				}
+				require.Equal(t, test.expected, s.MaxAssetsPerVtxo())
 			},
 		)
 	}
@@ -140,6 +249,171 @@ func TestDecodeTx(t *testing.T) {
 	})
 }
 
+func TestAcceptedSignerPubkeys(t *testing.T) {
+	currentKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	current := currentKey.PubKey()
+
+	deprecatedKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	deprecated := deprecatedKey.PubKey()
+
+	otherKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	other := otherKey.PubKey()
+
+	now := time.Now()
+
+	t.Run("valid", func(t *testing.T) {
+		validFixtures := []struct {
+			name           string
+			deprecatedKeys []ports.DeprecatedSignerPubkey
+			expected       []*btcec.PublicKey
+		}{
+			{
+				name:           "no deprecated keys",
+				deprecatedKeys: nil,
+				expected:       []*btcec.PublicKey{current},
+			},
+			{
+				name: "no cutoff date",
+				deprecatedKeys: []ports.DeprecatedSignerPubkey{
+					{PubKey: deprecated},
+				},
+				expected: []*btcec.PublicKey{current, deprecated},
+			},
+			{
+				name: "cutoff date in the future",
+				deprecatedKeys: []ports.DeprecatedSignerPubkey{
+					{PubKey: deprecated, CutoffDate: now.Add(time.Hour)},
+				},
+				expected: []*btcec.PublicKey{current, deprecated},
+			},
+		}
+
+		for _, fixture := range validFixtures {
+			t.Run(fixture.name, func(t *testing.T) {
+				pubkeys := acceptedSignerPubkeys(current, fixture.deprecatedKeys, now)
+				require.Equal(t, fixture.expected, pubkeys)
+			})
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		invalidFixtures := []struct {
+			name           string
+			deprecatedKeys []ports.DeprecatedSignerPubkey
+			expected       []*btcec.PublicKey
+		}{
+			{
+				name: "cutoff date in the past",
+				deprecatedKeys: []ports.DeprecatedSignerPubkey{
+					{PubKey: deprecated, CutoffDate: now.Add(-time.Hour)},
+				},
+				expected: []*btcec.PublicKey{current},
+			},
+			{
+				name: "mixed cutoff dates",
+				deprecatedKeys: []ports.DeprecatedSignerPubkey{
+					{PubKey: deprecated, CutoffDate: now.Add(-time.Hour)},
+					{PubKey: other, CutoffDate: now.Add(time.Hour)},
+				},
+				expected: []*btcec.PublicKey{current, other},
+			},
+		}
+
+		for _, fixture := range invalidFixtures {
+			t.Run(fixture.name, func(t *testing.T) {
+				pubkeys := acceptedSignerPubkeys(current, fixture.deprecatedKeys, now)
+				require.Equal(t, fixture.expected, pubkeys)
+			})
+		}
+	})
+}
+
+func TestValidateVtxoScriptForSigners(t *testing.T) {
+	currentKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	current := currentKey.PubKey()
+
+	deprecatedKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	deprecated := deprecatedKey.PubKey()
+
+	ownerKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	owner := ownerKey.PubKey()
+
+	now := time.Now()
+	exitDelay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512}
+	currentKeyScript := script.NewDefaultVtxoScript(owner, current, exitDelay)
+	deprecatedKeyScript := script.NewDefaultVtxoScript(owner, deprecated, exitDelay)
+
+	t.Run("valid", func(t *testing.T) {
+		validFixtures := []struct {
+			name           string
+			vtxoScript     *script.TapscriptsVtxoScript
+			deprecatedKeys []ports.DeprecatedSignerPubkey
+		}{
+			{
+				name:       "current key",
+				vtxoScript: currentKeyScript,
+			},
+			{
+				name:       "deprecated key within cutoff",
+				vtxoScript: deprecatedKeyScript,
+				deprecatedKeys: []ports.DeprecatedSignerPubkey{
+					{PubKey: deprecated, CutoffDate: now.Add(time.Hour)},
+				},
+			},
+		}
+
+		for _, fixture := range validFixtures {
+			t.Run(fixture.name, func(t *testing.T) {
+				err := validateVtxoScriptForSigners(
+					fixture.vtxoScript, current, fixture.deprecatedKeys, now, exitDelay, false,
+				)
+				require.NoError(t, err)
+			})
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		pastCutoff := now.Add(-time.Hour)
+		invalidFixtures := []struct {
+			name           string
+			deprecatedKeys []ports.DeprecatedSignerPubkey
+			errorSubstr    string
+		}{
+			{
+				name: "deprecated key past cutoff",
+				deprecatedKeys: []ports.DeprecatedSignerPubkey{
+					{PubKey: deprecated, CutoffDate: pastCutoff},
+				},
+				errorSubstr: fmt.Sprintf(
+					"%x is a deprecated key since %s",
+					deprecated.SerializeCompressed(), pastCutoff.Format(time.RFC3339),
+				),
+			},
+			{
+				name:           "unknown signer key",
+				deprecatedKeys: nil,
+				errorSubstr:    "signer pubkey not found",
+			},
+		}
+
+		for _, fixture := range invalidFixtures {
+			t.Run(fixture.name, func(t *testing.T) {
+				err := validateVtxoScriptForSigners(
+					deprecatedKeyScript, current, fixture.deprecatedKeys, now, exitDelay, false,
+				)
+				require.Error(t, err)
+				require.Contains(t, err.Error(), fixture.errorSubstr)
+			})
+		}
+	})
+}
+
 func newTestTx(inputs []wire.OutPoint, scripts [][]byte) *wire.MsgTx {
 	tx := wire.NewMsgTx(2)
 	for _, in := range inputs {
@@ -162,6 +436,43 @@ func mustEncodePSBTB64(t *testing.T, tx *wire.MsgTx) string {
 	p, err := psbt.NewFromUnsignedTx(tx)
 	require.NoError(t, err)
 	b64, err := p.B64Encode()
+	require.NoError(t, err)
+	return b64
+}
+
+type testOutput struct {
+	pubkey *btcec.PublicKey
+	amount int64
+}
+
+// makeP2TRLeafTx creates a valid base64-encoded PSBT with P2TR outputs for the given schnorr
+// public keys and amounts.
+func makeP2TRLeafTx(t *testing.T, outputs []testOutput) string {
+	t.Helper()
+	hash, err := chainhash.NewHashFromStr(
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	)
+	require.NoError(t, err)
+
+	txOuts := make([]*wire.TxOut, 0, len(outputs))
+	for _, out := range outputs {
+		pkScript := make([]byte, 34)
+		pkScript[0] = 0x51 // OP_1
+		pkScript[1] = 0x20 // 32-byte push
+		copy(pkScript[2:], schnorr.SerializePubKey(out.pubkey))
+
+		txOuts = append(txOuts, &wire.TxOut{
+			Value:    out.amount,
+			PkScript: pkScript,
+		})
+	}
+
+	ins := []*wire.OutPoint{{Hash: *hash, Index: 0}}
+	sequences := []uint32{wire.MaxTxInSequenceNum}
+	ptx, err := psbt.New(ins, txOuts, 3, 0, sequences)
+	require.NoError(t, err)
+
+	b64, err := ptx.B64Encode()
 	require.NoError(t, err)
 	return b64
 }

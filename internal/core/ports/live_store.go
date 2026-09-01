@@ -3,10 +3,16 @@ package ports
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"sort"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/btcsuite/btcd/btcec/v2"
 )
 
 type LiveStore interface {
@@ -17,6 +23,7 @@ type LiveStore interface {
 	ConfirmationSessions() ConfirmationSessionsStore
 	TreeSigingSessions() TreeSigningSessionsStore
 	BoardingInputs() BoardingInputsStore
+	Settings() SettingsStore
 }
 
 type IntentStore interface {
@@ -68,10 +75,14 @@ type ConfirmationSessionsStore interface {
 }
 
 type TreeSigningSessionsStore interface {
-	New(ctx context.Context, roundId string, uniqueSignersPubKeys map[string]struct{}) error
+	New(
+		ctx context.Context, roundId string, uniqueSignersPubKeys map[string]struct{},
+		signingContext SigningContext,
+	) error
 	Get(ctx context.Context, roundId string) (*MusigSigningSession, error)
 	Delete(ctx context.Context, roundId string) error
 	AddNonces(ctx context.Context, roundId string, pubkey string, nonces tree.TreeNonces) error
+	SetAggregatedNonces(ctx context.Context, roundId string, nonces tree.TreeNonces) error
 	AddSignatures(
 		ctx context.Context, roundId, pubkey string, nonces tree.TreePartialSigs,
 	) error
@@ -87,6 +98,12 @@ type BoardingInputsStore interface {
 	) error
 	GetSignatures(ctx context.Context, batchId string) (map[uint32]SignedBoardingInput, error)
 	DeleteSignatures(ctx context.Context, batchId string) error
+}
+
+type SettingsStore interface {
+	Get(ctx context.Context) (*Settings, error)
+	Upsert(ctx context.Context, settings Settings) error
+	UpdateLastBatch(ctx context.Context, at time.Time, roundId string) error
 }
 
 type TimedIntent struct {
@@ -106,11 +123,112 @@ type MusigSigningSession struct {
 	Cosigners   map[string]struct{}
 	Nonces      map[string]tree.TreeNonces
 
-	Signatures map[string]tree.TreePartialSigs
+	Signatures     map[string]tree.TreePartialSigs
+	SigningContext SigningContext
+}
+
+type SigningContext struct {
+	ScriptRoot       []byte
+	BatchOutAmount   int64
+	VtxoTree         tree.FlatTxTree
+	AggregatedNonces tree.TreeNonces
 }
 
 type ConfirmationSessions struct {
 	IntentsHashes       map[[32]byte]bool // hash --> confirmed
 	NumIntents          int
 	NumConfirmedIntents int
+}
+
+type Settings struct {
+	domain.Settings
+	Network                 arklib.Network
+	DustAmount              uint64
+	SignerPubkey            *btcec.PublicKey
+	DeprecatedSignerPubkeys []DeprecatedSignerPubkey
+	ForfeitPubkey           *btcec.PublicKey
+	ForfeitAddress          string
+	CheckpointTapscript     []byte
+	LastBatchAt             time.Time
+	LastBatchId             string
+}
+
+func (s Settings) Digest() (string, error) {
+	if s.SignerPubkey == nil || s.ForfeitPubkey == nil {
+		return "", fmt.Errorf("settings not initialized")
+	}
+
+	deprecatedSigners := make([]deprecatedSignerDigestData, 0, len(s.DeprecatedSignerPubkeys))
+	for _, deprecated := range s.DeprecatedSignerPubkeys {
+		deprecatedSigners = append(deprecatedSigners, deprecatedSignerDigestData{
+			PubKey:     hex.EncodeToString(deprecated.PubKey.SerializeCompressed()),
+			CutoffDate: deprecated.CutoffDate.Unix(),
+		})
+	}
+
+	// sort to make the digest deterministic regardless of input order
+	sort.Slice(deprecatedSigners, func(i, j int) bool {
+		if deprecatedSigners[i].PubKey != deprecatedSigners[j].PubKey {
+			return deprecatedSigners[i].PubKey < deprecatedSigners[j].PubKey
+		}
+		return deprecatedSigners[i].CutoffDate < deprecatedSigners[j].CutoffDate
+	})
+
+	data := digestData{
+		SignerPubKey:        hex.EncodeToString(s.SignerPubkey.SerializeCompressed()),
+		DeprecatedSigners:   deprecatedSigners,
+		ForfeitPubKey:       hex.EncodeToString(s.ForfeitPubkey.SerializeCompressed()),
+		UnilateralExitDelay: s.PublicUnilateralExitDelay.Seconds(),
+		BoardingExitDelay:   s.BoardingExitDelay.Seconds(),
+		SessionDuration:     int64(s.SessionDuration.Seconds()),
+		Network:             s.Network.Name,
+		Dust:                s.DustAmount,
+		ForfeitAddress:      s.ForfeitAddress,
+		UtxoMinAmount:       s.UtxoMinAmount,
+		UtxoMaxAmount:       s.UtxoMaxAmount,
+		VtxoMinAmount:       s.VtxoMinAmount,
+		VtxoMaxAmount:       s.VtxoMaxAmount,
+		CheckpointTapscript: hex.EncodeToString(s.CheckpointTapscript),
+		Fees: feeDigestData{
+			IntentFees: s.BatchFees,
+		},
+		MaxTxWeight:        int64(s.MaxTxWeight),
+		MaxOpReturnOutputs: int64(s.MaxOpReturnOutputs),
+	}
+	buf, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(buf)
+	return hex.EncodeToString(digest[:]), nil
+}
+
+type deprecatedSignerDigestData struct {
+	PubKey     string
+	CutoffDate int64
+}
+
+type digestData struct {
+	SignerPubKey        string
+	DeprecatedSigners   []deprecatedSignerDigestData
+	ForfeitPubKey       string
+	UnilateralExitDelay int64
+	BoardingExitDelay   int64
+	SessionDuration     int64
+	Network             string
+	Dust                uint64
+	ForfeitAddress      string
+	UtxoMinAmount       int64
+	UtxoMaxAmount       int64
+	VtxoMinAmount       int64
+	VtxoMaxAmount       int64
+	CheckpointTapscript string
+	Fees                feeDigestData
+	MaxTxWeight         int64
+	MaxOpReturnOutputs  int64
+}
+
+type feeDigestData struct {
+	IntentFees domain.BatchFees
+	TxFeeRate  float64
 }

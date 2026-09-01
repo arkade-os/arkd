@@ -39,6 +39,7 @@ const (
 	WalletService_EstimateFees_FullMethodName             = "/arkwallet.v1.WalletService/EstimateFees"
 	WalletService_FeeRate_FullMethodName                  = "/arkwallet.v1.WalletService/FeeRate"
 	WalletService_ListConnectorUtxos_FullMethodName       = "/arkwallet.v1.WalletService/ListConnectorUtxos"
+	WalletService_GetMainAccountUtxos_FullMethodName      = "/arkwallet.v1.WalletService/GetMainAccountUtxos"
 	WalletService_MainAccountBalance_FullMethodName       = "/arkwallet.v1.WalletService/MainAccountBalance"
 	WalletService_ConnectorsAccountBalance_FullMethodName = "/arkwallet.v1.WalletService/ConnectorsAccountBalance"
 	WalletService_LockConnectorUtxos_FullMethodName       = "/arkwallet.v1.WalletService/LockConnectorUtxos"
@@ -81,6 +82,7 @@ type WalletServiceClient interface {
 	EstimateFees(ctx context.Context, in *EstimateFeesRequest, opts ...grpc.CallOption) (*EstimateFeesResponse, error)
 	FeeRate(ctx context.Context, in *FeeRateRequest, opts ...grpc.CallOption) (*FeeRateResponse, error)
 	ListConnectorUtxos(ctx context.Context, in *ListConnectorUtxosRequest, opts ...grpc.CallOption) (*ListConnectorUtxosResponse, error)
+	GetMainAccountUtxos(ctx context.Context, in *GetMainAccountUtxosRequest, opts ...grpc.CallOption) (*GetMainAccountUtxosResponse, error)
 	MainAccountBalance(ctx context.Context, in *MainAccountBalanceRequest, opts ...grpc.CallOption) (*MainAccountBalanceResponse, error)
 	ConnectorsAccountBalance(ctx context.Context, in *ConnectorsAccountBalanceRequest, opts ...grpc.CallOption) (*ConnectorsAccountBalanceResponse, error)
 	LockConnectorUtxos(ctx context.Context, in *LockConnectorUtxosRequest, opts ...grpc.CallOption) (*LockConnectorUtxosResponse, error)
@@ -314,6 +316,16 @@ func (c *walletServiceClient) ListConnectorUtxos(ctx context.Context, in *ListCo
 	return out, nil
 }
 
+func (c *walletServiceClient) GetMainAccountUtxos(ctx context.Context, in *GetMainAccountUtxosRequest, opts ...grpc.CallOption) (*GetMainAccountUtxosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMainAccountUtxosResponse)
+	err := c.cc.Invoke(ctx, WalletService_GetMainAccountUtxos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *walletServiceClient) MainAccountBalance(ctx context.Context, in *MainAccountBalanceRequest, opts ...grpc.CallOption) (*MainAccountBalanceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MainAccountBalanceResponse)
@@ -489,6 +501,7 @@ type WalletServiceServer interface {
 	EstimateFees(context.Context, *EstimateFeesRequest) (*EstimateFeesResponse, error)
 	FeeRate(context.Context, *FeeRateRequest) (*FeeRateResponse, error)
 	ListConnectorUtxos(context.Context, *ListConnectorUtxosRequest) (*ListConnectorUtxosResponse, error)
+	GetMainAccountUtxos(context.Context, *GetMainAccountUtxosRequest) (*GetMainAccountUtxosResponse, error)
 	MainAccountBalance(context.Context, *MainAccountBalanceRequest) (*MainAccountBalanceResponse, error)
 	ConnectorsAccountBalance(context.Context, *ConnectorsAccountBalanceRequest) (*ConnectorsAccountBalanceResponse, error)
 	LockConnectorUtxos(context.Context, *LockConnectorUtxosRequest) (*LockConnectorUtxosResponse, error)
@@ -571,6 +584,9 @@ func (UnimplementedWalletServiceServer) FeeRate(context.Context, *FeeRateRequest
 }
 func (UnimplementedWalletServiceServer) ListConnectorUtxos(context.Context, *ListConnectorUtxosRequest) (*ListConnectorUtxosResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListConnectorUtxos not implemented")
+}
+func (UnimplementedWalletServiceServer) GetMainAccountUtxos(context.Context, *GetMainAccountUtxosRequest) (*GetMainAccountUtxosResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMainAccountUtxos not implemented")
 }
 func (UnimplementedWalletServiceServer) MainAccountBalance(context.Context, *MainAccountBalanceRequest) (*MainAccountBalanceResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MainAccountBalance not implemented")
@@ -987,6 +1003,24 @@ func _WalletService_ListConnectorUtxos_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WalletService_GetMainAccountUtxos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMainAccountUtxosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WalletServiceServer).GetMainAccountUtxos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WalletService_GetMainAccountUtxos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WalletServiceServer).GetMainAccountUtxos(ctx, req.(*GetMainAccountUtxosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _WalletService_MainAccountBalance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(MainAccountBalanceRequest)
 	if err := dec(in); err != nil {
@@ -1314,6 +1348,10 @@ var WalletService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListConnectorUtxos",
 			Handler:    _WalletService_ListConnectorUtxos_Handler,
+		},
+		{
+			MethodName: "GetMainAccountUtxos",
+			Handler:    _WalletService_GetMainAccountUtxos_Handler,
 		},
 		{
 			MethodName: "MainAccountBalance",

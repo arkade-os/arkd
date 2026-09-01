@@ -11,25 +11,24 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 )
 
 type roundRepository struct {
-	db      *sql.DB
-	querier *queries.Queries
+	db SQLiteDB
 }
 
 func NewRoundRepository(config ...interface{}) (domain.RoundRepository, error) {
 	if len(config) != 1 {
 		return nil, fmt.Errorf("invalid config")
 	}
-	db, ok := config[0].(*sql.DB)
+	db, ok := config[0].(SQLiteDB)
 	if !ok {
 		return nil, fmt.Errorf("cannot open round repository: invalid config, expected db at 0")
 	}
 
 	return &roundRepository{
-		db:      db,
-		querier: queries.New(db),
+		db: db,
 	}, nil
 }
 
@@ -37,43 +36,51 @@ func (r *roundRepository) Close() {
 	_ = r.db.Close()
 }
 
-func (r *roundRepository) GetRoundIds(
-	ctx context.Context, startedAfter, startedBefore int64, withFailed, withCompleted bool,
-) ([]string, error) {
-	var roundIDs []string
-	if startedAfter == 0 && startedBefore == 0 {
-		// Use filtering query when no time range is specified
-		ids, err := r.querier.SelectRoundIdsWithFilters(
-			ctx,
-			queries.SelectRoundIdsWithFiltersParams{
-				WithFailed:    withFailed,
-				WithCompleted: withCompleted,
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		roundIDs = ids
-	} else {
-		// Use time range filtering query
-		ids, err := r.querier.SelectRoundIdsInTimeRangeWithFilters(
-			ctx,
-			queries.SelectRoundIdsInTimeRangeWithFiltersParams{
-				StartTs:       startedAfter,
-				EndTs:         startedBefore,
-				WithFailed:    withFailed,
-				WithCompleted: withCompleted,
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		roundIDs = ids
+func (r *roundRepository) GetRoundSummaries(
+	ctx context.Context, startedAfter, startedBefore int64,
+	withFailed, withCompleted, onlyFailed bool, limit int64,
+) ([]domain.RoundSummary, error) {
+	if onlyFailed {
+		withFailed = true
 	}
 
-	return roundIDs, nil
+	var rows []queries.SelectRoundSummariesRow
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectRoundSummaries(ctx, queries.SelectRoundSummariesParams{
+			StartTs:       startedAfter,
+			EndTs:         startedBefore,
+			WithFailed:    withFailed,
+			WithCompleted: withCompleted,
+			OnlyFailed:    onlyFailed,
+			MaxResults:    limit,
+		})
+		return err
+	}); err != nil {
+		return nil, err
+	}
+
+	summaries := make([]domain.RoundSummary, 0, len(rows))
+	for _, row := range rows {
+		stage := domain.Stage{
+			Code:   int(row.StageCode),
+			Ended:  row.Ended,
+			Failed: row.Failed,
+		}
+		summaries = append(summaries, domain.RoundSummary{
+			RoundId:        row.ID,
+			CommitmentTxid: row.CommitmentTxid,
+			StartedAt:      row.StartingTimestamp,
+			EndedAt:        row.EndingTimestamp,
+			Stage:          domain.RoundStage(stage.Code).String(),
+			Ended:          domain.RoundEnded(stage),
+			Failed:         stage.Failed,
+			Swept:          row.Swept,
+			FailReason:     row.FailReason.String,
+			TotalIntents:   row.TotalIntents,
+		})
+	}
+	return summaries, nil
 }
 
 func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Round) error {
@@ -212,108 +219,130 @@ func (r *roundRepository) AddOrUpdateRound(ctx context.Context, round domain.Rou
 		return nil
 	}
 
-	return execTx(ctx, r.db, txBody)
+	return execTx(ctx, r.db.Write(), txBody)
 }
 
 func (r *roundRepository) GetRoundWithId(ctx context.Context, id string) (*domain.Round, error) {
-	rows, err := r.querier.SelectRoundWithId(ctx, id)
+	var round *domain.Round
+	err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		// Keep these related reads on the same pinned connection so cancellation
+		// and connection discard semantics apply consistently across the full load.
+		rows, err := q.SelectRoundWithId(ctx, id)
+		if err != nil {
+			return err
+		}
+
+		rvs := make([]combinedRow, 0, len(rows))
+		for _, row := range rows {
+			rvs = append(
+				rvs,
+				combinedRow{round: row.Round, intent: row.RoundIntentsVw, tx: row.RoundTxsVw},
+			)
+		}
+
+		rounds, err := rowsToRounds(rvs)
+		if err != nil {
+			return err
+		}
+		if len(rounds) == 0 {
+			return arkerrors.ROUND_NOT_FOUND.
+				New("batch %s not found", id).
+				WithMetadata(arkerrors.RoundNotFoundMetadata{RoundId: id})
+		}
+
+		round = rounds[0]
+		roundID := sql.NullString{String: round.Id, Valid: true}
+
+		receivers, err := q.SelectIntentReceiversByRoundId(ctx, roundID)
+		if err != nil {
+			return err
+		}
+		for _, row := range receivers {
+			applyReceiverToRound(round, row.IntentWithReceiversVw)
+		}
+
+		vtxoInputs, err := q.SelectVtxoInputsByRoundId(ctx, roundID)
+		if err != nil {
+			return err
+		}
+		for _, row := range vtxoInputs {
+			applyVtxoInputToRound(round, row.IntentWithInputsVw)
+		}
+
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	rvs := make([]combinedRow, 0, len(rows))
-	for _, row := range rows {
-		rvs = append(rvs, combinedRow{
-			round:  row.Round,
-			intent: row.RoundIntentsVw,
-			tx:     row.RoundTxsVw,
-		})
-	}
-
-	rounds, err := rowsToRounds(rvs)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(rounds) == 0 {
-		return nil, errors.New("batch not found")
-	}
-
-	round := rounds[0]
-	roundID := sql.NullString{String: round.Id, Valid: true}
-
-	receivers, err := r.querier.SelectIntentReceiversByRoundId(ctx, roundID)
-	if err != nil {
-		return nil, err
-	}
-	for _, row := range receivers {
-		applyReceiverToRound(round, row.IntentWithReceiversVw)
-	}
-
-	vtxoInputs, err := r.querier.SelectVtxoInputsByRoundId(ctx, roundID)
-	if err != nil {
-		return nil, err
-	}
-	for _, row := range vtxoInputs {
-		applyVtxoInputToRound(round, row.IntentWithInputsVw)
-	}
-
 	return round, nil
 }
 
 func (r *roundRepository) GetRoundWithCommitmentTxid(
 	ctx context.Context, txid string,
 ) (*domain.Round, error) {
-	rows, err := r.querier.SelectRoundWithTxid(ctx, txid)
+	var round *domain.Round
+	err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		// Keep these related reads on the same pinned connection so cancellation
+		// and connection discard semantics apply consistently across the full load.
+		rows, err := q.SelectRoundWithTxid(ctx, txid)
+		if err != nil {
+			return err
+		}
+
+		rvs := make([]combinedRow, 0, len(rows))
+		for _, row := range rows {
+			rvs = append(
+				rvs,
+				combinedRow{round: row.Round, intent: row.RoundIntentsVw, tx: row.RoundTxsVw},
+			)
+		}
+
+		rounds, err := rowsToRounds(rvs)
+		if err != nil {
+			return err
+		}
+		if len(rounds) == 0 {
+			return arkerrors.ROUND_NOT_FOUND.
+				New("batch with commitment txid %s not found", txid).
+				WithMetadata(arkerrors.RoundNotFoundMetadata{RoundId: txid})
+		}
+
+		round = rounds[0]
+		roundID := sql.NullString{String: round.Id, Valid: true}
+
+		receivers, err := q.SelectIntentReceiversByRoundId(ctx, roundID)
+		if err != nil {
+			return err
+		}
+		for _, row := range receivers {
+			applyReceiverToRound(round, row.IntentWithReceiversVw)
+		}
+
+		vtxoInputs, err := q.SelectVtxoInputsByRoundId(ctx, roundID)
+		if err != nil {
+			return err
+		}
+		for _, row := range vtxoInputs {
+			applyVtxoInputToRound(round, row.IntentWithInputsVw)
+		}
+
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	rvs := make([]combinedRow, 0, len(rows))
-	for _, row := range rows {
-		rvs = append(rvs, combinedRow{
-			round:  row.Round,
-			intent: row.RoundIntentsVw,
-			tx:     row.RoundTxsVw,
-		})
-	}
-
-	rounds, err := rowsToRounds(rvs)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(rounds) == 0 {
-		return nil, errors.New("batch not found")
-	}
-
-	round := rounds[0]
-	roundID := sql.NullString{String: round.Id, Valid: true}
-
-	receivers, err := r.querier.SelectIntentReceiversByRoundId(ctx, roundID)
-	if err != nil {
-		return nil, err
-	}
-	for _, row := range receivers {
-		applyReceiverToRound(round, row.IntentWithReceiversVw)
-	}
-
-	vtxoInputs, err := r.querier.SelectVtxoInputsByRoundId(ctx, roundID)
-	if err != nil {
-		return nil, err
-	}
-	for _, row := range vtxoInputs {
-		applyVtxoInputToRound(round, row.IntentWithInputsVw)
-	}
-
 	return round, nil
 }
 
 func (r *roundRepository) GetRoundStats(
 	ctx context.Context, id string,
 ) (*domain.RoundStats, error) {
-	rs, err := r.querier.SelectRoundStats(ctx, id)
-	if err != nil {
+	var rs queries.SelectRoundStatsRow
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rs, err = q.SelectRoundStats(ctx, id)
+		return err
+	}); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -373,14 +402,49 @@ func (r *roundRepository) GetRoundStats(
 }
 
 func (r *roundRepository) GetSweepableRounds(ctx context.Context) ([]string, error) {
-	return r.querier.SelectSweepableRounds(ctx)
+	var rounds []string
+	err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rounds, err = q.SelectSweepableRounds(ctx)
+		return err
+	})
+	return rounds, err
+}
+
+func (r *roundRepository) GetExpiredRounds(
+	ctx context.Context, expiredBefore int64,
+) ([]domain.ExpiredRound, error) {
+	var expiredRounds []domain.ExpiredRound
+	err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		rows, err := q.SelectExpiredRounds(ctx, expiredBefore)
+		if err != nil {
+			return err
+		}
+
+		for _, row := range rows {
+			expiredRounds = append(expiredRounds, domain.ExpiredRound{
+				RoundId:        row.ID,
+				CommitmentTxid: row.Txid,
+				ExpiredAt:      row.ExpiredAt,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return expiredRounds, nil
 }
 
 func (r *roundRepository) GetRoundForfeitTxs(
 	ctx context.Context, commitmentTxid string,
 ) ([]domain.ForfeitTx, error) {
-	rows, err := r.querier.SelectRoundForfeitTxs(ctx, commitmentTxid)
-	if err != nil {
+	var rows []queries.Tx
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectRoundForfeitTxs(ctx, commitmentTxid)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -398,8 +462,12 @@ func (r *roundRepository) GetRoundForfeitTxs(
 func (r *roundRepository) GetSweepTxs(
 	ctx context.Context, commitmentTxid string,
 ) (map[string]string, error) {
-	rows, err := r.querier.SelectRoundSweepTxs(ctx, commitmentTxid)
-	if err != nil {
+	var rows []queries.SelectRoundSweepTxsRow
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectRoundSweepTxs(ctx, commitmentTxid)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -414,8 +482,12 @@ func (r *roundRepository) GetSweepTxs(
 func (r *roundRepository) GetRoundConnectorTree(
 	ctx context.Context, commitmentTxid string,
 ) (tree.FlatTxTree, error) {
-	rows, err := r.querier.SelectRoundConnectors(ctx, commitmentTxid)
-	if err != nil {
+	var rows []queries.Tx
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectRoundConnectors(ctx, commitmentTxid)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -441,14 +513,24 @@ func (r *roundRepository) GetRoundConnectorTree(
 }
 
 func (r *roundRepository) GetSweptRoundsConnectorAddress(ctx context.Context) ([]string, error) {
-	return r.querier.SelectSweptRoundsConnectorAddress(ctx)
+	var addresses []string
+	err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		addresses, err = q.SelectSweptRoundsConnectorAddress(ctx)
+		return err
+	})
+	return addresses, err
 }
 
 func (r *roundRepository) GetRoundVtxoTree(
 	ctx context.Context, txid string,
 ) (tree.FlatTxTree, error) {
-	rows, err := r.querier.SelectRoundVtxoTree(ctx, txid)
-	if err != nil {
+	var rows []queries.Tx
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectRoundVtxoTree(ctx, txid)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
@@ -473,12 +555,12 @@ func (r *roundRepository) GetRoundVtxoTree(
 }
 
 func (r *roundRepository) GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error) {
-	rows, err := r.querier.SelectTxs(ctx, queries.SelectTxsParams{
-		Ids1: txids,
-		Ids2: txids,
-		Ids3: txids,
-	})
-	if err != nil {
+	var rows []queries.SelectTxsRow
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectTxs(ctx, queries.SelectTxsParams{Ids1: txids, Ids2: txids, Ids3: txids})
+		return err
+	}); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -496,13 +578,17 @@ func (r *roundRepository) GetTxsWithTxids(ctx context.Context, txids []string) (
 func (r *roundRepository) GetRoundsWithCommitmentTxids(
 	ctx context.Context, txids []string,
 ) (map[string]any, error) {
-	txids, err := r.querier.SelectRoundsWithTxids(ctx, txids)
-	if err != nil {
+	var roundTxids []string
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		roundTxids, err = q.SelectRoundsWithTxids(ctx, txids)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 
 	resp := make(map[string]any)
-	for _, txid := range txids {
+	for _, txid := range roundTxids {
 		resp[txid] = nil
 	}
 	return resp, nil
@@ -512,8 +598,12 @@ func (r *roundRepository) GetIntentByTxid(
 	ctx context.Context,
 	txid string,
 ) (*domain.Intent, error) {
-	intent, err := r.querier.SelectIntentByTxid(ctx, sql.NullString{String: txid, Valid: true})
-	if err != nil {
+	var intent queries.SelectIntentByTxidRow
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		intent, err = q.SelectIntentByTxid(ctx, sql.NullString{String: txid, Valid: true})
+		return err
+	}); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -528,21 +618,46 @@ func (r *roundRepository) GetIntentByTxid(
 	}, nil
 }
 
-func (r *roundRepository) PatchCollectedFees(
-	ctx context.Context, feesByRoundId map[string]uint64,
-) error {
-	txBody := func(querierWithTx *queries.Queries) error {
-		for id, fees := range feesByRoundId {
-			if err := querierWithTx.UpdateRoundCollectedFees(
-				ctx,
-				queries.UpdateRoundCollectedFeesParams{Fees: int64(fees), ID: id},
-			); err != nil {
-				return fmt.Errorf("failed to patch collected fees for round %s: %w", id, err)
-			}
-		}
-		return nil
+func (r *roundRepository) SumCollectedFees(
+	ctx context.Context, after, before int64,
+) (uint64, error) {
+	var total int64
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		total, err = q.SelectCollectedFeesInRange(ctx, queries.SelectCollectedFeesInRangeParams{
+			StartTs: after,
+			EndTs:   before,
+		})
+		return err
+	}); err != nil {
+		return 0, err
 	}
-	return execTx(ctx, r.db, txBody)
+	return uint64(total), nil
+}
+
+func (r *roundRepository) GetScheduledSweeps(
+	ctx context.Context, limit int64,
+) ([]domain.ScheduledSweep, error) {
+	var rows []queries.SelectScheduledSweepsRow
+	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rows, err = q.SelectScheduledSweeps(ctx, limit)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+
+	sweeps := make([]domain.ScheduledSweep, 0, len(rows))
+	for _, row := range rows {
+		sweeps = append(sweeps, domain.ScheduledSweep{
+			RoundId:        row.ID,
+			CommitmentTxid: row.Txid,
+			SweepAt:        row.SweepAt,
+			TotalAmount:    uint64(row.TotalAmount),
+			VtxoCount:      row.VtxoCount,
+		})
+	}
+	return sweeps, nil
 }
 
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {
@@ -745,7 +860,7 @@ func combinedRowToVtxo(row queries.IntentWithInputsVw) domain.Vtxo {
 		SpentBy:            row.SpentBy.String,
 		Spent:              row.Spent.Bool,
 		Unrolled:           row.Unrolled.Bool,
-		Swept:              row.Swept.Bool,
+		Swept:              toBool(row.Swept),
 		Preconfirmed:       row.Preconfirmed.Bool,
 		ExpiresAt:          row.ExpiresAt.Int64,
 		CreatedAt:          row.CreatedAt.Int64,

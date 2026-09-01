@@ -37,7 +37,10 @@ type WalletService interface {
 	BroadcastTransaction(ctx context.Context, txs ...string) (string, error)
 	EstimateFees(ctx context.Context, psbt string) (uint64, error)
 	FeeRate(ctx context.Context) (uint64, error)
-	ListConnectorUtxos(ctx context.Context, connectorAddress string) ([]TxInput, error)
+	ListConnectorUtxos(ctx context.Context, connectorAddresses []string) ([]TxInput, error)
+	// GetMainAccountUtxos lists the whole UTXO set of the main account,
+	// including locked and unconfirmed UTXOs, each flagged accordingly.
+	GetMainAccountUtxos(ctx context.Context) ([]WalletUtxo, error)
 	MainAccountBalance(ctx context.Context) (uint64, uint64, error)
 	ConnectorsAccountBalance(ctx context.Context) (uint64, uint64, error)
 	LockConnectorUtxos(ctx context.Context, utxos []domain.Outpoint) error
@@ -68,6 +71,18 @@ type Tapscript struct {
 	InternalKey  string // hex encoded
 	ControlBlock string // hex encoded
 	Tapscript    string // hex encoded
+}
+
+// WalletUtxo describes a single UTXO of the main account, including its
+// confirmation count and whether it is currently locked by a pending operation.
+type WalletUtxo struct {
+	Txid          string
+	Vout          uint32
+	Value         uint64
+	Script        string // hex encoded
+	Address       string
+	Confirmations uint32
+	Locked        bool
 }
 
 type BlockTimestamp struct {

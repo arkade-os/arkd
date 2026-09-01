@@ -466,3 +466,77 @@ var BUILD_VERSION_TOO_OLD = Code[BuildVersionMetadata]{
 	"BUILD_VERSION_TOO_OLD",
 	grpccodes.FailedPrecondition,
 }
+
+type DigestMetadata struct {
+	ExpectedDigest string `json:"expected_digest"`
+	GotDigest      string `json:"got_digest"`
+}
+
+var DIGEST_MISMATCH = Code[DigestMetadata]{
+	49,
+	"DIGEST_MISMATCH",
+	grpccodes.FailedPrecondition,
+}
+
+type SubscriptionMetadata struct {
+	SubscriptionId string `json:"subscription_id"`
+}
+
+var SUBSCRIPTION_NOT_FOUND = Code[SubscriptionMetadata]{
+	50,
+	"SUBSCRIPTION_NOT_FOUND",
+	grpccodes.NotFound,
+}
+
+type TxFiltersLimitMetadata struct {
+	SubscriptionId string `json:"subscription_id"`
+	MaxTxFilters   int    `json:"max_tx_filters"`
+	GotTxFilters   int    `json:"got_tx_filters"`
+}
+
+var TX_FILTERS_LIMIT_EXCEEDED = Code[TxFiltersLimitMetadata]{
+	51,
+	"TX_FILTERS_LIMIT_EXCEEDED",
+	grpccodes.InvalidArgument,
+}
+
+type TxFilterMetadata struct {
+	Expression string `json:"expression"`
+}
+
+var INVALID_TX_FILTER = Code[TxFilterMetadata]{
+	52,
+	"INVALID_TX_FILTER",
+	grpccodes.InvalidArgument,
+}
+
+type RoundNotFoundMetadata struct {
+	RoundId string `json:"round_id"`
+}
+
+var ROUND_NOT_FOUND = Code[RoundNotFoundMetadata]{
+	53,
+	"ROUND_NOT_FOUND",
+	grpccodes.NotFound,
+}
+
+type OffchainTxNotFoundMetadata struct {
+	Txid string `json:"txid"`
+}
+
+var OFFCHAIN_TX_NOT_FOUND = Code[OffchainTxNotFoundMetadata]{
+	54,
+	"OFFCHAIN_TX_NOT_FOUND",
+	grpccodes.NotFound,
+}
+
+type InvalidBatchOutputScriptMetadata struct {
+	ExpectedPkScript string `json:"expected_pkscript"`
+	ActualPkScript   string `json:"actual_pkscript"`
+}
+
+var INVALID_BATCH_OUTPUT_SCRIPT = Code[InvalidBatchOutputScriptMetadata]{
+	55,
+	"INVALID_BATCH_OUTPUT_SCRIPT",
+	grpccodes.InvalidArgument,
+}

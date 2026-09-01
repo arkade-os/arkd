@@ -21,7 +21,12 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	AdminService_GetScheduledSweep_FullMethodName            = "/ark.v1.AdminService/GetScheduledSweep"
 	AdminService_GetRoundDetails_FullMethodName              = "/ark.v1.AdminService/GetRoundDetails"
+	AdminService_GetRoundIntents_FullMethodName              = "/ark.v1.AdminService/GetRoundIntents"
 	AdminService_GetRounds_FullMethodName                    = "/ark.v1.AdminService/GetRounds"
+	AdminService_GetOffchainTxs_FullMethodName               = "/ark.v1.AdminService/GetOffchainTxs"
+	AdminService_GetOffchainTxDetails_FullMethodName         = "/ark.v1.AdminService/GetOffchainTxDetails"
+	AdminService_GetFeeRate_FullMethodName                   = "/ark.v1.AdminService/GetFeeRate"
+	AdminService_GetExpiredRounds_FullMethodName             = "/ark.v1.AdminService/GetExpiredRounds"
 	AdminService_CreateNote_FullMethodName                   = "/ark.v1.AdminService/CreateNote"
 	AdminService_GetScheduledSessionConfig_FullMethodName    = "/ark.v1.AdminService/GetScheduledSessionConfig"
 	AdminService_UpdateScheduledSessionConfig_FullMethodName = "/ark.v1.AdminService/UpdateScheduledSessionConfig"
@@ -44,6 +49,9 @@ const (
 	AdminService_GetRecoverableLiquidity_FullMethodName      = "/ark.v1.AdminService/GetRecoverableLiquidity"
 	AdminService_GetCollectedFees_FullMethodName             = "/ark.v1.AdminService/GetCollectedFees"
 	AdminService_Sweep_FullMethodName                        = "/ark.v1.AdminService/Sweep"
+	AdminService_GetSettings_FullMethodName                  = "/ark.v1.AdminService/GetSettings"
+	AdminService_UpdateSettings_FullMethodName               = "/ark.v1.AdminService/UpdateSettings"
+	AdminService_GetMainAccountUtxos_FullMethodName          = "/ark.v1.AdminService/GetMainAccountUtxos"
 )
 
 // AdminServiceClient is the client API for AdminService service.
@@ -52,7 +60,23 @@ const (
 type AdminServiceClient interface {
 	GetScheduledSweep(ctx context.Context, in *GetScheduledSweepRequest, opts ...grpc.CallOption) (*GetScheduledSweepResponse, error)
 	GetRoundDetails(ctx context.Context, in *GetRoundDetailsRequest, opts ...grpc.CallOption) (*GetRoundDetailsResponse, error)
+	// GetRoundIntents returns the intents registered in a batch as they were persisted,
+	// so they can be inspected even if the batch failed.
+	GetRoundIntents(ctx context.Context, in *GetRoundIntentsRequest, opts ...grpc.CallOption) (*GetRoundIntentsResponse, error)
 	GetRounds(ctx context.Context, in *GetRoundsRequest, opts ...grpc.CallOption) (*GetRoundsResponse, error)
+	// GetOffchainTxs returns the offchain txs started in the given time range, most
+	// recent first, including the failed ones and their fail reason.
+	GetOffchainTxs(ctx context.Context, in *GetOffchainTxsRequest, opts ...grpc.CallOption) (*GetOffchainTxsResponse, error)
+	// GetOffchainTxDetails returns the full details of an offchain tx at any stage,
+	// including txs that failed before being accepted.
+	GetOffchainTxDetails(ctx context.Context, in *GetOffchainTxDetailsRequest, opts ...grpc.CallOption) (*GetOffchainTxDetailsResponse, error)
+	// GetFeeRate returns the fee rate the wallet currently uses to estimate the fees
+	// of the onchain txs it builds, like the commitment tx.
+	GetFeeRate(ctx context.Context, in *GetFeeRateRequest, opts ...grpc.CallOption) (*GetFeeRateResponse, error)
+	// GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose
+	// batch outputs have expired but have not been swept yet. It is meant to surface
+	// rounds for which the sweep should have happened but likely failed.
+	GetExpiredRounds(ctx context.Context, in *GetExpiredRoundsRequest, opts ...grpc.CallOption) (*GetExpiredRoundsResponse, error)
 	CreateNote(ctx context.Context, in *CreateNoteRequest, opts ...grpc.CallOption) (*CreateNoteResponse, error)
 	GetScheduledSessionConfig(ctx context.Context, in *GetScheduledSessionConfigRequest, opts ...grpc.CallOption) (*GetScheduledSessionConfigResponse, error)
 	UpdateScheduledSessionConfig(ctx context.Context, in *UpdateScheduledSessionConfigRequest, opts ...grpc.CallOption) (*UpdateScheduledSessionConfigResponse, error)
@@ -75,6 +99,9 @@ type AdminServiceClient interface {
 	GetRecoverableLiquidity(ctx context.Context, in *GetRecoverableLiquidityRequest, opts ...grpc.CallOption) (*GetRecoverableLiquidityResponse, error)
 	GetCollectedFees(ctx context.Context, in *GetCollectedFeesRequest, opts ...grpc.CallOption) (*GetCollectedFeesResponse, error)
 	Sweep(ctx context.Context, in *SweepRequest, opts ...grpc.CallOption) (*SweepResponse, error)
+	GetSettings(ctx context.Context, in *GetSettingsRequest, opts ...grpc.CallOption) (*GetSettingsResponse, error)
+	UpdateSettings(ctx context.Context, in *UpdateSettingsRequest, opts ...grpc.CallOption) (*UpdateSettingsResponse, error)
+	GetMainAccountUtxos(ctx context.Context, in *GetMainAccountUtxosRequest, opts ...grpc.CallOption) (*GetMainAccountUtxosResponse, error)
 }
 
 type adminServiceClient struct {
@@ -105,10 +132,60 @@ func (c *adminServiceClient) GetRoundDetails(ctx context.Context, in *GetRoundDe
 	return out, nil
 }
 
+func (c *adminServiceClient) GetRoundIntents(ctx context.Context, in *GetRoundIntentsRequest, opts ...grpc.CallOption) (*GetRoundIntentsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRoundIntentsResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetRoundIntents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *adminServiceClient) GetRounds(ctx context.Context, in *GetRoundsRequest, opts ...grpc.CallOption) (*GetRoundsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetRoundsResponse)
 	err := c.cc.Invoke(ctx, AdminService_GetRounds_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetOffchainTxs(ctx context.Context, in *GetOffchainTxsRequest, opts ...grpc.CallOption) (*GetOffchainTxsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOffchainTxsResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetOffchainTxs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetOffchainTxDetails(ctx context.Context, in *GetOffchainTxDetailsRequest, opts ...grpc.CallOption) (*GetOffchainTxDetailsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOffchainTxDetailsResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetOffchainTxDetails_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetFeeRate(ctx context.Context, in *GetFeeRateRequest, opts ...grpc.CallOption) (*GetFeeRateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetFeeRateResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetFeeRate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetExpiredRounds(ctx context.Context, in *GetExpiredRoundsRequest, opts ...grpc.CallOption) (*GetExpiredRoundsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetExpiredRoundsResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetExpiredRounds_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -335,13 +412,59 @@ func (c *adminServiceClient) Sweep(ctx context.Context, in *SweepRequest, opts .
 	return out, nil
 }
 
+func (c *adminServiceClient) GetSettings(ctx context.Context, in *GetSettingsRequest, opts ...grpc.CallOption) (*GetSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSettingsResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) UpdateSettings(ctx context.Context, in *UpdateSettingsRequest, opts ...grpc.CallOption) (*UpdateSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateSettingsResponse)
+	err := c.cc.Invoke(ctx, AdminService_UpdateSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminServiceClient) GetMainAccountUtxos(ctx context.Context, in *GetMainAccountUtxosRequest, opts ...grpc.CallOption) (*GetMainAccountUtxosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMainAccountUtxosResponse)
+	err := c.cc.Invoke(ctx, AdminService_GetMainAccountUtxos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminServiceServer is the server API for AdminService service.
 // All implementations should embed UnimplementedAdminServiceServer
 // for forward compatibility.
 type AdminServiceServer interface {
 	GetScheduledSweep(context.Context, *GetScheduledSweepRequest) (*GetScheduledSweepResponse, error)
 	GetRoundDetails(context.Context, *GetRoundDetailsRequest) (*GetRoundDetailsResponse, error)
+	// GetRoundIntents returns the intents registered in a batch as they were persisted,
+	// so they can be inspected even if the batch failed.
+	GetRoundIntents(context.Context, *GetRoundIntentsRequest) (*GetRoundIntentsResponse, error)
 	GetRounds(context.Context, *GetRoundsRequest) (*GetRoundsResponse, error)
+	// GetOffchainTxs returns the offchain txs started in the given time range, most
+	// recent first, including the failed ones and their fail reason.
+	GetOffchainTxs(context.Context, *GetOffchainTxsRequest) (*GetOffchainTxsResponse, error)
+	// GetOffchainTxDetails returns the full details of an offchain tx at any stage,
+	// including txs that failed before being accepted.
+	GetOffchainTxDetails(context.Context, *GetOffchainTxDetailsRequest) (*GetOffchainTxDetailsResponse, error)
+	// GetFeeRate returns the fee rate the wallet currently uses to estimate the fees
+	// of the onchain txs it builds, like the commitment tx.
+	GetFeeRate(context.Context, *GetFeeRateRequest) (*GetFeeRateResponse, error)
+	// GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose
+	// batch outputs have expired but have not been swept yet. It is meant to surface
+	// rounds for which the sweep should have happened but likely failed.
+	GetExpiredRounds(context.Context, *GetExpiredRoundsRequest) (*GetExpiredRoundsResponse, error)
 	CreateNote(context.Context, *CreateNoteRequest) (*CreateNoteResponse, error)
 	GetScheduledSessionConfig(context.Context, *GetScheduledSessionConfigRequest) (*GetScheduledSessionConfigResponse, error)
 	UpdateScheduledSessionConfig(context.Context, *UpdateScheduledSessionConfigRequest) (*UpdateScheduledSessionConfigResponse, error)
@@ -364,6 +487,9 @@ type AdminServiceServer interface {
 	GetRecoverableLiquidity(context.Context, *GetRecoverableLiquidityRequest) (*GetRecoverableLiquidityResponse, error)
 	GetCollectedFees(context.Context, *GetCollectedFeesRequest) (*GetCollectedFeesResponse, error)
 	Sweep(context.Context, *SweepRequest) (*SweepResponse, error)
+	GetSettings(context.Context, *GetSettingsRequest) (*GetSettingsResponse, error)
+	UpdateSettings(context.Context, *UpdateSettingsRequest) (*UpdateSettingsResponse, error)
+	GetMainAccountUtxos(context.Context, *GetMainAccountUtxosRequest) (*GetMainAccountUtxosResponse, error)
 }
 
 // UnimplementedAdminServiceServer should be embedded to have
@@ -379,8 +505,23 @@ func (UnimplementedAdminServiceServer) GetScheduledSweep(context.Context, *GetSc
 func (UnimplementedAdminServiceServer) GetRoundDetails(context.Context, *GetRoundDetailsRequest) (*GetRoundDetailsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRoundDetails not implemented")
 }
+func (UnimplementedAdminServiceServer) GetRoundIntents(context.Context, *GetRoundIntentsRequest) (*GetRoundIntentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetRoundIntents not implemented")
+}
 func (UnimplementedAdminServiceServer) GetRounds(context.Context, *GetRoundsRequest) (*GetRoundsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetRounds not implemented")
+}
+func (UnimplementedAdminServiceServer) GetOffchainTxs(context.Context, *GetOffchainTxsRequest) (*GetOffchainTxsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetOffchainTxs not implemented")
+}
+func (UnimplementedAdminServiceServer) GetOffchainTxDetails(context.Context, *GetOffchainTxDetailsRequest) (*GetOffchainTxDetailsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetOffchainTxDetails not implemented")
+}
+func (UnimplementedAdminServiceServer) GetFeeRate(context.Context, *GetFeeRateRequest) (*GetFeeRateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetFeeRate not implemented")
+}
+func (UnimplementedAdminServiceServer) GetExpiredRounds(context.Context, *GetExpiredRoundsRequest) (*GetExpiredRoundsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetExpiredRounds not implemented")
 }
 func (UnimplementedAdminServiceServer) CreateNote(context.Context, *CreateNoteRequest) (*CreateNoteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateNote not implemented")
@@ -448,6 +589,15 @@ func (UnimplementedAdminServiceServer) GetCollectedFees(context.Context, *GetCol
 func (UnimplementedAdminServiceServer) Sweep(context.Context, *SweepRequest) (*SweepResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Sweep not implemented")
 }
+func (UnimplementedAdminServiceServer) GetSettings(context.Context, *GetSettingsRequest) (*GetSettingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSettings not implemented")
+}
+func (UnimplementedAdminServiceServer) UpdateSettings(context.Context, *UpdateSettingsRequest) (*UpdateSettingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateSettings not implemented")
+}
+func (UnimplementedAdminServiceServer) GetMainAccountUtxos(context.Context, *GetMainAccountUtxosRequest) (*GetMainAccountUtxosResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetMainAccountUtxos not implemented")
+}
 func (UnimplementedAdminServiceServer) testEmbeddedByValue() {}
 
 // UnsafeAdminServiceServer may be embedded to opt out of forward compatibility for this service.
@@ -504,6 +654,24 @@ func _AdminService_GetRoundDetails_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_GetRoundIntents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRoundIntentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetRoundIntents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetRoundIntents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetRoundIntents(ctx, req.(*GetRoundIntentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AdminService_GetRounds_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetRoundsRequest)
 	if err := dec(in); err != nil {
@@ -518,6 +686,78 @@ func _AdminService_GetRounds_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(AdminServiceServer).GetRounds(ctx, req.(*GetRoundsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetOffchainTxs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOffchainTxsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetOffchainTxs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetOffchainTxs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetOffchainTxs(ctx, req.(*GetOffchainTxsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetOffchainTxDetails_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOffchainTxDetailsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetOffchainTxDetails(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetOffchainTxDetails_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetOffchainTxDetails(ctx, req.(*GetOffchainTxDetailsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetFeeRate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetFeeRateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetFeeRate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetFeeRate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetFeeRate(ctx, req.(*GetFeeRateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetExpiredRounds_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetExpiredRoundsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetExpiredRounds(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetExpiredRounds_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetExpiredRounds(ctx, req.(*GetExpiredRoundsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -918,6 +1158,60 @@ func _AdminService_Sweep_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminService_GetSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetSettings(ctx, req.(*GetSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_UpdateSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).UpdateSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_UpdateSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).UpdateSettings(ctx, req.(*UpdateSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminService_GetMainAccountUtxos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMainAccountUtxosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminServiceServer).GetMainAccountUtxos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminService_GetMainAccountUtxos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminServiceServer).GetMainAccountUtxos(ctx, req.(*GetMainAccountUtxosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AdminService_ServiceDesc is the grpc.ServiceDesc for AdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -934,8 +1228,28 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AdminService_GetRoundDetails_Handler,
 		},
 		{
+			MethodName: "GetRoundIntents",
+			Handler:    _AdminService_GetRoundIntents_Handler,
+		},
+		{
 			MethodName: "GetRounds",
 			Handler:    _AdminService_GetRounds_Handler,
+		},
+		{
+			MethodName: "GetOffchainTxs",
+			Handler:    _AdminService_GetOffchainTxs_Handler,
+		},
+		{
+			MethodName: "GetOffchainTxDetails",
+			Handler:    _AdminService_GetOffchainTxDetails_Handler,
+		},
+		{
+			MethodName: "GetFeeRate",
+			Handler:    _AdminService_GetFeeRate_Handler,
+		},
+		{
+			MethodName: "GetExpiredRounds",
+			Handler:    _AdminService_GetExpiredRounds_Handler,
 		},
 		{
 			MethodName: "CreateNote",
@@ -1024,6 +1338,18 @@ var AdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Sweep",
 			Handler:    _AdminService_Sweep_Handler,
+		},
+		{
+			MethodName: "GetSettings",
+			Handler:    _AdminService_GetSettings_Handler,
+		},
+		{
+			MethodName: "UpdateSettings",
+			Handler:    _AdminService_UpdateSettings_Handler,
+		},
+		{
+			MethodName: "GetMainAccountUtxos",
+			Handler:    _AdminService_GetMainAccountUtxos_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

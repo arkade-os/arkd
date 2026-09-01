@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
+	channelzgrpc "google.golang.org/grpc/channelz/grpc_channelz_v1"
 	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/macaroon-bakery.v2/bakery"
 )
@@ -17,6 +18,7 @@ const (
 	EntityArk               = "ark"
 	EntityIndexer           = "indexer"
 	EntityHealth            = "health"
+	EntityChannelz          = "channelz"
 	EntityAuthManager       = "authmanager"
 )
 
@@ -265,6 +267,29 @@ func Whitelist() map[string][]bakery.Op {
 			Entity: EntityIndexer,
 			Action: "read",
 		}},
+
+		/* Channelz APIs (restricted to admin port) */
+		fmt.Sprintf("/%s/GetTopChannels", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetServers", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetServer", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetServerSockets", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetChannel", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetSubchannel", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetSocket", channelzgrpc.Channelz_ServiceDesc.ServiceName): {{
+			Entity: EntityChannelz, Action: "read",
+		}},
 	}
 }
 
@@ -300,7 +325,27 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 			Entity: EntityManager,
 			Action: "read",
 		}},
+		fmt.Sprintf("/%s/GetRoundIntents", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
 		fmt.Sprintf("/%s/GetRounds", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetOffchainTxs", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetOffchainTxDetails", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetFeeRate", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetExpiredRounds", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityManager,
 			Action: "read",
 		}},
@@ -313,6 +358,10 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 			Action: "read",
 		}},
 		fmt.Sprintf("/%s/GetCollectedFees", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetMainAccountUtxos", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityManager,
 			Action: "read",
 		}},
@@ -387,6 +436,14 @@ func AllPermissionsByMethod() map[string][]bakery.Op {
 		}},
 		fmt.Sprintf("/%s/RevokeAuth", arkv1.AdminService_ServiceDesc.ServiceName): {{
 			Entity: EntityAuthManager,
+			Action: "write",
+		}},
+		fmt.Sprintf("/%s/GetSettings", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/UpdateSettings", arkv1.AdminService_ServiceDesc.ServiceName): {{
+			Entity: EntityManager,
 			Action: "write",
 		}},
 		fmt.Sprintf("/%s/ListTokens", arkv1.AdminService_ServiceDesc.ServiceName): {{

@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 var (
@@ -40,26 +39,14 @@ func ExtractWithAnchors(p *psbt.Packet) (*wire.MsgTx, error) {
 		}
 
 		if pInput.FinalScriptWitness != nil {
-			witnessReader := bytes.NewReader(
-				pInput.FinalScriptWitness,
-			)
-
-			witCount, err := wire.ReadVarInt(witnessReader, 0)
+			// Read through ReadTxWitness rather than inline: the count is an
+			// attacker-chosen varint and sizing a wire.TxWitness from it costs 24
+			// bytes per slot, so it needs the bound that helper already applies.
+			witness, err := ReadTxWitness(pInput.FinalScriptWitness)
 			if err != nil {
 				return nil, err
 			}
-
-			tin.Witness = make(wire.TxWitness, witCount)
-			for j := uint64(0); j < witCount; j++ {
-				wit, err := wire.ReadVarBytes(
-					witnessReader, 0,
-					txscript.MaxScriptSize, "witness",
-				)
-				if err != nil {
-					return nil, err
-				}
-				tin.Witness[j] = wit
-			}
+			tin.Witness = witness
 		}
 	}
 

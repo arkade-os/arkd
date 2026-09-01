@@ -43,6 +43,7 @@ func newBenchService(tb testing.TB) ports.RepoManager {
 		DataStoreType:    "sqlite",
 		EventStoreConfig: []interface{}{"", nil},
 		DataStoreConfig:  []interface{}{dir},
+		Settings:         validSettings(),
 	}, nil)
 	if err != nil {
 		tb.Fatalf("open db: %s", err)

@@ -49,11 +49,11 @@ ON CONFLICT(intent_id, pubkey, onchain_address) DO UPDATE SET
 -- name: UpsertVtxo :exec
 INSERT INTO vtxo (
     txid, vout, pubkey, amount, commitment_txid, settled_by, ark_txid,
-    spent_by, spent, unrolled, swept, preconfirmed, expires_at, created_at, updated_at
+    spent_by, spent, unrolled, preconfirmed, expires_at, created_at, updated_at, depth, markers
 )
 VALUES (
     @txid, @vout, @pubkey, @amount, @commitment_txid, @settled_by, @ark_txid,
-    @spent_by, @spent, @unrolled, @swept, @preconfirmed, @expires_at, @created_at, (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
+    @spent_by, @spent, @unrolled, @preconfirmed, @expires_at, @created_at, (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)), @depth, @markers
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
@@ -63,11 +63,12 @@ VALUES (
     spent_by = EXCLUDED.spent_by,
     spent = EXCLUDED.spent,
     unrolled = EXCLUDED.unrolled,
-    swept = EXCLUDED.swept,
     preconfirmed = EXCLUDED.preconfirmed,
     expires_at = EXCLUDED.expires_at,
     created_at = EXCLUDED.created_at,
-    updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER));
+    updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)),
+    depth = EXCLUDED.depth,
+    markers = EXCLUDED.markers;
 
 -- name: InsertVtxoCommitmentTxid :exec
 INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
@@ -93,21 +94,6 @@ ON CONFLICT(txid) DO UPDATE SET
     is_root_commitment_txid = EXCLUDED.is_root_commitment_txid,
     offchain_txid = EXCLUDED.offchain_txid;
 
--- name: UpsertScheduledSession :exec
-INSERT INTO scheduled_session (id, start_time, end_time, period, duration, round_min_participants, round_max_participants, updated_at)
-VALUES (@id, @start_time, @end_time, @period, @duration, @round_min_participants, @round_max_participants, @updated_at)
-ON CONFLICT (id) DO UPDATE SET
-    start_time = EXCLUDED.start_time,
-    end_time = EXCLUDED.end_time,
-    period = EXCLUDED.period,
-    duration = EXCLUDED.duration,
-    round_min_participants = EXCLUDED.round_min_participants,
-    round_max_participants = EXCLUDED.round_max_participants,
-    updated_at = EXCLUDED.updated_at;
-
--- name: ClearScheduledSession :exec
-DELETE FROM scheduled_session;
-
 -- name: UpdateVtxoIntentId :exec
 UPDATE vtxo SET intent_id = @intent_id WHERE txid = @txid AND vout = @vout;
 
@@ -116,9 +102,6 @@ UPDATE vtxo SET expires_at = @expires_at WHERE txid = @txid AND vout = @vout;
 
 -- name: UpdateVtxoUnrolled :exec
 UPDATE vtxo SET unrolled = true, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)) WHERE txid = @txid AND vout = @vout;
-
--- name: UpdateVtxoSweptIfNotSwept :execrows
-UPDATE vtxo SET swept = true, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)) WHERE txid = @txid AND vout = @vout AND swept = false;
 
 -- name: UpdateVtxoSettled :exec
 UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
@@ -159,30 +142,54 @@ FROM intent_with_inputs_vw
 WHERE intent_with_inputs_vw.round_id = @round_id;
 
 -- name: SelectSweepableRounds :many
-SELECT txid FROM round_with_commitment_tx_vw r 
+SELECT txid FROM round_with_commitment_tx_vw r
 WHERE r.swept = false AND r.ended = true AND r.failed = false
 AND EXISTS (
-    SELECT 1 FROM tx tree_tx 
+    SELECT 1 FROM tx tree_tx
     WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
 );
 
--- name: SelectRoundIdsInTimeRange :many
-SELECT id FROM round WHERE starting_timestamp > @start_ts AND starting_timestamp < @end_ts;
+-- name: SelectExpiredRounds :many
+SELECT r.id, r.txid, CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS expired_at
+FROM round_with_commitment_tx_vw r
+WHERE r.swept = false AND r.ended = true AND r.failed = false
+AND (r.ending_timestamp + r.vtxo_tree_expiration) < @now
+AND EXISTS (
+    SELECT 1 FROM tx tree_tx
+    WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
+);
 
--- name: SelectAllRoundIds :many
-SELECT id FROM round;
 
--- name: SelectRoundIdsWithFilters :many
-SELECT id FROM round 
-WHERE (@with_failed = 1 OR failed = 0)
-  AND (@with_completed = 1 OR ended = 0);
 
--- name: SelectRoundIdsInTimeRangeWithFilters :many
-SELECT id FROM round 
-WHERE starting_timestamp > @start_ts 
-  AND starting_timestamp < @end_ts
-  AND (@with_failed = 1 OR failed = 0)
-  AND (@with_completed = 1 OR ended = 0);
+
+
+-- Batch listing for the admin API. Everything the listing renders is produced by
+-- this one query: filtering, ordering, the limit, the commitment txid and the
+-- intent count. Listing N batches costs one round trip instead of loading every
+-- round in full. Callers pass max_results = 0 for "no limit".
+-- The intent count is a correlated subquery, not a join against a GROUP BY over
+-- the whole intent table, so the limit bounds how many counts get computed.
+-- name: SelectRoundSummaries :many
+SELECT
+    r.id,
+    r.starting_timestamp,
+    r.ending_timestamp,
+    r.ended,
+    r.failed,
+    r.swept,
+    r.stage_code,
+    r.fail_reason,
+    COALESCE(t.txid, '') AS commitment_txid,
+    (SELECT COUNT(*) FROM intent i WHERE i.round_id = r.id) AS total_intents
+FROM round r
+LEFT JOIN tx t ON t.round_id = r.id AND t.type = 'commitment'
+WHERE (@start_ts = 0 OR r.starting_timestamp > @start_ts)
+  AND (@end_ts = 0 OR r.starting_timestamp < @end_ts)
+  AND (@with_failed = 1 OR r.failed = 0)
+  AND (@with_completed = 1 OR r.ended = 0)
+  AND (@only_failed = 0 OR r.failed = 1)
+ORDER BY r.starting_timestamp DESC
+LIMIT (CASE WHEN @max_results = 0 THEN -1 ELSE @max_results END);
 
 -- name: SelectRoundsWithTxids :many
 SELECT txid FROM tx WHERE type = 'commitment' AND tx.txid IN (sqlc.slice('txids'));
@@ -250,6 +257,15 @@ SELECT offchain_tx.txid, offchain_tx.tx AS data FROM offchain_tx WHERE offchain_
 UNION
 SELECT checkpoint_tx.txid, checkpoint_tx.tx AS data FROM checkpoint_tx WHERE checkpoint_tx.txid IN (sqlc.slice('ids3'));
 
+-- name: SelectCheckpointTxsByVtxoPubKeys :many
+SELECT DISTINCT c.txid, c.tx AS data
+FROM vtxo_vw v
+JOIN checkpoint_tx c ON c.txid = v.spent_by
+JOIN offchain_tx o ON o.txid = c.offchain_txid
+WHERE v.pubkey IN (sqlc.slice('pubkeys'))
+  AND v.swept = false
+  AND o.stage_code = 3;
+
 -- name: SelectNotUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false;
 
@@ -267,26 +283,48 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE updated_at >= :after
     AND (CAST(:before AS INTEGER) = 0 OR updated_at <= CAST(:before AS INTEGER))
     AND pubkey IN (sqlc.slice('pubkeys'));
 
+-- Reads swept-ness from vtxo_vw.swept (single source of truth: swept_marker OR
+-- swept_vtxo) so the accounting stays correct after the marker backfill empties
+-- swept_marker and moves that state into swept_vtxo.
 -- name: SelectExpiringLiquidityAmount :one
-SELECT COALESCE(SUM(amount), 0) AS amount
-FROM vtxo
-WHERE swept = false
-  AND spent = false
-  AND unrolled = false
-  AND expires_at > sqlc.arg('after')
-  AND (sqlc.arg('before') <= 0 OR expires_at < sqlc.arg('before'));
+SELECT COALESCE(SUM(v.amount), 0) AS amount
+FROM vtxo_vw v
+WHERE v.swept = false
+  AND v.spent = false
+  AND v.unrolled = false
+  AND v.expires_at > sqlc.arg('after')
+  AND (sqlc.arg('before') <= 0 OR v.expires_at < sqlc.arg('before'));
 
 -- name: SelectRecoverableLiquidityAmount :one
-SELECT COALESCE(SUM(amount), 0) AS amount
-FROM vtxo
-WHERE swept = true
-  AND spent = false;
+SELECT COALESCE(SUM(v.amount), 0) AS amount
+FROM vtxo_vw v
+WHERE v.swept = true
+  AND v.spent = false;
 
+-- Returns only accepted or finalized txs
 -- name: SelectOffchainTx :many
-SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid AND COALESCE(fail_reason, '') = '';
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid
+    AND (stage_code = 2 OR stage_code = 3);
 
--- name: SelectLatestScheduledSession :one
-SELECT * FROM scheduled_session ORDER BY updated_at DESC LIMIT 1;
+-- name: SelectOffchainTxsByTxids :many
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid IN (sqlc.slice('txids')) AND COALESCE(fail_reason, '') = '';
+
+-- Admin-only lookup: unlike SelectOffchainTx it does not filter by stage, so offchain
+-- txs that failed before being accepted can be inspected too.
+-- name: SelectAnyOffchainTx :many
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid;
+
+-- name: SelectOffchainTxsInRange :many
+SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid IN (
+    SELECT o.txid FROM offchain_tx o
+    WHERE (@after = 0 OR o.starting_timestamp > @after)
+      AND (@before = 0 OR o.starting_timestamp < @before)
+      AND (@only_failed = 0 OR COALESCE(o.fail_reason, '') <> '')
+      AND (@only_completed = 0
+           OR (o.stage_code = @finalized_stage AND COALESCE(o.fail_reason, '') = ''))
+    ORDER BY o.starting_timestamp DESC
+    LIMIT (CASE WHEN @max_results = 0 THEN -1 ELSE @max_results END)
+);
 
 -- name: SelectVtxoPubKeysByCommitmentTxid :many
 SELECT DISTINCT v.pubkey
@@ -326,13 +364,17 @@ WHERE v.swept = false
     OR (',' || COALESCE(v.commitments, '') || ',') LIKE '%,' || @commitment_txid || ',%');
 
 -- name: SelectVtxosOutpointsByArkTxidRecursive :many
+-- Returns the seed outpoint (txid, vout) and all VTXOs descending from it
+-- via ark_txid links. Scoped to a single outpoint (not the whole txid) so that
+-- sibling outputs of the seed tx, which belong to independent lineages, are
+-- not included.
 WITH RECURSIVE descendants_chain AS (
-    -- seed
+    -- seed: only the specific outpoint, not all vouts of the txid
     SELECT v.txid, v.vout, v.preconfirmed, v.ark_txid, v.spent_by,
            0 AS depth,
            v.txid||':'||v.vout AS visited
     FROM vtxo v
-    WHERE v.txid = @txid
+    WHERE v.txid = @txid AND v.vout = @vout
 
     UNION ALL
 
@@ -412,52 +454,68 @@ SELECT * FROM conviction
 WHERE crime_round_id = @round_id
 ORDER BY created_at ASC;
 
--- name: SelectLatestIntentFees :one
-SELECT * FROM intent_fees ORDER BY id DESC LIMIT 1;
-
--- name: AddIntentFees :exec
-INSERT INTO intent_fees (
-  offchain_input_fee_program,
-  onchain_input_fee_program,
-  offchain_output_fee_program,
-  onchain_output_fee_program
-)
-SELECT
-    -- if all fee programs are empty, set them all to empty, else use provided, but if provided is empty fetch and use latest for that fee program.
-    -- if no rows exist in intent_fees, and a specific fee program is passed in as empty, default to empty string. 
-  CASE
-    WHEN (:offchain_input_fee_program = '' AND :onchain_input_fee_program = '' AND :offchain_output_fee_program = '' AND :onchain_output_fee_program = '') THEN ''
-    WHEN :offchain_input_fee_program != '' THEN :offchain_input_fee_program
-    ELSE COALESCE((SELECT offchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
-  END,
-  CASE
-    WHEN (:offchain_input_fee_program = '' AND :onchain_input_fee_program = '' AND :offchain_output_fee_program = '' AND :onchain_output_fee_program = '') THEN ''
-    WHEN :onchain_input_fee_program != '' THEN :onchain_input_fee_program
-    ELSE COALESCE((SELECT onchain_input_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
-  END,
-  CASE
-    WHEN (:offchain_input_fee_program = '' AND :onchain_input_fee_program = '' AND :offchain_output_fee_program = '' AND :onchain_output_fee_program = '') THEN ''
-    WHEN :offchain_output_fee_program != '' THEN :offchain_output_fee_program
-    ELSE COALESCE((SELECT offchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
-  END,
-  CASE
-    WHEN (:offchain_input_fee_program = '' AND :onchain_input_fee_program = '' AND :offchain_output_fee_program = '' AND :onchain_output_fee_program = '') THEN ''
-    WHEN :onchain_output_fee_program != '' THEN :onchain_output_fee_program
-    ELSE COALESCE((SELECT onchain_output_fee_program FROM intent_fees ORDER BY created_at DESC LIMIT 1), '')
-  END;
-
--- name: ClearIntentFees :exec
-INSERT INTO intent_fees (
-  offchain_input_fee_program,
-  onchain_input_fee_program,
-  offchain_output_fee_program,
-  onchain_output_fee_program
-)
-VALUES ('', '', '', '');
-
 -- name: SelectIntentByTxid :one
 SELECT id, txid, proof, message FROM intent
 WHERE txid = @txid;
+
+-- Marker queries
+
+-- name: UpsertMarker :exec
+INSERT INTO marker (id, depth, parent_markers)
+VALUES (@id, @depth, @parent_markers)
+ON CONFLICT(id) DO UPDATE SET
+    depth = EXCLUDED.depth,
+    parent_markers = EXCLUDED.parent_markers;
+
+-- name: SelectMarker :one
+SELECT * FROM marker WHERE id = @id;
+
+-- name: SelectMarkersByDepthRange :many
+SELECT * FROM marker WHERE depth >= @min_depth AND depth <= @max_depth ORDER BY depth;
+
+-- name: SelectMarkersByIds :many
+SELECT * FROM marker WHERE id IN (sqlc.slice('ids'));
+
+-- name: InsertSweptMarker :exec
+INSERT INTO swept_marker (marker_id, swept_at)
+VALUES (@marker_id, @swept_at)
+ON CONFLICT(marker_id) DO NOTHING;
+
+
+-- name: SelectSweptMarkersByIds :many
+SELECT * FROM swept_marker WHERE marker_id IN (sqlc.slice('marker_ids'));
+
+-- name: IsMarkerSwept :one
+SELECT EXISTS(SELECT 1 FROM swept_marker WHERE marker_id = @marker_id) AS is_swept;
+
+-- name: UpdateVtxoMarkers :exec
+UPDATE vtxo SET markers = @markers WHERE txid = @txid AND vout = @vout;
+
+-- name: SelectVtxosByMarkerId :many
+-- Find VTXOs whose markers JSON array contains the given marker_id.
+-- Uses LIKE because sqlc cannot parse json_each with view columns.
+-- Safe for txid:vout format marker IDs (no special characters).
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE markers LIKE '%"' || @marker_id || '"%';
+
+-- Chain traversal queries for GetVtxoChain optimization
+
+-- name: SelectVtxosByDepthRange :many
+-- Get all VTXOs within a depth range, useful for filling gaps between markers
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
+WHERE depth >= @min_depth AND depth <= @max_depth
+ORDER BY depth DESC;
+
+-- name: SelectVtxosByArkTxid :many
+-- Get all VTXOs created by a specific ark tx (offchain tx)
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE ark_txid = @ark_txid;
+
+-- name: SelectVtxoChainByMarker :many
+-- Get VTXOs whose markers array contains the given marker_id.
+-- For multiple markers, call this multiple times and deduplicate in Go.
+-- Uses LIKE because sqlc cannot parse json_each with view columns.
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
+WHERE markers LIKE '%"' || @marker_id || '"%'
+ORDER BY vtxo_vw.depth DESC;
 
 -- name: InsertAsset :exec
 INSERT INTO asset (id, is_immutable, metadata_hash, metadata, control_asset_id)
@@ -467,11 +525,25 @@ VALUES (@id, @is_immutable, @metadata_hash, @metadata, @control_asset_id);
 INSERT INTO asset_projection (asset_id, txid, vout, amount)
 VALUES (@asset_id, @txid, @vout, @amount);
 
--- name: UpdateRoundCollectedFees :exec
-UPDATE round SET fees = sqlc.arg('fees') WHERE id = sqlc.arg('id');
 
 -- name: SelectAssetsByIds :many
 SELECT * FROM asset WHERE asset.id IN (sqlc.slice('ids'));
+
+-- name: SelectAssetsWithUnspentAmountsByIds :many
+SELECT
+  a.id,
+  a.is_immutable,
+  a.metadata_hash,
+  a.metadata,
+  a.control_asset_id,
+  COALESCE(v.asset_amount, '0') AS asset_amount
+FROM asset a
+LEFT JOIN vtxo_vw v
+  ON v.asset_id = a.id
+ AND v.spent = false
+ AND v.asset_amount > 0
+WHERE a.id IN (sqlc.slice('ids'))
+ORDER BY a.id;
 
 -- name: SelectAssetAmounts :many
 SELECT v.asset_amount FROM vtxo_vw v
@@ -482,3 +554,141 @@ SELECT control_asset_id FROM asset WHERE id = ?;
 
 -- name: SelectAssetExists :one
 SELECT 1 FROM asset WHERE id = ? LIMIT 1;
+
+-- name: InsertSweptVtxo :exec
+INSERT OR IGNORE INTO swept_vtxo (txid, vout, swept_at)
+VALUES (?, ?, ?);
+
+-- name: UpsertSettings :exec
+INSERT INTO settings (
+    id,
+    session_duration, unrolled_vtxo_min_expiry_margin,
+    ban_threshold, ban_duration,
+    unilateral_exit_delay, public_unilateral_exit_delay,
+    checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry,
+    round_min_participants_count, round_max_participants_count,
+    vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount,
+    settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date,
+    max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio,
+    note_uri_prefix,
+    scheduled_session_start_time, scheduled_session_end_time,
+    scheduled_session_period, scheduled_session_duration,
+    scheduled_session_round_min_participants_count,
+    scheduled_session_round_max_participants_count,
+    batch_onchain_input_fee, batch_offchain_input_fee,
+    batch_onchain_output_fee, batch_offchain_output_fee,
+    build_version_header, build_version_header_required,digest_header_required,
+    batch_trigger,
+    updated_at
+) VALUES (
+    1,
+    @session_duration, @unrolled_vtxo_min_expiry_margin,
+    @ban_threshold, @ban_duration,
+    @unilateral_exit_delay, @public_unilateral_exit_delay,
+    @checkpoint_exit_delay, @boarding_exit_delay, @vtxo_tree_expiry,
+    @round_min_participants_count, @round_max_participants_count,
+    @vtxo_min_amount, @vtxo_max_amount, @utxo_min_amount, @utxo_max_amount,
+    @settlement_min_expiry_gap, @vtxo_no_csv_validation_cutoff_date,
+    @max_tx_weight, @max_op_return_outputs, @asset_tx_max_weight_ratio,
+    @note_uri_prefix,
+    @scheduled_session_start_time, @scheduled_session_end_time,
+    @scheduled_session_period, @scheduled_session_duration,
+    @scheduled_session_round_min_participants_count,
+    @scheduled_session_round_max_participants_count,
+    @batch_onchain_input_fee, @batch_offchain_input_fee,
+    @batch_onchain_output_fee, @batch_offchain_output_fee,
+    @build_version_header, @build_version_header_required, @digest_header_required,
+    @batch_trigger,
+    @updated_at
+)
+ON CONFLICT(id) DO UPDATE SET
+    session_duration = EXCLUDED.session_duration,
+    unrolled_vtxo_min_expiry_margin = EXCLUDED.unrolled_vtxo_min_expiry_margin,
+    ban_threshold = EXCLUDED.ban_threshold,
+    ban_duration = EXCLUDED.ban_duration,
+    unilateral_exit_delay = EXCLUDED.unilateral_exit_delay,
+    public_unilateral_exit_delay = EXCLUDED.public_unilateral_exit_delay,
+    checkpoint_exit_delay = EXCLUDED.checkpoint_exit_delay,
+    boarding_exit_delay = EXCLUDED.boarding_exit_delay,
+    vtxo_tree_expiry = EXCLUDED.vtxo_tree_expiry,
+    round_min_participants_count = EXCLUDED.round_min_participants_count,
+    round_max_participants_count = EXCLUDED.round_max_participants_count,
+    vtxo_min_amount = EXCLUDED.vtxo_min_amount,
+    vtxo_max_amount = EXCLUDED.vtxo_max_amount,
+    utxo_min_amount = EXCLUDED.utxo_min_amount,
+    utxo_max_amount = EXCLUDED.utxo_max_amount,
+    settlement_min_expiry_gap = EXCLUDED.settlement_min_expiry_gap,
+    vtxo_no_csv_validation_cutoff_date = EXCLUDED.vtxo_no_csv_validation_cutoff_date,
+    max_tx_weight = EXCLUDED.max_tx_weight,
+    max_op_return_outputs = EXCLUDED.max_op_return_outputs,
+    asset_tx_max_weight_ratio = EXCLUDED.asset_tx_max_weight_ratio,
+    note_uri_prefix = EXCLUDED.note_uri_prefix,
+    scheduled_session_start_time = EXCLUDED.scheduled_session_start_time,
+    scheduled_session_end_time = EXCLUDED.scheduled_session_end_time,
+    scheduled_session_period = EXCLUDED.scheduled_session_period,
+    scheduled_session_duration = EXCLUDED.scheduled_session_duration,
+    scheduled_session_round_min_participants_count =
+        EXCLUDED.scheduled_session_round_min_participants_count,
+    scheduled_session_round_max_participants_count =
+        EXCLUDED.scheduled_session_round_max_participants_count,
+    batch_onchain_input_fee = EXCLUDED.batch_onchain_input_fee,
+    batch_offchain_input_fee = EXCLUDED.batch_offchain_input_fee,
+    batch_onchain_output_fee = EXCLUDED.batch_onchain_output_fee,
+    batch_offchain_output_fee = EXCLUDED.batch_offchain_output_fee,
+    build_version_header = EXCLUDED.build_version_header,
+    build_version_header_required = EXCLUDED.build_version_header_required,
+    digest_header_required = EXCLUDED.digest_header_required,
+    batch_trigger = EXCLUDED.batch_trigger,
+    updated_at = EXCLUDED.updated_at;
+
+-- name: SelectSettings :one
+SELECT * FROM settings WHERE id = 1;
+
+-- Collected fees for the admin API. One indexed aggregate replaces loading
+-- every round in the window in full.
+-- name: SelectCollectedFeesInRange :one
+SELECT
+    CAST(COALESCE(SUM(fees), 0) AS BIGINT) AS total
+FROM round
+WHERE ended = true AND failed = false
+  AND (@start_ts = 0 OR starting_timestamp > @start_ts)
+  AND (@end_ts = 0 OR starting_timestamp < @end_ts);
+
+
+-- Scheduled sweeps for the admin API. The due time is a plain column
+-- expression (same as SelectExpiredRounds), so this needs no chain access at
+-- all -- unlike findSweepableOutputs, which the sweeper itself still uses
+-- because it builds a real transaction.
+-- The aggregates are correlated subqueries against the already-limited CTE, so
+-- the limit bounds how many of them get computed.
+-- name: SelectScheduledSweeps :many
+WITH due AS (
+    SELECT r.id, r.txid,
+           CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS sweep_at
+    FROM round_with_commitment_tx_vw r
+    WHERE r.swept = false AND r.ended = true AND r.failed = false
+    AND EXISTS (
+        SELECT 1 FROM tx tree_tx
+        WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
+    )
+    AND EXISTS (
+        SELECT 1 FROM vtxo_vw v
+        WHERE v.commitment_txid = r.txid
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false AND v.unrolled = false
+    )
+    ORDER BY sweep_at ASC
+    LIMIT (CASE WHEN @max_results = 0 THEN -1 ELSE @max_results END)
+)
+SELECT d.id, d.txid, d.sweep_at,
+    CAST(COALESCE((
+        SELECT SUM(v.amount) FROM vtxo_vw v
+        WHERE v.commitment_txid = d.txid
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false AND v.unrolled = false
+    ), 0) AS BIGINT) AS total_amount,
+    CAST((
+        SELECT COUNT(*) FROM vtxo_vw v
+        WHERE v.commitment_txid = d.txid
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false AND v.unrolled = false
+    ) AS BIGINT) AS vtxo_count
+FROM due d
+ORDER BY d.sweep_at ASC;

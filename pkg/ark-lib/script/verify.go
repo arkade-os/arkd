@@ -9,9 +9,9 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 type VerifyTapscriptOption func(*verifyTapscriptOptions)
@@ -82,9 +82,11 @@ func VerifyTapscriptSigs(
 			)
 		}
 
-		// skip if not a taproot input
+		// a tapscript spend is possible only if the prevout is a taproot script
 		if txscript.GetScriptClass(prevout.PkScript) != txscript.WitnessV1TaprootTy {
-			continue
+			return nil, fmt.Errorf(
+				"input %d has a taproot leaf script but a non-taproot prevout", inputIndex,
+			)
 		}
 
 		tapscriptLeaf := input.TaprootLeafScript[0]
@@ -115,15 +117,12 @@ func VerifyTapscriptSigs(
 				expectedSigners[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
 		case *ConditionMultisigClosure:
-			witnessFields, err := txutils.GetArkPsbtFields(
-				tx, inputIndex, txutils.ConditionWitnessField,
-			)
+			witness, err := txutils.GetArkPsbtConditionWitness(tx, inputIndex)
 			if err != nil {
 				return nil, err
 			}
-			witness := make(wire.TxWitness, 0)
-			if len(witnessFields) > 0 {
-				witness = witnessFields[0]
+			if witness == nil {
+				witness = make(wire.TxWitness, 0)
 			}
 
 			if err := executeConditionScript(inputIndex, tx, prevoutFetcher, c.Condition, witness); err != nil {
@@ -135,15 +134,12 @@ func VerifyTapscriptSigs(
 				expectedSigners[hex.EncodeToString(schnorr.SerializePubKey(key))] = false
 			}
 		case *ConditionCSVMultisigClosure:
-			witnessFields, err := txutils.GetArkPsbtFields(
-				tx, inputIndex, txutils.ConditionWitnessField,
-			)
+			witness, err := txutils.GetArkPsbtConditionWitness(tx, inputIndex)
 			if err != nil {
 				return nil, err
 			}
-			witness := make(wire.TxWitness, 0)
-			if len(witnessFields) > 0 {
-				witness = witnessFields[0]
+			if witness == nil {
+				witness = make(wire.TxWitness, 0)
 			}
 
 			if err := executeConditionScript(inputIndex, tx, prevoutFetcher, c.Condition, witness); err != nil {

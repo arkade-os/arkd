@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 type FeeManager interface {
@@ -13,5 +13,5 @@ type FeeManager interface {
 		boardingInputs []wire.TxOut, vtxoInputs []domain.Vtxo,
 		onchainOutputs, offchainOutputs []wire.TxOut,
 	) (int64, error)
-	Validate(fees domain.IntentFees) error
+	Validate(fees domain.BatchFees) error
 }

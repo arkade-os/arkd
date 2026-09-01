@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 const (
@@ -19,6 +19,10 @@ const (
 	// SECONDS_PER_BLOCK is used to convert block-based locktimes to seconds.
 	// The value of 1 sec/block is used so that number of blocks refers to number of seconds.
 	SECONDS_PER_BLOCK = 1
+
+	// MinAllowedSequence is the discriminat above which all relative locktime values are
+	// considered in seconds, otherwise they are considered in blocks
+	MinAllowedSequence = 512
 
 	// before this value, nLocktime is interpreted as blockheight
 	nLocktimeMinSeconds = 500_000_000
@@ -93,10 +97,6 @@ func BIP68DecodeSequenceFromBytes(sequence []byte) (*RelativeLocktime, error) {
 		return nil, err
 	}
 
-	if scriptNumber >= txscript.OP_1 && scriptNumber <= txscript.OP_16 {
-		scriptNumber = scriptNumber - (txscript.OP_1 - 1)
-	}
-
 	asNumber := int64(scriptNumber)
 
 	if asNumber&SEQUENCE_LOCKTIME_DISABLE_FLAG != 0 {
@@ -107,7 +107,10 @@ func BIP68DecodeSequenceFromBytes(sequence []byte) (*RelativeLocktime, error) {
 		return &RelativeLocktime{Type: LocktimeTypeSecond, Value: uint32(seconds)}, nil
 	}
 
-	return &RelativeLocktime{Type: LocktimeTypeBlock, Value: uint32(asNumber)}, nil
+	return &RelativeLocktime{
+		Type:  LocktimeTypeBlock,
+		Value: uint32(asNumber & SEQUENCE_LOCKTIME_MASK),
+	}, nil
 }
 
 func BIP68DecodeSequence(sequenceNum uint32) (*RelativeLocktime, bool) {
@@ -128,4 +131,18 @@ func BIP68DecodeSequence(sequenceNum uint32) (*RelativeLocktime, bool) {
 			Value: uint32(relativeLock),
 		}, false
 	}
+}
+
+func ParseRelativeLocktime(value uint32) (RelativeLocktime, bool) {
+	if value < MinAllowedSequence {
+		return RelativeLocktime{Type: LocktimeTypeBlock, Value: value}, false
+	}
+
+	modified := false
+	val := value
+	if d := val % MinAllowedSequence; d != 0 {
+		val -= d
+		modified = true
+	}
+	return RelativeLocktime{Type: LocktimeTypeSecond, Value: val}, modified
 }

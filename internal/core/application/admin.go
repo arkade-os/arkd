@@ -4,7 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"strings"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -13,31 +14,42 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/wire"
 	log "github.com/sirupsen/logrus"
 )
 
+const maxSweepInputs = 1000
+
 type AdminService interface {
 	Wallet() ports.WalletService
-	GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep, error)
+	GetScheduledSweeps(ctx context.Context, limit int64) ([]domain.ScheduledSweep, error)
+	// GetRoundDetails accepts either a batch id or a commitment txid.
 	GetRoundDetails(ctx context.Context, roundId string) (*RoundDetails, error)
+	// GetRoundIntents returns the intents registered in a batch as they were persisted,
+	// so they can be inspected even if the batch failed. It accepts either a batch id or
+	// a commitment txid.
+	GetRoundIntents(ctx context.Context, roundId string) ([]IntentInfo, error)
 	GetRounds(
-		ctx context.Context, after, before int64, withFailed, withCompleted bool,
-	) ([]string, error)
+		ctx context.Context, after, before int64, withFailed, withCompleted, onlyFailed bool,
+		limit int64,
+	) ([]domain.RoundSummary, error)
+	GetOffchainTxs(
+		ctx context.Context, after, before int64, onlyFailed, onlyCompleted bool, limit int64,
+	) ([]*domain.OffchainTx, error)
+	GetOffchainTxDetails(ctx context.Context, txid string) (*domain.OffchainTx, error)
+	GetFeeRate(ctx context.Context) (uint64, error)
+	GetExpiredRounds(ctx context.Context) ([]domain.ExpiredRound, error)
 	GetWalletAddress(ctx context.Context) (string, error)
 	GetWalletStatus(ctx context.Context) (*WalletStatus, error)
+	GetMainAccountUtxos(ctx context.Context) ([]ports.WalletUtxo, error)
 	CreateNotes(ctx context.Context, amount uint32, quantity int) ([]string, error)
-	GetScheduledSessionConfig(ctx context.Context) (*domain.ScheduledSession, error)
-	UpdateScheduledSessionConfig(
-		ctx context.Context, scheduledSessionStartTime, scheduledSessionEndTime time.Time,
-		period, duration time.Duration, roundMinParticipantsCount, roundMaxParticipantsCount int64,
-	) error
-	ClearScheduledSessionConfig(ctx context.Context) error
+	GetScheduledSession(ctx context.Context) (*domain.ScheduledSession, error)
+	UpdateScheduledSession(ctx context.Context, updates domain.ScheduledSessionUpdate) error
+	ClearScheduledSession(ctx context.Context) error
 	ListIntents(ctx context.Context, intentIds ...string) ([]IntentInfo, error)
 	DeleteIntents(ctx context.Context, intentIds ...string) error
-	GetIntentFees(ctx context.Context) (*domain.IntentFees, error)
-	UpdateIntentFees(ctx context.Context, fees domain.IntentFees) error
-	ClearIntentFees(ctx context.Context) error
+	GetBatchFees(ctx context.Context) (*domain.BatchFees, error)
+	UpdateBatchFees(ctx context.Context, updates domain.BatchFeesUpdate) error
+	ClearBatchFees(ctx context.Context) error
 	GetConvictionsByIds(ctx context.Context, ids []string) ([]domain.Conviction, error)
 	GetConvictions(ctx context.Context, from, to time.Time) ([]domain.Conviction, error)
 	GetConvictionsByRound(ctx context.Context, roundID string) ([]domain.Conviction, error)
@@ -51,6 +63,8 @@ type AdminService interface {
 	) (string, string, error)
 	GetExpiringLiquidity(ctx context.Context, after, before int64) (uint64, error)
 	GetRecoverableLiquidity(ctx context.Context) (uint64, error)
+	GetSettings(ctx context.Context) (*domain.Settings, error)
+	UpdateSettings(ctx context.Context, settings domain.SettingsUpdate) ([]string, error)
 	GetCollectedFees(ctx context.Context, after, before int64) (uint64, error)
 }
 
@@ -61,29 +75,23 @@ type adminService struct {
 	sweeperTimeUnit ports.TimeUnit
 	liveStore       ports.LiveStore
 	feeManager      ports.FeeManager
-
-	roundMinParticipantsCount int64
-	roundMaxParticipantsCount int64
-
-	onInfoChange func()
+	// settingsMu serializes the read-modify-write cycles against the singleton
+	// settings row (UpdateSettings and the scheduled-session/batch-fees mutators)
+	// so concurrent admin calls can't lose each other's updates.
+	settingsMu sync.Mutex
 }
 
 func NewAdminService(
 	walletSvc ports.WalletService, repoManager ports.RepoManager, txBuilder ports.TxBuilder,
 	liveStoreSvc ports.LiveStore, timeUnit ports.TimeUnit, feeManager ports.FeeManager,
-	roundMinParticipantsCount, roundMaxParticipantsCount int64,
-	onInfoChange func(),
 ) AdminService {
 	return &adminService{
-		walletSvc:                 walletSvc,
-		repoManager:               repoManager,
-		txBuilder:                 txBuilder,
-		sweeperTimeUnit:           timeUnit,
-		liveStore:                 liveStoreSvc,
-		feeManager:                feeManager,
-		roundMinParticipantsCount: roundMinParticipantsCount,
-		roundMaxParticipantsCount: roundMaxParticipantsCount,
-		onInfoChange:              onInfoChange,
+		walletSvc:       walletSvc,
+		repoManager:     repoManager,
+		txBuilder:       txBuilder,
+		sweeperTimeUnit: timeUnit,
+		liveStore:       liveStoreSvc,
+		feeManager:      feeManager,
 	}
 }
 
@@ -91,10 +99,14 @@ func (a *adminService) Wallet() ports.WalletService {
 	return a.walletSvc
 }
 
+func (a *adminService) GetMainAccountUtxos(ctx context.Context) ([]ports.WalletUtxo, error) {
+	return a.walletSvc.GetMainAccountUtxos(ctx)
+}
+
 func (a *adminService) GetRoundDetails(
 	ctx context.Context, roundId string,
 ) (*RoundDetails, error) {
-	round, err := a.repoManager.Rounds().GetRoundWithId(ctx, roundId)
+	round, err := a.getRound(ctx, roundId)
 	if err != nil {
 		return nil, err
 	}
@@ -131,8 +143,7 @@ func (a *adminService) GetRoundDetails(
 	}
 
 	return &RoundDetails{
-		RoundId:          round.Id,
-		TxId:             round.CommitmentTxid,
+		RoundSummary:     roundSummary(round),
 		ForfeitedAmount:  totalForfeitAmount,
 		TotalVtxosAmount: totalVtxosAmount,
 		TotalExitAmount:  totalExitAmount,
@@ -140,34 +151,159 @@ func (a *adminService) GetRoundDetails(
 		FeesAmount:       round.CollectedFees,
 		InputVtxos:       inputVtxos,
 		OutputVtxos:      outputVtxos,
-		StartedAt:        round.StartingTimestamp,
-		EndedAt:          round.EndingTimestamp,
 	}, nil
 }
 
-func (a *adminService) GetRounds(
-	ctx context.Context, after, before int64, withFailed, withCompleted bool,
-) ([]string, error) {
-	return a.repoManager.Rounds().GetRoundIds(ctx, after, before, withFailed, withCompleted)
-}
-
-func (a *adminService) GetScheduledSweeps(ctx context.Context) ([]ScheduledSweep, error) {
-	sweepableRounds, err := a.repoManager.Rounds().GetSweepableRounds(ctx)
+func (a *adminService) GetRoundIntents(
+	ctx context.Context, roundId string,
+) ([]IntentInfo, error) {
+	round, err := a.getRound(ctx, roundId)
 	if err != nil {
 		return nil, err
 	}
 
-	scheduledSweeps := make([]ScheduledSweep, 0, len(sweepableRounds))
-	for _, commitmentTxid := range sweepableRounds {
-		scheduledSweep, err := a.getScheduledSweep(ctx, commitmentTxid)
+	intentsInfo := make([]IntentInfo, 0, len(round.Intents))
+	for _, intent := range round.Intents {
+		receivers, err := receiversInfo(intent.Receivers)
 		if err != nil {
-			log.WithError(err).Errorf("failed to get scheduled sweep for round %s", commitmentTxid)
-			continue
+			return nil, err
 		}
-		scheduledSweeps = append(scheduledSweeps, *scheduledSweep)
+
+		// Boarding inputs and cosigner pubkeys are not persisted with the intent, they
+		// only live in the intent queue, so they are left empty here.
+		intentsInfo = append(intentsInfo, IntentInfo{
+			Id:        intent.Id,
+			Receivers: receivers,
+			Inputs:    intent.Inputs,
+			Proof:     intent.Proof,
+			Message:   intent.Message,
+		})
 	}
 
-	return scheduledSweeps, nil
+	return intentsInfo, nil
+}
+
+// GetRounds lists batches. Filtering, ordering and the limit are pushed into the
+// repository query, so a wide window costs one round trip rather than loading
+// every round in the range.
+func (a *adminService) GetRounds(
+	ctx context.Context, after, before int64, withFailed, withCompleted, onlyFailed bool,
+	limit int64,
+) ([]domain.RoundSummary, error) {
+	return a.repoManager.Rounds().GetRoundSummaries(
+		ctx, after, before, withFailed, withCompleted, onlyFailed, limit,
+	)
+}
+
+func (a *adminService) GetOffchainTxs(
+	ctx context.Context, after, before int64, onlyFailed, onlyCompleted bool, limit int64,
+) ([]*domain.OffchainTx, error) {
+	txs, err := a.repoManager.OffchainTxs().GetOffchainTxsInRange(
+		ctx, after, before, onlyFailed, onlyCompleted, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Slice(txs, func(i, j int) bool {
+		return txs[i].StartingTimestamp > txs[j].StartingTimestamp
+	})
+
+	return txs, nil
+}
+
+func (a *adminService) GetOffchainTxDetails(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	return a.repoManager.OffchainTxs().GetAnyOffchainTx(ctx, txid)
+}
+
+func (a *adminService) GetFeeRate(ctx context.Context) (uint64, error) {
+	return a.walletSvc.FeeRate(ctx)
+}
+
+// getRound loads a batch by its id, or by its commitment txid if the given value looks
+// like one. Batch ids are uuids, so the two can never be confused.
+func (a *adminService) getRound(ctx context.Context, id string) (*domain.Round, error) {
+	if isTxid(id) {
+		return a.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, id)
+	}
+	return a.repoManager.Rounds().GetRoundWithId(ctx, id)
+}
+
+func isTxid(id string) bool {
+	if len(id) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(id)
+	return err == nil
+}
+
+// receiversInfo turns the receivers of an intent into their inspectable form, encoding
+// the offchain ones as vtxo scripts.
+func receiversInfo(list []domain.Receiver) ([]Receiver, error) {
+	receivers := make([]Receiver, 0, len(list))
+	for _, receiver := range list {
+		if len(receiver.OnchainAddress) > 0 {
+			receivers = append(receivers, Receiver{
+				OnchainAddress: receiver.OnchainAddress,
+				Amount:         receiver.Amount,
+			})
+			continue
+		}
+
+		pubkey, err := hex.DecodeString(receiver.PubKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode pubkey: %s", err)
+		}
+
+		vtxoTapKey, err := schnorr.ParsePubKey(pubkey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse pubkey: %s", err)
+		}
+
+		outScript, err := script.P2TRScript(vtxoTapKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode vtxo script: %s", err)
+		}
+
+		receivers = append(receivers, Receiver{
+			VtxoScript: hex.EncodeToString(outScript),
+			Amount:     receiver.Amount,
+		})
+	}
+	return receivers, nil
+}
+
+func roundSummary(round *domain.Round) domain.RoundSummary {
+	return domain.RoundSummary{
+		RoundId:        round.Id,
+		CommitmentTxid: round.CommitmentTxid,
+		StartedAt:      round.StartingTimestamp,
+		EndedAt:        round.EndingTimestamp,
+		Stage:          domain.RoundStage(round.Stage.Code).String(),
+		Ended:          round.IsEnded(),
+		Failed:         round.IsFailed(),
+		Swept:          round.Swept,
+		FailReason:     round.FailReason,
+		TotalIntents:   int64(len(round.Intents)),
+	}
+}
+
+// GetScheduledSweeps lists the batches awaiting a sweep, soonest due first.
+func (a *adminService) GetScheduledSweeps(
+	ctx context.Context, limit int64,
+) ([]domain.ScheduledSweep, error) {
+	return a.repoManager.Rounds().GetScheduledSweeps(ctx, limit)
+}
+
+// GetExpiredRounds returns the sweepable rounds (those with a vtxo tree) whose
+// batch outputs have already expired but have not been swept yet. These are
+// rounds for which the sweep should have happened but likely failed.
+func (a *adminService) GetExpiredRounds(
+	ctx context.Context,
+) ([]domain.ExpiredRound, error) {
+	return a.repoManager.Rounds().GetExpiredRounds(ctx, time.Now().Unix())
 }
 
 func (a *adminService) GetWalletAddress(ctx context.Context) (string, error) {
@@ -233,98 +369,56 @@ func (a *adminService) CreateNotes(
 	return notes, nil
 }
 
-func (s *adminService) GetScheduledSessionConfig(
+func (s *adminService) GetScheduledSession(
 	ctx context.Context,
 ) (*domain.ScheduledSession, error) {
-	return s.repoManager.ScheduledSession().Get(ctx)
+	settings, err := s.repoManager.Settings().Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if settings == nil {
+		return nil, fmt.Errorf("settings not found")
+	}
+	return settings.ScheduledSession, nil
 }
 
-func (s *adminService) UpdateScheduledSessionConfig(
-	ctx context.Context,
-	scheduledSessionStartTime, scheduledSessionEndTime time.Time, period, duration time.Duration,
-	roundMinParticipantsCount, roundMaxParticipantsCount int64,
+func (s *adminService) UpdateScheduledSession(
+	ctx context.Context, updates domain.ScheduledSessionUpdate,
 ) error {
-	startTimeSet := !scheduledSessionStartTime.IsZero()
-	endTimeSet := !scheduledSessionEndTime.IsZero()
-	if startTimeSet != endTimeSet {
-		return fmt.Errorf("scheduled session start time and end time must be set together")
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+
+	settings, err := s.repoManager.Settings().Get(ctx)
+	if err != nil {
+		return err
+	}
+	if settings == nil {
+		return fmt.Errorf("settings not found")
 	}
 
-	scheduledSession, err := s.repoManager.ScheduledSession().Get(ctx)
+	changelog, err := settings.UpdateScheduledSession(updates)
 	if err != nil {
 		return err
 	}
 
-	if scheduledSession == nil {
-		if scheduledSessionStartTime.IsZero() {
-			return fmt.Errorf("missing scheduled session start time")
-		}
-		if scheduledSessionEndTime.IsZero() {
-			return fmt.Errorf("missing scheduled session end time")
-		}
-		if period <= 0 {
-			return fmt.Errorf("missing scheduled session period")
-		}
-		if duration <= 0 {
-			return fmt.Errorf("missing scheduled session duration")
-		}
-		if roundMinParticipantsCount <= 0 {
-			roundMinParticipantsCount = s.roundMinParticipantsCount
-		}
-		if roundMaxParticipantsCount <= 0 {
-			roundMaxParticipantsCount = s.roundMaxParticipantsCount
-		}
-	}
-
-	now := time.Now()
-	if scheduledSessionStartTime.IsZero() {
-		scheduledSessionStartTime = scheduledSession.StartTime
-	} else if !scheduledSessionStartTime.After(now) {
-		return fmt.Errorf("scheduled session start time must be in the future")
-	}
-
-	if scheduledSessionEndTime.IsZero() {
-		scheduledSessionEndTime = scheduledSession.EndTime
-	} else if !scheduledSessionEndTime.After(scheduledSessionStartTime) {
-		return fmt.Errorf("scheduled session end time must be after start time")
-	}
-	if period <= 0 {
-		period = scheduledSession.Period
-	}
-	if duration <= 0 {
-		duration = scheduledSession.Duration
-	}
-	if roundMinParticipantsCount <= 0 {
-		roundMinParticipantsCount = scheduledSession.RoundMinParticipantsCount
-	}
-	if roundMaxParticipantsCount <= 0 {
-		roundMaxParticipantsCount = scheduledSession.RoundMaxParticipantsCount
-	}
-	if roundMaxParticipantsCount < roundMinParticipantsCount {
-		return fmt.Errorf(
-			"got round max participants %d, expected at least %d",
-			roundMaxParticipantsCount, roundMinParticipantsCount,
-		)
-	}
-
-	mh := domain.NewScheduledSession(
-		scheduledSessionStartTime, scheduledSessionEndTime, period, duration,
-		roundMinParticipantsCount, roundMaxParticipantsCount,
-	)
-	if err := s.repoManager.ScheduledSession().Upsert(ctx, *mh); err != nil {
-		return fmt.Errorf("failed to upsert scheduled session: %w", err)
-	}
-
-	s.onInfoChange()
-	return nil
+	return s.repoManager.Settings().Upsert(ctx, *settings, changelog)
 }
 
-func (s *adminService) ClearScheduledSessionConfig(ctx context.Context) error {
-	if err := s.repoManager.ScheduledSession().Clear(ctx); err != nil {
+func (s *adminService) ClearScheduledSession(ctx context.Context) error {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+
+	settings, err := s.repoManager.Settings().Get(ctx)
+	if err != nil {
 		return err
 	}
-	s.onInfoChange()
-	return nil
+	if settings == nil {
+		return fmt.Errorf("settings not found")
+	}
+
+	changelog := settings.ClearScheduledSession()
+
+	return s.repoManager.Settings().Upsert(ctx, *settings, changelog)
 }
 
 func (s *adminService) ListIntents(
@@ -337,35 +431,9 @@ func (s *adminService) ListIntents(
 
 	intentsInfo := make([]IntentInfo, 0, len(intents))
 	for _, intent := range intents {
-		receivers := make([]Receiver, 0, len(intent.Receivers))
-		for _, receiver := range intent.Receivers {
-			if len(receiver.OnchainAddress) > 0 {
-				receivers = append(receivers, Receiver{
-					OnchainAddress: receiver.OnchainAddress,
-					Amount:         receiver.Amount,
-				})
-				continue
-			}
-
-			pubkey, err := hex.DecodeString(receiver.PubKey)
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode pubkey: %s", err)
-			}
-
-			vtxoTapKey, err := schnorr.ParsePubKey(pubkey)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse pubkey: %s", err)
-			}
-
-			outScript, err := script.P2TRScript(vtxoTapKey)
-			if err != nil {
-				return nil, fmt.Errorf("failed to encode vtxo script: %s", err)
-			}
-
-			receivers = append(receivers, Receiver{
-				VtxoScript: hex.EncodeToString(outScript),
-				Amount:     receiver.Amount,
-			})
+		receivers, err := receiversInfo(intent.Receivers)
+		if err != nil {
+			return nil, err
 		}
 
 		intentsInfo = append(intentsInfo, IntentInfo{
@@ -390,34 +458,53 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 	return s.liveStore.Intents().Delete(ctx, intentIds)
 }
 
-func (s *adminService) GetIntentFees(
-	ctx context.Context,
-) (*domain.IntentFees, error) {
-	return s.repoManager.Fees().GetIntentFees(ctx)
+func (s *adminService) GetBatchFees(ctx context.Context) (*domain.BatchFees, error) {
+	settings, err := s.repoManager.Settings().Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if settings == nil {
+		return nil, fmt.Errorf("settings not found")
+	}
+	return &settings.BatchFees, nil
 }
 
-func (s *adminService) UpdateIntentFees(
-	ctx context.Context,
-	fees domain.IntentFees,
-) error {
-	// validate the programs for set fields
-	if err := s.feeManager.Validate(fees); err != nil {
+func (s *adminService) UpdateBatchFees(ctx context.Context, updates domain.BatchFeesUpdate) error {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+
+	settings, err := s.repoManager.Settings().Get(ctx)
+	if err != nil {
 		return err
 	}
-	if err := s.repoManager.Fees().UpdateIntentFees(ctx, fees); err != nil {
+	if settings == nil {
+		return fmt.Errorf("settings not found")
+	}
+
+	changelog, err := settings.UpdateBatchFees(updates)
+	if err != nil {
 		return err
 	}
-	s.onInfoChange()
-	return nil
+
+	return s.repoManager.Settings().Upsert(ctx, *settings, changelog)
 }
 
 // Zeroes out fees
-func (s *adminService) ClearIntentFees(ctx context.Context) error {
-	if err := s.repoManager.Fees().ClearIntentFees(ctx); err != nil {
+func (s *adminService) ClearBatchFees(ctx context.Context) error {
+	s.settingsMu.Lock()
+	defer s.settingsMu.Unlock()
+
+	settings, err := s.repoManager.Settings().Get(ctx)
+	if err != nil {
 		return err
 	}
-	s.onInfoChange()
-	return nil
+	if settings == nil {
+		return fmt.Errorf("settings not found")
+	}
+
+	changelog := settings.ClearBatchFees()
+
+	return s.repoManager.Settings().Upsert(ctx, *settings, changelog)
 }
 
 // Conviction management methods
@@ -479,6 +566,9 @@ func (a *adminService) Sweep(
 ) (txid string, txhex string, err error) {
 	inputs := make([]ports.TxInput, 0)
 	connectorsToLock := make([]domain.Outpoint, 0)
+	// truncated is set when the maxSweepInputs cap is reached while sweepable
+	// outputs remain; those are left for a subsequent sweep call.
+	truncated := false
 
 	if withConnectors {
 		connectorAddresses, err := a.repoManager.Rounds().GetSweptRoundsConnectorAddress(ctx)
@@ -486,23 +576,22 @@ func (a *adminService) Sweep(
 			return "", "", err
 		}
 
-		connectorUtxos := make([]ports.TxInput, 0)
-		for _, connectorAddress := range connectorAddresses {
-			utxos, err := a.walletSvc.ListConnectorUtxos(ctx, connectorAddress)
-			if err != nil {
-				return "", "", err
-			}
-			connectorUtxos = append(connectorUtxos, utxos...)
+		connectorUtxos, err := a.walletSvc.ListConnectorUtxos(ctx, connectorAddresses)
+		if err != nil {
+			return "", "", err
 		}
 
 		for _, utxo := range connectorUtxos {
+			if len(inputs) >= maxSweepInputs {
+				truncated = true
+				break
+			}
 			connectorsToLock = append(connectorsToLock, domain.Outpoint{
 				Txid: utxo.Txid,
 				VOut: utxo.Index,
 			})
+			inputs = append(inputs, utxo)
 		}
-
-		inputs = append(inputs, connectorUtxos...)
 	}
 
 	now := time.Now()
@@ -515,6 +604,11 @@ func (a *adminService) Sweep(
 
 	// for each commitment txid, find the sweepable outputs and add them to the inputs
 	for _, commitmentTxid := range commitmentTxids {
+		if len(inputs) >= maxSweepInputs {
+			truncated = true
+			break
+		}
+
 		// Get the round first (contains VtxoTree)
 		round, err := a.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
 		if err != nil {
@@ -558,8 +652,18 @@ func (a *adminService) Sweep(
 				continue
 			}
 
-			batchInputsList = append(batchInputsList, batchOutputs...)
-			inputs = append(inputs, batchOutputs...)
+			for _, batchOutput := range batchOutputs {
+				if len(inputs) >= maxSweepInputs {
+					truncated = true
+					break
+				}
+				batchInputsList = append(batchInputsList, batchOutput)
+				inputs = append(inputs, batchOutput)
+			}
+
+			if truncated {
+				break
+			}
 		}
 
 		if len(batchInputsList) > 0 {
@@ -569,6 +673,13 @@ func (a *adminService) Sweep(
 
 	if len(inputs) == 0 {
 		return "", "", fmt.Errorf("no funds to sweep")
+	}
+
+	if truncated {
+		log.Warnf(
+			"sweep: input count capped at %d; remaining sweepable outputs left for a subsequent sweep",
+			maxSweepInputs,
+		)
 	}
 
 	txid, txhex, err = a.txBuilder.BuildSweepTx(inputs)
@@ -609,157 +720,47 @@ func (a *adminService) GetRecoverableLiquidity(ctx context.Context) (uint64, err
 	return a.repoManager.Vtxos().GetRecoverableLiquidity(ctx)
 }
 
+func (a *adminService) GetSettings(ctx context.Context) (*domain.Settings, error) {
+	return a.repoManager.Settings().Get(ctx)
+}
+
+func (a *adminService) UpdateSettings(
+	ctx context.Context, updates domain.SettingsUpdate,
+) ([]string, error) {
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
+
+	// Partial update: only the fields set on the request (non-nil pointers) are
+	// applied to the stored settings; omitted fields are left unchanged. The
+	// returned changelog lists exactly the fields that were updated.
+	settings, err := a.repoManager.Settings().Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current settings: %w", err)
+	}
+	if settings == nil {
+		return nil, fmt.Errorf("no settings found")
+	}
+
+	changelog, err := settings.Update(updates)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := a.repoManager.Settings().Upsert(ctx, *settings, changelog); err != nil {
+		return nil, fmt.Errorf("failed to update settings: %w", err)
+	}
+
+	return changelog, nil
+}
+
+// GetCollectedFees totals the fees recorded against batches finalized in the
+// window. One indexed aggregate: it used to load every round in the window in
+// full — intents, receivers, inputs, txs and vtxo trees — plus a wallet RPC per
+// boarding input, to produce a single integer.
 func (a *adminService) GetCollectedFees(
 	ctx context.Context, after, before int64,
 ) (uint64, error) {
-	roundIds, err := a.repoManager.Rounds().GetRoundIds(ctx, after, before, false, true)
-	if err != nil {
-		return 0, err
-	}
-
-	var total uint64
-	// batchesToPatch is used to keep track of the batches for which we calculcated fees,
-	// so we can lazily patch the missing info in storage for batches prior
-	// https://github.com/arkade-os/arkd/pull/933.
-	batchesToPatch := make(map[string]uint64)
-	for _, id := range roundIds {
-		round, err := a.repoManager.Rounds().GetRoundWithId(ctx, id)
-		if err != nil {
-			return 0, err
-		}
-
-		// Batches finalized before fee persistence have a zero (default) collected fee;
-		// recompute it on the fly. Only patch (persist) when the recomputation is complete,
-		// so we never persist a value that under-counts boarding.
-		if round.CollectedFees == 0 {
-			fees, complete := a.recomputeCollectedFees(ctx, round)
-			total += fees
-			if complete && fees > 0 {
-				batchesToPatch[round.Id] = fees
-			}
-			continue
-		}
-		total += round.CollectedFees
-	}
-
-	if len(batchesToPatch) > 0 {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-			defer cancel()
-			if err := a.repoManager.Rounds().PatchCollectedFees(ctx, batchesToPatch); err != nil {
-				log.WithError(err).WithField("patches", batchesToPatch).Warn(
-					"failed to patch collected fees",
-				)
-			}
-		}()
-	}
-
-	return total, nil
-}
-
-// recomputeCollectedFees recomputes the fees collected by the operator for a batch whose fee was
-// not persisted (finalized before fee persistence). It recovers the boarding input amount from the
-// finalized commitment tx and returns whether the recomputation was complete.
-// When complete is false the boarding amount could not be recovered, so the returned value
-// under-counts the real fee and must not be persisted (a later call can retry).
-func (a *adminService) recomputeCollectedFees(
-	ctx context.Context, round *domain.Round,
-) (fees uint64, complete bool) {
-	boardingInputAmount, err := a.boardingInputAmount(ctx, round.CommitmentTx)
-	if err != nil {
-		log.WithError(err).WithField("round_id", round.Id).Warn(
-			"failed to recover boarding input amount, collected fees may be underestimated",
-		)
-		return calculateCollectedFees(round, 0), false
-	}
-	return calculateCollectedFees(round, boardingInputAmount), true
-}
-
-// boardingInputAmount computes the total amount (sats) of the boarding inputs of
-// a finalized (raw) commitment tx. Boarding inputs are detected by their taproot
-// script-path witness; since a raw tx carries no input amounts, each boarding
-// input's value is looked up from its prevout via the wallet.
-func (a *adminService) boardingInputAmount(
-	ctx context.Context, commitmentTx string,
-) (uint64, error) {
-	var tx wire.MsgTx
-	if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(commitmentTx))); err != nil {
-		return 0, fmt.Errorf("failed to deserialize commitment tx: %w", err)
-	}
-
-	var total uint64
-	for _, in := range tx.TxIn {
-		if !isBoardingWitness(in.Witness) {
-			continue
-		}
-
-		prevTxid := in.PreviousOutPoint.Hash.String()
-		prevTxHex, err := a.walletSvc.GetTransaction(ctx, prevTxid)
-		if err != nil {
-			return 0, fmt.Errorf("failed to get boarding prevout tx %s: %w", prevTxid, err)
-		}
-
-		var prevTx wire.MsgTx
-		if err := prevTx.Deserialize(hex.NewDecoder(strings.NewReader(prevTxHex))); err != nil {
-			return 0, fmt.Errorf("failed to deserialize boarding prevout tx %s: %w", prevTxid, err)
-		}
-
-		vout := in.PreviousOutPoint.Index
-		if int(vout) >= len(prevTx.TxOut) {
-			return 0, fmt.Errorf(
-				"boarding prevout %s:%d out of range", prevTxid, vout,
-			)
-		}
-		total += uint64(prevTx.TxOut[vout].Value)
-	}
-
-	return total, nil
-}
-
-func (a *adminService) getScheduledSweep(
-	ctx context.Context, commitmentTxid string,
-) (*ScheduledSweep, error) {
-	confirmed, _, err := a.walletSvc.IsTransactionConfirmed(ctx, commitmentTxid)
-	if !confirmed || err != nil {
-		return &ScheduledSweep{
-			RoundId:          commitmentTxid,
-			Confirmed:        false,
-			SweepableOutputs: make([]SweepableOutput, 0),
-		}, nil
-	}
-
-	round, err := a.repoManager.Rounds().GetRoundWithCommitmentTxid(ctx, commitmentTxid)
-	if err != nil {
-		return nil, err
-	}
-
-	vtxoTree, err := tree.NewTxTree(round.VtxoTree)
-	if err != nil {
-		return nil, err
-	}
-
-	batchOutsByExpiration, err := findSweepableOutputs(
-		ctx, a.walletSvc, a.txBuilder, a.sweeperTimeUnit, vtxoTree,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	batchOutputs := make([]SweepableOutput, 0)
-	for expirationTime, inputs := range batchOutsByExpiration {
-		for _, input := range inputs {
-			batchOutputs = append(batchOutputs, SweepableOutput{
-				TxInput:     input,
-				ScheduledAt: expirationTime,
-			})
-		}
-	}
-
-	return &ScheduledSweep{
-		RoundId:          round.Id,
-		SweepableOutputs: batchOutputs,
-		Confirmed:        true,
-	}, nil
+	return a.repoManager.Rounds().SumCollectedFees(ctx, after, before)
 }
 
 func (a *adminService) saveBatchSweptEvents(
@@ -814,11 +815,18 @@ func (a *adminService) saveBatchSweptEvents(
 				}
 
 				for _, leaf := range vtxosLeaves {
-					vtxo := domain.Outpoint{
-						Txid: leaf.UnsignedTx.TxID(),
-						VOut: 0,
+					// The VTXO is the first non-anchor output; leaf txs can
+					// carry an anchor at vout 0, so the VTXO is not always at
+					// vout 0. extractVtxoOutpoint handles that.
+					vtxo, err := extractVtxoOutpoint(leaf)
+					if err != nil {
+						log.WithError(err).Errorf(
+							"failed to extract vtxo outpoint from leaf %s",
+							leaf.UnsignedTx.TxID(),
+						)
+						continue
 					}
-					leafVtxos = append(leafVtxos, vtxo)
+					leafVtxos = append(leafVtxos, *vtxo)
 				}
 			}
 		}
@@ -838,7 +846,7 @@ func (a *adminService) saveBatchSweptEvents(
 		} else {
 			seen := make(map[string]struct{})
 			for _, leafVtxo := range leafVtxos {
-				children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo.Txid)
+				children, err := vtxoRepo.GetAllChildrenVtxos(ctx, leafVtxo)
 				if err != nil {
 					log.WithError(err).Error("error while getting children vtxos")
 					continue
@@ -870,20 +878,8 @@ func (a *adminService) saveBatchSweptEvents(
 	}
 }
 
-type SweepableOutput struct {
-	TxInput     ports.TxInput
-	ScheduledAt int64
-}
-
-type ScheduledSweep struct {
-	RoundId          string
-	Confirmed        bool
-	SweepableOutputs []SweepableOutput
-}
-
 type RoundDetails struct {
-	RoundId          string
-	TxId             string
+	domain.RoundSummary
 	ForfeitedAmount  uint64
 	TotalVtxosAmount uint64
 	TotalExitAmount  uint64
@@ -891,8 +887,6 @@ type RoundDetails struct {
 	InputVtxos       []string
 	OutputVtxos      []string
 	ExitAddresses    []string
-	StartedAt        int64
-	EndedAt          int64
 }
 
 type Receiver struct {

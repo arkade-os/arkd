@@ -1,0 +1,103 @@
+{
+  "cases": [
+    {
+      "name": "always true literal",
+      "program": "true",
+      "context": {},
+      "expected": true
+    },
+    {
+      "name": "always false literal",
+      "program": "false",
+      "context": {},
+      "expected": false
+    },
+    {
+      "name": "issue 1045 example: many intents or low fees or stale",
+      "program": "intents_count > 1.0 && (current_feerate <= 2.0 || time_since_last_batch >= 3600.0)",
+      "context": {
+        "intents_count": 5,
+        "current_feerate": 1,
+        "time_since_last_batch": 60,
+        "boarding_inputs_count": 0,
+        "total_boarding_amount": 0,
+        "total_intent_fees": 0
+      },
+      "expected": true
+    },
+    {
+      "name": "issue 1045 example: not enough intents",
+      "program": "intents_count > 1.0 && (current_feerate <= 2.0 || time_since_last_batch >= 3600.0)",
+      "context": {
+        "intents_count": 1,
+        "current_feerate": 1,
+        "time_since_last_batch": 99999,
+        "boarding_inputs_count": 0,
+        "total_boarding_amount": 0,
+        "total_intent_fees": 0
+      },
+      "expected": false
+    },
+    {
+      "name": "issue 1045 example: high fees and recent batch",
+      "program": "intents_count > 1.0 && (current_feerate <= 2.0 || time_since_last_batch >= 3600.0)",
+      "context": {
+        "intents_count": 10,
+        "current_feerate": 50,
+        "time_since_last_batch": 60,
+        "boarding_inputs_count": 0,
+        "total_boarding_amount": 0,
+        "total_intent_fees": 0
+      },
+      "expected": false
+    },
+    {
+      "name": "boarding-driven trigger",
+      "program": "boarding_inputs_count > 0.0 && total_boarding_amount >= 100000.0",
+      "context": {
+        "intents_count": 0,
+        "current_feerate": 0,
+        "time_since_last_batch": 0,
+        "boarding_inputs_count": 1,
+        "total_boarding_amount": 100000,
+        "total_intent_fees": 0
+      },
+      "expected": true
+    },
+    {
+      "name": "boarding under threshold",
+      "program": "boarding_inputs_count > 0.0 && total_boarding_amount >= 100000.0",
+      "context": {
+        "intents_count": 0,
+        "current_feerate": 0,
+        "time_since_last_batch": 0,
+        "boarding_inputs_count": 3,
+        "total_boarding_amount": 50000,
+        "total_intent_fees": 0
+      },
+      "expected": false
+    },
+    {
+      "name": "fee-revenue gate",
+      "program": "total_intent_fees >= 500.0",
+      "context": {
+        "total_intent_fees": 500
+      },
+      "expected": true
+    },
+    {
+      "name": "fee-revenue gate insufficient",
+      "program": "total_intent_fees >= 500.0",
+      "context": {
+        "total_intent_fees": 499
+      },
+      "expected": false
+    },
+    {
+      "name": "now() helper available",
+      "program": "now() > 0.0",
+      "context": {},
+      "expected": true
+    }
+  ]
+}
