@@ -28,15 +28,16 @@ import (
 const testDust uint64 = 546
 
 func TestEstimateIntentFeeRejectsNegativeBoardingAmount(t *testing.T) {
-	tx := wire.NewMsgTx(2)
-	tx.AddTxIn(wire.NewTxIn(&wire.OutPoint{}, nil, nil))
-	boardingOutpoint := wire.OutPoint{Index: 1}
-	tx.AddTxIn(wire.NewTxIn(&boardingOutpoint, nil, nil))
-	tx.AddTxOut(wire.NewTxOut(0, []byte{txscript.OP_RETURN}))
-
-	packet, err := psbt.NewFromUnsignedTx(tx)
+	message := intent.EstimateIntentFeeMessage{
+		BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeEstimateFee},
+	}
+	encodedMessage, err := message.Encode()
 	require.NoError(t, err)
-	packet.Inputs[1].WitnessUtxo = wire.NewTxOut(-1, nil)
+	proof := testNoteIntentProof(
+		t, encodedMessage, wire.NewTxOut(0, []byte{txscript.OP_RETURN}),
+	)
+	proof.Inputs[1].WitnessUtxo.Value = -1
+	boardingOutpoint := proof.UnsignedTx.TxIn[1].PreviousOutPoint
 
 	ctx := t.Context()
 	vtxos := &mockedVtxoRepo{}
@@ -46,10 +47,13 @@ func TestEstimateIntentFeeRejectsNegativeBoardingAmount(t *testing.T) {
 	repos := &mockedRepoManager{}
 	repos.On("Vtxos").Return(vtxos)
 
-	svc := &service{repoManager: repos}
-	_, appErr := svc.EstimateIntentFee(
-		ctx, intent.Proof{Packet: *packet}, intent.EstimateIntentFeeMessage{},
-	)
+	svc := &service{
+		repoManager: repos,
+		cache: testLiveStore{settings: testSettingsStore{settings: &ports.Settings{
+			SignerPubkey: testPubkey(t),
+		}}},
+	}
+	_, appErr := svc.EstimateIntentFee(ctx, *proof, message)
 	require.ErrorContains(t, appErr, "invalid amount for input 1: -1")
 }
 

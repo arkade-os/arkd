@@ -211,9 +211,17 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 		return fmt.Errorf("failed to encode forfeit tx: %s", err)
 	}
 
-	signedForfeitTx, err := s.signer.SignTransactionTapscript(ctx, forfeitTxB64, nil)
-	if err != nil {
-		return fmt.Errorf("failed to sign forfeit tx: %s", err)
+	// Forfeit txs are signed by the operator at collection time, so the stored tx
+	// is usually already broadcast-ready. Re-signing would append a duplicate
+	// operator signature and produce an invalid PSBT (duplicate key), so we only
+	// sign here when a signature is still missing, as on a legacy forfeit stored
+	// without the operator's half.
+	signedForfeitTx := forfeitTxB64
+	if !domain.ForfeitTxReadyToBroadcast(forfeitTx) {
+		signedForfeitTx, err = s.signer.SignTransactionTapscript(ctx, forfeitTxB64, nil)
+		if err != nil {
+			return fmt.Errorf("failed to sign forfeit tx: %s", err)
+		}
 	}
 
 	forfeitTxHex, err := s.builder.FinalizeAndExtract(signedForfeitTx)

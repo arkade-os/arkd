@@ -3,6 +3,7 @@ package inmemorylivestore
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sync"
 
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -27,15 +28,17 @@ func NewTreeSigningSessionsStore() ports.TreeSigningSessionsStore {
 
 func (s *treeSigningSessionsStore) New(
 	_ context.Context, roundId string, uniqueSignersPubKeys map[string]struct{},
+	signingContext ports.SigningContext,
 ) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	session := &ports.MusigSigningSession{
-		Cosigners:   uniqueSignersPubKeys,
-		NbCosigners: len(uniqueSignersPubKeys) + 1, // operator included
-		Nonces:      make(map[string]tree.TreeNonces),
-		Signatures:  make(map[string]tree.TreePartialSigs),
+		Cosigners:      uniqueSignersPubKeys,
+		NbCosigners:    len(uniqueSignersPubKeys) + 1, // operator included
+		Nonces:         make(map[string]tree.TreeNonces),
+		Signatures:     make(map[string]tree.TreePartialSigs),
+		SigningContext: signingContext,
 	}
 	s.sessions[roundId] = session
 
@@ -49,8 +52,15 @@ func (s *treeSigningSessionsStore) Get(
 ) (*ports.MusigSigningSession, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
-	session := s.sessions[roundId]
-	return session, nil
+	session, ok := s.sessions[roundId]
+	if !ok {
+		return nil, nil
+	}
+	// snapshot: the live maps are mutated under the write lock, callers read without it
+	snapshot := *session
+	snapshot.Nonces = maps.Clone(session.Nonces)
+	snapshot.Signatures = maps.Clone(session.Signatures)
+	return &snapshot, nil
 }
 func (s *treeSigningSessionsStore) Delete(_ context.Context, roundId string) error {
 	s.lock.Lock()
@@ -97,6 +107,20 @@ func (s *treeSigningSessionsStore) AddNonces(
 		default:
 		}
 	}
+	return nil
+}
+
+func (s *treeSigningSessionsStore) SetAggregatedNonces(
+	_ context.Context, roundId string, nonces tree.TreeNonces,
+) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	session, ok := s.sessions[roundId]
+	if !ok {
+		return fmt.Errorf(`signing session not found for round "%s"`, roundId)
+	}
+	session.SigningContext.AggregatedNonces = nonces
 	return nil
 }
 
