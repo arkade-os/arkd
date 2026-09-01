@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"testing"
@@ -18,387 +19,142 @@ import (
 
 // Mock implementations for indexer tests
 
-type mockVtxoRepoForIndexer struct {
-	mock.Mock
-}
+func TestPaginate(t *testing.T) {
+	items := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 
-func (m *mockVtxoRepoForIndexer) GetVtxos(
-	ctx context.Context,
-	outpoints []domain.Outpoint,
-) ([]domain.Vtxo, error) {
-	args := m.Called(ctx, outpoints)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]domain.Vtxo), args.Error(1)
-}
+	t.Run("slices the requested page", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			items    []int
+			page     Page
+			maxSize  int32
+			expected []int
+			resp     PageResp
+		}{
+			{
+				name:     "first page",
+				items:    items,
+				page:     Page{PageNum: 1, PageSize: 3},
+				maxSize:  100,
+				expected: []int{1, 2, 3},
+				resp:     PageResp{Current: 1, Next: 2, Total: 4},
+			},
+			{
+				name:     "last full page",
+				items:    items,
+				page:     Page{PageNum: 2, PageSize: 5},
+				maxSize:  100,
+				expected: []int{6, 7, 8, 9, 10},
+				resp:     PageResp{Current: 2, Next: 2, Total: 2},
+			},
+			{
+				name:     "last partial page",
+				items:    items,
+				page:     Page{PageNum: 4, PageSize: 3},
+				maxSize:  100,
+				expected: []int{10},
+				resp:     PageResp{Current: 4, Next: 4, Total: 4},
+			},
+			{
+				name:     "page past the end",
+				items:    items,
+				page:     Page{PageNum: 5, PageSize: 3},
+				maxSize:  100,
+				expected: []int{},
+				resp:     PageResp{Current: 5, Next: 4, Total: 4},
+			},
+			{
+				name:     "missing size defaults to max",
+				items:    items,
+				page:     Page{PageNum: 1},
+				maxSize:  100,
+				expected: items,
+				resp:     PageResp{Current: 1, Next: 1, Total: 1},
+			},
+			{
+				name:     "num and size below one default to first page and max",
+				items:    items,
+				page:     Page{PageNum: 0, PageSize: -1},
+				maxSize:  100,
+				expected: items,
+				resp:     PageResp{Current: 1, Next: 1, Total: 1},
+			},
+			{
+				name:     "size above max is clamped",
+				items:    items,
+				page:     Page{PageNum: 1, PageSize: 1000},
+				maxSize:  3,
+				expected: []int{1, 2, 3},
+				resp:     PageResp{Current: 1, Next: 2, Total: 4},
+			},
+			{
+				name:     "empty items",
+				items:    []int{},
+				page:     Page{PageNum: 1, PageSize: 3},
+				maxSize:  100,
+				expected: []int{},
+				resp:     PageResp{Current: 1, Next: 0, Total: 0},
+			},
+		}
 
-// Stub implementations for unused VtxoRepository methods
-func (m *mockVtxoRepoForIndexer) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) error {
-	return nil
-}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				page := tt.page
+				got, resp := paginate(tt.items, &page, tt.maxSize)
+				require.Equal(t, tt.expected, got)
+				require.Equal(t, tt.resp, resp)
+			})
+		}
+	})
 
-func (m *mockVtxoRepoForIndexer) SettleVtxos(
-	ctx context.Context,
-	spentVtxos map[domain.Outpoint]string,
-	commitmentTxid string,
-) error {
-	return nil
-}
+	t.Run("nil page returns everything unpaginated", func(t *testing.T) {
+		got, resp := paginate(items, nil, 3)
+		require.Equal(t, items, got)
+		require.Equal(t, PageResp{}, resp)
+	})
 
-func (m *mockVtxoRepoForIndexer) SpendVtxos(
-	ctx context.Context,
-	spentVtxos map[domain.Outpoint]string,
-	arkTxid string,
-) error {
-	return nil
-}
+	// (PageNum-1)*PageSize used to wrap int32 into a negative slice bound and panic.
+	t.Run("out of range page does not overflow", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			items   []int
+			page    Page
+			maxSize int32
+		}{
+			{
+				name:    "empty items, index times size exceeds MaxInt32",
+				items:   []int{},
+				page:    Page{PageNum: 65537, PageSize: 32768},
+				maxSize: 32768,
+			},
+			{
+				name:    "non empty items, index times size exceeds MaxInt32",
+				items:   items,
+				page:    Page{PageNum: 65537, PageSize: 32768},
+				maxSize: 32768,
+			},
+			{
+				name:    "max page num",
+				items:   items,
+				page:    Page{PageNum: math.MaxInt32, PageSize: 1},
+				maxSize: 100,
+			},
+		}
 
-func (m *mockVtxoRepoForIndexer) UnrollVtxos(
-	ctx context.Context,
-	outpoints []domain.Outpoint,
-) error {
-	return nil
-}
-
-func (m *mockVtxoRepoForIndexer) GetAllNonUnrolledVtxos(
-	ctx context.Context,
-	pubkey string,
-) ([]domain.Vtxo, []domain.Vtxo, error) {
-	return nil, nil, nil
-}
-
-func (m *mockVtxoRepoForIndexer) GetAllSweepableUnrolledVtxos(
-	ctx context.Context,
-) ([]domain.Vtxo, error) {
-	return nil, nil
-}
-func (m *mockVtxoRepoForIndexer) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
-	return nil, nil
-}
-
-func (m *mockVtxoRepoForIndexer) GetAllVtxosWithPubKeys(
-	ctx context.Context,
-	pubkeys []string,
-	after, before int64,
-) ([]domain.Vtxo, error) {
-	return nil, nil
-}
-
-func (m *mockVtxoRepoForIndexer) GetExpiringLiquidity(
-	ctx context.Context,
-	after, before int64,
-) (uint64, error) {
-	return 0, nil
-}
-func (m *mockVtxoRepoForIndexer) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
-	return 0, nil
-}
-
-func (m *mockVtxoRepoForIndexer) UpdateVtxosExpiration(
-	ctx context.Context,
-	outpoints []domain.Outpoint,
-	expiresAt int64,
-) error {
-	return nil
-}
-
-func (m *mockVtxoRepoForIndexer) GetLeafVtxosForBatch(
-	ctx context.Context,
-	txid string,
-) ([]domain.Vtxo, error) {
-	return nil, nil
-}
-
-func (m *mockVtxoRepoForIndexer) GetSweepableVtxosByCommitmentTxid(
-	ctx context.Context,
-	commitmentTxid string,
-) ([]domain.Outpoint, error) {
-	return nil, nil
-}
-
-func (m *mockVtxoRepoForIndexer) GetAllChildrenVtxos(
-	ctx context.Context,
-	outpoint domain.Outpoint,
-) ([]domain.Outpoint, error) {
-	return nil, nil
-}
-
-func (m *mockVtxoRepoForIndexer) GetCheckpointTxsByVtxoPubKeys(
-	ctx context.Context, pubkeys []string,
-) ([]domain.Tx, error) {
-	return nil, nil
-}
-
-func (m *mockVtxoRepoForIndexer) GetVtxoPubKeysByCommitmentTxid(
-	ctx context.Context,
-	commitmentTxid string,
-	withMinimumAmount uint64,
-) ([]string, error) {
-	return nil, nil
-}
-
-func (m *mockVtxoRepoForIndexer) GetVtxoPubKeysByCommitmentTxids(
-	ctx context.Context,
-	commitmentTxids []string,
-	withMinimumAmount uint64,
-) ([]string, error) {
-	return nil, nil
-}
-
-func (m *mockVtxoRepoForIndexer) GetPendingSpentVtxosWithPubKeys(
-	ctx context.Context,
-	pubkeys []string,
-	after, before int64,
-) ([]domain.Vtxo, error) {
-	return nil, nil
-}
-
-func (m *mockVtxoRepoForIndexer) GetPendingSpentVtxosWithOutpoints(
-	ctx context.Context,
-	outpoints []domain.Outpoint,
-) ([]domain.Vtxo, error) {
-	return nil, nil
-}
-func (m *mockVtxoRepoForIndexer) Close() {}
-
-type mockMarkerRepoForIndexer struct {
-	mock.Mock
-}
-
-func (m *mockMarkerRepoForIndexer) GetMarker(
-	ctx context.Context,
-	id string,
-) (*domain.Marker, error) {
-	args := m.Called(ctx, id)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*domain.Marker), args.Error(1)
-}
-
-func (m *mockMarkerRepoForIndexer) GetVtxoChainByMarkers(
-	ctx context.Context,
-	markerIDs []string,
-) ([]domain.Vtxo, error) {
-	args := m.Called(ctx, markerIDs)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]domain.Vtxo), args.Error(1)
-}
-
-// Stub implementations for unused MarkerRepository methods
-func (m *mockMarkerRepoForIndexer) AddMarker(ctx context.Context, marker domain.Marker) error {
-	return nil
-}
-
-func (m *mockMarkerRepoForIndexer) GetMarkersByDepthRange(
-	ctx context.Context,
-	minDepth, maxDepth uint32,
-) ([]domain.Marker, error) {
-	return nil, nil
-}
-
-func (m *mockMarkerRepoForIndexer) GetMarkersByIds(
-	ctx context.Context,
-	ids []string,
-) ([]domain.Marker, error) {
-	args := m.Called(ctx, ids)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]domain.Marker), args.Error(1)
-}
-
-func (m *mockMarkerRepoForIndexer) BulkSweepMarkers(
-	ctx context.Context,
-	markerIDs []string,
-	sweptAt int64,
-) error {
-	return nil
-}
-
-func (m *mockMarkerRepoForIndexer) IsMarkerSwept(
-	ctx context.Context,
-	markerID string,
-) (bool, error) {
-	return false, nil
-}
-
-func (m *mockMarkerRepoForIndexer) GetSweptMarkers(
-	ctx context.Context,
-	markerIDs []string,
-) ([]domain.SweptMarker, error) {
-	return nil, nil
-}
-
-func (m *mockMarkerRepoForIndexer) UpdateVtxoMarkers(
-	ctx context.Context,
-	outpoint domain.Outpoint,
-	markerIDs []string,
-) error {
-	return nil
-}
-
-func (m *mockMarkerRepoForIndexer) GetVtxosByMarker(
-	ctx context.Context,
-	markerID string,
-) ([]domain.Vtxo, error) {
-	args := m.Called(ctx, markerID)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]domain.Vtxo), args.Error(1)
-}
-
-func (m *mockMarkerRepoForIndexer) CreateRootMarkersForVtxos(
-	ctx context.Context,
-	vtxos []domain.Vtxo,
-) error {
-	return nil
-}
-
-func (m *mockMarkerRepoForIndexer) GetVtxosByDepthRange(
-	ctx context.Context,
-	minDepth, maxDepth uint32,
-) ([]domain.Vtxo, error) {
-	return nil, nil
-}
-
-func (m *mockMarkerRepoForIndexer) GetVtxosByArkTxid(
-	ctx context.Context,
-	arkTxid string,
-) ([]domain.Vtxo, error) {
-	return nil, nil
-}
-func (m *mockMarkerRepoForIndexer) SweepVtxoOutpoints(
-	ctx context.Context,
-	outpoints []domain.Outpoint,
-	sweptAt int64,
-) error {
-	return nil
-}
-
-func (m *mockMarkerRepoForIndexer) Close() {}
-
-type mockOffchainTxRepoForIndexer struct {
-	mock.Mock
-}
-
-func (m *mockOffchainTxRepoForIndexer) GetOffchainTx(
-	ctx context.Context, txid string,
-) (*domain.OffchainTx, error) {
-	args := m.Called(ctx, txid)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*domain.OffchainTx), args.Error(1)
-}
-
-func (m *mockOffchainTxRepoForIndexer) GetOffchainTxsByTxids(
-	ctx context.Context, txids []string,
-) ([]*domain.OffchainTx, error) {
-	args := m.Called(ctx, txids)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*domain.OffchainTx), args.Error(1)
-}
-
-func (m *mockOffchainTxRepoForIndexer) AddOrUpdateOffchainTx(
-	ctx context.Context, offchainTx *domain.OffchainTx,
-) error {
-	return nil
-}
-
-func (m *mockOffchainTxRepoForIndexer) Close() {}
-
-type mockRepoManagerForIndexer struct {
-	vtxos       *mockVtxoRepoForIndexer
-	markers     *mockMarkerRepoForIndexer
-	offchainTxs *mockOffchainTxRepoForIndexer
-}
-
-func (m *mockRepoManagerForIndexer) Events() domain.EventRepository { return nil }
-func (m *mockRepoManagerForIndexer) Rounds() domain.RoundRepository { return nil }
-func (m *mockRepoManagerForIndexer) Vtxos() domain.VtxoRepository   { return m.vtxos }
-func (m *mockRepoManagerForIndexer) Markers() domain.MarkerRepository {
-	if m.markers == nil {
-		return nil
-	}
-	return m.markers
-}
-func (m *mockRepoManagerForIndexer) OffchainTxs() domain.OffchainTxRepository {
-	if m.offchainTxs == nil {
-		return nil
-	}
-	return m.offchainTxs
-}
-func (m *mockRepoManagerForIndexer) Convictions() domain.ConvictionRepository                { return nil }
-func (m *mockRepoManagerForIndexer) Assets() domain.AssetRepository                          { return nil }
-func (m *mockRepoManagerForIndexer) Settings() domain.SettingsRepository                     { return nil }
-func (m *mockRepoManagerForIndexer) RegisterBatchUpdateHandler(func(data domain.Round))      {}
-func (m *mockRepoManagerForIndexer) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx)) {}
-func (m *mockRepoManagerForIndexer) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {
-}
-func (m *mockRepoManagerForIndexer) Close() {}
-
-// newTestIndexer creates a fresh set of mock repos and an indexerService for testing.
-func newChainTestIndexer() (
-	*mockVtxoRepoForIndexer,
-	*mockMarkerRepoForIndexer,
-	*indexerService,
-) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
-	indexer := &indexerService{repoManager: repoManager}
-	return vtxoRepo, markerRepo, indexer
-}
-
-// newTestIndexerWithOffchain creates mock repos including offchain tx repo.
-func newChainTestIndexerWithOffchain() (
-	*mockVtxoRepoForIndexer,
-	*mockMarkerRepoForIndexer,
-	*mockOffchainTxRepoForIndexer,
-	*indexerService,
-) {
-	vtxoRepo := &mockVtxoRepoForIndexer{}
-	markerRepo := &mockMarkerRepoForIndexer{}
-	offchainTxRepo := &mockOffchainTxRepoForIndexer{}
-	// Default: bulk fetch returns empty so the fallback to GetOffchainTx is used.
-	// Tests that want to verify bulk behavior can override with a more specific expectation.
-	offchainTxRepo.On("GetOffchainTxsByTxids", mock.Anything, mock.Anything).
-		Return([]*domain.OffchainTx{}, nil).Maybe()
-	repoManager := &mockRepoManagerForIndexer{
-		vtxos: vtxoRepo, markers: markerRepo, offchainTxs: offchainTxRepo,
-	}
-	indexer := &indexerService{repoManager: repoManager}
-	return vtxoRepo, markerRepo, offchainTxRepo, indexer
-}
-
-// makeCheckpointPSBT creates a base64-encoded PSBT with a single input from
-// the given previous outpoint. Used to build test checkpoint transactions.
-func makeCheckpointPSBT(t *testing.T, inputTxid string, inputVout uint32) string {
-	t.Helper()
-	prevHash, err := chainhash.NewHashFromStr(inputTxid)
-	require.NoError(t, err)
-
-	outPoint := wire.NewOutPoint(prevHash, inputVout)
-	output := wire.NewTxOut(1000, []byte{0x51}) // OP_TRUE
-
-	p, err := psbt.New(
-		[]*wire.OutPoint{outPoint},
-		[]*wire.TxOut{output},
-		2, 0,
-		[]uint32{wire.MaxTxInSequenceNum},
-	)
-	require.NoError(t, err)
-
-	b64, err := p.B64Encode()
-	require.NoError(t, err)
-	return b64
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				page := tt.page
+				var got []int
+				var resp PageResp
+				require.NotPanics(t, func() {
+					got, resp = paginate(tt.items, &page, tt.maxSize)
+				})
+				require.Empty(t, got)
+				require.GreaterOrEqual(t, resp.Next, int32(0))
+				require.GreaterOrEqual(t, resp.Total, int32(0))
+			})
+		}
+	})
 }
 
 func TestChainCursor(t *testing.T) {
@@ -729,75 +485,6 @@ func TestEnsureVtxosCached(t *testing.T) {
 	})
 }
 
-// setupPreconfirmedChain sets up a chain of preconfirmed VTXOs for pagination tests.
-// Returns the VTXOs, the starting outpoint, and configures all mock expectations.
-// Chain: vtxo-A -> checkpoint(input=vtxo-B) -> vtxo-B -> checkpoint(input=vtxo-C) -> vtxo-C (terminal)
-func setupPreconfirmedChain(
-	t *testing.T,
-	ctx context.Context,
-	vtxoRepo *mockVtxoRepoForIndexer,
-	markerRepo *mockMarkerRepoForIndexer,
-	offchainTxRepo *mockOffchainTxRepoForIndexer,
-) Outpoint {
-	t.Helper()
-
-	txidA := strings.Repeat("a", 64)
-	txidB := strings.Repeat("b", 64)
-	txidC := strings.Repeat("c", 64)
-
-	vtxoA := domain.Vtxo{
-		Outpoint:     domain.Outpoint{Txid: txidA, VOut: 0},
-		Preconfirmed: true,
-		ExpiresAt:    1000,
-	}
-	vtxoB := domain.Vtxo{
-		Outpoint:     domain.Outpoint{Txid: txidB, VOut: 0},
-		Preconfirmed: true,
-		ExpiresAt:    2000,
-	}
-	vtxoC := domain.Vtxo{
-		Outpoint:     domain.Outpoint{Txid: txidC, VOut: 0},
-		Preconfirmed: true,
-		ExpiresAt:    3000,
-	}
-
-	// VTXOs returned from DB
-	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: txidA, VOut: 0}}).
-		Return([]domain.Vtxo{vtxoA}, nil)
-	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: txidB, VOut: 0}}).
-		Return([]domain.Vtxo{vtxoB}, nil)
-	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: txidC, VOut: 0}}).
-		Return([]domain.Vtxo{vtxoC}, nil)
-
-	// Marker repo won't be used (no markers on these VTXOs)
-	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
-		Return([]domain.Vtxo{}, nil).Maybe()
-
-	// Checkpoint PSBTs: A's checkpoint points to B, B's checkpoint points to C
-	cpA := makeCheckpointPSBT(t, txidB, 0)
-	cpB := makeCheckpointPSBT(t, txidC, 0)
-
-	offchainTxA := &domain.OffchainTx{ArkTxid: txidA, CheckpointTxs: map[string]string{"cp-a": cpA}}
-	offchainTxB := &domain.OffchainTx{ArkTxid: txidB, CheckpointTxs: map[string]string{"cp-b": cpB}}
-	offchainTxC := &domain.OffchainTx{ArkTxid: txidC, CheckpointTxs: map[string]string{}}
-
-	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidA}).
-		Return([]*domain.OffchainTx{offchainTxA}, nil).Maybe()
-	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidB}).
-		Return([]*domain.OffchainTx{offchainTxB}, nil).Maybe()
-	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidC}).
-		Return([]*domain.OffchainTx{offchainTxC}, nil).Maybe()
-
-	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-		Return(offchainTxA, nil).Maybe()
-	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
-		Return(offchainTxB, nil).Maybe()
-	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
-		Return(offchainTxC, nil).Maybe()
-
-	return Outpoint{Txid: txidA, VOut: 0}
-}
-
 func TestGetVtxoChainPagination(t *testing.T) {
 	ctx := context.Background()
 
@@ -936,55 +623,6 @@ func TestGetVtxoChainPagination(t *testing.T) {
 		require.Len(t, resp.Chain, 1) // Just the ark tx
 		require.Empty(t, resp.NextPageToken, "short chain should have empty token")
 		require.Equal(t, IndexerChainedTxTypeArk, resp.Chain[0].Type)
-	})
-}
-
-// matchOutpoints returns a mock.MatchedBy matcher that matches a []domain.Outpoint
-// argument containing exactly the given outpoints, regardless of order.
-func matchOutpoints(expected ...domain.Outpoint) interface{} {
-	sorted := make([]string, len(expected))
-	for i, op := range expected {
-		sorted[i] = op.String()
-	}
-	sort.Strings(sorted)
-	return mock.MatchedBy(func(ops []domain.Outpoint) bool {
-		if len(ops) != len(sorted) {
-			return false
-		}
-		cp := make([]string, len(ops))
-		for i, op := range ops {
-			cp[i] = op.String()
-		}
-		sort.Strings(cp)
-		for i := range cp {
-			if cp[i] != sorted[i] {
-				return false
-			}
-		}
-		return true
-	})
-}
-
-// matchIDs returns a mock.MatchedBy matcher that matches a []string argument
-// containing exactly the given IDs, regardless of order. This avoids flakes from
-// non-deterministic map iteration in preloadByMarkers.
-func matchIDs(expected ...string) interface{} {
-	sorted := make([]string, len(expected))
-	copy(sorted, expected)
-	sort.Strings(sorted)
-	return mock.MatchedBy(func(ids []string) bool {
-		if len(ids) != len(sorted) {
-			return false
-		}
-		cp := make([]string, len(ids))
-		copy(cp, ids)
-		sort.Strings(cp)
-		for i := range cp {
-			if cp[i] != sorted[i] {
-				return false
-			}
-		}
-		return true
 	})
 }
 
@@ -1556,4 +1194,525 @@ func TestGetVtxoChain_OverlappingMarkers(t *testing.T) {
 	// Only 1 batch of marker fetches (m-a + m-b together; m-b's parent already visited).
 	markerRepo.AssertNumberOfCalls(t, "GetVtxoChainByMarkers", 1)
 	markerRepo.AssertNumberOfCalls(t, "GetMarkersByIds", 1)
+}
+
+type mockVtxoRepoForIndexer struct {
+	mock.Mock
+}
+
+func (m *mockVtxoRepoForIndexer) GetVtxos(
+	ctx context.Context,
+	outpoints []domain.Outpoint,
+) ([]domain.Vtxo, error) {
+	args := m.Called(ctx, outpoints)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.Vtxo), args.Error(1)
+}
+
+// Stub implementations for unused VtxoRepository methods
+func (m *mockVtxoRepoForIndexer) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) error {
+	return nil
+}
+
+func (m *mockVtxoRepoForIndexer) SettleVtxos(
+	ctx context.Context,
+	spentVtxos map[domain.Outpoint]string,
+	commitmentTxid string,
+) error {
+	return nil
+}
+
+func (m *mockVtxoRepoForIndexer) SpendVtxos(
+	ctx context.Context,
+	spentVtxos map[domain.Outpoint]string,
+	arkTxid string,
+) error {
+	return nil
+}
+
+func (m *mockVtxoRepoForIndexer) UnrollVtxos(
+	ctx context.Context,
+	outpoints []domain.Outpoint,
+) error {
+	return nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetAllNonUnrolledVtxos(
+	ctx context.Context,
+	pubkey string,
+) ([]domain.Vtxo, []domain.Vtxo, error) {
+	return nil, nil, nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetAllSweepableUnrolledVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	return nil, nil
+}
+func (m *mockVtxoRepoForIndexer) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
+	return nil, nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetAllVtxosWithPubKeys(
+	ctx context.Context,
+	pubkeys []string,
+	after, before int64,
+) ([]domain.Vtxo, error) {
+	return nil, nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetExpiringLiquidity(
+	ctx context.Context,
+	after, before int64,
+) (uint64, error) {
+	return 0, nil
+}
+func (m *mockVtxoRepoForIndexer) GetRecoverableLiquidity(ctx context.Context) (uint64, error) {
+	return 0, nil
+}
+
+func (m *mockVtxoRepoForIndexer) UpdateVtxosExpiration(
+	ctx context.Context,
+	outpoints []domain.Outpoint,
+	expiresAt int64,
+) error {
+	return nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetLeafVtxosForBatch(
+	ctx context.Context,
+	txid string,
+) ([]domain.Vtxo, error) {
+	return nil, nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetSweepableVtxosByCommitmentTxid(
+	ctx context.Context,
+	commitmentTxid string,
+) ([]domain.Outpoint, error) {
+	return nil, nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetAllChildrenVtxos(
+	ctx context.Context,
+	outpoint domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	return nil, nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetCheckpointTxsByVtxoPubKeys(
+	ctx context.Context, pubkeys []string,
+) ([]domain.Tx, error) {
+	return nil, nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetVtxoPubKeysByCommitmentTxid(
+	ctx context.Context,
+	commitmentTxid string,
+	withMinimumAmount uint64,
+) ([]string, error) {
+	return nil, nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetVtxoPubKeysByCommitmentTxids(
+	ctx context.Context,
+	commitmentTxids []string,
+	withMinimumAmount uint64,
+) ([]string, error) {
+	return nil, nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetPendingSpentVtxosWithPubKeys(
+	ctx context.Context,
+	pubkeys []string,
+	after, before int64,
+) ([]domain.Vtxo, error) {
+	return nil, nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetPendingSpentVtxosWithOutpoints(
+	ctx context.Context,
+	outpoints []domain.Outpoint,
+) ([]domain.Vtxo, error) {
+	return nil, nil
+}
+func (m *mockVtxoRepoForIndexer) Close() {}
+
+type mockMarkerRepoForIndexer struct {
+	mock.Mock
+}
+
+func (m *mockMarkerRepoForIndexer) GetMarker(
+	ctx context.Context,
+	id string,
+) (*domain.Marker, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Marker), args.Error(1)
+}
+
+func (m *mockMarkerRepoForIndexer) GetVtxoChainByMarkers(
+	ctx context.Context,
+	markerIDs []string,
+) ([]domain.Vtxo, error) {
+	args := m.Called(ctx, markerIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.Vtxo), args.Error(1)
+}
+
+// Stub implementations for unused MarkerRepository methods
+func (m *mockMarkerRepoForIndexer) AddMarker(ctx context.Context, marker domain.Marker) error {
+	return nil
+}
+
+func (m *mockMarkerRepoForIndexer) GetMarkersByDepthRange(
+	ctx context.Context,
+	minDepth, maxDepth uint32,
+) ([]domain.Marker, error) {
+	return nil, nil
+}
+
+func (m *mockMarkerRepoForIndexer) GetMarkersByIds(
+	ctx context.Context,
+	ids []string,
+) ([]domain.Marker, error) {
+	args := m.Called(ctx, ids)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.Marker), args.Error(1)
+}
+
+func (m *mockMarkerRepoForIndexer) BulkSweepMarkers(
+	ctx context.Context,
+	markerIDs []string,
+	sweptAt int64,
+) error {
+	return nil
+}
+
+func (m *mockMarkerRepoForIndexer) IsMarkerSwept(
+	ctx context.Context,
+	markerID string,
+) (bool, error) {
+	return false, nil
+}
+
+func (m *mockMarkerRepoForIndexer) GetSweptMarkers(
+	ctx context.Context,
+	markerIDs []string,
+) ([]domain.SweptMarker, error) {
+	return nil, nil
+}
+
+func (m *mockMarkerRepoForIndexer) UpdateVtxoMarkers(
+	ctx context.Context,
+	outpoint domain.Outpoint,
+	markerIDs []string,
+) error {
+	return nil
+}
+
+func (m *mockMarkerRepoForIndexer) GetVtxosByMarker(
+	ctx context.Context,
+	markerID string,
+) ([]domain.Vtxo, error) {
+	args := m.Called(ctx, markerID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.Vtxo), args.Error(1)
+}
+
+func (m *mockMarkerRepoForIndexer) CreateRootMarkersForVtxos(
+	ctx context.Context,
+	vtxos []domain.Vtxo,
+) error {
+	return nil
+}
+
+func (m *mockMarkerRepoForIndexer) GetVtxosByDepthRange(
+	ctx context.Context,
+	minDepth, maxDepth uint32,
+) ([]domain.Vtxo, error) {
+	return nil, nil
+}
+
+func (m *mockMarkerRepoForIndexer) GetVtxosByArkTxid(
+	ctx context.Context,
+	arkTxid string,
+) ([]domain.Vtxo, error) {
+	return nil, nil
+}
+func (m *mockMarkerRepoForIndexer) SweepVtxoOutpoints(
+	ctx context.Context,
+	outpoints []domain.Outpoint,
+	sweptAt int64,
+) error {
+	return nil
+}
+
+func (m *mockMarkerRepoForIndexer) Close() {}
+
+type mockOffchainTxRepoForIndexer struct {
+	mock.Mock
+}
+
+func (m *mockOffchainTxRepoForIndexer) GetOffchainTx(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	args := m.Called(ctx, txid)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.OffchainTx), args.Error(1)
+}
+
+func (m *mockOffchainTxRepoForIndexer) GetOffchainTxsByTxids(
+	ctx context.Context, txids []string,
+) ([]*domain.OffchainTx, error) {
+	args := m.Called(ctx, txids)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*domain.OffchainTx), args.Error(1)
+}
+
+func (m *mockOffchainTxRepoForIndexer) GetAnyOffchainTx(
+	ctx context.Context, txid string,
+) (*domain.OffchainTx, error) {
+	args := m.Called(ctx, txid)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.OffchainTx), args.Error(1)
+}
+
+func (m *mockOffchainTxRepoForIndexer) GetOffchainTxsInRange(
+	ctx context.Context, after, before int64, onlyFailed, onlyCompleted bool, limit int64,
+) ([]*domain.OffchainTx, error) {
+	args := m.Called(ctx, after, before, onlyFailed, onlyCompleted, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*domain.OffchainTx), args.Error(1)
+}
+
+func (m *mockOffchainTxRepoForIndexer) AddOrUpdateOffchainTx(
+	ctx context.Context, offchainTx *domain.OffchainTx,
+) error {
+	return nil
+}
+
+func (m *mockOffchainTxRepoForIndexer) Close() {}
+
+type mockRepoManagerForIndexer struct {
+	vtxos       *mockVtxoRepoForIndexer
+	markers     *mockMarkerRepoForIndexer
+	offchainTxs *mockOffchainTxRepoForIndexer
+}
+
+func (m *mockRepoManagerForIndexer) Events() domain.EventRepository { return nil }
+func (m *mockRepoManagerForIndexer) Rounds() domain.RoundRepository { return nil }
+func (m *mockRepoManagerForIndexer) Vtxos() domain.VtxoRepository   { return m.vtxos }
+func (m *mockRepoManagerForIndexer) Markers() domain.MarkerRepository {
+	if m.markers == nil {
+		return nil
+	}
+	return m.markers
+}
+func (m *mockRepoManagerForIndexer) OffchainTxs() domain.OffchainTxRepository {
+	if m.offchainTxs == nil {
+		return nil
+	}
+	return m.offchainTxs
+}
+func (m *mockRepoManagerForIndexer) Convictions() domain.ConvictionRepository                { return nil }
+func (m *mockRepoManagerForIndexer) Assets() domain.AssetRepository                          { return nil }
+func (m *mockRepoManagerForIndexer) Settings() domain.SettingsRepository                     { return nil }
+func (m *mockRepoManagerForIndexer) RegisterBatchUpdateHandler(func(data domain.Round))      {}
+func (m *mockRepoManagerForIndexer) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx)) {}
+func (m *mockRepoManagerForIndexer) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {
+}
+func (m *mockRepoManagerForIndexer) Close() {}
+
+// newTestIndexer creates a fresh set of mock repos and an indexerService for testing.
+func newChainTestIndexer() (
+	*mockVtxoRepoForIndexer,
+	*mockMarkerRepoForIndexer,
+	*indexerService,
+) {
+	vtxoRepo := &mockVtxoRepoForIndexer{}
+	markerRepo := &mockMarkerRepoForIndexer{}
+	repoManager := &mockRepoManagerForIndexer{vtxos: vtxoRepo, markers: markerRepo}
+	indexer := &indexerService{repoManager: repoManager}
+	return vtxoRepo, markerRepo, indexer
+}
+
+// newTestIndexerWithOffchain creates mock repos including offchain tx repo.
+func newChainTestIndexerWithOffchain() (
+	*mockVtxoRepoForIndexer,
+	*mockMarkerRepoForIndexer,
+	*mockOffchainTxRepoForIndexer,
+	*indexerService,
+) {
+	vtxoRepo := &mockVtxoRepoForIndexer{}
+	markerRepo := &mockMarkerRepoForIndexer{}
+	offchainTxRepo := &mockOffchainTxRepoForIndexer{}
+	// Default: bulk fetch returns empty so the fallback to GetOffchainTx is used.
+	// Tests that want to verify bulk behavior can override with a more specific expectation.
+	offchainTxRepo.On("GetOffchainTxsByTxids", mock.Anything, mock.Anything).
+		Return([]*domain.OffchainTx{}, nil).Maybe()
+	repoManager := &mockRepoManagerForIndexer{
+		vtxos: vtxoRepo, markers: markerRepo, offchainTxs: offchainTxRepo,
+	}
+	indexer := &indexerService{repoManager: repoManager}
+	return vtxoRepo, markerRepo, offchainTxRepo, indexer
+}
+
+// makeCheckpointPSBT creates a base64-encoded PSBT with a single input from
+// the given previous outpoint. Used to build test checkpoint transactions.
+func makeCheckpointPSBT(t *testing.T, inputTxid string, inputVout uint32) string {
+	t.Helper()
+	prevHash, err := chainhash.NewHashFromStr(inputTxid)
+	require.NoError(t, err)
+
+	outPoint := wire.NewOutPoint(prevHash, inputVout)
+	output := wire.NewTxOut(1000, []byte{0x51}) // OP_TRUE
+
+	p, err := psbt.New(
+		[]*wire.OutPoint{outPoint},
+		[]*wire.TxOut{output},
+		2, 0,
+		[]uint32{wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+
+	b64, err := p.B64Encode()
+	require.NoError(t, err)
+	return b64
+}
+
+// setupPreconfirmedChain sets up a chain of preconfirmed VTXOs for pagination tests.
+// Returns the VTXOs, the starting outpoint, and configures all mock expectations.
+// Chain: vtxo-A -> checkpoint(input=vtxo-B) -> vtxo-B -> checkpoint(input=vtxo-C) -> vtxo-C (terminal)
+func setupPreconfirmedChain(
+	t *testing.T,
+	ctx context.Context,
+	vtxoRepo *mockVtxoRepoForIndexer,
+	markerRepo *mockMarkerRepoForIndexer,
+	offchainTxRepo *mockOffchainTxRepoForIndexer,
+) Outpoint {
+	t.Helper()
+
+	txidA := strings.Repeat("a", 64)
+	txidB := strings.Repeat("b", 64)
+	txidC := strings.Repeat("c", 64)
+
+	vtxoA := domain.Vtxo{
+		Outpoint:     domain.Outpoint{Txid: txidA, VOut: 0},
+		Preconfirmed: true,
+		ExpiresAt:    1000,
+	}
+	vtxoB := domain.Vtxo{
+		Outpoint:     domain.Outpoint{Txid: txidB, VOut: 0},
+		Preconfirmed: true,
+		ExpiresAt:    2000,
+	}
+	vtxoC := domain.Vtxo{
+		Outpoint:     domain.Outpoint{Txid: txidC, VOut: 0},
+		Preconfirmed: true,
+		ExpiresAt:    3000,
+	}
+
+	// VTXOs returned from DB
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: txidA, VOut: 0}}).
+		Return([]domain.Vtxo{vtxoA}, nil)
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: txidB, VOut: 0}}).
+		Return([]domain.Vtxo{vtxoB}, nil)
+	vtxoRepo.On("GetVtxos", ctx, []domain.Outpoint{{Txid: txidC, VOut: 0}}).
+		Return([]domain.Vtxo{vtxoC}, nil)
+
+	// Marker repo won't be used (no markers on these VTXOs)
+	markerRepo.On("GetVtxosByMarker", ctx, mock.Anything).
+		Return([]domain.Vtxo{}, nil).Maybe()
+
+	// Checkpoint PSBTs: A's checkpoint points to B, B's checkpoint points to C
+	cpA := makeCheckpointPSBT(t, txidB, 0)
+	cpB := makeCheckpointPSBT(t, txidC, 0)
+
+	offchainTxA := &domain.OffchainTx{ArkTxid: txidA, CheckpointTxs: map[string]string{"cp-a": cpA}}
+	offchainTxB := &domain.OffchainTx{ArkTxid: txidB, CheckpointTxs: map[string]string{"cp-b": cpB}}
+	offchainTxC := &domain.OffchainTx{ArkTxid: txidC, CheckpointTxs: map[string]string{}}
+
+	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidA}).
+		Return([]*domain.OffchainTx{offchainTxA}, nil).Maybe()
+	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidB}).
+		Return([]*domain.OffchainTx{offchainTxB}, nil).Maybe()
+	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidC}).
+		Return([]*domain.OffchainTx{offchainTxC}, nil).Maybe()
+
+	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
+		Return(offchainTxA, nil).Maybe()
+	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
+		Return(offchainTxB, nil).Maybe()
+	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
+		Return(offchainTxC, nil).Maybe()
+
+	return Outpoint{Txid: txidA, VOut: 0}
+}
+
+// matchOutpoints returns a mock.MatchedBy matcher that matches a []domain.Outpoint
+// argument containing exactly the given outpoints, regardless of order.
+func matchOutpoints(expected ...domain.Outpoint) interface{} {
+	sorted := make([]string, len(expected))
+	for i, op := range expected {
+		sorted[i] = op.String()
+	}
+	sort.Strings(sorted)
+	return mock.MatchedBy(func(ops []domain.Outpoint) bool {
+		if len(ops) != len(sorted) {
+			return false
+		}
+		cp := make([]string, len(ops))
+		for i, op := range ops {
+			cp[i] = op.String()
+		}
+		sort.Strings(cp)
+		for i := range cp {
+			if cp[i] != sorted[i] {
+				return false
+			}
+		}
+		return true
+	})
+}
+
+// matchIDs returns a mock.MatchedBy matcher that matches a []string argument
+// containing exactly the given IDs, regardless of order. This avoids flakes from
+// non-deterministic map iteration in preloadByMarkers.
+func matchIDs(expected ...string) interface{} {
+	sorted := make([]string, len(expected))
+	copy(sorted, expected)
+	sort.Strings(sorted)
+	return mock.MatchedBy(func(ids []string) bool {
+		if len(ids) != len(sorted) {
+			return false
+		}
+		cp := make([]string, len(ids))
+		copy(cp, ids)
+		sort.Strings(cp)
+		for i := range cp {
+			if cp[i] != sorted[i] {
+				return false
+			}
+		}
+		return true
+	})
 }

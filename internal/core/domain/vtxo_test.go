@@ -159,19 +159,19 @@ func TestVtxo_RequiresForfeit(t *testing.T) {
 			requiresForfeit: true,
 		},
 		{
+			name: "should be true (expired, not swept)",
+			vtxo: domain.Vtxo{
+				CommitmentTxids: []string{"txid1"},
+				ExpiresAt:       pastExpiry,
+			},
+			requiresForfeit: true,
+		},
+		{
 			name: "should be false (swept)",
 			vtxo: domain.Vtxo{
 				CommitmentTxids: []string{"txid1"},
 				ExpiresAt:       futureExpiry,
 				Swept:           true,
-			},
-			requiresForfeit: false,
-		},
-		{
-			name: "should be false (expired)",
-			vtxo: domain.Vtxo{
-				CommitmentTxids: []string{"txid1"},
-				ExpiresAt:       pastExpiry,
 			},
 			requiresForfeit: false,
 		},

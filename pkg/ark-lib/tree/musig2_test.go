@@ -71,6 +71,44 @@ func TestBuildAndSignVtxoTree(t *testing.T) {
 	}
 }
 
+func TestAddSignaturesRejectsInvalidSig(t *testing.T) {
+	testCase, err := generateMockedReceivers(2)
+	require.NoError(t, err)
+
+	_, batchOutAmount, err := tree.BuildBatchOutput(testCase.receivers, batchOutSweepClosure[:])
+	require.NoError(t, err)
+
+	vtxoTree, err := tree.BuildVtxoTree(
+		rootInput, testCase.receivers, batchOutSweepClosure[:], vtxoTreeExpiry,
+	)
+	require.NoError(t, err)
+
+	coordinator, err := tree.NewTreeCoordinatorSession(
+		batchOutSweepClosure[:], batchOutAmount, vtxoTree,
+	)
+	require.NoError(t, err)
+
+	signers := makeCosigners(t, testCase.privKeys, batchOutAmount, vtxoTree)
+	makeAggregatedNonces(t, signers, coordinator, func(tree.TreeNonces) {})
+
+	pkStr := keyToStr(testCase.privKeys[0])
+	sigs, err := signers[pkStr].Sign()
+	require.NoError(t, err)
+
+	buf, err := hex.DecodeString(pkStr)
+	require.NoError(t, err)
+	pubkey, err := btcec.ParsePubKey(buf)
+	require.NoError(t, err)
+
+	for _, sig := range sigs {
+		sig.S.SetInt(1)
+	}
+
+	shouldBan, err := coordinator.AddSignatures(pubkey, sigs)
+	require.Error(t, err)
+	require.True(t, shouldBan)
+}
+
 func checkNoncesRoundtrip(t *testing.T) func(nonces tree.TreeNonces) {
 	return func(nonces tree.TreeNonces) {
 		// Marshal to JSON

@@ -93,7 +93,7 @@ func (v Vtxo) IsNote() bool {
 }
 
 func (v Vtxo) RequiresForfeit() bool {
-	return !v.Swept && !v.IsExpired() && !v.IsNote() && !v.Unrolled
+	return !v.Swept && !v.IsNote() && !v.Unrolled
 }
 
 func (v Vtxo) IsSettled() bool {

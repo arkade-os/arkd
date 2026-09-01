@@ -22,6 +22,7 @@ type RoundSigningStarted struct {
 	domain.RoundEvent
 	UnsignedCommitmentTx string
 	CosignersPubkeys     []string
+	Topics               []string
 }
 
 // signer should react to this event by partially signing the vtxo tree transactions

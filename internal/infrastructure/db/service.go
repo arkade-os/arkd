@@ -953,38 +953,44 @@ func getAssetsFromTxOuts(txid string, txOuts []ports.TxOut) (
 	issuances := make([]domain.Asset, 0)
 	assetDenominations := make(map[uint32][]domain.AssetDenomination)
 	for grpIndex, ast := range assetPacket {
-		for _, out := range ast.Outputs {
-			assetId := ""
+		if len(ast.Outputs) == 0 {
+			continue
+		}
 
-			if ast.IsIssuance() {
-				var err error
-				assetId, err = getAssetId(uint16(grpIndex))
-				if err != nil {
-					return nil, nil, err
-				}
+		assetId := ""
 
-				issuance := domain.Asset{
-					Id:       assetId,
-					Metadata: ast.Metadata,
-				}
-
-				if ast.ControlAsset != nil {
-					switch ast.ControlAsset.Type {
-					case asset.AssetRefByID:
-						issuance.ControlAssetId = ast.ControlAsset.AssetId.String()
-					case asset.AssetRefByGroup:
-						issuance.ControlAssetId, err = getAssetId(ast.ControlAsset.GroupIndex)
-						if err != nil {
-							return nil, nil, err
-						}
-					}
-				}
-
-				issuances = append(issuances, issuance)
-			} else {
-				assetId = ast.AssetId.String()
+		// the id of an issuance derives from the group index alone, so it is identical for
+		// every output of the group and must be collected once per group.
+		if ast.IsIssuance() {
+			var err error
+			assetId, err = getAssetId(uint16(grpIndex))
+			if err != nil {
+				return nil, nil, err
 			}
 
+			issuance := domain.Asset{
+				Id:       assetId,
+				Metadata: ast.Metadata,
+			}
+
+			if ast.ControlAsset != nil {
+				switch ast.ControlAsset.Type {
+				case asset.AssetRefByID:
+					issuance.ControlAssetId = ast.ControlAsset.AssetId.String()
+				case asset.AssetRefByGroup:
+					issuance.ControlAssetId, err = getAssetId(ast.ControlAsset.GroupIndex)
+					if err != nil {
+						return nil, nil, err
+					}
+				}
+			}
+
+			issuances = append(issuances, issuance)
+		} else {
+			assetId = ast.AssetId.String()
+		}
+
+		for _, out := range ast.Outputs {
 			assetDenominations[uint32(out.Vout)] = append(
 				assetDenominations[uint32(out.Vout)], domain.AssetDenomination{
 					AssetId: assetId,

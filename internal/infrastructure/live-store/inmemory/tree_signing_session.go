@@ -3,6 +3,7 @@ package inmemorylivestore
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sync"
 
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -27,19 +28,22 @@ func NewTreeSigningSessionsStore() ports.TreeSigningSessionsStore {
 
 func (s *treeSigningSessionsStore) New(
 	_ context.Context, roundId string, uniqueSignersPubKeys map[string]struct{},
+	signingContext ports.SigningContext,
 ) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	session := &ports.MusigSigningSession{
-		Cosigners:   uniqueSignersPubKeys,
-		NbCosigners: len(uniqueSignersPubKeys) + 1, // operator included
-		Nonces:      make(map[string]tree.TreeNonces),
-		Signatures:  make(map[string]tree.TreePartialSigs),
+		Cosigners:      uniqueSignersPubKeys,
+		NbCosigners:    len(uniqueSignersPubKeys) + 1, // operator included
+		Nonces:         make(map[string]tree.TreeNonces),
+		Signatures:     make(map[string]tree.TreePartialSigs),
+		SigningContext: signingContext,
 	}
 	s.sessions[roundId] = session
-	s.nonceCollectedCh[roundId] = make(chan struct{})
-	s.sigsCollectedCh[roundId] = make(chan struct{})
+
+	s.nonceCollectedCh[roundId] = make(chan struct{}, 1)
+	s.sigsCollectedCh[roundId] = make(chan struct{}, 1)
 	return nil
 }
 
@@ -48,8 +52,15 @@ func (s *treeSigningSessionsStore) Get(
 ) (*ports.MusigSigningSession, error) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
-	session := s.sessions[roundId]
-	return session, nil
+	session, ok := s.sessions[roundId]
+	if !ok {
+		return nil, nil
+	}
+	// snapshot: the live maps are mutated under the write lock, callers read without it
+	snapshot := *session
+	snapshot.Nonces = maps.Clone(session.Nonces)
+	snapshot.Signatures = maps.Clone(session.Signatures)
+	return &snapshot, nil
 }
 func (s *treeSigningSessionsStore) Delete(_ context.Context, roundId string) error {
 	s.lock.Lock()
@@ -81,6 +92,9 @@ func (s *treeSigningSessionsStore) AddNonces(
 	if _, ok := session.Cosigners[pubkey]; !ok {
 		return fmt.Errorf(`cosigner %s not found for round "%s"`, pubkey, roundId)
 	}
+	if _, exists := session.Nonces[pubkey]; exists {
+		return fmt.Errorf(`nonces already submitted for cosigner %s in round "%s"`, pubkey, roundId)
+	}
 	if _, exists := s.nonceCollectedCh[roundId]; !exists {
 		return fmt.Errorf("nonce channel not initialized for round %s", roundId)
 	}
@@ -88,8 +102,25 @@ func (s *treeSigningSessionsStore) AddNonces(
 	s.sessions[roundId].Nonces[pubkey] = nonces
 
 	if len(s.sessions[roundId].Nonces) == s.sessions[roundId].NbCosigners-1 {
-		s.nonceCollectedCh[roundId] <- struct{}{}
+		select {
+		case s.nonceCollectedCh[roundId] <- struct{}{}:
+		default:
+		}
 	}
+	return nil
+}
+
+func (s *treeSigningSessionsStore) SetAggregatedNonces(
+	_ context.Context, roundId string, nonces tree.TreeNonces,
+) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	session, ok := s.sessions[roundId]
+	if !ok {
+		return fmt.Errorf(`signing session not found for round "%s"`, roundId)
+	}
+	session.SigningContext.AggregatedNonces = nonces
 	return nil
 }
 
@@ -113,7 +144,10 @@ func (s *treeSigningSessionsStore) AddSignatures(
 	s.sessions[roundId].Signatures[pubkey] = sigs
 
 	if len(s.sessions[roundId].Signatures) == s.sessions[roundId].NbCosigners-1 {
-		s.sigsCollectedCh[roundId] <- struct{}{}
+		select {
+		case s.sigsCollectedCh[roundId] <- struct{}{}:
+		default:
+		}
 	}
 
 	return nil

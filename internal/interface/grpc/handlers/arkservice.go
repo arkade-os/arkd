@@ -550,7 +550,7 @@ func (h *handler) listenToEvents() {
 					},
 				}
 
-				evs = append(evs, eventWithTopics{event: ev})
+				evs = append(evs, eventWithTopics{event: ev, topics: e.Topics})
 			case application.TreeTxNoncesEvent:
 				nonces := make(map[string]string)
 				for pubkey, nonce := range e.Nonces {

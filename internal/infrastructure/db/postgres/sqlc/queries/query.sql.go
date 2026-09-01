@@ -178,33 +178,6 @@ func (q *Queries) SelectActiveScriptConvictions(ctx context.Context, arg SelectA
 	return items, nil
 }
 
-const selectAllRoundIds = `-- name: SelectAllRoundIds :many
-SELECT id FROM round
-`
-
-func (q *Queries) SelectAllRoundIds(ctx context.Context) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectAllRoundIds)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const selectAllVtxos = `-- name: SelectAllVtxos :many
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.vtxo_kind, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw
 `
@@ -245,6 +218,52 @@ func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, erro
 			&i.VtxoVw.Swept,
 			&i.VtxoVw.AssetID,
 			&i.VtxoVw.AssetAmount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectAnyOffchainTx = `-- name: SelectAnyOffchainTx :many
+SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid = $1
+`
+
+type SelectAnyOffchainTxRow struct {
+	OffchainTxVw OffchainTxVw
+}
+
+// Admin-only lookup: unlike SelectOffchainTx it does not filter by stage, so offchain
+// txs that failed before being accepted can be inspected too.
+func (q *Queries) SelectAnyOffchainTx(ctx context.Context, txid string) ([]SelectAnyOffchainTxRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectAnyOffchainTx, txid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectAnyOffchainTxRow
+	for rows.Next() {
+		var i SelectAnyOffchainTxRow
+		if err := rows.Scan(
+			&i.OffchainTxVw.Txid,
+			&i.OffchainTxVw.Tx,
+			&i.OffchainTxVw.StartingTimestamp,
+			&i.OffchainTxVw.EndingTimestamp,
+			&i.OffchainTxVw.ExpiryTimestamp,
+			&i.OffchainTxVw.FailReason,
+			&i.OffchainTxVw.StageCode,
+			&i.OffchainTxVw.CheckpointTxid,
+			&i.OffchainTxVw.CheckpointTx,
+			&i.OffchainTxVw.CommitmentTxid,
+			&i.OffchainTxVw.IsRootCommitmentTxid,
+			&i.OffchainTxVw.OffchainTxid,
 		); err != nil {
 			return nil, err
 		}
@@ -409,6 +428,29 @@ func (q *Queries) SelectCheckpointTxsByVtxoPubKeys(ctx context.Context, pubkeys 
 		return nil, err
 	}
 	return items, nil
+}
+
+const selectCollectedFeesInRange = `-- name: SelectCollectedFeesInRange :one
+SELECT
+    CAST(COALESCE(SUM(fees), 0) AS BIGINT) AS total
+FROM round
+WHERE ended = true AND failed = false
+  AND ($1::bigint = 0 OR starting_timestamp > $1::bigint)
+  AND ($2::bigint = 0 OR starting_timestamp < $2::bigint)
+`
+
+type SelectCollectedFeesInRangeParams struct {
+	StartTs int64
+	EndTs   int64
+}
+
+// Collected fees for the admin API. One indexed aggregate replaces loading
+// every round in the window in full.
+func (q *Queries) SelectCollectedFeesInRange(ctx context.Context, arg SelectCollectedFeesInRangeParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, selectCollectedFeesInRange, arg.StartTs, arg.EndTs)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
 }
 
 const selectControlAssetByID = `-- name: SelectControlAssetByID :one
@@ -883,6 +925,75 @@ func (q *Queries) SelectOffchainTxsByTxids(ctx context.Context, txids []string) 
 	return items, nil
 }
 
+const selectOffchainTxsInRange = `-- name: SelectOffchainTxsInRange :many
+SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid IN (
+    SELECT o.txid FROM offchain_tx o
+    WHERE ($1::bigint = 0 OR o.starting_timestamp > $1::bigint)
+      AND ($2::bigint = 0 OR o.starting_timestamp < $2::bigint)
+      AND ($3::boolean = false OR COALESCE(o.fail_reason, '') <> '')
+      AND ($4::boolean = false
+           OR (o.stage_code = $5::integer AND COALESCE(o.fail_reason, '') = ''))
+    ORDER BY o.starting_timestamp DESC
+    LIMIT NULLIF($6::bigint, 0)
+)
+`
+
+type SelectOffchainTxsInRangeParams struct {
+	After          int64
+	Before         int64
+	OnlyFailed     bool
+	OnlyCompleted  bool
+	FinalizedStage int32
+	MaxResults     int64
+}
+
+type SelectOffchainTxsInRangeRow struct {
+	OffchainTxVw OffchainTxVw
+}
+
+func (q *Queries) SelectOffchainTxsInRange(ctx context.Context, arg SelectOffchainTxsInRangeParams) ([]SelectOffchainTxsInRangeRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectOffchainTxsInRange,
+		arg.After,
+		arg.Before,
+		arg.OnlyFailed,
+		arg.OnlyCompleted,
+		arg.FinalizedStage,
+		arg.MaxResults,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectOffchainTxsInRangeRow
+	for rows.Next() {
+		var i SelectOffchainTxsInRangeRow
+		if err := rows.Scan(
+			&i.OffchainTxVw.Txid,
+			&i.OffchainTxVw.Tx,
+			&i.OffchainTxVw.StartingTimestamp,
+			&i.OffchainTxVw.EndingTimestamp,
+			&i.OffchainTxVw.ExpiryTimestamp,
+			&i.OffchainTxVw.FailReason,
+			&i.OffchainTxVw.StageCode,
+			&i.OffchainTxVw.CheckpointTxid,
+			&i.OffchainTxVw.CheckpointTx,
+			&i.OffchainTxVw.CommitmentTxid,
+			&i.OffchainTxVw.IsRootCommitmentTxid,
+			&i.OffchainTxVw.OffchainTxid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectPendingSpentVtxo = `-- name: SelectPendingSpentVtxo :many
 SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.depth, v.markers, v.vtxo_kind, v.commitments, v.swept, v.asset_id, v.asset_amount
 FROM vtxo_vw v
@@ -1094,115 +1205,6 @@ func (q *Queries) SelectRoundForfeitTxs(ctx context.Context, txid string) ([]Tx,
 	return items, nil
 }
 
-const selectRoundIdsInTimeRange = `-- name: SelectRoundIdsInTimeRange :many
-SELECT id FROM round WHERE starting_timestamp > $1 AND starting_timestamp < $2
-`
-
-type SelectRoundIdsInTimeRangeParams struct {
-	StartTs int64
-	EndTs   int64
-}
-
-func (q *Queries) SelectRoundIdsInTimeRange(ctx context.Context, arg SelectRoundIdsInTimeRangeParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectRoundIdsInTimeRange, arg.StartTs, arg.EndTs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectRoundIdsInTimeRangeWithFilters = `-- name: SelectRoundIdsInTimeRangeWithFilters :many
-SELECT id FROM round 
-WHERE starting_timestamp > $1 
-  AND starting_timestamp < $2
-  AND ($3::boolean = true OR failed = false)
-  AND ($4::boolean = true OR ended = false)
-`
-
-type SelectRoundIdsInTimeRangeWithFiltersParams struct {
-	StartTs       int64
-	EndTs         int64
-	WithFailed    bool
-	WithCompleted bool
-}
-
-func (q *Queries) SelectRoundIdsInTimeRangeWithFilters(ctx context.Context, arg SelectRoundIdsInTimeRangeWithFiltersParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectRoundIdsInTimeRangeWithFilters,
-		arg.StartTs,
-		arg.EndTs,
-		arg.WithFailed,
-		arg.WithCompleted,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const selectRoundIdsWithFilters = `-- name: SelectRoundIdsWithFilters :many
-SELECT id FROM round 
-WHERE ($1::boolean = true OR failed = false)
-  AND ($2::boolean = true OR ended = false)
-`
-
-type SelectRoundIdsWithFiltersParams struct {
-	WithFailed    bool
-	WithCompleted bool
-}
-
-func (q *Queries) SelectRoundIdsWithFilters(ctx context.Context, arg SelectRoundIdsWithFiltersParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, selectRoundIdsWithFilters, arg.WithFailed, arg.WithCompleted)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const selectRoundStats = `-- name: SelectRoundStats :one
 SELECT
     r.swept,
@@ -1253,6 +1255,98 @@ func (q *Queries) SelectRoundStats(ctx context.Context, txid string) (SelectRoun
 		&i.ExpiresAt,
 	)
 	return i, err
+}
+
+const selectRoundSummaries = `-- name: SelectRoundSummaries :many
+SELECT
+    r.id,
+    r.starting_timestamp,
+    r.ending_timestamp,
+    r.ended,
+    r.failed,
+    r.swept,
+    r.stage_code,
+    r.fail_reason,
+    COALESCE(t.txid, '') AS commitment_txid,
+    (SELECT COUNT(*) FROM intent i WHERE i.round_id = r.id) AS total_intents
+FROM round r
+LEFT JOIN tx t ON t.round_id = r.id AND t.type = 'commitment'
+WHERE ($1::bigint = 0 OR r.starting_timestamp > $1::bigint)
+  AND ($2::bigint = 0 OR r.starting_timestamp < $2::bigint)
+  AND ($3::boolean = true OR r.failed = false)
+  AND ($4::boolean = true OR r.ended = false)
+  AND ($5::boolean = false OR r.failed = true)
+ORDER BY r.starting_timestamp DESC
+LIMIT NULLIF($6::bigint, 0)
+`
+
+type SelectRoundSummariesParams struct {
+	StartTs       int64
+	EndTs         int64
+	WithFailed    bool
+	WithCompleted bool
+	OnlyFailed    bool
+	MaxResults    int64
+}
+
+type SelectRoundSummariesRow struct {
+	ID                string
+	StartingTimestamp int64
+	EndingTimestamp   int64
+	Ended             bool
+	Failed            bool
+	Swept             bool
+	StageCode         int32
+	FailReason        sql.NullString
+	CommitmentTxid    string
+	TotalIntents      int64
+}
+
+// Batch listing for the admin API. Everything the listing renders is produced by
+// this one query: filtering, ordering, the limit, the commitment txid and the
+// intent count. Listing N batches costs one round trip instead of loading every
+// round in full. Callers pass max_results = 0 for "no limit".
+// The intent count is a correlated subquery, not a join against a GROUP BY over
+// the whole intent table, so the limit bounds how many counts get computed.
+func (q *Queries) SelectRoundSummaries(ctx context.Context, arg SelectRoundSummariesParams) ([]SelectRoundSummariesRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectRoundSummaries,
+		arg.StartTs,
+		arg.EndTs,
+		arg.WithFailed,
+		arg.WithCompleted,
+		arg.OnlyFailed,
+		arg.MaxResults,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectRoundSummariesRow
+	for rows.Next() {
+		var i SelectRoundSummariesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.StartingTimestamp,
+			&i.EndingTimestamp,
+			&i.Ended,
+			&i.Failed,
+			&i.Swept,
+			&i.StageCode,
+			&i.FailReason,
+			&i.CommitmentTxid,
+			&i.TotalIntents,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const selectRoundSweepTxs = `-- name: SelectRoundSweepTxs :many
@@ -1608,6 +1702,82 @@ func (q *Queries) SelectRoundsWithTxids(ctx context.Context, dollar_1 []string) 
 			return nil, err
 		}
 		items = append(items, txid)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectScheduledSweeps = `-- name: SelectScheduledSweeps :many
+WITH due AS (
+    SELECT r.id, r.txid,
+           CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS sweep_at
+    FROM round_with_commitment_tx_vw r
+    WHERE r.swept = false AND r.ended = true AND r.failed = false
+    AND EXISTS (
+        SELECT 1 FROM tx tree_tx
+        WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
+    )
+    AND EXISTS (
+        SELECT 1 FROM vtxo_vw v
+        WHERE v.commitment_txid = r.txid
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false AND v.unrolled = false
+    )
+    ORDER BY sweep_at ASC
+    LIMIT (CASE WHEN $1::bigint = 0 THEN NULL ELSE $1::bigint END)
+)
+SELECT d.id, d.txid, d.sweep_at,
+    CAST(COALESCE((
+        SELECT SUM(v.amount) FROM vtxo_vw v
+        WHERE v.commitment_txid = d.txid
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false AND v.unrolled = false
+    ), 0) AS BIGINT) AS total_amount,
+    CAST((
+        SELECT COUNT(*) FROM vtxo_vw v
+        WHERE v.commitment_txid = d.txid
+          AND v.preconfirmed = false AND v.spent = false AND v.swept = false AND v.unrolled = false
+    ) AS BIGINT) AS vtxo_count
+FROM due d
+ORDER BY d.sweep_at ASC
+`
+
+type SelectScheduledSweepsRow struct {
+	ID          string
+	Txid        string
+	SweepAt     int64
+	TotalAmount int64
+	VtxoCount   int64
+}
+
+// Scheduled sweeps for the admin API. The due time is a plain column
+// expression (same as SelectExpiredRounds), so this needs no chain access at
+// all -- unlike findSweepableOutputs, which the sweeper itself still uses
+// because it builds a real transaction.
+// The aggregates are correlated subqueries against the already-limited CTE, so
+// the limit bounds how many of them get computed.
+func (q *Queries) SelectScheduledSweeps(ctx context.Context, maxResults int64) ([]SelectScheduledSweepsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectScheduledSweeps, maxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectScheduledSweepsRow
+	for rows.Next() {
+		var i SelectScheduledSweepsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Txid,
+			&i.SweepAt,
+			&i.TotalAmount,
+			&i.VtxoCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -2380,20 +2550,6 @@ UPDATE conviction SET pardoned = true WHERE id = $1
 
 func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, updateConvictionPardoned, id)
-	return err
-}
-
-const updateRoundCollectedFees = `-- name: UpdateRoundCollectedFees :exec
-UPDATE round SET fees = $1 WHERE id = $2
-`
-
-type UpdateRoundCollectedFeesParams struct {
-	Fees int64
-	ID   string
-}
-
-func (q *Queries) UpdateRoundCollectedFees(ctx context.Context, arg UpdateRoundCollectedFeesParams) error {
-	_, err := q.db.ExecContext(ctx, updateRoundCollectedFees, arg.Fees, arg.ID)
 	return err
 }
 
