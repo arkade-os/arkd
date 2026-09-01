@@ -115,6 +115,7 @@ type OffchainTx struct {
 	ExpiryTimestamp   int64
 	FailReason        sql.NullString
 	StageCode         int64
+	Packets           sql.NullString
 }
 
 type OffchainTxVw struct {
@@ -125,6 +126,7 @@ type OffchainTxVw struct {
 	ExpiryTimestamp      int64
 	FailReason           sql.NullString
 	StageCode            int64
+	Packets              sql.NullString
 	CheckpointTxid       string
 	CheckpointTx         string
 	CommitmentTxid       sql.NullString

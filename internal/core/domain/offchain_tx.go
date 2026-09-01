@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -46,7 +47,11 @@ type OffchainTx struct {
 	ParentMarkerIDs    []string
 	FailReason         string
 	Version            uint
-	changes            []Event
+	// Packets is the list of extension packet types carried by ArkTx, if any.
+	// It is set by the application layer at request time so repos do not have
+	// to decode the raw tx to satisfy structured filters.
+	Packets []int
+	changes []Event
 }
 
 func NewOffchainTx() *OffchainTx {
@@ -68,7 +73,7 @@ func NewOffchainTxFromEvents(events []Event) *OffchainTx {
 }
 
 func (s *OffchainTx) Request(
-	arkTxid, arkTx string, unsignedCheckpointTxs map[string]string,
+	arkTxid, arkTx string, unsignedCheckpointTxs map[string]string, packets []int,
 ) (Event, error) {
 	if s.IsFailed() || s.Stage.Code != int(OffchainTxUndefinedStage) {
 		return nil, fmt.Errorf("not in a valid stage to request offchain tx")
@@ -91,6 +96,12 @@ func (s *OffchainTx) Request(
 		ArkTx:                 arkTx,
 		UnsignedCheckpointTxs: unsignedCheckpointTxs,
 		StartingTimestamp:     time.Now().Unix(),
+		// Snapshot the slice so a later mutation of the caller's
+		// backing array can't alias the event payload. slices.Clone
+		// preserves nil-ness: an empty (but non-nil) list means "no
+		// extension" and must stay distinct from nil ("not yet decoded"),
+		// which the storage layer persists as NULL.
+		Packets: slices.Clone(packets),
 	}
 	s.raise(event)
 	return event, nil
@@ -245,6 +256,11 @@ func (s *OffchainTx) on(event Event, replayed bool) {
 		s.ArkTx = e.ArkTx
 		s.CheckpointTxs = e.UnsignedCheckpointTxs
 		s.StartingTimestamp = e.StartingTimestamp
+		// Snapshot the slice so future mutation of the event's backing
+		// array (e.g. by a replayer holding the same event) can't alias
+		// aggregate state. slices.Clone preserves the empty vs nil
+		// distinction the packets column relies on.
+		s.Packets = slices.Clone(e.Packets)
 	case OffchainTxAccepted:
 		if s.Stage.Code != int(OffchainTxRequestedStage) || s.Stage.Failed {
 			return

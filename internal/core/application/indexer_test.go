@@ -612,8 +612,8 @@ func TestGetVtxoChainPagination(t *testing.T) {
 		offchainTxA := &domain.OffchainTx{ArkTxid: txidA, CheckpointTxs: map[string]string{}}
 		offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidA}).
 			Return([]*domain.OffchainTx{offchainTxA}, nil)
-		offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-			Return(offchainTxA, nil).Maybe()
+		offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidA}}).
+			Return([]*domain.OffchainTx{offchainTxA}, nil).Maybe()
 
 		// Page size larger than chain
 		page := &Page{PageSize: 100}
@@ -777,12 +777,12 @@ func TestGetVtxoChain_WithMarkers_UsesPreload(t *testing.T) {
 	// Offchain tx setup for preconfirmed chain.
 	cpA := makeCheckpointPSBT(t, txidB, 0)
 	cpB := makeCheckpointPSBT(t, txidC, 0)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-a": cpA}}, nil)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-b": cpB}}, nil)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidA}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{"cp-a": cpA}}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidB}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{"cp-b": cpB}}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidC}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{}}}, nil)
 
 	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, nil, "")
 	require.NoError(t, err)
@@ -851,14 +851,14 @@ func TestGetVtxoChain_PreloadReducesDBCalls(t *testing.T) {
 	// Offchain tx: each vtxo_i has a checkpoint pointing to vtxo_{i+1}.
 	for i := 0; i < chainLen-1; i++ {
 		cp := makeCheckpointPSBT(t, txids[i+1], 0)
-		offchainTxRepo.On("GetOffchainTx", ctx, txids[i]).
-			Return(&domain.OffchainTx{
+		offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txids[i]}}).
+			Return([]*domain.OffchainTx{{
 				CheckpointTxs: map[string]string{fmt.Sprintf("cp-%d", i): cp},
-			}, nil)
+			}}, nil)
 	}
 	// Terminal VTXO (no checkpoints).
-	offchainTxRepo.On("GetOffchainTx", ctx, txids[chainLen-1]).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txids[chainLen-1]}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{}}}, nil)
 
 	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txids[0], VOut: 0}, nil, "")
 	require.NoError(t, err)
@@ -933,12 +933,12 @@ func TestGetVtxoChain_PreloadMarkerErrorFallback(t *testing.T) {
 	// Offchain tx for the preconfirmed chain: A → B → C.
 	cpA := makeCheckpointPSBT(t, txidB, 0)
 	cpB := makeCheckpointPSBT(t, txidC, 0)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-a": cpA}}, nil)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-b": cpB}}, nil)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidA}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{"cp-a": cpA}}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidB}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{"cp-b": cpB}}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidC}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{}}}, nil)
 
 	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, nil, "")
 	require.NoError(t, err, "marker preload failure must not abort GetVtxoChain")
@@ -980,12 +980,12 @@ func TestGetVtxoChain_Fanout(t *testing.T) {
 	// A has 2 checkpoints: one to B, one to C
 	cpB := makeCheckpointPSBT(t, txidB, 0)
 	cpC := makeCheckpointPSBT(t, txidC, 0)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-b": cpB, "cp-c": cpC}}, nil)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidA}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{"cp-b": cpB, "cp-c": cpC}}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidB}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{}}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidC}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{}}}, nil)
 
 	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, nil, "")
 	require.NoError(t, err)
@@ -1053,22 +1053,22 @@ func TestGetVtxoChain_Diamond(t *testing.T) {
 	// A fans out to B and C
 	cpB := makeCheckpointPSBT(t, txidB, 0)
 	cpC := makeCheckpointPSBT(t, txidC, 0)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-b": cpB, "cp-c": cpC}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidA}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{"cp-b": cpB, "cp-c": cpC}}}, nil)
 
 	// B converges to D
 	cpBD := makeCheckpointPSBT(t, txidD, 0)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-bd": cpBD}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidB}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{"cp-bd": cpBD}}}, nil)
 
 	// C converges to same D
 	cpCD := makeCheckpointPSBT(t, txidD, 0)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-cd": cpCD}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidC}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{"cp-cd": cpCD}}}, nil)
 
 	// D is terminal
-	offchainTxRepo.On("GetOffchainTx", ctx, txidD).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidD}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{}}}, nil)
 
 	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, nil, "")
 	require.NoError(t, err)
@@ -1118,10 +1118,10 @@ func TestGetVtxoChain_MarkerBoundaryStart(t *testing.T) {
 		Return([]domain.Vtxo{}, nil).Maybe()
 
 	cpB := makeCheckpointPSBT(t, txidB, 0)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-b": cpB}}, nil)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidA}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{"cp-b": cpB}}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidB}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{}}}, nil)
 
 	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, nil, "")
 	require.NoError(t, err)
@@ -1178,12 +1178,12 @@ func TestGetVtxoChain_OverlappingMarkers(t *testing.T) {
 
 	cpB := makeCheckpointPSBT(t, txidB, 0)
 	cpC := makeCheckpointPSBT(t, txidC, 0)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-b": cpB}}, nil)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{"cp-c": cpC}}, nil)
-	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
-		Return(&domain.OffchainTx{CheckpointTxs: map[string]string{}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidA}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{"cp-b": cpB}}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidB}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{"cp-c": cpC}}}, nil)
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidC}}).
+		Return([]*domain.OffchainTx{{CheckpointTxs: map[string]string{}}}, nil)
 
 	resp, err := indexer.GetVtxoChain(ctx, "", Outpoint{Txid: txidA, VOut: 0}, nil, "")
 	require.NoError(t, err)
@@ -1464,14 +1464,14 @@ type mockOffchainTxRepoForIndexer struct {
 	mock.Mock
 }
 
-func (m *mockOffchainTxRepoForIndexer) GetOffchainTx(
-	ctx context.Context, txid string,
-) (*domain.OffchainTx, error) {
-	args := m.Called(ctx, txid)
+func (m *mockOffchainTxRepoForIndexer) GetOffchainTxs(
+	ctx context.Context, filter domain.OffchainTxFilter,
+) ([]*domain.OffchainTx, error) {
+	args := m.Called(ctx, filter)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*domain.OffchainTx), args.Error(1)
+	return args.Get(0).([]*domain.OffchainTx), args.Error(1)
 }
 
 func (m *mockOffchainTxRepoForIndexer) GetOffchainTxsByTxids(
@@ -1658,12 +1658,12 @@ func setupPreconfirmedChain(
 	offchainTxRepo.On("GetOffchainTxsByTxids", ctx, []string{txidC}).
 		Return([]*domain.OffchainTx{offchainTxC}, nil).Maybe()
 
-	offchainTxRepo.On("GetOffchainTx", ctx, txidA).
-		Return(offchainTxA, nil).Maybe()
-	offchainTxRepo.On("GetOffchainTx", ctx, txidB).
-		Return(offchainTxB, nil).Maybe()
-	offchainTxRepo.On("GetOffchainTx", ctx, txidC).
-		Return(offchainTxC, nil).Maybe()
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidA}}).
+		Return([]*domain.OffchainTx{offchainTxA}, nil).Maybe()
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidB}}).
+		Return([]*domain.OffchainTx{offchainTxB}, nil).Maybe()
+	offchainTxRepo.On("GetOffchainTxs", ctx, domain.OffchainTxFilter{WithTxids: []string{txidC}}).
+		Return([]*domain.OffchainTx{offchainTxC}, nil).Maybe()
 
 	return Outpoint{Txid: txidA, VOut: 0}
 }

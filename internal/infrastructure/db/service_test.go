@@ -150,12 +150,29 @@ func TestMain(m *testing.M) {
 
 func TestService(t *testing.T) {
 	dbDir := t.TempDir()
+	badgerDir := t.TempDir()
 	pgDns := "postgresql://root:secret@127.0.0.1:5432/projection?sslmode=disable"
 	pgEventDns := "postgresql://root:secret@127.0.0.1:5432/event?sslmode=disable"
 	tests := []struct {
 		name   string
 		config db.ServiceConfig
+		// badger fails several of the other repo suites for reasons
+		// unrelated to offchain txs, e.g. badgerhold cannot gob-encode the
+		// big.Int asset supply. Run only the offchain tx suite there, which
+		// is the one that pins the cross-backend filter semantics.
+		offchainTxOnly bool
 	}{
+		{
+			name: "repo_manager_with_badger_stores",
+			config: db.ServiceConfig{
+				EventStoreType:   "badger",
+				DataStoreType:    "badger",
+				EventStoreConfig: []interface{}{"", nil},
+				DataStoreConfig:  []interface{}{badgerDir, nil},
+				Settings:         validSettings(),
+			},
+			offchainTxOnly: true,
+		},
 		{
 			name: "repo_manager_with_sqlite_stores",
 			config: db.ServiceConfig{
@@ -183,6 +200,11 @@ func TestService(t *testing.T) {
 			svc, err := db.NewService(tt.config, nil)
 			require.NoError(t, err)
 			require.NotNil(t, svc)
+
+			if tt.offchainTxOnly {
+				testOffchainTxRepository(t, svc)
+				return
+			}
 
 			// Since we use the same db for all tests and given the constraints on the db tables,
 			// we need to run the tests in this specific order to ensure batch and offchain txs
@@ -3240,9 +3262,12 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 		ctx := context.Background()
 		repo := svc.OffchainTxs()
 
-		offchainTx, err := repo.GetOffchainTx(ctx, arkTxid)
-		require.Nil(t, offchainTx)
-		require.Error(t, err)
+		offchainTxs, err := repo.GetOffchainTxs(
+			ctx, domain.OffchainTxFilter{WithTxids: []string{arkTxid}},
+		)
+		require.NoError(t, err)
+		require.Empty(t, offchainTxs)
+		var offchainTx *domain.OffchainTx
 
 		checkpointTxid1 := "0000000000000000000000000000000000000000000000000000000000000001"
 		signedCheckpointPtx1 := "cHNldP8BAgQCAAAAAQQBAAEFAQABBgEDAfsEAgAAAAA=signed"
@@ -3283,8 +3308,12 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 			err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
 			require.NoError(t, err)
 
-			gotOffchainTx, err := repo.GetOffchainTx(ctx, arkTxid)
+			gotOffchainTxs, err := repo.GetOffchainTxs(
+				ctx, domain.OffchainTxFilter{WithTxids: []string{arkTxid}},
+			)
 			require.NoError(t, err)
+			require.Len(t, gotOffchainTxs, 1)
+			gotOffchainTx := gotOffchainTxs[0]
 			require.NotNil(t, offchainTx)
 			require.True(t, gotOffchainTx.IsAccepted())
 			require.Equal(t, rootCommitmentTxid, gotOffchainTx.RootCommitmentTxId)
@@ -3305,11 +3334,43 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 			err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
 			require.NoError(t, err)
 
-			gotOffchainTx, err = repo.GetOffchainTx(ctx, arkTxid)
+			gotOffchainTxs, err = repo.GetOffchainTxs(
+				ctx, domain.OffchainTxFilter{WithTxids: []string{arkTxid}},
+			)
 			require.NoError(t, err)
+			require.Len(t, gotOffchainTxs, 1)
+			gotOffchainTx = gotOffchainTxs[0]
 			require.NotNil(t, offchainTx)
 			require.True(t, gotOffchainTx.IsFinalized())
 			require.Condition(t, offchainTxMatch(*offchainTx, *gotOffchainTx))
+
+			// Filter pushdown coverage: the row persisted above has no extension
+			// (empty Packets), so WithExtension must hide it and a time range that
+			// excludes its starting_timestamp must do likewise. We also assert that
+			// an unrelated txid returns an empty result.
+			hidden, err := repo.GetOffchainTxs(
+				ctx, domain.OffchainTxFilter{WithExtension: true},
+			)
+			require.NoError(t, err)
+			require.Empty(t, hidden)
+
+			outOfRange, err := repo.GetOffchainTxs(
+				ctx, domain.OffchainTxFilter{WithAfterDate: now.Add(time.Hour).Unix()},
+			)
+			require.NoError(t, err)
+			require.Empty(t, outOfRange)
+
+			notFound, err := repo.GetOffchainTxs(
+				ctx, domain.OffchainTxFilter{WithTxids: []string{txidb}},
+			)
+			require.NoError(t, err)
+			require.Empty(t, notFound)
+
+			invalid, err := repo.GetOffchainTxs(
+				ctx, domain.OffchainTxFilter{WithAfterDate: 10, WithBeforeDate: 5},
+			)
+			require.Error(t, err)
+			require.Nil(t, invalid)
 		})
 
 		t.Run("request -> accept -> fail -> finalize", func(t *testing.T) {
@@ -3352,8 +3413,12 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 			err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
 			require.NoError(t, err)
 
-			gotOffchainTx, err := repo.GetOffchainTx(ctx, txidb)
+			gotOffchainTxs, err := repo.GetOffchainTxs(
+				ctx, domain.OffchainTxFilter{WithTxids: []string{txidb}},
+			)
 			require.NoError(t, err)
+			require.Len(t, gotOffchainTxs, 1)
+			gotOffchainTx := gotOffchainTxs[0]
 			require.NotNil(t, offchainTx)
 			require.Equal(t, int(domain.OffchainTxAcceptedStage), gotOffchainTx.Stage.Code)
 			require.True(t, gotOffchainTx.Stage.Failed)
@@ -3376,8 +3441,12 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 			err = repo.AddOrUpdateOffchainTx(ctx, offchainTx)
 			require.NoError(t, err)
 
-			gotOffchainTx, err = repo.GetOffchainTx(ctx, txidb)
+			gotOffchainTxs, err = repo.GetOffchainTxs(
+				ctx, domain.OffchainTxFilter{WithTxids: []string{txidb}},
+			)
 			require.NoError(t, err)
+			require.Len(t, gotOffchainTxs, 1)
+			gotOffchainTx = gotOffchainTxs[0]
 			require.NotNil(t, offchainTx)
 			require.True(t, gotOffchainTx.IsFinalized())
 			require.Empty(t, gotOffchainTx.FailReason)
@@ -3470,11 +3539,47 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 			require.NotContains(t, got[secondTxid].CheckpointTxs, firstCheckpointTxid)
 		})
 
+		// Every backend must agree on which stages GetOffchainTxs exposes.
+		// A tx that never reached acceptance stays hidden so a submission
+		// that failed early can be retried. The "request -> accept -> fail
+		// -> finalize" subtest above pins the other half, where an accepted
+		// tx stays visible once failed, so duplicate detection in
+		// SubmitOffchainTx and the lookup in FinalizeOffchainTx still find it.
+		t.Run("requested tx is not exposed", func(t *testing.T) {
+			requestedTxid := "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+			events := []domain.Event{
+				domain.OffchainTxRequested{
+					OffchainTxEvent: domain.OffchainTxEvent{
+						Id:   requestedTxid,
+						Type: domain.EventTypeOffchainTxRequested,
+					},
+					StartingTimestamp: now.Unix(),
+				},
+			}
+			require.NoError(
+				t, repo.AddOrUpdateOffchainTx(ctx, domain.NewOffchainTxFromEvents(events)),
+			)
+
+			byTxid, err := repo.GetOffchainTxs(
+				ctx, domain.OffchainTxFilter{WithTxids: []string{requestedTxid}},
+			)
+			require.NoError(t, err)
+			require.Empty(t, byTxid)
+
+			// The unfiltered scan shares the same predicate, so a row hidden
+			// from a txid lookup must not resurface through it.
+			scanned, err := repo.GetOffchainTxs(ctx, domain.OffchainTxFilter{})
+			require.NoError(t, err)
+			for _, tx := range scanned {
+				require.NotEqual(t, requestedTxid, tx.ArkTxid)
+			}
+		})
+
 		t.Run("admin lookup of a tx failed at request stage", func(t *testing.T) {
 			// A tx that failed before being accepted must stay invisible to
-			// GetOffchainTx, otherwise it would be treated as a duplicate and could
+			// the filtered lookup, otherwise it would be treated as a duplicate and could
 			// not be retried. GetAnyOffchainTx is the admin escape hatch.
-			failedTxid := "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+			failedTxid := "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 			startedAt := now.Unix() + 1000
 
 			offchainTx := domain.NewOffchainTxFromEvents([]domain.Event{
@@ -3498,8 +3603,11 @@ func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 			})
 			require.NoError(t, repo.AddOrUpdateOffchainTx(ctx, offchainTx))
 
-			_, err := repo.GetOffchainTx(ctx, failedTxid)
-			require.Error(t, err)
+			hidden, err := repo.GetOffchainTxs(
+				ctx, domain.OffchainTxFilter{WithTxids: []string{failedTxid}},
+			)
+			require.NoError(t, err)
+			require.Empty(t, hidden)
 
 			gotOffchainTx, err := repo.GetAnyOffchainTx(ctx, failedTxid)
 			require.NoError(t, err)

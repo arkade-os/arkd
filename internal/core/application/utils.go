@@ -340,6 +340,16 @@ func getAssetsFromTx(ptx *psbt.Packet) (map[uint32][]domain.AssetDenomination, e
 	return getAssetsDenominations(ext.GetAssetPacket(), ptx.UnsignedTx.TxID())
 }
 
+// extractPacketTypes returns the list of ARK extension packet types
+// carried by tx. The empty slice indicates the tx carries no extension,
+// which still distinguishes it from "not yet decoded" at the storage
+// layer (NULL packets column). Malformed-extension errors are
+// propagated so SubmitOffchainTx rejects bad input rather than
+// persisting it as "no extension".
+func extractPacketTypes(tx *wire.MsgTx) ([]int, error) {
+	return domain.PacketTypesFromMsgTx(tx)
+}
+
 func getAssetsDenominations(
 	packet asset.Packet,
 	txid string,

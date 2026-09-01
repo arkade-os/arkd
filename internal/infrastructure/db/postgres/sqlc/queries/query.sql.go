@@ -232,7 +232,7 @@ func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, erro
 }
 
 const selectAnyOffchainTx = `-- name: SelectAnyOffchainTx :many
-SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid = $1
+SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.packets, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid = $1
 `
 
 type SelectAnyOffchainTxRow struct {
@@ -258,6 +258,7 @@ func (q *Queries) SelectAnyOffchainTx(ctx context.Context, txid string) ([]Selec
 			&i.OffchainTxVw.ExpiryTimestamp,
 			&i.OffchainTxVw.FailReason,
 			&i.OffchainTxVw.StageCode,
+			&i.OffchainTxVw.Packets,
 			&i.OffchainTxVw.CheckpointTxid,
 			&i.OffchainTxVw.CheckpointTx,
 			&i.OffchainTxVw.CommitmentTxid,
@@ -632,6 +633,88 @@ func (q *Queries) SelectExpiringLiquidityAmount(ctx context.Context, arg SelectE
 	return amount, err
 }
 
+const selectFilteredOffchainTxsByTxids = `-- name: SelectFilteredOffchainTxsByTxids :many
+WITH limited_txids AS (
+    SELECT txid
+    FROM offchain_tx
+    WHERE (stage_code = 2 OR stage_code = 3)
+      AND txid = ANY($1::varchar[])
+      AND ($2::boolean = false OR (packets IS NOT NULL AND packets <> ''))
+      AND ($3::boolean = false OR starting_timestamp >= $4::bigint)
+      AND ($5::boolean = false OR starting_timestamp <= $6::bigint)
+    ORDER BY starting_timestamp DESC, txid ASC
+    LIMIT $7
+)
+SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.packets, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw
+JOIN limited_txids USING (txid)
+ORDER BY offchain_tx_vw.starting_timestamp DESC, offchain_tx_vw.txid ASC
+`
+
+type SelectFilteredOffchainTxsByTxidsParams struct {
+	Txids         []string
+	WithExtension bool
+	WithAfter     bool
+	AfterTs       int64
+	WithBefore    bool
+	BeforeTs      int64
+	Lim           int32
+}
+
+type SelectFilteredOffchainTxsByTxidsRow struct {
+	OffchainTxVw OffchainTxVw
+}
+
+// Returns only accepted or finalized offchain txs.
+// Capped the same way as SelectOffchainTxs: a caller-supplied txid list does
+// not bound the result, because in withheld/private mode an empty request is
+// backfilled from the auth token's whitelist, which comes from an unbounded
+// vtxo chain walk. The cap counts deduplicated base txids in the CTE so a tx
+// with N checkpoint rows still contributes one txid to it.
+func (q *Queries) SelectFilteredOffchainTxsByTxids(ctx context.Context, arg SelectFilteredOffchainTxsByTxidsParams) ([]SelectFilteredOffchainTxsByTxidsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectFilteredOffchainTxsByTxids,
+		pq.Array(arg.Txids),
+		arg.WithExtension,
+		arg.WithAfter,
+		arg.AfterTs,
+		arg.WithBefore,
+		arg.BeforeTs,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectFilteredOffchainTxsByTxidsRow
+	for rows.Next() {
+		var i SelectFilteredOffchainTxsByTxidsRow
+		if err := rows.Scan(
+			&i.OffchainTxVw.Txid,
+			&i.OffchainTxVw.Tx,
+			&i.OffchainTxVw.StartingTimestamp,
+			&i.OffchainTxVw.EndingTimestamp,
+			&i.OffchainTxVw.ExpiryTimestamp,
+			&i.OffchainTxVw.FailReason,
+			&i.OffchainTxVw.StageCode,
+			&i.OffchainTxVw.Packets,
+			&i.OffchainTxVw.CheckpointTxid,
+			&i.OffchainTxVw.CheckpointTx,
+			&i.OffchainTxVw.CommitmentTxid,
+			&i.OffchainTxVw.IsRootCommitmentTxid,
+			&i.OffchainTxVw.OffchainTxid,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectIntentByTxid = `-- name: SelectIntentByTxid :one
 SELECT id, txid, proof, message FROM intent
 WHERE txid = $1
@@ -832,25 +915,55 @@ func (q *Queries) SelectNotUnrolledVtxosWithPubkey(ctx context.Context, pubkey s
 	return items, nil
 }
 
-const selectOffchainTx = `-- name: SelectOffchainTx :many
-SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid = $1
-    AND (stage_code = 2 OR stage_code = 3)
+const selectOffchainTxs = `-- name: SelectOffchainTxs :many
+WITH limited_txids AS (
+    SELECT txid
+    FROM offchain_tx
+    WHERE (stage_code = 2 OR stage_code = 3)
+      AND ($1::boolean = false OR (packets IS NOT NULL AND packets <> ''))
+      AND ($2::boolean = false OR starting_timestamp >= $3::bigint)
+      AND ($4::boolean = false OR starting_timestamp <= $5::bigint)
+    ORDER BY starting_timestamp DESC, txid ASC
+    LIMIT $6::int
+)
+SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.packets, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw
+JOIN limited_txids USING (txid)
+ORDER BY offchain_tx_vw.starting_timestamp DESC, offchain_tx_vw.txid ASC
 `
 
-type SelectOffchainTxRow struct {
+type SelectOffchainTxsParams struct {
+	WithExtension bool
+	WithAfter     bool
+	AfterTs       int64
+	WithBefore    bool
+	BeforeTs      int64
+	Lim           int32
+}
+
+type SelectOffchainTxsRow struct {
 	OffchainTxVw OffchainTxVw
 }
 
-// Returns only accepted or finalized offchain txs
-func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOffchainTxRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectOffchainTx, txid)
+// Returns only accepted or finalized offchain txs.
+// The cap is enforced over a deduplicated set of base txids in the CTE,
+// then expanded back through the LEFT JOIN view so a tx with N
+// checkpoint rows still contributes one txid to the cap.
+func (q *Queries) SelectOffchainTxs(ctx context.Context, arg SelectOffchainTxsParams) ([]SelectOffchainTxsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectOffchainTxs,
+		arg.WithExtension,
+		arg.WithAfter,
+		arg.AfterTs,
+		arg.WithBefore,
+		arg.BeforeTs,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SelectOffchainTxRow
+	var items []SelectOffchainTxsRow
 	for rows.Next() {
-		var i SelectOffchainTxRow
+		var i SelectOffchainTxsRow
 		if err := rows.Scan(
 			&i.OffchainTxVw.Txid,
 			&i.OffchainTxVw.Tx,
@@ -859,6 +972,7 @@ func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOf
 			&i.OffchainTxVw.ExpiryTimestamp,
 			&i.OffchainTxVw.FailReason,
 			&i.OffchainTxVw.StageCode,
+			&i.OffchainTxVw.Packets,
 			&i.OffchainTxVw.CheckpointTxid,
 			&i.OffchainTxVw.CheckpointTx,
 			&i.OffchainTxVw.CommitmentTxid,
@@ -879,7 +993,7 @@ func (q *Queries) SelectOffchainTx(ctx context.Context, txid string) ([]SelectOf
 }
 
 const selectOffchainTxsByTxids = `-- name: SelectOffchainTxsByTxids :many
-SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid = ANY($1::varchar[]) AND COALESCE(fail_reason, '') = ''
+SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.packets, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid = ANY($1::varchar[]) AND COALESCE(fail_reason, '') = ''
 `
 
 type SelectOffchainTxsByTxidsRow struct {
@@ -903,6 +1017,7 @@ func (q *Queries) SelectOffchainTxsByTxids(ctx context.Context, txids []string) 
 			&i.OffchainTxVw.ExpiryTimestamp,
 			&i.OffchainTxVw.FailReason,
 			&i.OffchainTxVw.StageCode,
+			&i.OffchainTxVw.Packets,
 			&i.OffchainTxVw.CheckpointTxid,
 			&i.OffchainTxVw.CheckpointTx,
 			&i.OffchainTxVw.CommitmentTxid,
@@ -923,7 +1038,7 @@ func (q *Queries) SelectOffchainTxsByTxids(ctx context.Context, txids []string) 
 }
 
 const selectOffchainTxsInRange = `-- name: SelectOffchainTxsInRange :many
-SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid IN (
+SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.packets, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid IN (
     SELECT o.txid FROM offchain_tx o
     WHERE ($1::bigint = 0 OR o.starting_timestamp > $1::bigint)
       AND ($2::bigint = 0 OR o.starting_timestamp < $2::bigint)
@@ -972,12 +1087,54 @@ func (q *Queries) SelectOffchainTxsInRange(ctx context.Context, arg SelectOffcha
 			&i.OffchainTxVw.ExpiryTimestamp,
 			&i.OffchainTxVw.FailReason,
 			&i.OffchainTxVw.StageCode,
+			&i.OffchainTxVw.Packets,
 			&i.OffchainTxVw.CheckpointTxid,
 			&i.OffchainTxVw.CheckpointTx,
 			&i.OffchainTxVw.CommitmentTxid,
 			&i.OffchainTxVw.IsRootCommitmentTxid,
 			&i.OffchainTxVw.OffchainTxid,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectOffchainTxsWithoutPackets = `-- name: SelectOffchainTxsWithoutPackets :many
+SELECT txid, tx FROM offchain_tx
+WHERE packets IS NULL
+  AND txid > $1::varchar
+ORDER BY txid ASC
+LIMIT $2::int
+`
+
+type SelectOffchainTxsWithoutPacketsParams struct {
+	Cursor string
+	Lim    int32
+}
+
+type SelectOffchainTxsWithoutPacketsRow struct {
+	Txid string
+	Tx   string
+}
+
+func (q *Queries) SelectOffchainTxsWithoutPackets(ctx context.Context, arg SelectOffchainTxsWithoutPacketsParams) ([]SelectOffchainTxsWithoutPacketsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectOffchainTxsWithoutPackets, arg.Cursor, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectOffchainTxsWithoutPacketsRow
+	for rows.Next() {
+		var i SelectOffchainTxsWithoutPacketsRow
+		if err := rows.Scan(&i.Txid, &i.Tx); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -2538,6 +2695,23 @@ func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error
 	return err
 }
 
+const updateOffchainTxPackets = `-- name: UpdateOffchainTxPackets :exec
+UPDATE offchain_tx SET packets = $1 WHERE txid = $2 AND packets IS NULL
+`
+
+type UpdateOffchainTxPacketsParams struct {
+	Packets sql.NullString
+	Txid    string
+}
+
+// Only backfills a row still marked as not-yet-decoded. Without the
+// packets IS NULL guard a concurrent AddOrUpdateOffchainTx landing
+// between the backfill's SELECT and this UPDATE would be clobbered.
+func (q *Queries) UpdateOffchainTxPackets(ctx context.Context, arg UpdateOffchainTxPacketsParams) error {
+	_, err := q.db.ExecContext(ctx, updateOffchainTxPackets, arg.Packets, arg.Txid)
+	return err
+}
+
 const updateVtxoExpiration = `-- name: UpdateVtxoExpiration :exec
 UPDATE vtxo SET expires_at = $1 WHERE txid = $2 AND vout = $3
 `
@@ -2757,15 +2931,16 @@ func (q *Queries) UpsertMarker(ctx context.Context, arg UpsertMarkerParams) erro
 }
 
 const upsertOffchainTx = `-- name: UpsertOffchainTx :exec
-INSERT INTO offchain_tx (txid, tx, starting_timestamp, ending_timestamp, expiry_timestamp, fail_reason, stage_code)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO offchain_tx (txid, tx, starting_timestamp, ending_timestamp, expiry_timestamp, fail_reason, stage_code, packets)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT(txid) DO UPDATE SET
     tx = EXCLUDED.tx,
     starting_timestamp = EXCLUDED.starting_timestamp,
     ending_timestamp = EXCLUDED.ending_timestamp,
     expiry_timestamp = EXCLUDED.expiry_timestamp,
     fail_reason = EXCLUDED.fail_reason,
-    stage_code = EXCLUDED.stage_code
+    stage_code = EXCLUDED.stage_code,
+    packets = EXCLUDED.packets
 `
 
 type UpsertOffchainTxParams struct {
@@ -2776,6 +2951,7 @@ type UpsertOffchainTxParams struct {
 	ExpiryTimestamp   int64
 	FailReason        sql.NullString
 	StageCode         int32
+	Packets           sql.NullString
 }
 
 func (q *Queries) UpsertOffchainTx(ctx context.Context, arg UpsertOffchainTxParams) error {
@@ -2787,6 +2963,7 @@ func (q *Queries) UpsertOffchainTx(ctx context.Context, arg UpsertOffchainTxPara
 		arg.ExpiryTimestamp,
 		arg.FailReason,
 		arg.StageCode,
+		arg.Packets,
 	)
 	return err
 }
