@@ -40,6 +40,20 @@ func TestEvalOffchainInput(t *testing.T) {
 		require.Equal(t, arkfee.FeeAmount(0), result)
 	})
 
+	t.Run("invalid fee amount", func(t *testing.T) {
+		for _, f := range invalidFeePrograms {
+			t.Run(f.name, func(t *testing.T) {
+				estimator, err := arkfee.New(arkfee.Config{IntentOffchainInputProgram: f.program})
+				require.NoError(t, err)
+
+				result, err := estimator.EvalOffchainInput(arkfee.OffchainInput{Amount: 1000})
+				require.Error(t, err)
+				require.ErrorContains(t, err, "invalid fee amount")
+				require.Equal(t, arkfee.FeeAmount(0), result)
+			})
+		}
+	})
+
 	data := loadTestData(t)
 
 	for _, fixture := range data.EvalOffchainInput {
@@ -71,6 +85,20 @@ func TestEvalOnchainInput(t *testing.T) {
 		result, err := estimator.EvalOnchainInput(arkfee.OnchainInput{})
 		require.NoError(t, err)
 		require.Equal(t, arkfee.FeeAmount(0), result)
+	})
+
+	t.Run("invalid fee amount", func(t *testing.T) {
+		for _, f := range invalidFeePrograms {
+			t.Run(f.name, func(t *testing.T) {
+				estimator, err := arkfee.New(arkfee.Config{IntentOnchainInputProgram: f.program})
+				require.NoError(t, err)
+
+				result, err := estimator.EvalOnchainInput(arkfee.OnchainInput{Amount: 1000})
+				require.Error(t, err)
+				require.ErrorContains(t, err, "invalid fee amount")
+				require.Equal(t, arkfee.FeeAmount(0), result)
+			})
+		}
 	})
 
 	data := loadTestData(t)
@@ -109,6 +137,20 @@ func TestEvalOffchainOutput(t *testing.T) {
 		require.Equal(t, arkfee.FeeAmount(0), result)
 	})
 
+	t.Run("invalid fee amount", func(t *testing.T) {
+		for _, f := range invalidFeePrograms {
+			t.Run(f.name, func(t *testing.T) {
+				estimator, err := arkfee.New(arkfee.Config{IntentOffchainOutputProgram: f.program})
+				require.NoError(t, err)
+
+				result, err := estimator.EvalOffchainOutput(arkfee.Output{Amount: 1000})
+				require.Error(t, err)
+				require.ErrorContains(t, err, "invalid fee amount")
+				require.Equal(t, arkfee.FeeAmount(0), result)
+			})
+		}
+	})
+
 	data := loadTestData(t)
 
 	for _, fixture := range data.EvalOffchainOutput {
@@ -140,6 +182,20 @@ func TestEvalOnchainOutput(t *testing.T) {
 		result, err := estimator.EvalOnchainOutput(arkfee.Output{})
 		require.NoError(t, err)
 		require.Equal(t, arkfee.FeeAmount(0), result)
+	})
+
+	t.Run("invalid fee amount", func(t *testing.T) {
+		for _, f := range invalidFeePrograms {
+			t.Run(f.name, func(t *testing.T) {
+				estimator, err := arkfee.New(arkfee.Config{IntentOnchainOutputProgram: f.program})
+				require.NoError(t, err)
+
+				result, err := estimator.EvalOnchainOutput(arkfee.Output{Amount: 1000})
+				require.Error(t, err)
+				require.ErrorContains(t, err, "invalid fee amount")
+				require.Equal(t, arkfee.FeeAmount(0), result)
+			})
+		}
 	})
 
 	data := loadTestData(t)
@@ -207,6 +263,16 @@ func TestEval(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Programs that compile fine as a double but return a value unusable as a fee
+var invalidFeePrograms = []struct{ name, program string }{
+	{"negative constant", "-50.0"},
+	{"negative expression", "0.0 - amount"},
+	{"NaN", "0.0 / 0.0"},
+	{"positive infinity", "1.0 / 0.0"},
+	{"negative infinity", "-1.0 / 0.0"},
+	{"overflows int64", "1e19"},
 }
 
 //go:embed testdata/valid.json

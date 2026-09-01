@@ -7,8 +7,10 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -137,6 +139,10 @@ func (l *leaf) tree(
 ) (*TxTree, error) {
 	tx, err := getTx(l, initialInput, expiry)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := blockchain.CheckTransactionSanity(btcutil.NewTx(tx.UnsignedTx)); err != nil {
 		return nil, err
 	}
 

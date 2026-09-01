@@ -12,8 +12,8 @@ import (
 
 func TestGetVtxosFilters(t *testing.T) {
 	// renewableIsUnionOfSpendableAndRecoverable pins the invariant the
-	// renewableOnly filter relies on. It holds only because RequiresForfeit expands
-	// to (Swept || IsExpired || IsNote || Unrolled), so any unspent, non-unrolled
+	// renewableOnly filter relies on. It holds only because !RequiresForfeit expands
+	// to (Swept || IsNote || Unrolled), so any unspent, non-unrolled
 	// vtxo lands in the spendable set when not swept and in the recoverable set
 	// otherwise. If RequiresForfeit ever gains a condition, this test fails instead
 	// of the filter silently returning the wrong set.
@@ -187,8 +187,9 @@ func filterTestFixtures() []struct {
 		{"plain", filterTestVtxo("a1", false, false, false, false, false), true, false},
 		// swept vtxos stop requiring a forfeit, so they become recoverable
 		{"swept", filterTestVtxo("a2", false, true, false, false, false), false, true},
-		// expired and note vtxos are both spendable and recoverable
-		{"expired", filterTestVtxo("a3", false, false, false, false, true), true, true},
+		// expired vtxos still require a forfeit until swept, so they are spendable
+		// but not recoverable; note vtxos are both
+		{"expired", filterTestVtxo("a3", false, false, false, false, true), true, false},
 		{"note", filterTestVtxo("a4", false, false, false, true, false), true, true},
 		{"spent", filterTestVtxo("a5", true, false, false, false, false), false, false},
 		{"unrolled", filterTestVtxo("a6", false, false, true, false, false), false, false},

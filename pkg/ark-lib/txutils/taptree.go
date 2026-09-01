@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 
 	"github.com/btcsuite/btcd/txscript"
 )
+
+const MaxLeaves = 400
 
 // TapTree is a wrapper around a list of tapscripts
 // it is used to encode and decode the taproot tree
@@ -69,6 +72,14 @@ func DecodeTapTree(data []byte) (TapTree, error) {
 			return nil, err
 		}
 
+		if scriptLen > uint64(buf.Len()) {
+			return nil, fmt.Errorf("script length %d exceeds remaining data %d", scriptLen, buf.Len())
+		}
+
+		if scriptLen > txscript.MaxScriptSize {
+			return nil, fmt.Errorf("script length %d exceeds max %d", scriptLen, txscript.MaxScriptSize)
+		}
+
 		// script bytes
 		scriptBytes := make([]byte, scriptLen)
 		if _, err := buf.Read(scriptBytes); err != nil {
@@ -76,6 +87,10 @@ func DecodeTapTree(data []byte) (TapTree, error) {
 		}
 
 		leaves = append(leaves, hex.EncodeToString(scriptBytes))
+
+		if len(leaves) > MaxLeaves {
+			return nil, fmt.Errorf("leaves length %d exceeds max %d", len(leaves), MaxLeaves)
+		}
 	}
 
 	return TapTree(leaves), nil

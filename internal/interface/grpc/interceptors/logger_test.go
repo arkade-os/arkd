@@ -28,6 +28,19 @@ func TestSanitizeMetadata(t *testing.T) {
 		}`, got)
 	})
 
+	t.Run("selects client ip header", func(t *testing.T) {
+		ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+			"cf-connecting-ip", "203.0.113.7",
+		))
+
+		got, ok := sanitizeMetadata(ctx)
+
+		require.True(t, ok)
+		require.JSONEq(t, `{
+			"cf-connecting-ip": "203.0.113.7"
+		}`, got)
+	})
+
 	t.Run("preserves multiple values", func(t *testing.T) {
 		ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 			"x-sdk-version", "0.9.0",
@@ -53,6 +66,7 @@ func TestSanitizeMetadata(t *testing.T) {
 		ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 			"authorization", "secret",
 			"x-request-id", "request-id",
+			"x-forwarded-for", "203.0.113.7, 198.51.100.4",
 		))
 
 		got, ok := sanitizeMetadata(ctx)
