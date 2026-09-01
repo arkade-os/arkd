@@ -3809,7 +3809,7 @@ func TestSweep(t *testing.T) {
 
 		waitForVtxosInIndexer(t, alice, incominFunds...)
 
-		// lock/unlock the wallet to restart the sweeper
+		// restart arkd to restart the sweeper
 		err = restartArkd()
 		require.NoError(t, err)
 

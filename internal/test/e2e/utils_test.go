@@ -46,6 +46,7 @@ import (
 
 const (
 	adminUrl    = "http://127.0.0.1:7071"
+	walletUrl   = "http://127.0.0.1:6060"
 	serverUrl   = "127.0.0.1:7070"
 	explorerUrl = "http://127.0.0.1:3000"
 )
@@ -1253,10 +1254,9 @@ func restartArkd() error {
 		return err
 	}
 
-	if err := unlockArkd(adminHttpClient); err != nil {
-		return err
-	}
-
+	// The wallet stays unlocked across the restart, arkd no longer locks it, so
+	// there is nothing to unlock here.
+	//
 	// wait until the wallet is synced again before returning, otherwise RPCs
 	// racing the restart get "server not ready".
 	if err := waitUntilReady(adminHttpClient); err != nil {
@@ -1288,14 +1288,6 @@ func waitUntilArkServiceReady() error {
 		time.Sleep(500 * time.Millisecond)
 	}
 	return fmt.Errorf("timed out waiting for the ark service to be ready: %w", lastErr)
-}
-
-// unlockArkd posts the unlock request, retrying until the admin API is
-// listening again after a container restart.
-func unlockArkd(httpClient *http.Client) error {
-	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
-	body := fmt.Sprintf(`{"password": "%s"}`, password)
-	return postWithRetry(httpClient, url, body, "unlock", time.Minute)
 }
 
 // postWithRetry retries post until it succeeds or timeout elapses. The admin
@@ -1339,73 +1331,103 @@ func recreateArkdWallet(signerKey, deprecated string) error {
 	return restartArkd()
 }
 
+// unlockArkdWallet unlocks the arkd-wallet directly through its own gateway.
+// arkd no longer unlocks the wallet, so recreating the wallet container leaves
+// it locked until we unlock it here.
 func unlockArkdWallet() error {
-	adminHttpClient := &http.Client{Timeout: 15 * time.Second}
-	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
-	body := fmt.Sprintf(`{"password": "%s"}`, password)
-	return postWithRetry(adminHttpClient, url, body, "unlock", time.Minute)
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	url := fmt.Sprintf("%s/v1/wallet/unlock", walletUrl)
+	body, err := json.Marshal(map[string]string{"password": password})
+	if err != nil {
+		return fmt.Errorf("failed to encode unlock wallet body: %s", err)
+	}
+	return postWithRetry(httpClient, url, string(body), "unlock wallet", time.Minute)
 }
 
 func setupArkd() error {
-	adminHttpClient := &http.Client{
+	httpClient := &http.Client{
 		Timeout: 15 * time.Second,
 	}
 
-	url := fmt.Sprintf("%s/v1/admin/wallet/status", adminUrl)
-	status, err := get[statusResp](adminHttpClient, url, "status")
-	if err != nil {
+	// arkd no longer initializes or unlocks the wallet: drive the arkd-wallet
+	// directly so it is initialized and unlocked. arkd hard-fails to start while
+	// the wallet is locked, so it may have been crash-looping until now.
+	if err := setupArkdWallet(httpClient); err != nil {
 		return err
 	}
 
-	if status.Initialized {
-		if !status.Unlocked {
-			if err := unlockArkd(adminHttpClient); err != nil {
-				return err
-			}
-		}
-
-		// An initialised wallet is never re-created, even when it is still
-		// syncing; wait for it instead.
-		if err := waitUntilReady(adminHttpClient); err != nil {
-			return err
-		}
-
-		// The wallet reporting ready is not the same signal as the public
-		// gRPC surface accepting calls, which is gated separately on the app
-		// service having started. Clients created before that gate opens fail
-		// with "server not ready".
-		if err := waitUntilArkServiceReady(); err != nil {
-			return err
-		}
-
-		return refill(adminHttpClient)
-	}
-
-	url = fmt.Sprintf("%s/v1/admin/wallet/seed", adminUrl)
-	seed, err := get[seedResp](adminHttpClient, url, "seed")
-	if err != nil {
+	// Restart arkd for a prompt clean boot now that the wallet is ready, then
+	// wait for it to come up.
+	if _, err := runCommand("docker", "container", "restart", "arkd"); err != nil {
 		return err
 	}
 
-	url = fmt.Sprintf("%s/v1/admin/wallet/create", adminUrl)
-	body := fmt.Sprintf(`{"seed": "%s", "password": "%s"}`, seed.Seed, password)
-	if err := post(adminHttpClient, url, body, "create"); err != nil {
+	if err := waitUntilReady(httpClient); err != nil {
 		return err
 	}
 
-	if err := unlockArkd(adminHttpClient); err != nil {
-		return err
-	}
-
-	if err := waitUntilReady(adminHttpClient); err != nil {
-		return err
-	}
-
+	// The wallet reporting ready is not the same signal as the public gRPC
+	// surface accepting calls, which is gated separately on the app service
+	// having started. Clients created before that gate opens fail with
+	// "server not ready".
 	if err := waitUntilArkServiceReady(); err != nil {
 		return err
 	}
 
-	return refill(adminHttpClient)
+	return refill(httpClient)
+}
+
+func setupArkdWallet(httpClient *http.Client) error {
+	// The arkd-wallet gateway may still be coming up; retry the first read until
+	// it is reachable.
+	statusURL := fmt.Sprintf("%s/v1/wallet/status", walletUrl)
+	var status *statusResp
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	timeout := time.After(2 * time.Minute)
+	for status == nil {
+		select {
+		case <-timeout:
+			return fmt.Errorf("timed out waiting for arkd-wallet to become reachable")
+		case <-ticker.C:
+			s, err := get[statusResp](httpClient, statusURL, "wallet status")
+			if err != nil {
+				// gateway not up yet; keep waiting.
+				continue
+			}
+			status = s
+		}
+	}
+
+	if !status.Initialized {
+		url := fmt.Sprintf("%s/v1/wallet/seed", walletUrl)
+		seed, err := get[seedResp](httpClient, url, "wallet seed")
+		if err != nil {
+			return err
+		}
+
+		url = fmt.Sprintf("%s/v1/wallet/create", walletUrl)
+		body, err := json.Marshal(map[string]string{"seed": seed.Seed, "password": password})
+		if err != nil {
+			return fmt.Errorf("failed to encode create wallet body: %s", err)
+		}
+		if err := post(httpClient, url, string(body), "create wallet"); err != nil {
+			return err
+		}
+	}
+
+	if !status.Unlocked {
+		url := fmt.Sprintf("%s/v1/wallet/unlock", walletUrl)
+		body, err := json.Marshal(map[string]string{"password": password})
+		if err != nil {
+			return fmt.Errorf("failed to encode unlock wallet body: %s", err)
+		}
+		if err := post(httpClient, url, string(body), "unlock wallet"); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 type statusResp struct {
