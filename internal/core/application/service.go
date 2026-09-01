@@ -1615,6 +1615,41 @@ func (s *service) releaseClaimsOfIntentIds(ctx context.Context, ids []string) {
 	s.releaseClaimsOfIntents(ctx, intents)
 }
 
+// releaseClaimsOfSelectedIntents releases the claims of every intent the last
+// Pop selected that is no longer queued. An intent re-pushed for a later round
+// is queued again under the same id and keeps its claim.
+func (s *service) releaseClaimsOfSelectedIntents(ctx context.Context) {
+	selected, err := s.cache.Intents().GetSelectedIntents(ctx)
+	if err != nil {
+		log.WithError(err).Warn("failed to get selected intents to release their claims")
+		return
+	}
+	if len(selected) <= 0 {
+		return
+	}
+	ids := make([]string, 0, len(selected))
+	for _, intent := range selected {
+		ids = append(ids, intent.Id)
+	}
+	queued, err := s.cache.Intents().ViewAll(ctx, ids)
+	if err != nil {
+		log.WithError(err).Warnf("failed to view intents %v to release their claims", ids)
+		return
+	}
+	stillQueued := make(map[string]struct{}, len(queued))
+	for _, intent := range queued {
+		stillQueued[intent.Id] = struct{}{}
+	}
+	dropped := make([]domain.Intent, 0, len(selected))
+	for _, intent := range selected {
+		if _, ok := stillQueued[intent.Id]; ok {
+			continue
+		}
+		dropped = append(dropped, intent.Intent)
+	}
+	s.releaseClaimsOfIntents(ctx, dropped)
+}
+
 func (s *service) RegisterIntent(
 	ctx context.Context, proof intent.Proof, message intent.RegisterMessage,
 ) (string, errors.Error) {
@@ -2248,10 +2283,11 @@ func (s *service) RegisterIntent(
 	// atomic across processes, as Add is, and reserves rather than only checking,
 	// so it also stops two intents registering the same vtxo.
 	//
-	// Every claim taken here is released again: on round completion, on delete by
-	// proof, and on admin delete. That holds because every registered intent is
-	// eventually selected by Pop and so appears in the finished round. Pop skips
-	// intents carrying no receivers, but RegisterIntent cannot produce one, since
+	// Every claim taken here is released again: at the next round start once Pop
+	// has selected the intent and it was either registered on the round or
+	// dropped, on delete by proof, and on admin delete. That holds because every
+	// registered intent is eventually selected by Pop. Pop skips intents
+	// carrying no receivers, but RegisterIntent cannot produce one, since
 	// Intent.validate rejects an empty output set. If receivers ever become
 	// optional (see the commented-out IntentStore.Update), such an intent would
 	// never be selected, never reach a release path, and its claim would leak
@@ -2848,13 +2884,14 @@ func (s *service) startRound() {
 				"failed to delete forfeit txs from cache for round %s", existingRound.Id,
 			)
 		}
-		// The round holds every intent Pop selected, so their claims are released
-		// here by owner; intents still queued for a later round keep theirs.
-		roundIntents := make([]domain.Intent, 0, len(existingRound.Intents))
-		for _, intent := range existingRound.Intents {
-			roundIntents = append(roundIntents, intent)
-		}
-		s.releaseClaimsOfIntents(ctx, roundIntents)
+		// Every intent the last Pop selected is by now registered on the round,
+		// re-pushed to the queue, or dropped (spent boarding input, liquidity
+		// abort, failed re-push, or a crash before the round was stored).
+		// Release the claims of all but the re-pushed ones, so a dropped intent
+		// cannot leave its vtxos claimed forever. This reconciles the conflict
+		// domain from the popped set the same way DeleteVtxos below reconciles
+		// the intent vtxo index.
+		s.releaseClaimsOfSelectedIntents(ctx)
 
 		if err := s.cache.Intents().DeleteVtxos(ctx); err != nil {
 			log.WithError(err).Warnf(

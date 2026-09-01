@@ -66,6 +66,40 @@ func TestIntentClaimRelease(t *testing.T) {
 		require.Empty(t, rec.released())
 	})
 
+	t.Run("round start releases selected intents that are no longer queued", func(t *testing.T) {
+		// After a round, a popped intent is either registered on the round or
+		// dropped, both gone from the queue, or re-pushed and still queued. Only
+		// the first two must release, or a dropped intent's vtxos stay claimed.
+		rec := &recordingOffchainTxStore{}
+		s := &service{cache: testLiveStore{
+			offchainTxs: rec,
+			intents: &claimIntentStore{
+				selected: []ports.TimedIntent{
+					{Intent: claimIntent("intent-a", "aa")},
+					{Intent: claimIntent("intent-b", "bb")},
+					{Intent: claimIntent("intent-c", "cc")},
+				},
+				all: []ports.TimedIntent{{Intent: claimIntent("intent-b", "bb")}},
+			},
+		}}
+
+		s.releaseClaimsOfSelectedIntents(ctx)
+
+		require.Equal(t, map[string][]string{
+			"intent-a": {outpointStr("aa")},
+			"intent-c": {outpointStr("cc")},
+		}, rec.released())
+	})
+
+	t.Run("round start with nothing selected releases nothing", func(t *testing.T) {
+		rec := &recordingOffchainTxStore{}
+		s := &service{cache: testLiveStore{offchainTxs: rec, intents: &claimIntentStore{}}}
+
+		s.releaseClaimsOfSelectedIntents(ctx)
+
+		require.Empty(t, rec.released())
+	})
+
 	t.Run("admin delete releases the named intents", func(t *testing.T) {
 		rec := &recordingOffchainTxStore{}
 		intents := &claimIntentStore{all: []ports.TimedIntent{
@@ -120,12 +154,18 @@ func (r *recordingOffchainTxStore) ReleaseOutpoints(
 
 func (r *recordingOffchainTxStore) released() map[string][]string { return r.calls }
 
-// claimIntentStore is an IntentStore that serves ViewAll and records deletions.
+// claimIntentStore is an IntentStore that serves ViewAll and GetSelectedIntents
+// and records deletions.
 type claimIntentStore struct {
 	ports.IntentStore
 	all        []ports.TimedIntent
+	selected   []ports.TimedIntent
 	deleted    []string
 	deletedAll bool
+}
+
+func (s *claimIntentStore) GetSelectedIntents(_ context.Context) ([]ports.TimedIntent, error) {
+	return s.selected, nil
 }
 
 func (s *claimIntentStore) ViewAll(
