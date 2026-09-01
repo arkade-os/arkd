@@ -445,7 +445,6 @@
             "name": "filter.expressions",
             "in": "query",
             "description": "CEL expressions evaluated against each indexed tx envelope. The\nindexer combines them with OR.",
-            "style": "simple",
             "schema": {
               "minItems": 1,
               "type": "array",
@@ -457,7 +456,6 @@
           {
             "name": "filter.scripts.add",
             "in": "query",
-            "style": "simple",
             "schema": {
               "minItems": 1,
               "type": "array",
@@ -469,7 +467,6 @@
           {
             "name": "filter.scripts.remove",
             "in": "query",
-            "style": "simple",
             "schema": {
               "minItems": 1,
               "type": "array",
@@ -564,7 +561,6 @@
             "name": "filter.expressions",
             "in": "query",
             "description": "CEL expressions evaluated against each indexed tx envelope. The\nindexer combines them with OR.",
-            "style": "simple",
             "schema": {
               "minItems": 1,
               "type": "array",
@@ -576,7 +572,6 @@
           {
             "name": "filter.scripts.add",
             "in": "query",
-            "style": "simple",
             "schema": {
               "minItems": 1,
               "type": "array",
@@ -588,7 +583,6 @@
           {
             "name": "filter.scripts.remove",
             "in": "query",
-            "style": "simple",
             "schema": {
               "minItems": 1,
               "type": "array",
@@ -855,7 +849,6 @@
             "name": "scripts",
             "in": "query",
             "description": "Either specify a list of vtxo scripts.",
-            "style": "simple",
             "schema": {
               "minItems": 1,
               "type": "array",
@@ -868,7 +861,6 @@
             "name": "outpoints",
             "in": "query",
             "description": "Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.",
-            "style": "simple",
             "schema": {
               "minItems": 1,
               "type": "array",

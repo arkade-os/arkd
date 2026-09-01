@@ -139,7 +139,6 @@
           {
             "name": "topics",
             "in": "query",
-            "style": "simple",
             "schema": {
               "minItems": 1,
               "type": "array",
