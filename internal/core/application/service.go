@@ -1068,6 +1068,40 @@ func (s *service) SubmitOffchainTx(
 		})
 	}
 
+	// txid doesn't commit to prevouts and taproot leaves
+	for i, rebuiltIn := range rebuiltArkTx.Inputs {
+		in := arkPtx.Inputs[i]
+		if in.WitnessUtxo.Value != rebuiltIn.WitnessUtxo.Value ||
+			!bytes.Equal(in.WitnessUtxo.PkScript, rebuiltIn.WitnessUtxo.PkScript) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"ark tx input %d prevout mismatch: expected %d %x, got %d %x",
+				i, rebuiltIn.WitnessUtxo.Value, rebuiltIn.WitnessUtxo.PkScript,
+				in.WitnessUtxo.Value, in.WitnessUtxo.PkScript,
+			).WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: i})
+		}
+		leaf, rebuiltLeaf := in.TaprootLeafScript[0], rebuiltIn.TaprootLeafScript[0]
+		if leaf.LeafVersion != rebuiltLeaf.LeafVersion {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"ark tx input %d tapscript leaf version mismatch: expected %d, got %d",
+				i, rebuiltLeaf.LeafVersion, leaf.LeafVersion,
+			).WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: i})
+		}
+
+		if !bytes.Equal(leaf.Script, rebuiltLeaf.Script) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"ark tx input %d tapscript leaf script mismatch: expected %x, got %x",
+				i, rebuiltLeaf.Script, leaf.Script,
+			).WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: i})
+		}
+
+		if !bytes.Equal(leaf.ControlBlock, rebuiltLeaf.ControlBlock) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"ark tx input %d tapscript control block mismatch: expected %x, got %x",
+				i, rebuiltLeaf.ControlBlock, leaf.ControlBlock,
+			).WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: i})
+		}
+	}
+
 	// verify the tapscript signatures
 	if valid, _, err := s.builder.VerifyVtxoTapscriptSigs(signedArkTx, false); err != nil ||
 		!valid {

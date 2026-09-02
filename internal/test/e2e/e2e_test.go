@@ -2209,6 +2209,107 @@ func TestOffchainTx(t *testing.T) {
 		require.Empty(t, finalArkTx)
 		require.Empty(t, signedCheckpoints)
 	})
+
+	t.Run("tampered input metadata", func(t *testing.T) {
+		ctx := t.Context()
+		alice := setupClientWallet(t)
+
+		faucetOffchain(t, alice, 0.0002)
+		faucetOffchain(t, alice, 0.0003)
+
+		_, offchainAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+
+		vtxos, _, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, vtxos, 2)
+
+		serverParams, err := alice.GetConfigData(ctx)
+		require.NoError(t, err)
+
+		type signFunc = func(ctx context.Context, tx string) (string, error)
+		type tamperFunc = func(ptx *psbt.Packet)
+		tamperThenSign := func(t *testing.T, tamper tamperFunc) signFunc {
+			t.Helper()
+			return func(ctx context.Context, tx string) (string, error) {
+				ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+				require.NoError(t, err)
+				require.Len(t, ptx.Inputs, 2)
+				tamper(ptx)
+				tampered, err := ptx.B64Encode()
+				require.NoError(t, err)
+				return alice.SignTransaction(ctx, tampered)
+			}
+		}
+
+		sendTampered := func(t *testing.T, tamper tamperFunc) error {
+			t.Helper()
+			send, err := offchaintx.BuildAndSignTx(ctx, offchaintx.BuildAndSignTxArgs{
+				BaseArgs: offchaintx.BaseArgs{
+					ServerParams: *serverParams,
+					SignTx:       tamperThenSign(t, tamper),
+					Vtxos:        vtxos,
+					ChangeAddr:   offchainAddr.Address,
+				},
+				Receivers: []clientlib.Receiver{{To: offchainAddr.Address, Amount: 40000}},
+			})
+			require.NoError(t, err)
+
+			_, _, _, err = alice.Client().SubmitTx(ctx, send.SignedArkTx, send.CheckpointTxs)
+			return err
+		}
+
+		t.Run("tamper prevout value", func(t *testing.T) {
+			err := sendTampered(t, func(ptx *psbt.Packet) {
+				ptx.Inputs[0].WitnessUtxo.Value += ptx.Inputs[1].WitnessUtxo.Value
+				ptx.Inputs[1].WitnessUtxo.Value = 0
+			})
+			require.ErrorContains(t, err, "prevout mismatch")
+		})
+
+		t.Run("tamper prevout pkscript", func(t *testing.T) {
+			for idx := range vtxos {
+				err := sendTampered(t, func(ptx *psbt.Packet) {
+					ptx.Inputs[idx].WitnessUtxo.PkScript = []byte{txscript.OP_TRUE}
+				})
+				require.ErrorContains(t, err, "prevout mismatch")
+			}
+		})
+
+		t.Run("tamper tapleaf script", func(t *testing.T) {
+			for idx := range vtxos {
+				err := sendTampered(t, func(ptx *psbt.Packet) {
+					leaf := ptx.Inputs[idx].TaprootLeafScript[0]
+					closure, err := script.DecodeClosure(leaf.Script)
+					require.NoError(t, err)
+					multisig, ok := closure.(*script.MultisigClosure)
+					require.True(t, ok)
+					slices.Reverse(multisig.PubKeys)
+					leaf.Script, err = multisig.Script()
+					require.NoError(t, err)
+				})
+				require.ErrorContains(t, err, "tapscript leaf script mismatch")
+			}
+		})
+
+		t.Run("tamper tapleaf control block", func(t *testing.T) {
+			for idx := range vtxos {
+				err := sendTampered(t, func(ptx *psbt.Packet) {
+					ptx.Inputs[idx].TaprootLeafScript[0].ControlBlock[0] ^= 1
+				})
+				require.ErrorContains(t, err, "tapscript control block mismatch")
+			}
+		})
+
+		t.Run("tamper tapleaf version", func(t *testing.T) {
+			for idx := range vtxos {
+				err := sendTampered(t, func(ptx *psbt.Packet) {
+					ptx.Inputs[idx].TaprootLeafScript[0].LeafVersion = txscript.TapscriptLeafVersion(0xFF)
+				})
+				require.ErrorContains(t, err, "tapscript leaf version mismatch")
+			}
+		})
+	})
 }
 
 // TestDelegateRefresh tests the case where Alice owns a vtxo and delegates Bob to refresh it.
