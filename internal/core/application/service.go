@@ -26,15 +26,16 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/errors"
+	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	log "github.com/sirupsen/logrus"
 )
@@ -192,8 +193,8 @@ func (s *service) Start() error {
 		return fmt.Errorf("failed to encode checkpoint tapscript: %s", err)
 	}
 
-	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
-	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(
+	pubkeyHash := address.Hash160(forfeitPubkey.SerializeCompressed())
+	forfeitAddr, err := address.NewAddressWitnessPubKeyHash(
 		pubkeyHash, chainParams(settings.Network),
 	)
 	if err != nil {

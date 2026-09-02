@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/ports"
-	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/stretchr/testify/require"
 )
 

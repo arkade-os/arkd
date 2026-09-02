@@ -9,10 +9,10 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -82,7 +82,7 @@ func newTestBumpAnchorArgs(
 	require.NoError(t, err)
 
 	netParams := clientlib.ToBitcoinNetwork(arklib.BitcoinRegTest)
-	addr, err := btcutil.NewAddressTaproot(
+	addr, err := address.NewAddressTaproot(
 		schnorr.SerializePubKey(bumpKey.PubKey()), &netParams,
 	)
 	require.NoError(t, err)
@@ -138,7 +138,7 @@ func newTestCompleteUnrollArgs(
 	require.NoError(t, err)
 
 	netParams := clientlib.ToBitcoinNetwork(arklib.BitcoinRegTest)
-	addr, err := btcutil.NewAddressTaproot(schnorr.SerializePubKey(tapKey), &netParams)
+	addr, err := address.NewAddressTaproot(schnorr.SerializePubKey(tapKey), &netParams)
 	require.NoError(t, err)
 
 	return CompleteUnrollArgs{

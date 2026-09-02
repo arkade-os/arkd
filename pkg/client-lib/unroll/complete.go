@@ -8,10 +8,10 @@ import (
 	"math"
 	"strings"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 // CompleteUnrollArgs configures CompleteUnroll: spends the user's matured
@@ -45,7 +45,7 @@ func (a CompleteUnrollArgs) validate() error {
 		return fmt.Errorf("missing receiver address")
 	}
 	netParams := clientlib.ToBitcoinNetwork(a.ServerParams.Network)
-	if _, err := btcutil.DecodeAddress(a.Receiver, &netParams); err != nil {
+	if _, err := arklib.DecodeBitcoinAddress(a.Receiver, &netParams); err != nil {
 		return fmt.Errorf("invalid receiver address")
 	}
 	return nil

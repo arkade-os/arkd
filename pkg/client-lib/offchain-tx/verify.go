@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/psbt/v2"
 )
 
 func VerifySignedCheckpointTxs(

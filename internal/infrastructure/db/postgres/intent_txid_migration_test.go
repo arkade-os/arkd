@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
-	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/stretchr/testify/require"
 )
 

@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/psbt/v2"
 )
 
 // FinalizeVtxoScript finalizes the given input as vtxo script IF the witness utxo is a decodable vtxo script closure.

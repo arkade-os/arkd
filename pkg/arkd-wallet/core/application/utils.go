@@ -2,7 +2,7 @@ package application
 
 import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
-	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 )
 
 func NetworkToChainParams(network string) *chaincfg.Params {

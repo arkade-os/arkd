@@ -13,9 +13,9 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/arkade-os/arkd/pkg/client-wallet/types"
+	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/txscript/v2"
 )
 
 func (w *wallet) Receive(ctx context.Context) (
@@ -328,7 +328,7 @@ func (w *wallet) deriveDefaultAddresses(
 		return "", nil, nil, nil, err
 	}
 
-	boardingTaprootAddr, err := btcutil.NewAddressTaproot(
+	boardingTaprootAddr, err := address.NewAddressTaproot(
 		schnorr.SerializePubKey(boardingTapKey), &netParams,
 	)
 	if err != nil {
@@ -340,7 +340,7 @@ func (w *wallet) deriveDefaultAddresses(
 		return "", nil, nil, nil, err
 	}
 
-	redemptionTaprootAddr, err := btcutil.NewAddressTaproot(
+	redemptionTaprootAddr, err := address.NewAddressTaproot(
 		schnorr.SerializePubKey(vtxoTapKey), &netParams,
 	)
 	if err != nil {
@@ -348,7 +348,7 @@ func (w *wallet) deriveDefaultAddresses(
 	}
 
 	onchainTapKey := txscript.ComputeTaprootKeyNoScript(key.PubKey)
-	onchainTaprootAddr, err := btcutil.NewAddressTaproot(
+	onchainTaprootAddr, err := address.NewAddressTaproot(
 		schnorr.SerializePubKey(onchainTapKey), &netParams,
 	)
 	if err != nil {

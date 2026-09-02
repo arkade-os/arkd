@@ -10,14 +10,14 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -121,8 +121,8 @@ func newForfeitScenario(
 	require.NoError(t, err)
 	forfeitPub, err := btcec.ParsePubKey(forfeitPubkeyBytes)
 	require.NoError(t, err)
-	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(
-		btcutil.Hash160(forfeitPub.SerializeCompressed()), &chaincfg.MainNetParams,
+	forfeitAddr, err := address.NewAddressWitnessPubKeyHash(
+		address.Hash160(forfeitPub.SerializeCompressed()), &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
 	forfeitScript, err := txscript.PayToAddrScript(forfeitAddr)
@@ -214,8 +214,8 @@ func TestVerifyForfeitTxsRejectsMalformedCltvLeaf(t *testing.T) {
 	require.NoError(t, err)
 	forfeitPub, err := btcec.ParsePubKey(forfeitPubkeyBytes)
 	require.NoError(t, err)
-	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(
-		btcutil.Hash160(forfeitPub.SerializeCompressed()), &chaincfg.MainNetParams,
+	forfeitAddr, err := address.NewAddressWitnessPubKeyHash(
+		address.Hash160(forfeitPub.SerializeCompressed()), &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
 	forfeitScript, err := txscript.PayToAddrScript(forfeitAddr)
@@ -310,8 +310,8 @@ func TestVerifyForfeitTxsZeroLocktimeCltvNeedsNonFinalSequence(t *testing.T) {
 	require.NoError(t, err)
 	forfeitPub, err := btcec.ParsePubKey(forfeitPubkeyBytes)
 	require.NoError(t, err)
-	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(
-		btcutil.Hash160(forfeitPub.SerializeCompressed()), &chaincfg.MainNetParams,
+	forfeitAddr, err := address.NewAddressWitnessPubKeyHash(
+		address.Hash160(forfeitPub.SerializeCompressed()), &chaincfg.MainNetParams,
 	)
 	require.NoError(t, err)
 	forfeitScript, err := txscript.PayToAddrScript(forfeitAddr)

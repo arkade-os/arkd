@@ -7,7 +7,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arktree "github.com/arkade-os/arkd/pkg/ark-lib/tree"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/mock"
 )
 

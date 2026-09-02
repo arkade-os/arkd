@@ -3,7 +3,7 @@ package arklib
 import (
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 )
 
 type Network struct {

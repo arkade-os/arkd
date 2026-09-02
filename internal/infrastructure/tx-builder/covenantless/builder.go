@@ -13,15 +13,16 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -593,7 +594,10 @@ func (b *txBuilder) BuildCommitmentTx(
 			return "", nil, "", nil, err
 		}
 
-		connectorAddress, err := btcutil.DecodeAddress(nextConnectorAddress, b.onchainNetwork())
+		connectorAddress, err := arklib.DecodeBitcoinAddress(
+			nextConnectorAddress,
+			b.onchainNetwork(),
+		)
 		if err != nil {
 			return "", nil, "", nil, err
 		}
@@ -856,7 +860,7 @@ func (b *txBuilder) createCommitmentTx(
 			return nil, err
 		}
 
-		changeAddress, err := btcutil.DecodeAddress(changeAddresses[0], b.onchainNetwork())
+		changeAddress, err := arklib.DecodeBitcoinAddress(changeAddresses[0], b.onchainNetwork())
 		if err != nil {
 			return nil, err
 		}
@@ -1268,13 +1272,13 @@ func (b *txBuilder) getForfeitScript() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	pubkeyHash := btcutil.Hash160(forfeitPubkey.SerializeCompressed())
-	forfeitAddr, err := btcutil.NewAddressWitnessPubKeyHash(pubkeyHash, b.onchainNetwork())
+	pubkeyHash := address.Hash160(forfeitPubkey.SerializeCompressed())
+	forfeitAddr, err := address.NewAddressWitnessPubKeyHash(pubkeyHash, b.onchainNetwork())
 	if err != nil {
 		return nil, err
 	}
 
-	addr, err := btcutil.DecodeAddress(forfeitAddr.String(), nil)
+	addr, err := arklib.DecodeBitcoinAddress(forfeitAddr.String(), nil)
 	if err != nil {
 		return nil, err
 	}

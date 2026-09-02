@@ -13,9 +13,9 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/client-lib/explorer"
+	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/chaincfg/v2"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -189,7 +189,7 @@ func newTestAddr(url string) string {
 	pubKey := key.PubKey()
 	pubKeyCompressed := pubKey.SerializeCompressed()
 
-	pubKeyHash := btcutil.Hash160(pubKeyCompressed)
+	pubKeyHash := address.Hash160(pubKeyCompressed)
 
 	net := &chaincfg.MainNetParams
 	if strings.Contains(url, "testnet") {
@@ -202,7 +202,7 @@ func newTestAddr(url string) string {
 		net = &chaincfg.RegressionNetParams
 	}
 
-	addr, err := btcutil.NewAddressWitnessPubKeyHash(pubKeyHash, net)
+	addr, err := address.NewAddressWitnessPubKeyHash(pubKeyHash, net)
 	if err != nil {
 		log.Fatal(err)
 	}

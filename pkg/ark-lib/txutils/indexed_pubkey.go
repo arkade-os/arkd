@@ -4,7 +4,7 @@ import (
 	"sort"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/psbt/v2"
 )
 
 // IndexedCosignerPublicKey is a public key with its associated index.

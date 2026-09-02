@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 type VtxoWithValue struct {
