@@ -1769,8 +1769,8 @@ func TestGetVirtualTxs_Batching(t *testing.T) {
 		require.Contains(t, resp.Txs, fmt.Sprintf("tx_%s", txids[500]))
 		require.Contains(t, resp.Txs, "dup_tx")
 
-		// 6. Pagination happens AFTER aggregation (total count reflects all aggregated unique txs)
-		require.Equal(t, int32(4), resp.Page.Total)
+		// 6. Pagination happens AFTER aggregation (total page count = 1 for 4 items with PageSize 10, all 4 items returned)
+		require.Equal(t, int32(1), resp.Page.Total)
 	})
 
 	t.Run("propagates error from intermediate chunk", func(t *testing.T) {
