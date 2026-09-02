@@ -1716,3 +1716,95 @@ func matchIDs(expected ...string) interface{} {
 		return true
 	})
 }
+
+func TestGetVirtualTxs_Batching(t *testing.T) {
+	t.Run("chunks lookups, aggregates results, handles duplicates and missing txs", func(t *testing.T) {
+		repoManager := &mockedRepoManager{}
+		roundRepo := &mockedRoundRepo{}
+		repoManager.On("Rounds").Return(roundRepo)
+
+		// 501 txids -> expected chunks: 250 + 250 + 1
+		txids := make([]string, 501)
+		for i := range txids {
+			txids[i] = fmt.Sprintf("%064d", i+1)
+		}
+
+		var callChunks [][]string
+		roundRepo.On("GetTxsWithTxids", mock.Anything, mock.Anything).
+			Run(func(args mock.Arguments) {
+				chunk := args.Get(1).([]string)
+				copied := make([]string, len(chunk))
+				copy(copied, chunk)
+				callChunks = append(callChunks, copied)
+			}).
+			Return(func(ctx context.Context, chunk []string) []string {
+				res := []string{fmt.Sprintf("tx_%s", chunk[0])}
+				if len(chunk) > 1 {
+					res = append(res, "dup_tx")
+				}
+				return res
+			}, nil)
+
+		svc := &indexerService{
+			repoManager: repoManager,
+			txExposure:  exposurePublic,
+		}
+
+		resp, err := svc.GetVirtualTxs(context.Background(), "", txids, &Page{PageNum: 1, PageSize: 10})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+
+		// 1. >250 txids are split into 3 calls (250 + 250 + 1)
+		require.Len(t, callChunks, 3)
+
+		// 2. Every chunk is <= 250
+		require.Len(t, callChunks[0], 250)
+		require.Len(t, callChunks[1], 250)
+		require.Len(t, callChunks[2], 1)
+
+		// 3, 4, 5. Results are combined, missing txids handled, duplicates deduplicated
+		require.Len(t, resp.Txs, 4)
+		require.Contains(t, resp.Txs, fmt.Sprintf("tx_%s", txids[0]))
+		require.Contains(t, resp.Txs, fmt.Sprintf("tx_%s", txids[250]))
+		require.Contains(t, resp.Txs, fmt.Sprintf("tx_%s", txids[500]))
+		require.Contains(t, resp.Txs, "dup_tx")
+
+		// 6. Pagination happens AFTER aggregation (total count reflects all aggregated unique txs)
+		require.Equal(t, int32(4), resp.Page.Total)
+	})
+
+	t.Run("propagates error from intermediate chunk", func(t *testing.T) {
+		repoManager := &mockedRepoManager{}
+		roundRepo := &mockedRoundRepo{}
+		repoManager.On("Rounds").Return(roundRepo)
+
+		txids := make([]string, 501)
+		for i := range txids {
+			txids[i] = fmt.Sprintf("%064d", i+1)
+		}
+
+		callCount := 0
+		roundRepo.On("GetTxsWithTxids", mock.Anything, mock.Anything).
+			Return(func(ctx context.Context, chunk []string) []string {
+				callCount++
+				if callCount == 2 {
+					return nil
+				}
+				return []string{"tx_ok"}
+			}, func(ctx context.Context, chunk []string) error {
+				if callCount == 2 {
+					return fmt.Errorf("db error on chunk 2")
+				}
+				return nil
+			})
+
+		svc := &indexerService{
+			repoManager: repoManager,
+			txExposure:  exposurePublic,
+		}
+
+		_, err := svc.GetVirtualTxs(context.Background(), "", txids, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "db error on chunk 2")
+	})
+}
