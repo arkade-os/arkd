@@ -337,6 +337,8 @@ func TestParseDeleteIntent(t *testing.T) {
 				_, _, err := parseDeleteIntent(intentProof)
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.ExpectedError)
+			})
+		}
 	})
 }
 
