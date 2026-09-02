@@ -179,6 +179,12 @@ func (h *defaultHandler) OnTreeSigningStarted(
 		return false, err
 	}
 
+	// the tree has to be verified before we send any nonce or signature for it,
+	// otherwise we pre-sign unroll paths we haven't checked.
+	if err := h.validateVtxoTreeAgainstCommitmentTx(commitmentTx, vtxoTree); err != nil {
+		return false, fmt.Errorf("failed to verify vtxo tree: %s", err)
+	}
+
 	batchOutput := commitmentTx.UnsignedTx.TxOut[0]
 	batchOutputAmount := batchOutput.Value
 
@@ -438,15 +444,11 @@ func (h *defaultHandler) vtxosToForfeit() []clientlib.Vtxo {
 	return withoutRecoverable
 }
 
-func (h *defaultHandler) validateVtxoTree(
-	event clientlib.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree,
+// validateVtxoTreeAgainstCommitmentTx groups the checks needing nothing but the
+// vtxo tree and the commitment tx, so that they can run before the tree is signed.
+func (h *defaultHandler) validateVtxoTreeAgainstCommitmentTx(
+	commitmentPtx *psbt.Packet, vtxoTree *tree.TxTree,
 ) error {
-	commitmentTx := event.Tx
-	commitmentPtx, err := psbt.NewFromRawBytes(strings.NewReader(commitmentTx), true)
-	if err != nil {
-		return err
-	}
-
 	// validate the vtxo tree is well formed
 	if !isOnchainOnly(h.Receivers) {
 		if err := tree.ValidateVtxoTree(
@@ -476,9 +478,23 @@ func (h *defaultHandler) validateVtxoTree(
 	}
 
 	// validate it contains our outputs
-	if err := validateReceivers(
+	return validateReceivers(
 		h.ServerParams.Network, commitmentPtx, h.Receivers, vtxoTree,
-	); err != nil {
+	)
+}
+
+func (h *defaultHandler) validateVtxoTree(
+	event clientlib.BatchFinalizationEvent, vtxoTree, connectorTree *tree.TxTree,
+) error {
+	commitmentTx := event.Tx
+	commitmentPtx, err := psbt.NewFromRawBytes(strings.NewReader(commitmentTx), true)
+	if err != nil {
+		return err
+	}
+
+	// re-run them against the commitment tx of this event, it may not be the one
+	// we were given when the signing session started.
+	if err := h.validateVtxoTreeAgainstCommitmentTx(commitmentPtx, vtxoTree); err != nil {
 		return err
 	}
 
