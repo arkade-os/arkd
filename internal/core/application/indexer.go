@@ -960,11 +960,29 @@ func (i *indexerService) ensureVtxosCached(
 func (i *indexerService) getVirtualTxs(
 	ctx context.Context, txids []string, page *Page, authToken string,
 ) (*VirtualTxsResp, error) {
-	txs, err := i.repoManager.Rounds().GetTxsWithTxids(ctx, txids)
-	if err != nil {
-		return nil, err
+	const maxQueryChunkSize = 250
+	var allTxs []string
+	seen := make(map[string]bool)
+
+	for start := 0; start < len(txids); start += maxQueryChunkSize {
+		end := start + maxQueryChunkSize
+		if end > len(txids) {
+			end = len(txids)
+		}
+		chunk := txids[start:end]
+		chunkTxs, err := i.repoManager.Rounds().GetTxsWithTxids(ctx, chunk)
+		if err != nil {
+			return nil, err
+		}
+		for _, tx := range chunkTxs {
+			if !seen[tx] {
+				seen[tx] = true
+				allTxs = append(allTxs, tx)
+			}
+		}
 	}
-	virtualTxs, resp := paginate(txs, page, maxPageSizeVirtualTxs)
+
+	virtualTxs, resp := paginate(allTxs, page, maxPageSizeVirtualTxs)
 	return &VirtualTxsResp{
 		Txs:       virtualTxs,
 		Page:      resp,
