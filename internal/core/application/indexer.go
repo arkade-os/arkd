@@ -24,9 +24,9 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -1034,19 +1034,18 @@ func (i *indexerService) validateIntent(ctx context.Context, intentToValidate In
 		return fmt.Errorf("not enough inputs in intent tx, expected at least 2")
 	}
 
+	if err := intent.Verify(
+		intentToValidate.Proof, intentToValidate.Message, i.allSignerPubkeys(),
+	); err != nil {
+		return err
+	}
+
 	outpoints := intent.Proof{Packet: *ptx}.GetOutpoints()
 
 	boardingTxs := make(map[string]wire.MsgTx)
 	for idx, outpoint := range outpoints {
 		txInIndex := idx + 1
 		txIn := ptx.Inputs[txInIndex]
-
-		if len(txIn.TaprootLeafScript) == 0 {
-			return fmt.Errorf("missing taproot leaf script on intent tx input %d", txInIndex)
-		}
-		if txIn.WitnessUtxo == nil {
-			return fmt.Errorf("missing witness utxo on intent tx input %d", txInIndex)
-		}
 
 		vtxoOutpoint := domain.Outpoint{
 			Txid: outpoint.Hash.String(),
@@ -1139,9 +1138,7 @@ func (i *indexerService) validateIntent(ctx context.Context, intentToValidate In
 		}
 	}
 
-	return intent.Verify(
-		intentToValidate.Proof, intentToValidate.Message, i.allSignerPubkeys(),
-	)
+	return nil
 }
 
 // extractOutpointFromIntent parses the intent proof and returns all input outpoints

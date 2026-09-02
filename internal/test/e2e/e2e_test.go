@@ -35,11 +35,10 @@ import (
 	"github.com/arkade-os/arkd/pkg/client-wallet/types"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/btcsuite/btcwallet/waddrmgr"
 	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
@@ -2407,7 +2406,7 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NoError(t, err)
 
 	// Alice creates a forfeit transaction spending the vtxo with SIGHASH_ALL | ANYONECANPAY
-	forfeitOutputAddr, err := btcutil.DecodeAddress(aliceConfig.ForfeitAddress, nil)
+	forfeitOutputAddr, err := arklib.DecodeBitcoinAddress(aliceConfig.ForfeitAddress, nil)
 	require.NoError(t, err)
 
 	forfeitOutputScript, err := txscript.PayToAddrScript(forfeitOutputAddr)
@@ -5516,7 +5515,7 @@ func TestBan(t *testing.T) {
 				// use a wrong script to create invalid signatures
 				fakeScript := []byte("random_script")
 
-				forfeitOutputAddr, err := btcutil.DecodeAddress(cfgData.ForfeitAddress, nil)
+				forfeitOutputAddr, err := arklib.DecodeBitcoinAddress(cfgData.ForfeitAddress, nil)
 				if err != nil {
 					return nil, err
 				}
@@ -5802,7 +5801,6 @@ func TestUnauthenticatedCosignerSubmission(t *testing.T) {
 	})
 
 	t.Run("signatures", func(t *testing.T) {
-		t.Skip("TODO: need validation on submit signature")
 		res := runCosignerOverwrite(t, overwriteSignatures)
 
 		require.True(t, res.forged, "mallory never reached signing, nothing was verified")
@@ -7525,7 +7523,9 @@ func TestDeprecatedSignerKey(t *testing.T) {
 	faucetOnchainAndWait(t, aliceBoardingAddr.Address, 0.00021)
 
 	// settle boarding utxo into a VTXO locked to the OLD signer pubkey
-	settleVtxo(t, ctx, alice, aliceOffchainAddr.Address)
+	commitmentTxid := settleVtxo(t, ctx, alice, aliceOffchainAddr.Address)
+	waitForOutspendsIndexed(t, testExplorer, commitmentTxid, 0)
+	require.NoError(t, generateBlocks(1))
 
 	balBefore, err := alice.Balance(ctx)
 	require.NoError(t, err)
@@ -7829,4 +7829,139 @@ func TestUnrolledVtxoOnchainSpendBackfill(t *testing.T) {
 			return fmt.Errorf("vtxo %s not found among %d spent vtxos", target, len(spent))
 		},
 	)
+}
+
+// TestEagerForfeitSurvivesWalletRotation checks that a forfeit signed at
+// collection time stays broadcastable across a hard signer-key rotation: after
+// rotating to a new key with no deprecated key retained, the server still
+// broadcasts the pre-signed forfeit to punish a fraudulent unroll of the
+// forfeited vtxo.
+//
+// The rotation has to be hard (no deprecated key retained) for this to mean
+// anything: readiness is decided from the stored psbt's own leaf, so the server
+// has to recognize the old-key signature and broadcast it as is.
+//
+// On its own this test does not discriminate. It passed before readiness was read
+// off the leaf too, because a live re-sign only appends a second signature under
+// the new key and the finalizer still picks the leaf's own key out of the psbt.
+// What it covers is the end-to-end outcome, that fraud is punished after a hard
+// rotation. That no live signing happens on the way is pinned by
+// domain.TestForfeitTxReadyToBroadcast, and was confirmed on regtest by observing
+// the signer record no SignTransactionTapscript call in the fraud window.
+//
+// Stopping the signer to prove that here would need SIGNER_ADDR and WALLET_ADDR
+// pointing at different services. The regtest stack runs both on arkd-wallet:6060
+// and reacting to fraud needs the wallet half for LockConnectorUtxos, the anchor
+// bump and the broadcast.
+func TestEagerForfeitSurvivesWalletRotation(t *testing.T) {
+	const (
+		oldSignerKey = "afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0"
+		newSignerKey = "2222222222222222222222222222222222222222222222222222222222222222"
+	)
+	ctx := t.Context()
+
+	// restore the old signer key (no deprecated keys) for other integration tests
+	t.Cleanup(func() {
+		require.NoError(t, recreateArkdWallet(oldSignerKey, ""))
+	})
+
+	client := setupClientWallet(t)
+	indexerClient := client.Indexer()
+
+	_, arkAddr, boardingAddress, err := client.Receive(ctx)
+	require.NoError(t, err)
+
+	faucetOnchain(t, boardingAddress.Address, 0.00021)
+	time.Sleep(5 * time.Second)
+
+	// settle 1: board -> vtxo locked to the OLD signer key
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		vtxos, err := client.NotifyIncomingFunds(ctx, arkAddr.Address)
+		require.NoError(t, err)
+		require.NotNil(t, vtxos)
+	}()
+	res, err := client.Settle(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.NotEmpty(t, res.CommitmentTxid)
+	wg.Wait()
+	time.Sleep(5 * time.Second)
+
+	// settle 2: the first vtxo is forfeited. Its forfeit tx is collected AND
+	// operator-signed here, while the OLD key is still current, so the stored
+	// forfeit is broadcast-ready.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		vtxos, err := client.NotifyIncomingFunds(ctx, arkAddr.Address)
+		require.NoError(t, err)
+		require.NotNil(t, vtxos)
+	}()
+	_, err = client.Settle(ctx)
+	require.NoError(t, err)
+	wg.Wait()
+	time.Sleep(time.Second)
+
+	// the forfeited vtxo: spent, confirmed (non-preconfirmed), from commitment 1
+	_, spentVtxos, err := client.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, spentVtxos)
+
+	var vtxo clientlib.Vtxo
+	for _, v := range spentVtxos {
+		if !v.Preconfirmed && v.CommitmentTxids[0] == res.CommitmentTxid {
+			vtxo = v
+			break
+		}
+	}
+	require.NotEmpty(t, vtxo.Txid)
+
+	// hard rotation: new signer key, NO deprecated key. The forfeit was already
+	// signed with the old key at collection time, so it must remain broadcastable.
+	require.NoError(t, recreateArkdWallet(newSignerKey, ""))
+
+	// confirm the rotation is a clean switch: no deprecated keys remain
+	info, err := client.Client().GetInfo(ctx)
+	require.NoError(t, err)
+	require.Empty(t, info.DeprecatedSignerPubKeys)
+
+	explorer, err := mempoolexplorer.NewExplorer(
+		"http://localhost:3000", arklib.BitcoinRegTest,
+		mempoolexplorer.WithTracker(false),
+	)
+	require.NoError(t, err)
+
+	// fraud: unroll the already-forfeited vtxo onchain
+	branch, err := unroll.NewRedeemBranch(ctx, explorer, indexerClient, vtxo)
+	require.NoError(t, err)
+	leafTx, err := branch.NextRedeemTx()
+	require.NoError(t, err)
+	require.NotEmpty(t, leafTx)
+
+	bumpAndBroadcastTx(t, leafTx, explorer)
+	time.Sleep(5 * time.Second)
+
+	// the vtxo is now unrolled and unspent in the mempool
+	spentStatus, err := explorer.GetTxOutspends(vtxo.Txid)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(spentStatus), int(vtxo.VOut))
+	require.False(t, spentStatus[vtxo.VOut].Spent)
+
+	require.NoError(t, generateBlocks(1))
+
+	// give the server time to react to the fraud, arbitrary amount of time this feels sufficient
+	time.Sleep(8 * time.Second)
+
+	// the pre-signed forfeit survives the rotation: the server broadcast it and
+	// claimed the unrolled vtxo. Fraud is punished.
+	spentStatus, err = explorer.GetTxOutspends(vtxo.Txid)
+	require.NoError(t, err)
+	require.NotEmpty(t, spentStatus)
+	require.True(t, spentStatus[vtxo.VOut].Spent,
+		"forfeit signed at collection time must stay broadcastable across a hard "+
+			"signer rotation, letting the server punish the fraud")
+	require.NotEmpty(t, spentStatus[vtxo.VOut].SpentBy)
 }

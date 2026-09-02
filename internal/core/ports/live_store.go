@@ -75,10 +75,14 @@ type ConfirmationSessionsStore interface {
 }
 
 type TreeSigningSessionsStore interface {
-	New(ctx context.Context, roundId string, uniqueSignersPubKeys map[string]struct{}) error
+	New(
+		ctx context.Context, roundId string, uniqueSignersPubKeys map[string]struct{},
+		signingContext SigningContext,
+	) error
 	Get(ctx context.Context, roundId string) (*MusigSigningSession, error)
 	Delete(ctx context.Context, roundId string) error
 	AddNonces(ctx context.Context, roundId string, pubkey string, nonces tree.TreeNonces) error
+	SetAggregatedNonces(ctx context.Context, roundId string, nonces tree.TreeNonces) error
 	AddSignatures(
 		ctx context.Context, roundId, pubkey string, nonces tree.TreePartialSigs,
 	) error
@@ -119,7 +123,15 @@ type MusigSigningSession struct {
 	Cosigners   map[string]struct{}
 	Nonces      map[string]tree.TreeNonces
 
-	Signatures map[string]tree.TreePartialSigs
+	Signatures     map[string]tree.TreePartialSigs
+	SigningContext SigningContext
+}
+
+type SigningContext struct {
+	ScriptRoot       []byte
+	BatchOutAmount   int64
+	VtxoTree         tree.FlatTxTree
+	AggregatedNonces tree.TreeNonces
 }
 
 type ConfirmationSessions struct {

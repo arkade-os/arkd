@@ -10,7 +10,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/interface/grpc/handlers/txfilter"
 	arkdErrors "github.com/arkade-os/arkd/pkg/errors"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 // MaxTxFiltersPerListener bounds the number of compiled CEL programs a single
@@ -329,13 +329,10 @@ func (h *broker[T]) getTxFilters(id string) []string {
 }
 
 // installTxFilters atomically replaces the listener's tx filter set with
-// pre-compiled filters. Enforces MaxTxFiltersPerListener; the caller
+// pre-compiled filters. The caller enforces MaxTxFiltersPerListener and
 // compiles upfront so that compile-time CEL errors can be raised
 // alongside other input validation before any mutation.
 func (h *broker[T]) installTxFilters(id string, filters map[string]txfilter.Filter) error {
-	if len(filters) > MaxTxFiltersPerListener {
-		return ErrTxFiltersLimitExceeded
-	}
 	h.lock.RLock()
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()

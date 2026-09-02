@@ -14,9 +14,9 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 var (
@@ -519,59 +519,32 @@ func (t *treeCoordinatorSession) AddSignatures(pubkey *btcec.PublicKey, sig Tree
 		return false, fmt.Errorf("missing musig2 nonces for pubkey %s", hex.EncodeToString(schnorr.SerializePubKey(pubkey)))
 	}
 
-	for txid, tx := range t.txs {
-		serializedPubkey := schnorr.SerializePubKey(pubkey)
-		mustSign, cosigners, err := getCosignersPublicKeys(serializedPubkey, tx)
-		if err != nil {
-			return false, fmt.Errorf("failed to get cosigners public keys: %w", err)
-		}
-
-		if !mustSign {
-			// the signer doesn't have to sign this tx, skip it
-			continue
-		}
-
-		sig, ok := sig[txid]
-		if !ok {
-			return true, fmt.Errorf("missing musig2 signature for tx %s", txid)
-		}
-
-		nonce, ok := nonces[txid]
-		if !ok {
-			return true, fmt.Errorf("missing musig2 nonce for txid %s", txid)
-		}
-
-		combinedNonce, ok := t.combinedNonces[txid]
-		if !ok {
-			return false, fmt.Errorf("missing combined nonce for txid %s, cannot validate signature", txid)
-		}
-
-		prevoutFetcher, err := t.prevoutFetcherFactory(tx)
-		if err != nil {
-			return false, fmt.Errorf("failed to get prevout fetcher: %w", err)
-		}
-
-		message, err := txscript.CalcTaprootSignatureHash(
-			txscript.NewTxSigHashes(tx.UnsignedTx, prevoutFetcher),
-			txscript.SigHashDefault, tx.UnsignedTx, 0, prevoutFetcher,
-		)
-		if err != nil {
-			return false, fmt.Errorf("failed to calculate sighash: %w", err)
-		}
-		if len(message) != 32 {
-			return false, fmt.Errorf("invalid taproot signature hash length for txid %s", tx.UnsignedTx.TxID())
-		}
-
-		if !sig.Verify(
-			nonce.PubNonce, combinedNonce.PubNonce, cosigners, pubkey, [32]byte(message),
-			musig2.WithSortedKeys(), musig2.WithTaprootSignTweak(t.scriptRoot),
-		) {
-			return true, fmt.Errorf("invalid signature for txid %s", txid)
-		}
+	if shouldBan, err := verifyTreePartialSigs(
+		t.scriptRoot, t.prevoutFetcherFactory, t.txs, pubkey, nonces, t.combinedNonces, sig,
+	); err != nil {
+		return shouldBan, err
 	}
 
 	t.sigs[hex.EncodeToString(schnorr.SerializePubKey(pubkey))] = sig
 	return false, nil
+}
+
+// VerifyTreePartialSigs verifies the musig2 partial signatures of a cosigner for each tree
+// transaction it must sign. shouldBan is true if the failure proves the cosigner misbehaved.
+func VerifyTreePartialSigs(
+	scriptRoot []byte, batchOutAmount int64, vtxoTree *TxTree, pubkey *btcec.PublicKey,
+	nonces TreeNonces, aggregatedNonces TreeNonces, sigs TreePartialSigs,
+) (shouldBan bool, err error) {
+	prevoutFetcherFactory, err := prevOutFetcherFactory(scriptRoot, batchOutAmount, vtxoTree)
+	if err != nil {
+		return false, err
+	}
+
+	return verifyTreePartialSigs(
+		scriptRoot, prevoutFetcherFactory,
+		treeToIndexedTxs(vtxoTree, make(map[string]*psbt.Packet)),
+		pubkey, nonces, aggregatedNonces, sigs,
+	)
 }
 
 // AggregateNonces aggregates the musig2 nonces for each transaction in the tree
@@ -1015,4 +988,64 @@ func combineSigs(
 
 		return combinedSig, nil
 	}
+}
+
+func verifyTreePartialSigs(
+	scriptRoot []byte,
+	prevoutFetcherFactory func(*psbt.Packet) (txscript.PrevOutputFetcher, error),
+	txs map[string]*psbt.Packet, pubkey *btcec.PublicKey,
+	nonces TreeNonces, aggregatedNonces TreeNonces, sigs TreePartialSigs,
+) (shouldBan bool, err error) {
+	for txid, tx := range txs {
+		serializedPubkey := schnorr.SerializePubKey(pubkey)
+		mustSign, cosigners, err := getCosignersPublicKeys(serializedPubkey, tx)
+		if err != nil {
+			return false, fmt.Errorf("failed to get cosigners public keys: %w", err)
+		}
+
+		if !mustSign {
+			// the signer doesn't have to sign this tx, skip it
+			continue
+		}
+
+		sig, ok := sigs[txid]
+		if !ok {
+			return true, fmt.Errorf("missing musig2 signature for tx %s", txid)
+		}
+
+		nonce, ok := nonces[txid]
+		if !ok {
+			return true, fmt.Errorf("missing musig2 nonce for txid %s", txid)
+		}
+
+		combinedNonce, ok := aggregatedNonces[txid]
+		if !ok {
+			return false, fmt.Errorf("missing combined nonce for txid %s, cannot validate signature", txid)
+		}
+
+		prevoutFetcher, err := prevoutFetcherFactory(tx)
+		if err != nil {
+			return false, fmt.Errorf("failed to get prevout fetcher: %w", err)
+		}
+
+		message, err := txscript.CalcTaprootSignatureHash(
+			txscript.NewTxSigHashes(tx.UnsignedTx, prevoutFetcher),
+			txscript.SigHashDefault, tx.UnsignedTx, 0, prevoutFetcher,
+		)
+		if err != nil {
+			return false, fmt.Errorf("failed to calculate sighash: %w", err)
+		}
+		if len(message) != 32 {
+			return false, fmt.Errorf("invalid taproot signature hash length for txid %s", tx.UnsignedTx.TxID())
+		}
+
+		if !sig.Verify(
+			nonce.PubNonce, combinedNonce.PubNonce, cosigners, pubkey, [32]byte(message),
+			musig2.WithSortedKeys(), musig2.WithTaprootSignTweak(scriptRoot),
+		) {
+			return true, fmt.Errorf("invalid signature for txid %s", txid)
+		}
+	}
+
+	return false, nil
 }
