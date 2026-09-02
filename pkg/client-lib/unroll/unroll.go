@@ -176,10 +176,11 @@ func bumpAnchorTx(
 		return "", "", err
 	}
 
-	fees := uint64(math.Ceil(float64(packageSize) * feeRate))
-	if fees > math.MaxInt64 {
-		return "", "", fmt.Errorf("invalid fee amount %d", fees)
+	feeAmount := math.Ceil(float64(packageSize) * feeRate)
+	if math.IsNaN(feeAmount) || feeAmount < 0 || feeAmount >= float64(math.MaxInt64) {
+		return "", "", fmt.Errorf("invalid fee amount %v", feeAmount)
 	}
+	fees := uint64(feeAmount)
 
 	addr := args.BumpAddr
 	pkScript, err := toOutputScript(addr, args.ServerParams.Network)

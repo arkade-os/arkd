@@ -3,6 +3,7 @@ package unroll
 import (
 	"context"
 	"encoding/hex"
+	"math"
 	"testing"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
@@ -32,17 +33,20 @@ func TestCompleteUnroll(t *testing.T) {
 
 func TestBumpAnchorTx(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
-		// A negative rate makes uint64(math.Ceil(size * rate)) enormous, which
-		// used to defeat the amountToSelect > 0 gate and wrap the change into a
-		// negative output value. The bundled explorer now rejects such a rate,
-		// but Explorer is an injectable interface so the guard has to hold here.
-		t.Run("fee rate makes the fee exceed MaxInt64", func(t *testing.T) {
-			args, parent := newTestBumpAnchorArgs(t, 1000, -5)
+		for _, tc := range []struct {
+			name    string
+			feeRate float64
+		}{
+			{name: "negative fee", feeRate: -5},
+			{name: "NaN fee", feeRate: math.NaN()},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				args, parent := newTestBumpAnchorArgs(t, 1000, tc.feeRate)
 
-			_, _, err := bumpAnchorTx(context.Background(), args, parent)
-			require.Error(t, err)
-			require.Contains(t, err.Error(), "invalid fee amount")
-		})
+				_, _, err := bumpAnchorTx(context.Background(), args, parent)
+				require.ErrorContains(t, err, "invalid fee amount")
+			})
+		}
 	})
 }
 
