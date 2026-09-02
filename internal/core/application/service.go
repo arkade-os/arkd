@@ -1171,7 +1171,6 @@ func (s *service) SubmitOffchainTx(
 	// offchain tx is evicted from the cache once it is projected, so that read can
 	// be stale by now: a vtxo spent and projected in the meantime is no longer in
 	// the cache for the claim below to conflict against. Re-read before claiming.
-	// See ArkLabsHQ/arkd#71.
 	freshSpentVtxos, err := vtxoRepo.GetVtxos(ctx, spentVtxoKeys)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to fetch vtxos: %w", err).
