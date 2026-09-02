@@ -280,17 +280,22 @@ func checkSighashType(sighashType txscript.SigHashType) error {
 	}
 }
 
-// checkSighashTypes rejects a base64 encoded tx declaring a forbidden sighash
-// type on any of its inputs.
-func checkSighashTypes(tx string) error {
+// checkCheckpointSighashTypes rejects a base64 encoded checkpoint tx declaring
+// anything but SIGHASH_DEFAULT on any of its inputs. Checkpoints are never
+// stamped with a sighash type when we build them, and unlike the submit path
+// there is no locally built tx here to compare against.
+func checkCheckpointSighashTypes(tx string) error {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
 		return err
 	}
 
 	for inputIndex, input := range ptx.Inputs {
-		if err := checkSighashType(input.SighashType); err != nil {
-			return fmt.Errorf("input %d: %s", inputIndex, err)
+		if input.SighashType != txscript.SigHashDefault {
+			return fmt.Errorf(
+				"input %d: forbidden sighash type %#x, expected SIGHASH_DEFAULT",
+				inputIndex, uint32(input.SighashType),
+			)
 		}
 	}
 
@@ -683,7 +688,7 @@ func finalizeTx(
 	for _, checkpoint := range acceptedTx.SignedCheckpointTxs {
 		// the checkpoints are built by the counterparty and signed as they come,
 		// a forbidden sighash type would make us sign a blank cheque.
-		if err := checkSighashTypes(checkpoint); err != nil {
+		if err := checkCheckpointSighashTypes(checkpoint); err != nil {
 			return "", nil, err
 		}
 

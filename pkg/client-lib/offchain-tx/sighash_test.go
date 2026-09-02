@@ -128,6 +128,29 @@ func TestFinalizeTxSighashPolicy(t *testing.T) {
 		}
 	})
 
+	// unlike the submit path there is no locally built checkpoint to compare
+	// against here, so anything but SIGHASH_DEFAULT is refused.
+	t.Run("not default", func(t *testing.T) {
+		for _, sighashType := range []txscript.SigHashType{
+			txscript.SigHashAll,
+			txscript.SigHashAll | txscript.SigHashAnyOneCanPay,
+		} {
+			t.Run(fmt.Sprintf("%#x", uint32(sighashType)), func(t *testing.T) {
+				client := &recordingClient{}
+
+				_, _, err := finalizeTx(
+					context.Background(), client, client.signTx,
+					clientlib.AcceptedOffchainTx{
+						Txid:                txid,
+						SignedCheckpointTxs: []string{withSighashType(t, checkpoint, sighashType)},
+					},
+				)
+				require.ErrorContains(t, err, "expected SIGHASH_DEFAULT")
+				require.Empty(t, client.signed)
+				require.False(t, client.finalized)
+			})
+		}
+	})
 	t.Run("allowed", func(t *testing.T) {
 		client := &recordingClient{}
 
