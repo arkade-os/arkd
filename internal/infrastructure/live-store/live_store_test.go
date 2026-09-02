@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -623,7 +624,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		const ownerA, ownerB = "arktx-a", "arktx-b"
 
 		t.Run("different owner conflicts, all-or-nothing", func(t *testing.T) {
-			x, y := claimOutpoint("dd", 0), claimOutpoint("ee", 0)
+			x, y := claimOutpoint(0), claimOutpoint(0)
 
 			status, _, err := store.OffchainTxs().ClaimOutpoints(
 				ctx, ownerA, []domain.Outpoint{x},
@@ -647,7 +648,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		})
 
 		t.Run("released outpoint is free again, absent release is a no-op", func(t *testing.T) {
-			x := claimOutpoint("ff", 2)
+			x := claimOutpoint(2)
 
 			_, _, err := store.OffchainTxs().ClaimOutpoints(ctx, ownerA, []domain.Outpoint{x})
 			require.NoError(t, err)
@@ -655,7 +656,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 				store.OffchainTxs().ReleaseOutpoints(ctx, ownerA, []domain.Outpoint{x}),
 			)
 			require.NoError(t, store.OffchainTxs().ReleaseOutpoints(
-				ctx, ownerA, []domain.Outpoint{claimOutpoint("99", 9)},
+				ctx, ownerA, []domain.Outpoint{claimOutpoint(9)},
 			))
 
 			// Now free, another owner can claim it.
@@ -669,7 +670,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		// Run under -race: exactly one of N distinct-owner claimers of the same
 		// outpoint wins fresh, the rest conflict.
 		t.Run("concurrent distinct owners, exactly one wins", func(t *testing.T) {
-			x := claimOutpoint("ab", 4)
+			x := claimOutpoint(4)
 
 			const n = 64
 			var fresh, conflicts int64
@@ -708,7 +709,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		// Run under -race: N same-owner claimers of the same outpoint all succeed
 		// (fresh or already-owned), never conflict.
 		t.Run("concurrent same owner, none conflict", func(t *testing.T) {
-			x := claimOutpoint("cd", 5)
+			x := claimOutpoint(5)
 
 			const n = 64
 			var conflicts int64
@@ -1551,12 +1552,10 @@ func sigsMatch(sigs, gotSigs map[uint32]ports.SignedBoardingInput) error {
 	return nil
 }
 
-// claimOutpoint builds a valid domain.Outpoint from a short hex seed, padded to
-// a 64-char txid so it round-trips through Outpoint.FromString on the redis path.
-func claimOutpoint(seed string, vout uint32) domain.Outpoint {
-	txid := seed
-	for len(txid) < 64 {
-		txid += "0"
-	}
-	return domain.Outpoint{Txid: txid[:64], VOut: vout}
+// claimOutpoint builds a domain.Outpoint with a fresh random 64-char hex txid,
+// so it round-trips through Outpoint.FromString on the redis path and never
+// collides with a claim left behind by an earlier run against the same redis.
+func claimOutpoint(vout uint32) domain.Outpoint {
+	txid := strings.ReplaceAll(uuid.New().String()+uuid.New().String(), "-", "")
+	return domain.Outpoint{Txid: txid, VOut: vout}
 }
