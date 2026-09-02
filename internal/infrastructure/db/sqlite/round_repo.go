@@ -554,22 +554,77 @@ func (r *roundRepository) GetRoundVtxoTree(
 	return nodes, nil
 }
 
+// sqliteSelectTxsBatchSize bounds the number of txids bound to a single
+// SelectTxs invocation. The query expands the same slice into three IN
+// clauses (tx, offchain_tx, checkpoint_tx), so each call binds 3N
+// parameters. modernc.org/sqlite caps bound parameters at
+// SQLITE_MAX_VARIABLE_NUMBER = 32766; with batchSize = 5000 a single call
+// binds at most 15000 params, leaving generous headroom. The wrapper below
+// splits the input slice into batches of this size and merges the
+// deduplicated results in Go.
+const sqliteSelectTxsBatchSize = 5000
+
 func (r *roundRepository) GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error) {
-	var rows []queries.SelectTxsRow
-	if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
-		var err error
-		rows, err = q.SelectTxs(ctx, queries.SelectTxsParams{Ids1: txids, Ids2: txids, Ids3: txids})
-		return err
-	}); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
+	return r.getTxsWithTxidsBatched(ctx, txids, sqliteSelectTxsBatchSize)
+}
+
+// getTxsWithTxidsBatched is the testable inner of GetTxsWithTxids that
+// splits txids into chunks of batchSize, issues one query per chunk, and
+// merges the deduplicated union of results in Go, preserving first-seen
+// order. batchSize <= 0 is treated as "no batching" and runs a single call.
+// The generated SelectTxsParams struct exposes three Ids* fields, but the
+// public API of this method takes a single slice and binds it to all three.
+// All fields MUST receive the same slice; the query template has three
+// distinct slice placeholders only because sqlc's sqlite generator expands
+// a slice placeholder only once per generated query, and the query looks in
+// three tables (tx, offchain_tx, checkpoint_tx).
+func (r *roundRepository) getTxsWithTxidsBatched(
+	ctx context.Context, txids []string, batchSize int,
+) ([]string, error) {
+	if len(txids) == 0 {
+		return nil, nil
+	}
+	if batchSize <= 0 {
+		batchSize = len(txids)
 	}
 
-	resp := make([]string, 0, len(rows))
-	for _, row := range rows {
-		resp = append(resp, row.Data)
+	seen := make(map[string]struct{})
+	resp := make([]string, 0, len(txids))
+	for start := 0; start < len(txids); start += batchSize {
+		end := start + batchSize
+		if end > len(txids) {
+			end = len(txids)
+		}
+		batch := txids[start:end]
+		// Same slice in all three fields by construction; see the const
+		// doc above for the sqlc multi-placeholder explanation.
+		var rows []queries.SelectTxsRow
+		if err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+			res, err := q.SelectTxs(ctx, queries.SelectTxsParams{
+				Ids1: batch, Ids2: batch, Ids3: batch,
+			})
+			if err != nil {
+				return err
+			}
+			rows = res
+			return nil
+		}); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return nil, err
+		}
+		for _, row := range rows {
+			// Key on txid+data so the merged result preserves the
+			// single-query UNION semantics even when the input
+			// contains duplicated txids spanning two batches.
+			key := row.Txid + "\x00" + row.Data
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			resp = append(resp, row.Data)
+		}
 	}
 
 	return resp, nil
