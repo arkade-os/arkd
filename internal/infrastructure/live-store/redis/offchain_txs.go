@@ -12,7 +12,11 @@ import (
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/redis/go-redis/v9"
+	log "github.com/sirupsen/logrus"
 )
+
+// rebuildTimeout bounds the startup rebuild of the inputs hash.
+const rebuildTimeout = 30 * time.Second
 
 const (
 	offChainTxsHashKey = "offChainTxStore:txs"
@@ -111,26 +115,65 @@ type offChainTxStore struct {
 }
 
 func NewOffChainTxStore(rdb *redis.Client, numOfRetries int) ports.OffChainTxStore {
-	return &offChainTxStore{
+	s := &offChainTxStore{
 		rdb:          rdb,
 		numOfRetries: numOfRetries,
 		retryDelay:   10 * time.Millisecond,
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), rebuildTimeout)
+	defer cancel()
+	if err := s.rebuildInputs(ctx); err != nil {
+		log.WithError(err).Warn(
+			"failed to rebuild offchain tx inputs from stored txs, " +
+				"in-flight txs accepted before this start are unprotected until projected",
+		)
+	}
+	return s
+}
+
+// rebuildInputs re-registers, under its arkTxid, every spent input of every
+// stored tx body. A tx accepted by the previous version, which kept an untagged
+// set instead of this hash, or whose entries were deleted by hand during a
+// rollback, gets its single-spend protection back that way. It only ever adds,
+// and never overwrites an owner, so it is safe on every start and cannot race
+// a concurrent Add, which writes a body and its inputs together.
+func (s *offChainTxStore) rebuildInputs(ctx context.Context) error {
+	bodies, err := s.rdb.HGetAll(ctx, offChainTxsHashKey).Result()
+	if err != nil {
+		return fmt.Errorf("failed to list stored offchain txs: %v", err)
+	}
+	registered := 0
+	for arkTxid, body := range bodies {
+		var offchainTx domain.OffchainTx
+		if err := json.Unmarshal([]byte(body), &offchainTx); err != nil {
+			log.WithError(err).Warnf("skipping malformed stored offchain tx %s", arkTxid)
+			continue
+		}
+		inputs, _ := checkpointInputs(offchainTx)
+		for _, in := range inputs {
+			added, err := s.rdb.HSetNX(ctx, offChainInputsHashKey, in, arkTxid).Result()
+			if err != nil {
+				return fmt.Errorf("failed to re-register input %s of %s: %v", in, arkTxid, err)
+			}
+			if added {
+				registered++
+			}
+		}
+	}
+	if registered > 0 {
+		log.Infof(
+			"re-registered %d spent input(s) from %d stored offchain tx(s)",
+			registered, len(bodies),
+		)
+	}
+	return nil
 }
 
 func (s *offChainTxStore) Add(
 	ctx context.Context, offchainTx domain.OffchainTx,
 ) (ports.ClaimStatus, *domain.Outpoint, error) {
-	inputs := make([]string, 0)
-	for _, tx := range offchainTx.CheckpointTxs {
-		ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
-		if err != nil {
-			continue
-		}
-		for _, in := range ptx.UnsignedTx.TxIn {
-			inputs = append(inputs, in.PreviousOutPoint.String())
-		}
-	}
+	// A checkpoint tx that fails to parse is skipped, they are validated upstream.
+	inputs, _ := checkpointInputs(offchainTx)
 	val, err := json.Marshal(offchainTx)
 	if err != nil {
 		return ports.ClaimFresh, nil, fmt.Errorf(
@@ -164,17 +207,9 @@ func (s *offChainTxStore) Remove(ctx context.Context, arkTxid string) error {
 	if err := json.Unmarshal([]byte(txStr), &offchainTx); err != nil {
 		return fmt.Errorf("malformed offchain tx in storage %s: %v", arkTxid, err)
 	}
-	inputs := make([]string, 0)
-	for _, tx := range offchainTx.CheckpointTxs {
-		ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
-		if err != nil {
-			return fmt.Errorf(
-				"malformed offchain checkpoint tx in storage %s (tx=%s): %v", arkTxid, tx, err,
-			)
-		}
-		for _, in := range ptx.UnsignedTx.TxIn {
-			inputs = append(inputs, in.PreviousOutPoint.String())
-		}
+	inputs, err := checkpointInputs(offchainTx)
+	if err != nil {
+		return fmt.Errorf("malformed offchain checkpoint tx in storage %s: %v", arkTxid, err)
 	}
 
 	args := make([]interface{}, 0, 1+len(inputs))
@@ -291,4 +326,24 @@ func parseClaimResult(res interface{}) (ports.ClaimStatus, *domain.Outpoint, err
 	default:
 		return ports.ClaimFresh, nil, fmt.Errorf("unknown claim status %q", status)
 	}
+}
+
+// checkpointInputs returns every spent-input outpoint of every checkpoint tx of
+// the offchain tx, the set the conflict domain registers. Checkpoint txs that
+// fail to parse are skipped and the last parse error is returned, so callers
+// choose whether that is fatal.
+func checkpointInputs(offchainTx domain.OffchainTx) ([]string, error) {
+	inputs := make([]string, 0)
+	var parseErr error
+	for _, tx := range offchainTx.CheckpointTxs {
+		ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+		if err != nil {
+			parseErr = err
+			continue
+		}
+		for _, in := range ptx.UnsignedTx.TxIn {
+			inputs = append(inputs, in.PreviousOutPoint.String())
+		}
+	}
+	return inputs, parseErr
 }
