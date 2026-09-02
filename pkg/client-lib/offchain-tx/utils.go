@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
@@ -266,6 +267,41 @@ func addExtension(
 	return nil
 }
 
+// checkSighashType rejects the sighash types the honest stack never produces.
+// SIGHASH_NONE and SIGHASH_SINGLE don't commit to our outputs, so a signature
+// made under them can be replayed on a tx paying the counterparty instead.
+func checkSighashType(sighashType txscript.SigHashType) error {
+	switch sighashType {
+	case txscript.SigHashDefault, txscript.SigHashAll,
+		txscript.SigHashAll | txscript.SigHashAnyOneCanPay:
+		return nil
+	default:
+		return fmt.Errorf("forbidden sighash type %#x", uint32(sighashType))
+	}
+}
+
+// checkCheckpointSighashTypes rejects a base64 encoded checkpoint tx declaring
+// anything but SIGHASH_DEFAULT on any of its inputs. Checkpoints are never
+// stamped with a sighash type when we build them, and unlike the submit path
+// there is no locally built tx here to compare against.
+func checkCheckpointSighashTypes(tx string) error {
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+	if err != nil {
+		return err
+	}
+
+	for inputIndex, input := range ptx.Inputs {
+		if input.SighashType != txscript.SigHashDefault {
+			return fmt.Errorf(
+				"input %d: forbidden sighash type %#x, expected SIGHASH_DEFAULT",
+				inputIndex, uint32(input.SighashType),
+			)
+		}
+	}
+
+	return nil
+}
+
 // verifyOffchainTx verifies the signer signatures of the given transaction
 func verifyOffchainTx(original, signed *psbt.Packet, signers map[string]*btcec.PublicKey) error {
 	if original.UnsignedTx.TxID() != signed.UnsignedTx.TxID() {
@@ -313,6 +349,20 @@ func verifyOffchainTx(original, signed *psbt.Packet, signers map[string]*btcec.P
 			)
 		}
 
+		// the sighash type is declared by the signer, verifying under it would
+		// accept a signature committing to nothing, so it must be allowed and
+		// must match the one of the tx we built.
+		if err := checkSighashType(signedInput.SighashType); err != nil {
+			return fmt.Errorf("input %d: %s", inputIndex, err)
+		}
+
+		if signedInput.SighashType != originalInput.SighashType {
+			return fmt.Errorf(
+				"sighash type mismatch for input %d: expected %#x, got %#x",
+				inputIndex, uint32(originalInput.SighashType), uint32(signedInput.SighashType),
+			)
+		}
+
 		// check that every input has the signer's signature
 		var signerSig *psbt.TaprootScriptSpendSig
 		var signerPubkey *btcec.PublicKey
@@ -337,7 +387,7 @@ func verifyOffchainTx(original, signed *psbt.Packet, signers map[string]*btcec.P
 		// verify the signature
 		message, err := txscript.CalcTapscriptSignaturehash(
 			txsigHashes,
-			signedInput.SighashType,
+			originalInput.SighashType,
 			original.UnsignedTx,
 			inputIndex,
 			prevoutFetcher,
@@ -636,6 +686,12 @@ func finalizeTx(
 	finalCheckpoints := make([]string, 0, len(acceptedTx.SignedCheckpointTxs))
 
 	for _, checkpoint := range acceptedTx.SignedCheckpointTxs {
+		// the checkpoints are built by the counterparty and signed as they come,
+		// a forbidden sighash type would make us sign a blank cheque.
+		if err := checkCheckpointSighashTypes(checkpoint); err != nil {
+			return "", nil, err
+		}
+
 		signedTx, err := signTx(ctx, checkpoint)
 		if err != nil {
 			return "", nil, err
