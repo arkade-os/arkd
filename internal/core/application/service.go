@@ -2280,9 +2280,9 @@ func (s *service) RegisterIntent(
 	}
 
 	// Claim the vtxo inputs in the shared conflict domain, replacing the
-	// offchainTxMu-guarded check this used to do (ArkLabsHQ/arkd#62). The claim is
-	// atomic across processes, as Add is, and reserves rather than only checking,
-	// so it also stops two intents registering the same vtxo.
+	// offchainTxMu-guarded check this used to do. The claim is atomic across
+	// processes, as Add is, and reserves rather than only checking, so it also
+	// stops two intents registering the same vtxo.
 	//
 	// Every claim taken here is released again: at the next round start once Pop
 	// has selected the intent and it was either registered on the round or

@@ -181,6 +181,8 @@ func (s *offChainTxStore) Add(
 		)
 	}
 
+	// addScript ARGV layout: the owner (arkTxid) and the tx body first, then one
+	// entry per input.
 	args := make([]interface{}, 0, 2+len(inputs))
 	args = append(args, offchainTx.ArkTxid, string(val))
 	for _, in := range inputs {
@@ -212,6 +214,7 @@ func (s *offChainTxStore) Remove(ctx context.Context, arkTxid string) error {
 		return fmt.Errorf("malformed offchain checkpoint tx in storage %s: %v", arkTxid, err)
 	}
 
+	// removeScript ARGV layout: the owner (arkTxid) first, then one entry per input.
 	args := make([]interface{}, 0, 1+len(inputs))
 	args = append(args, arkTxid)
 	for _, in := range inputs {
@@ -248,6 +251,7 @@ func (s *offChainTxStore) ClaimOutpoints(
 	if len(outpoints) == 0 {
 		return ports.ClaimAlreadyOwned, nil, nil
 	}
+	// claimScript ARGV layout: the owner first, then one entry per outpoint.
 	args := make([]interface{}, 0, 1+len(outpoints))
 	args = append(args, owner)
 	for _, o := range outpoints {
@@ -266,6 +270,7 @@ func (s *offChainTxStore) ReleaseOutpoints(
 	if len(outpoints) == 0 {
 		return nil
 	}
+	// releaseScript ARGV layout: the owner first, then one entry per outpoint.
 	args := make([]interface{}, 0, 1+len(outpoints))
 	args = append(args, owner)
 	for _, o := range outpoints {
