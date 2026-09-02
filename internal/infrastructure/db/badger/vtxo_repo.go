@@ -752,7 +752,11 @@ func (r *VtxoRepository) settleVtxo(
 	if vtxo == nil {
 		return nil
 	}
-	if vtxo.Spent {
+	// An onchain-spend mark does not block the settlement. A rejoined unrolled
+	// vtxo is spent onchain by the commitment tx itself, and that spend can be
+	// noticed before the round is projected. The settlement is the authoritative
+	// record and overrides it, as the SQL backends do without a spent guard.
+	if vtxo.Spent && !vtxo.IsOnchainSpent() {
 		return nil
 	}
 

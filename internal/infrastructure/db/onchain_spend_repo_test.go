@@ -145,6 +145,37 @@ func TestOnchainSpendRepository(t *testing.T) {
 				require.False(t, containsOutpoint(recorded, unspent.Outpoint))
 			})
 
+			// A rejoined unrolled vtxo is spent onchain by the commitment tx
+			// itself, and that spend can be noticed before the round is
+			// projected. The settlement is the authoritative record and must
+			// override the onchain-spend mark rather than be skipped by it.
+			t.Run("settlement overrides an earlier onchain spend mark", func(t *testing.T) {
+				vtxo := onchainSpendVtxo(randomString(32))
+				require.NoError(t, repo.AddVtxos(ctx, []domain.Vtxo{vtxo}))
+				require.NoError(t, repo.UnrollVtxos(ctx, []domain.Outpoint{vtxo.Outpoint}))
+				require.NoError(t, repo.MarkVtxosOnchainSpent(
+					ctx, map[domain.Outpoint]string{vtxo.Outpoint: "commitmenttxid"},
+				))
+
+				require.NoError(t, repo.SettleVtxos(
+					ctx, map[domain.Outpoint]string{vtxo.Outpoint: "commitmenttxid"},
+					"commitmenttxid",
+				))
+
+				got := getOnchainSpendVtxo(t, repo, vtxo.Outpoint)
+				require.True(t, got.Spent)
+				require.Equal(t, "commitmenttxid", got.SettledBy)
+				require.False(t, got.IsOnchainSpent())
+
+				// Once settled, the reconciler can no longer touch it.
+				require.NoError(t, repo.UnmarkVtxosOnchainSpent(
+					ctx, []domain.Outpoint{vtxo.Outpoint},
+				))
+				got = getOnchainSpendVtxo(t, repo, vtxo.Outpoint)
+				require.True(t, got.Spent)
+				require.Equal(t, "commitmenttxid", got.SettledBy)
+			})
+
 			// Exercises a batch larger than the badger
 			// transaction chunk size. badger rejects an oversized transaction with
 			// ErrTxnTooBig and Discard then drops every buffered write, so an unbounded
