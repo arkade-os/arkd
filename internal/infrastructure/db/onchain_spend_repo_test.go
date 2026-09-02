@@ -12,90 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newOnchainSpendRepos builds one VtxoRepository per supported backend. The
-// onchain-spend statements are guarded by predicates that each backend expresses
-// differently (SQL WHERE clauses in sqlite/postgres, badgerhold query terms and
-// a read-modify-write in badger), so they have to be pinned on all three rather
-// than on whichever one is convenient.
-func newOnchainSpendRepos(t *testing.T) map[string]domain.VtxoRepository {
-	t.Helper()
-
-	configs := map[string]db.ServiceConfig{
-		"sqlite": {
-			EventStoreType:   "badger",
-			DataStoreType:    "sqlite",
-			EventStoreConfig: []interface{}{"", nil},
-			DataStoreConfig:  []interface{}{t.TempDir()},
-			Settings:         validSettings(),
-		},
-		// Dedicated databases, auto-created on first run. TestService seeds and
-		// then mutates the settings row of the shared projection database, so
-		// sharing it here would make the two tests fail depending on which ran
-		// first.
-		"postgres": {
-			EventStoreType: "postgres",
-			DataStoreType:  "postgres",
-			EventStoreConfig: []interface{}{
-				"postgresql://root:secret@127.0.0.1:5432/event_onchain_spend?sslmode=disable",
-				true, pgdb.ConnectionConfig{},
-			},
-			DataStoreConfig: []interface{}{
-				"postgresql://root:secret@127.0.0.1:5432/projection_onchain_spend?sslmode=disable",
-				true, pgdb.ConnectionConfig{},
-			},
-			Settings: validSettings(),
-		},
-	}
-
-	repos := make(map[string]domain.VtxoRepository, len(configs)+1)
-	for name, config := range configs {
-		svc, err := db.NewService(config, nil)
-		require.NoError(t, err, "failed to open %s repo manager", name)
-		t.Cleanup(svc.Close)
-		repos[name] = svc.Vtxos()
-	}
-
-	// badger is built from the repository constructor rather than a full
-	// RepoManager. Opening a second badger data store in one process after the
-	// first is closed fails with "DB Closed" — reproducible on the base commit
-	// with `go test -count=2 -run TestRoundSummariesBadger`, so it predates this
-	// change. Standing up a RepoManager here would make that latent bug fail an
-	// unrelated test in this package, and nothing here needs one.
-	badgerRepo, err := badgerdb.NewVtxoRepository(badgerTempDir(t), nil)
-	require.NoError(t, err, "failed to open badger vtxo repository")
-	t.Cleanup(badgerRepo.Close)
-	repos["badger"] = badgerRepo
-
-	return repos
-}
-
-// badgerTempDir is t.TempDir with best-effort removal. badger keeps its value
-// log mapped for a moment after Close, and on Windows t.TempDir's cleanup fails
-// the test when the unlink loses that race. The failure says nothing about the
-// code under test, so the directory is removed on a best-effort basis instead.
-func badgerTempDir(t *testing.T) string {
-	t.Helper()
-	dir, err := os.MkdirTemp("", "onchain-spend-badger-*")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		//nolint:errcheck
-		_ = os.RemoveAll(dir)
-	})
-	return dir
-}
-
-func onchainSpendVtxo(txid string) domain.Vtxo {
-	return domain.Vtxo{
-		Outpoint:           domain.Outpoint{Txid: txid, VOut: 0},
-		PubKey:             "187396153c4cf84a4a9d32cba6a8a64f6869ba986d85c4e6c763f3564ed781af",
-		Amount:             187592,
-		CommitmentTxids:    []string{"9246e57242e458015cefe06511b841f1b9bf6431194b4af371e3528af67554ae"},
-		RootCommitmentTxid: "9246e57242e458015cefe06511b841f1b9bf6431194b4af371e3528af67554ae",
-		ExpiresAt:          1785690467,
-		CreatedAt:          1783098211,
-	}
-}
-
 func TestOnchainSpendRepository(t *testing.T) {
 	ctx := context.Background()
 
@@ -228,7 +144,128 @@ func TestOnchainSpendRepository(t *testing.T) {
 				require.True(t, containsOutpoint(recorded, spent.Outpoint))
 				require.False(t, containsOutpoint(recorded, unspent.Outpoint))
 			})
+
+			// Exercises a batch larger than the badger
+			// transaction chunk size. badger rejects an oversized transaction with
+			// ErrTxnTooBig and Discard then drops every buffered write, so an unbounded
+			// batch would lose the whole set rather than part of it. The reconciler's first
+			// pass after a restart is unwindowed by design and can carry exactly this kind
+			// of backlog.
+			t.Run("records and retracts a batch larger than a badger chunk", func(t *testing.T) {
+				const count = 450 // spans more than two chunks of 200
+				vtxos := make([]domain.Vtxo, 0, count)
+				spentBy := make(map[domain.Outpoint]string, count)
+				outpoints := make([]domain.Outpoint, 0, count)
+				for i := 0; i < count; i++ {
+					vtxo := onchainSpendVtxo(randomString(32))
+					vtxos = append(vtxos, vtxo)
+					outpoints = append(outpoints, vtxo.Outpoint)
+					spentBy[vtxo.Outpoint] = "spendingtxid"
+				}
+
+				require.NoError(t, repo.AddVtxos(ctx, vtxos))
+				require.NoError(t, repo.UnrollVtxos(ctx, outpoints))
+				require.NoError(t, repo.MarkVtxosOnchainSpent(ctx, spentBy))
+
+				recorded, err := repo.GetOnchainSpentVtxos(ctx)
+				require.NoError(t, err)
+				for _, outpoint := range outpoints {
+					require.True(t, containsOutpoint(recorded, outpoint),
+						"every vtxo in an oversized batch must be recorded")
+				}
+
+				require.NoError(t, repo.UnmarkVtxosOnchainSpent(ctx, outpoints))
+				for _, outpoint := range outpoints {
+					require.False(t, getOnchainSpendVtxo(t, repo, outpoint).Spent)
+				}
+			})
 		})
+	}
+}
+
+// --- fixtures ---
+
+// newOnchainSpendRepos builds one VtxoRepository per supported backend. The
+// onchain-spend statements are guarded by predicates that each backend expresses
+// differently (SQL WHERE clauses in sqlite/postgres, badgerhold query terms and
+// a read-modify-write in badger), so they have to be pinned on all three rather
+// than on whichever one is convenient.
+func newOnchainSpendRepos(t *testing.T) map[string]domain.VtxoRepository {
+	t.Helper()
+
+	configs := map[string]db.ServiceConfig{
+		"sqlite": {
+			EventStoreType:   "badger",
+			DataStoreType:    "sqlite",
+			EventStoreConfig: []interface{}{"", nil},
+			DataStoreConfig:  []interface{}{t.TempDir()},
+			Settings:         validSettings(),
+		},
+		// Dedicated databases, auto-created on first run. TestService seeds and
+		// then mutates the settings row of the shared projection database, so
+		// sharing it here would make the two tests fail depending on which ran
+		// first.
+		"postgres": {
+			EventStoreType: "postgres",
+			DataStoreType:  "postgres",
+			EventStoreConfig: []interface{}{
+				"postgresql://root:secret@127.0.0.1:5432/event_onchain_spend?sslmode=disable",
+				true, pgdb.ConnectionConfig{},
+			},
+			DataStoreConfig: []interface{}{
+				"postgresql://root:secret@127.0.0.1:5432/projection_onchain_spend?sslmode=disable",
+				true, pgdb.ConnectionConfig{},
+			},
+			Settings: validSettings(),
+		},
+	}
+
+	repos := make(map[string]domain.VtxoRepository, len(configs)+1)
+	for name, config := range configs {
+		svc, err := db.NewService(config, nil)
+		require.NoError(t, err, "failed to open %s repo manager", name)
+		t.Cleanup(svc.Close)
+		repos[name] = svc.Vtxos()
+	}
+
+	// badger is built from the repository constructor rather than a full
+	// RepoManager. Opening a second badger data store in one process after the
+	// first is closed fails with "DB Closed" — reproducible on the base commit
+	// with `go test -count=2 -run TestRoundSummariesBadger`, so it predates this
+	// change. Standing up a RepoManager here would make that latent bug fail an
+	// unrelated test in this package, and nothing here needs one.
+	badgerRepo, err := badgerdb.NewVtxoRepository(badgerTempDir(t), nil)
+	require.NoError(t, err, "failed to open badger vtxo repository")
+	t.Cleanup(badgerRepo.Close)
+	repos["badger"] = badgerRepo
+
+	return repos
+}
+
+// badgerTempDir is t.TempDir with best-effort removal. badger keeps its value
+// log mapped for a moment after Close, and on Windows t.TempDir's cleanup fails
+// the test when the unlink loses that race. The failure says nothing about the
+// code under test, so the directory is removed on a best-effort basis instead.
+func badgerTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "onchain-spend-badger-*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		//nolint:errcheck
+		_ = os.RemoveAll(dir)
+	})
+	return dir
+}
+
+func onchainSpendVtxo(txid string) domain.Vtxo {
+	return domain.Vtxo{
+		Outpoint:           domain.Outpoint{Txid: txid, VOut: 0},
+		PubKey:             "187396153c4cf84a4a9d32cba6a8a64f6869ba986d85c4e6c763f3564ed781af",
+		Amount:             187592,
+		CommitmentTxids:    []string{"9246e57242e458015cefe06511b841f1b9bf6431194b4af371e3528af67554ae"},
+		RootCommitmentTxid: "9246e57242e458015cefe06511b841f1b9bf6431194b4af371e3528af67554ae",
+		ExpiresAt:          1785690467,
+		CreatedAt:          1783098211,
 	}
 }
 
@@ -249,45 +286,4 @@ func containsOutpoint(vtxos []domain.Vtxo, outpoint domain.Outpoint) bool {
 		}
 	}
 	return false
-}
-
-// TestOnchainSpendLargeBatch exercises a batch larger than the badger
-// transaction chunk size. badger rejects an oversized transaction with
-// ErrTxnTooBig and Discard then drops every buffered write, so an unbounded
-// batch would lose the whole set rather than part of it. The reconciler's first
-// pass after a restart is unwindowed by design and can carry exactly this kind
-// of backlog.
-func TestOnchainSpendLargeBatch(t *testing.T) {
-	ctx := context.Background()
-	const count = 450 // spans more than two chunks of 200
-
-	for name, repo := range newOnchainSpendRepos(t) {
-		t.Run(name, func(t *testing.T) {
-			vtxos := make([]domain.Vtxo, 0, count)
-			spentBy := make(map[domain.Outpoint]string, count)
-			outpoints := make([]domain.Outpoint, 0, count)
-			for i := 0; i < count; i++ {
-				vtxo := onchainSpendVtxo(randomString(32))
-				vtxos = append(vtxos, vtxo)
-				outpoints = append(outpoints, vtxo.Outpoint)
-				spentBy[vtxo.Outpoint] = "spendingtxid"
-			}
-
-			require.NoError(t, repo.AddVtxos(ctx, vtxos))
-			require.NoError(t, repo.UnrollVtxos(ctx, outpoints))
-			require.NoError(t, repo.MarkVtxosOnchainSpent(ctx, spentBy))
-
-			recorded, err := repo.GetOnchainSpentVtxos(ctx)
-			require.NoError(t, err)
-			for _, outpoint := range outpoints {
-				require.True(t, containsOutpoint(recorded, outpoint),
-					"every vtxo in an oversized batch must be recorded")
-			}
-
-			require.NoError(t, repo.UnmarkVtxosOnchainSpent(ctx, outpoints))
-			for _, outpoint := range outpoints {
-				require.False(t, getOnchainSpendVtxo(t, repo, outpoint).Spent)
-			}
-		})
-	}
 }

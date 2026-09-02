@@ -244,39 +244,6 @@ func TestWalletClientUnwatchScriptsChunking(t *testing.T) {
 	})
 }
 
-// fakeNotificationStream replays a fixed set of responses, then blocks until
-// its context is cancelled so the reader goroutine behaves like a live stream
-// rather than terminating immediately.
-type fakeNotificationStream struct {
-	arkwalletv1.WalletService_NotificationStreamClient
-	responses []*arkwalletv1.NotificationStreamResponse
-	idx       int
-	done      chan struct{}
-}
-
-func (f *fakeNotificationStream) Recv() (*arkwalletv1.NotificationStreamResponse, error) {
-	if f.idx < len(f.responses) {
-		resp := f.responses[f.idx]
-		f.idx++
-		return resp, nil
-	}
-	<-f.done
-	return nil, errors.New("EOF")
-}
-
-type notifyFakeClient struct {
-	arkwalletv1.WalletServiceClient
-	streamCalls int
-	stream      *fakeNotificationStream
-}
-
-func (f *notifyFakeClient) NotificationStream(
-	_ context.Context, _ *arkwalletv1.NotificationStreamRequest, _ ...grpc.CallOption,
-) (arkwalletv1.WalletService_NotificationStreamClient, error) {
-	f.streamCalls++
-	return f.stream, nil
-}
-
 // TestNotificationStreamIsShared pins that both consumers are fed by a single
 // NotificationStream RPC. One chain event carries its new UTXOs and its spends
 // in the same message, so a stream per consumer would open two long-lived
@@ -325,4 +292,37 @@ func TestNotificationStreamIsShared(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		require.Fail(t, "timeout waiting for spend notification")
 	}
+}
+
+// fakeNotificationStream replays a fixed set of responses, then blocks until
+// its context is cancelled so the reader goroutine behaves like a live stream
+// rather than terminating immediately.
+type fakeNotificationStream struct {
+	arkwalletv1.WalletService_NotificationStreamClient
+	responses []*arkwalletv1.NotificationStreamResponse
+	idx       int
+	done      chan struct{}
+}
+
+func (f *fakeNotificationStream) Recv() (*arkwalletv1.NotificationStreamResponse, error) {
+	if f.idx < len(f.responses) {
+		resp := f.responses[f.idx]
+		f.idx++
+		return resp, nil
+	}
+	<-f.done
+	return nil, errors.New("EOF")
+}
+
+type notifyFakeClient struct {
+	arkwalletv1.WalletServiceClient
+	streamCalls int
+	stream      *fakeNotificationStream
+}
+
+func (f *notifyFakeClient) NotificationStream(
+	_ context.Context, _ *arkwalletv1.NotificationStreamRequest, _ ...grpc.CallOption,
+) (arkwalletv1.WalletService_NotificationStreamClient, error) {
+	f.streamCalls++
+	return f.stream, nil
 }
