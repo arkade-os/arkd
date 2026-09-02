@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"errors"
-	"fmt"
 	"maps"
 	"strings"
 	"sync"
@@ -13,19 +11,15 @@ import (
 	"github.com/btcsuite/btcd/wire/v2"
 )
 
-// MaxTxFiltersPerListener bounds the number of compiled CEL programs a single
-// subscription can hold, preventing memory exhaustion via repeated
-// UpdateSubscription calls.
-const MaxTxFiltersPerListener = 64
-
-// ErrSubscriptionNotFound is returned by broker operations targeting a
-// subscription id that has no live listener.
-var ErrSubscriptionNotFound = errors.New("subscription not found")
-
-// ErrTxFiltersLimitExceeded is returned when an add or overwrite would push
-// the listener's tx filter count above MaxTxFiltersPerListener.
-var ErrTxFiltersLimitExceeded = fmt.Errorf(
-	"tx filters per subscription limit (%d) exceeded", MaxTxFiltersPerListener,
+const (
+	// MaxTxFiltersPerListener bounds the number of compiled CEL programs a single
+	// subscription can hold, preventing memory exhaustion via repeated
+	// UpdateSubscription calls.
+	MaxTxFiltersPerListener = 64
+	// MaxTopicsPerListener bounds the nb of topics a single subscription can hold.
+	MaxTopicsPerListener = 1000
+	// MaxListeners bounds the number of live listeners a single broker will hold.
+	MaxListeners = 5000
 )
 
 type listener[T any] struct {
@@ -84,15 +78,27 @@ func (l *listener[T]) includesAny(topics []string) bool {
 	return false
 }
 
-func (l *listener[T]) addTopics(topics []string) {
+func (l *listener[T]) addTopics(topics []string) error {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	if l.topics == nil {
 		l.topics = make(map[string]struct{}, len(topics))
 	}
+
+	// Count what the add would actually produce: topics already held are
+	// no-ops, so rejecting on len(current)+len(incoming) would refuse a
+	// re-subscribe to the same scripts.
+	merged := make(map[string]struct{}, len(l.topics)+len(topics))
+	maps.Copy(merged, l.topics)
 	for _, topic := range topics {
-		l.topics[formatTopic(topic)] = struct{}{}
+		merged[formatTopic(topic)] = struct{}{}
 	}
+	if len(merged) > MaxTopicsPerListener {
+		return topicsLimitErr(l.id, len(merged))
+	}
+
+	l.topics = merged
+	return nil
 }
 
 func (l *listener[T]) removeTopics(topics []string) {
@@ -106,14 +112,25 @@ func (l *listener[T]) removeTopics(topics []string) {
 	}
 }
 
-func (l *listener[T]) overwriteTopics(topics []string) {
+func (l *listener[T]) overwriteTopics(topics []string) error {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	newTopics := make(map[string]struct{}, len(topics))
 	for _, topic := range topics {
 		newTopics[formatTopic(topic)] = struct{}{}
 	}
+	if len(newTopics) > MaxTopicsPerListener {
+		return topicsLimitErr(l.id, len(newTopics))
+	}
+
 	l.topics = newTopics
+	return nil
+}
+
+func (l *listener[T]) topicCount() int {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+	return len(l.topics)
 }
 
 func (l *listener[T]) getTopics() []string {
@@ -197,11 +214,22 @@ func newBroker[T any]() *broker[T] {
 	}
 }
 
-func (h *broker[T]) pushListener(l *listener[T]) {
+// pushListener registers l, rejecting it if the broker is full or if l already
+// carries more topics than a subscription may hold
+func (h *broker[T]) pushListener(l *listener[T]) error {
+	if count := l.topicCount(); count > MaxTopicsPerListener {
+		return topicsLimitErr(l.id, count)
+	}
+
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
+	if _, ok := h.listeners[l.id]; !ok && len(h.listeners) >= MaxListeners {
+		return subsLimitErr()
+	}
+
 	h.listeners[l.id] = l
+	return nil
 }
 
 func (h *broker[T]) removeListener(id string) {
@@ -227,7 +255,7 @@ func (h *broker[T]) attach(id string) (*listener[T], *attachment, error) {
 
 	l, ok := h.listeners[id]
 	if !ok {
-		return nil, nil, fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
+		return nil, nil, notFoundErr(id)
 	}
 	if l.timeoutTimer != nil {
 		l.timeoutTimer.Stop()
@@ -279,10 +307,9 @@ func (h *broker[T]) addTopics(id string, topics []string) error {
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
 	if !ok {
-		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
+		return notFoundErr(id)
 	}
-	listener.addTopics(topics)
-	return nil
+	return listener.addTopics(topics)
 }
 
 func (h *broker[T]) removeTopics(id string, topics []string) error {
@@ -290,7 +317,7 @@ func (h *broker[T]) removeTopics(id string, topics []string) error {
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
 	if !ok {
-		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
+		return notFoundErr(id)
 	}
 	listener.removeTopics(topics)
 	return nil
@@ -301,10 +328,9 @@ func (h *broker[T]) removeAllTopics(id string) error {
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
 	if !ok {
-		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
+		return notFoundErr(id)
 	}
-	listener.overwriteTopics([]string{})
-	return nil
+	return listener.overwriteTopics([]string{})
 }
 
 func (h *broker[T]) overwriteTopics(id string, topics []string) error {
@@ -312,10 +338,9 @@ func (h *broker[T]) overwriteTopics(id string, topics []string) error {
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
 	if !ok {
-		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
+		return notFoundErr(id)
 	}
-	listener.overwriteTopics(topics)
-	return nil
+	return listener.overwriteTopics(topics)
 }
 
 func (h *broker[T]) getTxFilters(id string) []string {
@@ -337,7 +362,7 @@ func (h *broker[T]) installTxFilters(id string, filters map[string]txfilter.Filt
 	listener, ok := h.listeners[id]
 	h.lock.RUnlock()
 	if !ok {
-		return fmt.Errorf("%w: %s", ErrSubscriptionNotFound, id)
+		return notFoundErr(id)
 	}
 	listener.setTxFilters(filters)
 	return nil
@@ -373,7 +398,8 @@ func (h *broker[T]) startTimeout(id string, timeout time.Duration) {
 	h.scheduleExpiryLocked(l, timeout)
 }
 
-// scheduleExpiryLocked (re)arms the expiry timer on l; broker lock must be held, and only the current timer may remove the listener.
+// scheduleExpiryLocked (re)arms the expiry timer on l; broker lock must be held,
+// and only the current timer may remove the listener.
 func (h *broker[T]) scheduleExpiryLocked(l *listener[T], timeout time.Duration) {
 	if l.timeoutTimer != nil {
 		l.timeoutTimer.Stop()
@@ -410,4 +436,46 @@ func (h *broker[T]) hasListeners() bool {
 
 func formatTopic(topic string) string {
 	return strings.Trim(strings.ToLower(topic), " ")
+}
+
+// topicsLimitErr is returned when a subscribe or update would push the listener's topic count
+// above MaxTopicsPerListener.
+func topicsLimitErr(id string, got int) error {
+	return arkdErrors.TOPICS_LIMIT_EXCEEDED.
+		New("topics per subscription limit (%d) exceeded", MaxTopicsPerListener).
+		WithMetadata(arkdErrors.TopicsLimitMetadata{
+			SubscriptionId: id,
+			MaxTopics:      MaxTopicsPerListener,
+			GotTopics:      got,
+		})
+}
+
+// notFoundErr is returned by broker operations targeting a subscription id that has no live
+// listener.
+func notFoundErr(id string) error {
+	return arkdErrors.SUBSCRIPTION_NOT_FOUND.
+		New("subscription %s not found", id).
+		WithMetadata(arkdErrors.SubscriptionMetadata{SubscriptionId: id})
+}
+
+// subsLimitErr is returned when a subscribe would push the broker's listener count above
+// MaxListeners.
+func subsLimitErr() error {
+	return arkdErrors.SUBSCRIPTIONS_LIMIT_EXCEEDED.
+		New("live subscriptions limit (%d) reached", MaxListeners).
+		WithMetadata(arkdErrors.SubscriptionsLimitMetadata{
+			MaxSubscriptions: MaxListeners,
+		})
+}
+
+// txFiltersLimitErr is returned when a subscribe or update would push the listener's tx filter
+// count above MaxTxFiltersPerListener.
+func txFiltersLimitErr(id string, got int) error {
+	return arkdErrors.TX_FILTERS_LIMIT_EXCEEDED.
+		New("tx filters per subscription limit (%d) exceeded", MaxTxFiltersPerListener).
+		WithMetadata(arkdErrors.TxFiltersLimitMetadata{
+			SubscriptionId: id,
+			MaxTxFilters:   MaxTxFiltersPerListener,
+			GotTxFilters:   got,
+		})
 }

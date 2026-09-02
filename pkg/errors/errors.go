@@ -540,3 +540,27 @@ var INVALID_BATCH_OUTPUT_SCRIPT = Code[InvalidBatchOutputScriptMetadata]{
 	"INVALID_BATCH_OUTPUT_SCRIPT",
 	grpccodes.InvalidArgument,
 }
+
+type TopicsLimitMetadata struct {
+	SubscriptionId string `json:"subscription_id"`
+	MaxTopics      int    `json:"max_topics"`
+	GotTopics      int    `json:"got_topics"`
+}
+
+var TOPICS_LIMIT_EXCEEDED = Code[TopicsLimitMetadata]{
+	56,
+	"TOPICS_LIMIT_EXCEEDED",
+	grpccodes.InvalidArgument,
+}
+
+type SubscriptionsLimitMetadata struct {
+	MaxSubscriptions int `json:"max_subscriptions"`
+}
+
+// SUBSCRIPTIONS_LIMIT_EXCEEDED is resource exhaustion rather than bad input:
+// the caller's request is well formed and retrying later may succeed.
+var SUBSCRIPTIONS_LIMIT_EXCEEDED = Code[SubscriptionsLimitMetadata]{
+	57,
+	"SUBSCRIPTIONS_LIMIT_EXCEEDED",
+	grpccodes.ResourceExhausted,
+}

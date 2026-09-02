@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	arkdErrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -269,7 +270,7 @@ func TestBroker(t *testing.T) {
 		// add to a non-existent listener
 		err = broker.addTopics("non-existent", []string{"topic1"})
 		require.Error(t, err)
-		require.ErrorIs(t, err, ErrSubscriptionNotFound)
+		requireCode(t, err, arkdErrors.SUBSCRIPTION_NOT_FOUND.Name)
 	})
 
 	t.Run("removeTopics", func(t *testing.T) {
@@ -290,7 +291,7 @@ func TestBroker(t *testing.T) {
 
 		err = broker.removeTopics("non-existent", []string{"topic1"})
 		require.Error(t, err)
-		require.ErrorIs(t, err, ErrSubscriptionNotFound)
+		requireCode(t, err, arkdErrors.SUBSCRIPTION_NOT_FOUND.Name)
 	})
 
 	t.Run("removeAllTopics", func(t *testing.T) {
@@ -307,7 +308,7 @@ func TestBroker(t *testing.T) {
 
 		err = broker.removeAllTopics("non-existent")
 		require.Error(t, err)
-		require.ErrorIs(t, err, ErrSubscriptionNotFound)
+		requireCode(t, err, arkdErrors.SUBSCRIPTION_NOT_FOUND.Name)
 	})
 
 	t.Run("overwriteTopics", func(t *testing.T) {
@@ -339,7 +340,7 @@ func TestBroker(t *testing.T) {
 
 		err = broker.overwriteTopics("non-existent", []string{"topic4", "topic5"})
 		require.Error(t, err)
-		require.ErrorIs(t, err, ErrSubscriptionNotFound)
+		requireCode(t, err, arkdErrors.SUBSCRIPTION_NOT_FOUND.Name)
 	})
 
 	t.Run("concurrent topic modifications", func(t *testing.T) {
@@ -436,7 +437,7 @@ func TestBroker(t *testing.T) {
 			broker := newBroker[string]()
 
 			_, _, err := broker.attach("missing")
-			require.ErrorIs(t, err, ErrSubscriptionNotFound)
+			requireCode(t, err, arkdErrors.SUBSCRIPTION_NOT_FOUND.Name)
 		})
 
 		t.Run("attach displaces previous attachment", func(t *testing.T) {
@@ -486,7 +487,7 @@ func TestBroker(t *testing.T) {
 				broker.release("test-id", att1, 0)
 
 				if err := <-attached; err != nil {
-					require.ErrorIs(t, err, ErrSubscriptionNotFound)
+					requireCode(t, err, arkdErrors.SUBSCRIPTION_NOT_FOUND.Name)
 					require.Empty(t, broker.getListenersCopy())
 					continue
 				}

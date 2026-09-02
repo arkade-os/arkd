@@ -232,7 +232,9 @@ func (h *handler) GetEventStream(
 	topics := req.GetTopics()
 	listener := newListener[*arkv1.GetEventStreamResponse](uuid.NewString(), topics)
 
-	h.eventsListenerHandler.pushListener(listener)
+	if err := h.eventsListenerHandler.pushListener(listener); err != nil {
+		return err
+	}
 	defer h.eventsListenerHandler.removeListener(listener.id)
 
 	// immediately send a stream started event
@@ -308,7 +310,7 @@ func (h *handler) UpdateStreamTopics(
 		if err := h.eventsListenerHandler.overwriteTopics(
 			req.GetStreamId(), req.GetOverwrite().GetTopics(),
 		); err != nil {
-			return nil, status.Error(codes.NotFound, err.Error())
+			return nil, err
 		}
 		return &arkv1.UpdateStreamTopicsResponse{
 			AllTopics: h.eventsListenerHandler.getTopics(req.GetStreamId()),
@@ -326,14 +328,14 @@ func (h *handler) UpdateStreamTopics(
 			if err := h.eventsListenerHandler.addTopics(
 				req.GetStreamId(), modify.GetAddTopics(),
 			); err != nil {
-				return nil, status.Error(codes.NotFound, err.Error())
+				return nil, err
 			}
 		}
 		if len(modify.GetRemoveTopics()) > 0 {
 			if err := h.eventsListenerHandler.removeTopics(
 				req.GetStreamId(), modify.GetRemoveTopics(),
 			); err != nil {
-				return nil, status.Error(codes.NotFound, err.Error())
+				return nil, err
 			}
 		}
 		return &arkv1.UpdateStreamTopicsResponse{
@@ -431,7 +433,9 @@ func (h *handler) GetTransactionsStream(
 ) error {
 	listener := newListener[*arkv1.GetTransactionsStreamResponse](uuid.NewString(), []string{})
 
-	h.transactionsListenerHandler.pushListener(listener)
+	if err := h.transactionsListenerHandler.pushListener(listener); err != nil {
+		return err
+	}
 
 	defer func() {
 		h.transactionsListenerHandler.removeListener(listener.id)

@@ -15,7 +15,6 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
-	arkdErrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
@@ -459,9 +458,11 @@ func (h *indexerService) GetSubscription(
 	if isNew {
 		// New single-connection flow: create subscription inline.
 		subscriptionId = uuid.NewString()
-		h.scriptSubsHandler.pushListener(
+		if err := h.scriptSubsHandler.pushListener(
 			newListener[*arkv1.GetSubscriptionResponse](subscriptionId, nil),
-		)
+		); err != nil {
+			return err
+		}
 		reconnectWindow = 0
 	}
 
@@ -469,7 +470,7 @@ func (h *indexerService) GetSubscription(
 	// it forces any previous streams attached to the same subscriptinId to be closed
 	listener, att, err := h.scriptSubsHandler.attach(subscriptionId)
 	if err != nil {
-		return subscriptionErr(subscriptionId, err)
+		return err
 	}
 	// On exit, release our hold: the subscription survives for reconnectWindow.
 	defer h.scriptSubsHandler.release(subscriptionId, att, reconnectWindow)
@@ -629,12 +630,12 @@ func (h *indexerService) applyFilter(
 
 	// Mutate: expressions first (literal overwrite), then scripts.
 	if err := h.scriptSubsHandler.installTxFilters(subscriptionID, compiledExprs); err != nil {
-		return subscriptionErr(subscriptionID, err)
+		return err
 	}
 
 	if len(parsedAdd) > 0 {
 		if err := h.scriptSubsHandler.addTopics(subscriptionID, parsedAdd); err != nil {
-			return subscriptionErr(subscriptionID, err)
+			return err
 		}
 	}
 
@@ -645,12 +646,12 @@ func (h *indexerService) applyFilter(
 	switch {
 	case len(parsedRemove) > 0:
 		if err := h.scriptSubsHandler.removeTopics(subscriptionID, parsedRemove); err != nil {
-			return subscriptionErr(subscriptionID, err)
+			return err
 		}
 	case len(parsedAdd) == 0:
 		// Both add and remove empty: mirror UnsubscribeForScripts and clear all.
 		if err := h.scriptSubsHandler.removeAllTopics(subscriptionID); err != nil {
-			return subscriptionErr(subscriptionID, err)
+			return err
 		}
 	}
 
@@ -669,7 +670,7 @@ func (h *indexerService) UnsubscribeForScripts(
 	if len(scripts) == 0 {
 		// remove all topics
 		if err := h.scriptSubsHandler.removeAllTopics(subscriptionId); err != nil {
-			return nil, subscriptionErr(subscriptionId, err)
+			return nil, err
 		}
 		// Only tear down the listener if no tx filters remain on it, otherwise
 		// tx-only subscriptions would be silently dropped.
@@ -680,26 +681,10 @@ func (h *indexerService) UnsubscribeForScripts(
 	}
 
 	if err := h.scriptSubsHandler.removeTopics(subscriptionId, scripts); err != nil {
-		return nil, subscriptionErr(subscriptionId, err)
+		return nil, err
 	}
 
 	return &arkv1.UnsubscribeForScriptsResponse{}, nil
-}
-
-// subscriptionErr maps an error returned by the script-subscription broker
-// onto the error surfaced to the client. A missing subscription becomes the
-// structured SUBSCRIPTION_NOT_FOUND code (gRPC NotFound); any other error is
-// reported as Internal. The message keeps the legacy
-// "subscription <id> not found" phrasing so SDKs that still match on the error
-// string keep detecting stale subscriptions (see ts-sdk#600), while the
-// structured code lets clients detect it without parsing the message.
-func subscriptionErr(id string, err error) error {
-	if errors.Is(err, ErrSubscriptionNotFound) {
-		return arkdErrors.SUBSCRIPTION_NOT_FOUND.
-			New("subscription %s not found", id).
-			WithMetadata(arkdErrors.SubscriptionMetadata{SubscriptionId: id})
-	}
-	return status.Error(codes.Internal, err.Error())
 }
 
 func (h *indexerService) SubscribeForScripts(
@@ -717,12 +702,14 @@ func (h *indexerService) SubscribeForScripts(
 
 		listener := newListener[*arkv1.GetSubscriptionResponse](subscriptionId, scripts)
 
-		h.scriptSubsHandler.pushListener(listener)
+		if err := h.scriptSubsHandler.pushListener(listener); err != nil {
+			return nil, err
+		}
 		h.scriptSubsHandler.startTimeout(subscriptionId, h.subscriptionTimeoutDuration)
 	} else {
 		// update listener topic
 		if err := h.scriptSubsHandler.addTopics(subscriptionId, scripts); err != nil {
-			return nil, subscriptionErr(subscriptionId, err)
+			return nil, err
 		}
 	}
 	return &arkv1.SubscribeForScriptsResponse{
@@ -1037,14 +1024,4 @@ func parseIndexerIntent(i *arkv1.IndexerIntent) (*application.Intent, error) {
 		return nil, err
 	}
 	return &application.Intent{Proof: proof, Message: message}, nil
-}
-
-func txFiltersLimitErr(subscriptionID string, got int) error {
-	return arkdErrors.TX_FILTERS_LIMIT_EXCEEDED.
-		New("%s", ErrTxFiltersLimitExceeded.Error()).
-		WithMetadata(arkdErrors.TxFiltersLimitMetadata{
-			SubscriptionId: subscriptionID,
-			MaxTxFilters:   MaxTxFiltersPerListener,
-			GotTxFilters:   got,
-		})
 }
