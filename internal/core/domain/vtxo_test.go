@@ -191,6 +191,18 @@ func TestVtxo_RequiresForfeit(t *testing.T) {
 			},
 			requiresForfeit: false,
 		},
+		{
+			// An on-chain Arkade UTXO is a boarding input in a batch, never a
+			// forfeited vtxo, even when it carries commitment txids and so
+			// would not read as a note.
+			name: "should be false (onchain kind)",
+			vtxo: domain.Vtxo{
+				CommitmentTxids: []string{"txid1"},
+				ExpiresAt:       futureExpiry,
+				Kind:            domain.VtxoKindOnchain,
+			},
+			requiresForfeit: false,
+		},
 	}
 	for _, f := range fixtures {
 		t.Run(f.name, func(t *testing.T) {

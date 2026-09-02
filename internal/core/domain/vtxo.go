@@ -93,7 +93,9 @@ func (v Vtxo) IsNote() bool {
 }
 
 func (v Vtxo) RequiresForfeit() bool {
-	return !v.Swept && !v.IsNote() && !v.Unrolled
+	// An on-chain Arkade UTXO joins a batch as a boarding input, which is
+	// signed directly and never forfeited.
+	return v.Kind != VtxoKindOnchain && !v.Swept && !v.IsNote() && !v.Unrolled
 }
 
 func (v Vtxo) IsSettled() bool {
