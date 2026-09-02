@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 // LeafOutput represents the output of a leaf transaction.
@@ -199,6 +200,7 @@ func (t *TxTree) SerializeNode() (*TxTreeNode, error) {
 // It verifies :
 // - every tx is a valid partial transaction.
 // - every tx has exactly one input.
+// - every tx is final, ie. it can be broadcasted as soon as its parent is confirmed
 // - the child txs spend the right parent's output
 // - the sum of the child txs' output amounts matches the parent tx input amount
 func (t *TxTree) Validate() error {
@@ -210,11 +212,26 @@ func (t *TxTree) Validate() error {
 		return fmt.Errorf("unexpected version: %d, expected 3", t.Root.UnsignedTx.Version)
 	}
 
+	// A non-final tx can't be broadcasted until its timelock elapses, which would
+	// hold the unroll path back while the batch output sweep matures.
+	if t.Root.UnsignedTx.LockTime != 0 {
+		return fmt.Errorf("unexpected locktime: %d, expected 0", t.Root.UnsignedTx.LockTime)
+	}
+
 	nbOfOutputs := uint32(len(t.Root.UnsignedTx.TxOut))
 	nbOfInputs := uint32(len(t.Root.UnsignedTx.TxIn))
 
 	if nbOfInputs != 1 {
 		return fmt.Errorf("unexpected number of inputs: %d, expected 1", nbOfInputs)
+	}
+
+	for inputIndex, input := range t.Root.UnsignedTx.TxIn {
+		if input.Sequence != wire.MaxTxInSequenceNum {
+			return fmt.Errorf(
+				"unexpected sequence for input %d: %d, expected %d",
+				inputIndex, input.Sequence, uint32(wire.MaxTxInSequenceNum),
+			)
+		}
 	}
 
 	// The children map can't be bigger than the number of outputs (excluding the P2A).
