@@ -399,6 +399,7 @@ func rowToVtxoFromMarkerQuery(row queries.SelectVtxosByMarkerIdRow) domain.Vtxo 
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
+		Kind:               domain.VtxoKind(row.VtxoVw.VtxoKind),
 		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers),
 	}
 }
@@ -427,6 +428,7 @@ func rowToVtxoFromDepthRangeQuery(row queries.SelectVtxosByDepthRangeRow) domain
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
+		Kind:               domain.VtxoKind(row.VtxoVw.VtxoKind),
 		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers),
 	}
 }
@@ -455,6 +457,7 @@ func rowToVtxoFromArkTxidQuery(row queries.SelectVtxosByArkTxidRow) domain.Vtxo 
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
+		Kind:               domain.VtxoKind(row.VtxoVw.VtxoKind),
 		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers),
 	}
 }
@@ -483,6 +486,7 @@ func rowToVtxoFromChainQuery(row queries.SelectVtxoChainByMarkerRow) domain.Vtxo
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
+		Kind:               domain.VtxoKind(row.VtxoVw.VtxoKind),
 		MarkerIDs:          parseMarkersJSON(row.VtxoVw.Markers),
 	}
 }
