@@ -2,8 +2,10 @@ package nbxplorer
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -28,6 +30,11 @@ const (
 	// Default cryptocode for Bitcoin
 	btcCryptoCode = "BTC"
 )
+
+// errNotFound marks a 404 from NBXplorer. The group transactions endpoint
+// answers 404 for a transaction that touches nothing the group tracks, which is
+// an ordinary outcome rather than a failure.
+var errNotFound = errors.New("not found")
 
 type nbxplorer struct {
 	url           string
@@ -166,7 +173,12 @@ func (n *nbxplorer) GetTransaction(ctx context.Context, txid string) (*ports.Tra
 
 	data, err := n.makeRequest(ctx, "GET", fmt.Sprintf("/v1/cryptos/%s/transactions/%s", btcCryptoCode, txid), nil)
 	if err != nil {
-		if strings.Contains(err.Error(), "404") {
+		// Matched on the sentinel rather than the message. A transaction the
+		// node has not seen yet is an ordinary outcome, and the caller chain
+		// depends on it being reported as ErrTransactionNotFound: the gRPC
+		// handler turns that into "not confirmed", and the sweeper reads a
+		// failure here as "cannot schedule this sweep" instead.
+		if errors.Is(err, errNotFound) {
 			return nil, application.ErrTransactionNotFound
 		}
 		return nil, fmt.Errorf("failed to get transaction: %w", err)
@@ -664,10 +676,12 @@ func (n *nbxplorer) UnwatchAddresses(ctx context.Context, addresses ...string) e
 	return nil
 }
 
-// GetAddressNotifications returns the channel where to listen for notifications about incoming 
+// GetAddressNotifications returns the channel where to listen for notifications about incoming
 // UTXOs for the watched addresses.
 // If no underlying group is set, an empty one will be created.
-func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports.Utxo, error) {
+func (n *nbxplorer) GetAddressNotifications(
+	ctx context.Context,
+) (<-chan ports.ChainNotification, error) {
 	if len(n.groupID) == 0 {
 		if err := n.createEmptyGroup(ctx); err != nil {
 			return nil, fmt.Errorf("failed to create empty group: %w", err)
@@ -679,7 +693,7 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 	}
 
 	// buffered channel to prevent blocking
-	notificationsChan := make(chan []ports.Utxo, 64)
+	notificationsChan := make(chan ports.ChainNotification, 64)
 
 	go func() {
 		defer close(notificationsChan)
@@ -704,14 +718,37 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 					var newTxEvent newTransactionEvent
 					if eventDataBytes, err := json.Marshal(event.Data); err == nil {
 						if err := json.Unmarshal(eventDataBytes, &newTxEvent); err == nil {
-							newUtxos, err := n.searchNewUTXOs(ctx, newTxEvent.TransactionData.TransactionHash)
+							txid := newTxEvent.TransactionData.TransactionHash
+
+							// A failure here must not discard the spend half of
+							// the event: the two lookups are independent, and
+							// returning early would silently drop a spend the
+							// transaction-specific query could still resolve.
+							newUtxos, err := n.searchNewUTXOs(ctx, txid)
 							if err != nil {
-								continue
+								log.WithError(err).Warnf(
+									"failed to fetch new utxos for tx %s", txid,
+								)
+								newUtxos = nil
 							}
 
-							if len(newUtxos) > 0 {
+							// The same event carries spends of watched outputs.
+							// searchNewUTXOs cannot see them: a transaction that
+							// spends a watched output creates no new UTXO at that
+							// script, so it would look like nothing happened.
+							spends, err := n.GetTxSpends(ctx, txid)
+							if err != nil {
+								log.WithError(err).Warnf(
+									"failed to fetch spends for tx %s", txid,
+								)
+							}
+
+							if len(newUtxos) > 0 || len(spends) > 0 {
 								select {
-								case notificationsChan <- newUtxos:
+								case notificationsChan <- ports.ChainNotification{
+									Utxos:  newUtxos,
+									Spends: spends,
+								}:
 								case <-ctx.Done():
 									return
 								}
@@ -767,6 +804,16 @@ func (n *nbxplorer) makeRequest(ctx context.Context, method, endpoint string, bo
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == http.StatusNotFound {
+			// Callers should match errNotFound, not this text. The status stays
+			// in the message anyway, because dropping it is what silently broke
+			// GetTransaction once: it detected a missing transaction by looking
+			// for "404" here, and rewording the error turned every unseen
+			// transaction into an opaque failure several layers up.
+			return nil, fmt.Errorf(
+				"%w: HTTP %d: %s", errNotFound, resp.StatusCode, string(bodyBytes),
+			)
+		}
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
@@ -902,6 +949,208 @@ func (n *nbxplorer) rescanUTXOs(ctx context.Context, outpoints []wire.OutPoint) 
 		return fmt.Errorf("failed to rescan UTXOs: %w", err)
 	}
 	return nil
+}
+
+// groupTransactionsEndpoint builds the group transactions URL. includeTransaction
+// is always false: the raw tx hex dominates the payload and nothing here needs
+// it. from, when set, is a unix timestamp in seconds, which is the only format
+// NBXplorer's DateTimeOffsetModelBinder accepts.
+func (n *nbxplorer) groupTransactionsEndpoint(txid string, from *time.Time) string {
+	endpoint := fmt.Sprintf(
+		"/v1/cryptos/%s/groups/%s/transactions", btcCryptoCode, url.PathEscape(n.groupID),
+	)
+	if len(txid) > 0 {
+		endpoint += "/" + url.PathEscape(txid)
+	}
+
+	query := url.Values{}
+	query.Set("includeTransaction", "false")
+	if from != nil {
+		query.Set("from", strconv.FormatInt(from.Unix(), 10))
+	}
+	return endpoint + "?" + query.Encode()
+}
+
+// castSpends turns the matched inputs of one transaction into spends. Each
+// matched input names the outpoint being spent, while the transaction itself is
+// the spender.
+func castSpends(tx transactionInformation) []ports.Spend {
+	spends := make([]ports.Spend, 0, len(tx.Inputs))
+	for _, in := range tx.Inputs {
+		hash, err := chainhash.NewHashFromStr(in.TransactionId)
+		if err != nil {
+			log.WithError(err).Warnf("skipping spend with invalid txid %s", in.TransactionId)
+			continue
+		}
+
+		confirmations := int64(0)
+		if tx.Confirmations > 0 {
+			confirmations = tx.Confirmations
+		}
+
+		spends = append(spends, ports.Spend{
+			OutPoint:      wire.OutPoint{Hash: *hash, Index: in.Index},
+			SpendingTxid:  tx.TransactionId,
+			Confirmations: uint32(confirmations),
+		})
+	}
+	return spends
+}
+
+func (n *nbxplorer) GetSpends(ctx context.Context, from *time.Time) ([]ports.Spend, error) {
+	data, err := n.makeRequest(ctx, "GET", n.groupTransactionsEndpoint("", from), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get group transactions: %w", err)
+	}
+
+	var resp transactionsResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal group transactions: %w", err)
+	}
+
+	// Replaced transactions are deliberately skipped: after an RBF the spender
+	// that matters is the replacement, which appears in the unconfirmed set.
+	spends := make([]ports.Spend, 0)
+	for _, tx := range resp.ConfirmedTransactions.Transactions {
+		spends = append(spends, castSpends(tx)...)
+	}
+	for _, tx := range resp.UnconfirmedTransactions.Transactions {
+		spends = append(spends, castSpends(tx)...)
+	}
+	return spends, nil
+}
+
+func (n *nbxplorer) GetTxSpends(ctx context.Context, txid string) ([]ports.Spend, error) {
+	if len(txid) == 0 {
+		return nil, fmt.Errorf("transaction id is required")
+	}
+
+	data, err := n.makeRequest(ctx, "GET", n.groupTransactionsEndpoint(txid, nil), nil)
+	if err != nil {
+		// A transaction that spends nothing the group tracks is a 404, and is
+		// the common case: every new transaction on a watched script triggers
+		// this lookup, most of them only paying to it.
+		if errors.Is(err, errNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get transaction %s: %w", txid, err)
+	}
+
+	// With a txid in the path NBXplorer returns a bare TransactionInformation
+	// rather than the confirmed/unconfirmed sets.
+	var tx transactionInformation
+	if err := json.Unmarshal(data, &tx); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal transaction %s: %w", txid, err)
+	}
+	return castSpends(tx), nil
+}
+
+// GetUnspentOutpoints returns the tracked outputs that are currently unspent.
+//
+// The subtraction matters: NBXplorer keeps a confirmed output in Confirmed.UtxOs
+// even while the transaction spending it sits in the mempool, listing it in
+// Unconfirmed.SpentOutpoints at the same time. Taking Confirmed.UtxOs at face
+// value would therefore report a mempool-spent output as unspent, and a caller
+// using this to retract spends would undo every mempool spend one tick after
+// recording it.
+func (n *nbxplorer) GetUnspentOutpoints(
+	ctx context.Context,
+) (map[wire.OutPoint]struct{}, error) {
+	endpoint := fmt.Sprintf(
+		"/v1/cryptos/%s/groups/%s/utxos", btcCryptoCode, url.PathEscape(n.groupID),
+	)
+	data, err := n.makeRequest(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get group UTXOs: %w", err)
+	}
+
+	var resp utxosResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal group UTXOs: %w", err)
+	}
+
+	unspent := make(map[wire.OutPoint]struct{})
+	for _, u := range slices.Concat(resp.Confirmed.UtxOs, resp.Unconfirmed.UtxOs) {
+		utxo, err := castUtxo(u)
+		if err != nil {
+			log.WithError(err).Warn("skipping UTXO with invalid outpoint")
+			continue
+		}
+		unspent[utxo.OutPoint] = struct{}{}
+	}
+
+	for _, u := range resp.SpentUnconfirmed {
+		utxo, err := castUtxo(u)
+		if err != nil {
+			continue
+		}
+		delete(unspent, utxo.OutPoint)
+	}
+
+	for _, outpoints := range [][]string{
+		resp.Confirmed.SpentOutpoints, resp.Unconfirmed.SpentOutpoints,
+	} {
+		for _, o := range outpoints {
+			outpoint, err := parseOutpoint(o)
+			if err != nil {
+				log.WithError(err).Warnf("skipping spent outpoint %s", o)
+				continue
+			}
+			delete(unspent, *outpoint)
+		}
+	}
+
+	return unspent, nil
+}
+
+// parseOutpoint reads an outpoint as NBXplorer serialises one in a response:
+// 36 bytes of hex, being the 32-byte hash in internal (reversed) byte order
+// followed by a little-endian uint32 index.
+//
+// This is NOT the "<txid>-<index>" form rescanUTXOs sends. That form is what
+// the rescan *request* accepts; responses use NBitcoin's OutPoint encoding.
+// Verified against NBXplorer 2.6.7, which returned
+// bca470...631900000000 for 19631d10...a4bc:0. Getting this wrong is silent:
+// every spent outpoint fails to parse, the unspent set is never reduced, and a
+// caller using it to retract spends undoes each mempool spend one tick after
+// recording it. The dashed form is still accepted so a caller that passes the
+// request encoding keeps working.
+func parseOutpoint(s string) (*wire.OutPoint, error) {
+	if txid, index, found := strings.Cut(s, "-"); found {
+		hash, err := chainhash.NewHashFromStr(txid)
+		if err != nil {
+			return nil, fmt.Errorf("invalid outpoint txid %s: %w", txid, err)
+		}
+
+		vout, err := strconv.ParseUint(index, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid outpoint index %s: %w", index, err)
+		}
+
+		return &wire.OutPoint{Hash: *hash, Index: uint32(vout)}, nil
+	}
+
+	raw, err := hex.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("invalid outpoint %s: %w", s, err)
+	}
+	if len(raw) != chainhash.HashSize+4 {
+		return nil, fmt.Errorf(
+			"invalid outpoint %s: got %d bytes, want %d", s, len(raw), chainhash.HashSize+4,
+		)
+	}
+
+	// NewHash takes the internal byte order, which is what the wire encoding
+	// carries, so no reversal is needed here.
+	hash, err := chainhash.NewHash(raw[:chainhash.HashSize])
+	if err != nil {
+		return nil, fmt.Errorf("invalid outpoint hash in %s: %w", s, err)
+	}
+
+	return &wire.OutPoint{
+		Hash:  *hash,
+		Index: binary.LittleEndian.Uint32(raw[chainhash.HashSize:]),
+	}, nil
 }
 
 func castUtxo(u utxoResponse) (ports.Utxo, error) {

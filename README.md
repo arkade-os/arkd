@@ -96,6 +96,7 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_PYROSCOPE_SERVER_URL`        | Pyroscope server URL for continuous profiling                                   | -                              |
 | `ARKD_ENABLE_PPROF`                | Expose pprof endpoints on the admin port                                        | `false`                        |
 | `ARKD_HEARTBEAT_INTERVAL`          | Heartbeat interval in seconds                                                   | `60`                           |
+| `ARKD_ONCHAIN_SPEND_RECONCILE_INTERVAL` | How often, in seconds, unrolled vtxos are re-checked against the chain to detect or retract onchain spends | `300`                          |
 | `ARKD_MAX_CONCURRENT_STREAMS`      | Max concurrent gRPC streams per connection                                      | `1000`                         |
 | `ARKD_STREAM_CONN_POOL_SIZE`       | Number of gRPC connections in the stream pool                                   | `4`                            |
 | `ARKD_INDEXER_EXPOSURE`            | Require intent for getting vtxo chain (public, private, withheld)               | `public`                       |

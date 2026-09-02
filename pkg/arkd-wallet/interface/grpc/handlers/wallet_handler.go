@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"time"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
 	application "github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
@@ -422,6 +423,7 @@ func (h *walletHandler) NotificationStream(
 ) error {
 	ctx := stream.Context()
 	ch := h.scanner.GetNotificationChannel(ctx)
+	spendCh := h.scanner.GetSpendNotificationChannel(ctx)
 
 	for {
 		select {
@@ -454,8 +456,68 @@ func (h *walletHandler) NotificationStream(
 			if err := stream.Send(resp); err != nil {
 				return err
 			}
+		case spends, ok := <-spendCh:
+			if !ok {
+				return nil
+			}
+
+			resp := &arkwalletv1.NotificationStreamResponse{
+				Spends: castSpendsToProto(spends),
+			}
+			if err := stream.Send(resp); err != nil {
+				return err
+			}
 		}
 	}
+}
+
+func (h *walletHandler) GetSpends(
+	ctx context.Context, req *arkwalletv1.GetSpendsRequest,
+) (*arkwalletv1.GetSpendsResponse, error) {
+	var from *time.Time
+	if req.GetFrom() > 0 {
+		t := time.Unix(req.GetFrom(), 0)
+		from = &t
+	}
+
+	spends, err := h.scanner.GetSpends(ctx, from)
+	if err != nil {
+		return nil, err
+	}
+
+	return &arkwalletv1.GetSpendsResponse{Spends: castSpendsToProto(spends)}, nil
+}
+
+func (h *walletHandler) GetUnspentOutpoints(
+	ctx context.Context, _ *arkwalletv1.GetUnspentOutpointsRequest,
+) (*arkwalletv1.GetUnspentOutpointsResponse, error) {
+	unspent, err := h.scanner.GetUnspentOutpoints(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	outpoints := make([]*arkwalletv1.TxOutpoint, 0, len(unspent))
+	for outpoint := range unspent {
+		outpoints = append(outpoints, &arkwalletv1.TxOutpoint{
+			Txid:  outpoint.Hash.String(),
+			Index: outpoint.Index,
+		})
+	}
+
+	return &arkwalletv1.GetUnspentOutpointsResponse{Outpoints: outpoints}, nil
+}
+
+func castSpendsToProto(spends []application.Spend) []*arkwalletv1.SpendInfo {
+	out := make([]*arkwalletv1.SpendInfo, 0, len(spends))
+	for _, spend := range spends {
+		out = append(out, &arkwalletv1.SpendInfo{
+			SpentTxid:     spend.Txid,
+			SpentVout:     spend.Index,
+			SpendingTxid:  spend.SpendingTxid,
+			Confirmations: spend.Confirmations,
+		})
+	}
+	return out
 }
 
 func (h *walletHandler) Withdraw(

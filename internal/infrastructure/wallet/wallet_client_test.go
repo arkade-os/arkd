@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"testing"
+	"time"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
 	"github.com/stretchr/testify/require"
@@ -241,4 +242,87 @@ func TestWalletClientUnwatchScriptsChunking(t *testing.T) {
 		require.ErrorIs(t, err, boom)
 		require.Len(t, fake.unwatchCalls, 1)
 	})
+}
+
+// TestNotificationStreamIsShared pins that both consumers are fed by a single
+// NotificationStream RPC. One chain event carries its new UTXOs and its spends
+// in the same message, so a stream per consumer would open two long-lived
+// connections, dispatch every event twice, discard half of each dispatch, and
+// let a spend be observed before the UTXOs of the same event.
+func TestNotificationStreamIsShared(t *testing.T) {
+	const (
+		script  = "51201873961"
+		spentTx = "4ba63c204f39841e3a7c98e458586307cf6d33bbed9a9a520c827ab043f32701"
+		byTx    = "0e85af9b9c0fe73b82cd59a46b333cd312b830706cf82dda856c81d0d09e1f72"
+	)
+
+	fake := &notifyFakeClient{stream: &fakeNotificationStream{
+		done: make(chan struct{}),
+		responses: []*arkwalletv1.NotificationStreamResponse{
+			{Entries: []*arkwalletv1.VtoxsPerScript{{
+				Script: script,
+				Vtxos:  []*arkwalletv1.VtxoWithKey{{Txid: spentTx, Vout: 0, Value: 187592}},
+			}}},
+			{Spends: []*arkwalletv1.SpendInfo{{
+				SpentTxid: spentTx, SpentVout: 0, SpendingTxid: byTx, Confirmations: 3,
+			}}},
+		},
+	}}
+	t.Cleanup(func() { close(fake.stream.done) })
+
+	w := &walletDaemonClient{client: fake}
+	utxoCh := w.GetNotificationChannel(t.Context())
+	spendCh := w.GetSpendNotificationChannel(t.Context())
+
+	require.Equal(t, 1, fake.streamCalls, "both consumers must share one stream")
+
+	select {
+	case m := <-utxoCh:
+		require.Len(t, m[script], 1)
+		require.Equal(t, spentTx, m[script][0].Txid)
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "timeout waiting for utxo notification")
+	}
+
+	select {
+	case spends := <-spendCh:
+		require.Len(t, spends, 1)
+		require.Equal(t, spentTx, spends[0].Txid)
+		require.Equal(t, byTx, spends[0].SpendingTxid)
+	case <-time.After(2 * time.Second):
+		require.Fail(t, "timeout waiting for spend notification")
+	}
+}
+
+// fakeNotificationStream replays a fixed set of responses, then blocks until
+// its context is cancelled so the reader goroutine behaves like a live stream
+// rather than terminating immediately.
+type fakeNotificationStream struct {
+	arkwalletv1.WalletService_NotificationStreamClient
+	responses []*arkwalletv1.NotificationStreamResponse
+	idx       int
+	done      chan struct{}
+}
+
+func (f *fakeNotificationStream) Recv() (*arkwalletv1.NotificationStreamResponse, error) {
+	if f.idx < len(f.responses) {
+		resp := f.responses[f.idx]
+		f.idx++
+		return resp, nil
+	}
+	<-f.done
+	return nil, errors.New("EOF")
+}
+
+type notifyFakeClient struct {
+	arkwalletv1.WalletServiceClient
+	streamCalls int
+	stream      *fakeNotificationStream
+}
+
+func (f *notifyFakeClient) NotificationStream(
+	_ context.Context, _ *arkwalletv1.NotificationStreamRequest, _ ...grpc.CallOption,
+) (arkwalletv1.WalletService_NotificationStreamClient, error) {
+	f.streamCalls++
+	return f.stream, nil
 }

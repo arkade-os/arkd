@@ -3,6 +3,7 @@ package txbuilder_test
 import (
 	"context"
 	"encoding/hex"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -390,6 +391,24 @@ func (m *mockedWallet) LoadSignerKey(ctx context.Context, privateKey string) err
 func (m *mockedWallet) RescanUtxos(ctx context.Context, outs []wire.OutPoint) error {
 	args := m.Called(ctx, outs)
 	return args.Error(0)
+}
+
+func (m *mockedWallet) GetSpendNotificationChannel(
+	ctx context.Context,
+) <-chan []ports.Spend {
+	return nil
+}
+
+func (m *mockedWallet) GetSpends(
+	ctx context.Context, from *time.Time,
+) ([]ports.Spend, error) {
+	return nil, nil
+}
+
+func (m *mockedWallet) GetUnspentOutpoints(
+	ctx context.Context,
+) (map[domain.Outpoint]struct{}, error) {
+	return nil, nil
 }
 
 // staticSigner is a minimal SignerService that always returns the given pubkey.

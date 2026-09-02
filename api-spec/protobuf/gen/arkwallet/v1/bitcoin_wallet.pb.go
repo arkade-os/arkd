@@ -339,8 +339,11 @@ func (*NotificationStreamRequest) Descriptor() ([]byte, []int) {
 }
 
 type NotificationStreamResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Entries       []*VtoxsPerScript      `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Entries []*VtoxsPerScript      `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	// Spends of watched outputs carried by the same chain event as entries. Added
+	// after entries, so an older client simply ignores it.
+	Spends        []*SpendInfo `protobuf:"bytes,2,rep,name=spends,proto3" json:"spends,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -382,6 +385,260 @@ func (x *NotificationStreamResponse) GetEntries() []*VtoxsPerScript {
 	return nil
 }
 
+func (x *NotificationStreamResponse) GetSpends() []*SpendInfo {
+	if x != nil {
+		return x.Spends
+	}
+	return nil
+}
+
+// SpendInfo identifies a watched output that has been spent and the transaction
+// spending it. confirmations is 0 while the spend is only in the mempool.
+type SpendInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SpentTxid     string                 `protobuf:"bytes,1,opt,name=spent_txid,json=spentTxid,proto3" json:"spent_txid,omitempty"`
+	SpentVout     uint32                 `protobuf:"varint,2,opt,name=spent_vout,json=spentVout,proto3" json:"spent_vout,omitempty"`
+	SpendingTxid  string                 `protobuf:"bytes,3,opt,name=spending_txid,json=spendingTxid,proto3" json:"spending_txid,omitempty"`
+	Confirmations uint32                 `protobuf:"varint,4,opt,name=confirmations,proto3" json:"confirmations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SpendInfo) Reset() {
+	*x = SpendInfo{}
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SpendInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SpendInfo) ProtoMessage() {}
+
+func (x *SpendInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SpendInfo.ProtoReflect.Descriptor instead.
+func (*SpendInfo) Descriptor() ([]byte, []int) {
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *SpendInfo) GetSpentTxid() string {
+	if x != nil {
+		return x.SpentTxid
+	}
+	return ""
+}
+
+func (x *SpendInfo) GetSpentVout() uint32 {
+	if x != nil {
+		return x.SpentVout
+	}
+	return 0
+}
+
+func (x *SpendInfo) GetSpendingTxid() string {
+	if x != nil {
+		return x.SpendingTxid
+	}
+	return ""
+}
+
+func (x *SpendInfo) GetConfirmations() uint32 {
+	if x != nil {
+		return x.Confirmations
+	}
+	return 0
+}
+
+type GetSpendsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Unix timestamp in seconds. When set, only spends seen at or after this
+	// instant are returned, which keeps the response bounded on a wallet with a
+	// long history.
+	//
+	// Zero means unbounded, and is deliberate rather than a missing default: the
+	// reconciler's first pass after a restart must reach spends older than any
+	// rolling window, or a vtxo spent long ago stays wrongly unspent forever.
+	// Callers that do not need that should always set a bound, because the
+	// response grows with the wallet's whole history.
+	From          int64 `protobuf:"varint,1,opt,name=from,proto3" json:"from,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSpendsRequest) Reset() {
+	*x = GetSpendsRequest{}
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSpendsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSpendsRequest) ProtoMessage() {}
+
+func (x *GetSpendsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSpendsRequest.ProtoReflect.Descriptor instead.
+func (*GetSpendsRequest) Descriptor() ([]byte, []int) {
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetSpendsRequest) GetFrom() int64 {
+	if x != nil {
+		return x.From
+	}
+	return 0
+}
+
+type GetSpendsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Spends        []*SpendInfo           `protobuf:"bytes,1,rep,name=spends,proto3" json:"spends,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSpendsResponse) Reset() {
+	*x = GetSpendsResponse{}
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSpendsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSpendsResponse) ProtoMessage() {}
+
+func (x *GetSpendsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSpendsResponse.ProtoReflect.Descriptor instead.
+func (*GetSpendsResponse) Descriptor() ([]byte, []int) {
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetSpendsResponse) GetSpends() []*SpendInfo {
+	if x != nil {
+		return x.Spends
+	}
+	return nil
+}
+
+type GetUnspentOutpointsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUnspentOutpointsRequest) Reset() {
+	*x = GetUnspentOutpointsRequest{}
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUnspentOutpointsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUnspentOutpointsRequest) ProtoMessage() {}
+
+func (x *GetUnspentOutpointsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUnspentOutpointsRequest.ProtoReflect.Descriptor instead.
+func (*GetUnspentOutpointsRequest) Descriptor() ([]byte, []int) {
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{11}
+}
+
+type GetUnspentOutpointsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Outpoints     []*TxOutpoint          `protobuf:"bytes,1,rep,name=outpoints,proto3" json:"outpoints,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetUnspentOutpointsResponse) Reset() {
+	*x = GetUnspentOutpointsResponse{}
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetUnspentOutpointsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetUnspentOutpointsResponse) ProtoMessage() {}
+
+func (x *GetUnspentOutpointsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetUnspentOutpointsResponse.ProtoReflect.Descriptor instead.
+func (*GetUnspentOutpointsResponse) Descriptor() ([]byte, []int) {
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *GetUnspentOutpointsResponse) GetOutpoints() []*TxOutpoint {
+	if x != nil {
+		return x.Outpoints
+	}
+	return nil
+}
+
 type VtoxsPerScript struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Script        string                 `protobuf:"bytes,1,opt,name=script,proto3" json:"script,omitempty"` // hex-encoded script
@@ -392,7 +649,7 @@ type VtoxsPerScript struct {
 
 func (x *VtoxsPerScript) Reset() {
 	*x = VtoxsPerScript{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[8]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -404,7 +661,7 @@ func (x *VtoxsPerScript) String() string {
 func (*VtoxsPerScript) ProtoMessage() {}
 
 func (x *VtoxsPerScript) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[8]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -417,7 +674,7 @@ func (x *VtoxsPerScript) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VtoxsPerScript.ProtoReflect.Descriptor instead.
 func (*VtoxsPerScript) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{8}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *VtoxsPerScript) GetScript() string {
@@ -445,7 +702,7 @@ type VtxoWithKey struct {
 
 func (x *VtxoWithKey) Reset() {
 	*x = VtxoWithKey{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[9]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -457,7 +714,7 @@ func (x *VtxoWithKey) String() string {
 func (*VtxoWithKey) ProtoMessage() {}
 
 func (x *VtxoWithKey) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[9]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -470,7 +727,7 @@ func (x *VtxoWithKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VtxoWithKey.ProtoReflect.Descriptor instead.
 func (*VtxoWithKey) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{9}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *VtxoWithKey) GetTxid() string {
@@ -502,7 +759,7 @@ type GenSeedRequest struct {
 
 func (x *GenSeedRequest) Reset() {
 	*x = GenSeedRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[10]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -514,7 +771,7 @@ func (x *GenSeedRequest) String() string {
 func (*GenSeedRequest) ProtoMessage() {}
 
 func (x *GenSeedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[10]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -527,7 +784,7 @@ func (x *GenSeedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenSeedRequest.ProtoReflect.Descriptor instead.
 func (*GenSeedRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{10}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{15}
 }
 
 type GenSeedResponse struct {
@@ -539,7 +796,7 @@ type GenSeedResponse struct {
 
 func (x *GenSeedResponse) Reset() {
 	*x = GenSeedResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[11]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -551,7 +808,7 @@ func (x *GenSeedResponse) String() string {
 func (*GenSeedResponse) ProtoMessage() {}
 
 func (x *GenSeedResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[11]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -564,7 +821,7 @@ func (x *GenSeedResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GenSeedResponse.ProtoReflect.Descriptor instead.
 func (*GenSeedResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{11}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GenSeedResponse) GetSeed() string {
@@ -584,7 +841,7 @@ type CreateRequest struct {
 
 func (x *CreateRequest) Reset() {
 	*x = CreateRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[12]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -596,7 +853,7 @@ func (x *CreateRequest) String() string {
 func (*CreateRequest) ProtoMessage() {}
 
 func (x *CreateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[12]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -609,7 +866,7 @@ func (x *CreateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRequest.ProtoReflect.Descriptor instead.
 func (*CreateRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{12}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CreateRequest) GetSeed() string {
@@ -634,7 +891,7 @@ type CreateResponse struct {
 
 func (x *CreateResponse) Reset() {
 	*x = CreateResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[13]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -646,7 +903,7 @@ func (x *CreateResponse) String() string {
 func (*CreateResponse) ProtoMessage() {}
 
 func (x *CreateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[13]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -659,7 +916,7 @@ func (x *CreateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateResponse.ProtoReflect.Descriptor instead.
 func (*CreateResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{13}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{18}
 }
 
 type RestoreRequest struct {
@@ -672,7 +929,7 @@ type RestoreRequest struct {
 
 func (x *RestoreRequest) Reset() {
 	*x = RestoreRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[14]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -684,7 +941,7 @@ func (x *RestoreRequest) String() string {
 func (*RestoreRequest) ProtoMessage() {}
 
 func (x *RestoreRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[14]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -697,7 +954,7 @@ func (x *RestoreRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestoreRequest.ProtoReflect.Descriptor instead.
 func (*RestoreRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{14}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *RestoreRequest) GetSeed() string {
@@ -722,7 +979,7 @@ type RestoreResponse struct {
 
 func (x *RestoreResponse) Reset() {
 	*x = RestoreResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[15]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -734,7 +991,7 @@ func (x *RestoreResponse) String() string {
 func (*RestoreResponse) ProtoMessage() {}
 
 func (x *RestoreResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[15]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -747,7 +1004,7 @@ func (x *RestoreResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RestoreResponse.ProtoReflect.Descriptor instead.
 func (*RestoreResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{15}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{20}
 }
 
 type UnlockRequest struct {
@@ -759,7 +1016,7 @@ type UnlockRequest struct {
 
 func (x *UnlockRequest) Reset() {
 	*x = UnlockRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[16]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -771,7 +1028,7 @@ func (x *UnlockRequest) String() string {
 func (*UnlockRequest) ProtoMessage() {}
 
 func (x *UnlockRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[16]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -784,7 +1041,7 @@ func (x *UnlockRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnlockRequest.ProtoReflect.Descriptor instead.
 func (*UnlockRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{16}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *UnlockRequest) GetPassword() string {
@@ -802,7 +1059,7 @@ type UnlockResponse struct {
 
 func (x *UnlockResponse) Reset() {
 	*x = UnlockResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[17]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -814,7 +1071,7 @@ func (x *UnlockResponse) String() string {
 func (*UnlockResponse) ProtoMessage() {}
 
 func (x *UnlockResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[17]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -827,7 +1084,7 @@ func (x *UnlockResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnlockResponse.ProtoReflect.Descriptor instead.
 func (*UnlockResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{17}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{22}
 }
 
 type LockRequest struct {
@@ -838,7 +1095,7 @@ type LockRequest struct {
 
 func (x *LockRequest) Reset() {
 	*x = LockRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[18]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -850,7 +1107,7 @@ func (x *LockRequest) String() string {
 func (*LockRequest) ProtoMessage() {}
 
 func (x *LockRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[18]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -863,7 +1120,7 @@ func (x *LockRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LockRequest.ProtoReflect.Descriptor instead.
 func (*LockRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{18}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{23}
 }
 
 type LockResponse struct {
@@ -874,7 +1131,7 @@ type LockResponse struct {
 
 func (x *LockResponse) Reset() {
 	*x = LockResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[19]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -886,7 +1143,7 @@ func (x *LockResponse) String() string {
 func (*LockResponse) ProtoMessage() {}
 
 func (x *LockResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[19]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -899,7 +1156,7 @@ func (x *LockResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LockResponse.ProtoReflect.Descriptor instead.
 func (*LockResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{19}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{24}
 }
 
 type StatusRequest struct {
@@ -910,7 +1167,7 @@ type StatusRequest struct {
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[20]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -922,7 +1179,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[20]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -935,7 +1192,7 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{20}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{25}
 }
 
 type StatusResponse struct {
@@ -949,7 +1206,7 @@ type StatusResponse struct {
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[21]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -961,7 +1218,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[21]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -974,7 +1231,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{21}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *StatusResponse) GetInitialized() bool {
@@ -1006,7 +1263,7 @@ type GetNetworkRequest struct {
 
 func (x *GetNetworkRequest) Reset() {
 	*x = GetNetworkRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[22]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1018,7 +1275,7 @@ func (x *GetNetworkRequest) String() string {
 func (*GetNetworkRequest) ProtoMessage() {}
 
 func (x *GetNetworkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[22]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1031,7 +1288,7 @@ func (x *GetNetworkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNetworkRequest.ProtoReflect.Descriptor instead.
 func (*GetNetworkRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{22}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{27}
 }
 
 type GetNetworkResponse struct {
@@ -1043,7 +1300,7 @@ type GetNetworkResponse struct {
 
 func (x *GetNetworkResponse) Reset() {
 	*x = GetNetworkResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[23]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1055,7 +1312,7 @@ func (x *GetNetworkResponse) String() string {
 func (*GetNetworkResponse) ProtoMessage() {}
 
 func (x *GetNetworkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[23]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1068,7 +1325,7 @@ func (x *GetNetworkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetNetworkResponse.ProtoReflect.Descriptor instead.
 func (*GetNetworkResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{23}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *GetNetworkResponse) GetNetwork() string {
@@ -1086,7 +1343,7 @@ type GetForfeitPubkeyRequest struct {
 
 func (x *GetForfeitPubkeyRequest) Reset() {
 	*x = GetForfeitPubkeyRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[24]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1098,7 +1355,7 @@ func (x *GetForfeitPubkeyRequest) String() string {
 func (*GetForfeitPubkeyRequest) ProtoMessage() {}
 
 func (x *GetForfeitPubkeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[24]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1111,7 +1368,7 @@ func (x *GetForfeitPubkeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetForfeitPubkeyRequest.ProtoReflect.Descriptor instead.
 func (*GetForfeitPubkeyRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{24}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{29}
 }
 
 type GetForfeitPubkeyResponse struct {
@@ -1123,7 +1380,7 @@ type GetForfeitPubkeyResponse struct {
 
 func (x *GetForfeitPubkeyResponse) Reset() {
 	*x = GetForfeitPubkeyResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[25]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1135,7 +1392,7 @@ func (x *GetForfeitPubkeyResponse) String() string {
 func (*GetForfeitPubkeyResponse) ProtoMessage() {}
 
 func (x *GetForfeitPubkeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[25]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1148,7 +1405,7 @@ func (x *GetForfeitPubkeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetForfeitPubkeyResponse.ProtoReflect.Descriptor instead.
 func (*GetForfeitPubkeyResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{25}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *GetForfeitPubkeyResponse) GetPubkey() string {
@@ -1166,7 +1423,7 @@ type DeriveConnectorAddressRequest struct {
 
 func (x *DeriveConnectorAddressRequest) Reset() {
 	*x = DeriveConnectorAddressRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[26]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1178,7 +1435,7 @@ func (x *DeriveConnectorAddressRequest) String() string {
 func (*DeriveConnectorAddressRequest) ProtoMessage() {}
 
 func (x *DeriveConnectorAddressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[26]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1191,7 +1448,7 @@ func (x *DeriveConnectorAddressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeriveConnectorAddressRequest.ProtoReflect.Descriptor instead.
 func (*DeriveConnectorAddressRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{26}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{31}
 }
 
 type DeriveConnectorAddressResponse struct {
@@ -1203,7 +1460,7 @@ type DeriveConnectorAddressResponse struct {
 
 func (x *DeriveConnectorAddressResponse) Reset() {
 	*x = DeriveConnectorAddressResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[27]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1215,7 +1472,7 @@ func (x *DeriveConnectorAddressResponse) String() string {
 func (*DeriveConnectorAddressResponse) ProtoMessage() {}
 
 func (x *DeriveConnectorAddressResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[27]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1228,7 +1485,7 @@ func (x *DeriveConnectorAddressResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeriveConnectorAddressResponse.ProtoReflect.Descriptor instead.
 func (*DeriveConnectorAddressResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{27}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *DeriveConnectorAddressResponse) GetAddress() string {
@@ -1247,7 +1504,7 @@ type DeriveAddressesRequest struct {
 
 func (x *DeriveAddressesRequest) Reset() {
 	*x = DeriveAddressesRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[28]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1259,7 +1516,7 @@ func (x *DeriveAddressesRequest) String() string {
 func (*DeriveAddressesRequest) ProtoMessage() {}
 
 func (x *DeriveAddressesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[28]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1272,7 +1529,7 @@ func (x *DeriveAddressesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeriveAddressesRequest.ProtoReflect.Descriptor instead.
 func (*DeriveAddressesRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{28}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *DeriveAddressesRequest) GetNum() int32 {
@@ -1291,7 +1548,7 @@ type DeriveAddressesResponse struct {
 
 func (x *DeriveAddressesResponse) Reset() {
 	*x = DeriveAddressesResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[29]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1303,7 +1560,7 @@ func (x *DeriveAddressesResponse) String() string {
 func (*DeriveAddressesResponse) ProtoMessage() {}
 
 func (x *DeriveAddressesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[29]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1316,7 +1573,7 @@ func (x *DeriveAddressesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeriveAddressesResponse.ProtoReflect.Descriptor instead.
 func (*DeriveAddressesResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{29}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *DeriveAddressesResponse) GetAddresses() []string {
@@ -1336,7 +1593,7 @@ type SignTransactionRequest struct {
 
 func (x *SignTransactionRequest) Reset() {
 	*x = SignTransactionRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[30]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1348,7 +1605,7 @@ func (x *SignTransactionRequest) String() string {
 func (*SignTransactionRequest) ProtoMessage() {}
 
 func (x *SignTransactionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[30]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1361,7 +1618,7 @@ func (x *SignTransactionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignTransactionRequest.ProtoReflect.Descriptor instead.
 func (*SignTransactionRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{30}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *SignTransactionRequest) GetPartialTx() string {
@@ -1387,7 +1644,7 @@ type SignTransactionResponse struct {
 
 func (x *SignTransactionResponse) Reset() {
 	*x = SignTransactionResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[31]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1399,7 +1656,7 @@ func (x *SignTransactionResponse) String() string {
 func (*SignTransactionResponse) ProtoMessage() {}
 
 func (x *SignTransactionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[31]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1412,7 +1669,7 @@ func (x *SignTransactionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignTransactionResponse.ProtoReflect.Descriptor instead.
 func (*SignTransactionResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{31}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *SignTransactionResponse) GetSignedTx() string {
@@ -1432,7 +1689,7 @@ type SignTransactionTapscriptRequest struct {
 
 func (x *SignTransactionTapscriptRequest) Reset() {
 	*x = SignTransactionTapscriptRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[32]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1444,7 +1701,7 @@ func (x *SignTransactionTapscriptRequest) String() string {
 func (*SignTransactionTapscriptRequest) ProtoMessage() {}
 
 func (x *SignTransactionTapscriptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[32]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1457,7 +1714,7 @@ func (x *SignTransactionTapscriptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignTransactionTapscriptRequest.ProtoReflect.Descriptor instead.
 func (*SignTransactionTapscriptRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{32}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *SignTransactionTapscriptRequest) GetPartialTx() string {
@@ -1483,7 +1740,7 @@ type SignTransactionTapscriptResponse struct {
 
 func (x *SignTransactionTapscriptResponse) Reset() {
 	*x = SignTransactionTapscriptResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[33]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1495,7 +1752,7 @@ func (x *SignTransactionTapscriptResponse) String() string {
 func (*SignTransactionTapscriptResponse) ProtoMessage() {}
 
 func (x *SignTransactionTapscriptResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[33]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1508,7 +1765,7 @@ func (x *SignTransactionTapscriptResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignTransactionTapscriptResponse.ProtoReflect.Descriptor instead.
 func (*SignTransactionTapscriptResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{33}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *SignTransactionTapscriptResponse) GetSignedTx() string {
@@ -1529,7 +1786,7 @@ type SelectUtxosRequest struct {
 
 func (x *SelectUtxosRequest) Reset() {
 	*x = SelectUtxosRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[34]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1541,7 +1798,7 @@ func (x *SelectUtxosRequest) String() string {
 func (*SelectUtxosRequest) ProtoMessage() {}
 
 func (x *SelectUtxosRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[34]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1554,7 +1811,7 @@ func (x *SelectUtxosRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SelectUtxosRequest.ProtoReflect.Descriptor instead.
 func (*SelectUtxosRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{34}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *SelectUtxosRequest) GetAsset() string {
@@ -1588,7 +1845,7 @@ type SelectUtxosResponse struct {
 
 func (x *SelectUtxosResponse) Reset() {
 	*x = SelectUtxosResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[35]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1600,7 +1857,7 @@ func (x *SelectUtxosResponse) String() string {
 func (*SelectUtxosResponse) ProtoMessage() {}
 
 func (x *SelectUtxosResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[35]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1613,7 +1870,7 @@ func (x *SelectUtxosResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SelectUtxosResponse.ProtoReflect.Descriptor instead.
 func (*SelectUtxosResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{35}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *SelectUtxosResponse) GetUtxos() []*TxInput {
@@ -1639,7 +1896,7 @@ type BroadcastTransactionRequest struct {
 
 func (x *BroadcastTransactionRequest) Reset() {
 	*x = BroadcastTransactionRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[36]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1651,7 +1908,7 @@ func (x *BroadcastTransactionRequest) String() string {
 func (*BroadcastTransactionRequest) ProtoMessage() {}
 
 func (x *BroadcastTransactionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[36]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1664,7 +1921,7 @@ func (x *BroadcastTransactionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BroadcastTransactionRequest.ProtoReflect.Descriptor instead.
 func (*BroadcastTransactionRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{36}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *BroadcastTransactionRequest) GetTxs() []string {
@@ -1683,7 +1940,7 @@ type BroadcastTransactionResponse struct {
 
 func (x *BroadcastTransactionResponse) Reset() {
 	*x = BroadcastTransactionResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[37]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1695,7 +1952,7 @@ func (x *BroadcastTransactionResponse) String() string {
 func (*BroadcastTransactionResponse) ProtoMessage() {}
 
 func (x *BroadcastTransactionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[37]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1708,7 +1965,7 @@ func (x *BroadcastTransactionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BroadcastTransactionResponse.ProtoReflect.Descriptor instead.
 func (*BroadcastTransactionResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{37}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *BroadcastTransactionResponse) GetTxid() string {
@@ -1727,7 +1984,7 @@ type WaitForSyncRequest struct {
 
 func (x *WaitForSyncRequest) Reset() {
 	*x = WaitForSyncRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[38]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1739,7 +1996,7 @@ func (x *WaitForSyncRequest) String() string {
 func (*WaitForSyncRequest) ProtoMessage() {}
 
 func (x *WaitForSyncRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[38]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1752,7 +2009,7 @@ func (x *WaitForSyncRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitForSyncRequest.ProtoReflect.Descriptor instead.
 func (*WaitForSyncRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{38}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *WaitForSyncRequest) GetTxid() string {
@@ -1770,7 +2027,7 @@ type WaitForSyncResponse struct {
 
 func (x *WaitForSyncResponse) Reset() {
 	*x = WaitForSyncResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[39]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1782,7 +2039,7 @@ func (x *WaitForSyncResponse) String() string {
 func (*WaitForSyncResponse) ProtoMessage() {}
 
 func (x *WaitForSyncResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[39]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1795,7 +2052,7 @@ func (x *WaitForSyncResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WaitForSyncResponse.ProtoReflect.Descriptor instead.
 func (*WaitForSyncResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{39}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{44}
 }
 
 type EstimateFeesRequest struct {
@@ -1807,7 +2064,7 @@ type EstimateFeesRequest struct {
 
 func (x *EstimateFeesRequest) Reset() {
 	*x = EstimateFeesRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[40]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1819,7 +2076,7 @@ func (x *EstimateFeesRequest) String() string {
 func (*EstimateFeesRequest) ProtoMessage() {}
 
 func (x *EstimateFeesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[40]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1832,7 +2089,7 @@ func (x *EstimateFeesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EstimateFeesRequest.ProtoReflect.Descriptor instead.
 func (*EstimateFeesRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{40}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *EstimateFeesRequest) GetPsbt() string {
@@ -1851,7 +2108,7 @@ type EstimateFeesResponse struct {
 
 func (x *EstimateFeesResponse) Reset() {
 	*x = EstimateFeesResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[41]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1863,7 +2120,7 @@ func (x *EstimateFeesResponse) String() string {
 func (*EstimateFeesResponse) ProtoMessage() {}
 
 func (x *EstimateFeesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[41]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1876,7 +2133,7 @@ func (x *EstimateFeesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EstimateFeesResponse.ProtoReflect.Descriptor instead.
 func (*EstimateFeesResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{41}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *EstimateFeesResponse) GetFee() uint64 {
@@ -1894,7 +2151,7 @@ type FeeRateRequest struct {
 
 func (x *FeeRateRequest) Reset() {
 	*x = FeeRateRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[42]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1906,7 +2163,7 @@ func (x *FeeRateRequest) String() string {
 func (*FeeRateRequest) ProtoMessage() {}
 
 func (x *FeeRateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[42]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1919,7 +2176,7 @@ func (x *FeeRateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FeeRateRequest.ProtoReflect.Descriptor instead.
 func (*FeeRateRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{42}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{47}
 }
 
 type FeeRateResponse struct {
@@ -1931,7 +2188,7 @@ type FeeRateResponse struct {
 
 func (x *FeeRateResponse) Reset() {
 	*x = FeeRateResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[43]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1943,7 +2200,7 @@ func (x *FeeRateResponse) String() string {
 func (*FeeRateResponse) ProtoMessage() {}
 
 func (x *FeeRateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[43]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1956,7 +2213,7 @@ func (x *FeeRateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FeeRateResponse.ProtoReflect.Descriptor instead.
 func (*FeeRateResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{43}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *FeeRateResponse) GetSatPerKvbyte() uint64 {
@@ -1975,7 +2232,7 @@ type ListConnectorUtxosRequest struct {
 
 func (x *ListConnectorUtxosRequest) Reset() {
 	*x = ListConnectorUtxosRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[44]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1987,7 +2244,7 @@ func (x *ListConnectorUtxosRequest) String() string {
 func (*ListConnectorUtxosRequest) ProtoMessage() {}
 
 func (x *ListConnectorUtxosRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[44]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2000,7 +2257,7 @@ func (x *ListConnectorUtxosRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConnectorUtxosRequest.ProtoReflect.Descriptor instead.
 func (*ListConnectorUtxosRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{44}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *ListConnectorUtxosRequest) GetConnectorAddresses() []string {
@@ -2019,7 +2276,7 @@ type ListConnectorUtxosResponse struct {
 
 func (x *ListConnectorUtxosResponse) Reset() {
 	*x = ListConnectorUtxosResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[45]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2031,7 +2288,7 @@ func (x *ListConnectorUtxosResponse) String() string {
 func (*ListConnectorUtxosResponse) ProtoMessage() {}
 
 func (x *ListConnectorUtxosResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[45]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2044,7 +2301,7 @@ func (x *ListConnectorUtxosResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConnectorUtxosResponse.ProtoReflect.Descriptor instead.
 func (*ListConnectorUtxosResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{45}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ListConnectorUtxosResponse) GetUtxos() []*TxInput {
@@ -2062,7 +2319,7 @@ type GetMainAccountUtxosRequest struct {
 
 func (x *GetMainAccountUtxosRequest) Reset() {
 	*x = GetMainAccountUtxosRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[46]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2074,7 +2331,7 @@ func (x *GetMainAccountUtxosRequest) String() string {
 func (*GetMainAccountUtxosRequest) ProtoMessage() {}
 
 func (x *GetMainAccountUtxosRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[46]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2087,7 +2344,7 @@ func (x *GetMainAccountUtxosRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMainAccountUtxosRequest.ProtoReflect.Descriptor instead.
 func (*GetMainAccountUtxosRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{46}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{51}
 }
 
 type GetMainAccountUtxosResponse struct {
@@ -2099,7 +2356,7 @@ type GetMainAccountUtxosResponse struct {
 
 func (x *GetMainAccountUtxosResponse) Reset() {
 	*x = GetMainAccountUtxosResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[47]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2111,7 +2368,7 @@ func (x *GetMainAccountUtxosResponse) String() string {
 func (*GetMainAccountUtxosResponse) ProtoMessage() {}
 
 func (x *GetMainAccountUtxosResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[47]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2124,7 +2381,7 @@ func (x *GetMainAccountUtxosResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMainAccountUtxosResponse.ProtoReflect.Descriptor instead.
 func (*GetMainAccountUtxosResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{47}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *GetMainAccountUtxosResponse) GetUtxos() []*WalletUtxo {
@@ -2142,7 +2399,7 @@ type MainAccountBalanceRequest struct {
 
 func (x *MainAccountBalanceRequest) Reset() {
 	*x = MainAccountBalanceRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[48]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2154,7 +2411,7 @@ func (x *MainAccountBalanceRequest) String() string {
 func (*MainAccountBalanceRequest) ProtoMessage() {}
 
 func (x *MainAccountBalanceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[48]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2167,7 +2424,7 @@ func (x *MainAccountBalanceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MainAccountBalanceRequest.ProtoReflect.Descriptor instead.
 func (*MainAccountBalanceRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{48}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{53}
 }
 
 type MainAccountBalanceResponse struct {
@@ -2181,7 +2438,7 @@ type MainAccountBalanceResponse struct {
 
 func (x *MainAccountBalanceResponse) Reset() {
 	*x = MainAccountBalanceResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[49]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2193,7 +2450,7 @@ func (x *MainAccountBalanceResponse) String() string {
 func (*MainAccountBalanceResponse) ProtoMessage() {}
 
 func (x *MainAccountBalanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[49]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2206,7 +2463,7 @@ func (x *MainAccountBalanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MainAccountBalanceResponse.ProtoReflect.Descriptor instead.
 func (*MainAccountBalanceResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{49}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *MainAccountBalanceResponse) GetConfirmed() uint64 {
@@ -2231,7 +2488,7 @@ type ConnectorsAccountBalanceRequest struct {
 
 func (x *ConnectorsAccountBalanceRequest) Reset() {
 	*x = ConnectorsAccountBalanceRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[50]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2243,7 +2500,7 @@ func (x *ConnectorsAccountBalanceRequest) String() string {
 func (*ConnectorsAccountBalanceRequest) ProtoMessage() {}
 
 func (x *ConnectorsAccountBalanceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[50]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2256,7 +2513,7 @@ func (x *ConnectorsAccountBalanceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectorsAccountBalanceRequest.ProtoReflect.Descriptor instead.
 func (*ConnectorsAccountBalanceRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{50}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{55}
 }
 
 type ConnectorsAccountBalanceResponse struct {
@@ -2269,7 +2526,7 @@ type ConnectorsAccountBalanceResponse struct {
 
 func (x *ConnectorsAccountBalanceResponse) Reset() {
 	*x = ConnectorsAccountBalanceResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[51]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2281,7 +2538,7 @@ func (x *ConnectorsAccountBalanceResponse) String() string {
 func (*ConnectorsAccountBalanceResponse) ProtoMessage() {}
 
 func (x *ConnectorsAccountBalanceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[51]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2294,7 +2551,7 @@ func (x *ConnectorsAccountBalanceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectorsAccountBalanceResponse.ProtoReflect.Descriptor instead.
 func (*ConnectorsAccountBalanceResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{51}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ConnectorsAccountBalanceResponse) GetConfirmed() uint64 {
@@ -2320,7 +2577,7 @@ type LockConnectorUtxosRequest struct {
 
 func (x *LockConnectorUtxosRequest) Reset() {
 	*x = LockConnectorUtxosRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[52]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2332,7 +2589,7 @@ func (x *LockConnectorUtxosRequest) String() string {
 func (*LockConnectorUtxosRequest) ProtoMessage() {}
 
 func (x *LockConnectorUtxosRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[52]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2345,7 +2602,7 @@ func (x *LockConnectorUtxosRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LockConnectorUtxosRequest.ProtoReflect.Descriptor instead.
 func (*LockConnectorUtxosRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{52}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *LockConnectorUtxosRequest) GetUtxos() []*TxOutpoint {
@@ -2363,7 +2620,7 @@ type LockConnectorUtxosResponse struct {
 
 func (x *LockConnectorUtxosResponse) Reset() {
 	*x = LockConnectorUtxosResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[53]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2375,7 +2632,7 @@ func (x *LockConnectorUtxosResponse) String() string {
 func (*LockConnectorUtxosResponse) ProtoMessage() {}
 
 func (x *LockConnectorUtxosResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[53]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2388,7 +2645,7 @@ func (x *LockConnectorUtxosResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LockConnectorUtxosResponse.ProtoReflect.Descriptor instead.
 func (*LockConnectorUtxosResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{53}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{58}
 }
 
 type GetDustAmountRequest struct {
@@ -2399,7 +2656,7 @@ type GetDustAmountRequest struct {
 
 func (x *GetDustAmountRequest) Reset() {
 	*x = GetDustAmountRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[54]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2411,7 +2668,7 @@ func (x *GetDustAmountRequest) String() string {
 func (*GetDustAmountRequest) ProtoMessage() {}
 
 func (x *GetDustAmountRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[54]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2424,7 +2681,7 @@ func (x *GetDustAmountRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDustAmountRequest.ProtoReflect.Descriptor instead.
 func (*GetDustAmountRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{54}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{59}
 }
 
 type GetDustAmountResponse struct {
@@ -2436,7 +2693,7 @@ type GetDustAmountResponse struct {
 
 func (x *GetDustAmountResponse) Reset() {
 	*x = GetDustAmountResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[55]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2448,7 +2705,7 @@ func (x *GetDustAmountResponse) String() string {
 func (*GetDustAmountResponse) ProtoMessage() {}
 
 func (x *GetDustAmountResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[55]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2461,7 +2718,7 @@ func (x *GetDustAmountResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDustAmountResponse.ProtoReflect.Descriptor instead.
 func (*GetDustAmountResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{55}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *GetDustAmountResponse) GetDustAmount() uint64 {
@@ -2480,7 +2737,7 @@ type WatchScriptsRequest struct {
 
 func (x *WatchScriptsRequest) Reset() {
 	*x = WatchScriptsRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[56]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2492,7 +2749,7 @@ func (x *WatchScriptsRequest) String() string {
 func (*WatchScriptsRequest) ProtoMessage() {}
 
 func (x *WatchScriptsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[56]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2505,7 +2762,7 @@ func (x *WatchScriptsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchScriptsRequest.ProtoReflect.Descriptor instead.
 func (*WatchScriptsRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{56}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *WatchScriptsRequest) GetScripts() []string {
@@ -2523,7 +2780,7 @@ type WatchScriptsResponse struct {
 
 func (x *WatchScriptsResponse) Reset() {
 	*x = WatchScriptsResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[57]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2535,7 +2792,7 @@ func (x *WatchScriptsResponse) String() string {
 func (*WatchScriptsResponse) ProtoMessage() {}
 
 func (x *WatchScriptsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[57]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2548,7 +2805,7 @@ func (x *WatchScriptsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchScriptsResponse.ProtoReflect.Descriptor instead.
 func (*WatchScriptsResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{57}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{62}
 }
 
 type UnwatchScriptsRequest struct {
@@ -2560,7 +2817,7 @@ type UnwatchScriptsRequest struct {
 
 func (x *UnwatchScriptsRequest) Reset() {
 	*x = UnwatchScriptsRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[58]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2572,7 +2829,7 @@ func (x *UnwatchScriptsRequest) String() string {
 func (*UnwatchScriptsRequest) ProtoMessage() {}
 
 func (x *UnwatchScriptsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[58]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2585,7 +2842,7 @@ func (x *UnwatchScriptsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnwatchScriptsRequest.ProtoReflect.Descriptor instead.
 func (*UnwatchScriptsRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{58}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *UnwatchScriptsRequest) GetScripts() []string {
@@ -2603,7 +2860,7 @@ type UnwatchScriptsResponse struct {
 
 func (x *UnwatchScriptsResponse) Reset() {
 	*x = UnwatchScriptsResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[59]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2615,7 +2872,7 @@ func (x *UnwatchScriptsResponse) String() string {
 func (*UnwatchScriptsResponse) ProtoMessage() {}
 
 func (x *UnwatchScriptsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[59]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2628,7 +2885,7 @@ func (x *UnwatchScriptsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnwatchScriptsResponse.ProtoReflect.Descriptor instead.
 func (*UnwatchScriptsResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{59}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{64}
 }
 
 type GetTransactionRequest struct {
@@ -2640,7 +2897,7 @@ type GetTransactionRequest struct {
 
 func (x *GetTransactionRequest) Reset() {
 	*x = GetTransactionRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[60]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2652,7 +2909,7 @@ func (x *GetTransactionRequest) String() string {
 func (*GetTransactionRequest) ProtoMessage() {}
 
 func (x *GetTransactionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[60]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2665,7 +2922,7 @@ func (x *GetTransactionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTransactionRequest.ProtoReflect.Descriptor instead.
 func (*GetTransactionRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{60}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *GetTransactionRequest) GetTxid() string {
@@ -2684,7 +2941,7 @@ type GetTransactionResponse struct {
 
 func (x *GetTransactionResponse) Reset() {
 	*x = GetTransactionResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[61]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2696,7 +2953,7 @@ func (x *GetTransactionResponse) String() string {
 func (*GetTransactionResponse) ProtoMessage() {}
 
 func (x *GetTransactionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[61]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2709,7 +2966,7 @@ func (x *GetTransactionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTransactionResponse.ProtoReflect.Descriptor instead.
 func (*GetTransactionResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{61}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *GetTransactionResponse) GetTxHex() string {
@@ -2728,7 +2985,7 @@ type SignMessageRequest struct {
 
 func (x *SignMessageRequest) Reset() {
 	*x = SignMessageRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[62]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2740,7 +2997,7 @@ func (x *SignMessageRequest) String() string {
 func (*SignMessageRequest) ProtoMessage() {}
 
 func (x *SignMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[62]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2753,7 +3010,7 @@ func (x *SignMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignMessageRequest.ProtoReflect.Descriptor instead.
 func (*SignMessageRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{62}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *SignMessageRequest) GetMessage() []byte {
@@ -2772,7 +3029,7 @@ type SignMessageResponse struct {
 
 func (x *SignMessageResponse) Reset() {
 	*x = SignMessageResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[63]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2784,7 +3041,7 @@ func (x *SignMessageResponse) String() string {
 func (*SignMessageResponse) ProtoMessage() {}
 
 func (x *SignMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[63]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2797,7 +3054,7 @@ func (x *SignMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignMessageResponse.ProtoReflect.Descriptor instead.
 func (*SignMessageResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{63}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *SignMessageResponse) GetSignature() []byte {
@@ -2817,7 +3074,7 @@ type VerifyMessageSignatureRequest struct {
 
 func (x *VerifyMessageSignatureRequest) Reset() {
 	*x = VerifyMessageSignatureRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[64]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2829,7 +3086,7 @@ func (x *VerifyMessageSignatureRequest) String() string {
 func (*VerifyMessageSignatureRequest) ProtoMessage() {}
 
 func (x *VerifyMessageSignatureRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[64]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2842,7 +3099,7 @@ func (x *VerifyMessageSignatureRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyMessageSignatureRequest.ProtoReflect.Descriptor instead.
 func (*VerifyMessageSignatureRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{64}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *VerifyMessageSignatureRequest) GetMessage() []byte {
@@ -2868,7 +3125,7 @@ type VerifyMessageSignatureResponse struct {
 
 func (x *VerifyMessageSignatureResponse) Reset() {
 	*x = VerifyMessageSignatureResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[65]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2880,7 +3137,7 @@ func (x *VerifyMessageSignatureResponse) String() string {
 func (*VerifyMessageSignatureResponse) ProtoMessage() {}
 
 func (x *VerifyMessageSignatureResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[65]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2893,7 +3150,7 @@ func (x *VerifyMessageSignatureResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyMessageSignatureResponse.ProtoReflect.Descriptor instead.
 func (*VerifyMessageSignatureResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{65}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *VerifyMessageSignatureResponse) GetValid() bool {
@@ -2911,7 +3168,7 @@ type GetCurrentBlockTimeRequest struct {
 
 func (x *GetCurrentBlockTimeRequest) Reset() {
 	*x = GetCurrentBlockTimeRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[66]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2923,7 +3180,7 @@ func (x *GetCurrentBlockTimeRequest) String() string {
 func (*GetCurrentBlockTimeRequest) ProtoMessage() {}
 
 func (x *GetCurrentBlockTimeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[66]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2936,7 +3193,7 @@ func (x *GetCurrentBlockTimeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCurrentBlockTimeRequest.ProtoReflect.Descriptor instead.
 func (*GetCurrentBlockTimeRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{66}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{71}
 }
 
 type GetCurrentBlockTimeResponse struct {
@@ -2948,7 +3205,7 @@ type GetCurrentBlockTimeResponse struct {
 
 func (x *GetCurrentBlockTimeResponse) Reset() {
 	*x = GetCurrentBlockTimeResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[67]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2960,7 +3217,7 @@ func (x *GetCurrentBlockTimeResponse) String() string {
 func (*GetCurrentBlockTimeResponse) ProtoMessage() {}
 
 func (x *GetCurrentBlockTimeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[67]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2973,7 +3230,7 @@ func (x *GetCurrentBlockTimeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCurrentBlockTimeResponse.ProtoReflect.Descriptor instead.
 func (*GetCurrentBlockTimeResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{67}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *GetCurrentBlockTimeResponse) GetTimestamp() *BlockTimestamp {
@@ -2992,7 +3249,7 @@ type RescanUtxosRequest struct {
 
 func (x *RescanUtxosRequest) Reset() {
 	*x = RescanUtxosRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[68]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3004,7 +3261,7 @@ func (x *RescanUtxosRequest) String() string {
 func (*RescanUtxosRequest) ProtoMessage() {}
 
 func (x *RescanUtxosRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[68]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3017,7 +3274,7 @@ func (x *RescanUtxosRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RescanUtxosRequest.ProtoReflect.Descriptor instead.
 func (*RescanUtxosRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{68}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *RescanUtxosRequest) GetOutpoints() []string {
@@ -3035,7 +3292,7 @@ type RescanUtxosResponse struct {
 
 func (x *RescanUtxosResponse) Reset() {
 	*x = RescanUtxosResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[69]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3047,7 +3304,7 @@ func (x *RescanUtxosResponse) String() string {
 func (*RescanUtxosResponse) ProtoMessage() {}
 
 func (x *RescanUtxosResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[69]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3060,7 +3317,7 @@ func (x *RescanUtxosResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RescanUtxosResponse.ProtoReflect.Descriptor instead.
 func (*RescanUtxosResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{69}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{74}
 }
 
 type WithdrawRequest struct {
@@ -3076,7 +3333,7 @@ type WithdrawRequest struct {
 
 func (x *WithdrawRequest) Reset() {
 	*x = WithdrawRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[70]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3088,7 +3345,7 @@ func (x *WithdrawRequest) String() string {
 func (*WithdrawRequest) ProtoMessage() {}
 
 func (x *WithdrawRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[70]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3101,7 +3358,7 @@ func (x *WithdrawRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WithdrawRequest.ProtoReflect.Descriptor instead.
 func (*WithdrawRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{70}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *WithdrawRequest) GetAddress() string {
@@ -3134,7 +3391,7 @@ type WithdrawResponse struct {
 
 func (x *WithdrawResponse) Reset() {
 	*x = WithdrawResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[71]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3146,7 +3403,7 @@ func (x *WithdrawResponse) String() string {
 func (*WithdrawResponse) ProtoMessage() {}
 
 func (x *WithdrawResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[71]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3159,7 +3416,7 @@ func (x *WithdrawResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WithdrawResponse.ProtoReflect.Descriptor instead.
 func (*WithdrawResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{71}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *WithdrawResponse) GetTxid() string {
@@ -3178,7 +3435,7 @@ type LoadSignerKeyRequest struct {
 
 func (x *LoadSignerKeyRequest) Reset() {
 	*x = LoadSignerKeyRequest{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[72]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3190,7 +3447,7 @@ func (x *LoadSignerKeyRequest) String() string {
 func (*LoadSignerKeyRequest) ProtoMessage() {}
 
 func (x *LoadSignerKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[72]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3203,7 +3460,7 @@ func (x *LoadSignerKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoadSignerKeyRequest.ProtoReflect.Descriptor instead.
 func (*LoadSignerKeyRequest) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{72}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *LoadSignerKeyRequest) GetPrivateKey() string {
@@ -3221,7 +3478,7 @@ type LoadSignerKeyResponse struct {
 
 func (x *LoadSignerKeyResponse) Reset() {
 	*x = LoadSignerKeyResponse{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[73]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3233,7 +3490,7 @@ func (x *LoadSignerKeyResponse) String() string {
 func (*LoadSignerKeyResponse) ProtoMessage() {}
 
 func (x *LoadSignerKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[73]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3246,7 +3503,7 @@ func (x *LoadSignerKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LoadSignerKeyResponse.ProtoReflect.Descriptor instead.
 func (*LoadSignerKeyResponse) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{73}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{78}
 }
 
 type TxInput struct {
@@ -3261,7 +3518,7 @@ type TxInput struct {
 
 func (x *TxInput) Reset() {
 	*x = TxInput{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[74]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3273,7 +3530,7 @@ func (x *TxInput) String() string {
 func (*TxInput) ProtoMessage() {}
 
 func (x *TxInput) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[74]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3286,7 +3543,7 @@ func (x *TxInput) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TxInput.ProtoReflect.Descriptor instead.
 func (*TxInput) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{74}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *TxInput) GetTxid() string {
@@ -3332,7 +3589,7 @@ type WalletUtxo struct {
 
 func (x *WalletUtxo) Reset() {
 	*x = WalletUtxo{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[75]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3344,7 +3601,7 @@ func (x *WalletUtxo) String() string {
 func (*WalletUtxo) ProtoMessage() {}
 
 func (x *WalletUtxo) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[75]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3357,7 +3614,7 @@ func (x *WalletUtxo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WalletUtxo.ProtoReflect.Descriptor instead.
 func (*WalletUtxo) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{75}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *WalletUtxo) GetTxid() string {
@@ -3419,7 +3676,7 @@ type TxOutpoint struct {
 
 func (x *TxOutpoint) Reset() {
 	*x = TxOutpoint{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[76]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3431,7 +3688,7 @@ func (x *TxOutpoint) String() string {
 func (*TxOutpoint) ProtoMessage() {}
 
 func (x *TxOutpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[76]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3444,7 +3701,7 @@ func (x *TxOutpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TxOutpoint.ProtoReflect.Descriptor instead.
 func (*TxOutpoint) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{76}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *TxOutpoint) GetTxid() string {
@@ -3471,7 +3728,7 @@ type BlockTimestamp struct {
 
 func (x *BlockTimestamp) Reset() {
 	*x = BlockTimestamp{}
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[77]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3483,7 +3740,7 @@ func (x *BlockTimestamp) String() string {
 func (*BlockTimestamp) ProtoMessage() {}
 
 func (x *BlockTimestamp) ProtoReflect() protoreflect.Message {
-	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[77]
+	mi := &file_arkwallet_v1_bitcoin_wallet_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3496,7 +3753,7 @@ func (x *BlockTimestamp) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlockTimestamp.ProtoReflect.Descriptor instead.
 func (*BlockTimestamp) Descriptor() ([]byte, []int) {
-	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{77}
+	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *BlockTimestamp) GetHeight() uint32 {
@@ -3532,9 +3789,24 @@ const file_arkwallet_v1_bitcoin_wallet_proto_rawDesc = "" +
 	"\x04vout\x18\x02 \x01(\rR\x04vout\"1\n" +
 	"\x19GetOutpointStatusResponse\x12\x14\n" +
 	"\x05spent\x18\x01 \x01(\bR\x05spent\"\x1b\n" +
-	"\x19NotificationStreamRequest\"T\n" +
+	"\x19NotificationStreamRequest\"\x85\x01\n" +
 	"\x1aNotificationStreamResponse\x126\n" +
-	"\aentries\x18\x01 \x03(\v2\x1c.arkwallet.v1.VtoxsPerScriptR\aentries\"Y\n" +
+	"\aentries\x18\x01 \x03(\v2\x1c.arkwallet.v1.VtoxsPerScriptR\aentries\x12/\n" +
+	"\x06spends\x18\x02 \x03(\v2\x17.arkwallet.v1.SpendInfoR\x06spends\"\x94\x01\n" +
+	"\tSpendInfo\x12\x1d\n" +
+	"\n" +
+	"spent_txid\x18\x01 \x01(\tR\tspentTxid\x12\x1d\n" +
+	"\n" +
+	"spent_vout\x18\x02 \x01(\rR\tspentVout\x12#\n" +
+	"\rspending_txid\x18\x03 \x01(\tR\fspendingTxid\x12$\n" +
+	"\rconfirmations\x18\x04 \x01(\rR\rconfirmations\"&\n" +
+	"\x10GetSpendsRequest\x12\x12\n" +
+	"\x04from\x18\x01 \x01(\x03R\x04from\"D\n" +
+	"\x11GetSpendsResponse\x12/\n" +
+	"\x06spends\x18\x01 \x03(\v2\x17.arkwallet.v1.SpendInfoR\x06spends\"\x1c\n" +
+	"\x1aGetUnspentOutpointsRequest\"U\n" +
+	"\x1bGetUnspentOutpointsResponse\x126\n" +
+	"\toutpoints\x18\x01 \x03(\v2\x18.arkwallet.v1.TxOutpointR\toutpoints\"Y\n" +
 	"\x0eVtoxsPerScript\x12\x16\n" +
 	"\x06script\x18\x01 \x01(\tR\x06script\x12/\n" +
 	"\x05vtxos\x18\x02 \x03(\v2\x19.arkwallet.v1.VtxoWithKeyR\x05vtxos\"K\n" +
@@ -3686,7 +3958,7 @@ const file_arkwallet_v1_bitcoin_wallet_proto_rawDesc = "" +
 	"\x05index\x18\x02 \x01(\rR\x05index\"<\n" +
 	"\x0eBlockTimestamp\x12\x16\n" +
 	"\x06height\x18\x01 \x01(\rR\x06height\x12\x12\n" +
-	"\x04time\x18\x02 \x01(\x03R\x04time2\xc8\"\n" +
+	"\x04time\x18\x02 \x01(\x03R\x04time2\xbe$\n" +
 	"\rWalletService\x12\\\n" +
 	"\aGenSeed\x12\x1c.arkwallet.v1.GenSeedRequest\x1a\x1d.arkwallet.v1.GenSeedResponse\"\x14\xb2J\x11\x12\x0f/v1/wallet/seed\x12^\n" +
 	"\x06Create\x12\x1b.arkwallet.v1.CreateRequest\x1a\x1c.arkwallet.v1.CreateResponse\"\x19\xb2J\x16B\x01*\"\x11/v1/wallet/create\x12b\n" +
@@ -3723,7 +3995,9 @@ const file_arkwallet_v1_bitcoin_wallet_proto_rawDesc = "" +
 	"\x0eUnwatchScripts\x12#.arkwallet.v1.UnwatchScriptsRequest\x1a$.arkwallet.v1.UnwatchScriptsResponse\"\"\xb2J\x1fB\x01*\"\x1a/v1/wallet/unwatch-scripts\x12\x88\x01\n" +
 	"\x12NotificationStream\x12'.arkwallet.v1.NotificationStreamRequest\x1a(.arkwallet.v1.NotificationStreamResponse\"\x1d\xb2J\x1a\x12\x18/v1/wallet/notifications0\x01\x12w\n" +
 	"\rLoadSignerKey\x12\".arkwallet.v1.LoadSignerKeyRequest\x1a#.arkwallet.v1.LoadSignerKeyResponse\"\x1d\xb2J\x1aB\x01*\"\x15/v1/wallet/signer-key\x12s\n" +
-	"\vRescanUtxos\x12 .arkwallet.v1.RescanUtxosRequest\x1a!.arkwallet.v1.RescanUtxosResponse\"\x1f\xb2J\x1cB\x01*\"\x17/v1/wallet/rescan-utxosB\xab\x01\n" +
+	"\vRescanUtxos\x12 .arkwallet.v1.RescanUtxosRequest\x1a!.arkwallet.v1.RescanUtxosResponse\"\x1f\xb2J\x1cB\x01*\"\x17/v1/wallet/rescan-utxos\x12d\n" +
+	"\tGetSpends\x12\x1e.arkwallet.v1.GetSpendsRequest\x1a\x1f.arkwallet.v1.GetSpendsResponse\"\x16\xb2J\x13\x12\x11/v1/wallet/spends\x12\x8d\x01\n" +
+	"\x13GetUnspentOutpoints\x12(.arkwallet.v1.GetUnspentOutpointsRequest\x1a).arkwallet.v1.GetUnspentOutpointsResponse\"!\xb2J\x1e\x12\x1c/v1/wallet/unspent-outpointsB\xab\x01\n" +
 	"\x10com.arkwallet.v1B\x12BitcoinWalletProtoP\x01Z2github.com/arkade-os/arkd/arkwallet/v1;arkwalletv1\xa2\x02\x03AXX\xaa\x02\fArkwallet.V1\xca\x02\fArkwallet\\V1\xe2\x02\x18Arkwallet\\V1\\GPBMetadata\xea\x02\rArkwallet::V1b\x06proto3"
 
 var (
@@ -3738,7 +4012,7 @@ func file_arkwallet_v1_bitcoin_wallet_proto_rawDescGZIP() []byte {
 	return file_arkwallet_v1_bitcoin_wallet_proto_rawDescData
 }
 
-var file_arkwallet_v1_bitcoin_wallet_proto_msgTypes = make([]protoimpl.MessageInfo, 78)
+var file_arkwallet_v1_bitcoin_wallet_proto_msgTypes = make([]protoimpl.MessageInfo, 83)
 var file_arkwallet_v1_bitcoin_wallet_proto_goTypes = []any{
 	(*GetReadyUpdateRequest)(nil),            // 0: arkwallet.v1.GetReadyUpdateRequest
 	(*GetReadyUpdateResponse)(nil),           // 1: arkwallet.v1.GetReadyUpdateResponse
@@ -3748,160 +4022,172 @@ var file_arkwallet_v1_bitcoin_wallet_proto_goTypes = []any{
 	(*GetOutpointStatusResponse)(nil),        // 5: arkwallet.v1.GetOutpointStatusResponse
 	(*NotificationStreamRequest)(nil),        // 6: arkwallet.v1.NotificationStreamRequest
 	(*NotificationStreamResponse)(nil),       // 7: arkwallet.v1.NotificationStreamResponse
-	(*VtoxsPerScript)(nil),                   // 8: arkwallet.v1.VtoxsPerScript
-	(*VtxoWithKey)(nil),                      // 9: arkwallet.v1.VtxoWithKey
-	(*GenSeedRequest)(nil),                   // 10: arkwallet.v1.GenSeedRequest
-	(*GenSeedResponse)(nil),                  // 11: arkwallet.v1.GenSeedResponse
-	(*CreateRequest)(nil),                    // 12: arkwallet.v1.CreateRequest
-	(*CreateResponse)(nil),                   // 13: arkwallet.v1.CreateResponse
-	(*RestoreRequest)(nil),                   // 14: arkwallet.v1.RestoreRequest
-	(*RestoreResponse)(nil),                  // 15: arkwallet.v1.RestoreResponse
-	(*UnlockRequest)(nil),                    // 16: arkwallet.v1.UnlockRequest
-	(*UnlockResponse)(nil),                   // 17: arkwallet.v1.UnlockResponse
-	(*LockRequest)(nil),                      // 18: arkwallet.v1.LockRequest
-	(*LockResponse)(nil),                     // 19: arkwallet.v1.LockResponse
-	(*StatusRequest)(nil),                    // 20: arkwallet.v1.StatusRequest
-	(*StatusResponse)(nil),                   // 21: arkwallet.v1.StatusResponse
-	(*GetNetworkRequest)(nil),                // 22: arkwallet.v1.GetNetworkRequest
-	(*GetNetworkResponse)(nil),               // 23: arkwallet.v1.GetNetworkResponse
-	(*GetForfeitPubkeyRequest)(nil),          // 24: arkwallet.v1.GetForfeitPubkeyRequest
-	(*GetForfeitPubkeyResponse)(nil),         // 25: arkwallet.v1.GetForfeitPubkeyResponse
-	(*DeriveConnectorAddressRequest)(nil),    // 26: arkwallet.v1.DeriveConnectorAddressRequest
-	(*DeriveConnectorAddressResponse)(nil),   // 27: arkwallet.v1.DeriveConnectorAddressResponse
-	(*DeriveAddressesRequest)(nil),           // 28: arkwallet.v1.DeriveAddressesRequest
-	(*DeriveAddressesResponse)(nil),          // 29: arkwallet.v1.DeriveAddressesResponse
-	(*SignTransactionRequest)(nil),           // 30: arkwallet.v1.SignTransactionRequest
-	(*SignTransactionResponse)(nil),          // 31: arkwallet.v1.SignTransactionResponse
-	(*SignTransactionTapscriptRequest)(nil),  // 32: arkwallet.v1.SignTransactionTapscriptRequest
-	(*SignTransactionTapscriptResponse)(nil), // 33: arkwallet.v1.SignTransactionTapscriptResponse
-	(*SelectUtxosRequest)(nil),               // 34: arkwallet.v1.SelectUtxosRequest
-	(*SelectUtxosResponse)(nil),              // 35: arkwallet.v1.SelectUtxosResponse
-	(*BroadcastTransactionRequest)(nil),      // 36: arkwallet.v1.BroadcastTransactionRequest
-	(*BroadcastTransactionResponse)(nil),     // 37: arkwallet.v1.BroadcastTransactionResponse
-	(*WaitForSyncRequest)(nil),               // 38: arkwallet.v1.WaitForSyncRequest
-	(*WaitForSyncResponse)(nil),              // 39: arkwallet.v1.WaitForSyncResponse
-	(*EstimateFeesRequest)(nil),              // 40: arkwallet.v1.EstimateFeesRequest
-	(*EstimateFeesResponse)(nil),             // 41: arkwallet.v1.EstimateFeesResponse
-	(*FeeRateRequest)(nil),                   // 42: arkwallet.v1.FeeRateRequest
-	(*FeeRateResponse)(nil),                  // 43: arkwallet.v1.FeeRateResponse
-	(*ListConnectorUtxosRequest)(nil),        // 44: arkwallet.v1.ListConnectorUtxosRequest
-	(*ListConnectorUtxosResponse)(nil),       // 45: arkwallet.v1.ListConnectorUtxosResponse
-	(*GetMainAccountUtxosRequest)(nil),       // 46: arkwallet.v1.GetMainAccountUtxosRequest
-	(*GetMainAccountUtxosResponse)(nil),      // 47: arkwallet.v1.GetMainAccountUtxosResponse
-	(*MainAccountBalanceRequest)(nil),        // 48: arkwallet.v1.MainAccountBalanceRequest
-	(*MainAccountBalanceResponse)(nil),       // 49: arkwallet.v1.MainAccountBalanceResponse
-	(*ConnectorsAccountBalanceRequest)(nil),  // 50: arkwallet.v1.ConnectorsAccountBalanceRequest
-	(*ConnectorsAccountBalanceResponse)(nil), // 51: arkwallet.v1.ConnectorsAccountBalanceResponse
-	(*LockConnectorUtxosRequest)(nil),        // 52: arkwallet.v1.LockConnectorUtxosRequest
-	(*LockConnectorUtxosResponse)(nil),       // 53: arkwallet.v1.LockConnectorUtxosResponse
-	(*GetDustAmountRequest)(nil),             // 54: arkwallet.v1.GetDustAmountRequest
-	(*GetDustAmountResponse)(nil),            // 55: arkwallet.v1.GetDustAmountResponse
-	(*WatchScriptsRequest)(nil),              // 56: arkwallet.v1.WatchScriptsRequest
-	(*WatchScriptsResponse)(nil),             // 57: arkwallet.v1.WatchScriptsResponse
-	(*UnwatchScriptsRequest)(nil),            // 58: arkwallet.v1.UnwatchScriptsRequest
-	(*UnwatchScriptsResponse)(nil),           // 59: arkwallet.v1.UnwatchScriptsResponse
-	(*GetTransactionRequest)(nil),            // 60: arkwallet.v1.GetTransactionRequest
-	(*GetTransactionResponse)(nil),           // 61: arkwallet.v1.GetTransactionResponse
-	(*SignMessageRequest)(nil),               // 62: arkwallet.v1.SignMessageRequest
-	(*SignMessageResponse)(nil),              // 63: arkwallet.v1.SignMessageResponse
-	(*VerifyMessageSignatureRequest)(nil),    // 64: arkwallet.v1.VerifyMessageSignatureRequest
-	(*VerifyMessageSignatureResponse)(nil),   // 65: arkwallet.v1.VerifyMessageSignatureResponse
-	(*GetCurrentBlockTimeRequest)(nil),       // 66: arkwallet.v1.GetCurrentBlockTimeRequest
-	(*GetCurrentBlockTimeResponse)(nil),      // 67: arkwallet.v1.GetCurrentBlockTimeResponse
-	(*RescanUtxosRequest)(nil),               // 68: arkwallet.v1.RescanUtxosRequest
-	(*RescanUtxosResponse)(nil),              // 69: arkwallet.v1.RescanUtxosResponse
-	(*WithdrawRequest)(nil),                  // 70: arkwallet.v1.WithdrawRequest
-	(*WithdrawResponse)(nil),                 // 71: arkwallet.v1.WithdrawResponse
-	(*LoadSignerKeyRequest)(nil),             // 72: arkwallet.v1.LoadSignerKeyRequest
-	(*LoadSignerKeyResponse)(nil),            // 73: arkwallet.v1.LoadSignerKeyResponse
-	(*TxInput)(nil),                          // 74: arkwallet.v1.TxInput
-	(*WalletUtxo)(nil),                       // 75: arkwallet.v1.WalletUtxo
-	(*TxOutpoint)(nil),                       // 76: arkwallet.v1.TxOutpoint
-	(*BlockTimestamp)(nil),                   // 77: arkwallet.v1.BlockTimestamp
+	(*SpendInfo)(nil),                        // 8: arkwallet.v1.SpendInfo
+	(*GetSpendsRequest)(nil),                 // 9: arkwallet.v1.GetSpendsRequest
+	(*GetSpendsResponse)(nil),                // 10: arkwallet.v1.GetSpendsResponse
+	(*GetUnspentOutpointsRequest)(nil),       // 11: arkwallet.v1.GetUnspentOutpointsRequest
+	(*GetUnspentOutpointsResponse)(nil),      // 12: arkwallet.v1.GetUnspentOutpointsResponse
+	(*VtoxsPerScript)(nil),                   // 13: arkwallet.v1.VtoxsPerScript
+	(*VtxoWithKey)(nil),                      // 14: arkwallet.v1.VtxoWithKey
+	(*GenSeedRequest)(nil),                   // 15: arkwallet.v1.GenSeedRequest
+	(*GenSeedResponse)(nil),                  // 16: arkwallet.v1.GenSeedResponse
+	(*CreateRequest)(nil),                    // 17: arkwallet.v1.CreateRequest
+	(*CreateResponse)(nil),                   // 18: arkwallet.v1.CreateResponse
+	(*RestoreRequest)(nil),                   // 19: arkwallet.v1.RestoreRequest
+	(*RestoreResponse)(nil),                  // 20: arkwallet.v1.RestoreResponse
+	(*UnlockRequest)(nil),                    // 21: arkwallet.v1.UnlockRequest
+	(*UnlockResponse)(nil),                   // 22: arkwallet.v1.UnlockResponse
+	(*LockRequest)(nil),                      // 23: arkwallet.v1.LockRequest
+	(*LockResponse)(nil),                     // 24: arkwallet.v1.LockResponse
+	(*StatusRequest)(nil),                    // 25: arkwallet.v1.StatusRequest
+	(*StatusResponse)(nil),                   // 26: arkwallet.v1.StatusResponse
+	(*GetNetworkRequest)(nil),                // 27: arkwallet.v1.GetNetworkRequest
+	(*GetNetworkResponse)(nil),               // 28: arkwallet.v1.GetNetworkResponse
+	(*GetForfeitPubkeyRequest)(nil),          // 29: arkwallet.v1.GetForfeitPubkeyRequest
+	(*GetForfeitPubkeyResponse)(nil),         // 30: arkwallet.v1.GetForfeitPubkeyResponse
+	(*DeriveConnectorAddressRequest)(nil),    // 31: arkwallet.v1.DeriveConnectorAddressRequest
+	(*DeriveConnectorAddressResponse)(nil),   // 32: arkwallet.v1.DeriveConnectorAddressResponse
+	(*DeriveAddressesRequest)(nil),           // 33: arkwallet.v1.DeriveAddressesRequest
+	(*DeriveAddressesResponse)(nil),          // 34: arkwallet.v1.DeriveAddressesResponse
+	(*SignTransactionRequest)(nil),           // 35: arkwallet.v1.SignTransactionRequest
+	(*SignTransactionResponse)(nil),          // 36: arkwallet.v1.SignTransactionResponse
+	(*SignTransactionTapscriptRequest)(nil),  // 37: arkwallet.v1.SignTransactionTapscriptRequest
+	(*SignTransactionTapscriptResponse)(nil), // 38: arkwallet.v1.SignTransactionTapscriptResponse
+	(*SelectUtxosRequest)(nil),               // 39: arkwallet.v1.SelectUtxosRequest
+	(*SelectUtxosResponse)(nil),              // 40: arkwallet.v1.SelectUtxosResponse
+	(*BroadcastTransactionRequest)(nil),      // 41: arkwallet.v1.BroadcastTransactionRequest
+	(*BroadcastTransactionResponse)(nil),     // 42: arkwallet.v1.BroadcastTransactionResponse
+	(*WaitForSyncRequest)(nil),               // 43: arkwallet.v1.WaitForSyncRequest
+	(*WaitForSyncResponse)(nil),              // 44: arkwallet.v1.WaitForSyncResponse
+	(*EstimateFeesRequest)(nil),              // 45: arkwallet.v1.EstimateFeesRequest
+	(*EstimateFeesResponse)(nil),             // 46: arkwallet.v1.EstimateFeesResponse
+	(*FeeRateRequest)(nil),                   // 47: arkwallet.v1.FeeRateRequest
+	(*FeeRateResponse)(nil),                  // 48: arkwallet.v1.FeeRateResponse
+	(*ListConnectorUtxosRequest)(nil),        // 49: arkwallet.v1.ListConnectorUtxosRequest
+	(*ListConnectorUtxosResponse)(nil),       // 50: arkwallet.v1.ListConnectorUtxosResponse
+	(*GetMainAccountUtxosRequest)(nil),       // 51: arkwallet.v1.GetMainAccountUtxosRequest
+	(*GetMainAccountUtxosResponse)(nil),      // 52: arkwallet.v1.GetMainAccountUtxosResponse
+	(*MainAccountBalanceRequest)(nil),        // 53: arkwallet.v1.MainAccountBalanceRequest
+	(*MainAccountBalanceResponse)(nil),       // 54: arkwallet.v1.MainAccountBalanceResponse
+	(*ConnectorsAccountBalanceRequest)(nil),  // 55: arkwallet.v1.ConnectorsAccountBalanceRequest
+	(*ConnectorsAccountBalanceResponse)(nil), // 56: arkwallet.v1.ConnectorsAccountBalanceResponse
+	(*LockConnectorUtxosRequest)(nil),        // 57: arkwallet.v1.LockConnectorUtxosRequest
+	(*LockConnectorUtxosResponse)(nil),       // 58: arkwallet.v1.LockConnectorUtxosResponse
+	(*GetDustAmountRequest)(nil),             // 59: arkwallet.v1.GetDustAmountRequest
+	(*GetDustAmountResponse)(nil),            // 60: arkwallet.v1.GetDustAmountResponse
+	(*WatchScriptsRequest)(nil),              // 61: arkwallet.v1.WatchScriptsRequest
+	(*WatchScriptsResponse)(nil),             // 62: arkwallet.v1.WatchScriptsResponse
+	(*UnwatchScriptsRequest)(nil),            // 63: arkwallet.v1.UnwatchScriptsRequest
+	(*UnwatchScriptsResponse)(nil),           // 64: arkwallet.v1.UnwatchScriptsResponse
+	(*GetTransactionRequest)(nil),            // 65: arkwallet.v1.GetTransactionRequest
+	(*GetTransactionResponse)(nil),           // 66: arkwallet.v1.GetTransactionResponse
+	(*SignMessageRequest)(nil),               // 67: arkwallet.v1.SignMessageRequest
+	(*SignMessageResponse)(nil),              // 68: arkwallet.v1.SignMessageResponse
+	(*VerifyMessageSignatureRequest)(nil),    // 69: arkwallet.v1.VerifyMessageSignatureRequest
+	(*VerifyMessageSignatureResponse)(nil),   // 70: arkwallet.v1.VerifyMessageSignatureResponse
+	(*GetCurrentBlockTimeRequest)(nil),       // 71: arkwallet.v1.GetCurrentBlockTimeRequest
+	(*GetCurrentBlockTimeResponse)(nil),      // 72: arkwallet.v1.GetCurrentBlockTimeResponse
+	(*RescanUtxosRequest)(nil),               // 73: arkwallet.v1.RescanUtxosRequest
+	(*RescanUtxosResponse)(nil),              // 74: arkwallet.v1.RescanUtxosResponse
+	(*WithdrawRequest)(nil),                  // 75: arkwallet.v1.WithdrawRequest
+	(*WithdrawResponse)(nil),                 // 76: arkwallet.v1.WithdrawResponse
+	(*LoadSignerKeyRequest)(nil),             // 77: arkwallet.v1.LoadSignerKeyRequest
+	(*LoadSignerKeyResponse)(nil),            // 78: arkwallet.v1.LoadSignerKeyResponse
+	(*TxInput)(nil),                          // 79: arkwallet.v1.TxInput
+	(*WalletUtxo)(nil),                       // 80: arkwallet.v1.WalletUtxo
+	(*TxOutpoint)(nil),                       // 81: arkwallet.v1.TxOutpoint
+	(*BlockTimestamp)(nil),                   // 82: arkwallet.v1.BlockTimestamp
 }
 var file_arkwallet_v1_bitcoin_wallet_proto_depIdxs = []int32{
-	8,  // 0: arkwallet.v1.NotificationStreamResponse.entries:type_name -> arkwallet.v1.VtoxsPerScript
-	9,  // 1: arkwallet.v1.VtoxsPerScript.vtxos:type_name -> arkwallet.v1.VtxoWithKey
-	74, // 2: arkwallet.v1.SelectUtxosResponse.utxos:type_name -> arkwallet.v1.TxInput
-	74, // 3: arkwallet.v1.ListConnectorUtxosResponse.utxos:type_name -> arkwallet.v1.TxInput
-	75, // 4: arkwallet.v1.GetMainAccountUtxosResponse.utxos:type_name -> arkwallet.v1.WalletUtxo
-	76, // 5: arkwallet.v1.LockConnectorUtxosRequest.utxos:type_name -> arkwallet.v1.TxOutpoint
-	77, // 6: arkwallet.v1.GetCurrentBlockTimeResponse.timestamp:type_name -> arkwallet.v1.BlockTimestamp
-	10, // 7: arkwallet.v1.WalletService.GenSeed:input_type -> arkwallet.v1.GenSeedRequest
-	12, // 8: arkwallet.v1.WalletService.Create:input_type -> arkwallet.v1.CreateRequest
-	14, // 9: arkwallet.v1.WalletService.Restore:input_type -> arkwallet.v1.RestoreRequest
-	16, // 10: arkwallet.v1.WalletService.Unlock:input_type -> arkwallet.v1.UnlockRequest
-	18, // 11: arkwallet.v1.WalletService.Lock:input_type -> arkwallet.v1.LockRequest
-	20, // 12: arkwallet.v1.WalletService.Status:input_type -> arkwallet.v1.StatusRequest
-	22, // 13: arkwallet.v1.WalletService.GetNetwork:input_type -> arkwallet.v1.GetNetworkRequest
-	24, // 14: arkwallet.v1.WalletService.GetForfeitPubkey:input_type -> arkwallet.v1.GetForfeitPubkeyRequest
-	26, // 15: arkwallet.v1.WalletService.DeriveConnectorAddress:input_type -> arkwallet.v1.DeriveConnectorAddressRequest
-	28, // 16: arkwallet.v1.WalletService.DeriveAddresses:input_type -> arkwallet.v1.DeriveAddressesRequest
-	30, // 17: arkwallet.v1.WalletService.SignTransaction:input_type -> arkwallet.v1.SignTransactionRequest
-	32, // 18: arkwallet.v1.WalletService.SignTransactionTapscript:input_type -> arkwallet.v1.SignTransactionTapscriptRequest
-	34, // 19: arkwallet.v1.WalletService.SelectUtxos:input_type -> arkwallet.v1.SelectUtxosRequest
-	36, // 20: arkwallet.v1.WalletService.BroadcastTransaction:input_type -> arkwallet.v1.BroadcastTransactionRequest
-	0,  // 21: arkwallet.v1.WalletService.GetReadyUpdate:input_type -> arkwallet.v1.GetReadyUpdateRequest
-	2,  // 22: arkwallet.v1.WalletService.IsTransactionConfirmed:input_type -> arkwallet.v1.IsTransactionConfirmedRequest
-	4,  // 23: arkwallet.v1.WalletService.GetOutpointStatus:input_type -> arkwallet.v1.GetOutpointStatusRequest
-	40, // 24: arkwallet.v1.WalletService.EstimateFees:input_type -> arkwallet.v1.EstimateFeesRequest
-	42, // 25: arkwallet.v1.WalletService.FeeRate:input_type -> arkwallet.v1.FeeRateRequest
-	44, // 26: arkwallet.v1.WalletService.ListConnectorUtxos:input_type -> arkwallet.v1.ListConnectorUtxosRequest
-	46, // 27: arkwallet.v1.WalletService.GetMainAccountUtxos:input_type -> arkwallet.v1.GetMainAccountUtxosRequest
-	48, // 28: arkwallet.v1.WalletService.MainAccountBalance:input_type -> arkwallet.v1.MainAccountBalanceRequest
-	50, // 29: arkwallet.v1.WalletService.ConnectorsAccountBalance:input_type -> arkwallet.v1.ConnectorsAccountBalanceRequest
-	52, // 30: arkwallet.v1.WalletService.LockConnectorUtxos:input_type -> arkwallet.v1.LockConnectorUtxosRequest
-	54, // 31: arkwallet.v1.WalletService.GetDustAmount:input_type -> arkwallet.v1.GetDustAmountRequest
-	60, // 32: arkwallet.v1.WalletService.GetTransaction:input_type -> arkwallet.v1.GetTransactionRequest
-	62, // 33: arkwallet.v1.WalletService.SignMessage:input_type -> arkwallet.v1.SignMessageRequest
-	64, // 34: arkwallet.v1.WalletService.VerifyMessageSignature:input_type -> arkwallet.v1.VerifyMessageSignatureRequest
-	66, // 35: arkwallet.v1.WalletService.GetCurrentBlockTime:input_type -> arkwallet.v1.GetCurrentBlockTimeRequest
-	70, // 36: arkwallet.v1.WalletService.Withdraw:input_type -> arkwallet.v1.WithdrawRequest
-	56, // 37: arkwallet.v1.WalletService.WatchScripts:input_type -> arkwallet.v1.WatchScriptsRequest
-	58, // 38: arkwallet.v1.WalletService.UnwatchScripts:input_type -> arkwallet.v1.UnwatchScriptsRequest
-	6,  // 39: arkwallet.v1.WalletService.NotificationStream:input_type -> arkwallet.v1.NotificationStreamRequest
-	72, // 40: arkwallet.v1.WalletService.LoadSignerKey:input_type -> arkwallet.v1.LoadSignerKeyRequest
-	68, // 41: arkwallet.v1.WalletService.RescanUtxos:input_type -> arkwallet.v1.RescanUtxosRequest
-	11, // 42: arkwallet.v1.WalletService.GenSeed:output_type -> arkwallet.v1.GenSeedResponse
-	13, // 43: arkwallet.v1.WalletService.Create:output_type -> arkwallet.v1.CreateResponse
-	15, // 44: arkwallet.v1.WalletService.Restore:output_type -> arkwallet.v1.RestoreResponse
-	17, // 45: arkwallet.v1.WalletService.Unlock:output_type -> arkwallet.v1.UnlockResponse
-	19, // 46: arkwallet.v1.WalletService.Lock:output_type -> arkwallet.v1.LockResponse
-	21, // 47: arkwallet.v1.WalletService.Status:output_type -> arkwallet.v1.StatusResponse
-	23, // 48: arkwallet.v1.WalletService.GetNetwork:output_type -> arkwallet.v1.GetNetworkResponse
-	25, // 49: arkwallet.v1.WalletService.GetForfeitPubkey:output_type -> arkwallet.v1.GetForfeitPubkeyResponse
-	27, // 50: arkwallet.v1.WalletService.DeriveConnectorAddress:output_type -> arkwallet.v1.DeriveConnectorAddressResponse
-	29, // 51: arkwallet.v1.WalletService.DeriveAddresses:output_type -> arkwallet.v1.DeriveAddressesResponse
-	31, // 52: arkwallet.v1.WalletService.SignTransaction:output_type -> arkwallet.v1.SignTransactionResponse
-	33, // 53: arkwallet.v1.WalletService.SignTransactionTapscript:output_type -> arkwallet.v1.SignTransactionTapscriptResponse
-	35, // 54: arkwallet.v1.WalletService.SelectUtxos:output_type -> arkwallet.v1.SelectUtxosResponse
-	37, // 55: arkwallet.v1.WalletService.BroadcastTransaction:output_type -> arkwallet.v1.BroadcastTransactionResponse
-	1,  // 56: arkwallet.v1.WalletService.GetReadyUpdate:output_type -> arkwallet.v1.GetReadyUpdateResponse
-	3,  // 57: arkwallet.v1.WalletService.IsTransactionConfirmed:output_type -> arkwallet.v1.IsTransactionConfirmedResponse
-	5,  // 58: arkwallet.v1.WalletService.GetOutpointStatus:output_type -> arkwallet.v1.GetOutpointStatusResponse
-	41, // 59: arkwallet.v1.WalletService.EstimateFees:output_type -> arkwallet.v1.EstimateFeesResponse
-	43, // 60: arkwallet.v1.WalletService.FeeRate:output_type -> arkwallet.v1.FeeRateResponse
-	45, // 61: arkwallet.v1.WalletService.ListConnectorUtxos:output_type -> arkwallet.v1.ListConnectorUtxosResponse
-	47, // 62: arkwallet.v1.WalletService.GetMainAccountUtxos:output_type -> arkwallet.v1.GetMainAccountUtxosResponse
-	49, // 63: arkwallet.v1.WalletService.MainAccountBalance:output_type -> arkwallet.v1.MainAccountBalanceResponse
-	51, // 64: arkwallet.v1.WalletService.ConnectorsAccountBalance:output_type -> arkwallet.v1.ConnectorsAccountBalanceResponse
-	53, // 65: arkwallet.v1.WalletService.LockConnectorUtxos:output_type -> arkwallet.v1.LockConnectorUtxosResponse
-	55, // 66: arkwallet.v1.WalletService.GetDustAmount:output_type -> arkwallet.v1.GetDustAmountResponse
-	61, // 67: arkwallet.v1.WalletService.GetTransaction:output_type -> arkwallet.v1.GetTransactionResponse
-	63, // 68: arkwallet.v1.WalletService.SignMessage:output_type -> arkwallet.v1.SignMessageResponse
-	65, // 69: arkwallet.v1.WalletService.VerifyMessageSignature:output_type -> arkwallet.v1.VerifyMessageSignatureResponse
-	67, // 70: arkwallet.v1.WalletService.GetCurrentBlockTime:output_type -> arkwallet.v1.GetCurrentBlockTimeResponse
-	71, // 71: arkwallet.v1.WalletService.Withdraw:output_type -> arkwallet.v1.WithdrawResponse
-	57, // 72: arkwallet.v1.WalletService.WatchScripts:output_type -> arkwallet.v1.WatchScriptsResponse
-	59, // 73: arkwallet.v1.WalletService.UnwatchScripts:output_type -> arkwallet.v1.UnwatchScriptsResponse
-	7,  // 74: arkwallet.v1.WalletService.NotificationStream:output_type -> arkwallet.v1.NotificationStreamResponse
-	73, // 75: arkwallet.v1.WalletService.LoadSignerKey:output_type -> arkwallet.v1.LoadSignerKeyResponse
-	69, // 76: arkwallet.v1.WalletService.RescanUtxos:output_type -> arkwallet.v1.RescanUtxosResponse
-	42, // [42:77] is the sub-list for method output_type
-	7,  // [7:42] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	13, // 0: arkwallet.v1.NotificationStreamResponse.entries:type_name -> arkwallet.v1.VtoxsPerScript
+	8,  // 1: arkwallet.v1.NotificationStreamResponse.spends:type_name -> arkwallet.v1.SpendInfo
+	8,  // 2: arkwallet.v1.GetSpendsResponse.spends:type_name -> arkwallet.v1.SpendInfo
+	81, // 3: arkwallet.v1.GetUnspentOutpointsResponse.outpoints:type_name -> arkwallet.v1.TxOutpoint
+	14, // 4: arkwallet.v1.VtoxsPerScript.vtxos:type_name -> arkwallet.v1.VtxoWithKey
+	79, // 5: arkwallet.v1.SelectUtxosResponse.utxos:type_name -> arkwallet.v1.TxInput
+	79, // 6: arkwallet.v1.ListConnectorUtxosResponse.utxos:type_name -> arkwallet.v1.TxInput
+	80, // 7: arkwallet.v1.GetMainAccountUtxosResponse.utxos:type_name -> arkwallet.v1.WalletUtxo
+	81, // 8: arkwallet.v1.LockConnectorUtxosRequest.utxos:type_name -> arkwallet.v1.TxOutpoint
+	82, // 9: arkwallet.v1.GetCurrentBlockTimeResponse.timestamp:type_name -> arkwallet.v1.BlockTimestamp
+	15, // 10: arkwallet.v1.WalletService.GenSeed:input_type -> arkwallet.v1.GenSeedRequest
+	17, // 11: arkwallet.v1.WalletService.Create:input_type -> arkwallet.v1.CreateRequest
+	19, // 12: arkwallet.v1.WalletService.Restore:input_type -> arkwallet.v1.RestoreRequest
+	21, // 13: arkwallet.v1.WalletService.Unlock:input_type -> arkwallet.v1.UnlockRequest
+	23, // 14: arkwallet.v1.WalletService.Lock:input_type -> arkwallet.v1.LockRequest
+	25, // 15: arkwallet.v1.WalletService.Status:input_type -> arkwallet.v1.StatusRequest
+	27, // 16: arkwallet.v1.WalletService.GetNetwork:input_type -> arkwallet.v1.GetNetworkRequest
+	29, // 17: arkwallet.v1.WalletService.GetForfeitPubkey:input_type -> arkwallet.v1.GetForfeitPubkeyRequest
+	31, // 18: arkwallet.v1.WalletService.DeriveConnectorAddress:input_type -> arkwallet.v1.DeriveConnectorAddressRequest
+	33, // 19: arkwallet.v1.WalletService.DeriveAddresses:input_type -> arkwallet.v1.DeriveAddressesRequest
+	35, // 20: arkwallet.v1.WalletService.SignTransaction:input_type -> arkwallet.v1.SignTransactionRequest
+	37, // 21: arkwallet.v1.WalletService.SignTransactionTapscript:input_type -> arkwallet.v1.SignTransactionTapscriptRequest
+	39, // 22: arkwallet.v1.WalletService.SelectUtxos:input_type -> arkwallet.v1.SelectUtxosRequest
+	41, // 23: arkwallet.v1.WalletService.BroadcastTransaction:input_type -> arkwallet.v1.BroadcastTransactionRequest
+	0,  // 24: arkwallet.v1.WalletService.GetReadyUpdate:input_type -> arkwallet.v1.GetReadyUpdateRequest
+	2,  // 25: arkwallet.v1.WalletService.IsTransactionConfirmed:input_type -> arkwallet.v1.IsTransactionConfirmedRequest
+	4,  // 26: arkwallet.v1.WalletService.GetOutpointStatus:input_type -> arkwallet.v1.GetOutpointStatusRequest
+	45, // 27: arkwallet.v1.WalletService.EstimateFees:input_type -> arkwallet.v1.EstimateFeesRequest
+	47, // 28: arkwallet.v1.WalletService.FeeRate:input_type -> arkwallet.v1.FeeRateRequest
+	49, // 29: arkwallet.v1.WalletService.ListConnectorUtxos:input_type -> arkwallet.v1.ListConnectorUtxosRequest
+	51, // 30: arkwallet.v1.WalletService.GetMainAccountUtxos:input_type -> arkwallet.v1.GetMainAccountUtxosRequest
+	53, // 31: arkwallet.v1.WalletService.MainAccountBalance:input_type -> arkwallet.v1.MainAccountBalanceRequest
+	55, // 32: arkwallet.v1.WalletService.ConnectorsAccountBalance:input_type -> arkwallet.v1.ConnectorsAccountBalanceRequest
+	57, // 33: arkwallet.v1.WalletService.LockConnectorUtxos:input_type -> arkwallet.v1.LockConnectorUtxosRequest
+	59, // 34: arkwallet.v1.WalletService.GetDustAmount:input_type -> arkwallet.v1.GetDustAmountRequest
+	65, // 35: arkwallet.v1.WalletService.GetTransaction:input_type -> arkwallet.v1.GetTransactionRequest
+	67, // 36: arkwallet.v1.WalletService.SignMessage:input_type -> arkwallet.v1.SignMessageRequest
+	69, // 37: arkwallet.v1.WalletService.VerifyMessageSignature:input_type -> arkwallet.v1.VerifyMessageSignatureRequest
+	71, // 38: arkwallet.v1.WalletService.GetCurrentBlockTime:input_type -> arkwallet.v1.GetCurrentBlockTimeRequest
+	75, // 39: arkwallet.v1.WalletService.Withdraw:input_type -> arkwallet.v1.WithdrawRequest
+	61, // 40: arkwallet.v1.WalletService.WatchScripts:input_type -> arkwallet.v1.WatchScriptsRequest
+	63, // 41: arkwallet.v1.WalletService.UnwatchScripts:input_type -> arkwallet.v1.UnwatchScriptsRequest
+	6,  // 42: arkwallet.v1.WalletService.NotificationStream:input_type -> arkwallet.v1.NotificationStreamRequest
+	77, // 43: arkwallet.v1.WalletService.LoadSignerKey:input_type -> arkwallet.v1.LoadSignerKeyRequest
+	73, // 44: arkwallet.v1.WalletService.RescanUtxos:input_type -> arkwallet.v1.RescanUtxosRequest
+	9,  // 45: arkwallet.v1.WalletService.GetSpends:input_type -> arkwallet.v1.GetSpendsRequest
+	11, // 46: arkwallet.v1.WalletService.GetUnspentOutpoints:input_type -> arkwallet.v1.GetUnspentOutpointsRequest
+	16, // 47: arkwallet.v1.WalletService.GenSeed:output_type -> arkwallet.v1.GenSeedResponse
+	18, // 48: arkwallet.v1.WalletService.Create:output_type -> arkwallet.v1.CreateResponse
+	20, // 49: arkwallet.v1.WalletService.Restore:output_type -> arkwallet.v1.RestoreResponse
+	22, // 50: arkwallet.v1.WalletService.Unlock:output_type -> arkwallet.v1.UnlockResponse
+	24, // 51: arkwallet.v1.WalletService.Lock:output_type -> arkwallet.v1.LockResponse
+	26, // 52: arkwallet.v1.WalletService.Status:output_type -> arkwallet.v1.StatusResponse
+	28, // 53: arkwallet.v1.WalletService.GetNetwork:output_type -> arkwallet.v1.GetNetworkResponse
+	30, // 54: arkwallet.v1.WalletService.GetForfeitPubkey:output_type -> arkwallet.v1.GetForfeitPubkeyResponse
+	32, // 55: arkwallet.v1.WalletService.DeriveConnectorAddress:output_type -> arkwallet.v1.DeriveConnectorAddressResponse
+	34, // 56: arkwallet.v1.WalletService.DeriveAddresses:output_type -> arkwallet.v1.DeriveAddressesResponse
+	36, // 57: arkwallet.v1.WalletService.SignTransaction:output_type -> arkwallet.v1.SignTransactionResponse
+	38, // 58: arkwallet.v1.WalletService.SignTransactionTapscript:output_type -> arkwallet.v1.SignTransactionTapscriptResponse
+	40, // 59: arkwallet.v1.WalletService.SelectUtxos:output_type -> arkwallet.v1.SelectUtxosResponse
+	42, // 60: arkwallet.v1.WalletService.BroadcastTransaction:output_type -> arkwallet.v1.BroadcastTransactionResponse
+	1,  // 61: arkwallet.v1.WalletService.GetReadyUpdate:output_type -> arkwallet.v1.GetReadyUpdateResponse
+	3,  // 62: arkwallet.v1.WalletService.IsTransactionConfirmed:output_type -> arkwallet.v1.IsTransactionConfirmedResponse
+	5,  // 63: arkwallet.v1.WalletService.GetOutpointStatus:output_type -> arkwallet.v1.GetOutpointStatusResponse
+	46, // 64: arkwallet.v1.WalletService.EstimateFees:output_type -> arkwallet.v1.EstimateFeesResponse
+	48, // 65: arkwallet.v1.WalletService.FeeRate:output_type -> arkwallet.v1.FeeRateResponse
+	50, // 66: arkwallet.v1.WalletService.ListConnectorUtxos:output_type -> arkwallet.v1.ListConnectorUtxosResponse
+	52, // 67: arkwallet.v1.WalletService.GetMainAccountUtxos:output_type -> arkwallet.v1.GetMainAccountUtxosResponse
+	54, // 68: arkwallet.v1.WalletService.MainAccountBalance:output_type -> arkwallet.v1.MainAccountBalanceResponse
+	56, // 69: arkwallet.v1.WalletService.ConnectorsAccountBalance:output_type -> arkwallet.v1.ConnectorsAccountBalanceResponse
+	58, // 70: arkwallet.v1.WalletService.LockConnectorUtxos:output_type -> arkwallet.v1.LockConnectorUtxosResponse
+	60, // 71: arkwallet.v1.WalletService.GetDustAmount:output_type -> arkwallet.v1.GetDustAmountResponse
+	66, // 72: arkwallet.v1.WalletService.GetTransaction:output_type -> arkwallet.v1.GetTransactionResponse
+	68, // 73: arkwallet.v1.WalletService.SignMessage:output_type -> arkwallet.v1.SignMessageResponse
+	70, // 74: arkwallet.v1.WalletService.VerifyMessageSignature:output_type -> arkwallet.v1.VerifyMessageSignatureResponse
+	72, // 75: arkwallet.v1.WalletService.GetCurrentBlockTime:output_type -> arkwallet.v1.GetCurrentBlockTimeResponse
+	76, // 76: arkwallet.v1.WalletService.Withdraw:output_type -> arkwallet.v1.WithdrawResponse
+	62, // 77: arkwallet.v1.WalletService.WatchScripts:output_type -> arkwallet.v1.WatchScriptsResponse
+	64, // 78: arkwallet.v1.WalletService.UnwatchScripts:output_type -> arkwallet.v1.UnwatchScriptsResponse
+	7,  // 79: arkwallet.v1.WalletService.NotificationStream:output_type -> arkwallet.v1.NotificationStreamResponse
+	78, // 80: arkwallet.v1.WalletService.LoadSignerKey:output_type -> arkwallet.v1.LoadSignerKeyResponse
+	74, // 81: arkwallet.v1.WalletService.RescanUtxos:output_type -> arkwallet.v1.RescanUtxosResponse
+	10, // 82: arkwallet.v1.WalletService.GetSpends:output_type -> arkwallet.v1.GetSpendsResponse
+	12, // 83: arkwallet.v1.WalletService.GetUnspentOutpoints:output_type -> arkwallet.v1.GetUnspentOutpointsResponse
+	47, // [47:84] is the sub-list for method output_type
+	10, // [10:47] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_arkwallet_v1_bitcoin_wallet_proto_init() }
@@ -3915,7 +4201,7 @@ func file_arkwallet_v1_bitcoin_wallet_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_arkwallet_v1_bitcoin_wallet_proto_rawDesc), len(file_arkwallet_v1_bitcoin_wallet_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   78,
+			NumMessages:   83,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

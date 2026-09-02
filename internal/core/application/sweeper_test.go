@@ -374,6 +374,24 @@ func (m *mockWalletService) RescanUtxos(ctx context.Context, outpoints []wire.Ou
 	return nil
 }
 
+func (m *mockWalletService) GetSpendNotificationChannel(
+	ctx context.Context,
+) <-chan []ports.Spend {
+	return nil
+}
+
+func (m *mockWalletService) GetSpends(
+	ctx context.Context, from *time.Time,
+) ([]ports.Spend, error) {
+	return nil, nil
+}
+
+func (m *mockWalletService) GetUnspentOutpoints(
+	ctx context.Context,
+) (map[domain.Outpoint]struct{}, error) {
+	return nil, nil
+}
+
 type mockVtxoRepository struct {
 	mock.Mock
 }
@@ -434,6 +452,26 @@ func (m *mockVtxoRepository) GetAllSweepableUnrolledVtxos(
 	ctx context.Context,
 ) ([]domain.Vtxo, error) {
 	return nil, nil
+}
+func (m *mockVtxoRepository) GetUnrolledUnspentVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	return nil, nil
+}
+func (m *mockVtxoRepository) GetOnchainSpentVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	return nil, nil
+}
+func (m *mockVtxoRepository) MarkVtxosOnchainSpent(
+	ctx context.Context, spentBy map[domain.Outpoint]string,
+) error {
+	return nil
+}
+func (m *mockVtxoRepository) UnmarkVtxosOnchainSpent(
+	ctx context.Context, outpoints []domain.Outpoint,
+) error {
+	return nil
 }
 func (m *mockVtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
 	return nil, nil

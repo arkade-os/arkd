@@ -7646,6 +7646,191 @@ func TestDeprecatedSignerKey(t *testing.T) {
 	})
 }
 
+// TestUnrolledVtxoOnchainSpend is the end-to-end proof of onchain spend
+// tracking. Every other test for it sits at unit, repository or
+// NBXplorer-contract level, and none of those exercises the whole path: a real
+// spend on the chain, through the wallet's notification stream, into the vtxo
+// the indexer serves.
+//
+// Before this tracking existed the vtxo asserted on here stayed reported as
+// unspent indefinitely, because a transaction that spends a watched output
+// creates no new UTXO at that script and so produced no notification at all.
+func TestUnrolledVtxoOnchainSpend(t *testing.T) {
+	ctx := t.Context()
+	alice := setupClientWallet(t)
+
+	// Offchain funds plus a little onchain to cover the unroll fees.
+	faucet(t, alice, 0.00021)
+
+	// Captured before the unroll: this outpoint is what appears onchain
+	// afterwards, and it is the row the indexer must end up reporting as spent.
+	spendable, _, err := alice.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, spendable)
+	target := spendable[0].Outpoint
+
+	res, err := alice.Unroll(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, res)
+
+	require.NoError(t, generateBlocks(1))
+	require.NotNil(t, waitForUnrolledOnchainFunds(t, alice))
+
+	// Mature the unilateral exit CSV so the onchain output can be claimed.
+	require.NoError(t, generateBlocks(20))
+	waitForMatureOnchainFunds(t, alice)
+
+	// Claiming the matured funds spends the unrolled outpoint onchain. This is
+	// precisely the event arkd used to be blind to.
+	spendTxid, err := alice.CompleteUnroll(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, spendTxid)
+
+	require.NoError(t, generateBlocks(1))
+
+	// The push path should carry this within seconds. The periodic reconciler
+	// runs far less often, so a deadline this short also asserts that the spend
+	// was noticed by the notification path rather than swept up much later.
+	waitUntil(
+		t, indexerWait, "the unrolled vtxo to be reported spent onchain",
+		func(ctx context.Context) error {
+			_, spent, err := alice.ListVtxos(ctx)
+			if err != nil {
+				return err
+			}
+			for _, vtxo := range spent {
+				if vtxo.Outpoint != target {
+					continue
+				}
+				if !vtxo.Unrolled {
+					return fmt.Errorf("vtxo %s is no longer marked unrolled", target)
+				}
+				if !vtxo.Spent {
+					return fmt.Errorf("vtxo %s is still reported unspent", target)
+				}
+				if vtxo.SpentBy != spendTxid {
+					return fmt.Errorf(
+						"vtxo %s reports spent_by %q, want the onchain spender %s",
+						target, vtxo.SpentBy, spendTxid,
+					)
+				}
+				// An onchain spend must never be attributed to an Arkade
+				// transaction: the absence of ark_txid is the discriminator the
+				// sweeper and the fraud reaction both key off.
+				if vtxo.ArkTxid != "" {
+					return fmt.Errorf(
+						"vtxo %s wrongly carries ark txid %s for an onchain spend",
+						target, vtxo.ArkTxid,
+					)
+				}
+				return nil
+			}
+			return fmt.Errorf("vtxo %s not found among %d spent vtxos", target, len(spent))
+		},
+	)
+}
+
+// TestUnrolledVtxoOnchainSpendBackfill proves the reconciler, which is the half
+// of onchain spend tracking the push path cannot cover.
+//
+// TestUnrolledVtxoOnchainSpend exercises a spend that happens while arkd is
+// listening. Here the spend happens while arkd is stopped, so no notification is
+// ever delivered for it: the only way the vtxo can end up correctly marked is
+// the unwindowed reconcile pass arkd runs at startup. That pass exists because a
+// windowed query would never reach a spend older than the window, which is
+// exactly how a vtxo stays wrongly unspent forever.
+//
+// arkd-wallet deliberately keeps running, so NBXplorer still has the script
+// tracked and records the matched input for the spending transaction. A spend
+// that happens while the script itself is untracked is not recoverable and is
+// out of scope here.
+func TestUnrolledVtxoOnchainSpendBackfill(t *testing.T) {
+	ctx := t.Context()
+	alice := setupClientWallet(t)
+
+	faucet(t, alice, 0.00021)
+
+	spendable, _, err := alice.ListVtxos(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, spendable)
+	target := spendable[0].Outpoint
+
+	res, err := alice.Unroll(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, res)
+
+	require.NoError(t, generateBlocks(1))
+	require.NotNil(t, waitForUnrolledOnchainFunds(t, alice))
+
+	require.NoError(t, generateBlocks(20))
+	waitForMatureOnchainFunds(t, alice)
+
+	// Stop arkd so the spend below cannot be observed by the push path. The
+	// client claims through the explorer and signs locally, so it does not need
+	// arkd to be up.
+	_, err = runCommand("docker", "container", "stop", "arkd")
+	require.NoError(t, err)
+
+	spendTxid, err := alice.CompleteUnroll(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, spendTxid)
+
+	require.NoError(t, generateBlocks(1))
+
+	// Bring arkd back. Its startup reconcile pass is now the only thing that can
+	// discover the spend.
+	_, err = runCommand("docker", "container", "start", "arkd")
+	require.NoError(t, err)
+
+	adminHttpClient := &http.Client{Timeout: 15 * time.Second}
+	require.NoError(t, unlockArkd(adminHttpClient))
+	require.NoError(t, waitUntilReady(adminHttpClient))
+	require.NoError(t, waitUntilArkServiceReady())
+
+	// serverWait rather than indexerWait: unlike the push test, a short deadline
+	// carries no meaning here. There push is the only thing that can meet it, so
+	// the deadline is part of the assertion; here push is impossible and the
+	// startup reconcile is the only candidate, so a tighter bound would only add
+	// flap risk on a loaded runner.
+	waitUntil(
+		t, serverWait, "the reconciler to backfill the onchain spend",
+		func(ctx context.Context) error {
+			_, spent, err := alice.ListVtxos(ctx)
+			if err != nil {
+				return err
+			}
+			for _, vtxo := range spent {
+				if vtxo.Outpoint != target {
+					continue
+				}
+				// Asserted for parity with the push test: recording an onchain
+				// spend must not clear the flag that marks the vtxo unrolled,
+				// which is half of the onchain-spend discriminator.
+				if !vtxo.Unrolled {
+					return fmt.Errorf("vtxo %s is no longer marked unrolled", target)
+				}
+				if !vtxo.Spent {
+					return fmt.Errorf("vtxo %s is still reported unspent", target)
+				}
+				if vtxo.SpentBy != spendTxid {
+					return fmt.Errorf(
+						"vtxo %s reports spent_by %q, want the onchain spender %s",
+						target, vtxo.SpentBy, spendTxid,
+					)
+				}
+				if vtxo.ArkTxid != "" {
+					return fmt.Errorf(
+						"vtxo %s wrongly carries ark txid %s for an onchain spend",
+						target, vtxo.ArkTxid,
+					)
+				}
+				return nil
+			}
+			return fmt.Errorf("vtxo %s not found among %d spent vtxos", target, len(spent))
+		},
+	)
+}
+
 // TestEagerForfeitSurvivesWalletRotation checks that a forfeit signed at
 // collection time stays broadcastable across a hard signer-key rotation: after
 // rotating to a new key with no deprecated key retained, the server still

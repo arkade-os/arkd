@@ -28,8 +28,12 @@ type scanner struct {
 
 	lock                  sync.RWMutex
 	notificationListeners []chan map[string][]application.Utxo
-	initialBackoff        time.Duration
-	maxBackoff            time.Duration
+	spendListeners        []chan []application.Spend
+	// inFlight counts fan-out deliveries that have been started but not yet
+	// completed, so Close can wait for them before closing listener channels.
+	inFlight       sync.WaitGroup
+	initialBackoff time.Duration
+	maxBackoff     time.Duration
 }
 
 // New creates a new BlockchainScanner service
@@ -42,6 +46,7 @@ func New(nbxplorer ports.Nbxplorer, network string) (application.BlockchainScann
 		nbxplorer:             nbxplorer,
 		lock:                  sync.RWMutex{},
 		notificationListeners: make([]chan map[string][]application.Utxo, 0),
+		spendListeners:        make([]chan []application.Spend, 0),
 		chainParams:           application.NetworkToChainParams(network),
 		initialBackoff:        defaultInitialBackoff,
 		maxBackoff:            defaultMaxBackoff,
@@ -60,7 +65,14 @@ func (s *scanner) start(ctx context.Context) error {
 		return err
 	}
 
+	// The dispatcher itself is tracked, not just the deliveries it launches.
+	// Otherwise inFlight.Wait() in Close can return between two batches, and the
+	// dispatcher then adds a fresh delivery goroutine after Close believed all
+	// senders were done but before it took the write lock.
+	s.inFlight.Add(1)
 	go func() {
+		defer s.inFlight.Done()
+
 		backoff := s.initialBackoff
 
 		connected := true
@@ -69,7 +81,7 @@ func (s *scanner) start(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
 				return
-			case utxos, ok := <-notificationCh:
+			case notification, ok := <-notificationCh:
 				if !ok {
 					if connected {
 						log.Warn("nbxplorer disconnected")
@@ -102,7 +114,7 @@ func (s *scanner) start(ctx context.Context) error {
 				}
 
 				notificationsMap := make(map[string][]application.Utxo)
-				for _, utxo := range utxos {
+				for _, utxo := range notification.Utxos {
 					notificationsMap[utxo.Script] = append(notificationsMap[utxo.Script], application.Utxo{
 						Txid:   utxo.OutPoint.Hash.String(),
 						Index:  utxo.OutPoint.Index,
@@ -111,15 +123,39 @@ func (s *scanner) start(ctx context.Context) error {
 					})
 				}
 
+				spends := castSpends(notification.Spends)
+
+				// Each delivery is registered on inFlight before the goroutine
+				// starts, while the lock is held. Close waits on inFlight before
+				// closing the listener channels, because a select whose Done
+				// case and send case are both ready may still pick the send —
+				// and a send on a closed channel panics the whole process.
 				s.lock.RLock()
-				for _, listener := range s.notificationListeners {
-					go func(listener chan map[string][]application.Utxo) {
-						select {
-						case <-ctx.Done():
-							return
-						case listener <- notificationsMap:
-						}
-					}(listener)
+				if len(notificationsMap) > 0 {
+					for _, listener := range s.notificationListeners {
+						s.inFlight.Add(1)
+						go func(listener chan map[string][]application.Utxo) {
+							defer s.inFlight.Done()
+							select {
+							case <-ctx.Done():
+								return
+							case listener <- notificationsMap:
+							}
+						}(listener)
+					}
+				}
+				if len(spends) > 0 {
+					for _, listener := range s.spendListeners {
+						s.inFlight.Add(1)
+						go func(listener chan []application.Spend) {
+							defer s.inFlight.Done()
+							select {
+							case <-ctx.Done():
+								return
+							case listener <- spends:
+							}
+						}(listener)
+					}
 				}
 				s.lock.RUnlock()
 			}
@@ -175,6 +211,59 @@ func (s *scanner) GetNotificationChannel(ctx context.Context) <-chan map[string]
 	return ch
 }
 
+func (s *scanner) GetSpendNotificationChannel(ctx context.Context) <-chan []application.Spend {
+	ch := make(chan []application.Spend, 128)
+	s.lock.Lock()
+	s.spendListeners = append(s.spendListeners, ch)
+	s.lock.Unlock()
+
+	go func() {
+		// remove the listener if the context is canceled
+		<-ctx.Done()
+		s.lock.Lock()
+		defer s.lock.Unlock()
+		for i, listener := range s.spendListeners {
+			if listener == ch {
+				s.spendListeners = append(
+					s.spendListeners[:i], s.spendListeners[i+1:]...,
+				)
+				return
+			}
+		}
+	}()
+
+	return ch
+}
+
+func (s *scanner) GetSpends(
+	ctx context.Context, from *time.Time,
+) ([]application.Spend, error) {
+	spends, err := s.nbxplorer.GetSpends(ctx, from)
+	if err != nil {
+		return nil, err
+	}
+	return castSpends(spends), nil
+}
+
+func (s *scanner) GetUnspentOutpoints(
+	ctx context.Context,
+) (map[wire.OutPoint]struct{}, error) {
+	return s.nbxplorer.GetUnspentOutpoints(ctx)
+}
+
+func castSpends(spends []ports.Spend) []application.Spend {
+	out := make([]application.Spend, 0, len(spends))
+	for _, spend := range spends {
+		out = append(out, application.Spend{
+			Txid:          spend.OutPoint.Hash.String(),
+			Index:         spend.OutPoint.Index,
+			SpendingTxid:  spend.SpendingTxid,
+			Confirmations: spend.Confirmations,
+		})
+	}
+	return out
+}
+
 func (s *scanner) IsTransactionConfirmed(ctx context.Context, txid string) (isConfirmed bool, blockHeight int64, blockTime int64, err error) {
 	details, err := s.nbxplorer.GetTransaction(ctx, txid)
 	if err != nil {
@@ -197,11 +286,19 @@ func (s *scanner) GetOutpointStatus(ctx context.Context, outpoint wire.OutPoint)
 
 func (s *scanner) Close() {
 	s.cancel()
+	// Cancelling is not enough to make the fan-out goroutines stop before the
+	// channels close: their select can still choose a ready send over a ready
+	// Done. Wait for them, then close.
+	s.inFlight.Wait()
 	s.lock.Lock()
 	for _, listener := range s.notificationListeners {
 		close(listener)
 	}
 	s.notificationListeners = make([]chan map[string][]application.Utxo, 0)
+	for _, listener := range s.spendListeners {
+		close(listener)
+	}
+	s.spendListeners = make([]chan []application.Spend, 0)
 	s.lock.Unlock()
 }
 

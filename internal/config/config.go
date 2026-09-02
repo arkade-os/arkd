@@ -5,9 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/application"
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -35,6 +37,9 @@ import (
 
 const (
 	bitcoinBlockWeight = 4_000_000
+	// maxDurationSeconds is the largest whole number of seconds representable as
+	// a time.Duration, whose unit is nanoseconds in an int64.
+	maxDurationSeconds = int64(math.MaxInt64 / int64(time.Second))
 )
 
 var (
@@ -76,36 +81,37 @@ type Config struct {
 	TLSExtraIPs     []string
 	TLSExtraDomains []string
 
-	DbType                     string
-	EventDbType                string
-	DbDir                      string
-	DbUrl                      string
-	EventDbUrl                 string
-	EventDbDir                 string
-	PostgresAutoCreateDB       bool
-	PostgresMaxOpenConn        int
-	PostgresMaxIdleConn        int
-	PostgresConnMaxIdleMins    int64
-	PostgresConnMaxLifeMins    int64
-	SessionDuration            int64
-	BanDuration                int64
-	BanThreshold               int64 // number of crimes to trigger a ban
-	TxBuilderType              string
-	LiveStoreType              string
-	RedisUrl                   string
-	RedisTxNumOfRetries        int
-	WalletAddr                 string
-	SignerAddr                 string
-	VtxoTreeExpiry             arklib.RelativeLocktime
-	UnilateralExitDelay        arklib.RelativeLocktime
-	PublicUnilateralExitDelay  arklib.RelativeLocktime
-	CheckpointExitDelay        arklib.RelativeLocktime
-	BoardingExitDelay          arklib.RelativeLocktime
-	NoteUriPrefix              string
-	HeartbeatInterval          int64
-	BuildVersionHeaderRequired bool
-	BuildVersionHeader         string
-	DigestHeaderRequired       bool
+	DbType                        string
+	EventDbType                   string
+	DbDir                         string
+	DbUrl                         string
+	EventDbUrl                    string
+	EventDbDir                    string
+	PostgresAutoCreateDB          bool
+	PostgresMaxOpenConn           int
+	PostgresMaxIdleConn           int
+	PostgresConnMaxIdleMins       int64
+	PostgresConnMaxLifeMins       int64
+	SessionDuration               int64
+	BanDuration                   int64
+	BanThreshold                  int64 // number of crimes to trigger a ban
+	TxBuilderType                 string
+	LiveStoreType                 string
+	RedisUrl                      string
+	RedisTxNumOfRetries           int
+	WalletAddr                    string
+	SignerAddr                    string
+	VtxoTreeExpiry                arklib.RelativeLocktime
+	UnilateralExitDelay           arklib.RelativeLocktime
+	PublicUnilateralExitDelay     arklib.RelativeLocktime
+	CheckpointExitDelay           arklib.RelativeLocktime
+	BoardingExitDelay             arklib.RelativeLocktime
+	NoteUriPrefix                 string
+	HeartbeatInterval             int64
+	OnchainSpendReconcileInterval int64
+	BuildVersionHeaderRequired    bool
+	BuildVersionHeader            string
+	DigestHeaderRequired          bool
 
 	VtxoNoCsvValidationCutoffDate int64
 
@@ -182,55 +188,56 @@ func (c *Config) String() string {
 }
 
 var (
-	Datadir                   = "DATADIR"
-	WalletAddr                = "WALLET_ADDR"
-	SignerAddr                = "SIGNER_ADDR"
-	SessionDuration           = "SESSION_DURATION"
-	BanDuration               = "BAN_DURATION"
-	BanThreshold              = "BAN_THRESHOLD"
-	Port                      = "PORT"
-	AdminPort                 = "ADMIN_PORT"
-	EventDbType               = "EVENT_DB_TYPE"
-	DbType                    = "DB_TYPE"
-	DbUrl                     = "PG_DB_URL"
-	PostgresAutoCreateDB      = "PG_DB_AUTOCREATE"
-	PostgresMaxOpenConn       = "PG_DB_MAX_OPEN_CONN"
-	PostgresMaxIdleConn       = "PG_DB_MAX_IDLE_CONN"
-	PostgresConnMaxIdleMins   = "PG_DB_CONN_MAX_IDLE_MINS"
-	PostgresConnMaxLifeMins   = "PG_DB_CONN_MAX_LIFE_MINS"
-	EventDbUrl                = "PG_EVENT_DB_URL"
-	TxBuilderType             = "TX_BUILDER_TYPE"
-	LiveStoreType             = "LIVE_STORE_TYPE"
-	RedisUrl                  = "REDIS_URL"
-	RedisTxNumOfRetries       = "REDIS_NUM_OF_RETRIES"
-	LogLevel                  = "LOG_LEVEL"
-	VtxoTreeExpiry            = "VTXO_TREE_EXPIRY"
-	UnilateralExitDelay       = "UNILATERAL_EXIT_DELAY"
-	PublicUnilateralExitDelay = "PUBLIC_UNILATERAL_EXIT_DELAY"
-	CheckpointExitDelay       = "CHECKPOINT_EXIT_DELAY"
-	BoardingExitDelay         = "BOARDING_EXIT_DELAY"
-	EsploraURL                = "ESPLORA_URL"
-	AlertManagerURL           = "ALERT_MANAGER_URL"
-	ArkadeExplorerURL         = "ARKADE_EXPLORER_URL"
-	NoMacaroons               = "NO_MACAROONS"
-	NoTLS                     = "NO_TLS"
-	TLSExtraIP                = "TLS_EXTRA_IP"
-	TLSExtraDomain            = "TLS_EXTRA_DOMAIN"
-	UnlockerType              = "UNLOCKER_TYPE"
-	UnlockerFilePath          = "UNLOCKER_FILE_PATH"
-	UnlockerPassword          = "UNLOCKER_PASSWORD"
-	NoteUriPrefix             = "NOTE_URI_PREFIX"
-	OtelCollectorEndpoint     = "OTEL_COLLECTOR_ENDPOINT"
-	OtelPushInterval          = "OTEL_PUSH_INTERVAL"
-	PyroscopeServerURL        = "PYROSCOPE_SERVER_URL"
-	RoundMaxParticipantsCount = "ROUND_MAX_PARTICIPANTS_COUNT"
-	RoundMinParticipantsCount = "ROUND_MIN_PARTICIPANTS_COUNT"
-	UtxoMaxAmount             = "UTXO_MAX_AMOUNT"
-	VtxoMaxAmount             = "VTXO_MAX_AMOUNT"
-	UtxoMinAmount             = "UTXO_MIN_AMOUNT"
-	VtxoMinAmount             = "VTXO_MIN_AMOUNT"
-	HeartbeatInterval         = "HEARTBEAT_INTERVAL"
-	SettlementMinExpiryGap    = "SETTLEMENT_MIN_EXPIRY_GAP"
+	Datadir                       = "DATADIR"
+	WalletAddr                    = "WALLET_ADDR"
+	SignerAddr                    = "SIGNER_ADDR"
+	SessionDuration               = "SESSION_DURATION"
+	BanDuration                   = "BAN_DURATION"
+	BanThreshold                  = "BAN_THRESHOLD"
+	Port                          = "PORT"
+	AdminPort                     = "ADMIN_PORT"
+	EventDbType                   = "EVENT_DB_TYPE"
+	DbType                        = "DB_TYPE"
+	DbUrl                         = "PG_DB_URL"
+	PostgresAutoCreateDB          = "PG_DB_AUTOCREATE"
+	PostgresMaxOpenConn           = "PG_DB_MAX_OPEN_CONN"
+	PostgresMaxIdleConn           = "PG_DB_MAX_IDLE_CONN"
+	PostgresConnMaxIdleMins       = "PG_DB_CONN_MAX_IDLE_MINS"
+	PostgresConnMaxLifeMins       = "PG_DB_CONN_MAX_LIFE_MINS"
+	EventDbUrl                    = "PG_EVENT_DB_URL"
+	TxBuilderType                 = "TX_BUILDER_TYPE"
+	LiveStoreType                 = "LIVE_STORE_TYPE"
+	RedisUrl                      = "REDIS_URL"
+	RedisTxNumOfRetries           = "REDIS_NUM_OF_RETRIES"
+	LogLevel                      = "LOG_LEVEL"
+	VtxoTreeExpiry                = "VTXO_TREE_EXPIRY"
+	UnilateralExitDelay           = "UNILATERAL_EXIT_DELAY"
+	PublicUnilateralExitDelay     = "PUBLIC_UNILATERAL_EXIT_DELAY"
+	CheckpointExitDelay           = "CHECKPOINT_EXIT_DELAY"
+	BoardingExitDelay             = "BOARDING_EXIT_DELAY"
+	EsploraURL                    = "ESPLORA_URL"
+	AlertManagerURL               = "ALERT_MANAGER_URL"
+	ArkadeExplorerURL             = "ARKADE_EXPLORER_URL"
+	NoMacaroons                   = "NO_MACAROONS"
+	NoTLS                         = "NO_TLS"
+	TLSExtraIP                    = "TLS_EXTRA_IP"
+	TLSExtraDomain                = "TLS_EXTRA_DOMAIN"
+	UnlockerType                  = "UNLOCKER_TYPE"
+	UnlockerFilePath              = "UNLOCKER_FILE_PATH"
+	UnlockerPassword              = "UNLOCKER_PASSWORD"
+	NoteUriPrefix                 = "NOTE_URI_PREFIX"
+	OtelCollectorEndpoint         = "OTEL_COLLECTOR_ENDPOINT"
+	OtelPushInterval              = "OTEL_PUSH_INTERVAL"
+	PyroscopeServerURL            = "PYROSCOPE_SERVER_URL"
+	RoundMaxParticipantsCount     = "ROUND_MAX_PARTICIPANTS_COUNT"
+	RoundMinParticipantsCount     = "ROUND_MIN_PARTICIPANTS_COUNT"
+	UtxoMaxAmount                 = "UTXO_MAX_AMOUNT"
+	VtxoMaxAmount                 = "VTXO_MAX_AMOUNT"
+	UtxoMinAmount                 = "UTXO_MIN_AMOUNT"
+	VtxoMinAmount                 = "VTXO_MIN_AMOUNT"
+	HeartbeatInterval             = "HEARTBEAT_INTERVAL"
+	OnchainSpendReconcileInterval = "ONCHAIN_SPEND_RECONCILE_INTERVAL"
+	SettlementMinExpiryGap        = "SETTLEMENT_MIN_EXPIRY_GAP"
 	// Minimum remaining CSV time (in seconds) for an unrolled VTXO to be accepted into a batch.
 	// 0 means fallback to session duration.
 	UnrolledVtxoMinExpiryMargin = "UNROLLED_VTXO_MIN_EXPIRY_MARGIN"
@@ -288,10 +295,14 @@ var (
 	defaultVtxoMinAmount       = -1 // -1 means native dust limit (default)
 	defaultVtxoMaxAmount       = -1 // -1 means no limit (default)
 
-	defaultRoundMaxParticipantsCount     = 128
-	defaultRoundMinParticipantsCount     = 1
-	defaultOtelPushInterval              = 10  // seconds
-	defaultHeartbeatInterval             = 60  // seconds
+	defaultRoundMaxParticipantsCount = 128
+	defaultRoundMinParticipantsCount = 1
+	defaultOtelPushInterval          = 10 // seconds
+	defaultHeartbeatInterval         = 60 // seconds
+	// How often unrolled vtxos are re-checked against the chain. Spends are
+	// normally picked up by push notification; this loop backfills, recovers what
+	// was missed while arkd was down, and retracts spends that never confirmed.
+	defaultOnchainSpendReconcileInterval = 300 // seconds
 	defaultSettlementMinExpiryGap        = 0   // disabled by default
 	defaultUnrolledVtxoMinExpiryMargin   = 300 // 5 minutes in seconds
 	defaultMaxTxWeight                   = int64(0.01 * bitcoinBlockWeight)
@@ -346,6 +357,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(RedisTxNumOfRetries, defaultRedisTxNumOfRetries)
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
+	viper.SetDefault(OnchainSpendReconcileInterval, defaultOnchainSpendReconcileInterval)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
 	viper.SetDefault(UnrolledVtxoMinExpiryMargin, defaultUnrolledVtxoMinExpiryMargin)
 	viper.SetDefault(MaxTxWeight, defaultMaxTxWeight)
@@ -389,6 +401,19 @@ func LoadConfig() (*Config, error) {
 		if redisUrl == "" {
 			return nil, fmt.Errorf("live store type set to 'redis' but redis url is missing")
 		}
+	}
+
+	// time.NewTicker panics on a non-positive duration, which would take the
+	// process down from inside the reconcile goroutine, and seconds beyond
+	// maxDurationSeconds overflow the int64 nanosecond conversion into a
+	// negative duration that panics the same way.
+	onchainSpendReconcileInterval := viper.GetInt64(OnchainSpendReconcileInterval)
+	if onchainSpendReconcileInterval <= 0 ||
+		onchainSpendReconcileInterval > maxDurationSeconds {
+		return nil, fmt.Errorf(
+			"%s must be between 1 and %d seconds, got %d",
+			OnchainSpendReconcileInterval, maxDurationSeconds, onchainSpendReconcileInterval,
+		)
 	}
 
 	signerAddr := viper.GetString(SignerAddr)
@@ -447,50 +472,51 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return &Config{
-		Datadir:                   viper.GetString(Datadir),
-		WalletAddr:                viper.GetString(WalletAddr),
-		SignerAddr:                signerAddr,
-		SessionDuration:           viper.GetInt64(SessionDuration),
-		BanDuration:               viper.GetInt64(BanDuration),
-		BanThreshold:              viper.GetInt64(BanThreshold),
-		Port:                      viper.GetUint32(Port),
-		AdminPort:                 adminPort,
-		EventDbType:               viper.GetString(EventDbType),
-		DbType:                    viper.GetString(DbType),
-		TxBuilderType:             viper.GetString(TxBuilderType),
-		LiveStoreType:             viper.GetString(LiveStoreType),
-		RedisUrl:                  redisUrl,
-		RedisTxNumOfRetries:       viper.GetInt(RedisTxNumOfRetries),
-		NoTLS:                     viper.GetBool(NoTLS),
-		DbDir:                     dbPath,
-		DbUrl:                     dbUrl,
-		EventDbDir:                dbPath,
-		EventDbUrl:                eventDbUrl,
-		PostgresAutoCreateDB:      viper.GetBool(PostgresAutoCreateDB),
-		PostgresMaxOpenConn:       viper.GetInt(PostgresMaxOpenConn),
-		PostgresMaxIdleConn:       viper.GetInt(PostgresMaxIdleConn),
-		PostgresConnMaxIdleMins:   viper.GetInt64(PostgresConnMaxIdleMins),
-		PostgresConnMaxLifeMins:   viper.GetInt64(PostgresConnMaxLifeMins),
-		LogLevel:                  viper.GetInt(LogLevel),
-		VtxoTreeExpiry:            vtxoTreeExpiry,
-		UnilateralExitDelay:       unilateralExitDelay,
-		PublicUnilateralExitDelay: publicUnilateralExitDelay,
-		CheckpointExitDelay:       checkpointExitDelay,
-		BoardingExitDelay:         boardingExitDelay,
-		EsploraURL:                viper.GetString(EsploraURL),
-		AlertManagerURL:           viper.GetString(AlertManagerURL),
-		ArkadeExplorerURL:         viper.GetString(ArkadeExplorerURL),
-		NoMacaroons:               viper.GetBool(NoMacaroons),
-		TLSExtraIPs:               viper.GetStringSlice(TLSExtraIP),
-		TLSExtraDomains:           viper.GetStringSlice(TLSExtraDomain),
-		UnlockerType:              viper.GetString(UnlockerType),
-		UnlockerFilePath:          viper.GetString(UnlockerFilePath),
-		UnlockerPassword:          viper.GetString(UnlockerPassword),
-		NoteUriPrefix:             viper.GetString(NoteUriPrefix),
-		OtelCollectorEndpoint:     viper.GetString(OtelCollectorEndpoint),
-		OtelPushInterval:          viper.GetInt64(OtelPushInterval),
-		PyroscopeServerURL:        viper.GetString(PyroscopeServerURL),
-		HeartbeatInterval:         viper.GetInt64(HeartbeatInterval),
+		Datadir:                       viper.GetString(Datadir),
+		WalletAddr:                    viper.GetString(WalletAddr),
+		SignerAddr:                    signerAddr,
+		SessionDuration:               viper.GetInt64(SessionDuration),
+		BanDuration:                   viper.GetInt64(BanDuration),
+		BanThreshold:                  viper.GetInt64(BanThreshold),
+		Port:                          viper.GetUint32(Port),
+		AdminPort:                     adminPort,
+		EventDbType:                   viper.GetString(EventDbType),
+		DbType:                        viper.GetString(DbType),
+		TxBuilderType:                 viper.GetString(TxBuilderType),
+		LiveStoreType:                 viper.GetString(LiveStoreType),
+		RedisUrl:                      redisUrl,
+		RedisTxNumOfRetries:           viper.GetInt(RedisTxNumOfRetries),
+		NoTLS:                         viper.GetBool(NoTLS),
+		DbDir:                         dbPath,
+		DbUrl:                         dbUrl,
+		EventDbDir:                    dbPath,
+		EventDbUrl:                    eventDbUrl,
+		PostgresAutoCreateDB:          viper.GetBool(PostgresAutoCreateDB),
+		PostgresMaxOpenConn:           viper.GetInt(PostgresMaxOpenConn),
+		PostgresMaxIdleConn:           viper.GetInt(PostgresMaxIdleConn),
+		PostgresConnMaxIdleMins:       viper.GetInt64(PostgresConnMaxIdleMins),
+		PostgresConnMaxLifeMins:       viper.GetInt64(PostgresConnMaxLifeMins),
+		LogLevel:                      viper.GetInt(LogLevel),
+		VtxoTreeExpiry:                vtxoTreeExpiry,
+		UnilateralExitDelay:           unilateralExitDelay,
+		PublicUnilateralExitDelay:     publicUnilateralExitDelay,
+		CheckpointExitDelay:           checkpointExitDelay,
+		BoardingExitDelay:             boardingExitDelay,
+		EsploraURL:                    viper.GetString(EsploraURL),
+		AlertManagerURL:               viper.GetString(AlertManagerURL),
+		ArkadeExplorerURL:             viper.GetString(ArkadeExplorerURL),
+		NoMacaroons:                   viper.GetBool(NoMacaroons),
+		TLSExtraIPs:                   viper.GetStringSlice(TLSExtraIP),
+		TLSExtraDomains:               viper.GetStringSlice(TLSExtraDomain),
+		UnlockerType:                  viper.GetString(UnlockerType),
+		UnlockerFilePath:              viper.GetString(UnlockerFilePath),
+		UnlockerPassword:              viper.GetString(UnlockerPassword),
+		NoteUriPrefix:                 viper.GetString(NoteUriPrefix),
+		OtelCollectorEndpoint:         viper.GetString(OtelCollectorEndpoint),
+		OtelPushInterval:              viper.GetInt64(OtelPushInterval),
+		PyroscopeServerURL:            viper.GetString(PyroscopeServerURL),
+		HeartbeatInterval:             viper.GetInt64(HeartbeatInterval),
+		OnchainSpendReconcileInterval: onchainSpendReconcileInterval,
 
 		RoundMaxParticipantsCount:     viper.GetUint64(RoundMaxParticipantsCount),
 		RoundMinParticipantsCount:     viper.GetUint64(RoundMinParticipantsCount),
@@ -910,6 +936,7 @@ func (c *Config) appService() error {
 	svc, err := application.NewService(
 		c.wallet, c.signer, c.repo, c.txBuilder, c.scanner,
 		c.scheduler, c.liveStore, c.alerts, c.fee,
+		time.Duration(c.OnchainSpendReconcileInterval)*time.Second,
 	)
 	if err != nil {
 		return err

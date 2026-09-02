@@ -54,6 +54,10 @@ type service struct {
 	alerts        ports.Alerts
 	feeManager    ports.FeeManager
 
+	// how often the onchain spend reconciler re-derives the chain state of
+	// unrolled vtxos
+	onchainSpendReconcileInterval time.Duration
+
 	operatorPrvkey *btcec.PrivateKey
 	operatorPubkey *btcec.PublicKey
 
@@ -82,6 +86,7 @@ func NewService(
 	cache ports.LiveStore,
 	alerts ports.Alerts,
 	feeManager ports.FeeManager,
+	onchainSpendReconcileInterval time.Duration,
 ) (Service, error) {
 	ctx := context.Background()
 
@@ -161,6 +166,8 @@ func NewService(
 		offchainTxMu:             &sync.Mutex{},
 		alerts:                   alerts,
 		feeManager:               feeManager,
+
+		onchainSpendReconcileInterval: onchainSpendReconcileInterval,
 	}
 	svc.sweeper.onSweepCheckpoint = svc.propagateTransactionEvent
 	return svc, nil
@@ -216,6 +223,8 @@ func (s *service) Start() error {
 	}
 
 	go s.listenToScannerNotifications()
+	go s.watchOnchainSpends()
+	go s.reconcileOnchainSpends(s.onchainSpendReconcileInterval)
 
 	log.Debug("starting sweeper service...")
 	s.sweeperCancel = s.stop
@@ -3768,7 +3777,14 @@ func (s *service) listenToScannerNotifications() {
 							}()
 						}
 
-						if vtxo.Spent {
+						// Fraud here means the vtxo was spent inside the Ark and
+						// then redeemed onchain, which reactToFraud answers by
+						// broadcasting the checkpoint or forfeit tx recorded
+						// against SpentBy. A vtxo spent onchain has no such tx:
+						// its SpentBy is the spending txid, so reacting would
+						// only log a failure against a checkpoint that never
+						// existed.
+						if vtxo.Spent && !vtxo.IsOnchainSpent() {
 							log.Infof("fraud detected on vtxo %s", vtxo.Outpoint.String())
 							go func() {
 								if err := s.reactToFraud(ctx, vtxo, locks); err != nil {
@@ -4096,27 +4112,58 @@ func (s *service) restoreWatchingVtxos() error {
 		return err
 	}
 
-	if len(commitmentTxIds) == 0 {
-		return nil
-	}
-
-	tapKeys, err := s.repoManager.Vtxos().
-		GetVtxoPubKeysByCommitmentTxids(ctx, commitmentTxIds, 0)
-	if err != nil {
-		return err
+	var tapKeys []string
+	if len(commitmentTxIds) > 0 {
+		tapKeys, err = s.repoManager.Vtxos().
+			GetVtxoPubKeysByCommitmentTxids(ctx, commitmentTxIds, 0)
+		if err != nil {
+			return err
+		}
 	}
 
 	scripts := make([]string, 0, len(tapKeys))
-	for _, key := range tapKeys {
+	seen := make(map[string]struct{}, len(tapKeys))
+	addKey := func(key string) {
 		// Skip values that are not a 32-byte x-only pubkey encoded as 64
 		// hex chars. arkd writes valid keys, but defending against a
 		// corrupted DB row here means a single bad pubkey cannot poison
 		// the entire WatchScripts gRPC payload at startup recovery.
 		decoded, err := hex.DecodeString(key)
 		if err != nil || len(decoded) != 32 {
+			return
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		scripts = append(scripts, fmt.Sprintf("5120%s", key))
+	}
+
+	for _, key := range tapKeys {
+		addKey(key)
+	}
+
+	// Unrolled vtxos are watched independently of any round. Their batch may
+	// no longer be sweepable, so the loop above would not restore them, and an
+	// unwatched script is invisible to onchain spend tracking twice over: no
+	// push notification arrives, and NBXplorer only records the matched inputs
+	// the reconciler reads for sources it was tracking when it indexed the
+	// spending transaction. Both directions are restored: still-unspent vtxos
+	// so a spend is seen, and already onchain-spent ones so a spend that is
+	// later reorged out can be retracted.
+	// Soft-fail: a DB error here must not block startup.
+	for _, load := range []func(context.Context) ([]domain.Vtxo, error){
+		s.repoManager.Vtxos().GetUnrolledUnspentVtxos,
+		s.repoManager.Vtxos().GetOnchainSpentVtxos,
+	} {
+		vtxos, err := load(ctx)
+		if err != nil {
+			log.WithError(err).Warn("failed to fetch unrolled vtxos for restore")
 			continue
 		}
-		scripts = append(scripts, fmt.Sprintf("5120%s", key))
+		for _, vtxo := range vtxos {
+			addKey(vtxo.PubKey)
+		}
 	}
 
 	if len(tapKeys) > 0 {
@@ -4140,7 +4187,7 @@ func (s *service) restoreWatchingVtxos() error {
 	}
 
 	log.Debugf(
-		"restored watching %d scripts (vtxo + checkpoint) from %d sweepable rounds",
+		"restored watching %d scripts (vtxo + checkpoint + unrolled) from %d sweepable rounds",
 		len(scripts), len(commitmentTxIds),
 	)
 	return nil
@@ -4266,6 +4313,12 @@ func (s *service) processBoardingInputs(
 	unilateralExitDelay := settings.UnilateralExitDelay
 
 	scripts := make([]string, 0)
+	// Scripts to unwatch once this intent has been processed. An unrolled vtxo's
+	// script is deliberately excluded: it is watched for the whole lifetime of
+	// the vtxo so onchain spends of it keep being reported, and unwatching it
+	// here would blind that tracking from the moment its owner tried to register
+	// it in an intent.
+	transientScripts := make([]string, 0)
 	outpoints := make([]wire.OutPoint, 0)
 
 	// extract the scripts and outpoints from the boarding utxos
@@ -4282,6 +4335,9 @@ func (s *service) processBoardingInputs(
 			})
 		}
 		scripts = append(scripts, hex.EncodeToString(script))
+		if !input.isUnrolledVtxo {
+			transientScripts = append(transientScripts, hex.EncodeToString(script))
+		}
 
 		txHash, err := chainhash.NewHashFromStr(input.Txid)
 		if err != nil {
@@ -4301,7 +4357,10 @@ func (s *service) processBoardingInputs(
 	}
 
 	defer func() {
-		if err := s.scanner.UnwatchScripts(ctx, scripts); err != nil {
+		if len(transientScripts) == 0 {
+			return
+		}
+		if err := s.scanner.UnwatchScripts(ctx, transientScripts); err != nil {
 			log.WithError(err).Warnf(
 				"failed to unwatch boarding scripts for intent %s", intentTxid,
 			)

@@ -106,6 +106,90 @@ func (r *VtxoRepository) UnrollVtxos(
 	return nil
 }
 
+func (r *VtxoRepository) MarkVtxosOnchainSpent(
+	ctx context.Context, spentBy map[domain.Outpoint]string,
+) error {
+	outpoints := make([]domain.Outpoint, 0, len(spentBy))
+	for outpoint := range spentBy {
+		outpoints = append(outpoints, outpoint)
+	}
+
+	return r.inChunkedTx(outpoints, func(tx *badger.Txn, outpoint domain.Outpoint) error {
+		return r.markOnchainSpentVtxo(tx, outpoint, spentBy[outpoint])
+	})
+}
+
+func (r *VtxoRepository) UnmarkVtxosOnchainSpent(
+	ctx context.Context, outpoints []domain.Outpoint,
+) error {
+	return r.inChunkedTx(outpoints, func(tx *badger.Txn, outpoint domain.Outpoint) error {
+		return r.unmarkOnchainSpentVtxo(tx, outpoint)
+	})
+}
+
+// onchainSpendTxChunkSize bounds how many vtxos share one badger transaction.
+// badger rejects a transaction whose buffered writes exceed its internal limit
+// with ErrTxnTooBig, and Discard then drops every buffered update, so an
+// unbounded batch would lose the whole set rather than part of it. The
+// reconciler's first pass after a restart is unwindowed by design and can carry
+// a large backlog, which is exactly the case that would hit the limit.
+const onchainSpendTxChunkSize = 200
+
+// inChunkedTx applies fn to each outpoint, batching them into transactions of a
+// bounded size. Each chunk keeps its reads, guards and writes together so the
+// atomicity the guards depend on is preserved within a chunk; chunks commit
+// independently, and a failure leaves earlier chunks applied, which the
+// reconciler corrects on its next pass.
+func (r *VtxoRepository) inChunkedTx(
+	outpoints []domain.Outpoint, fn func(tx *badger.Txn, outpoint domain.Outpoint) error,
+) error {
+	for start := 0; start < len(outpoints); start += onchainSpendTxChunkSize {
+		end := min(start+onchainSpendTxChunkSize, len(outpoints))
+
+		chunk := outpoints[start:end]
+		if err := r.inRetryableTx(func(tx *badger.Txn) error {
+			for _, outpoint := range chunk {
+				if err := fn(tx, outpoint); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// inRetryableTx runs fn inside a single badger transaction and retries the WHOLE
+// function on conflict. Retrying only the final write would re-apply a decision
+// taken from a snapshot that has since changed, which is the thing these guards
+// exist to prevent. badger tracks reads made in an update transaction, so a
+// concurrent write to a key read here surfaces as ErrConflict at commit.
+func (r *VtxoRepository) inRetryableTx(fn func(tx *badger.Txn) error) error {
+	var err error
+	for range maxRetries {
+		err = func() error {
+			tx := r.store.Badger().NewTransaction(true)
+			defer tx.Discard()
+
+			if err := fn(tx); err != nil {
+				return err
+			}
+			return tx.Commit()
+		}()
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, badger.ErrConflict) {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		return err
+	}
+	return err
+}
+
 func (r *VtxoRepository) GetVtxos(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) ([]domain.Vtxo, error) {
@@ -157,6 +241,12 @@ func (r *VtxoRepository) GetAllNonUnrolledVtxos(
 	return unspentVtxos, spentVtxos, nil
 }
 
+// GetAllSweepableUnrolledVtxos returns vtxos spent inside the Ark and then
+// unrolled, whose SpentBy the sweeper resolves as a checkpoint txid. ArkTxid is
+// always set by SpendVtxos on an accepted offchain tx, so requiring it excludes
+// vtxos spent onchain, whose SpentBy is a spending txid with no checkpoint tx
+// behind it. The ArkTxid predicate is a no-op for every vtxo written before
+// onchain-spend tracking existed.
 func (r *VtxoRepository) GetAllSweepableUnrolledVtxos(
 	ctx context.Context,
 ) ([]domain.Vtxo, error) {
@@ -167,7 +257,35 @@ func (r *VtxoRepository) GetAllSweepableUnrolledVtxos(
 		And("SettledBy").
 		Eq("").
 		And("Spent").
-		Eq(true)
+		Eq(true).
+		And("ArkTxid").
+		Ne("")
+	return r.findVtxos(ctx, query)
+}
+
+func (r *VtxoRepository) GetUnrolledUnspentVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	query := badgerhold.Where("Unrolled").
+		Eq(true).
+		And("Spent").
+		Eq(false).
+		And("Swept").
+		Eq(false)
+	return r.findVtxos(ctx, query)
+}
+
+func (r *VtxoRepository) GetOnchainSpentVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	query := badgerhold.Where("Unrolled").
+		Eq(true).
+		And("Spent").
+		Eq(true).
+		And("SettledBy").
+		Eq("").
+		And("ArkTxid").
+		Eq("")
 	return r.findVtxos(ctx, query)
 }
 
@@ -634,7 +752,11 @@ func (r *VtxoRepository) settleVtxo(
 	if vtxo == nil {
 		return nil
 	}
-	if vtxo.Spent {
+	// An onchain-spend mark does not block the settlement. A rejoined unrolled
+	// vtxo is spent onchain by the commitment tx itself, and that spend can be
+	// noticed before the round is projected. The settlement is the authoritative
+	// record and overrides it, as the SQL backends do without a spent guard.
+	if vtxo.Spent && !vtxo.IsOnchainSpent() {
 		return nil
 	}
 
@@ -686,6 +808,71 @@ func (r *VtxoRepository) unrollVtxo(
 		return nil, err
 	}
 	return vtxo, nil
+}
+
+// markOnchainSpentVtxo records an unrolled vtxo as spent onchain, or re-points an
+// already onchain-spent one at a new spender when RBF replaces it. ArkTxid is
+// deliberately left empty: its absence is what identifies the spend as onchain.
+// A vtxo already spent inside the Ark is left alone, so this can never erase the
+// ArkTxid the sweeper and the fraud reaction depend on. The read and the write
+// share the caller's transaction, so that guard is evaluated against the state
+// actually being committed rather than a snapshot taken earlier.
+func (r *VtxoRepository) markOnchainSpentVtxo(
+	tx *badger.Txn, outpoint domain.Outpoint, spendingTxid string,
+) error {
+	vtxo, err := r.getVtxoTx(tx, outpoint)
+	if err != nil || vtxo == nil || !vtxo.Unrolled {
+		return err
+	}
+	if vtxo.Spent && !vtxo.IsOnchainSpent() {
+		return nil
+	}
+	if vtxo.Spent && vtxo.SpentBy == spendingTxid {
+		return nil
+	}
+
+	vtxo.Spent = true
+	vtxo.SpentBy = spendingTxid
+
+	return r.updateVtxoTx(tx, vtxo)
+}
+
+// unmarkOnchainSpentVtxo retracts an onchain spend whose transaction was evicted
+// or reorged out. Scoped to onchain-spent vtxos so an offchain spend or a
+// settlement can never be undone here, and transactional for the same reason as
+// markOnchainSpentVtxo.
+func (r *VtxoRepository) unmarkOnchainSpentVtxo(
+	tx *badger.Txn, outpoint domain.Outpoint,
+) error {
+	vtxo, err := r.getVtxoTx(tx, outpoint)
+	if err != nil || vtxo == nil || !vtxo.IsOnchainSpent() {
+		return err
+	}
+
+	vtxo.Spent = false
+	vtxo.SpentBy = ""
+
+	return r.updateVtxoTx(tx, vtxo)
+}
+
+func (r *VtxoRepository) getVtxoTx(
+	tx *badger.Txn, outpoint domain.Outpoint,
+) (*domain.Vtxo, error) {
+	var dto vtxoDTO
+	if err := r.store.TxGet(tx, outpoint.String(), &dto); err != nil {
+		if errors.Is(err, badgerhold.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &dto.Vtxo, nil
+}
+
+func (r *VtxoRepository) updateVtxoTx(tx *badger.Txn, vtxo *domain.Vtxo) error {
+	return r.store.TxUpdate(tx, vtxo.Outpoint.String(), vtxoDTO{
+		Vtxo:      *vtxo,
+		UpdatedAt: time.Now().UnixMilli(),
+	})
 }
 
 func (r *VtxoRepository) findVtxos(
