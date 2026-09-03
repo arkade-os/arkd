@@ -15,8 +15,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// rebuildTimeout bounds the startup rebuild of the inputs hash.
-const rebuildTimeout = 30 * time.Second
+// rebuildTimeout bounds the startup rebuild of the inputs hash. Generous on
+// purpose: a rebuild that does not complete fails the start, and the first
+// start after an upgrade may carry a backlog over a slow link.
+const rebuildTimeout = 2 * time.Minute
 
 const (
 	offChainTxsHashKey = "offChainTxStore:txs"
@@ -132,7 +134,11 @@ type offChainTxStore struct {
 	retryDelay   time.Duration
 }
 
-func NewOffChainTxStore(rdb *redis.Client, numOfRetries int) ports.OffChainTxStore {
+// NewOffChainTxStore fails, rather than returning a store, when the rebuild of
+// the inputs hash does not complete. A store that served after a partial
+// rebuild would answer ClaimFresh for the inputs of every in-flight tx it did
+// not reach, and so let a conflicting spend through.
+func NewOffChainTxStore(rdb *redis.Client, numOfRetries int) (ports.OffChainTxStore, error) {
 	s := &offChainTxStore{
 		rdb:          rdb,
 		numOfRetries: numOfRetries,
@@ -141,12 +147,9 @@ func NewOffChainTxStore(rdb *redis.Client, numOfRetries int) ports.OffChainTxSto
 	ctx, cancel := context.WithTimeout(context.Background(), rebuildTimeout)
 	defer cancel()
 	if err := s.rebuildInputs(ctx); err != nil {
-		log.WithError(err).Warn(
-			"failed to rebuild offchain tx inputs from stored txs, " +
-				"in-flight txs accepted before this start are unprotected until projected",
-		)
+		return nil, fmt.Errorf("failed to rebuild offchain tx inputs from stored txs: %v", err)
 	}
-	return s
+	return s, nil
 }
 
 // rebuildInputs re-registers, under its arkTxid, every spent input of every
@@ -167,7 +170,15 @@ func (s *offChainTxStore) rebuildInputs(ctx context.Context) error {
 			log.WithError(err).Warnf("skipping malformed stored offchain tx %s", arkTxid)
 			continue
 		}
-		inputs, _ := checkpointInputs(offchainTx)
+		// A tx whose input set cannot be fully parsed is skipped as a whole:
+		// registering a subset would leave claims that Remove, which fails on
+		// the same parse error, could never clear.
+		inputs, err := checkpointInputs(offchainTx)
+		if err != nil {
+			log.WithError(err).
+				Warnf("skipping stored offchain tx %s with a malformed checkpoint tx", arkTxid)
+			continue
+		}
 		added, err := s.reregisterInputs(ctx, arkTxid, inputs)
 		if err != nil {
 			return err
@@ -213,8 +224,12 @@ func (s *offChainTxStore) reregisterInputs(
 func (s *offChainTxStore) Add(
 	ctx context.Context, offchainTx domain.OffchainTx,
 ) (ports.ClaimStatus, *domain.Outpoint, error) {
-	// A checkpoint tx that fails to parse is skipped, they are validated upstream.
-	inputs, _ := checkpointInputs(offchainTx)
+	inputs, err := checkpointInputs(offchainTx)
+	if err != nil {
+		return ports.ClaimFresh, nil, fmt.Errorf(
+			"malformed checkpoint tx in offchain tx %s: %v", offchainTx.ArkTxid, err,
+		)
+	}
 	val, err := json.Marshal(offchainTx)
 	if err != nil {
 		return ports.ClaimFresh, nil, fmt.Errorf(
@@ -379,17 +394,15 @@ func parseClaimResult(res interface{}) (ports.ClaimStatus, *domain.Outpoint, err
 }
 
 // checkpointInputs returns every spent-input outpoint of every checkpoint tx of
-// the offchain tx, the set the conflict domain registers. Checkpoint txs that
-// fail to parse are skipped and the last parse error is returned, so callers
-// choose whether that is fatal.
+// the offchain tx, the set the conflict domain registers. It is all or nothing:
+// a checkpoint tx that fails to parse fails the call, so no caller ever
+// registers or releases a subset of a tx's inputs.
 func checkpointInputs(offchainTx domain.OffchainTx) ([]string, error) {
 	inputs := make([]string, 0)
-	var parseErr error
 	for _, tx := range offchainTx.CheckpointTxs {
 		ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 		if err != nil {
-			parseErr = err
-			continue
+			return nil, err
 		}
 		for _, in := range ptx.UnsignedTx.TxIn {
 			// Built through domain.Outpoint so the field name matches what
@@ -400,5 +413,5 @@ func checkpointInputs(offchainTx domain.OffchainTx) ([]string, error) {
 			}.String())
 		}
 	}
-	return inputs, parseErr
+	return inputs, nil
 }

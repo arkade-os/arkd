@@ -25,7 +25,7 @@ func TestOffChainTxStore(t *testing.T) {
 		tx, spent := rebuildFixtureTx(t, "arktx-aa", 1)
 		storeBody(t, rdb, tx)
 
-		store := NewOffChainTxStore(rdb, 3)
+		store := newStore(t, rdb, 3)
 
 		exists, err := store.Includes(ctx, spent)
 		require.NoError(t, err)
@@ -54,7 +54,7 @@ func TestOffChainTxStore(t *testing.T) {
 			rdb.HSet(ctx, offChainInputsHashKey, spent.String(), "someone-else").Err(),
 		)
 
-		NewOffChainTxStore(rdb, 3)
+		newStore(t, rdb, 3)
 
 		owner, err := rdb.HGet(ctx, offChainInputsHashKey, spent.String()).Result()
 		require.NoError(t, err)
@@ -67,7 +67,7 @@ func TestOffChainTxStore(t *testing.T) {
 		tx, spent := rebuildFixtureTx(t, "arktx-cc", 3)
 		storeBody(t, rdb, tx)
 
-		store := NewOffChainTxStore(rdb, 3)
+		store := newStore(t, rdb, 3)
 
 		exists, err := store.Includes(ctx, spent)
 		require.NoError(t, err)
@@ -77,7 +77,7 @@ func TestOffChainTxStore(t *testing.T) {
 	t.Run("is a no-op with nothing stored", func(t *testing.T) {
 		require.NoError(t, rdb.FlushDB(ctx).Err())
 
-		NewOffChainTxStore(rdb, 3)
+		newStore(t, rdb, 3)
 
 		n, err := rdb.HLen(ctx, offChainInputsHashKey).Result()
 		require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestOffChainTxStore(t *testing.T) {
 		require.NoError(t, rdb.FlushDB(ctx).Err())
 		tx, spent := rebuildFixtureTx(t, "arktx-dd", 4)
 		storeBody(t, rdb, tx)
-		store := NewOffChainTxStore(rdb, 3).(*offChainTxStore)
+		store := newStore(t, rdb, 3)
 		inputs, err := checkpointInputs(tx)
 		require.NoError(t, err)
 
@@ -105,9 +105,37 @@ func TestOffChainTxStore(t *testing.T) {
 		require.False(t, exists, "an input must not be registered for a body that is gone")
 	})
 
+	t.Run("skips a stored tx with a malformed checkpoint tx as a whole", func(t *testing.T) {
+		require.NoError(t, rdb.FlushDB(ctx).Err())
+		tx, spent := rebuildFixtureTx(t, "arktx-ff", 6)
+		// One parseable checkpoint tx and one that is not. Registering only the
+		// parseable half would leave claims that Remove, failing on the same
+		// parse error, could never clear.
+		tx.CheckpointTxs["bad"] = "not a psbt"
+		storeBody(t, rdb, tx)
+
+		store := newStore(t, rdb, 3)
+
+		exists, err := store.Includes(ctx, spent)
+		require.NoError(t, err)
+		require.False(t, exists, "no input of a partially parseable tx may be registered")
+	})
+
+	t.Run("fails to construct when the rebuild cannot run", func(t *testing.T) {
+		// A store that served after a failed rebuild would answer ClaimFresh
+		// for every in-flight input it did not reach.
+		unreachable := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+		t.Cleanup(func() { _ = unreachable.Close() })
+
+		store, err := NewOffChainTxStore(unreachable, 1)
+
+		require.Error(t, err)
+		require.Nil(t, store)
+	})
+
 	t.Run("runs a script at least once with zero retries", func(t *testing.T) {
 		require.NoError(t, rdb.FlushDB(ctx).Err())
-		store := NewOffChainTxStore(rdb, 0)
+		store := newStore(t, rdb, 0)
 		_, spent := rebuildFixtureTx(t, "arktx-ee", 5)
 
 		status, _, err := store.ClaimOutpoints(ctx, "owner", []domain.Outpoint{spent})
@@ -122,6 +150,15 @@ func TestOffChainTxStore(t *testing.T) {
 }
 
 // --- helpers ---
+
+// newStore builds the store against the given redis, failing the test if the
+// startup rebuild does.
+func newStore(t *testing.T, rdb *redis.Client, retries int) *offChainTxStore {
+	t.Helper()
+	store, err := NewOffChainTxStore(rdb, retries)
+	require.NoError(t, err)
+	return store.(*offChainTxStore)
+}
 
 // newRebuildTestRedis connects to a redis db index of its own and flushes it
 // when the test ends.

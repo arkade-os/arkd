@@ -467,7 +467,7 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 		return nil
 	}
 
-	s.releaseClaimsOfIntents(ctx, intents)
+	s.releaseClaimsOfTimedIntents(ctx, intents)
 
 	ids := make([]string, 0, len(intents))
 	for _, intent := range intents {
@@ -476,10 +476,12 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 	return s.liveStore.Intents().Delete(ctx, ids)
 }
 
-// releaseClaimsOfIntents releases the claims held by the given intents. Failures
+// releaseClaimsOfTimedIntents releases the claims held by the given intents. Failures
 // are logged, not returned: the delete proceeds either way and a stale claim is
 // not worth failing the call.
-func (s *adminService) releaseClaimsOfIntents(ctx context.Context, intents []ports.TimedIntent) {
+func (s *adminService) releaseClaimsOfTimedIntents(
+	ctx context.Context, intents []ports.TimedIntent,
+) {
 	for _, intent := range intents {
 		outpoints := make([]domain.Outpoint, 0, len(intent.Inputs))
 		for _, in := range intent.Inputs {

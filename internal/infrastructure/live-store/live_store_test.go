@@ -96,12 +96,15 @@ func TestLiveStoreImplementations(t *testing.T) {
 	txBuilder.On("VerifyForfeitTxs", mock.Anything, mock.Anything, mock.Anything).
 		Return(validTx, nil)
 
+	redisStore, err := redislivestore.NewLiveStore(rdb, txBuilder, 5)
+	require.NoError(t, err)
+
 	stores := []struct {
 		name  string
 		store ports.LiveStore
 	}{
 		{"inmemory", inmemory.NewLiveStore(txBuilder)},
-		{"redis", redislivestore.NewLiveStore(rdb, txBuilder, 5)},
+		{"redis", redisStore},
 	}
 
 	for _, tt := range stores {
@@ -622,6 +625,22 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 	t.Run("OffChainTxStore claims", func(t *testing.T) {
 		ctx := t.Context()
 		const ownerA, ownerB = "arktx-a", "arktx-b"
+
+		// Parsing the checkpoint txs is all or nothing on both backends, so a
+		// tx can never end up with a subset of its inputs registered.
+		t.Run("Add rejects a tx with a malformed checkpoint tx", func(t *testing.T) {
+			tx, err := parseOffchainTxFixture(offchainTxJSON)
+			require.NoError(t, err)
+			tx.ArkTxid = "arktx-malformed"
+			tx.CheckpointTxs["bad"] = "not a psbt"
+
+			_, _, err = store.OffchainTxs().Add(ctx, tx)
+			require.Error(t, err)
+
+			got, err := store.OffchainTxs().Get(ctx, tx.ArkTxid)
+			require.NoError(t, err)
+			require.Nil(t, got, "a rejected tx must not be stored")
+		})
 
 		t.Run("different owner conflicts, all-or-nothing", func(t *testing.T) {
 			x, y := claimOutpoint(0), claimOutpoint(0)

@@ -867,7 +867,10 @@ func (c *Config) liveStoreService() error {
 			return fmt.Errorf("invalid REDIS_URL: %w", err)
 		}
 		rdb := redis.NewClient(redisOpts)
-		liveStoreSvc = redislivestore.NewLiveStore(rdb, c.txBuilder, c.RedisTxNumOfRetries)
+		liveStoreSvc, err = redislivestore.NewLiveStore(rdb, c.txBuilder, c.RedisTxNumOfRetries)
+		if err != nil {
+			return fmt.Errorf("failed to init redis live store: %w", err)
+		}
 	default:
 		err = fmt.Errorf("unknown liveStore type")
 	}

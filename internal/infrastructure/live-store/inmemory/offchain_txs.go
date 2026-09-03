@@ -2,6 +2,7 @@ package inmemorylivestore
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -31,7 +32,13 @@ func (m *offChainTxStore) Add(
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	status, conflict := m.claimLocked(offchainTx.ArkTxid, checkpointInputs(offchainTx))
+	inputs, err := checkpointInputs(offchainTx)
+	if err != nil {
+		return ports.ClaimFresh, nil, fmt.Errorf(
+			"malformed checkpoint tx in offchain tx %s: %v", offchainTx.ArkTxid, err,
+		)
+	}
+	status, conflict := m.claimLocked(offchainTx.ArkTxid, inputs)
 	if status == ports.ClaimConflict {
 		return status, conflict, nil
 	}
@@ -47,7 +54,11 @@ func (m *offChainTxStore) Remove(_ context.Context, arkTxid string) error {
 	if !ok {
 		return nil
 	}
-	for _, o := range checkpointInputs(offchainTx) {
+	inputs, err := checkpointInputs(offchainTx)
+	if err != nil {
+		return fmt.Errorf("malformed checkpoint tx in stored offchain tx %s: %v", arkTxid, err)
+	}
+	for _, o := range inputs {
 		if owner, ok := m.inputs[o.String()]; ok && owner == arkTxid {
 			delete(m.inputs, o.String())
 		}
@@ -132,14 +143,15 @@ func (m *offChainTxStore) claimLocked(
 }
 
 // checkpointInputs returns every spent-input outpoint of every checkpoint tx of
-// the offchain tx, matching what the conflict domain registers. Checkpoint txs
-// that fail to parse are skipped (they are validated upstream).
-func checkpointInputs(offchainTx domain.OffchainTx) []domain.Outpoint {
+// the offchain tx, matching what the conflict domain registers. It is all or
+// nothing: a checkpoint tx that fails to parse fails the call, so no caller ever
+// registers or releases a subset of a tx's inputs.
+func checkpointInputs(offchainTx domain.OffchainTx) ([]domain.Outpoint, error) {
 	out := make([]domain.Outpoint, 0)
 	for _, tx := range offchainTx.CheckpointTxs {
 		ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 		if err != nil {
-			continue
+			return nil, err
 		}
 		for _, in := range ptx.UnsignedTx.TxIn {
 			out = append(out, domain.Outpoint{
@@ -148,5 +160,5 @@ func checkpointInputs(offchainTx domain.OffchainTx) []domain.Outpoint {
 			})
 		}
 	}
-	return out
+	return out, nil
 }
