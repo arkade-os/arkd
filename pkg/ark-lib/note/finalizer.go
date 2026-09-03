@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
-	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/psbt/v2"
 )
 
 var ErrInvalidNoteScript = fmt.Errorf("invalid not script")

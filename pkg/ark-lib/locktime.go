@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 const (

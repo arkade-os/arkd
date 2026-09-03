@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/chainhash/v2"
 )
 
 // PacketType is the fixed type identifier for the asset packet format 0x00.

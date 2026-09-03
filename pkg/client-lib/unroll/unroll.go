@@ -8,15 +8,15 @@ import (
 	"math"
 	"strings"
 
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntypes"
 	log "github.com/sirupsen/logrus"
@@ -57,7 +57,7 @@ func (a UnrollArgs) validate() error {
 		return fmt.Errorf("missing bump address")
 	}
 	netParams := clientlib.ToBitcoinNetwork(a.ServerParams.Network)
-	if _, err := btcutil.DecodeAddress(a.BumpAddr, &netParams); err != nil {
+	if _, err := arklib.DecodeBitcoinAddress(a.BumpAddr, &netParams); err != nil {
 		return fmt.Errorf("invalid bump address")
 	}
 	return nil
