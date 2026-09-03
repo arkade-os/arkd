@@ -452,26 +452,34 @@ func (s *adminService) ListIntents(
 }
 
 func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) error {
-	// Drop the conflict-domain claims these intents hold before removing them,
-	// otherwise their vtxos stay claimed and become unspendable. ViewAll with no
-	// ids returns every intent, which is what the delete-all case needs.
-	s.releaseClaimsOfIntents(ctx, intentIds)
-
-	if len(intentIds) == 0 {
-		return s.liveStore.Intents().DeleteAll(ctx)
+	// Snapshot the intents, release their claims, then delete exactly that
+	// snapshot. ViewAll with no ids returns every intent, so delete-all takes the
+	// same path. Wiping the store instead would also remove an intent registered
+	// after the snapshot, whose claim was never released and which the
+	// round-start reconcile cannot see since it was never popped, leaving its
+	// vtxos claimed forever. It would also drop the selected-intent set that
+	// reconcile reads, leaking the claims of the intents in the running round.
+	intents, err := s.liveStore.Intents().ViewAll(ctx, intentIds)
+	if err != nil {
+		return fmt.Errorf("failed to view intents to delete: %s", err)
 	}
-	return s.liveStore.Intents().Delete(ctx, intentIds)
+	if len(intents) == 0 {
+		return nil
+	}
+
+	s.releaseClaimsOfIntents(ctx, intents)
+
+	ids := make([]string, 0, len(intents))
+	for _, intent := range intents {
+		ids = append(ids, intent.Id)
+	}
+	return s.liveStore.Intents().Delete(ctx, ids)
 }
 
-// releaseClaimsOfIntents releases the claims held by the given intents, or by
-// every queued intent when ids is empty. Failures are logged, not returned: the
-// delete proceeds either way and a stale claim is not worth failing the call.
-func (s *adminService) releaseClaimsOfIntents(ctx context.Context, ids []string) {
-	intents, err := s.liveStore.Intents().ViewAll(ctx, ids)
-	if err != nil {
-		log.WithError(err).Warnf("failed to view intents %v to release their claims", ids)
-		return
-	}
+// releaseClaimsOfIntents releases the claims held by the given intents. Failures
+// are logged, not returned: the delete proceeds either way and a stale claim is
+// not worth failing the call.
+func (s *adminService) releaseClaimsOfIntents(ctx context.Context, intents []ports.TimedIntent) {
 	for _, intent := range intents {
 		outpoints := make([]domain.Outpoint, 0, len(intent.Inputs))
 		for _, in := range intent.Inputs {

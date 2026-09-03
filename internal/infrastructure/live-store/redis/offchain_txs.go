@@ -108,6 +108,24 @@ redis.call('HDEL', KEYS[2], owner)
 return 1
 `)
 
+// rebuildScript re-registers a stored tx's inputs under it, only while its body
+// still exists, and returns how many were newly registered (HSETNX never
+// overwrites an owner). KEYS[1]=inputs hash, KEYS[2]=txs hash. ARGV[1]=owner
+// (arkTxid), ARGV[2..]=outpoints. The body check and the writes share one
+// script so a Remove landing in between, which deletes the body and its inputs,
+// cannot be followed by inputs re-registered for a body that is gone and that
+// no later Remove could clear.
+var rebuildScript = redis.NewScript(`
+if redis.call('HEXISTS', KEYS[2], ARGV[1]) == 0 then
+  return 0
+end
+local added = 0
+for i = 2, #ARGV do
+  added = added + redis.call('HSETNX', KEYS[1], ARGV[i], ARGV[1])
+end
+return added
+`)
+
 type offChainTxStore struct {
 	rdb          *redis.Client
 	numOfRetries int
@@ -142,7 +160,7 @@ func (s *offChainTxStore) rebuildInputs(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to list stored offchain txs: %v", err)
 	}
-	registered := 0
+	var registered int64
 	for arkTxid, body := range bodies {
 		var offchainTx domain.OffchainTx
 		if err := json.Unmarshal([]byte(body), &offchainTx); err != nil {
@@ -150,15 +168,11 @@ func (s *offChainTxStore) rebuildInputs(ctx context.Context) error {
 			continue
 		}
 		inputs, _ := checkpointInputs(offchainTx)
-		for _, in := range inputs {
-			added, err := s.rdb.HSetNX(ctx, offChainInputsHashKey, in, arkTxid).Result()
-			if err != nil {
-				return fmt.Errorf("failed to re-register input %s of %s: %v", in, arkTxid, err)
-			}
-			if added {
-				registered++
-			}
+		added, err := s.reregisterInputs(ctx, arkTxid, inputs)
+		if err != nil {
+			return err
 		}
+		registered += added
 	}
 	if registered > 0 {
 		log.Infof(
@@ -167,6 +181,33 @@ func (s *offChainTxStore) rebuildInputs(ctx context.Context) error {
 		)
 	}
 	return nil
+}
+
+// reregisterInputs runs rebuildScript for one stored tx and returns how many of
+// its inputs were newly registered.
+func (s *offChainTxStore) reregisterInputs(
+	ctx context.Context, arkTxid string, inputs []string,
+) (int64, error) {
+	if len(inputs) == 0 {
+		return 0, nil
+	}
+	// rebuildScript ARGV layout: the owner (arkTxid) first, then one entry per input.
+	args := make([]interface{}, 0, 1+len(inputs))
+	args = append(args, arkTxid)
+	for _, in := range inputs {
+		args = append(args, in)
+	}
+	res, err := s.eval(
+		ctx, rebuildScript, []string{offChainInputsHashKey, offChainTxsHashKey}, args...,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to re-register inputs of %s: %v", arkTxid, err)
+	}
+	added, ok := res.(int64)
+	if !ok {
+		return 0, fmt.Errorf("unexpected rebuild result for %s: %v", arkTxid, res)
+	}
+	return added, nil
 }
 
 func (s *offChainTxStore) Add(
@@ -295,8 +336,12 @@ func (s *offChainTxStore) Includes(ctx context.Context, outpoint domain.Outpoint
 func (s *offChainTxStore) eval(
 	ctx context.Context, script *redis.Script, keys []string, args ...interface{},
 ) (interface{}, error) {
+	// A non-positive retry count must still run the script once, otherwise every
+	// claim would fail on a nil result and every release would silently do
+	// nothing.
+	attempts := max(s.numOfRetries, 1)
 	var lastErr error
-	for range s.numOfRetries {
+	for range attempts {
 		res, err := script.Run(ctx, s.rdb, keys, args...).Result()
 		if err == nil {
 			return res, nil
@@ -347,7 +392,12 @@ func checkpointInputs(offchainTx domain.OffchainTx) ([]string, error) {
 			continue
 		}
 		for _, in := range ptx.UnsignedTx.TxIn {
-			inputs = append(inputs, in.PreviousOutPoint.String())
+			// Built through domain.Outpoint so the field name matches what
+			// ClaimOutpoints, ReleaseOutpoints and Includes write and read.
+			inputs = append(inputs, domain.Outpoint{
+				Txid: in.PreviousOutPoint.Hash.String(),
+				VOut: in.PreviousOutPoint.Index,
+			}.String())
 		}
 	}
 	return inputs, parseErr

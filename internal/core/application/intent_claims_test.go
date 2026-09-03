@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -164,6 +165,8 @@ func TestIntentClaimRelease(t *testing.T) {
 
 	t.Run("admin delete-all releases every queued intent", func(t *testing.T) {
 		// ViewAll with no ids returns everything, which is what delete-all needs.
+		// It deletes that snapshot by id rather than wiping the store, so the
+		// deleted set is exactly the released set.
 		rec := &recordingOffchainTxStore{}
 		intents := &claimIntentStore{all: []ports.TimedIntent{
 			{Intent: claimIntent("intent-a", "aa")},
@@ -177,7 +180,42 @@ func TestIntentClaimRelease(t *testing.T) {
 			"intent-a": {outpointStr("aa")},
 			"intent-b": {outpointStr("bb")},
 		}, rec.released())
-		require.True(t, intents.deletedAll)
+		require.Equal(t, []string{"intent-a", "intent-b"}, intents.deleted)
+		require.False(t, intents.deletedAll, "delete-all must delete the snapshot, not wipe the store")
+	})
+
+	t.Run("admin delete-all keeps an intent registered after the snapshot", func(t *testing.T) {
+		// Registered between the snapshot and the delete, intent-c holds a claim
+		// nobody released. Wiping the store would delete it and leave that claim
+		// behind, with no round to release it from since it was never popped.
+		rec := &recordingOffchainTxStore{}
+		intents := &claimIntentStore{all: []ports.TimedIntent{
+			{Intent: claimIntent("intent-a", "aa")},
+		}}
+		intents.afterViewAll = func() {
+			intents.all = append(intents.all, ports.TimedIntent{Intent: claimIntent("intent-c", "cc")})
+		}
+		a := &adminService{liveStore: testLiveStore{offchainTxs: rec, intents: intents}}
+
+		require.NoError(t, a.DeleteIntents(ctx))
+
+		require.Equal(t, map[string][]string{"intent-a": {outpointStr("aa")}}, rec.released())
+		require.Equal(t, []string{"intent-a"}, intents.deleted)
+		require.False(t, intents.deletedAll)
+	})
+
+	t.Run("admin delete fails without deleting when the lookup fails", func(t *testing.T) {
+		// Deleting without the snapshot would drop intents whose claims were
+		// never released, so the call fails instead.
+		rec := &recordingOffchainTxStore{}
+		intents := &claimIntentStore{err: errors.New("store down")}
+		a := &adminService{liveStore: testLiveStore{offchainTxs: rec, intents: intents}}
+
+		require.Error(t, a.DeleteIntents(ctx, "intent-a"))
+
+		require.Empty(t, rec.released())
+		require.Empty(t, intents.deleted)
+		require.False(t, intents.deletedAll)
 	})
 }
 
@@ -204,13 +242,16 @@ func (r *recordingOffchainTxStore) ReleaseOutpoints(
 func (r *recordingOffchainTxStore) released() map[string][]string { return r.calls }
 
 // claimIntentStore is an IntentStore that serves ViewAll and GetSelectedIntents
-// and records deletions.
+// and records deletions. afterViewAll, when set, runs once a ViewAll snapshot
+// has been taken, to simulate a registration racing the caller.
 type claimIntentStore struct {
 	ports.IntentStore
-	all        []ports.TimedIntent
-	selected   []ports.TimedIntent
-	deleted    []string
-	deletedAll bool
+	all          []ports.TimedIntent
+	selected     []ports.TimedIntent
+	err          error
+	afterViewAll func()
+	deleted      []string
+	deletedAll   bool
 }
 
 func (s *claimIntentStore) GetSelectedIntents(_ context.Context) ([]ports.TimedIntent, error) {
@@ -220,16 +261,17 @@ func (s *claimIntentStore) GetSelectedIntents(_ context.Context) ([]ports.TimedI
 func (s *claimIntentStore) ViewAll(
 	_ context.Context, ids []string,
 ) ([]ports.TimedIntent, error) {
-	if len(ids) <= 0 {
-		return s.all, nil
+	if s.err != nil {
+		return nil, s.err
 	}
-	out := make([]ports.TimedIntent, 0, len(ids))
+	out := make([]ports.TimedIntent, 0, len(s.all))
 	for _, intent := range s.all {
-		for _, id := range ids {
-			if intent.Id == id {
-				out = append(out, intent)
-			}
+		if len(ids) <= 0 || slices.Contains(ids, intent.Id) {
+			out = append(out, intent)
 		}
+	}
+	if s.afterViewAll != nil {
+		s.afterViewAll()
 	}
 	return out, nil
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOffChainTxStoreRebuildInputs(t *testing.T) {
+func TestOffChainTxStore(t *testing.T) {
 	ctx := context.Background()
 	rdb := newRebuildTestRedis(t)
 
@@ -82,6 +82,42 @@ func TestOffChainTxStoreRebuildInputs(t *testing.T) {
 		n, err := rdb.HLen(ctx, offChainInputsHashKey).Result()
 		require.NoError(t, err)
 		require.Zero(t, n)
+	})
+
+	t.Run("does not re-register the inputs of a body removed meanwhile", func(t *testing.T) {
+		require.NoError(t, rdb.FlushDB(ctx).Err())
+		tx, spent := rebuildFixtureTx(t, "arktx-dd", 4)
+		storeBody(t, rdb, tx)
+		store := NewOffChainTxStore(rdb, 3).(*offChainTxStore)
+		inputs, err := checkpointInputs(tx)
+		require.NoError(t, err)
+
+		// Another instance projects the tx and removes it between the body
+		// listing and the re-registration. Nothing could clear an input
+		// re-registered after that, since Remove needs the body to find it.
+		require.NoError(t, store.Remove(ctx, tx.ArkTxid))
+
+		added, err := store.reregisterInputs(ctx, tx.ArkTxid, inputs)
+		require.NoError(t, err)
+		require.Zero(t, added)
+		exists, err := store.Includes(ctx, spent)
+		require.NoError(t, err)
+		require.False(t, exists, "an input must not be registered for a body that is gone")
+	})
+
+	t.Run("runs a script at least once with zero retries", func(t *testing.T) {
+		require.NoError(t, rdb.FlushDB(ctx).Err())
+		store := NewOffChainTxStore(rdb, 0)
+		_, spent := rebuildFixtureTx(t, "arktx-ee", 5)
+
+		status, _, err := store.ClaimOutpoints(ctx, "owner", []domain.Outpoint{spent})
+		require.NoError(t, err)
+		require.Equal(t, ports.ClaimFresh, status)
+
+		require.NoError(t, store.ReleaseOutpoints(ctx, "owner", []domain.Outpoint{spent}))
+		exists, err := store.Includes(ctx, spent)
+		require.NoError(t, err)
+		require.False(t, exists)
 	})
 }
 
