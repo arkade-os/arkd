@@ -699,7 +699,7 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 				// the new UTXOs can be built without any additional NBXplorer call.
 				newUtxos, err := utxosFromTransactionEvent(message, n.groupID)
 				if err != nil {
-					log.Errorf("failed to parse transaction event: %s", err)
+					log.Warnf("failed to parse transaction event: %s", err)
 					continue
 				}
 
