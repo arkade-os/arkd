@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
@@ -293,6 +294,12 @@ func verifyOffchainTx(original, signed *psbt.Packet, signers map[string]*btcec.P
 	for inputIndex, signedInput := range signed.Inputs {
 		if signedInput.WitnessUtxo == nil {
 			return fmt.Errorf("witness utxo not found for input %d", inputIndex)
+		}
+		if signedInput.SighashType != original.Inputs[inputIndex].SighashType {
+			return fmt.Errorf(
+				"sighash type mismatch for input %d: expected %d, got %d",
+				inputIndex, original.Inputs[inputIndex].SighashType, signedInput.SighashType,
+			)
 		}
 
 		// fill prevouts map with the original witness data
@@ -636,6 +643,9 @@ func finalizeTx(
 	finalCheckpoints := make([]string, 0, len(acceptedTx.SignedCheckpointTxs))
 
 	for _, checkpoint := range acceptedTx.SignedCheckpointTxs {
+		if err := checkDefaultSighash(checkpoint); err != nil {
+			return "", nil, err
+		}
 		signedTx, err := signTx(ctx, checkpoint)
 		if err != nil {
 			return "", nil, err
@@ -650,11 +660,19 @@ func finalizeTx(
 	return acceptedTx.Txid, finalCheckpoints, nil
 }
 
-// parsePubkey converts a hex-encoded pubkey to a btcec.PublicKey.
-func parsePubkey(pubkey string) (*btcec.PublicKey, error) {
-	buf, err := hex.DecodeString(pubkey)
+func checkDefaultSighash(tx string) error {
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return btcec.ParsePubKey(buf)
+	for i, in := range ptx.Inputs {
+		if in.SighashType != txscript.SigHashDefault {
+			return fmt.Errorf(
+				"checkpoint %s input %d: unexpected sighash type %d",
+				ptx.UnsignedTx.TxID(), i, in.SighashType,
+			)
+		}
+	}
+	return nil
 }
+
