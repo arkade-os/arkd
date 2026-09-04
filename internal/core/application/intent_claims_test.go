@@ -22,9 +22,8 @@ func TestIntentClaimRelease(t *testing.T) {
 		// The conflict domain is owner-tagged, so a release under the wrong id
 		// would leave the claim in place and the vtxo unspendable.
 		rec := &recordingOffchainTxStore{}
-		s := &service{cache: testLiveStore{offchainTxs: rec}}
 
-		s.releaseClaimsOfIntents(ctx, []domain.Intent{
+		releaseClaimsOfIntents(ctx, rec, []domain.Intent{
 			claimIntent("intent-a", "aa", "bb"),
 			claimIntent("intent-b", "cc"),
 		})
@@ -52,9 +51,8 @@ func TestIntentClaimRelease(t *testing.T) {
 	t.Run("releases nothing when the intent has no vtxo inputs", func(t *testing.T) {
 		// A boarding-only intent claims nothing, so it must not release either.
 		rec := &recordingOffchainTxStore{}
-		s := &service{cache: testLiveStore{offchainTxs: rec}}
 
-		s.releaseClaimsOfIntents(ctx, []domain.Intent{{Id: "intent-a"}})
+		releaseClaimsOfIntents(ctx, rec, []domain.Intent{{Id: "intent-a"}})
 
 		require.Empty(t, rec.released())
 	})
@@ -148,6 +146,32 @@ func TestIntentClaimRelease(t *testing.T) {
 			"intent-a": {vtxo.Outpoint.String()},
 		}, rec.released())
 		require.Equal(t, []string{"intent-a"}, intents.deleted)
+	})
+
+	// Both services drop intents and both must release through the same helper.
+	// A second copy that drifted would leak claims on whichever path missed a
+	// fix, with no error to show it.
+	t.Run("the service and the admin service release identically", func(t *testing.T) {
+		intents := []domain.Intent{claimIntent("intent-a", "aa", "bb")}
+
+		fromService := &recordingOffchainTxStore{}
+		svc := &service{cache: testLiveStore{
+			offchainTxs: fromService,
+			intents:     testIntentStore{intents: []ports.TimedIntent{{Intent: intents[0]}}},
+		}}
+		svc.releaseClaimsOfIntentIds(ctx, []string{"intent-a"})
+
+		fromAdmin := &recordingOffchainTxStore{}
+		a := &adminService{liveStore: testLiveStore{
+			offchainTxs: fromAdmin,
+			intents:     &claimIntentStore{all: []ports.TimedIntent{{Intent: intents[0]}}},
+		}}
+		require.NoError(t, a.DeleteIntents(ctx, "intent-a"))
+
+		require.Equal(t, fromService.released(), fromAdmin.released())
+		require.Equal(t, map[string][]string{
+			"intent-a": {outpointStr("aa"), outpointStr("bb")},
+		}, fromAdmin.released())
 	})
 
 	t.Run("admin delete releases the named intents", func(t *testing.T) {

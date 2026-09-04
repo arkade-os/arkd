@@ -467,37 +467,13 @@ func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) e
 		return nil
 	}
 
-	s.releaseClaimsOfTimedIntents(ctx, intents)
+	releaseClaimsOfIntents(ctx, s.liveStore.OffchainTxs(), intentsOf(intents))
 
 	ids := make([]string, 0, len(intents))
 	for _, intent := range intents {
 		ids = append(ids, intent.Id)
 	}
 	return s.liveStore.Intents().Delete(ctx, ids)
-}
-
-// releaseClaimsOfTimedIntents releases the claims held by the given intents. Failures
-// are logged, not returned: the delete proceeds either way and a stale claim is
-// not worth failing the call.
-func (s *adminService) releaseClaimsOfTimedIntents(
-	ctx context.Context, intents []ports.TimedIntent,
-) {
-	for _, intent := range intents {
-		outpoints := make([]domain.Outpoint, 0, len(intent.Inputs))
-		for _, in := range intent.Inputs {
-			outpoints = append(outpoints, in.Outpoint)
-		}
-		if len(outpoints) <= 0 {
-			continue
-		}
-		if err := s.liveStore.OffchainTxs().ReleaseOutpoints(
-			ctx, intent.Id, outpoints,
-		); err != nil {
-			log.WithError(err).Warnf(
-				"failed to release conflict-domain claims of intent %s", intent.Id,
-			)
-		}
-	}
 }
 
 func (s *adminService) GetBatchFees(ctx context.Context) (*domain.BatchFees, error) {

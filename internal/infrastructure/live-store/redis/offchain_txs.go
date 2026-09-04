@@ -163,7 +163,7 @@ func (s *offChainTxStore) rebuildInputs(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to list stored offchain txs: %v", err)
 	}
-	var registered int64
+	var registered, rebuilt int64
 	for arkTxid, body := range bodies {
 		var offchainTx domain.OffchainTx
 		if err := json.Unmarshal([]byte(body), &offchainTx); err != nil {
@@ -183,12 +183,15 @@ func (s *offChainTxStore) rebuildInputs(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if added > 0 {
+			rebuilt++
+		}
 		registered += added
 	}
 	if registered > 0 {
 		log.Infof(
 			"re-registered %d spent input(s) from %d stored offchain tx(s)",
-			registered, len(bodies),
+			registered, rebuilt,
 		)
 	}
 	return nil

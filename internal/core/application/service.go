@@ -1569,34 +1569,6 @@ func (s *service) GetPendingOffchainTxs(
 	return acceptedOffchainTxs, nil
 }
 
-// releaseIntentClaims drops the conflict-domain claims an intent holds. Releasing
-// is per-owner and idempotent, so a claim already gone, or one since taken by
-// someone else, is left alone. Failure is logged rather than returned: the caller
-// is always on a path that drops the intent regardless, and a lost release only
-// leaves a stale claim, which is worse to turn into a caller-visible error.
-func (s *service) releaseIntentClaims(
-	ctx context.Context, owner string, outpoints []domain.Outpoint,
-) {
-	if len(outpoints) <= 0 {
-		return
-	}
-	if err := s.cache.OffchainTxs().ReleaseOutpoints(ctx, owner, outpoints); err != nil {
-		log.WithError(err).Warnf("failed to release conflict-domain claims of intent %s", owner)
-	}
-}
-
-// releaseClaimsOfIntents releases the claims of each given intent, keyed by its
-// own id, since the conflict domain is owner-tagged.
-func (s *service) releaseClaimsOfIntents(ctx context.Context, intents []domain.Intent) {
-	for _, intent := range intents {
-		outpoints := make([]domain.Outpoint, 0, len(intent.Inputs))
-		for _, in := range intent.Inputs {
-			outpoints = append(outpoints, in.Outpoint)
-		}
-		s.releaseIntentClaims(ctx, intent.Id, outpoints)
-	}
-}
-
 // releaseClaimsOfIntentIds looks the intents up so their inputs can be released,
 // for callers that only hold ids.
 func (s *service) releaseClaimsOfIntentIds(ctx context.Context, ids []string) {
@@ -1608,11 +1580,7 @@ func (s *service) releaseClaimsOfIntentIds(ctx context.Context, ids []string) {
 		log.WithError(err).Warnf("failed to view intents %v to release their claims", ids)
 		return
 	}
-	intents := make([]domain.Intent, 0, len(timed))
-	for _, t := range timed {
-		intents = append(intents, t.Intent)
-	}
-	s.releaseClaimsOfIntents(ctx, intents)
+	releaseClaimsOfIntents(ctx, s.cache.OffchainTxs(), intentsOf(timed))
 }
 
 // releaseClaimsOfSelectedIntents releases the claims of every intent the last
@@ -1647,7 +1615,7 @@ func (s *service) releaseClaimsOfSelectedIntents(ctx context.Context) {
 		}
 		dropped = append(dropped, intent.Intent)
 	}
-	s.releaseClaimsOfIntents(ctx, dropped)
+	releaseClaimsOfIntents(ctx, s.cache.OffchainTxs(), dropped)
 }
 
 func (s *service) RegisterIntent(
@@ -2316,7 +2284,7 @@ func (s *service) RegisterIntent(
 	if err := s.cache.Intents().Push(
 		ctx, *intent, boardingInputs, message.CosignersPublicKeys,
 	); err != nil {
-		s.releaseIntentClaims(ctx, intent.Id, claimedOutpoints)
+		releaseIntentClaims(ctx, s.cache.OffchainTxs(), intent.Id, claimedOutpoints)
 		return "", errors.INTERNAL_ERROR.New("failed to push intent: %w", err).
 			WithMetadata(map[string]any{
 				"intent":                intent,
