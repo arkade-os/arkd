@@ -7,7 +7,7 @@ replace github.com/arkade-os/arkd/pkg/kvdb => ../kvdb
 require (
 	github.com/arkade-os/arkd/pkg/kvdb v0.0.0-20250606113434-241d3e1ec7cb
 	github.com/btcsuite/btcwallet v0.16.10-0.20240718224643-db3a4a2543bd
-	github.com/btcsuite/btcwallet/walletdb v1.4.2
+	github.com/btcsuite/btcwallet/walletdb v1.6.0
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.83.1
 	gopkg.in/macaroon-bakery.v2 v2.3.0
@@ -67,7 +67,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75 // indirect
 	github.com/xiang90/probing v0.0.0-20221125231312-a49e3df8f510 // indirect
-	go.etcd.io/bbolt v1.3.10 // indirect
+	go.etcd.io/bbolt v1.3.11 // indirect
 	go.etcd.io/etcd/api/v3 v3.5.15 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.15 // indirect
 	go.etcd.io/etcd/client/v2 v2.305.15 // indirect

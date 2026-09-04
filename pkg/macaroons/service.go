@@ -256,8 +256,9 @@ func (svc *Service) CheckMacAuth(ctx context.Context, macBytes []byte,
 	return err
 }
 
-// Close closes the database that underlies the RootKeyStore and zeroes the
-// encryption keys.
+// Close zeroes the encryption keys held by the RootKeyStore. It does not close
+// the database that underlies it: whoever opened that database owns it and is
+// responsible for closing it.
 func (svc *Service) Close() error {
 	if boltRKS, ok := svc.rks.(ExtendedRootKeyStore); ok {
 		return boltRKS.Close()

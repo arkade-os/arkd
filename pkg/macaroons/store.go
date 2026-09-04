@@ -406,8 +406,9 @@ func (r *RootKeyStorage) SetRootKey(rootKey []byte) error {
 	}, func() {})
 }
 
-// Close closes the underlying database and zeroes the encryption key stored
-// in memory.
+// Close zeroes the encryption key stored in memory. It does not close the
+// underlying database, which stays owned by whoever opened it, see the comment
+// in the body below.
 func (r *RootKeyStorage) Close() error {
 	r.encKeyMtx.Lock()
 	defer r.encKeyMtx.Unlock()

@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"github.com/arkade-os/arkd/internal/interface/grpc/permissions"
+	"github.com/arkade-os/arkd/pkg/kvdb"
 	"github.com/arkade-os/arkd/pkg/macaroons"
+	log "github.com/sirupsen/logrus"
 	"gopkg.in/macaroon-bakery.v2/bakery"
 )
 
@@ -86,4 +88,56 @@ func pathExists(path string) bool {
 		}
 	}
 	return true
+}
+
+// newMacaroonService creates (or opens) the macaroon database in the service
+// datadir and returns a macaroon service backed by it, along with the database
+// handle. Closing the service only zeroes the in-memory encryption key, so the
+// caller owns the handle and must close it on shutdown. Both are nil if
+// macaroons are disabled.
+func newMacaroonService(svcConfig Config) (*macaroons.Service, kvdb.Backend, error) {
+	if svcConfig.NoMacaroons {
+		return nil, nil, nil
+	}
+
+	macaroonDB, err := kvdb.Create(
+		kvdb.BoltBackendName, filepath.Join(svcConfig.Datadir, macaroonsDbFile),
+		true, kvdb.DefaultDBTimeout, false,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	keyStore, err := macaroons.NewRootKeyStorage(macaroonDB)
+	if err != nil {
+		closeMacaroonStore(nil, macaroonDB)
+		return nil, nil, err
+	}
+
+	svc, err := macaroons.NewService(
+		keyStore, macaroonsLocation, false, macaroons.IPLockChecker,
+	)
+	if err != nil {
+		closeMacaroonStore(nil, macaroonDB)
+		return nil, nil, err
+	}
+
+	return svc, macaroonDB, nil
+}
+
+// closeMacaroonStore releases a macaroon service and the database handle it was
+// built on, logging any failure. Closing the service only zeroes its in-memory
+// keys, so the database has to be closed separately to release the bolt file
+// lock. Either argument may be nil.
+func closeMacaroonStore(svc *macaroons.Service, db kvdb.Backend) {
+	if svc != nil {
+		if err := svc.Close(); err != nil {
+			log.Errorf("failed to close macaroon service: %s", err)
+		}
+	}
+	if db != nil {
+		if err := db.Close(); err != nil {
+			log.Errorf("failed to close macaroon db: %s", err)
+		}
+	}
 }

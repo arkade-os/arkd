@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/pprof"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -54,6 +53,7 @@ type service struct {
 	readinessSvc      *interceptors.ReadinessService
 	appSvcStarted     atomic.Bool
 	macaroonSvc       *macaroons.Service
+	macaroonDB        kvdb.Backend
 	otelShutdown      func(context.Context) error
 	pyroscopeShutdown func() error
 	unaryConn         *grpc.ClientConn
@@ -71,30 +71,18 @@ func NewService(
 		return nil, fmt.Errorf("invalid app config: %s", err)
 	}
 
-	var macaroonSvc *macaroons.Service
-	if !svcConfig.NoMacaroons {
-		macaroonDB, err := kvdb.Create(
-			kvdb.BoltBackendName,
-			filepath.Join(svcConfig.Datadir, macaroonsDbFile),
-			true,
-			kvdb.DefaultDBTimeout,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		keyStore, err := macaroons.NewRootKeyStorage(macaroonDB)
-		if err != nil {
-			return nil, err
-		}
-		svc, err := macaroons.NewService(
-			keyStore, macaroonsLocation, false, macaroons.IPLockChecker,
-		)
-		if err != nil {
-			return nil, err
-		}
-		macaroonSvc = svc
+	macaroonSvc, macaroonDB, err := newMacaroonService(svcConfig)
+	if err != nil {
+		return nil, err
 	}
+	// Anything that fails below returns without a service to Stop(), so the
+	// macaroon store has to be released here or the bolt file lock stays held.
+	initialized := false
+	defer func() {
+		if !initialized {
+			closeMacaroonStore(macaroonSvc, macaroonDB)
+		}
+	}()
 
 	if !svcConfig.insecure() {
 		if err := generateOperatorTLSKeyCert(
@@ -105,11 +93,13 @@ func NewService(
 		log.Debugf("generated TLS key pair at path: %s", svcConfig.tlsDatadir())
 	}
 
+	initialized = true
 	return &service{
 		version:     version,
 		config:      svcConfig,
 		appConfig:   appConfig,
 		macaroonSvc: macaroonSvc,
+		macaroonDB:  macaroonDB,
 	}, nil
 }
 
@@ -130,6 +120,7 @@ func (s *service) Start() error {
 
 func (s *service) Stop() {
 	s.stop()
+	closeMacaroonStore(s.macaroonSvc, s.macaroonDB)
 	if s.pyroscopeShutdown != nil {
 		if err := s.pyroscopeShutdown(); err != nil {
 			log.Errorf("failed to shutdown pyroscope: %s", err)
