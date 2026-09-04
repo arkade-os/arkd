@@ -7,7 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -94,12 +96,15 @@ func TestLiveStoreImplementations(t *testing.T) {
 	txBuilder.On("VerifyForfeitTxs", mock.Anything, mock.Anything, mock.Anything).
 		Return(validTx, nil)
 
+	redisStore, err := redislivestore.NewLiveStore(rdb, txBuilder, 5)
+	require.NoError(t, err)
+
 	stores := []struct {
 		name  string
 		store ports.LiveStore
 	}{
 		{"inmemory", inmemory.NewLiveStore(txBuilder)},
-		{"redis", redislivestore.NewLiveStore(rdb, txBuilder, 5)},
+		{"redis", redisStore},
 	}
 
 	for _, tt := range stores {
@@ -527,9 +532,17 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		tx, err := parseOffchainTxFixture(offchainTxJSON)
 		require.NoError(t, err)
 
-		// Add
-		err = store.OffchainTxs().Add(ctx, tx)
+		// Add returns ClaimFresh for the first submission of a tx.
+		status, conflict, err := store.OffchainTxs().Add(ctx, tx)
 		require.NoError(t, err)
+		require.Nil(t, conflict)
+		require.Equal(t, ports.ClaimFresh, status)
+
+		// Re-adding the same arkTxid is idempotent (ClaimAlreadyOwned).
+		status, conflict, err = store.OffchainTxs().Add(ctx, tx)
+		require.NoError(t, err)
+		require.Nil(t, conflict)
+		require.Equal(t, ports.ClaimAlreadyOwned, status)
 
 		// Get
 		offchainTx, err := store.OffchainTxs().Get(ctx, "nonexistent")
@@ -541,7 +554,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 		require.NotNil(t, offchainTx)
 
-		// Includes
+		// Includes: every checkpoint TxIn the tx registered is visible.
 		outpointJSON := `{"Txid":"fefcc1d90510aa15a77b3bac88a745f7cc58a02a1d4ebe631901bff7f327c51a","VOut":0}`
 		var outpoint domain.Outpoint
 		err = json.Unmarshal([]byte(outpointJSON), &outpoint)
@@ -549,6 +562,52 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		exists, err := store.OffchainTxs().Includes(ctx, outpoint)
 		require.NoError(t, err)
 		require.True(t, exists)
+
+		// A DIFFERENT owner claiming an outpoint the off-chain Add registered
+		// conflicts: both writers share one owner-tagged domain.
+		status, conflict, err = store.OffchainTxs().ClaimOutpoints(
+			ctx, "other-owner", []domain.Outpoint{outpoint},
+		)
+		require.NoError(t, err)
+		require.Equal(t, ports.ClaimConflict, status)
+		require.NotNil(t, conflict)
+		require.Equal(t, outpoint.String(), conflict.String())
+
+		// A fresh outpoint claims cleanly, reads back through Includes, and a
+		// different owner is then refused until it is released.
+		fresh := domain.Outpoint{
+			Txid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			VOut: 7,
+		}
+		status, conflict, err = store.OffchainTxs().ClaimOutpoints(
+			ctx, "owner-x", []domain.Outpoint{fresh},
+		)
+		require.NoError(t, err)
+		require.Nil(t, conflict)
+		require.Equal(t, ports.ClaimFresh, status)
+		exists, err = store.OffchainTxs().Includes(ctx, fresh)
+		require.NoError(t, err)
+		require.True(t, exists)
+		status, _, err = store.OffchainTxs().ClaimOutpoints(
+			ctx, "owner-y", []domain.Outpoint{fresh},
+		)
+		require.NoError(t, err)
+		require.Equal(t, ports.ClaimConflict, status)
+
+		// Release is owner-scoped: the wrong owner cannot release it, the right
+		// owner can.
+		require.NoError(t,
+			store.OffchainTxs().ReleaseOutpoints(ctx, "owner-y", []domain.Outpoint{fresh}),
+		)
+		exists, err = store.OffchainTxs().Includes(ctx, fresh)
+		require.NoError(t, err)
+		require.True(t, exists)
+		require.NoError(t,
+			store.OffchainTxs().ReleaseOutpoints(ctx, "owner-x", []domain.Outpoint{fresh}),
+		)
+		exists, err = store.OffchainTxs().Includes(ctx, fresh)
+		require.NoError(t, err)
+		require.False(t, exists)
 
 		// Remove
 		err = store.OffchainTxs().Remove(ctx, tx.ArkTxid)
@@ -561,6 +620,144 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		offchainTx, err = store.OffchainTxs().Get(ctx, tx.ArkTxid)
 		require.NoError(t, err)
 		require.Nil(t, offchainTx)
+	})
+
+	t.Run("OffChainTxStore claims", func(t *testing.T) {
+		ctx := t.Context()
+		const ownerA, ownerB = "arktx-a", "arktx-b"
+
+		// Parsing the checkpoint txs is all or nothing on both backends, so a
+		// tx can never end up with a subset of its inputs registered.
+		t.Run("Add rejects a tx with a malformed checkpoint tx", func(t *testing.T) {
+			tx, err := parseOffchainTxFixture(offchainTxJSON)
+			require.NoError(t, err)
+			tx.ArkTxid = "arktx-malformed"
+			tx.CheckpointTxs["bad"] = "not a psbt"
+
+			_, _, err = store.OffchainTxs().Add(ctx, tx)
+			require.Error(t, err)
+
+			got, err := store.OffchainTxs().Get(ctx, tx.ArkTxid)
+			require.NoError(t, err)
+			require.Nil(t, got, "a rejected tx must not be stored")
+		})
+
+		t.Run("different owner conflicts, all-or-nothing", func(t *testing.T) {
+			x, y := claimOutpoint(0), claimOutpoint(0)
+
+			status, _, err := store.OffchainTxs().ClaimOutpoints(
+				ctx, ownerA, []domain.Outpoint{x},
+			)
+			require.NoError(t, err)
+			require.Equal(t, ports.ClaimFresh, status)
+
+			// ownerB claiming [x, y] must fail on x and register nothing, so y
+			// stays free.
+			status, conflict, err := store.OffchainTxs().ClaimOutpoints(
+				ctx, ownerB, []domain.Outpoint{x, y},
+			)
+			require.NoError(t, err)
+			require.Equal(t, ports.ClaimConflict, status)
+			require.NotNil(t, conflict)
+			require.Equal(t, x.String(), conflict.String())
+
+			exists, err := store.OffchainTxs().Includes(ctx, y)
+			require.NoError(t, err)
+			require.False(t, exists, "y must not be registered when the batch conflicts on x")
+		})
+
+		t.Run("released outpoint is free again, absent release is a no-op", func(t *testing.T) {
+			x := claimOutpoint(2)
+
+			_, _, err := store.OffchainTxs().ClaimOutpoints(ctx, ownerA, []domain.Outpoint{x})
+			require.NoError(t, err)
+			require.NoError(t,
+				store.OffchainTxs().ReleaseOutpoints(ctx, ownerA, []domain.Outpoint{x}),
+			)
+			require.NoError(t, store.OffchainTxs().ReleaseOutpoints(
+				ctx, ownerA, []domain.Outpoint{claimOutpoint(9)},
+			))
+
+			// Now free, another owner can claim it.
+			status, _, err := store.OffchainTxs().ClaimOutpoints(
+				ctx, ownerB, []domain.Outpoint{x},
+			)
+			require.NoError(t, err)
+			require.Equal(t, ports.ClaimFresh, status)
+		})
+
+		// Run under -race: exactly one of N distinct-owner claimers of the same
+		// outpoint wins fresh, the rest conflict.
+		t.Run("concurrent distinct owners, exactly one wins", func(t *testing.T) {
+			x := claimOutpoint(4)
+
+			const n = 64
+			var fresh, conflicts int64
+			errs := make(chan error, n)
+			var wg sync.WaitGroup
+			wg.Add(n)
+			for i := 0; i < n; i++ {
+				owner := ownerA + string(rune('0'+i%10)) + string(rune('a'+i/10))
+				go func(owner string) {
+					defer wg.Done()
+					status, _, err := store.OffchainTxs().ClaimOutpoints(
+						ctx, owner, []domain.Outpoint{x},
+					)
+					if err != nil {
+						errs <- err
+						return
+					}
+					switch status {
+					case ports.ClaimFresh:
+						atomic.AddInt64(&fresh, 1)
+					case ports.ClaimConflict:
+						atomic.AddInt64(&conflicts, 1)
+					}
+				}(owner)
+			}
+			wg.Wait()
+			close(errs)
+			for err := range errs {
+				require.NoError(t, err)
+			}
+
+			require.Equal(t, int64(1), fresh, "exactly one distinct owner must win")
+			require.Equal(t, int64(n-1), conflicts)
+		})
+
+		// Run under -race: N same-owner claimers of the same outpoint all succeed
+		// (fresh or already-owned), never conflict.
+		t.Run("concurrent same owner, none conflict", func(t *testing.T) {
+			x := claimOutpoint(5)
+
+			const n = 64
+			var conflicts int64
+			errs := make(chan error, n)
+			var wg sync.WaitGroup
+			wg.Add(n)
+			for i := 0; i < n; i++ {
+				go func() {
+					defer wg.Done()
+					status, _, err := store.OffchainTxs().ClaimOutpoints(
+						ctx, ownerA, []domain.Outpoint{x},
+					)
+					if err != nil {
+						errs <- err
+						return
+					}
+					if status == ports.ClaimConflict {
+						atomic.AddInt64(&conflicts, 1)
+					}
+				}()
+			}
+			wg.Wait()
+			close(errs)
+			for err := range errs {
+				require.NoError(t, err)
+			}
+
+			require.Equal(t, int64(0), conflicts, "same-owner claims must never conflict")
+		})
 	})
 
 	t.Run("CurrentRoundStore", func(t *testing.T) {
@@ -1372,4 +1569,12 @@ func sigsMatch(sigs, gotSigs map[uint32]ports.SignedBoardingInput) error {
 		}
 	}
 	return nil
+}
+
+// claimOutpoint builds a domain.Outpoint with a fresh random 64-char hex txid,
+// so it round-trips through Outpoint.FromString on the redis path and never
+// collides with a claim left behind by an earlier run against the same redis.
+func claimOutpoint(vout uint32) domain.Outpoint {
+	txid := strings.ReplaceAll(uuid.New().String()+uuid.New().String(), "-", "")
+	return domain.Outpoint{Txid: txid, VOut: vout}
 }

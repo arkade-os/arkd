@@ -64,10 +64,9 @@ type service struct {
 	indexerTxEventsCh        chan TransactionEvent
 
 	// stop and round-execution go routine handlers
-	stop         func()
-	ctx          context.Context
-	wg           *sync.WaitGroup
-	offchainTxMu *sync.Mutex
+	stop func()
+	ctx  context.Context
+	wg   *sync.WaitGroup
 	// global mtx for the fraud.go coinselection
 	feeBumpMtx sync.Mutex
 }
@@ -158,7 +157,6 @@ func NewService(
 		stop:                     cancel,
 		ctx:                      ctx,
 		wg:                       &sync.WaitGroup{},
-		offchainTxMu:             &sync.Mutex{},
 		alerts:                   alerts,
 		feeManager:               feeManager,
 	}
@@ -1169,33 +1167,10 @@ func (s *service) SubmitOffchainTx(
 			})
 	}
 
-	s.offchainTxMu.Lock()
-	defer s.offchainTxMu.Unlock()
-
-	// before pushing to the cache, check if any of the spent vtxos are already spent by another offchain tx
-	// we redo this check after locking the mutex to avoid race conditions between concurrent offchain tx submissions
-	for _, spentVtxo := range spentVtxos {
-		isSpent, err := s.cache.OffchainTxs().Includes(ctx, spentVtxo.Outpoint)
-		if err != nil {
-			log.WithError(err).Errorf(
-				"failed to check again spent status of inputs against tx in cache",
-			)
-			return nil, errors.INTERNAL_ERROR.New("something went wrong").
-				WithMetadata(map[string]any{"vtxo": spentVtxo.Outpoint.String()})
-		}
-		if isSpent {
-			return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", spentVtxo.Outpoint.String()).
-				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: spentVtxo.Outpoint.String()})
-		}
-	}
-
-	if exists, vtxo := s.cache.Intents().IncludesAny(ctx, spentVtxoKeys); exists {
-		return nil, errors.VTXO_ALREADY_REGISTERED.New("%s already registered", vtxo).
-			WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo})
-	}
-
-	// Cache entries are removed after DB projection completes
-	// Re-read DB to confirm unspent status and prevent a race with cache entry removal
+	// The spent vtxos were read from the DB earlier in this call, but an accepted
+	// offchain tx is evicted from the cache once it is projected, so that read can
+	// be stale by now: a vtxo spent and projected in the meantime is no longer in
+	// the cache for the claim below to conflict against. Re-read before claiming.
 	freshSpentVtxos, err := vtxoRepo.GetVtxos(ctx, spentVtxoKeys)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to fetch vtxos: %w", err).
@@ -1233,24 +1208,40 @@ func (s *service) SubmitOffchainTx(
 		}
 	}
 
-	if err := s.cache.OffchainTxs().Add(ctx, *offchainTx); err != nil {
-		return nil, errors.INTERNAL_ERROR.New("something went wrong").
-			WithMetadata(map[string]any{"ark_txid": offchainTx.ArkTxid})
-	}
-
-	// apply Accepted event only after verifying the spent vtxos
-	changes = append(changes, change)
-
 	signedCheckpointTxs := make([]string, 0, len(signedCheckpointTxsMap))
 	for _, tx := range signedCheckpointTxsMap {
 		signedCheckpointTxs = append(signedCheckpointTxs, tx)
 	}
-
-	return &AcceptedOffchainTx{
+	accepted := &AcceptedOffchainTx{
 		TxId:                txid,
 		FinalArkTx:          fullySignedArkTx,
 		SignedCheckpointTxs: signedCheckpointTxs,
-	}, nil
+	}
+
+	// Atomically claim the spent inputs and store the tx in one step. The store
+	// (redis Lua / inmemory lock) is the single cross-process barrier against a
+	// concurrent spend of the same vtxos, whether off-chain or on-chain, so no
+	// separate recheck-then-add under a per-process mutex is needed.
+	status, conflict, err := s.cache.OffchainTxs().Add(ctx, *offchainTx)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithMetadata(map[string]any{"ark_txid": offchainTx.ArkTxid})
+	}
+	switch status {
+	case ports.ClaimConflict:
+		return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", conflict.String()).
+			WithMetadata(errors.VtxoMetadata{VtxoOutpoint: conflict.String()})
+	case ports.ClaimAlreadyOwned:
+		// A concurrent or retried submit of this same arkTxid already claimed
+		// these inputs and applied the acceptance. Return the accepted result
+		// and record nothing further, so no duplicate Accepted event is saved.
+		changes = nil
+		return accepted, nil
+	}
+
+	// ClaimFresh: apply the Accepted event.
+	changes = append(changes, change)
+	return accepted, nil
 }
 
 func (s *service) FinalizeOffchainTx(
@@ -1576,6 +1567,55 @@ func (s *service) GetPendingOffchainTxs(
 	}
 
 	return acceptedOffchainTxs, nil
+}
+
+// releaseClaimsOfIntentIds looks the intents up so their inputs can be released,
+// for callers that only hold ids.
+func (s *service) releaseClaimsOfIntentIds(ctx context.Context, ids []string) {
+	if len(ids) <= 0 {
+		return
+	}
+	timed, err := s.cache.Intents().ViewAll(ctx, ids)
+	if err != nil {
+		log.WithError(err).Warnf("failed to view intents %v to release their claims", ids)
+		return
+	}
+	releaseClaimsOfIntents(ctx, s.cache.OffchainTxs(), intentsOf(timed))
+}
+
+// releaseClaimsOfSelectedIntents releases the claims of every intent the last
+// Pop selected that is no longer queued. An intent re-pushed for a later round
+// is queued again under the same id and keeps its claim.
+func (s *service) releaseClaimsOfSelectedIntents(ctx context.Context) {
+	selected, err := s.cache.Intents().GetSelectedIntents(ctx)
+	if err != nil {
+		log.WithError(err).Warn("failed to get selected intents to release their claims")
+		return
+	}
+	if len(selected) <= 0 {
+		return
+	}
+	ids := make([]string, 0, len(selected))
+	for _, intent := range selected {
+		ids = append(ids, intent.Id)
+	}
+	queued, err := s.cache.Intents().ViewAll(ctx, ids)
+	if err != nil {
+		log.WithError(err).Warnf("failed to view intents %v to release their claims", ids)
+		return
+	}
+	stillQueued := make(map[string]struct{}, len(queued))
+	for _, intent := range queued {
+		stillQueued[intent.Id] = struct{}{}
+	}
+	dropped := make([]domain.Intent, 0, len(selected))
+	for _, intent := range selected {
+		if _, ok := stillQueued[intent.Id]; ok {
+			continue
+		}
+		dropped = append(dropped, intent.Intent)
+	}
+	releaseClaimsOfIntents(ctx, s.cache.OffchainTxs(), dropped)
 }
 
 func (s *service) RegisterIntent(
@@ -2206,27 +2246,45 @@ func (s *service) RegisterIntent(
 		}
 	}
 
-	s.offchainTxMu.Lock()
-	defer s.offchainTxMu.Unlock()
-
+	// Claim the vtxo inputs in the shared conflict domain, replacing the
+	// offchainTxMu-guarded check this used to do. The claim is atomic across
+	// processes, as Add is, and reserves rather than only checking, so it also
+	// stops two intents registering the same vtxo.
+	//
+	// Every claim taken here is released again: at the next round start once Pop
+	// has selected the intent and it was either registered on the round or
+	// dropped, on delete by proof, and on admin delete. That holds because every
+	// registered intent is eventually selected by Pop. Pop skips intents
+	// carrying no receivers, but RegisterIntent cannot produce one, since
+	// Intent.validate rejects an empty output set. If receivers ever become
+	// optional (see the commented-out IntentStore.Update), such an intent would
+	// never be selected, never reach a release path, and its claim would leak
+	// here, leaving the vtxos permanently unspendable.
+	claimedOutpoints := make([]domain.Outpoint, 0, len(vtxoInputs))
 	for _, vtxo := range vtxoInputs {
-		isSpent, err := s.cache.OffchainTxs().Includes(ctx, vtxo.Outpoint)
+		claimedOutpoints = append(claimedOutpoints, vtxo.Outpoint)
+	}
+
+	if len(claimedOutpoints) > 0 {
+		status, conflict, err := s.cache.OffchainTxs().ClaimOutpoints(
+			ctx, intent.Id, claimedOutpoints,
+		)
 		if err != nil {
-			log.WithError(err).
-				Errorf("failed to check again spent status of input against tx in cache")
+			log.WithError(err).Errorf("failed to claim intent inputs in the conflict domain")
 			return "", errors.INTERNAL_ERROR.New("something went wrong").
-				WithMetadata(map[string]any{"vtxo": vtxo.Outpoint.String()})
+				WithMetadata(map[string]any{"vtxos": claimedOutpoints})
 		}
-		if isSpent {
+		if status == ports.ClaimConflict {
 			return "", errors.VTXO_ALREADY_SPENT.New(
-				"vtxo %s is currently being spent", vtxo.Outpoint.String(),
-			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+				"vtxo %s is currently being spent", conflict.String(),
+			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: conflict.String()})
 		}
 	}
 
 	if err := s.cache.Intents().Push(
 		ctx, *intent, boardingInputs, message.CosignersPublicKeys,
 	); err != nil {
+		releaseIntentClaims(ctx, s.cache.OffchainTxs(), intent.Id, claimedOutpoints)
 		return "", errors.INTERNAL_ERROR.New("failed to push intent: %w", err).
 			WithMetadata(map[string]any{
 				"intent":                intent,
@@ -2503,6 +2561,8 @@ func (s *service) DeleteIntentsByProof(
 	for _, m := range matches {
 		idsToDelete = append(idsToDelete, m.Id)
 	}
+
+	s.releaseClaimsOfIntentIds(ctx, idsToDelete)
 
 	if deleteErr := s.cache.Intents().Delete(ctx, idsToDelete); deleteErr != nil {
 		return errors.INTERNAL_ERROR.New("failed to delete intents: %w", deleteErr).
@@ -2792,6 +2852,15 @@ func (s *service) startRound() {
 				"failed to delete forfeit txs from cache for round %s", existingRound.Id,
 			)
 		}
+		// Every intent the last Pop selected is by now registered on the round,
+		// re-pushed to the queue, or dropped (spent boarding input, liquidity
+		// abort, failed re-push, or a crash before the round was stored).
+		// Release the claims of all but the re-pushed ones, so a dropped intent
+		// cannot leave its vtxos claimed forever. This reconciles the conflict
+		// domain from the popped set the same way DeleteVtxos below reconciles
+		// the intent vtxo index.
+		s.releaseClaimsOfSelectedIntents(ctx)
+
 		if err := s.cache.Intents().DeleteVtxos(ctx); err != nil {
 			log.WithError(err).Warnf(
 				"failed to delete spent vtxos from cache after round %s", existingRound.Id,
