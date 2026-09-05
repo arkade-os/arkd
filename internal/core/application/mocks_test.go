@@ -18,13 +18,14 @@ type mockedRoundRepo struct {
 
 func (m *mockedRoundRepo) GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error) {
 	args := m.Called(ctx, txids)
+	if fn, ok := args.Get(0).(func(context.Context, []string) ([]string, error)); ok {
+		return fn(ctx, txids)
+	}
+
 	var res []string
 	var err error
 
 	if v := args.Get(0); v != nil {
-		if fn, ok := v.(func(context.Context, []string) ([]string, error)); ok {
-			return fn(ctx, txids)
-		}
 		if fn, ok := v.(func(context.Context, []string) []string); ok {
 			res = fn(ctx, txids)
 		} else {

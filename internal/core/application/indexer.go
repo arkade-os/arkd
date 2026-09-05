@@ -960,6 +960,9 @@ func (i *indexerService) ensureVtxosCached(
 func (i *indexerService) getVirtualTxs(
 	ctx context.Context, txids []string, page *Page, authToken string,
 ) (*VirtualTxsResp, error) {
+	// maxQueryChunkSize bounds the number of txids queried in a single SQL query.
+	// Each txid expands into 3 IN-clause bound parameters in the underlying SQLite query.
+	// A chunk size of 250 translates to 750 parameters per query, well below SQLite's SQLITE_MAX_VARIABLE_NUMBER ceiling.
 	const maxQueryChunkSize = 250
 	var allTxs []string
 	seen := make(map[string]bool)

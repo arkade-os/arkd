@@ -7,6 +7,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -1783,19 +1784,14 @@ func TestGetVirtualTxs_Batching(t *testing.T) {
 			txids[i] = fmt.Sprintf("%064d", i+1)
 		}
 
-		callCount := 0
+		var callCount atomic.Int32
 		roundRepo.On("GetTxsWithTxids", mock.Anything, mock.Anything).
-			Return(func(ctx context.Context, chunk []string) []string {
-				callCount++
-				if callCount == 2 {
-					return nil
+			Return(func(ctx context.Context, chunk []string) ([]string, error) {
+				count := callCount.Add(1)
+				if count == 2 {
+					return nil, fmt.Errorf("db error on chunk 2")
 				}
-				return []string{"tx_ok"}
-			}, func(ctx context.Context, chunk []string) error {
-				if callCount == 2 {
-					return fmt.Errorf("db error on chunk 2")
-				}
-				return nil
+				return []string{"tx_ok"}, nil
 			})
 
 		svc := &indexerService{
