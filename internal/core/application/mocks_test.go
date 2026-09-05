@@ -18,10 +18,30 @@ type mockedRoundRepo struct {
 
 func (m *mockedRoundRepo) GetTxsWithTxids(ctx context.Context, txids []string) ([]string, error) {
 	args := m.Called(ctx, txids)
-	if v := args.Get(0); v != nil {
-		return v.([]string), args.Error(1)
+	if fn, ok := args.Get(0).(func(context.Context, []string) ([]string, error)); ok {
+		return fn(ctx, txids)
 	}
-	return nil, args.Error(1)
+
+	var res []string
+	var err error
+
+	if v := args.Get(0); v != nil {
+		if fn, ok := v.(func(context.Context, []string) []string); ok {
+			res = fn(ctx, txids)
+		} else {
+			res = v.([]string)
+		}
+	}
+
+	if v := args.Get(1); v != nil {
+		if fn, ok := v.(func(context.Context, []string) error); ok {
+			err = fn(ctx, txids)
+		} else {
+			err = args.Error(1)
+		}
+	}
+
+	return res, err
 }
 
 func (m *mockedRoundRepo) GetRoundVtxoTree(ctx context.Context, txid string) (arktree.FlatTxTree, error) {

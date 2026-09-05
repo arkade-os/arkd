@@ -922,9 +922,14 @@ func parsePage(page *arkv1.IndexerPageRequest) (*application.Page, error) {
 	}, nil
 }
 
+const maxTxidsPerRequest = 10_000
+
 func parseTxids(txids []string) ([]string, error) {
 	if len(txids) == 0 {
 		return nil, fmt.Errorf("missing txids")
+	}
+	if len(txids) > maxTxidsPerRequest {
+		return nil, fmt.Errorf("txids list exceeds maximum limit of %d", maxTxidsPerRequest)
 	}
 	for _, txid := range txids {
 		if _, err := parseTxid(txid); err != nil {
