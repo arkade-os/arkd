@@ -27,7 +27,7 @@ func main() {
 		log.Fatalf("failed to create service: %s", err)
 	}
 
-	log.Infof("arkd wallet config: %+v", cfg)
+	log.Infof("arkd wallet config: %s", cfg)
 
 	log.Info("starting service...")
 	if err := svc.Start(); err != nil {

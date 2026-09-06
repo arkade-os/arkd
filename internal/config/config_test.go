@@ -230,28 +230,62 @@ func TestConfigValidateEarlyChecks(t *testing.T) {
 
 func TestConfigStringRedactsSecrets(t *testing.T) {
 	tests := []struct {
-		name     string
-		mutate   func(c *Config)
-		value    string
-		redacted bool
+		name           string
+		mutate         func(c *Config)
+		mustNotContain string
+		mustContain    string
 	}{
 		{
-			"unlocker password is redacted",
-			func(c *Config) { c.UnlockerPassword = "super-secret-password" },
-			"super-secret-password",
-			true,
+			name:           "unlocker password is redacted",
+			mutate:         func(c *Config) { c.UnlockerPassword = "super-secret-password" },
+			mustNotContain: "super-secret-password",
+			mustContain:    redactedMask,
 		},
 		{
-			"indexer signing key is redacted",
-			func(c *Config) { c.IndexerSigningKey = "deadbeefsigningkey" },
-			"deadbeefsigningkey",
-			true,
+			name:           "indexer signing key is redacted",
+			mutate:         func(c *Config) { c.IndexerSigningKey = "deadbeefsigningkey" },
+			mustNotContain: "deadbeefsigningkey",
+			mustContain:    redactedMask,
 		},
 		{
-			"non-sensitive field is preserved",
-			func(c *Config) { c.WalletAddr = "localhost:6060" },
-			"localhost:6060",
-			false,
+			name: "postgres url keeps host and database but drops the password",
+			mutate: func(c *Config) {
+				c.DbUrl = "postgres://ark:hunter2@pg:5432/arkd?sslmode=disable"
+			},
+			mustNotContain: "hunter2",
+			mustContain:    "postgres://ark:xxxxx@pg:5432/arkd?sslmode=disable",
+		},
+		{
+			name: "postgres keyword dsn is masked whole",
+			mutate: func(c *Config) {
+				c.DbUrl = "host=pg port=5432 user=ark password=hunter2 dbname=arkd"
+			},
+			mustNotContain: "hunter2",
+			mustContain:    redactedMask,
+		},
+		{
+			name: "event db url password is redacted",
+			mutate: func(c *Config) {
+				c.EventDbUrl = "postgres://ark:hunter2@pg:5432/arkd-events"
+			},
+			mustNotContain: "hunter2",
+			mustContain:    "postgres://ark:xxxxx@pg:5432/arkd-events",
+		},
+		{
+			name:           "redis url password is redacted",
+			mutate:         func(c *Config) { c.RedisUrl = "redis://default:hunter2@redis:6379/0" },
+			mustNotContain: "hunter2",
+			mustContain:    "redis://default:xxxxx@redis:6379/0",
+		},
+		{
+			name:        "credential-free url is left intact",
+			mutate:      func(c *Config) { c.RedisUrl = "redis://redis:6379/0" },
+			mustContain: "redis://redis:6379/0",
+		},
+		{
+			name:        "non-sensitive field is preserved",
+			mutate:      func(c *Config) { c.WalletAddr = "localhost:6060" },
+			mustContain: "localhost:6060",
 		},
 	}
 
@@ -261,12 +295,10 @@ func TestConfigStringRedactsSecrets(t *testing.T) {
 			tt.mutate(&c)
 
 			out := c.String()
-			if tt.redacted {
-				require.NotContains(t, out, tt.value)
-				require.Contains(t, out, "••••••")
-			} else {
-				require.Contains(t, out, tt.value)
+			if tt.mustNotContain != "" {
+				require.NotContains(t, out, tt.mustNotContain)
 			}
+			require.Contains(t, out, tt.mustContain)
 		})
 	}
 }

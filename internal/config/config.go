@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -166,19 +167,42 @@ type Config struct {
 	settings  *domain.Settings
 }
 
+const redactedMask = "••••••"
+
 func (c *Config) String() string {
 	clone := *c
-	if clone.UnlockerPassword != "" {
-		clone.UnlockerPassword = "••••••"
-	}
-	if clone.IndexerSigningKey != "" {
-		clone.IndexerSigningKey = "••••••"
-	}
+	clone.UnlockerPassword = maskSecret(clone.UnlockerPassword)
+	clone.IndexerSigningKey = maskSecret(clone.IndexerSigningKey)
+	clone.DbUrl = redactConnectionString(clone.DbUrl)
+	clone.EventDbUrl = redactConnectionString(clone.EventDbUrl)
+	clone.RedisUrl = redactConnectionString(clone.RedisUrl)
+
 	json, err := json.MarshalIndent(clone, "", "  ")
 	if err != nil {
 		return fmt.Sprintf("error while marshalling config JSON: %s", err)
 	}
 	return string(json)
+}
+
+func maskSecret(secret string) string {
+	if secret == "" {
+		return ""
+	}
+	return redactedMask
+}
+
+// Non-URL values are masked whole because lib/pq also accepts keyword DSNs
+// ("host=pg user=ark password=hunter2"), which url.Parse accepts without
+// recognising any credential, so Redacted() would pass the password through.
+func redactConnectionString(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return redactedMask
+	}
+	return parsed.Redacted()
 }
 
 var (
