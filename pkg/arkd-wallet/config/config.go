@@ -97,18 +97,29 @@ type Config struct {
 	OtelPushInterval      int64
 	PyroscopeServerURL    string
 
-	WalletSvc  application.WalletService
-	ScannerSvc application.BlockchainScanner
+	WalletSvc  application.WalletService     `json:"-"`
+	ScannerSvc application.BlockchainScanner `json:"-"`
 }
+
+const redactedMask = "••••••"
 
 func (c *Config) String() string {
 	clone := *c
+	clone.SignerKey = maskSecret(clone.SignerKey)
+	clone.DeprecatedSignerKeys = maskSecret(clone.DeprecatedSignerKeys)
 
 	json, err := json.MarshalIndent(clone, "", "  ")
 	if err != nil {
 		return fmt.Sprintf("error while marshalling config JSON: %s", err)
 	}
 	return string(json)
+}
+
+func maskSecret(secret string) string {
+	if secret == "" {
+		return ""
+	}
+	return redactedMask
 }
 
 func (c *Config) initServices() error {

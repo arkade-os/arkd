@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -166,19 +167,72 @@ type Config struct {
 	settings  *domain.Settings
 }
 
+const redactedMask = "••••••"
+
 func (c *Config) String() string {
 	clone := *c
-	if clone.UnlockerPassword != "" {
-		clone.UnlockerPassword = "••••••"
-	}
-	if clone.IndexerSigningKey != "" {
-		clone.IndexerSigningKey = "••••••"
-	}
+	clone.UnlockerPassword = maskSecret(clone.UnlockerPassword)
+	clone.IndexerSigningKey = maskSecret(clone.IndexerSigningKey)
+	clone.DbUrl = redactConnectionString(clone.DbUrl)
+	clone.EventDbUrl = redactConnectionString(clone.EventDbUrl)
+	clone.RedisUrl = redactConnectionString(clone.RedisUrl)
+
 	json, err := json.MarshalIndent(clone, "", "  ")
 	if err != nil {
 		return fmt.Sprintf("error while marshalling config JSON: %s", err)
 	}
 	return string(json)
+}
+
+func maskSecret(secret string) string {
+	if secret == "" {
+		return ""
+	}
+	return redactedMask
+}
+
+// matches url.URL.Redacted()
+const urlPasswordMask = "xxxxx"
+
+// lib/pq honours these in URL form; Redacted() masks only the userinfo.
+var credentialQueryParams = []string{"password", "sslpassword"}
+
+// Non-URLs are masked whole: keyword DSNs hide credentials from url.Parse.
+func redactConnectionString(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return redactedMask
+	}
+	if err := redactQueryCredentials(parsed); err != nil {
+		return redactedMask
+	}
+	return parsed.Redacted()
+}
+
+// Fails closed: url.URL.Query would silently drop a malformed password pair,
+// leaving it in RawQuery for Redacted() to emit.
+func redactQueryCredentials(parsed *url.URL) error {
+	query, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return err
+	}
+	redacted := false
+	for key := range query {
+		for _, credential := range credentialQueryParams {
+			if strings.EqualFold(key, credential) {
+				query.Set(key, urlPasswordMask)
+				redacted = true
+			}
+		}
+	}
+	// Encode reorders params, so only rewrite when masked.
+	if redacted {
+		parsed.RawQuery = query.Encode()
+	}
+	return nil
 }
 
 var (
