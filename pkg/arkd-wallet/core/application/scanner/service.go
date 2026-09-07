@@ -276,6 +276,10 @@ func (s *scanner) IsTransactionConfirmed(ctx context.Context, txid string) (isCo
 	return details.Confirmations > 0, int64(details.Height), details.Timestamp, nil
 }
 
+func (s *scanner) IsTransactionInMempool(ctx context.Context, txid string) (bool, error) {
+	return s.nbxplorer.IsInMempool(ctx, txid)
+}
+
 func (s *scanner) TransactionReplacedBy(ctx context.Context, txid string) (string, error) {
 	details, err := s.nbxplorer.GetTransaction(ctx, txid)
 	if err != nil {

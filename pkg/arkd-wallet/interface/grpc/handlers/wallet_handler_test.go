@@ -34,7 +34,7 @@ func TestIsTransactionConfirmedNotFound(t *testing.T) {
 	// mined yet. Flagging this one would let a caller treat a live transaction
 	// as gone.
 	t.Run("an unconfirmed transaction is not flagged not found", func(t *testing.T) {
-		h := &walletHandler{scanner: &confirmScanner{}}
+		h := &walletHandler{scanner: &confirmScanner{inMempool: true}}
 
 		resp, err := h.IsTransactionConfirmed(
 			context.Background(), &arkwalletv1.IsTransactionConfirmedRequest{Txid: txid},
@@ -91,6 +91,55 @@ func TestIsTransactionConfirmedNotFound(t *testing.T) {
 		require.Empty(t, resp.GetReplacedBy())
 	})
 
+	// The signal that actually fires for an unroll. The materialising tx is
+	// pre-signed and cannot be replaced, so the way it fails is by being dropped
+	// from the mempool, and only the node knows that.
+	t.Run("an unconfirmed tx the node no longer holds is dropped", func(t *testing.T) {
+		h := &walletHandler{scanner: &confirmScanner{inMempool: false}}
+
+		resp, err := h.IsTransactionConfirmed(
+			context.Background(), &arkwalletv1.IsTransactionConfirmedRequest{Txid: txid},
+		)
+
+		require.NoError(t, err)
+		require.True(t, resp.GetDropped())
+	})
+
+	t.Run("a tx still in the mempool is not dropped", func(t *testing.T) {
+		h := &walletHandler{scanner: &confirmScanner{inMempool: true}}
+
+		resp, err := h.IsTransactionConfirmed(
+			context.Background(), &arkwalletv1.IsTransactionConfirmedRequest{Txid: txid},
+		)
+
+		require.NoError(t, err)
+		require.False(t, resp.GetDropped(), "waiting is not the same as gone")
+	})
+
+	// Both the confirmed case and an unanswerable node must read as not dropped,
+	// so nothing acts on a transaction that may well be alive.
+	t.Run("a confirmed tx is not dropped", func(t *testing.T) {
+		h := &walletHandler{scanner: &confirmScanner{confirmed: true}}
+
+		resp, err := h.IsTransactionConfirmed(
+			context.Background(), &arkwalletv1.IsTransactionConfirmedRequest{Txid: txid},
+		)
+
+		require.NoError(t, err)
+		require.False(t, resp.GetDropped())
+	})
+
+	t.Run("a node that cannot answer leaves it not dropped", func(t *testing.T) {
+		h := &walletHandler{scanner: &confirmScanner{mempoolErr: errors.New("rpc disabled")}}
+
+		resp, err := h.IsTransactionConfirmed(
+			context.Background(), &arkwalletv1.IsTransactionConfirmedRequest{Txid: txid},
+		)
+
+		require.NoError(t, err)
+		require.False(t, resp.GetDropped(), "cannot tell must never read as gone")
+	})
+
 	t.Run("another failure is returned as an error", func(t *testing.T) {
 		h := &walletHandler{scanner: &confirmScanner{err: errors.New("backend down")}}
 
@@ -113,12 +162,18 @@ type confirmScanner struct {
 	blockHeight int64
 	blockTime   int64
 	replacedBy  string
+	inMempool   bool
 	err         error
 	replacedErr error
+	mempoolErr  error
 }
 
 func (s *confirmScanner) TransactionReplacedBy(_ context.Context, _ string) (string, error) {
 	return s.replacedBy, s.replacedErr
+}
+
+func (s *confirmScanner) IsTransactionInMempool(_ context.Context, _ string) (bool, error) {
+	return s.inMempool, s.mempoolErr
 }
 
 func (s *confirmScanner) IsTransactionConfirmed(

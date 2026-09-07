@@ -305,10 +305,22 @@ func TestIsTransactionDropped(t *testing.T) {
 	// The case that actually fires in production. A replaced transaction is
 	// still known to the backend and still answers "not confirmed", so only the
 	// replacement signal distinguishes it from one merely waiting.
+	t.Run("a transaction the node no longer holds is dropped", func(t *testing.T) {
+		w := &walletDaemonClient{client: &confirmFakeClient{
+			resp: &arkwalletv1.IsTransactionConfirmedResponse{Dropped: true},
+		}}
+
+		dropped, err := w.IsTransactionDropped(t.Context(), txid)
+
+		require.NoError(t, err)
+		require.True(t, dropped)
+	})
+
 	t.Run("a replaced transaction is dropped", func(t *testing.T) {
 		w := &walletDaemonClient{client: &confirmFakeClient{
 			resp: &arkwalletv1.IsTransactionConfirmedResponse{
 				ReplacedBy: "4dc2f8e63b9dc3825f69c8295a48a9b87ba4c663f42ea7b49fa335746d626246",
+				Dropped:    true,
 			},
 		}}
 
@@ -320,7 +332,7 @@ func TestIsTransactionDropped(t *testing.T) {
 
 	t.Run("a transaction the backend has no record of is dropped", func(t *testing.T) {
 		w := &walletDaemonClient{client: &confirmFakeClient{
-			resp: &arkwalletv1.IsTransactionConfirmedResponse{NotFound: true},
+			resp: &arkwalletv1.IsTransactionConfirmedResponse{NotFound: true, Dropped: true},
 		}}
 
 		dropped, err := w.IsTransactionDropped(t.Context(), txid)

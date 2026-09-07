@@ -239,6 +239,14 @@ message IsTransactionConfirmedResponse {
   // Empty when the transaction was not replaced, which is also what an older
   // wallet returns, so the safe reading is the zero value here too.
   string replaced_by = 5;
+  // dropped is the wallet's judgement that this transaction will not confirm:
+  // superseded, unknown to the backend, or unconfirmed and no longer held by
+  // the node. It is computed here because only the wallet can see all three.
+  //
+  // False whenever the wallet cannot tell, including on an older wallet that
+  // never sets it, so a caller acting on this can never act on a live
+  // transaction.
+  bool dropped = 6;
 }
 
 message GetOutpointStatusRequest {

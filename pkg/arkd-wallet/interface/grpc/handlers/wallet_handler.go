@@ -351,14 +351,17 @@ func (h *walletHandler) IsTransactionConfirmed(
 				Blocknumber: 0,
 				Blocktime:   0,
 				NotFound:    true,
+				Dropped:     true,
 			}, nil
 		}
 		return nil, err
 	}
-	// Only an unconfirmed transaction can have been replaced, so the second
-	// lookup is skipped for the common case. A failure to answer is not
-	// reported as "not replaced": it is left empty, which reads as no signal.
+	// A confirmed transaction is settled, so neither extra question is asked.
+	// For an unconfirmed one both are, and a failure to answer either leaves the
+	// result empty or false rather than asserting anything: the caller must
+	// never read "cannot tell" as "gone".
 	var replacedBy string
+	var dropped bool
 	if !confirmed {
 		replacement, err := h.scanner.TransactionReplacedBy(ctx, req.GetTxid())
 		if err != nil {
@@ -368,6 +371,19 @@ func (h *walletHandler) IsTransactionConfirmed(
 		} else {
 			replacedBy = replacement
 		}
+
+		// The node is the only component that knows it has dropped a
+		// transaction: NBXplorer keeps reporting one at zero confirmations long
+		// after the node let it go.
+		inMempool, err := h.scanner.IsTransactionInMempool(ctx, req.GetTxid())
+		if err != nil {
+			log.WithError(err).Warnf(
+				"failed to check whether tx %s is still in the mempool", req.GetTxid(),
+			)
+		} else {
+			dropped = !inMempool
+		}
+		dropped = dropped || replacedBy != ""
 	}
 
 	return &arkwalletv1.IsTransactionConfirmedResponse{
@@ -375,6 +391,7 @@ func (h *walletHandler) IsTransactionConfirmed(
 		Blocknumber: blocknumber,
 		Blocktime:   blocktime,
 		ReplacedBy:  replacedBy,
+		Dropped:     dropped,
 	}, nil
 }
 

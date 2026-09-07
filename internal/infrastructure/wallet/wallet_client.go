@@ -455,7 +455,7 @@ func (w *walletDaemonClient) IsTransactionDropped(
 	if err != nil {
 		return false, err
 	}
-	return resp.GetNotFound() || resp.GetReplacedBy() != "", nil
+	return resp.GetDropped(), nil
 }
 
 func (w *walletDaemonClient) IsTransactionConfirmed(

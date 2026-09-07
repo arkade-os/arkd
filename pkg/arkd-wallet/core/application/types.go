@@ -68,6 +68,10 @@ type BlockchainScanner interface {
 	// TransactionReplacedBy names the transaction the backend has recorded as
 	// having superseded this one, or empty when it has not been replaced.
 	TransactionReplacedBy(ctx context.Context, txid string) (string, error)
+	// IsTransactionInMempool reports whether the node is holding the
+	// transaction. Combined with the confirmation state it is what separates a
+	// transaction still waiting from one the node has dropped.
+	IsTransactionInMempool(ctx context.Context, txid string) (bool, error)
 	GetOutpointStatus(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error)
 	// GetSpends returns every watched output spent by a confirmed or unconfirmed
 	// transaction, windowed from the given instant when one is supplied.

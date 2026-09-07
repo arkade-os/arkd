@@ -36,6 +36,10 @@ const (
 // an ordinary outcome rather than a failure.
 var errNotFound = errors.New("not found")
 
+// rpcInvalidAddressOrKey is bitcoind's RPC_INVALID_ADDRESS_OR_KEY, which
+// getmempoolentry returns for a transaction the node is not holding.
+const rpcInvalidAddressOrKey = -5
+
 type nbxplorer struct {
 	url           string
 	httpClient    *http.Client
@@ -1054,6 +1058,57 @@ func (n *nbxplorer) GetTxSpends(ctx context.Context, txid string) ([]ports.Spend
 // value would therefore report a mempool-spent output as unspent, and a caller
 // using this to retract spends would undo every mempool spend one tick after
 // recording it.
+// IsInMempool asks the node, through NBXplorer's RPC proxy, whether it is
+// holding the transaction.
+//
+// The node is the only component that knows this. NBXplorer keeps a transaction
+// in its own index after the node has dropped it, reporting zero confirmations
+// indefinitely, so its view cannot separate one waiting in the mempool from one
+// that is gone. Verified against a live regtest node: a replaced transaction the
+// node no longer holds answers "Transaction not in mempool", exactly as a
+// confirmed one does, which is why the caller must combine this with the
+// confirmation state rather than read it alone.
+func (n *nbxplorer) IsInMempool(ctx context.Context, txid string) (bool, error) {
+	if _, err := chainhash.NewHashFromStr(txid); err != nil {
+		return false, fmt.Errorf("invalid txid format: %w", err)
+	}
+
+	body := fmt.Sprintf(
+		`{"jsonrpc":"1.0","id":"arkd","method":"getmempoolentry","params":[%q]}`, txid,
+	)
+	endpoint := fmt.Sprintf("/v1/cryptos/%s/rpc", btcCryptoCode)
+	data, err := n.makeRequest(ctx, "POST", endpoint, strings.NewReader(body))
+	if err != nil {
+		return false, fmt.Errorf("failed to query the node mempool: %w", err)
+	}
+
+	// A JSON-RPC failure arrives with an HTTP 200 and an error member, so the
+	// body has to be read rather than the status.
+	var resp struct {
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return false, fmt.Errorf("failed to unmarshal mempool entry: %v", err)
+	}
+
+	if resp.Error != nil {
+		// The node says it does not hold the transaction. Every other failure is
+		// reported, so a caller never reads "cannot tell" as "not there".
+		if resp.Error.Code == rpcInvalidAddressOrKey {
+			return false, nil
+		}
+		return false, fmt.Errorf(
+			"node rejected the mempool query: %s (code %d)", resp.Error.Message, resp.Error.Code,
+		)
+	}
+
+	return len(resp.Result) > 0 && string(resp.Result) != "null", nil
+}
+
 func (n *nbxplorer) GetUnspentOutpoints(
 	ctx context.Context,
 ) (map[wire.OutPoint]struct{}, error) {

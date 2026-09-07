@@ -166,7 +166,15 @@ type IsTransactionConfirmedResponse struct {
 	//
 	// Empty when the transaction was not replaced, which is also what an older
 	// wallet returns, so the safe reading is the zero value here too.
-	ReplacedBy    string `protobuf:"bytes,5,opt,name=replaced_by,json=replacedBy,proto3" json:"replaced_by,omitempty"`
+	ReplacedBy string `protobuf:"bytes,5,opt,name=replaced_by,json=replacedBy,proto3" json:"replaced_by,omitempty"`
+	// dropped is the wallet's judgement that this transaction will not confirm:
+	// superseded, unknown to the backend, or unconfirmed and no longer held by
+	// the node. It is computed here because only the wallet can see all three.
+	//
+	// False whenever the wallet cannot tell, including on an older wallet that
+	// never sets it, so a caller acting on this can never act on a live
+	// transaction.
+	Dropped       bool `protobuf:"varint,6,opt,name=dropped,proto3" json:"dropped,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -234,6 +242,13 @@ func (x *IsTransactionConfirmedResponse) GetReplacedBy() string {
 		return x.ReplacedBy
 	}
 	return ""
+}
+
+func (x *IsTransactionConfirmedResponse) GetDropped() bool {
+	if x != nil {
+		return x.Dropped
+	}
+	return false
 }
 
 type GetOutpointStatusRequest struct {
@@ -3809,14 +3824,15 @@ const file_arkwallet_v1_bitcoin_wallet_proto_rawDesc = "" +
 	"\x16GetReadyUpdateResponse\x12\x14\n" +
 	"\x05ready\x18\x01 \x01(\bR\x05ready\"3\n" +
 	"\x1dIsTransactionConfirmedRequest\x12\x12\n" +
-	"\x04txid\x18\x01 \x01(\tR\x04txid\"\xbc\x01\n" +
+	"\x04txid\x18\x01 \x01(\tR\x04txid\"\xd6\x01\n" +
 	"\x1eIsTransactionConfirmedResponse\x12\x1c\n" +
 	"\tconfirmed\x18\x01 \x01(\bR\tconfirmed\x12 \n" +
 	"\vblocknumber\x18\x02 \x01(\x03R\vblocknumber\x12\x1c\n" +
 	"\tblocktime\x18\x03 \x01(\x03R\tblocktime\x12\x1b\n" +
 	"\tnot_found\x18\x04 \x01(\bR\bnotFound\x12\x1f\n" +
 	"\vreplaced_by\x18\x05 \x01(\tR\n" +
-	"replacedBy\"B\n" +
+	"replacedBy\x12\x18\n" +
+	"\adropped\x18\x06 \x01(\bR\adropped\"B\n" +
 	"\x18GetOutpointStatusRequest\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x12\n" +
 	"\x04vout\x18\x02 \x01(\rR\x04vout\"1\n" +
