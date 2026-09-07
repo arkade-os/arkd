@@ -406,6 +406,9 @@ func (e *indexerService) GetVirtualTxs(
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	if page == nil {
+		page = &application.Page{PageSize: maxPageRequestSize, PageNum: 1}
+	}
 
 	var resp *application.VirtualTxsResp
 	if request.GetIntent() != nil {

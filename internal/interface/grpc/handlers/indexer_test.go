@@ -91,6 +91,19 @@ func TestParsePage(t *testing.T) {
 	}
 }
 
+func TestGetVirtualTxsDefaultsPage(t *testing.T) {
+	mockSvc := &mockAppIndexer{}
+	svc := newTestIndexerService(t)
+	svc.indexerSvc = mockSvc
+
+	_, err := svc.GetVirtualTxs(context.Background(), &arkv1.GetVirtualTxsRequest{
+		Txids: []string{testChainTxid},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, &application.Page{PageSize: maxPageRequestSize, PageNum: 1}, mockSvc.gotVirtualTxsPage)
+}
+
 func TestGetVtxoChain(t *testing.T) {
 	// Cursor pagination is continued via the auth_token, not by re-submitting the intent proof,
 	// so combining an intent with a page_token must be rejected before the request reaches the
@@ -2095,9 +2108,10 @@ func (m *gatedSubscriptionServer) RecvMsg(any) error            { return nil }
 // other method would panic via the embedded nil interface (none are called).
 type mockAppIndexer struct {
 	application.IndexerService
-	gotPageToken string
-	resp         *application.VtxoChainResp
-	err          error
+	gotPageToken      string
+	gotVirtualTxsPage *application.Page
+	resp              *application.VtxoChainResp
+	err               error
 }
 
 func (m *mockAppIndexer) GetVtxoChain(
@@ -2105,4 +2119,11 @@ func (m *mockAppIndexer) GetVtxoChain(
 ) (*application.VtxoChainResp, error) {
 	m.gotPageToken = pageToken
 	return m.resp, m.err
+}
+
+func (m *mockAppIndexer) GetVirtualTxs(
+	_ context.Context, _ string, _ []string, page *application.Page,
+) (*application.VirtualTxsResp, error) {
+	m.gotVirtualTxsPage = page
+	return &application.VirtualTxsResp{}, m.err
 }
