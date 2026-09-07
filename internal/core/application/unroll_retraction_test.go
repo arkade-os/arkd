@@ -109,6 +109,28 @@ func TestRetractStaleUnrolls(t *testing.T) {
 		vtxos.AssertNotCalled(t, "UnmarkVtxosUnrolled", mock.Anything, mock.Anything)
 	})
 
+	// Without this the retraction is unreachable in production: every unit above
+	// calls retractStaleUnrolls directly, so removing its one call site from the
+	// reconcile pass would leave them all green.
+	t.Run("the reconcile pass drives the retraction", func(t *testing.T) {
+		vtxos := &mockedVtxoRepo{}
+		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return(candidates, nil)
+		vtxos.On("GetOnchainSpentVtxos", mock.Anything).Return([]domain.Vtxo{}, nil)
+		vtxos.On("UnmarkVtxosUnrolled", mock.Anything, mock.Anything).Return(nil)
+		rm := &mockedRepoManager{}
+		rm.On("Vtxos").Return(vtxos)
+		svc := &service{repoManager: rm, scanner: &mockedScanner{
+			unspent: map[domain.Outpoint]struct{}{},
+			known:   map[string]bool{},
+		}}
+
+		for range unrollRetractionObservations {
+			svc.reconcileOnchainSpendsOnce(ctx, nil)
+		}
+
+		vtxos.AssertCalled(t, "UnmarkVtxosUnrolled", mock.Anything, []domain.Outpoint{out})
+	})
+
 	t.Run("no candidates is a no-op", func(t *testing.T) {
 		scanner := &mockedScanner{}
 		svc, vtxos := unrollService(t, scanner)

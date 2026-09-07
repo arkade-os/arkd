@@ -294,6 +294,76 @@ func TestNotificationStreamIsShared(t *testing.T) {
 	}
 }
 
+// TestIsTransactionKnown pins the reading that keeps an unroll retraction safe.
+// The wallet answers "not confirmed" both for a transaction waiting in the
+// mempool and for one its backend has never seen, so the caller depends on the
+// not_found flag to tell those apart, and on an older wallet that never sets it
+// reading as known rather than as missing.
+func TestIsTransactionKnown(t *testing.T) {
+	const txid = "4ba63c204f39841e3a7c98e458586307cf6d33bbed9a9a520c827ab043f32701"
+
+	t.Run("a transaction the backend has no record of is not known", func(t *testing.T) {
+		w := &walletDaemonClient{client: &confirmFakeClient{
+			resp: &arkwalletv1.IsTransactionConfirmedResponse{NotFound: true},
+		}}
+
+		known, err := w.IsTransactionKnown(t.Context(), txid)
+
+		require.NoError(t, err)
+		require.False(t, known)
+	})
+
+	t.Run("an unconfirmed transaction the backend has is known", func(t *testing.T) {
+		w := &walletDaemonClient{client: &confirmFakeClient{
+			resp: &arkwalletv1.IsTransactionConfirmedResponse{Confirmed: false},
+		}}
+
+		known, err := w.IsTransactionKnown(t.Context(), txid)
+
+		require.NoError(t, err)
+		require.True(t, known, "unconfirmed is not the same as missing")
+	})
+
+	// The compatibility case. A wallet predating the flag leaves it unset, and
+	// the caller must read that as known, so no retraction can ever fire against
+	// an old wallet.
+	t.Run("an older wallet that never sets the flag reads as known", func(t *testing.T) {
+		w := &walletDaemonClient{client: &confirmFakeClient{
+			resp: &arkwalletv1.IsTransactionConfirmedResponse{},
+		}}
+
+		known, err := w.IsTransactionKnown(t.Context(), txid)
+
+		require.NoError(t, err)
+		require.True(t, known)
+	})
+
+	t.Run("a transport failure is reported, not read as missing", func(t *testing.T) {
+		w := &walletDaemonClient{client: &confirmFakeClient{err: errors.New("wallet down")}}
+
+		known, err := w.IsTransactionKnown(t.Context(), txid)
+
+		require.Error(t, err)
+		require.False(t, known)
+	})
+}
+
+// confirmFakeClient answers IsTransactionConfirmed with a fixed response.
+type confirmFakeClient struct {
+	arkwalletv1.WalletServiceClient
+	resp *arkwalletv1.IsTransactionConfirmedResponse
+	err  error
+}
+
+func (f *confirmFakeClient) IsTransactionConfirmed(
+	_ context.Context, _ *arkwalletv1.IsTransactionConfirmedRequest, _ ...grpc.CallOption,
+) (*arkwalletv1.IsTransactionConfirmedResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.resp, nil
+}
+
 // fakeNotificationStream replays a fixed set of responses, then blocks until
 // its context is cancelled so the reader goroutine behaves like a live stream
 // rather than terminating immediately.

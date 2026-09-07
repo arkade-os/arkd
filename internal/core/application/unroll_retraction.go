@@ -104,8 +104,8 @@ func (s *service) recordUnrollObservation(outpoint domain.Outpoint, known bool) 
 		delete(s.unrollObservations, outpoint)
 		return 0
 	}
-	// Lazily built so a service assembled without NewService, as the tests do,
-	// still counts rather than panicking on a nil map.
+	// Built on demand so a zero-value service counts correctly rather than
+	// panicking on a nil map.
 	if s.unrollObservations == nil {
 		s.unrollObservations = make(map[domain.Outpoint]int)
 	}
