@@ -206,12 +206,19 @@ func redactConnectionString(rawURL string) string {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return redactedMask
 	}
-	redactQueryCredentials(parsed)
+	if err := redactQueryCredentials(parsed); err != nil {
+		return redactedMask
+	}
 	return parsed.Redacted()
 }
 
-func redactQueryCredentials(parsed *url.URL) {
-	query := parsed.Query()
+// Fails closed: url.URL.Query would silently drop a malformed password pair,
+// leaving it in RawQuery for Redacted() to emit.
+func redactQueryCredentials(parsed *url.URL) error {
+	query, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return err
+	}
 	redacted := false
 	for key := range query {
 		for _, credential := range credentialQueryParams {
@@ -225,6 +232,7 @@ func redactQueryCredentials(parsed *url.URL) {
 	if redacted {
 		parsed.RawQuery = query.Encode()
 	}
+	return nil
 }
 
 var (

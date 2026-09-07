@@ -288,6 +288,22 @@ func TestConfigStringRedactsSecrets(t *testing.T) {
 			mustContain:    "sslpassword=xxxxx",
 		},
 		{
+			name: "unparseable query is masked whole",
+			mutate: func(c *Config) {
+				c.DbUrl = "postgresql://ark@pg:5432/arkd?password=secret%ZZ"
+			},
+			mustNotContain: "secret",
+			mustContain:    redactedMask,
+		},
+		{
+			// over-masking: nothing secret here, but a DSN is not parseable
+			name: "keyword dsn without a password is still masked whole",
+			mutate: func(c *Config) {
+				c.DbUrl = "host=pg port=5432 user=ark dbname=arkd"
+			},
+			mustContain: redactedMask,
+		},
+		{
 			// not re-encoded, so param order survives
 			name: "query parameters are otherwise left untouched",
 			mutate: func(c *Config) {
