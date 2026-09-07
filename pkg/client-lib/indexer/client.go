@@ -173,7 +173,7 @@ func (a *grpcClient) GetFullVtxoTree(
 	}
 
 	var allTxs clientlib.TxNodes = resp.Tree
-	for resp.Page != nil && resp.Page.Next != resp.Page.Total {
+	for hasMorePages(resp.Page) {
 		nextPage := &clientlib.PageRequest{Index: resp.Page.Next}
 		if o.Page != nil {
 			nextPage.Size = o.Page.Size
@@ -317,16 +317,15 @@ func (a *grpcClient) GetVtxos(
 		return nil, err
 	}
 
-	if o.Page == nil && (len(o.Scripts)+len(o.Outpoints) > maxPageSize) {
-		return a.paginatedGetVtxos(ctx, opts...)
+	if len(o.Scripts) == 0 && len(o.Outpoints) == 0 {
+		return nil, fmt.Errorf("missing opts")
 	}
 
-	var page *arkv1.IndexerPageRequest
-	if o.Page != nil {
-		page = &arkv1.IndexerPageRequest{
-			Size:  o.Page.Size,
-			Index: o.Page.Index,
-		}
+	// The server answers a request without a page with page one, capped at its
+	// page size, so a caller that asks for no page is walked through every page
+	// and gets the whole set, as it did before the cap.
+	if o.Page == nil {
+		return a.paginatedGetVtxos(ctx, opts...)
 	}
 
 	req := &arkv1.GetVtxosRequest{
@@ -338,11 +337,10 @@ func (a *grpcClient) GetVtxos(
 		PendingOnly:     o.PendingOnly,
 		After:           o.After,
 		Before:          o.Before,
-		Page:            page,
-	}
-
-	if len(o.Scripts) == 0 && len(o.Outpoints) == 0 {
-		return nil, fmt.Errorf("missing opts")
+		Page: &arkv1.IndexerPageRequest{
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
+		},
 	}
 
 	resp, err := a.svc().GetVtxos(ctx, req)
@@ -836,6 +834,12 @@ func toStreamConnectionState(
 	default:
 		return clientlib.StreamConnectionState(state)
 	}
+}
+
+// The server clamps Next to Total on the last page, so Next != Total stops one
+// page early; compare Current instead.
+func hasMorePages(page *clientlib.PageResponse) bool {
+	return page != nil && page.Current < page.Total
 }
 
 func parsePage(page *arkv1.IndexerPageResponse) *clientlib.PageResponse {

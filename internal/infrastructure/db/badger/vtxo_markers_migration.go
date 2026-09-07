@@ -102,7 +102,7 @@ func BackfillVtxoMarkers(
 	// Depth/MarkerIDs are mutated. UpdatedAt is deliberately left untouched to
 	// match the SQL backfill (which sets only depth+markers): stamping every
 	// vtxo at migration time would pollute the UpdatedAt-range queries
-	// (GetPendingSpentVtxosWithPubKeys, GetVtxoPubKeysByCommitmentTxids). Written
+	// (getPendingSpentVtxosWithPubKeys, GetVtxoPubKeysByCommitmentTxids). Written
 	// after markers so an interrupted run re-does both.
 	for i := range dtos {
 		d := dtos[i]

@@ -275,13 +275,57 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false AND pubkey = @pub
 -- name: SelectVtxo :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 
--- name: SelectAllVtxos :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
+-- Batch form of SelectVtxo. sqlc.slice cannot expand (txid, vout) pairs, so
+-- this matches on txid and the caller drops the sibling vouts.
+-- name: SelectVtxosByTxids :many
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid IN (sqlc.slice('txids'))
+ORDER BY txid, vout;
 
--- name: SelectVtxosWithPubkeys :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE updated_at >= :after
-    AND (CAST(:before AS INTEGER) = 0 OR updated_at <= CAST(:before AS INTEGER))
-    AND pubkey IN (sqlc.slice('pubkeys'));
+-- Paged, filtered vtxo query by pubkeys. Each flag is inert when
+-- false. vtxo_vw has one row per asset, so the page is taken over DISTINCT
+-- outpoints and COUNT(*) OVER () counts vtxos, not asset rows. The bounds CTE
+-- binds lim/off ahead of the expanded pubkey slice. A non positive lim means
+-- no limit, which is how a request without a page reads.
+-- name: SelectVtxosWithPubkeysPage :many
+WITH bounds AS (
+    SELECT CAST(CASE WHEN :lim <= 0 THEN -1 ELSE :lim END AS INTEGER) AS lim,
+           CAST(:off AS INTEGER) AS off
+), matching AS (
+    SELECT DISTINCT v.txid, v.vout, v.created_at
+    FROM vtxo_vw v
+    WHERE v.updated_at >= CAST(:after AS INTEGER)
+        AND (CAST(:before AS INTEGER) = 0 OR v.updated_at <= CAST(:before AS INTEGER))
+        AND (CAST(:spendable_only AS BOOLEAN) = FALSE OR (
+            v.spent = FALSE AND v.swept = FALSE AND v.unrolled = FALSE
+        ))
+        AND (CAST(:spent_only AS BOOLEAN) = FALSE OR (
+            v.spent = TRUE OR v.swept = TRUE OR v.unrolled = TRUE
+        ))
+        AND (CAST(:renewable_only AS BOOLEAN) = FALSE OR (
+            v.spent = FALSE AND v.unrolled = FALSE
+        ))
+        AND (CAST(:recoverable_only AS BOOLEAN) = FALSE OR (
+            v.spent = FALSE AND v.unrolled = FALSE AND (
+                v.swept = TRUE OR (v.commitments = '' AND v.commitment_txid = '')
+            )
+        ))
+        AND (CAST(:pending_only AS BOOLEAN) = FALSE OR (
+            v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
+            AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+            )
+        ))
+        AND v.pubkey IN (sqlc.slice('pubkeys'))
+), page AS (
+    SELECT m.txid, m.vout, m.created_at, COUNT(*) OVER () AS total
+    FROM matching m
+    ORDER BY m.created_at DESC, m.txid, m.vout
+    LIMIT (SELECT lim FROM bounds) OFFSET (SELECT off FROM bounds)
+)
+SELECT sqlc.embed(vtxo_vw), page.total FROM vtxo_vw
+JOIN page ON vtxo_vw.txid = page.txid AND vtxo_vw.vout = page.vout
+ORDER BY page.created_at DESC, page.txid, page.vout;
+
 
 -- Reads swept-ness from vtxo_vw.swept (single source of truth: swept_marker OR
 -- swept_vtxo) so the accounting stays correct after the marker backfill empties
@@ -402,17 +446,6 @@ ORDER BY depth, txid, vout;
 -- name: SelectSweepableUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND (COALESCE(settled_by, '') = '');
 
--- name: SelectPendingSpentVtxosWithPubkeys :many
-SELECT v.*
-FROM vtxo_vw v
-WHERE v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
-    AND v.ark_txid IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
-    )
-    AND v.updated_at >= :after
-    AND (CAST(:before AS INTEGER) = 0 OR v.updated_at <= CAST(:before AS INTEGER))
-    AND v.pubkey IN (sqlc.slice('pubkeys'));
-
 -- name: SelectPendingSpentVtxo :many
 SELECT v.*
 FROM vtxo_vw v
@@ -421,6 +454,17 @@ WHERE v.txid = @txid AND v.vout = @vout
     AND v.ark_txid IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     );
+
+-- Batch form of SelectPendingSpentVtxo, see SelectVtxosByTxids.
+-- name: SelectPendingSpentVtxosByTxids :many
+SELECT v.*
+FROM vtxo_vw v
+WHERE v.txid IN (sqlc.slice('txids'))
+    AND v.spent = TRUE AND v.unrolled = FALSE AND COALESCE(v.settled_by, '') = ''
+    AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+    )
+ORDER BY v.created_at DESC;
 
 -- name: UpsertConviction :exec
 INSERT INTO conviction (

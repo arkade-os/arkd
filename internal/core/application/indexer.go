@@ -283,66 +283,39 @@ func (i *indexerService) GetVtxos(
 		)
 	}
 
-	var allVtxos []domain.Vtxo
-	var err error
-	if pendingOnly {
-		allVtxos, err = i.repoManager.Vtxos().
-			GetPendingSpentVtxosWithPubKeys(ctx, pubkeys, after, before)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		allVtxos, err = i.repoManager.Vtxos().GetAllVtxosWithPubKeys(ctx, pubkeys, after, before)
-		if err != nil {
-			return nil, err
-		}
-
-		if spendableOnly {
-			spendableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
-			for _, vtxo := range allVtxos {
-				if !vtxo.Spent && !vtxo.Swept && !vtxo.Unrolled {
-					spendableVtxos = append(spendableVtxos, vtxo)
-				}
-			}
-			allVtxos = spendableVtxos
-		}
-		if spentOnly {
-			spentVtxos := make([]domain.Vtxo, 0, len(allVtxos))
-			for _, vtxo := range allVtxos {
-				if vtxo.Spent || vtxo.Swept || vtxo.Unrolled {
-					spentVtxos = append(spentVtxos, vtxo)
-				}
-			}
-			allVtxos = spentVtxos
-		}
-		if recoverableOnly {
-			recoverableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
-			for _, vtxo := range allVtxos {
-				if !vtxo.RequiresForfeit() && !vtxo.Spent && !vtxo.Unrolled {
-					recoverableVtxos = append(recoverableVtxos, vtxo)
-				}
-			}
-			allVtxos = recoverableVtxos
-		}
-		if renewableOnly {
-			// Renewable is the union of the spendable and recoverable sets: an
-			// unspent, non-unrolled vtxo is spendable when not swept, and
-			// recoverable otherwise (RequiresForfeit is false for swept, note,
-			// and unrolled vtxos).
-			renewableVtxos := make([]domain.Vtxo, 0, len(allVtxos))
-			for _, vtxo := range allVtxos {
-				if !vtxo.Spent && !vtxo.Unrolled {
-					renewableVtxos = append(renewableVtxos, vtxo)
-				}
-			}
-			allVtxos = renewableVtxos
-		}
+	filter := domain.VtxoFilter{
+		Pubkeys:         pubkeys,
+		After:           after,
+		Before:          before,
+		SpendableOnly:   spendableOnly,
+		SpentOnly:       spentOnly,
+		RecoverableOnly: recoverableOnly,
+		RenewableOnly:   renewableOnly,
+		PendingOnly:     pendingOnly,
 	}
 
-	vtxos, pageResp := paginate(allVtxos, page, maxPageSizeSpendableVtxos)
+	// A request without a page reads the whole set and carries no page back,
+	// the contract callers had before the query was bounded, so no client has
+	// to change.
+	if page == nil {
+		vtxos, _, err := i.repoManager.Vtxos().GetVtxosWithPubKeys(ctx, filter, domain.Page{})
+		if err != nil {
+			return nil, err
+		}
+		return &GetVtxosResp{Vtxos: vtxos}, nil
+	}
+
+	pageNum, pageSize, offset := resolvePage(page, maxPageSizeSpendableVtxos)
+	vtxos, total, err := i.repoManager.Vtxos().GetVtxosWithPubKeys(
+		ctx, filter, domain.Page{Limit: pageSize, Offset: offset},
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return &GetVtxosResp{
 		Vtxos: vtxos,
-		Page:  pageResp,
+		Page:  pageRespFor(pageNum, pageSize, total),
 	}, nil
 }
 
@@ -732,15 +705,16 @@ func (i *indexerService) walkVtxoChain(
 			}
 
 			// if the vtxo is not preconfirmed, it means it's a leaf of a batch tree
-			// add the branch until the commitment tx
-			flatVtxoTree, err := i.GetVtxoTree(ctx, Outpoint{
-				Txid: vtxo.RootCommitmentTxid, VOut: 0,
-			}, nil)
+			// add the branch until the commitment tx.
+			// use the rounds repo to get the full tree as GetVtxoTree is paginated
+			flatVtxoTree, err := i.repoManager.Rounds().GetRoundVtxoTree(
+				ctx, vtxo.RootCommitmentTxid,
+			)
 			if err != nil {
 				return nil, nil, false, err
 			}
 
-			vtxoTree, err := tree.NewTxTree(flatVtxoTree.Txs)
+			vtxoTree, err := tree.NewTxTree(flatVtxoTree)
 			if err != nil {
 				return nil, nil, false, err
 			}
@@ -1392,40 +1366,48 @@ func hashOutpoints(outpoints []Outpoint) ([]byte, error) {
 	return hash[:], nil
 }
 
+// paginate slices one page out of items; a nil page returns everything.
 func paginate[T any](items []T, params *Page, maxSize int32) ([]T, PageResp) {
 	if params == nil {
 		return items, PageResp{}
 	}
-	if params.PageSize <= 0 || params.PageSize > maxSize {
-		params.PageSize = maxSize
-	}
-	if params.PageNum <= 0 {
-		params.PageNum = 1
-	}
+	pageNum, pageSize, offset := resolvePage(params, maxSize)
+	total := int32(len(items))
+	resp := pageRespFor(pageNum, pageSize, total)
 
-	totalCount := int32(len(items))
-	totalPages := int32(math.Ceil(float64(totalCount) / float64(params.PageSize)))
-	next := totalPages
-	if params.PageNum < totalPages {
-		next = params.PageNum + 1
-	}
-
-	resp := PageResp{
-		Current: params.PageNum,
-		Next:    next,
-		Total:   totalPages,
-	}
-
-	if params.PageNum > totalPages {
+	if offset >= total {
 		return []T{}, resp
 	}
 
-	// The guard above bounds PageNum by totalPages, so (PageNum-1)*PageSize
-	// stays below totalCount and cannot wrap.
-	startIndex := (params.PageNum - 1) * params.PageSize
-	endIndex := min(startIndex+params.PageSize, totalCount)
+	end := offset + min(pageSize, total-offset)
+	return items[offset:end], resp
+}
 
-	return items[startIndex:endIndex], resp
+// resolvePage normalizes a page request and derives its offset, saturating
+// instead of overflowing int32.
+func resolvePage(params *Page, maxSize int32) (pageNum, pageSize, offset int32) {
+	pageNum, pageSize = 1, maxSize
+	if params != nil {
+		if params.PageSize > 0 && params.PageSize <= maxSize {
+			pageSize = params.PageSize
+		}
+		if params.PageNum > 0 {
+			pageNum = params.PageNum
+		}
+	}
+
+	offset64 := min(int64(pageNum-1)*int64(pageSize), math.MaxInt32)
+
+	return pageNum, pageSize, int32(offset64)
+}
+
+func pageRespFor(pageNum, pageSize, totalCount int32) PageResp {
+	totalPages := int32(math.Ceil(float64(totalCount) / float64(pageSize)))
+	next := totalPages
+	if pageNum < totalPages {
+		next = pageNum + 1
+	}
+	return PageResp{Current: pageNum, Next: next, Total: totalPages}
 }
 
 // chainCursorPage slices a page of pageSize starting at offset out of chain and

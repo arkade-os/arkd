@@ -268,14 +268,54 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = false AND pubkey = @pub
 -- name: SelectVtxo :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE txid = @txid AND vout = @vout;
 
--- name: SelectAllVtxos :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw;
-
--- name: SelectVtxosWithPubkeys :many
+-- Batch form of SelectVtxo matching exact (txid, vout) pairs.
+-- name: SelectVtxosByOutpoints :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw
-WHERE vtxo_vw.pubkey = ANY($1::varchar[])
-    AND vtxo_vw.updated_at >= @after::bigint
-    AND (@before::bigint = 0 OR vtxo_vw.updated_at <= @before::bigint);
+WHERE (vtxo_vw.txid, vtxo_vw.vout) IN (
+    SELECT unnest(@txids::text[]), unnest(@vouts::integer[])
+)
+ORDER BY vtxo_vw.txid, vtxo_vw.vout;
+
+-- Paged, filtered vtxo query by pubkeys. Each flag is inert when
+-- false. vtxo_vw has one row per asset, so the page is taken over DISTINCT
+-- outpoints and COUNT(*) OVER () counts vtxos, not asset rows.
+-- name: SelectVtxosWithPubkeysPage :many
+WITH matching AS (
+    SELECT DISTINCT v.txid, v.vout, v.created_at
+    FROM vtxo_vw v
+    WHERE v.pubkey = ANY(@pubkeys::varchar[])
+        AND v.updated_at >= @after::bigint
+        AND (@before::bigint = 0 OR v.updated_at <= @before::bigint)
+        AND (NOT @spendable_only::boolean OR (
+            v.spent = false AND COALESCE(v.swept, false) = false AND v.unrolled = false
+        ))
+        AND (NOT @spent_only::boolean OR (
+            v.spent = true OR COALESCE(v.swept, false) = true OR v.unrolled = true
+        ))
+        AND (NOT @renewable_only::boolean OR (v.spent = false AND v.unrolled = false))
+        AND (NOT @recoverable_only::boolean OR (
+            v.spent = false AND v.unrolled = false AND (
+                COALESCE(v.swept, false) = true
+                OR (v.commitments = '' AND v.commitment_txid = '')
+            )
+        ))
+        AND (NOT @pending_only::boolean OR (
+            v.spent = true AND v.unrolled = false AND COALESCE(v.settled_by, '') = ''
+            AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+            )
+        ))
+), page AS (
+    SELECT m.txid, m.vout, m.created_at, COUNT(*) OVER ()::integer AS total
+    FROM matching m
+    ORDER BY m.created_at DESC, m.txid, m.vout
+    LIMIT (CASE WHEN @lim::integer <= 0 THEN NULL ELSE @lim::integer END)
+    OFFSET @off::integer
+)
+SELECT sqlc.embed(vtxo_vw), page.total FROM vtxo_vw
+JOIN page ON vtxo_vw.txid = page.txid AND vtxo_vw.vout = page.vout
+ORDER BY page.created_at DESC, page.txid, page.vout;
+
 
 -- Reads swept-ness from vtxo_vw.swept (single source of truth: swept_marker OR
 -- swept_vtxo) so the accounting stays correct after the marker backfill empties
@@ -391,17 +431,6 @@ ORDER BY depth, txid, vout;
 -- name: SelectSweepableUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND COALESCE(settled_by, '') = '';
 
--- name: SelectPendingSpentVtxosWithPubkeys :many
-SELECT v.*
-FROM vtxo_vw v
-WHERE v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
-    AND v.pubkey = ANY($1::varchar[])
-    AND v.ark_txid IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
-    )
-    AND v.updated_at >= @after::bigint
-    AND (@before::bigint = 0 OR v.updated_at <= @before::bigint);
-
 -- name: SelectPendingSpentVtxo :many
 SELECT v.*
 FROM vtxo_vw v
@@ -410,6 +439,19 @@ WHERE v.txid = @txid AND v.vout = @vout
     AND v.ark_txid IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     );
+
+-- Batch form of SelectPendingSpentVtxo.
+-- name: SelectPendingSpentVtxosByOutpoints :many
+SELECT v.*
+FROM vtxo_vw v
+WHERE (v.txid, v.vout) IN (
+        SELECT unnest(@txids::text[]), unnest(@vouts::integer[])
+    )
+    AND v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
+    AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+    )
+ORDER BY v.created_at DESC;
 
 -- name: UpsertConviction :exec
 INSERT INTO conviction (

@@ -140,6 +140,41 @@ func TestGetVtxoChain(t *testing.T) {
 	})
 }
 
+func TestGetVtxosFilterCaps(t *testing.T) {
+	t.Run("rejects too many outpoints", func(t *testing.T) {
+		svc := newTestIndexerService(t)
+
+		_, err := svc.GetVtxos(context.Background(), &arkv1.GetVtxosRequest{
+			Outpoints: repeatOutpoint(maxOutpointsPerRequest + 1),
+		})
+		requireFilterLimitErr(t, err, "outpoints", maxOutpointsPerRequest)
+	})
+
+	t.Run("rejects too many scripts", func(t *testing.T) {
+		svc := newTestIndexerService(t)
+
+		_, err := svc.GetVtxos(context.Background(), &arkv1.GetVtxosRequest{
+			Scripts: repeatScript(maxScriptsPerRequest + 1),
+		})
+		requireFilterLimitErr(t, err, "scripts", maxScriptsPerRequest)
+	})
+
+	// A request exactly at the cap gets through to parsing.
+	t.Run("accepts the cap itself", func(t *testing.T) {
+		svc := newTestIndexerService(t)
+
+		outpoints := repeatOutpoint(maxOutpointsPerRequest)
+		outpoints[maxOutpointsPerRequest-1] = "not-an-outpoint"
+
+		_, err := svc.GetVtxos(context.Background(), &arkv1.GetVtxosRequest{
+			Outpoints: outpoints,
+		})
+		require.Error(t, err)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+		require.Contains(t, err.Error(), "invalid outpoint format")
+	})
+}
+
 func TestGetSubscription(t *testing.T) {
 	t.Parallel()
 
@@ -1930,6 +1965,37 @@ func newTestIndexerServiceWithEvents(
 	svc := newTestIndexerService(t)
 	svc.eventsCh = eventsCh
 	return svc
+}
+
+func requireFilterLimitErr(t *testing.T, err error, filter string, limit int) {
+	t.Helper()
+	require.Error(t, err)
+
+	var structured arkdErrors.Error
+	require.True(t, stderrors.As(err, &structured))
+	require.Equal(t, arkdErrors.QUERY_FILTER_LIMIT_EXCEEDED.Code, structured.Code())
+	require.Equal(t, codes.InvalidArgument, structured.GrpcCode())
+
+	metadata := structured.Metadata()
+	require.Equal(t, filter, metadata["filter"])
+	require.Equal(t, strconv.Itoa(limit), metadata["max_items"])
+	require.Equal(t, strconv.Itoa(limit+1), metadata["got_items"])
+}
+
+func repeatOutpoint(n int) []string {
+	outpoints := make([]string, 0, n)
+	for i := range n {
+		outpoints = append(outpoints, fmt.Sprintf("%s:%d", testChainTxid, i))
+	}
+	return outpoints
+}
+
+func repeatScript(n int) []string {
+	scripts := make([]string, 0, n)
+	for range n {
+		scripts = append(scripts, testScript1)
+	}
+	return scripts
 }
 
 func newTestIndexerService(t *testing.T) *indexerService {

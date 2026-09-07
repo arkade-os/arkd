@@ -171,7 +171,7 @@ func (r *VtxoRepository) GetAllSweepableUnrolledVtxos(
 	return r.findVtxos(ctx, query)
 }
 
-func (r *VtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
+func (r *VtxoRepository) getAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
 	return r.findVtxos(ctx, &badgerhold.Query{})
 }
 
@@ -219,7 +219,7 @@ func (r *VtxoRepository) UpdateVtxosExpiration(
 	return err
 }
 
-func (r *VtxoRepository) GetAllVtxosWithPubKeys(
+func (r *VtxoRepository) getAllVtxosWithPubKeys(
 	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
 	if err := validateTimeRange(after, before); err != nil {
@@ -242,6 +242,79 @@ func (r *VtxoRepository) GetAllVtxosWithPubKeys(
 		allVtxos = append(allVtxos, vtxos...)
 	}
 	return allVtxos, nil
+}
+
+// GetVtxosWithPubKeys filters and pages in memory: badgerhold cannot push
+// the filter down, but the caller still gets a bounded page.
+func (r *VtxoRepository) GetVtxosWithPubKeys(
+	ctx context.Context, filter domain.VtxoFilter, page domain.Page,
+) ([]domain.Vtxo, int32, error) {
+	var candidates []domain.Vtxo
+	var err error
+	if filter.PendingOnly {
+		candidates, err = r.getPendingSpentVtxosWithPubKeys(
+			ctx, filter.Pubkeys, filter.After, filter.Before,
+		)
+	} else {
+		candidates, err = r.getAllVtxosWithPubKeys(
+			ctx, filter.Pubkeys, filter.After, filter.Before,
+		)
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+
+	matched := make([]domain.Vtxo, 0, len(candidates))
+	for _, vtxo := range candidates {
+		if matchesFilter(filter, vtxo) {
+			matched = append(matched, vtxo)
+		}
+	}
+	sortByCreatedAt(matched)
+
+	// Clamp like the sql stores do: a page past the end is empty, not a panic,
+	// and a non positive limit reads everything from the offset on.
+	total := int32(len(matched))
+	offset := max(page.Offset, 0)
+	if offset >= total {
+		return nil, total, nil
+	}
+	end := total
+	if page.Limit > 0 {
+		end = min(offset+page.Limit, total)
+	}
+
+	return matched[offset:end], total, nil
+}
+
+// matchesFilter applies the Only flags; PendingOnly, pubkeys and the time
+// range are handled by the candidate query. Mirrors SelectVtxosWithPubkeysPage.
+func matchesFilter(f domain.VtxoFilter, v domain.Vtxo) bool {
+	switch {
+	case f.SpendableOnly:
+		return !v.Spent && !v.Swept && !v.Unrolled
+	case f.SpentOnly:
+		return v.Spent || v.Swept || v.Unrolled
+	case f.RenewableOnly:
+		return !v.Spent && !v.Unrolled
+	case f.RecoverableOnly:
+		return !v.Spent && !v.Unrolled && (v.Swept || v.IsNote())
+	}
+	return true
+}
+
+// sortByCreatedAt orders newest first, breaking ties by outpoint so paging is
+// stable.
+func sortByCreatedAt(vtxos []domain.Vtxo) {
+	sort.SliceStable(vtxos, func(i, j int) bool {
+		if vtxos[i].CreatedAt != vtxos[j].CreatedAt {
+			return vtxos[i].CreatedAt > vtxos[j].CreatedAt
+		}
+		if vtxos[i].Txid != vtxos[j].Txid {
+			return vtxos[i].Txid < vtxos[j].Txid
+		}
+		return vtxos[i].VOut < vtxos[j].VOut
+	})
 }
 
 func (r *VtxoRepository) GetExpiringLiquidity(
@@ -468,7 +541,7 @@ func (r *VtxoRepository) GetCheckpointTxsByVtxoPubKeys(
 	return txs, nil
 }
 
-func (r *VtxoRepository) GetPendingSpentVtxosWithPubKeys(
+func (r *VtxoRepository) getPendingSpentVtxosWithPubKeys(
 	ctx context.Context, pubkeys []string, after, before int64,
 ) ([]domain.Vtxo, error) {
 	if err := validateTimeRange(after, before); err != nil {

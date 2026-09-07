@@ -17,7 +17,7 @@ const assetStoreDir = "assets"
 
 type assetRepository struct {
 	store    *badgerhold.Store
-	vtxoRepo domain.VtxoRepository
+	vtxoRepo *VtxoRepository
 }
 
 func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
@@ -35,9 +35,9 @@ func NewAssetRepository(config ...interface{}) (domain.AssetRepository, error) {
 			return nil, fmt.Errorf("invalid logger")
 		}
 	}
-	var vtxoRepo domain.VtxoRepository
+	var vtxoRepo *VtxoRepository
 	if len(config) == 3 && config[2] != nil {
-		vtxoRepo, ok = config[2].(domain.VtxoRepository)
+		vtxoRepo, ok = config[2].(*VtxoRepository)
 		if !ok {
 			return nil, fmt.Errorf("invalid vtxo repository")
 		}
@@ -119,7 +119,7 @@ func (r *assetRepository) AssetExists(ctx context.Context, assetID string) (bool
 
 // computeSupply returns the sum of unspent vtxo amounts for the asset (big.Int to avoid overflow).
 func (r *assetRepository) computeSupply(ctx context.Context, assetID string) *big.Int {
-	vtxos, err := r.vtxoRepo.GetAllVtxos(ctx)
+	vtxos, err := r.vtxoRepo.getAllVtxos(ctx)
 	if err != nil {
 		return nil
 	}

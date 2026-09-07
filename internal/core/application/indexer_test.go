@@ -107,7 +107,7 @@ func TestPaginate(t *testing.T) {
 		}
 	})
 
-	t.Run("nil page returns everything unpaginated", func(t *testing.T) {
+	t.Run("nil page returns everything", func(t *testing.T) {
 		got, resp := paginate(items, nil, 3)
 		require.Equal(t, items, got)
 		require.Equal(t, PageResp{}, resp)
@@ -152,6 +152,42 @@ func TestPaginate(t *testing.T) {
 				require.Empty(t, got)
 				require.GreaterOrEqual(t, resp.Next, int32(0))
 				require.GreaterOrEqual(t, resp.Total, int32(0))
+			})
+		}
+	})
+
+	// The db-side paging must produce the same page and PageResp as paginate.
+	t.Run("db side paging agrees with paginate", func(t *testing.T) {
+		const maxSize = int32(3)
+
+		pages := []*Page{
+			{PageNum: 1, PageSize: 2},
+			{PageNum: 2, PageSize: 2},
+			{PageNum: 3, PageSize: 2},
+			{PageNum: 5, PageSize: 2},
+			{PageNum: 1, PageSize: 0},
+			{PageNum: 0, PageSize: -1},
+			{PageNum: 1, PageSize: 1000},
+			{PageNum: math.MaxInt32, PageSize: 3}, // offset must saturate, not wrap
+		}
+
+		for _, params := range pages {
+			name := fmt.Sprintf("num %d size %d", params.PageNum, params.PageSize)
+
+			t.Run(name, func(t *testing.T) {
+				copied := *params
+				wantItems, wantResp := paginate(items, &copied, maxSize)
+
+				pageNum, pageSize, offset := resolvePage(params, maxSize)
+				require.Equal(t, wantResp, pageRespFor(pageNum, pageSize, int32(len(items))))
+				require.GreaterOrEqual(t, offset, int32(0), "offset must never wrap negative")
+
+				gotItems := []int{}
+				if int(offset) < len(items) {
+					end := min(int(offset+pageSize), len(items))
+					gotItems = items[offset:end]
+				}
+				require.Equal(t, wantItems, gotItems)
 			})
 		}
 	})
@@ -1251,17 +1287,6 @@ func (m *mockVtxoRepoForIndexer) GetAllSweepableUnrolledVtxos(
 ) ([]domain.Vtxo, error) {
 	return nil, nil
 }
-func (m *mockVtxoRepoForIndexer) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
-	return nil, nil
-}
-
-func (m *mockVtxoRepoForIndexer) GetAllVtxosWithPubKeys(
-	ctx context.Context,
-	pubkeys []string,
-	after, before int64,
-) ([]domain.Vtxo, error) {
-	return nil, nil
-}
 
 func (m *mockVtxoRepoForIndexer) GetExpiringLiquidity(
 	ctx context.Context,
@@ -1324,19 +1349,19 @@ func (m *mockVtxoRepoForIndexer) GetVtxoPubKeysByCommitmentTxids(
 	return nil, nil
 }
 
-func (m *mockVtxoRepoForIndexer) GetPendingSpentVtxosWithPubKeys(
-	ctx context.Context,
-	pubkeys []string,
-	after, before int64,
-) ([]domain.Vtxo, error) {
-	return nil, nil
-}
-
 func (m *mockVtxoRepoForIndexer) GetPendingSpentVtxosWithOutpoints(
 	ctx context.Context,
 	outpoints []domain.Outpoint,
 ) ([]domain.Vtxo, error) {
 	return nil, nil
+}
+
+func (m *mockVtxoRepoForIndexer) GetVtxosWithPubKeys(
+	ctx context.Context,
+	filter domain.VtxoFilter,
+	page domain.Page,
+) ([]domain.Vtxo, int32, error) {
+	return nil, 0, nil
 }
 func (m *mockVtxoRepoForIndexer) Close() {}
 

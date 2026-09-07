@@ -2,6 +2,8 @@ package application
 
 import (
 	"context"
+	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -53,14 +55,40 @@ func (m *mockedVtxoRepo) GetVtxos(ctx context.Context, outpoints []domain.Outpoi
 	return nil, args.Error(1)
 }
 
-func (m *mockedVtxoRepo) GetAllVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string, after, before int64,
-) ([]domain.Vtxo, error) {
-	args := m.Called(ctx, pubkeys, after, before)
-	if v := args.Get(0); v != nil {
-		return v.([]domain.Vtxo), args.Error(1)
+// GetVtxosWithPubKeys filters and pages the stubbed set like the real
+// stores do. PendingOnly needs a lookup of the spending tx that the stub
+// cannot express, so it is refused rather than matching everything and
+// letting a test pass vacuously; the db tests cover it.
+func (m *mockedVtxoRepo) GetVtxosWithPubKeys(
+	ctx context.Context, filter domain.VtxoFilter, page domain.Page,
+) ([]domain.Vtxo, int32, error) {
+	if filter.PendingOnly {
+		return nil, 0, fmt.Errorf("mockedVtxoRepo: PendingOnly is not modelled, use the db tests")
 	}
-	return nil, args.Error(1)
+
+	args := m.Called(ctx, filter, page)
+	if args.Get(0) == nil {
+		return nil, 0, args.Error(1)
+	}
+
+	matched := make([]domain.Vtxo, 0)
+	for _, vtxo := range args.Get(0).([]domain.Vtxo) {
+		if matchesFilter(filter, vtxo) {
+			matched = append(matched, vtxo)
+		}
+	}
+	sortByCreatedAt(matched)
+
+	total := int32(len(matched))
+	if page.Offset >= total {
+		return nil, total, args.Error(1)
+	}
+	end := total
+	if page.Limit > 0 {
+		end = min(page.Offset+page.Limit, total)
+	}
+
+	return matched[page.Offset:end], total, args.Error(1)
 }
 
 func (m *mockedVtxoRepo) GetVtxoPubKeysByCommitmentTxids(
@@ -222,4 +250,30 @@ func (m *mockedScanner) IsTransactionConfirmed(
 
 func (m *mockedScanner) RescanUtxos(_ context.Context, _ []wire.OutPoint) error {
 	return nil
+}
+
+func matchesFilter(f domain.VtxoFilter, v domain.Vtxo) bool {
+	switch {
+	case f.SpendableOnly:
+		return !v.Spent && !v.Swept && !v.Unrolled
+	case f.SpentOnly:
+		return v.Spent || v.Swept || v.Unrolled
+	case f.RenewableOnly:
+		return !v.Spent && !v.Unrolled
+	case f.RecoverableOnly:
+		return !v.Spent && !v.Unrolled && (v.Swept || v.IsNote())
+	}
+	return true
+}
+
+func sortByCreatedAt(vtxos []domain.Vtxo) {
+	sort.SliceStable(vtxos, func(i, j int) bool {
+		if vtxos[i].CreatedAt != vtxos[j].CreatedAt {
+			return vtxos[i].CreatedAt > vtxos[j].CreatedAt
+		}
+		if vtxos[i].Txid != vtxos[j].Txid {
+			return vtxos[i].Txid < vtxos[j].Txid
+		}
+		return vtxos[i].VOut < vtxos[j].VOut
+	})
 }

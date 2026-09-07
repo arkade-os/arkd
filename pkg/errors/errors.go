@@ -564,3 +564,15 @@ var SUBSCRIPTIONS_LIMIT_EXCEEDED = Code[SubscriptionsLimitMetadata]{
 	"SUBSCRIPTIONS_LIMIT_EXCEEDED",
 	grpccodes.ResourceExhausted,
 }
+
+type QueryFilterLimitMetadata struct {
+	Filter   string `json:"filter"`
+	MaxItems int    `json:"max_items"`
+	GotItems int    `json:"got_items"`
+}
+
+var QUERY_FILTER_LIMIT_EXCEEDED = Code[QueryFilterLimitMetadata]{
+	58,
+	"QUERY_FILTER_LIMIT_EXCEEDED",
+	grpccodes.InvalidArgument,
+}

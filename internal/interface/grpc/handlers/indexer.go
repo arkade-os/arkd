@@ -15,6 +15,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
+	arkdErrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
@@ -29,6 +30,11 @@ const (
 	// so the offset computed downstream can never wrap.
 	maxPageRequestSize  = 1000
 	maxPageRequestIndex = 1_000_000
+
+	// Caps on the GetVtxos filter sets. 1000 matches the chunk size the client
+	// splits its filter sets into (maxPageSize in pkg/client-lib/indexer).
+	maxOutpointsPerRequest = 1000
+	maxScriptsPerRequest   = 1000
 )
 
 type indexerService struct {
@@ -244,6 +250,13 @@ func (e *indexerService) GetVtxos(
 	page, err := parsePage(request.GetPage())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	if len(request.GetScripts()) > maxScriptsPerRequest {
+		return nil, filterLimitErr("scripts", len(request.GetScripts()), maxScriptsPerRequest)
+	}
+	if len(request.GetOutpoints()) > maxOutpointsPerRequest {
+		return nil, filterLimitErr("outpoints", len(request.GetOutpoints()), maxOutpointsPerRequest)
 	}
 
 	pubkeys := make([]string, 0, len(request.GetScripts()))
@@ -854,6 +867,16 @@ func parseTxid(txid string) (string, error) {
 		return "", fmt.Errorf("invalid txid length")
 	}
 	return txid, nil
+}
+
+func filterLimitErr(filter string, got, limit int) error {
+	return arkdErrors.QUERY_FILTER_LIMIT_EXCEEDED.
+		New("too many %s in filter: %d, max %d", filter, got, limit).
+		WithMetadata(arkdErrors.QueryFilterLimitMetadata{
+			Filter:   filter,
+			MaxItems: limit,
+			GotItems: got,
+		})
 }
 
 func parseOutpoints(outpoints []string) ([]application.Outpoint, error) {

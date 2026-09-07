@@ -2,6 +2,25 @@ package domain
 
 import "context"
 
+// VtxoFilter narrows a vtxo query. The Only flags are mutually exclusive.
+type VtxoFilter struct {
+	Pubkeys         []string
+	After           int64
+	Before          int64
+	SpendableOnly   bool
+	SpentOnly       bool
+	RecoverableOnly bool
+	RenewableOnly   bool
+	PendingOnly     bool
+}
+
+// Page bounds a query in the db layer. A Limit of 0 or less means no limit,
+// which is how a request without a page reads the whole set.
+type Page struct {
+	Limit  int32
+	Offset int32
+}
+
 type VtxoRepository interface {
 	AddVtxos(ctx context.Context, vtxos []Vtxo) error
 	SettleVtxos(ctx context.Context, spentVtxos map[Outpoint]string, commitmentTxid string) error
@@ -10,12 +29,6 @@ type VtxoRepository interface {
 	GetVtxos(ctx context.Context, outpoints []Outpoint) ([]Vtxo, error)
 	GetAllNonUnrolledVtxos(ctx context.Context, pubkey string) ([]Vtxo, []Vtxo, error)
 	GetAllSweepableUnrolledVtxos(ctx context.Context) ([]Vtxo, error)
-	GetAllVtxos(ctx context.Context) ([]Vtxo, error)
-	GetAllVtxosWithPubKeys(
-		ctx context.Context,
-		pubkeys []string,
-		after, before int64,
-	) ([]Vtxo, error)
 	GetExpiringLiquidity(ctx context.Context, after, before int64) (uint64, error)
 	GetRecoverableLiquidity(ctx context.Context) (uint64, error)
 	UpdateVtxosExpiration(ctx context.Context, outpoints []Outpoint, expiresAt int64) error
@@ -35,11 +48,9 @@ type VtxoRepository interface {
 	) (
 		[]string, error,
 	)
-	GetPendingSpentVtxosWithPubKeys(
-		ctx context.Context,
-		pubkeys []string,
-		after, before int64,
-	) ([]Vtxo, error)
 	GetPendingSpentVtxosWithOutpoints(ctx context.Context, outpoints []Outpoint) ([]Vtxo, error)
+	GetVtxosWithPubKeys(
+		ctx context.Context, filter VtxoFilter, page Page,
+	) ([]Vtxo, int32, error)
 	Close()
 }

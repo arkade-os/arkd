@@ -91,3 +91,32 @@ func TestInvalidTxFilterContract(t *testing.T) {
 		t.Fatalf("Metadata()[expression] = %q, want &&&", got)
 	}
 }
+
+func TestQueryFilterLimitExceededContract(t *testing.T) {
+	err := QUERY_FILTER_LIMIT_EXCEEDED.
+		New("too many %s in filter: %d, max %d", "outpoints", 101, 100).
+		WithMetadata(QueryFilterLimitMetadata{
+			Filter:   "outpoints",
+			MaxItems: 100,
+			GotItems: 101,
+		})
+
+	if got := err.Code(); got != 58 {
+		t.Fatalf("Code() = %d, want 58", got)
+	}
+	if got := err.CodeName(); got != "QUERY_FILTER_LIMIT_EXCEEDED" {
+		t.Fatalf("CodeName() = %q, want QUERY_FILTER_LIMIT_EXCEEDED", got)
+	}
+	if got := err.GrpcCode(); got != grpccodes.InvalidArgument {
+		t.Fatalf("GrpcCode() = %v, want InvalidArgument", got)
+	}
+	if got := err.Metadata()["filter"]; got != "outpoints" {
+		t.Fatalf("Metadata()[filter] = %q, want outpoints", got)
+	}
+	if got := err.Metadata()["max_items"]; got != "100" {
+		t.Fatalf("Metadata()[max_items] = %q, want 100", got)
+	}
+	if got := err.Metadata()["got_items"]; got != "101" {
+		t.Fatalf("Metadata()[got_items] = %q, want 101", got)
+	}
+}

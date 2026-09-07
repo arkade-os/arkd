@@ -178,59 +178,6 @@ func (q *Queries) SelectActiveScriptConvictions(ctx context.Context, arg SelectA
 	return items, nil
 }
 
-const selectAllVtxos = `-- name: SelectAllVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw
-`
-
-type SelectAllVtxosRow struct {
-	VtxoVw VtxoVw
-}
-
-func (q *Queries) SelectAllVtxos(ctx context.Context) ([]SelectAllVtxosRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectAllVtxos)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []SelectAllVtxosRow
-	for rows.Next() {
-		var i SelectAllVtxosRow
-		if err := rows.Scan(
-			&i.VtxoVw.Txid,
-			&i.VtxoVw.Vout,
-			&i.VtxoVw.Pubkey,
-			&i.VtxoVw.Amount,
-			&i.VtxoVw.ExpiresAt,
-			&i.VtxoVw.CreatedAt,
-			&i.VtxoVw.CommitmentTxid,
-			&i.VtxoVw.SpentBy,
-			&i.VtxoVw.Spent,
-			&i.VtxoVw.Unrolled,
-			&i.VtxoVw.Preconfirmed,
-			&i.VtxoVw.SettledBy,
-			&i.VtxoVw.ArkTxid,
-			&i.VtxoVw.IntentID,
-			&i.VtxoVw.UpdatedAt,
-			&i.VtxoVw.Depth,
-			&i.VtxoVw.Markers,
-			&i.VtxoVw.Commitments,
-			&i.VtxoVw.Swept,
-			&i.VtxoVw.AssetID,
-			&i.VtxoVw.AssetAmount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const selectAnyOffchainTx = `-- name: SelectAnyOffchainTx :many
 SELECT offchain_tx_vw.txid, offchain_tx_vw.tx, offchain_tx_vw.starting_timestamp, offchain_tx_vw.ending_timestamp, offchain_tx_vw.expiry_timestamp, offchain_tx_vw.fail_reason, offchain_tx_vw.stage_code, offchain_tx_vw.checkpoint_txid, offchain_tx_vw.checkpoint_tx, offchain_tx_vw.commitment_txid, offchain_tx_vw.is_root_commitment_txid, offchain_tx_vw.offchain_txid FROM offchain_tx_vw WHERE txid = $1
 `
@@ -1051,26 +998,27 @@ func (q *Queries) SelectPendingSpentVtxo(ctx context.Context, arg SelectPendingS
 	return items, nil
 }
 
-const selectPendingSpentVtxosWithPubkeys = `-- name: SelectPendingSpentVtxosWithPubkeys :many
+const selectPendingSpentVtxosByOutpoints = `-- name: SelectPendingSpentVtxosByOutpoints :many
 SELECT v.txid, v.vout, v.pubkey, v.amount, v.expires_at, v.created_at, v.commitment_txid, v.spent_by, v.spent, v.unrolled, v.preconfirmed, v.settled_by, v.ark_txid, v.intent_id, v.updated_at, v.depth, v.markers, v.commitments, v.swept, v.asset_id, v.asset_amount
 FROM vtxo_vw v
-WHERE v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
-    AND v.pubkey = ANY($1::varchar[])
+WHERE (v.txid, v.vout) IN (
+        SELECT unnest($1::text[]), unnest($2::integer[])
+    )
+    AND v.spent = TRUE AND v.unrolled = FALSE and COALESCE(v.settled_by, '') = ''
     AND v.ark_txid IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
     )
-    AND v.updated_at >= $2::bigint
-    AND ($3::bigint = 0 OR v.updated_at <= $3::bigint)
+ORDER BY v.created_at DESC
 `
 
-type SelectPendingSpentVtxosWithPubkeysParams struct {
-	Column1 []string
-	After   int64
-	Before  int64
+type SelectPendingSpentVtxosByOutpointsParams struct {
+	Txids []string
+	Vouts []int32
 }
 
-func (q *Queries) SelectPendingSpentVtxosWithPubkeys(ctx context.Context, arg SelectPendingSpentVtxosWithPubkeysParams) ([]VtxoVw, error) {
-	rows, err := q.db.QueryContext(ctx, selectPendingSpentVtxosWithPubkeys, pq.Array(arg.Column1), arg.After, arg.Before)
+// Batch form of SelectPendingSpentVtxo.
+func (q *Queries) SelectPendingSpentVtxosByOutpoints(ctx context.Context, arg SelectPendingSpentVtxosByOutpointsParams) ([]VtxoVw, error) {
+	rows, err := q.db.QueryContext(ctx, selectPendingSpentVtxosByOutpoints, pq.Array(arg.Txids), pq.Array(arg.Vouts))
 	if err != nil {
 		return nil, err
 	}
@@ -2397,6 +2345,69 @@ func (q *Queries) SelectVtxosByMarkerId(ctx context.Context, markerID string) ([
 	return items, nil
 }
 
+const selectVtxosByOutpoints = `-- name: SelectVtxosByOutpoints :many
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw
+WHERE (vtxo_vw.txid, vtxo_vw.vout) IN (
+    SELECT unnest($1::text[]), unnest($2::integer[])
+)
+ORDER BY vtxo_vw.txid, vtxo_vw.vout
+`
+
+type SelectVtxosByOutpointsParams struct {
+	Txids []string
+	Vouts []int32
+}
+
+type SelectVtxosByOutpointsRow struct {
+	VtxoVw VtxoVw
+}
+
+// Batch form of SelectVtxo matching exact (txid, vout) pairs.
+func (q *Queries) SelectVtxosByOutpoints(ctx context.Context, arg SelectVtxosByOutpointsParams) ([]SelectVtxosByOutpointsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxosByOutpoints, pq.Array(arg.Txids), pq.Array(arg.Vouts))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectVtxosByOutpointsRow
+	for rows.Next() {
+		var i SelectVtxosByOutpointsRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.Markers,
+			&i.VtxoVw.Commitments,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.AssetID,
+			&i.VtxoVw.AssetAmount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectVtxosOutpointsByArkTxidRecursive = `-- name: SelectVtxosOutpointsByArkTxidRecursive :many
 WITH RECURSIVE descendants_chain AS (
     -- seed: only the specific outpoint, not all vouts of the txid
@@ -2467,32 +2478,85 @@ func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, ar
 	return items, nil
 }
 
-const selectVtxosWithPubkeys = `-- name: SelectVtxosWithPubkeys :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw
-WHERE vtxo_vw.pubkey = ANY($1::varchar[])
-    AND vtxo_vw.updated_at >= $2::bigint
-    AND ($3::bigint = 0 OR vtxo_vw.updated_at <= $3::bigint)
+const selectVtxosWithPubkeysPage = `-- name: SelectVtxosWithPubkeysPage :many
+WITH matching AS (
+    SELECT DISTINCT v.txid, v.vout, v.created_at
+    FROM vtxo_vw v
+    WHERE v.pubkey = ANY($1::varchar[])
+        AND v.updated_at >= $2::bigint
+        AND ($3::bigint = 0 OR v.updated_at <= $3::bigint)
+        AND (NOT $4::boolean OR (
+            v.spent = false AND COALESCE(v.swept, false) = false AND v.unrolled = false
+        ))
+        AND (NOT $5::boolean OR (
+            v.spent = true OR COALESCE(v.swept, false) = true OR v.unrolled = true
+        ))
+        AND (NOT $6::boolean OR (v.spent = false AND v.unrolled = false))
+        AND (NOT $7::boolean OR (
+            v.spent = false AND v.unrolled = false AND (
+                COALESCE(v.swept, false) = true
+                OR (v.commitments = '' AND v.commitment_txid = '')
+            )
+        ))
+        AND (NOT $8::boolean OR (
+            v.spent = true AND v.unrolled = false AND COALESCE(v.settled_by, '') = ''
+            AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+            )
+        ))
+), page AS (
+    SELECT m.txid, m.vout, m.created_at, COUNT(*) OVER ()::integer AS total
+    FROM matching m
+    ORDER BY m.created_at DESC, m.txid, m.vout
+    LIMIT (CASE WHEN $10::integer <= 0 THEN NULL ELSE $10::integer END)
+    OFFSET $9::integer
+)
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount, page.total FROM vtxo_vw
+JOIN page ON vtxo_vw.txid = page.txid AND vtxo_vw.vout = page.vout
+ORDER BY page.created_at DESC, page.txid, page.vout
 `
 
-type SelectVtxosWithPubkeysParams struct {
-	Column1 []string
-	After   int64
-	Before  int64
+type SelectVtxosWithPubkeysPageParams struct {
+	Pubkeys         []string
+	After           int64
+	Before          int64
+	SpendableOnly   bool
+	SpentOnly       bool
+	RenewableOnly   bool
+	RecoverableOnly bool
+	PendingOnly     bool
+	Off             int32
+	Lim             int32
 }
 
-type SelectVtxosWithPubkeysRow struct {
+type SelectVtxosWithPubkeysPageRow struct {
 	VtxoVw VtxoVw
+	Total  int32
 }
 
-func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, arg SelectVtxosWithPubkeysParams) ([]SelectVtxosWithPubkeysRow, error) {
-	rows, err := q.db.QueryContext(ctx, selectVtxosWithPubkeys, pq.Array(arg.Column1), arg.After, arg.Before)
+// Paged, filtered vtxo query by pubkeys. Each flag is inert when
+// false. vtxo_vw has one row per asset, so the page is taken over DISTINCT
+// outpoints and COUNT(*) OVER () counts vtxos, not asset rows.
+func (q *Queries) SelectVtxosWithPubkeysPage(ctx context.Context, arg SelectVtxosWithPubkeysPageParams) ([]SelectVtxosWithPubkeysPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxosWithPubkeysPage,
+		pq.Array(arg.Pubkeys),
+		arg.After,
+		arg.Before,
+		arg.SpendableOnly,
+		arg.SpentOnly,
+		arg.RenewableOnly,
+		arg.RecoverableOnly,
+		arg.PendingOnly,
+		arg.Off,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []SelectVtxosWithPubkeysRow
+	var items []SelectVtxosWithPubkeysPageRow
 	for rows.Next() {
-		var i SelectVtxosWithPubkeysRow
+		var i SelectVtxosWithPubkeysPageRow
 		if err := rows.Scan(
 			&i.VtxoVw.Txid,
 			&i.VtxoVw.Vout,
@@ -2515,6 +2579,7 @@ func (q *Queries) SelectVtxosWithPubkeys(ctx context.Context, arg SelectVtxosWit
 			&i.VtxoVw.Swept,
 			&i.VtxoVw.AssetID,
 			&i.VtxoVw.AssetAmount,
+			&i.Total,
 		); err != nil {
 			return nil, err
 		}

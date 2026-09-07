@@ -7,6 +7,7 @@ import (
 	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
+	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	"github.com/stretchr/testify/require"
 )
 
@@ -155,4 +156,57 @@ func TestPaginatedFetch(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestHasMorePages(t *testing.T) {
+	t.Run("stops only after the last page", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			totalPages int32
+		}{
+			{"single page", 1},
+			{"two pages", 2}, // page 1 already reports Next == Total
+			{"three pages", 3},
+			{"many pages", 10},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				visited := make([]int32, 0, tt.totalPages)
+
+				page := serverPage(1, tt.totalPages)
+				visited = append(visited, page.Current)
+				for hasMorePages(page) {
+					page = serverPage(page.Next, tt.totalPages)
+					visited = append(visited, page.Current)
+					require.LessOrEqual(
+						t, int32(len(visited)), tt.totalPages, "loop must terminate",
+					)
+				}
+
+				want := make([]int32, 0, tt.totalPages)
+				for i := int32(1); i <= tt.totalPages; i++ {
+					want = append(want, i)
+				}
+				require.Equal(t, want, visited, "every page must be read exactly once")
+			})
+		}
+	})
+
+	t.Run("nil page has nothing more to read", func(t *testing.T) {
+		require.False(t, hasMorePages(nil))
+	})
+
+	t.Run("empty result has nothing more to read", func(t *testing.T) {
+		require.False(t, hasMorePages(&clientlib.PageResponse{Current: 1, Next: 0, Total: 0}))
+	})
+}
+
+// serverPage mirrors the PageResp arkd builds, including the Next clamp.
+func serverPage(current, totalPages int32) *clientlib.PageResponse {
+	next := totalPages
+	if current < totalPages {
+		next = current + 1
+	}
+	return &clientlib.PageResponse{Current: current, Next: next, Total: totalPages}
 }

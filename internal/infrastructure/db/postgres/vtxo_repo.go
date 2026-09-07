@@ -4,9 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"sort"
 	"strconv"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -174,50 +172,30 @@ func (v *vtxoRepository) GetAllNonUnrolledVtxos(
 func (v *vtxoRepository) GetVtxos(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) ([]domain.Vtxo, error) {
-	vtxos := make([]domain.Vtxo, 0, len(outpoints))
-	for _, o := range outpoints {
-		res, err := v.querier.SelectVtxo(
-			ctx, queries.SelectVtxoParams{Txid: o.Txid, Vout: int32(o.VOut)},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(res) == 0 {
-			continue
-		}
-
-		rows := make([]queries.VtxoVw, 0, len(res))
-		for _, row := range res {
-			rows = append(rows, row.VtxoVw)
-		}
-
-		result, err := readRows(rows)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(result) == 0 {
-			continue
-		}
-
-		vtxos = append(vtxos, result[0])
+	if len(outpoints) == 0 {
+		return []domain.Vtxo{}, nil
 	}
 
-	return vtxos, nil
-}
-
-func (v *vtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
-	res, err := v.querier.SelectAllVtxos(ctx)
+	txids, vouts := splitOutpoints(outpoints)
+	res, err := v.querier.SelectVtxosByOutpoints(ctx, queries.SelectVtxosByOutpointsParams{
+		Txids: txids,
+		Vouts: vouts,
+	})
 	if err != nil {
 		return nil, err
 	}
+
 	rows := make([]queries.VtxoVw, 0, len(res))
 	for _, row := range res {
 		rows = append(rows, row.VtxoVw)
 	}
 
-	return readRows(rows)
+	result, err := readRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func (v *vtxoRepository) GetExpiringLiquidity(
@@ -368,23 +346,32 @@ func (v *vtxoRepository) UpdateVtxosExpiration(
 	return execTx(ctx, v.db, txBody)
 }
 
-func (v *vtxoRepository) GetAllVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string, after, before int64,
-) ([]domain.Vtxo, error) {
-	if err := validateTimeRange(after, before); err != nil {
-		return nil, err
+func (v *vtxoRepository) GetVtxosWithPubKeys(
+	ctx context.Context, filter domain.VtxoFilter, page domain.Page,
+) ([]domain.Vtxo, int32, error) {
+	if err := validateTimeRange(filter.After, filter.Before); err != nil {
+		return nil, 0, err
 	}
-	res, err := v.querier.SelectVtxosWithPubkeys(ctx, queries.SelectVtxosWithPubkeysParams{
-		Column1: pubkeys,
-		After:   after,
-		Before:  before,
-	})
+
+	res, err := v.selectVtxosPage(ctx, filter, page.Limit, page.Offset)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
+		return nil, 0, err
 	}
+
+	// The total rides on the returned rows: a page past the end needs a second
+	// read to recover it.
+	if len(res) == 0 {
+		first, err := v.selectVtxosPage(ctx, filter, 1, 0)
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(first) == 0 {
+			return nil, 0, nil
+		}
+		return nil, first[0].Total, nil
+	}
+
+	total := res[0].Total
 	rows := make([]queries.VtxoVw, 0, len(res))
 	for _, row := range res {
 		rows = append(rows, row.VtxoVw)
@@ -392,13 +379,29 @@ func (v *vtxoRepository) GetAllVtxosWithPubKeys(
 
 	vtxos, err := readRows(rows)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	sort.SliceStable(vtxos, func(i, j int) bool {
-		return vtxos[i].CreatedAt > vtxos[j].CreatedAt
-	})
+	return vtxos, total, nil
+}
 
-	return vtxos, nil
+func (v *vtxoRepository) selectVtxosPage(
+	ctx context.Context, filter domain.VtxoFilter, limit, offset int32,
+) ([]queries.SelectVtxosWithPubkeysPageRow, error) {
+	res, err := v.querier.SelectVtxosWithPubkeysPage(
+		ctx, queries.SelectVtxosWithPubkeysPageParams{
+			Pubkeys:         filter.Pubkeys,
+			After:           filter.After,
+			Before:          filter.Before,
+			SpendableOnly:   filter.SpendableOnly,
+			SpentOnly:       filter.SpentOnly,
+			RecoverableOnly: filter.RecoverableOnly,
+			RenewableOnly:   filter.RenewableOnly,
+			PendingOnly:     filter.PendingOnly,
+			Lim:             limit,
+			Off:             offset,
+		},
+	)
+	return res, err
 }
 
 func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
@@ -490,68 +493,28 @@ func (v *vtxoRepository) GetVtxoPubKeysByCommitmentTxids(
 	return taprootKeys, nil
 }
 
-func (v *vtxoRepository) GetPendingSpentVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string, after, before int64,
-) ([]domain.Vtxo, error) {
-	if err := validateTimeRange(after, before); err != nil {
-		return nil, err
-	}
-	rows, err := v.querier.SelectPendingSpentVtxosWithPubkeys(
-		ctx,
-		queries.SelectPendingSpentVtxosWithPubkeysParams{
-			Column1: pubkeys,
-			After:   after,
-			Before:  before,
-		},
-	)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	vtxos, err := readRows(rows)
-	if err != nil {
-		return nil, err
-	}
-	sort.SliceStable(vtxos, func(i, j int) bool {
-		return vtxos[i].CreatedAt > vtxos[j].CreatedAt
-	})
-
-	return vtxos, nil
-}
-
 func (v *vtxoRepository) GetPendingSpentVtxosWithOutpoints(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) ([]domain.Vtxo, error) {
-	var vtxos []domain.Vtxo
-	for _, outpoint := range outpoints {
-		res, err := v.querier.SelectPendingSpentVtxo(
-			ctx, queries.SelectPendingSpentVtxoParams{
-				Txid: outpoint.Txid,
-				Vout: int32(outpoint.VOut),
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(res) == 0 {
-			continue
-		}
-
-		result, err := readRows(res)
-		if err != nil {
-			return nil, err
-		}
-
-		vtxos = append(vtxos, result...)
+	if len(outpoints) == 0 {
+		return nil, nil
 	}
 
-	sort.SliceStable(vtxos, func(i, j int) bool {
-		return vtxos[i].CreatedAt > vtxos[j].CreatedAt
-	})
+	txids, vouts := splitOutpoints(outpoints)
+	res, err := v.querier.SelectPendingSpentVtxosByOutpoints(
+		ctx, queries.SelectPendingSpentVtxosByOutpointsParams{
+			Txids: txids,
+			Vouts: vouts,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	vtxos, err := readRows(res)
+	if err != nil {
+		return nil, err
+	}
 
 	return vtxos, nil
 }
@@ -609,29 +572,31 @@ func parseMarkersJSONBFromVtxo(markers json.RawMessage) []string {
 	return markerIDs
 }
 
+func splitOutpoints(outpoints []domain.Outpoint) ([]string, []int32) {
+	txids := make([]string, 0, len(outpoints))
+	vouts := make([]int32, 0, len(outpoints))
+	for _, o := range outpoints {
+		txids = append(txids, o.Txid)
+		vouts = append(vouts, int32(o.VOut))
+	}
+	return txids, vouts
+}
+
 func readRows(rows []queries.VtxoVw) ([]domain.Vtxo, error) {
-	vtxosByOutpoint := make(map[string]domain.Vtxo)
+	vtxos := make([]domain.Vtxo, 0, len(rows))
+	indexByOutpoint := make(map[string]int, len(rows))
 	for _, row := range rows {
 		key := fmt.Sprintf("%s:%d", row.Txid, row.Vout)
-		if _, ok := vtxosByOutpoint[key]; !ok {
-			vtxosByOutpoint[key] = rowToVtxo(row)
+		i, ok := indexByOutpoint[key]
+		if !ok {
+			indexByOutpoint[key] = len(vtxos)
+			vtxos = append(vtxos, rowToVtxo(row))
 			continue
 		}
 
-		asset := rowToAsset(row)
-		emptyAsset := domain.AssetDenomination{}
-		if asset != emptyAsset {
-			vtxo := vtxosByOutpoint[key]
-			vtxo.Assets = append(
-				vtxosByOutpoint[key].Assets, asset,
-			)
-			vtxosByOutpoint[key] = vtxo
+		if asset := rowToAsset(row); asset != (domain.AssetDenomination{}) {
+			vtxos[i].Assets = append(vtxos[i].Assets, asset)
 		}
-	}
-
-	vtxos := make([]domain.Vtxo, 0, len(rows))
-	for _, vtxo := range vtxosByOutpoint {
-		vtxos = append(vtxos, vtxo)
 	}
 
 	return vtxos, nil

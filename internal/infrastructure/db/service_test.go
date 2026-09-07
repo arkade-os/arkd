@@ -194,6 +194,8 @@ func TestService(t *testing.T) {
 			testOffchainTxRepository(t, svc)
 			testAssetRepository(t, svc)
 			testVtxoRepository(t, svc)
+			testGetVtxosBatch(t, svc)
+			testVtxosWithPubKeysPage(t, svc)
 			// After testVtxoRepository: the sweeps aggregate joins leaf vtxos, so
 			// the vtxo tables must exist and be writable by now.
 			testScheduledSweeps(t, svc)
@@ -791,18 +793,10 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.NotEmpty(t, spendableVtxos)
 		require.Empty(t, spentVtxos)
 
-		initialVtxos, err := svc.Vtxos().GetAllVtxos(ctx)
-		require.NoError(t, err)
-		require.Greater(t, len(initialVtxos), 0)
-
-		totVtxos := len(initialVtxos) + len(newVtxos)
+		totVtxos := len(spendableVtxos) + len(newVtxos)
 
 		err = svc.Vtxos().AddVtxos(ctx, newVtxos)
 		require.NoError(t, err)
-
-		allVtxos, err := svc.Vtxos().GetAllVtxos(ctx)
-		require.NoError(t, err)
-		require.Len(t, allVtxos, totVtxos)
 
 		vtxos, err = svc.Vtxos().GetVtxos(ctx, vtxoKeys)
 		require.NoError(t, err)
@@ -830,8 +824,9 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Equal(t, arkTxid, v.ArkTxid)
 		}
 
-		allVtxos, err = svc.Vtxos().GetAllVtxos(ctx)
+		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, "")
 		require.NoError(t, err)
+		allVtxos := append(spendableVtxos, spentVtxos...)
 		require.Len(t, allVtxos, totVtxos)
 
 		spendableVtxos, spentVtxos, err = svc.Vtxos().GetAllNonUnrolledVtxos(ctx, pubkey)
@@ -1213,8 +1208,11 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxos)
 
-			pendingSpentVtxosByPubkey, err := svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"aaaa"}, 0, 0,
+			pendingSpentVtxosByPubkey, _, err := svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"aaaa"},
+					PendingOnly: true,
+				}, domain.Page{Limit: 100},
 			)
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxosByPubkey)
@@ -1226,14 +1224,20 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.NoError(t, err)
 			require.Len(t, pendingSpentVtxos, 3)
 
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"aaaa"}, 0, 0,
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"aaaa"},
+					PendingOnly: true,
+				}, domain.Page{Limit: 100},
 			)
 			require.NoError(t, err)
 			require.Len(t, pendingSpentVtxosByPubkey, 2)
 
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"}, 0, 0,
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"bbbb"},
+					PendingOnly: true,
+				}, domain.Page{Limit: 100},
 			)
 			require.NoError(t, err)
 			require.Len(t, pendingSpentVtxosByPubkey, 1)
@@ -1257,75 +1261,117 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Len(t, pendingSpentVtxos, 1)
 			require.Equal(t, "bbbb", pendingSpentVtxos[0].PubKey)
 
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"aaaa"}, 0, 0,
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"aaaa"},
+					PendingOnly: true,
+				}, domain.Page{Limit: 100},
 			)
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxosByPubkey)
 
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"}, 0, 0,
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"bbbb"},
+					PendingOnly: true,
+				}, domain.Page{Limit: 100},
 			)
 			require.NoError(t, err)
 			require.Len(t, pendingSpentVtxosByPubkey, 1)
 
 			// Test with time range that includes the vtxo
 			currTime := time.Now()
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"}, currTime.Add(-1*time.Hour).UnixMilli(), currTime.Add(1*time.Hour).UnixMilli(),
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"bbbb"},
+					PendingOnly: true,
+					After:       currTime.Add(-1 * time.Hour).UnixMilli(),
+					Before:      currTime.Add(1 * time.Hour).UnixMilli(),
+				}, domain.Page{Limit: 100},
 			)
 			require.NoError(t, err)
 			require.Len(t, pendingSpentVtxosByPubkey, 1)
 
 			// Test with unbounded after time
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"}, 0, currTime.Add(1*time.Hour).UnixMilli(),
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"bbbb"},
+					PendingOnly: true,
+					Before:      currTime.Add(1 * time.Hour).UnixMilli(),
+				}, domain.Page{Limit: 100},
 			)
 			require.NoError(t, err)
 			require.Len(t, pendingSpentVtxosByPubkey, 1)
 
 			// Test with unbounded before time
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"}, currTime.Add(-1*time.Hour).UnixMilli(), 0,
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"bbbb"},
+					PendingOnly: true,
+					After:       currTime.Add(-1 * time.Hour).UnixMilli(),
+				}, domain.Page{Limit: 100},
 			)
 			require.NoError(t, err)
 			require.Len(t, pendingSpentVtxosByPubkey, 1)
 
 			// Test with time range that excludes the vtxo
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"}, currTime.Add(-2*time.Hour).UnixMilli(), currTime.Add(-1*time.Hour).UnixMilli(),
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"bbbb"},
+					PendingOnly: true,
+					After:       currTime.Add(-2 * time.Hour).UnixMilli(),
+					Before:      currTime.Add(-1 * time.Hour).UnixMilli(),
+				}, domain.Page{Limit: 100},
 			)
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxosByPubkey)
 
 			// TODO: move to "invalid" sub-test
 			// Test with invalid time range where after is greater than before
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"}, now.UnixMilli()+1000, now.UnixMilli(),
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"bbbb"},
+					PendingOnly: true,
+					After:       now.UnixMilli() + 1000,
+					Before:      now.UnixMilli(),
+				}, domain.Page{Limit: 100},
 			)
 			require.Error(t, err)
 			require.Equal(t, "before must be greater than after", err.Error())
 			require.Empty(t, pendingSpentVtxosByPubkey)
 
 			// Test with invalid time range where after is equal to before
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"}, now.UnixMilli(), now.UnixMilli(),
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"bbbb"},
+					PendingOnly: true,
+					After:       now.UnixMilli(),
+					Before:      now.UnixMilli(),
+				}, domain.Page{Limit: 100},
 			)
 			require.Error(t, err)
 			require.Equal(t, "before must be greater than after", err.Error())
 			require.Empty(t, pendingSpentVtxosByPubkey)
 
 			// Test with negative time after value
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"}, -1000, 0,
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"bbbb"},
+					PendingOnly: true,
+					After:       -1000,
+				}, domain.Page{Limit: 100},
 			)
 			require.Error(t, err)
 			require.Equal(t, "after and before must be greater than or equal to 0", err.Error())
 			require.Empty(t, pendingSpentVtxosByPubkey)
 
 			// Test with negative time before value
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"}, 0, -1000,
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"bbbb"},
+					PendingOnly: true,
+					Before:      -1000,
+				}, domain.Page{Limit: 100},
 			)
 			require.Error(t, err)
 			require.Equal(t, "after and before must be greater than or equal to 0", err.Error())
@@ -1334,8 +1380,13 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			// Test with future time range
 			futureStart := time.Now().Add(24 * time.Hour).UnixMilli()
 			futureEnd := time.Now().Add(25 * time.Hour).UnixMilli()
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"}, futureStart, futureEnd,
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"bbbb"},
+					PendingOnly: true,
+					After:       futureStart,
+					Before:      futureEnd,
+				}, domain.Page{Limit: 100},
 			)
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxosByPubkey)
@@ -1359,8 +1410,11 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxos)
 
-			pendingSpentVtxosByPubkey, err = svc.Vtxos().GetPendingSpentVtxosWithPubKeys(
-				ctx, []string{"bbbb"}, 0, 0,
+			pendingSpentVtxosByPubkey, _, err = svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{
+					Pubkeys:     []string{"bbbb"},
+					PendingOnly: true,
+				}, domain.Page{Limit: 100},
 			)
 			require.NoError(t, err)
 			require.Empty(t, pendingSpentVtxosByPubkey)
@@ -3213,25 +3267,207 @@ func testCreateRootMarkersForEmptyVtxos(t *testing.T, svc ports.RepoManager) {
 		err := svc.Vtxos().AddVtxos(ctx, vtxosToAdd)
 		require.NoError(t, err)
 
-		// Single pubkey should return 1 vtxo.
-		got, err := svc.Vtxos().GetAllVtxosWithPubKeys(ctx, []string{pk1}, 0, 0)
-		require.NoError(t, err)
+		byPubkeys := func(pubkeys ...string) []domain.Vtxo {
+			got, total, err := svc.Vtxos().GetVtxosWithPubKeys(
+				ctx, domain.VtxoFilter{Pubkeys: pubkeys}, domain.Page{Limit: 100},
+			)
+			require.NoError(t, err)
+			require.Equal(t, int32(len(got)), total)
+			return got
+		}
+
+		got := byPubkeys(pk1)
 		require.Len(t, got, 1)
 		require.Equal(t, pk1, got[0].PubKey)
 
-		got, err = svc.Vtxos().GetAllVtxosWithPubKeys(ctx, []string{pk2}, 0, 0)
-		require.NoError(t, err)
+		got = byPubkeys(pk2)
 		require.Len(t, got, 1)
 		require.Equal(t, pk2, got[0].PubKey)
 
-		// Multiple pubkeys should return vtxos for both.
-		got, err = svc.Vtxos().GetAllVtxosWithPubKeys(ctx, []string{pk1, pk2}, 0, 0)
-		require.NoError(t, err)
+		got = byPubkeys(pk1, pk2)
 		require.Len(t, got, 2)
 
 		gotPubkeys := map[string]bool{got[0].PubKey: true, got[1].PubKey: true}
 		require.True(t, gotPubkeys[pk1], "expected vtxo with pubkey pk1")
 		require.True(t, gotPubkeys[pk2], "expected vtxo with pubkey pk2")
+	})
+}
+
+func testGetVtxosBatch(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_get_vtxos_batch", func(t *testing.T) {
+		ctx := t.Context()
+		const count = 1000
+
+		pk := randomString(32)
+		cmtTxid := randomString(32)
+		vtxos := make([]domain.Vtxo, 0, count)
+		for i := range count {
+			vtxos = append(vtxos, domain.Vtxo{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: uint32(i % 4)},
+				PubKey:             pk,
+				Amount:             1000,
+				ExpiresAt:          time.Now().Add(time.Hour).Unix(),
+				RootCommitmentTxid: cmtTxid,
+				CommitmentTxids:    []string{cmtTxid},
+			})
+		}
+		require.NoError(t, svc.Vtxos().AddVtxos(ctx, vtxos))
+
+		outpoints := outpointsOf(vtxos)
+		got, err := svc.Vtxos().GetVtxos(ctx, outpoints)
+		require.NoError(t, err)
+		require.ElementsMatch(t, outpoints, outpointsOf(got))
+
+		withMiss := append(
+			[]domain.Outpoint{{Txid: randomString(32), VOut: 0}}, outpoints[:10]...,
+		)
+		got, err = svc.Vtxos().GetVtxos(ctx, withMiss)
+		require.NoError(t, err)
+		require.ElementsMatch(t, outpoints[:10], outpointsOf(got))
+
+		// Sibling vouts of a requested txid must not leak in.
+		txid := randomString(32)
+		siblings := []domain.Vtxo{vtxos[0], vtxos[0]}
+		siblings[0].Outpoint = domain.Outpoint{Txid: txid, VOut: 0}
+		siblings[1].Outpoint = domain.Outpoint{Txid: txid, VOut: 1}
+		require.NoError(t, svc.Vtxos().AddVtxos(ctx, siblings))
+		got, err = svc.Vtxos().GetVtxos(ctx, []domain.Outpoint{siblings[1].Outpoint})
+		require.NoError(t, err)
+		require.Equal(t, []domain.Outpoint{siblings[1].Outpoint}, outpointsOf(got))
+	})
+}
+
+// For every filter mode the paged query must select exactly what matchesFilter
+// selects, and paging must partition that set without gaps or repeats.
+func testVtxosWithPubKeysPage(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_get_vtxos_with_pubkeys_page", func(t *testing.T) {
+		ctx := t.Context()
+		pk := randomString(32)
+		now := time.Now().Unix()
+		seeded := seedFilterVtxos(t, svc, pk, now)
+
+		all, err := svc.Vtxos().GetVtxos(ctx, outpointsOf(seeded))
+		require.NoError(t, err)
+		require.Len(t, all, len(seeded))
+
+		modes := []struct {
+			name   string
+			filter domain.VtxoFilter
+		}{
+			{"no filter", domain.VtxoFilter{}},
+			{"spendable only", domain.VtxoFilter{SpendableOnly: true}},
+			{"spent only", domain.VtxoFilter{SpentOnly: true}},
+			{"recoverable only", domain.VtxoFilter{RecoverableOnly: true}},
+			{"renewable only", domain.VtxoFilter{RenewableOnly: true}},
+		}
+
+		for _, mode := range modes {
+			t.Run(mode.name, func(t *testing.T) {
+				filter := mode.filter
+				filter.Pubkeys = []string{pk}
+
+				want := make([]domain.Vtxo, 0, len(all))
+				for _, vtxo := range all {
+					if matchesFilter(filter, vtxo) {
+						want = append(want, vtxo)
+					}
+				}
+
+				got, total, err := svc.Vtxos().GetVtxosWithPubKeys(
+					ctx, filter, domain.Page{Limit: 100},
+				)
+				require.NoError(t, err)
+				require.Equal(t, int32(len(want)), total)
+				require.ElementsMatch(t, outpointsOf(want), outpointsOf(got))
+
+				for i := 1; i < len(got); i++ {
+					require.GreaterOrEqual(t, got[i-1].CreatedAt, got[i].CreatedAt)
+				}
+
+				// A zero limit is how a request without a page reads: the
+				// whole set, in the same order, with the same total.
+				unbounded, unboundedTotal, err := svc.Vtxos().GetVtxosWithPubKeys(
+					ctx, filter, domain.Page{},
+				)
+				require.NoError(t, err)
+				require.Equal(t, total, unboundedTotal)
+				require.Equal(t, outpointsOf(got), outpointsOf(unbounded))
+
+				if total == 0 {
+					return
+				}
+
+				walked := make([]domain.Outpoint, 0, total)
+				for offset := int32(0); offset < total; offset++ {
+					page, pageTotal, err := svc.Vtxos().GetVtxosWithPubKeys(
+						ctx, filter, domain.Page{Limit: 1, Offset: offset},
+					)
+					require.NoError(t, err)
+					require.Equal(t, total, pageTotal)
+					require.Len(t, page, 1)
+					walked = append(walked, page[0].Outpoint)
+				}
+				require.ElementsMatch(t, outpointsOf(want), walked)
+				require.Len(t, dedupOutpoints(walked), len(walked))
+
+				page, pastTotal, err := svc.Vtxos().GetVtxosWithPubKeys(
+					ctx, filter, domain.Page{Limit: 10, Offset: total},
+				)
+				require.NoError(t, err)
+				require.Empty(t, page)
+				require.Equal(t, total, pastTotal, "an out of range page still reports the total")
+			})
+		}
+
+		t.Run("total counts vtxos, not asset rows", func(t *testing.T) {
+			ctx := t.Context()
+			assetPk := randomString(32)
+			cmtTxid := randomString(32)
+
+			multi := domain.Vtxo{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+				PubKey:             assetPk,
+				Amount:             330,
+				ExpiresAt:          now + 3600,
+				CreatedAt:          now,
+				RootCommitmentTxid: cmtTxid,
+				CommitmentTxids:    []string{cmtTxid},
+				// Reuses assets the suite already inserted: postgres has a
+				// foreign key from asset_projection onto asset.
+				Assets: []domain.AssetDenomination{
+					{AssetId: "asset1", Amount: 1000},
+					{AssetId: "asset2", Amount: 2000},
+				},
+			}
+			require.NoError(t, svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{multi}))
+
+			got, total, err := svc.Vtxos().GetVtxosWithPubKeys(
+				ctx,
+				domain.VtxoFilter{Pubkeys: []string{assetPk}},
+				domain.Page{Limit: 100},
+			)
+			require.NoError(t, err)
+			require.Equal(t, int32(1), total, "one vtxo, not one per asset")
+			require.Len(t, got, 1)
+			require.Len(t, got[0].Assets, 2, "its assets still come back whole")
+		})
+
+		// PendingOnly is not expressed by matchesFilter; pin it against the
+		// dedicated query instead.
+		t.Run("pending only", func(t *testing.T) {
+			want, err := svc.Vtxos().GetPendingSpentVtxosWithOutpoints(ctx, outpointsOf(seeded))
+			require.NoError(t, err)
+			require.NotEmpty(t, want, "fixture must contain a pending spent vtxo")
+
+			got, total, err := svc.Vtxos().GetVtxosWithPubKeys(
+				ctx,
+				domain.VtxoFilter{Pubkeys: []string{pk}, PendingOnly: true},
+				domain.Page{Limit: 100},
+			)
+			require.NoError(t, err)
+			require.Equal(t, int32(len(want)), total)
+			require.ElementsMatch(t, outpointsOf(want), outpointsOf(got))
+		})
 	})
 }
 
@@ -4103,6 +4339,74 @@ func offchainTxMatch(expected, got domain.OffchainTx) assert.Comparison {
 		}
 		return true
 	}
+}
+
+// seedFilterVtxos writes one vtxo per state the filters discriminate on: live,
+// expired, note, spent, unrolled and swept.
+func seedFilterVtxos(
+	t *testing.T, svc ports.RepoManager, pubkey string, now int64,
+) []domain.Vtxo {
+	t.Helper()
+	ctx := t.Context()
+	cmtTxid := randomString(32)
+
+	newVtxo := func(vout uint32, expiresAt, createdAt int64, note bool) domain.Vtxo {
+		vtxo := domain.Vtxo{
+			Outpoint:  domain.Outpoint{Txid: randomString(32), VOut: vout},
+			PubKey:    pubkey,
+			Amount:    1000,
+			ExpiresAt: expiresAt,
+			CreatedAt: createdAt,
+		}
+		if !note {
+			vtxo.RootCommitmentTxid = cmtTxid
+			vtxo.CommitmentTxids = []string{cmtTxid}
+		}
+		return vtxo
+	}
+
+	live := newVtxo(0, now+3600, now, false)
+	expired := newVtxo(1, now-3600, now-10, false)
+	note := newVtxo(2, now+3600, now-20, true)
+	toSpend := newVtxo(3, now+3600, now-30, false)
+	toUnroll := newVtxo(4, now+3600, now-40, false)
+	toSweep := newVtxo(5, now+3600, now-50, false)
+
+	vtxos := []domain.Vtxo{live, expired, note, toSpend, toUnroll, toSweep}
+	require.NoError(t, svc.Vtxos().AddVtxos(ctx, vtxos))
+
+	require.NoError(t, svc.Vtxos().SpendVtxos(
+		ctx, map[domain.Outpoint]string{toSpend.Outpoint: randomString(32)}, randomString(32),
+	))
+	require.NoError(t, svc.Vtxos().UnrollVtxos(ctx, []domain.Outpoint{toUnroll.Outpoint}))
+
+	markerID := toSweep.Outpoint.String()
+	require.NoError(t, svc.Markers().AddMarker(ctx, domain.Marker{ID: markerID, Depth: 0}))
+	require.NoError(t, svc.Markers().UpdateVtxoMarkers(ctx, toSweep.Outpoint, []string{markerID}))
+	require.NoError(t, svc.Markers().BulkSweepMarkers(ctx, []string{markerID}, now))
+
+	return vtxos
+}
+
+func outpointsOf(vtxos []domain.Vtxo) []domain.Outpoint {
+	outpoints := make([]domain.Outpoint, 0, len(vtxos))
+	for _, vtxo := range vtxos {
+		outpoints = append(outpoints, vtxo.Outpoint)
+	}
+	return outpoints
+}
+
+func dedupOutpoints(outpoints []domain.Outpoint) []domain.Outpoint {
+	seen := make(map[domain.Outpoint]struct{}, len(outpoints))
+	deduped := make([]domain.Outpoint, 0, len(outpoints))
+	for _, o := range outpoints {
+		if _, ok := seen[o]; ok {
+			continue
+		}
+		seen[o] = struct{}{}
+		deduped = append(deduped, o)
+	}
+	return deduped
 }
 
 func randomString(len int) string {
@@ -5453,4 +5757,18 @@ func checkVtxos(t *testing.T, expectedVtxos, gotVtxos []domain.Vtxo) {
 		require.ElementsMatch(t, expected.CommitmentTxids, v.CommitmentTxids)
 		require.ElementsMatch(t, expected.Assets, v.Assets)
 	}
+}
+
+func matchesFilter(f domain.VtxoFilter, v domain.Vtxo) bool {
+	switch {
+	case f.SpendableOnly:
+		return !v.Spent && !v.Swept && !v.Unrolled
+	case f.SpentOnly:
+		return v.Spent || v.Swept || v.Unrolled
+	case f.RenewableOnly:
+		return !v.Spent && !v.Unrolled
+	case f.RecoverableOnly:
+		return !v.Spent && !v.Unrolled && (v.Swept || v.IsNote())
+	}
+	return true
 }

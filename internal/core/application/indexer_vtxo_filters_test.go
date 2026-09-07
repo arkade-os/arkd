@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,35 @@ import (
 )
 
 func TestGetVtxosFilters(t *testing.T) {
+	// A request without a page is the contract the SDKs rely on: the whole
+	// set and no page back. The cap applies only when a page is asked for.
+	t.Run("a request without a page reads the whole set", func(t *testing.T) {
+		ctx := context.Background()
+		all := make([]domain.Vtxo, 0, 2*maxPageSizeSpendableVtxos+50)
+		for i := range cap(all) {
+			all = append(all, domain.Vtxo{
+				Outpoint:  domain.Outpoint{Txid: fmt.Sprintf("tx%04d", i)},
+				PubKey:    filterTestPubkey,
+				CreatedAt: int64(i),
+			})
+		}
+		svc := newFilterTestIndexer(all)
+		pubkeys := []string{filterTestPubkey}
+
+		resp, err := svc.GetVtxos(ctx, pubkeys, false, false, false, false, false, 0, 0, nil)
+		require.NoError(t, err)
+		require.Len(t, resp.Vtxos, len(all), "a nil page must not be capped")
+		require.Equal(t, PageResp{}, resp.Page, "a nil page carries no page back")
+
+		resp, err = svc.GetVtxos(
+			ctx, pubkeys, false, false, false, false, false, 0, 0,
+			&Page{PageSize: maxPageSizeSpendableVtxos, PageNum: 2},
+		)
+		require.NoError(t, err)
+		require.Len(t, resp.Vtxos, maxPageSizeSpendableVtxos)
+		require.Equal(t, PageResp{Current: 2, Next: 3, Total: 3}, resp.Page)
+	})
+
 	// renewableIsUnionOfSpendableAndRecoverable pins the invariant the
 	// renewableOnly filter relies on. It holds only because !RequiresForfeit expands
 	// to (Swept || IsNote || Unrolled), so any unspent, non-unrolled
@@ -152,7 +182,7 @@ func filterTestVtxo(txid string, spent, swept, unrolled, note, expired bool) dom
 func newFilterTestIndexer(vtxos []domain.Vtxo) *indexerService {
 	vtxoRepo := &mockedVtxoRepo{}
 	vtxoRepo.On(
-		"GetAllVtxosWithPubKeys", mock.Anything, []string{filterTestPubkey}, int64(0), int64(0),
+		"GetVtxosWithPubKeys", mock.Anything, mock.Anything, mock.Anything,
 	).Return(vtxos, nil)
 
 	repoManager := &mockedRepoManager{}

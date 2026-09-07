@@ -435,15 +435,6 @@ func (m *mockVtxoRepository) GetAllSweepableUnrolledVtxos(
 ) ([]domain.Vtxo, error) {
 	return nil, nil
 }
-func (m *mockVtxoRepository) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
-	return nil, nil
-}
-
-func (m *mockVtxoRepository) GetAllVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string, after, before int64,
-) ([]domain.Vtxo, error) {
-	return nil, nil
-}
 
 func (m *mockVtxoRepository) GetExpiringLiquidity(
 	ctx context.Context, after, before int64,
@@ -484,16 +475,16 @@ func (m *mockVtxoRepository) GetVtxoPubKeysByCommitmentTxids(
 	return nil, nil
 }
 
-func (m *mockVtxoRepository) GetPendingSpentVtxosWithPubKeys(
-	ctx context.Context, pubkeys []string, after, before int64,
-) ([]domain.Vtxo, error) {
-	return nil, nil
-}
-
 func (m *mockVtxoRepository) GetPendingSpentVtxosWithOutpoints(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) ([]domain.Vtxo, error) {
 	return nil, nil
+}
+
+func (m *mockVtxoRepository) GetVtxosWithPubKeys(
+	ctx context.Context, filter domain.VtxoFilter, page domain.Page,
+) ([]domain.Vtxo, int32, error) {
+	return nil, 0, nil
 }
 func (m *mockVtxoRepository) Close() {}
 
