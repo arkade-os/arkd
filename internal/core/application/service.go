@@ -4143,9 +4143,10 @@ func (s *service) restoreWatchingVtxos() error {
 		addKey(key)
 	}
 
-	// Unrolled vtxos are watched independently of any round. Their batch may
-	// no longer be sweepable, so the loop above would not restore them, and an
-	// unwatched script is invisible to onchain spend tracking twice over: no
+	// Unrolled and onchain-kind vtxos are watched independently of any round:
+	// an unrolled vtxo's batch may no longer be sweepable, and an onchain-kind
+	// vtxo has no batch at all, so the loop above would not restore them, and
+	// an unwatched script is invisible to onchain spend tracking twice over: no
 	// push notification arrives, and NBXplorer only records the matched inputs
 	// the reconciler reads for sources it was tracking when it indexed the
 	// spending transaction. Both directions are restored: still-unspent vtxos
@@ -4158,7 +4159,7 @@ func (s *service) restoreWatchingVtxos() error {
 	} {
 		vtxos, err := load(ctx)
 		if err != nil {
-			log.WithError(err).Warn("failed to fetch unrolled vtxos for restore")
+			log.WithError(err).Warn("failed to fetch onchain vtxos for restore")
 			continue
 		}
 		for _, vtxo := range vtxos {

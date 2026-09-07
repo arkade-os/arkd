@@ -117,16 +117,19 @@ WHERE txid = @txid AND vout = @vout;
 -- The spent = false guard makes the write idempotent and prevents it clobbering
 -- an offchain spend that lands concurrently, which would erase that vtxo's
 -- ark_txid and hide a genuine fraud case from the sweeper.
+-- vtxo_kind 1 is an on-chain Arkade UTXO (add_vtxo_kind migration). It has an
+-- onchain output without ever being unrolled, so the onchain spend statements
+-- take it alongside unrolled vtxos.
 -- name: UpdateVtxoOnchainSpent :exec
 UPDATE vtxo SET spent = true, spent_by = @spent_by, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
-WHERE txid = @txid AND vout = @vout AND unrolled = true AND spent = false;
+WHERE txid = @txid AND vout = @vout AND (unrolled = true OR vtxo_kind = 1) AND spent = false;
 
 -- Re-points an already onchain-spent vtxo at a new spending tx, for when RBF
 -- replaces the spender. Scoped to rows that are onchain-spent so it can never
 -- rewrite the spent_by of an offchain spend or a settlement.
 -- name: UpdateVtxoOnchainSpentBy :exec
 UPDATE vtxo SET spent_by = @spent_by, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
-WHERE txid = @txid AND vout = @vout AND unrolled = true AND spent = true
+WHERE txid = @txid AND vout = @vout AND (unrolled = true OR vtxo_kind = 1) AND spent = true
   AND COALESCE(settled_by, '') = '' AND COALESCE(ark_txid, '') = '';
 
 -- Retracts an onchain spend whose transaction was evicted or reorged out. Same
@@ -134,7 +137,7 @@ WHERE txid = @txid AND vout = @vout AND unrolled = true AND spent = true
 -- by this statement.
 -- name: UpdateVtxoOnchainUnspent :exec
 UPDATE vtxo SET spent = false, spent_by = NULL, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
-WHERE txid = @txid AND vout = @vout AND unrolled = true AND spent = true
+WHERE txid = @txid AND vout = @vout AND (unrolled = true OR vtxo_kind = 1) AND spent = true
   AND COALESCE(settled_by, '') = '' AND COALESCE(ark_txid, '') = '';
 
 -- name: SelectRoundWithId :many
@@ -437,12 +440,12 @@ SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE spent = true AND unrolled = true A
 -- Candidates for onchain-spend reconciliation: unrolled vtxos we currently
 -- believe are unspent.
 -- name: SelectUnrolledUnspentVtxos :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = true AND spent = false AND swept = false;
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE (unrolled = true OR vtxo_kind = 1) AND spent = false AND swept = false;
 
 -- Vtxos we currently record as spent onchain, so the reconciler can re-point
 -- them on RBF or retract them if the spend disappears.
 -- name: SelectOnchainSpentVtxos :many
-SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = true AND spent = true
+SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE (unrolled = true OR vtxo_kind = 1) AND spent = true
   AND (COALESCE(settled_by, '') = '') AND (COALESCE(ark_txid, '') = '');
 
 -- name: SelectPendingSpentVtxosWithPubkeys :many

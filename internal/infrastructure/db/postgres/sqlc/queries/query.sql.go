@@ -995,7 +995,7 @@ func (q *Queries) SelectOffchainTxsInRange(ctx context.Context, arg SelectOffcha
 }
 
 const selectOnchainSpentVtxos = `-- name: SelectOnchainSpentVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.vtxo_kind, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE unrolled = true AND spent = true
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.vtxo_kind, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE (unrolled = true OR vtxo_kind = 1) AND spent = true
   AND COALESCE(settled_by, '') = '' AND COALESCE(ark_txid, '') = ''
 `
 
@@ -2114,7 +2114,7 @@ func (q *Queries) SelectTxs(ctx context.Context, dollar_1 []string) ([]SelectTxs
 }
 
 const selectUnrolledUnspentVtxos = `-- name: SelectUnrolledUnspentVtxos :many
-SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.vtxo_kind, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE unrolled = true AND spent = false AND swept = false
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.vtxo_kind, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE (unrolled = true OR vtxo_kind = 1) AND spent = false AND swept = false
 `
 
 type SelectUnrolledUnspentVtxosRow struct {
@@ -2719,7 +2719,7 @@ func (q *Queries) UpdateVtxoMarkers(ctx context.Context, arg UpdateVtxoMarkersPa
 
 const updateVtxoOnchainSpent = `-- name: UpdateVtxoOnchainSpent :exec
 UPDATE vtxo SET spent = true, spent_by = $1, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
-WHERE txid = $2 AND vout = $3 AND unrolled = true AND spent = false
+WHERE txid = $2 AND vout = $3 AND (unrolled = true OR vtxo_kind = 1) AND spent = false
 `
 
 type UpdateVtxoOnchainSpentParams struct {
@@ -2733,6 +2733,9 @@ type UpdateVtxoOnchainSpentParams struct {
 // The spent = false guard makes the write idempotent and prevents it clobbering
 // an offchain spend that lands concurrently, which would erase that vtxo's
 // ark_txid and hide a genuine fraud case from the sweeper.
+// vtxo_kind 1 is an on-chain Arkade UTXO (add_vtxo_kind migration). It has an
+// onchain output without ever being unrolled, so the onchain spend statements
+// take it alongside unrolled vtxos.
 func (q *Queries) UpdateVtxoOnchainSpent(ctx context.Context, arg UpdateVtxoOnchainSpentParams) error {
 	_, err := q.db.ExecContext(ctx, updateVtxoOnchainSpent, arg.SpentBy, arg.Txid, arg.Vout)
 	return err
@@ -2740,7 +2743,7 @@ func (q *Queries) UpdateVtxoOnchainSpent(ctx context.Context, arg UpdateVtxoOnch
 
 const updateVtxoOnchainSpentBy = `-- name: UpdateVtxoOnchainSpentBy :exec
 UPDATE vtxo SET spent_by = $1, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
-WHERE txid = $2 AND vout = $3 AND unrolled = true AND spent = true
+WHERE txid = $2 AND vout = $3 AND (unrolled = true OR vtxo_kind = 1) AND spent = true
   AND COALESCE(settled_by, '') = '' AND COALESCE(ark_txid, '') = ''
 `
 
@@ -2760,7 +2763,7 @@ func (q *Queries) UpdateVtxoOnchainSpentBy(ctx context.Context, arg UpdateVtxoOn
 
 const updateVtxoOnchainUnspent = `-- name: UpdateVtxoOnchainUnspent :exec
 UPDATE vtxo SET spent = false, spent_by = NULL, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
-WHERE txid = $1 AND vout = $2 AND unrolled = true AND spent = true
+WHERE txid = $1 AND vout = $2 AND (unrolled = true OR vtxo_kind = 1) AND spent = true
   AND COALESCE(settled_by, '') = '' AND COALESCE(ark_txid, '') = ''
 `
 

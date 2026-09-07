@@ -248,6 +248,23 @@ func TestVtxo_IsOnchainSpent(t *testing.T) {
 			vtxo:     domain.Vtxo{Unrolled: true, Spent: true, SettledBy: "commitmenttxid"},
 			expected: false,
 		},
+		{
+			name:     "true (onchain kind, spent onchain)",
+			vtxo:     domain.Vtxo{Kind: domain.VtxoKindOnchain, Spent: true},
+			expected: true,
+		},
+		{
+			name:     "false (onchain kind, not spent)",
+			vtxo:     domain.Vtxo{Kind: domain.VtxoKindOnchain},
+			expected: false,
+		},
+		{
+			name: "false (onchain kind, settled in a batch)",
+			vtxo: domain.Vtxo{
+				Kind: domain.VtxoKindOnchain, Spent: true, SettledBy: "commitmenttxid",
+			},
+			expected: false,
+		},
 	}
 	for _, f := range fixtures {
 		t.Run(f.name, func(t *testing.T) {
