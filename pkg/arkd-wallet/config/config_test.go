@@ -6,8 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// validConfig returns a config shaped like one produced by LoadConfig, minus the
-// services that initServices attaches.
 func validConfig() Config {
 	return Config{
 		Port:         6060,
@@ -65,8 +63,7 @@ func TestConfigStringRedactsSecrets(t *testing.T) {
 	}
 }
 
-// The services are not configuration, and marshalling them would leak the moment
-// one of them gained an exported field.
+// services would leak once any gains an exported field
 func TestConfigStringOmitsServices(t *testing.T) {
 	c := validConfig()
 

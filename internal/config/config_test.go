@@ -272,6 +272,30 @@ func TestConfigStringRedactsSecrets(t *testing.T) {
 			mustContain:    "postgres://ark:xxxxx@pg:5432/arkd-events",
 		},
 		{
+			name: "password query parameter is redacted",
+			mutate: func(c *Config) {
+				c.DbUrl = "postgresql://ark@pg:5432/arkd?password=hunter2&sslmode=disable"
+			},
+			mustNotContain: "hunter2",
+			mustContain:    "password=xxxxx",
+		},
+		{
+			name: "sslpassword query parameter is redacted",
+			mutate: func(c *Config) {
+				c.EventDbUrl = "postgresql://ark@pg:5432/arkd-events?sslpassword=keypass"
+			},
+			mustNotContain: "keypass",
+			mustContain:    "sslpassword=xxxxx",
+		},
+		{
+			// not re-encoded, so param order survives
+			name: "query parameters are otherwise left untouched",
+			mutate: func(c *Config) {
+				c.DbUrl = "postgresql://ark@pg:5432/arkd?sslmode=disable&connect_timeout=5"
+			},
+			mustContain: "arkd?sslmode=disable",
+		},
+		{
 			name:           "redis url password is redacted",
 			mutate:         func(c *Config) { c.RedisUrl = "redis://default:hunter2@redis:6379/0" },
 			mustNotContain: "hunter2",

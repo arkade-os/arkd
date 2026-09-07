@@ -191,9 +191,13 @@ func maskSecret(secret string) string {
 	return redactedMask
 }
 
-// Non-URL values are masked whole because lib/pq also accepts keyword DSNs
-// ("host=pg user=ark password=hunter2"), which url.Parse accepts without
-// recognising any credential, so Redacted() would pass the password through.
+// matches url.URL.Redacted()
+const urlPasswordMask = "xxxxx"
+
+// lib/pq honours these in URL form; Redacted() masks only the userinfo.
+var credentialQueryParams = []string{"password", "sslpassword"}
+
+// Non-URLs are masked whole: keyword DSNs hide credentials from url.Parse.
 func redactConnectionString(rawURL string) string {
 	if rawURL == "" {
 		return ""
@@ -202,7 +206,25 @@ func redactConnectionString(rawURL string) string {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return redactedMask
 	}
+	redactQueryCredentials(parsed)
 	return parsed.Redacted()
+}
+
+func redactQueryCredentials(parsed *url.URL) {
+	query := parsed.Query()
+	redacted := false
+	for key := range query {
+		for _, credential := range credentialQueryParams {
+			if strings.EqualFold(key, credential) {
+				query.Set(key, urlPasswordMask)
+				redacted = true
+			}
+		}
+	}
+	// Encode reorders params, so only rewrite when masked.
+	if redacted {
+		parsed.RawQuery = query.Encode()
+	}
 }
 
 var (
