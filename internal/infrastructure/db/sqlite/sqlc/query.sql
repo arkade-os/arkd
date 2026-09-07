@@ -49,11 +49,11 @@ ON CONFLICT(intent_id, pubkey, onchain_address) DO UPDATE SET
 -- name: UpsertVtxo :exec
 INSERT INTO vtxo (
     txid, vout, pubkey, amount, commitment_txid, settled_by, ark_txid,
-    spent_by, spent, unrolled, preconfirmed, expires_at, created_at, updated_at, depth, markers
+    spent_by, spent, unrolled, preconfirmed, expires_at, created_at, updated_at, depth, markers, vtxo_kind
 )
 VALUES (
     @txid, @vout, @pubkey, @amount, @commitment_txid, @settled_by, @ark_txid,
-    @spent_by, @spent, @unrolled, @preconfirmed, @expires_at, @created_at, (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)), @depth, @markers
+    @spent_by, @spent, @unrolled, @preconfirmed, @expires_at, @created_at, (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)), @depth, @markers, @vtxo_kind
 ) ON CONFLICT(txid, vout) DO UPDATE SET
     pubkey = EXCLUDED.pubkey,
     amount = EXCLUDED.amount,
@@ -68,7 +68,8 @@ VALUES (
     created_at = EXCLUDED.created_at,
     updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER)),
     depth = EXCLUDED.depth,
-    markers = EXCLUDED.markers;
+    markers = EXCLUDED.markers,
+    vtxo_kind = EXCLUDED.vtxo_kind;
 
 -- name: InsertVtxoCommitmentTxid :exec
 INSERT INTO vtxo_commitment_txid (vtxo_txid, vtxo_vout, commitment_txid)
