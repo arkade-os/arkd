@@ -1712,6 +1712,10 @@
           },
           "confirmed": {
             "type": "boolean"
+          },
+          "notFound": {
+            "type": "boolean",
+            "description": "not_found separates a transaction the backend has no record of from one it\nknows and sees unconfirmed. Both answer confirmed = false, which is why the\ndistinction needs its own field.\n\nAdded after the other fields, and phrased so false is the safe reading: an\nolder wallet never sets it, and a caller then sees \"not known to be\nmissing\" rather than \"missing\"."
           }
         }
       },

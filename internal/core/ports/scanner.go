@@ -31,6 +31,14 @@ type BlockchainScanner interface {
 	IsTransactionConfirmed(
 		ctx context.Context, txid string,
 	) (isConfirmed bool, blockTimestamp *BlockTimestamp, err error)
+	// IsTransactionKnown reports whether the chain backend has any record of the
+	// transaction, confirmed or still in the mempool. It is deliberately not
+	// IsTransactionConfirmed: that answers false both for a transaction waiting
+	// in the mempool and for one the backend has never seen, and the difference
+	// is the whole signal here. A false answer is positive evidence the
+	// transaction is gone, which is what separates a replaced or evicted one
+	// from one merely waiting.
+	IsTransactionKnown(ctx context.Context, txid string) (bool, error)
 	// GetSpends returns every watched output spent by a confirmed or unconfirmed
 	// transaction, windowed from the given instant when one is supplied.
 	GetSpends(ctx context.Context, from *time.Time) ([]Spend, error)

@@ -442,6 +442,21 @@ func castSpends(spends []*arkwalletv1.SpendInfo) []ports.Spend {
 	return out
 }
 
+// IsTransactionKnown reads the not_found flag the wallet sets when its backend
+// has no record of the transaction. An older wallet never sets it, so this
+// reports the transaction as known and no caller can act on a missing one.
+func (w *walletDaemonClient) IsTransactionKnown(
+	ctx context.Context, txid string,
+) (bool, error) {
+	resp, err := w.client.IsTransactionConfirmed(
+		ctx, &arkwalletv1.IsTransactionConfirmedRequest{Txid: txid},
+	)
+	if err != nil {
+		return false, err
+	}
+	return !resp.GetNotFound(), nil
+}
+
 func (w *walletDaemonClient) IsTransactionConfirmed(
 	ctx context.Context, txid string,
 ) (bool, *ports.BlockTimestamp, error) {

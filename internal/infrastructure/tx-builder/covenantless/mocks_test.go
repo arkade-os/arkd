@@ -198,6 +198,15 @@ func (m *mockedWallet) GetDustAmount(ctx context.Context) (uint64, error) {
 	return res, args.Error(1)
 }
 
+func (m *mockedWallet) IsTransactionKnown(ctx context.Context, txid string) (bool, error) {
+	args := m.Called(ctx, txid)
+	var res bool
+	if a := args.Get(0); a != nil {
+		res = a.(bool)
+	}
+	return res, args.Error(1)
+}
+
 func (m *mockedWallet) IsTransactionConfirmed(
 	ctx context.Context, txid string,
 ) (bool, *ports.BlockTimestamp, error) {

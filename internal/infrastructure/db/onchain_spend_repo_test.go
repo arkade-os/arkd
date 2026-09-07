@@ -145,6 +145,41 @@ func TestOnchainSpendRepository(t *testing.T) {
 				require.False(t, containsOutpoint(recorded, unspent.Outpoint))
 			})
 
+			t.Run("retracts an unroll and leaves an in-Ark spend alone", func(t *testing.T) {
+				// The unroll mark is set the moment the outpoint appears on
+				// chain, so an unroll that never confirms leaves it set forever.
+				retracted := onchainSpendVtxo(randomString(32))
+				require.NoError(t, repo.AddVtxos(ctx, []domain.Vtxo{retracted}))
+				require.NoError(t, repo.UnrollVtxos(ctx, []domain.Outpoint{retracted.Outpoint}))
+				require.True(t, getOnchainSpendVtxo(t, repo, retracted.Outpoint).Unrolled)
+
+				require.NoError(t, repo.UnmarkVtxosUnrolled(
+					ctx, []domain.Outpoint{retracted.Outpoint},
+				))
+
+				got := getOnchainSpendVtxo(t, repo, retracted.Outpoint)
+				require.False(t, got.Unrolled, "a retracted unroll must free the vtxo again")
+				require.False(t, got.Spent)
+
+				// A vtxo spent inside the Ark and then unrolled is the fraud
+				// path, whose spent_by the sweeper resolves as a checkpoint tx.
+				// Clearing its unroll would hide it from that path entirely.
+				fraud := onchainSpendVtxo(randomString(32))
+				require.NoError(t, repo.AddVtxos(ctx, []domain.Vtxo{fraud}))
+				require.NoError(t, repo.SpendVtxos(
+					ctx, map[domain.Outpoint]string{fraud.Outpoint: "checkpointtxid"}, "arktxid",
+				))
+				require.NoError(t, repo.UnrollVtxos(ctx, []domain.Outpoint{fraud.Outpoint}))
+
+				require.NoError(t, repo.UnmarkVtxosUnrolled(
+					ctx, []domain.Outpoint{fraud.Outpoint},
+				))
+
+				got = getOnchainSpendVtxo(t, repo, fraud.Outpoint)
+				require.True(t, got.Unrolled, "an in-Ark spend must keep its unroll mark")
+				require.Equal(t, "arktxid", got.ArkTxid)
+			})
+
 			// A rejoined unrolled vtxo is spent onchain by the commitment tx
 			// itself, and that spend can be noticed before the round is
 			// projected. The settlement is the authoritative record and must

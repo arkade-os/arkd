@@ -2804,6 +2804,25 @@ func (q *Queries) UpdateVtxoSpent(ctx context.Context, arg UpdateVtxoSpentParams
 	return err
 }
 
+const updateVtxoUnrollRetracted = `-- name: UpdateVtxoUnrollRetracted :exec
+UPDATE vtxo SET unrolled = false, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+WHERE txid = $1 AND vout = $2 AND unrolled = true AND spent = false
+`
+
+type UpdateVtxoUnrollRetractedParams struct {
+	Txid string
+	Vout int32
+}
+
+// Retracts an unroll whose materialising transaction the chain backend no longer
+// has any record of. Scoped to a vtxo still believed unspent, so it can never
+// clear the flag on one that was spent inside the Ark and then unrolled, which
+// is the fraud path the sweeper resolves through spent_by.
+func (q *Queries) UpdateVtxoUnrollRetracted(ctx context.Context, arg UpdateVtxoUnrollRetractedParams) error {
+	_, err := q.db.ExecContext(ctx, updateVtxoUnrollRetracted, arg.Txid, arg.Vout)
+	return err
+}
+
 const updateVtxoUnrolled = `-- name: UpdateVtxoUnrolled :exec
 UPDATE vtxo SET unrolled = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT WHERE txid = $1 AND vout = $2
 `

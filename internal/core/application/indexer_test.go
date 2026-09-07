@@ -1232,6 +1232,11 @@ func (m *mockVtxoRepoForIndexer) SpendVtxos(
 	return nil
 }
 
+func (m *mockVtxoRepoForIndexer) UnmarkVtxosUnrolled(
+	ctx context.Context, outpoints []domain.Outpoint,
+) error {
+	return nil
+}
 func (m *mockVtxoRepoForIndexer) UnrollVtxos(
 	ctx context.Context,
 	outpoints []domain.Outpoint,

@@ -103,6 +103,14 @@ UPDATE vtxo SET expires_at = @expires_at WHERE txid = @txid AND vout = @vout;
 -- name: UpdateVtxoUnrolled :exec
 UPDATE vtxo SET unrolled = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT WHERE txid = @txid AND vout = @vout;
 
+-- Retracts an unroll whose materialising transaction the chain backend no longer
+-- has any record of. Scoped to a vtxo still believed unspent, so it can never
+-- clear the flag on one that was spent inside the Ark and then unrolled, which
+-- is the fraud path the sweeper resolves through spent_by.
+-- name: UpdateVtxoUnrollRetracted :exec
+UPDATE vtxo SET unrolled = false, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+WHERE txid = @txid AND vout = @vout AND unrolled = true AND spent = false;
+
 -- name: UpdateVtxoSettled :exec
 UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
 WHERE txid = @txid AND vout = @vout;

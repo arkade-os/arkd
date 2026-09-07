@@ -223,6 +223,14 @@ message IsTransactionConfirmedResponse {
   bool confirmed = 1;
   int64 blocknumber = 2;
   int64 blocktime = 3;
+  // not_found separates a transaction the backend has no record of from one it
+  // knows and sees unconfirmed. Both answer confirmed = false, which is why the
+  // distinction needs its own field.
+  //
+  // Added after the other fields, and phrased so false is the safe reading: an
+  // older wallet never sets it, and a caller then sees "not known to be
+  // missing" rather than "missing".
+  bool not_found = 4;
 }
 
 message GetOutpointStatusRequest {

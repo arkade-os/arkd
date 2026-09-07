@@ -350,6 +350,7 @@ func (h *walletHandler) IsTransactionConfirmed(
 				Confirmed:   false,
 				Blocknumber: 0,
 				Blocktime:   0,
+				NotFound:    true,
 			}, nil
 		}
 		return nil, err

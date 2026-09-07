@@ -74,6 +74,12 @@ func (m *mockedVtxoRepo) GetVtxoPubKeysByCommitmentTxids(
 	return nil, args.Error(1)
 }
 
+func (m *mockedVtxoRepo) UnmarkVtxosUnrolled(
+	ctx context.Context, outpoints []domain.Outpoint,
+) error {
+	return m.Called(ctx, outpoints).Error(0)
+}
+
 func (m *mockedVtxoRepo) MarkVtxosOnchainSpent(
 	ctx context.Context, spentBy map[domain.Outpoint]string,
 ) error {
@@ -207,6 +213,11 @@ type mockedScanner struct {
 	mu        sync.Mutex
 
 	// onchain-spend fixtures, read by the reconcile tests
+	// known maps a txid to whether the backend still has a record of it; a txid
+	// absent from the map reads as unknown, which is what a retraction needs.
+	known      map[string]bool
+	knownErr   error
+	knownCalls []string
 	spendCh    chan []ports.Spend
 	spends     []ports.Spend
 	spendsErr  error
@@ -263,6 +274,23 @@ func (m *mockedScanner) IsTransactionConfirmed(
 
 func (m *mockedScanner) RescanUtxos(_ context.Context, _ []wire.OutPoint) error {
 	return nil
+}
+
+func (m *mockedScanner) IsTransactionKnown(_ context.Context, txid string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.knownCalls = append(m.knownCalls, txid)
+	if m.knownErr != nil {
+		return false, m.knownErr
+	}
+	return m.known[txid], nil
+}
+
+// KnownCalls returns every txid IsTransactionKnown was asked about.
+func (m *mockedScanner) KnownCalls() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.knownCalls...)
 }
 
 func (m *mockedScanner) GetSpendNotificationChannel(

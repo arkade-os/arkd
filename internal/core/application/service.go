@@ -58,6 +58,12 @@ type service struct {
 	// unrolled vtxos
 	onchainSpendReconcileInterval time.Duration
 
+	// consecutive reconcile passes that found a vtxo's materialising tx unknown
+	// to the chain backend, keyed by outpoint. In memory on purpose: losing it
+	// on restart only delays a retraction, which is the safe direction.
+	unrollObservations   map[domain.Outpoint]int
+	unrollObservationsMu sync.Mutex
+
 	operatorPrvkey *btcec.PrivateKey
 	operatorPubkey *btcec.PublicKey
 
@@ -168,6 +174,7 @@ func NewService(
 		feeManager:               feeManager,
 
 		onchainSpendReconcileInterval: onchainSpendReconcileInterval,
+		unrollObservations:            make(map[domain.Outpoint]int),
 	}
 	svc.sweeper.onSweepCheckpoint = svc.propagateTransactionEvent
 	return svc, nil

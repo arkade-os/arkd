@@ -370,6 +370,9 @@ func (m *mockWalletService) IsTransactionConfirmed(
 ) (bool, *ports.BlockTimestamp, error) {
 	return false, nil, nil
 }
+func (m *mockWalletService) IsTransactionKnown(ctx context.Context, txid string) (bool, error) {
+	return true, nil
+}
 func (m *mockWalletService) RescanUtxos(ctx context.Context, outpoints []wire.OutPoint) error {
 	return nil
 }
@@ -435,6 +438,11 @@ func (m *mockVtxoRepository) SettleVtxos(
 
 func (m *mockVtxoRepository) SpendVtxos(
 	ctx context.Context, spentVtxos map[domain.Outpoint]string, arkTxid string,
+) error {
+	return nil
+}
+func (m *mockVtxoRepository) UnmarkVtxosUnrolled(
+	ctx context.Context, outpoints []domain.Outpoint,
 ) error {
 	return nil
 }
