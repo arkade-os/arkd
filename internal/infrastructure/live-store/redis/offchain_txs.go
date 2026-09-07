@@ -147,6 +147,15 @@ func NewOffChainTxStore(rdb *redis.Client, numOfRetries int) (ports.OffChainTxSt
 	ctx, cancel := context.WithTimeout(context.Background(), rebuildTimeout)
 	defer cancel()
 	if err := s.rebuildInputs(ctx); err != nil {
+		// ctx is this function's own, so an expired one means the rebuild ran
+		// out of its budget rather than failing outright. Worth saying, since
+		// otherwise the operator sees only a wrapped deadline error.
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf(
+				"failed to rebuild offchain tx inputs from stored txs within %s: %v",
+				rebuildTimeout, err,
+			)
+		}
 		return nil, fmt.Errorf("failed to rebuild offchain tx inputs from stored txs: %v", err)
 	}
 	return s, nil

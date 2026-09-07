@@ -84,6 +84,15 @@ type OffChainTxStore interface {
 	// stores nothing and returns (ClaimConflict, &outpoint, nil). A re-add of
 	// the same arkTxid over the same inputs returns ClaimAlreadyOwned so the
 	// caller can skip re-applying the acceptance.
+	//
+	// A re-add carries the same inputs by construction, and Add relies on it: an
+	// arkTxid is the txid of the ark tx, which commits to the checkpoint outputs
+	// it spends, so a different input set is a different arkTxid. The caller
+	// enforces it too, rebuilding the checkpoint and ark txs from the spent
+	// vtxos and rejecting any mismatch before calling here. Were a re-add ever
+	// to arrive with a changed input set, the inputs only the previous body
+	// named would stay claimed, since Remove finds a tx's inputs through the
+	// body it replaced.
 	Add(ctx context.Context, offchainTx domain.OffchainTx) (ClaimStatus, *domain.Outpoint, error)
 	Remove(ctx context.Context, arkTxid string) error
 	Get(ctx context.Context, arkTxid string) (*domain.OffchainTx, error)
