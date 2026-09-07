@@ -8,7 +8,7 @@ import (
 )
 
 // unrollRetractionObservations is how many consecutive reconcile passes must
-// find a vtxo's materialising tx unknown to the chain backend before its unroll
+// find a vtxo's materialising tx dropped by the chain backend before its unroll
 // is retracted. One pass is not enough: a transaction that has been broadcast
 // but has not reached our node yet reads exactly like one that is gone, and
 // retracting a live unroll would hand its owner back a vtxo whose output exists
@@ -57,7 +57,7 @@ func (s *service) retractStaleUnrolls(ctx context.Context, candidates []domain.V
 			continue
 		}
 
-		known, err := s.scanner.IsTransactionKnown(ctx, vtxo.Txid)
+		dropped, err := s.scanner.IsTransactionDropped(ctx, vtxo.Txid)
 		if err != nil {
 			// Not evidence of anything. Leave the count untouched so a flapping
 			// backend cannot accumulate its way to a retraction.
@@ -68,7 +68,7 @@ func (s *service) retractStaleUnrolls(ctx context.Context, candidates []domain.V
 			continue
 		}
 
-		if s.recordUnrollObservation(vtxo.Outpoint, known) >= unrollRetractionObservations {
+		if s.recordUnrollObservation(vtxo.Outpoint, !dropped) >= unrollRetractionObservations {
 			stale = append(stale, vtxo.Outpoint)
 		}
 	}

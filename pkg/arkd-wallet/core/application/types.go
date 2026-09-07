@@ -65,6 +65,9 @@ type BlockchainScanner interface {
 	IsTransactionConfirmed(
 		ctx context.Context, txid string,
 	) (isConfirmed bool, blockHeight, blockTime int64, err error)
+	// TransactionReplacedBy names the transaction the backend has recorded as
+	// having superseded this one, or empty when it has not been replaced.
+	TransactionReplacedBy(ctx context.Context, txid string) (string, error)
 	GetOutpointStatus(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error)
 	// GetSpends returns every watched output spent by a confirmed or unconfirmed
 	// transaction, windowed from the given instant when one is supplied.

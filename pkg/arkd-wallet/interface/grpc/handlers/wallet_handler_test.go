@@ -62,6 +62,35 @@ func TestIsTransactionConfirmedNotFound(t *testing.T) {
 
 	// Any other failure stays a failure. Reporting it as not found would tell
 	// the caller the transaction is gone when the backend simply could not say.
+	// The signal the retraction actually depends on: a replaced transaction is
+	// still known and still answers "not confirmed", so only this names it.
+	t.Run("a replaced transaction reports its replacement", func(t *testing.T) {
+		const replacement = "4dc2f8e63b9dc3825f69c8295a48a9b87ba4c663f42ea7b49fa335746d626246"
+		h := &walletHandler{scanner: &confirmScanner{replacedBy: replacement}}
+
+		resp, err := h.IsTransactionConfirmed(
+			context.Background(), &arkwalletv1.IsTransactionConfirmedRequest{Txid: txid},
+		)
+
+		require.NoError(t, err)
+		require.False(t, resp.GetConfirmed())
+		require.False(t, resp.GetNotFound())
+		require.Equal(t, replacement, resp.GetReplacedBy())
+	})
+
+	// A backend that cannot answer must not be read as "not replaced", so the
+	// field stays empty and the caller sees no signal rather than a false one.
+	t.Run("a failed replacement lookup leaves the field empty", func(t *testing.T) {
+		h := &walletHandler{scanner: &confirmScanner{replacedErr: errors.New("backend down")}}
+
+		resp, err := h.IsTransactionConfirmed(
+			context.Background(), &arkwalletv1.IsTransactionConfirmedRequest{Txid: txid},
+		)
+
+		require.NoError(t, err)
+		require.Empty(t, resp.GetReplacedBy())
+	})
+
 	t.Run("another failure is returned as an error", func(t *testing.T) {
 		h := &walletHandler{scanner: &confirmScanner{err: errors.New("backend down")}}
 
@@ -83,7 +112,13 @@ type confirmScanner struct {
 	confirmed   bool
 	blockHeight int64
 	blockTime   int64
+	replacedBy  string
 	err         error
+	replacedErr error
+}
+
+func (s *confirmScanner) TransactionReplacedBy(_ context.Context, _ string) (string, error) {
+	return s.replacedBy, s.replacedErr
 }
 
 func (s *confirmScanner) IsTransactionConfirmed(

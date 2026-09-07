@@ -442,10 +442,11 @@ func castSpends(spends []*arkwalletv1.SpendInfo) []ports.Spend {
 	return out
 }
 
-// IsTransactionKnown reads the not_found flag the wallet sets when its backend
-// has no record of the transaction. An older wallet never sets it, so this
-// reports the transaction as known and no caller can act on a missing one.
-func (w *walletDaemonClient) IsTransactionKnown(
+// IsTransactionDropped reads the two ways the wallet says a transaction will
+// not confirm: replaced by another one, or unknown to its backend. An older
+// wallet sets neither, so every transaction reads as still live and no caller
+// can act on one that is gone.
+func (w *walletDaemonClient) IsTransactionDropped(
 	ctx context.Context, txid string,
 ) (bool, error) {
 	resp, err := w.client.IsTransactionConfirmed(
@@ -454,7 +455,7 @@ func (w *walletDaemonClient) IsTransactionKnown(
 	if err != nil {
 		return false, err
 	}
-	return !resp.GetNotFound(), nil
+	return resp.GetNotFound() || resp.GetReplacedBy() != "", nil
 }
 
 func (w *walletDaemonClient) IsTransactionConfirmed(

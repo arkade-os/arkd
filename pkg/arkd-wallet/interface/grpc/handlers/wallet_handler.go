@@ -355,10 +355,26 @@ func (h *walletHandler) IsTransactionConfirmed(
 		}
 		return nil, err
 	}
+	// Only an unconfirmed transaction can have been replaced, so the second
+	// lookup is skipped for the common case. A failure to answer is not
+	// reported as "not replaced": it is left empty, which reads as no signal.
+	var replacedBy string
+	if !confirmed {
+		replacement, err := h.scanner.TransactionReplacedBy(ctx, req.GetTxid())
+		if err != nil {
+			log.WithError(err).Warnf(
+				"failed to check whether tx %s was replaced", req.GetTxid(),
+			)
+		} else {
+			replacedBy = replacement
+		}
+	}
+
 	return &arkwalletv1.IsTransactionConfirmedResponse{
 		Confirmed:   confirmed,
 		Blocknumber: blocknumber,
 		Blocktime:   blocktime,
+		ReplacedBy:  replacedBy,
 	}, nil
 }
 

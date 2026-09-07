@@ -21,6 +21,11 @@ type TransactionDetails struct {
 	Height        uint32
 	Timestamp     int64
 	Confirmations uint32
+	// ReplacedBy names the transaction that superseded this one, and is the
+	// backend's only positive statement that a transaction will not confirm. It
+	// is populated once the replacement itself confirms; a transaction merely
+	// dropped from the mempool keeps reporting zero confirmations forever.
+	ReplacedBy string
 }
 
 type Utxo struct {

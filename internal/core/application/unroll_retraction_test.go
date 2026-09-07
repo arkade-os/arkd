@@ -15,10 +15,10 @@ func TestRetractStaleUnrolls(t *testing.T) {
 	out := outpoint(unrolledVtxoTxid, 0)
 	candidates := []domain.Vtxo{{Outpoint: out, Unrolled: true}}
 
-	t.Run("retracts once the tx has been unknown for enough passes", func(t *testing.T) {
+	t.Run("retracts once the backend says the tx is gone for enough passes", func(t *testing.T) {
 		svc, vtxos := unrollService(t, &mockedScanner{
 			unspent: map[domain.Outpoint]struct{}{},
-			known:   map[string]bool{},
+			dropped: map[string]bool{unrolledVtxoTxid: true},
 		})
 		vtxos.On("UnmarkVtxosUnrolled", mock.Anything, mock.Anything).Return(nil)
 
@@ -36,7 +36,7 @@ func TestRetractStaleUnrolls(t *testing.T) {
 	t.Run("never retracts while the outpoint is still unspent", func(t *testing.T) {
 		svc, vtxos := unrollService(t, &mockedScanner{
 			unspent: map[domain.Outpoint]struct{}{out: {}},
-			known:   map[string]bool{},
+			dropped: map[string]bool{unrolledVtxoTxid: true},
 		})
 
 		for range unrollRetractionObservations * 2 {
@@ -46,21 +46,22 @@ func TestRetractStaleUnrolls(t *testing.T) {
 		vtxos.AssertNotCalled(t, "UnmarkVtxosUnrolled", mock.Anything, mock.Anything)
 	})
 
-	// A wallet predating the not-found field reports every tx as known, so it
-	// degrades to never retracting rather than to retracting blindly.
-	t.Run("a tx the backend still knows resets the count", func(t *testing.T) {
+	// An older wallet sets neither signal, so every transaction reads as still
+	// live and the reconciler degrades to never retracting rather than to
+	// retracting blindly.
+	t.Run("a tx the backend has not dropped resets the count", func(t *testing.T) {
 		scanner := &mockedScanner{
 			unspent: map[domain.Outpoint]struct{}{},
-			known:   map[string]bool{},
+			dropped: map[string]bool{unrolledVtxoTxid: true},
 		}
 		svc, vtxos := unrollService(t, scanner)
 
 		for range unrollRetractionObservations - 1 {
 			svc.retractStaleUnrolls(ctx, candidates)
 		}
-		scanner.known[unrolledVtxoTxid] = true
+		scanner.dropped[unrolledVtxoTxid] = false
 		svc.retractStaleUnrolls(ctx, candidates)
-		scanner.known[unrolledVtxoTxid] = false
+		scanner.dropped[unrolledVtxoTxid] = true
 		svc.retractStaleUnrolls(ctx, candidates)
 
 		vtxos.AssertNotCalled(t, "UnmarkVtxosUnrolled", mock.Anything, mock.Anything)
@@ -70,8 +71,8 @@ func TestRetractStaleUnrolls(t *testing.T) {
 	// retraction the way a real "gone" answer does.
 	t.Run("a lookup failure does not advance the count", func(t *testing.T) {
 		svc, vtxos := unrollService(t, &mockedScanner{
-			unspent:  map[domain.Outpoint]struct{}{},
-			knownErr: errors.New("wallet down"),
+			unspent:    map[domain.Outpoint]struct{}{},
+			droppedErr: errors.New("wallet down"),
 		})
 
 		for range unrollRetractionObservations * 2 {
@@ -87,7 +88,7 @@ func TestRetractStaleUnrolls(t *testing.T) {
 
 		svc.retractStaleUnrolls(ctx, candidates)
 
-		require.Empty(t, scanner.KnownCalls(), "no tx lookup without the stronger signal")
+		require.Empty(t, scanner.DroppedCalls(), "no tx lookup without the stronger signal")
 		vtxos.AssertNotCalled(t, "UnmarkVtxosUnrolled", mock.Anything, mock.Anything)
 	})
 
@@ -96,7 +97,7 @@ func TestRetractStaleUnrolls(t *testing.T) {
 	t.Run("counts do not survive leaving the candidate set", func(t *testing.T) {
 		svc, vtxos := unrollService(t, &mockedScanner{
 			unspent: map[domain.Outpoint]struct{}{},
-			known:   map[string]bool{},
+			dropped: map[string]bool{unrolledVtxoTxid: true},
 		})
 		vtxos.On("UnmarkVtxosUnrolled", mock.Anything, mock.Anything).Return(nil)
 
@@ -121,7 +122,7 @@ func TestRetractStaleUnrolls(t *testing.T) {
 		rm.On("Vtxos").Return(vtxos)
 		svc := &service{repoManager: rm, scanner: &mockedScanner{
 			unspent: map[domain.Outpoint]struct{}{},
-			known:   map[string]bool{},
+			dropped: map[string]bool{unrolledVtxoTxid: true},
 		}}
 
 		for range unrollRetractionObservations {
@@ -137,7 +138,7 @@ func TestRetractStaleUnrolls(t *testing.T) {
 
 		svc.retractStaleUnrolls(ctx, nil)
 
-		require.Empty(t, scanner.KnownCalls())
+		require.Empty(t, scanner.DroppedCalls())
 		vtxos.AssertNotCalled(t, "UnmarkVtxosUnrolled", mock.Anything, mock.Anything)
 	})
 }

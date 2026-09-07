@@ -158,7 +158,15 @@ type IsTransactionConfirmedResponse struct {
 	// Added after the other fields, and phrased so false is the safe reading: an
 	// older wallet never sets it, and a caller then sees "not known to be
 	// missing" rather than "missing".
-	NotFound      bool `protobuf:"varint,4,opt,name=not_found,json=notFound,proto3" json:"not_found,omitempty"`
+	NotFound bool `protobuf:"varint,4,opt,name=not_found,json=notFound,proto3" json:"not_found,omitempty"`
+	// replaced_by names the transaction that superseded this one. It is the
+	// backend's only positive statement that a transaction will not confirm: a
+	// replaced transaction keeps answering confirmed = false and not_found =
+	// false forever, so neither of those can stand in for it.
+	//
+	// Empty when the transaction was not replaced, which is also what an older
+	// wallet returns, so the safe reading is the zero value here too.
+	ReplacedBy    string `protobuf:"bytes,5,opt,name=replaced_by,json=replacedBy,proto3" json:"replaced_by,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -219,6 +227,13 @@ func (x *IsTransactionConfirmedResponse) GetNotFound() bool {
 		return x.NotFound
 	}
 	return false
+}
+
+func (x *IsTransactionConfirmedResponse) GetReplacedBy() string {
+	if x != nil {
+		return x.ReplacedBy
+	}
+	return ""
 }
 
 type GetOutpointStatusRequest struct {
@@ -3794,12 +3809,14 @@ const file_arkwallet_v1_bitcoin_wallet_proto_rawDesc = "" +
 	"\x16GetReadyUpdateResponse\x12\x14\n" +
 	"\x05ready\x18\x01 \x01(\bR\x05ready\"3\n" +
 	"\x1dIsTransactionConfirmedRequest\x12\x12\n" +
-	"\x04txid\x18\x01 \x01(\tR\x04txid\"\x9b\x01\n" +
+	"\x04txid\x18\x01 \x01(\tR\x04txid\"\xbc\x01\n" +
 	"\x1eIsTransactionConfirmedResponse\x12\x1c\n" +
 	"\tconfirmed\x18\x01 \x01(\bR\tconfirmed\x12 \n" +
 	"\vblocknumber\x18\x02 \x01(\x03R\vblocknumber\x12\x1c\n" +
 	"\tblocktime\x18\x03 \x01(\x03R\tblocktime\x12\x1b\n" +
-	"\tnot_found\x18\x04 \x01(\bR\bnotFound\"B\n" +
+	"\tnot_found\x18\x04 \x01(\bR\bnotFound\x12\x1f\n" +
+	"\vreplaced_by\x18\x05 \x01(\tR\n" +
+	"replacedBy\"B\n" +
 	"\x18GetOutpointStatusRequest\x12\x12\n" +
 	"\x04txid\x18\x01 \x01(\tR\x04txid\x12\x12\n" +
 	"\x04vout\x18\x02 \x01(\rR\x04vout\"1\n" +

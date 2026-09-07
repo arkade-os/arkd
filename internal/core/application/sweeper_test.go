@@ -370,8 +370,8 @@ func (m *mockWalletService) IsTransactionConfirmed(
 ) (bool, *ports.BlockTimestamp, error) {
 	return false, nil, nil
 }
-func (m *mockWalletService) IsTransactionKnown(ctx context.Context, txid string) (bool, error) {
-	return true, nil
+func (m *mockWalletService) IsTransactionDropped(ctx context.Context, txid string) (bool, error) {
+	return false, nil
 }
 func (m *mockWalletService) RescanUtxos(ctx context.Context, outpoints []wire.OutPoint) error {
 	return nil

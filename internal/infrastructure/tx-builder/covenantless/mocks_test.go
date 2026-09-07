@@ -198,7 +198,7 @@ func (m *mockedWallet) GetDustAmount(ctx context.Context) (uint64, error) {
 	return res, args.Error(1)
 }
 
-func (m *mockedWallet) IsTransactionKnown(ctx context.Context, txid string) (bool, error) {
+func (m *mockedWallet) IsTransactionDropped(ctx context.Context, txid string) (bool, error) {
 	args := m.Called(ctx, txid)
 	var res bool
 	if a := args.Get(0); a != nil {

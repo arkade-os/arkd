@@ -294,57 +294,73 @@ func TestNotificationStreamIsShared(t *testing.T) {
 	}
 }
 
-// TestIsTransactionKnown pins the reading that keeps an unroll retraction safe.
-// The wallet answers "not confirmed" both for a transaction waiting in the
-// mempool and for one its backend has never seen, so the caller depends on the
-// not_found flag to tell those apart, and on an older wallet that never sets it
-// reading as known rather than as missing.
-func TestIsTransactionKnown(t *testing.T) {
+// TestIsTransactionDropped pins the reading that keeps an unroll retraction
+// safe. The wallet answers "not confirmed" for a transaction waiting in the
+// mempool, for one that was replaced, and for one its backend has never seen,
+// so the caller depends on the two explicit signals to tell them apart, and on
+// an older wallet that sets neither reading as still live.
+func TestIsTransactionDropped(t *testing.T) {
 	const txid = "4ba63c204f39841e3a7c98e458586307cf6d33bbed9a9a520c827ab043f32701"
 
-	t.Run("a transaction the backend has no record of is not known", func(t *testing.T) {
+	// The case that actually fires in production. A replaced transaction is
+	// still known to the backend and still answers "not confirmed", so only the
+	// replacement signal distinguishes it from one merely waiting.
+	t.Run("a replaced transaction is dropped", func(t *testing.T) {
+		w := &walletDaemonClient{client: &confirmFakeClient{
+			resp: &arkwalletv1.IsTransactionConfirmedResponse{
+				ReplacedBy: "4dc2f8e63b9dc3825f69c8295a48a9b87ba4c663f42ea7b49fa335746d626246",
+			},
+		}}
+
+		dropped, err := w.IsTransactionDropped(t.Context(), txid)
+
+		require.NoError(t, err)
+		require.True(t, dropped)
+	})
+
+	t.Run("a transaction the backend has no record of is dropped", func(t *testing.T) {
 		w := &walletDaemonClient{client: &confirmFakeClient{
 			resp: &arkwalletv1.IsTransactionConfirmedResponse{NotFound: true},
 		}}
 
-		known, err := w.IsTransactionKnown(t.Context(), txid)
+		dropped, err := w.IsTransactionDropped(t.Context(), txid)
 
 		require.NoError(t, err)
-		require.False(t, known)
+		require.True(t, dropped)
 	})
 
-	t.Run("an unconfirmed transaction the backend has is known", func(t *testing.T) {
+	t.Run("an unconfirmed transaction is not dropped", func(t *testing.T) {
 		w := &walletDaemonClient{client: &confirmFakeClient{
 			resp: &arkwalletv1.IsTransactionConfirmedResponse{Confirmed: false},
 		}}
 
-		known, err := w.IsTransactionKnown(t.Context(), txid)
+		dropped, err := w.IsTransactionDropped(t.Context(), txid)
 
 		require.NoError(t, err)
-		require.True(t, known, "unconfirmed is not the same as missing")
+		require.False(t, dropped, "waiting in the mempool is not the same as gone")
 	})
 
-	// The compatibility case. A wallet predating the flag leaves it unset, and
-	// the caller must read that as known, so no retraction can ever fire against
-	// an old wallet.
-	t.Run("an older wallet that never sets the flag reads as known", func(t *testing.T) {
+	// The compatibility case. A wallet predating both signals sets neither, and
+	// the caller must read that as still live, so no retraction can ever fire
+	// against an old wallet.
+	t.Run("an older wallet that sets neither signal reads as live", func(t *testing.T) {
 		w := &walletDaemonClient{client: &confirmFakeClient{
 			resp: &arkwalletv1.IsTransactionConfirmedResponse{},
 		}}
 
-		known, err := w.IsTransactionKnown(t.Context(), txid)
+		dropped, err := w.IsTransactionDropped(t.Context(), txid)
 
 		require.NoError(t, err)
-		require.True(t, known)
+		require.False(t, dropped)
 	})
 
-	t.Run("a transport failure is reported, not read as missing", func(t *testing.T) {
+	t.Run("a transport failure is reported, not read as dropped", func(t *testing.T) {
 		w := &walletDaemonClient{client: &confirmFakeClient{err: errors.New("wallet down")}}
 
-		known, err := w.IsTransactionKnown(t.Context(), txid)
+		dropped, err := w.IsTransactionDropped(t.Context(), txid)
 
 		require.Error(t, err)
-		require.False(t, known)
+		require.False(t, dropped)
 	})
 }
 

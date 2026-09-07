@@ -195,6 +195,7 @@ func (n *nbxplorer) GetTransaction(ctx context.Context, txid string) (*ports.Tra
 		Height:        resp.Height,
 		Timestamp:     resp.Timestamp,
 		Confirmations: resp.Confirmations,
+		ReplacedBy:    resp.ReplacedBy,
 	}, nil
 }
 

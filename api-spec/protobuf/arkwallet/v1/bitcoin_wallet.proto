@@ -231,6 +231,14 @@ message IsTransactionConfirmedResponse {
   // older wallet never sets it, and a caller then sees "not known to be
   // missing" rather than "missing".
   bool not_found = 4;
+  // replaced_by names the transaction that superseded this one. It is the
+  // backend's only positive statement that a transaction will not confirm: a
+  // replaced transaction keeps answering confirmed = false and not_found =
+  // false forever, so neither of those can stand in for it.
+  //
+  // Empty when the transaction was not replaced, which is also what an older
+  // wallet returns, so the safe reading is the zero value here too.
+  string replaced_by = 5;
 }
 
 message GetOutpointStatusRequest {
