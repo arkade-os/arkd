@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -228,6 +229,11 @@ func TestConfigValidateEarlyChecks(t *testing.T) {
 	})
 }
 
+// maskedField matches a field whose entire logged value is the mask.
+func maskedField(name string) string {
+	return fmt.Sprintf("%q: %q", name, redactedMask)
+}
+
 func TestConfigStringRedactsSecrets(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -261,7 +267,7 @@ func TestConfigStringRedactsSecrets(t *testing.T) {
 				c.DbUrl = "host=pg port=5432 user=ark password=hunter2 dbname=arkd"
 			},
 			mustNotContain: "hunter2",
-			mustContain:    redactedMask,
+			mustContain:    maskedField("DbUrl"),
 		},
 		{
 			name: "event db url password is redacted",
@@ -293,7 +299,7 @@ func TestConfigStringRedactsSecrets(t *testing.T) {
 				c.DbUrl = "postgresql://ark@pg:5432/arkd?password=secret%ZZ"
 			},
 			mustNotContain: "secret",
-			mustContain:    redactedMask,
+			mustContain:    maskedField("DbUrl"),
 		},
 		{
 			// over-masking: nothing secret here, but a DSN is not parseable
@@ -301,7 +307,8 @@ func TestConfigStringRedactsSecrets(t *testing.T) {
 			mutate: func(c *Config) {
 				c.DbUrl = "host=pg port=5432 user=ark dbname=arkd"
 			},
-			mustContain: redactedMask,
+			mustNotContain: "host=pg",
+			mustContain:    maskedField("DbUrl"),
 		},
 		{
 			// not re-encoded, so param order survives
