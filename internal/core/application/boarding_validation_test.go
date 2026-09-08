@@ -138,6 +138,30 @@ func TestValidateBoardingInput(t *testing.T) {
 		require.NoError(t, validateBoardingInput(tx, blockTimestamp, tip, in, now, settings))
 	})
 
+	t.Run("a block-typed locktime is counted in blocks", func(t *testing.T) {
+		blockDelay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144}
+		blockScript := script.NewDefaultVtxoScript(owner, signer, blockDelay)
+		blockTapscripts, err := blockScript.Encode()
+		require.NoError(t, err)
+
+		blockSettings := settings
+		blockSettings.BoardingExitDelay = blockDelay
+		blockSettings.UnilateralExitDelay = blockDelay
+		blockSettings.VtxoTreeExpiry = blockDelay // makes AllowCSVBlockType() true
+
+		// Confirmed at 100 with tip 200, so the exit matures 144 blocks from the
+		// tip and 244 blocks will have passed since confirmation by then.
+		in := boardingInput(0, blockTapscripts)
+		in.locktimeDisabled = false
+
+		in.locktime = &arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 400}
+		err = validateBoardingInput(tx, blockTimestamp, tip, in, now, blockSettings)
+		require.ErrorContains(t, err, "in 156 blocks")
+
+		in.locktime = &arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 244}
+		require.NoError(t, validateBoardingInput(tx, blockTimestamp, tip, in, now, blockSettings))
+	})
+
 	t.Run("unrolled vtxo needs margin before its exit matures", func(t *testing.T) {
 		withMargin := settings
 		withMargin.UnrolledVtxoMinExpiryMargin = 4 * time.Hour
@@ -280,6 +304,75 @@ func TestExitPathAvailable(t *testing.T) {
 		got, err = exitPathAvailable(conf, nil, longDelay, 2*time.Hour, now)
 		require.NoError(t, err)
 		require.True(t, got)
+	})
+}
+
+// Seconds() converts a block count at SECONDS_PER_BLOCK = 1, so reading both
+// sides through it measures blocks against a clock.
+func TestLocktimeRemainingAtExit(t *testing.T) {
+	now := time.Now()
+	conf := &ports.BlockTimestamp{Height: 100, Time: now.Add(-time.Hour).Unix()}
+	tip := &ports.BlockTimestamp{Height: 106}
+
+	blocks := func(v uint32) arklib.RelativeLocktime {
+		return arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: v}
+	}
+	seconds := func(v uint32) arklib.RelativeLocktime {
+		return arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: v}
+	}
+
+	// Tip 106 plus a 144-block exit is height 250, which is 150 blocks after the
+	// confirmation at 100.
+	t.Run("both block-typed, counted in blocks", func(t *testing.T) {
+		for _, tc := range []struct {
+			locktime  uint32
+			remaining int64
+		}{
+			{1000, 850},
+			{151, 1},
+			{150, 0},
+			{100, 0}, // already elapsed, never negative
+		} {
+			got, err := locktimeRemainingAtExit(conf, tip, blocks(tc.locktime), blocks(144), now)
+			require.NoError(t, err)
+			require.Equalf(t, tc.remaining, got, "locktime=%d blocks", tc.locktime)
+		}
+	})
+
+	// Confirmed 3600s ago with a 7168s exit delay puts the window at 10768s.
+	t.Run("both seconds-typed, counted on the clock", func(t *testing.T) {
+		got, err := locktimeRemainingAtExit(conf, tip, seconds(11264), seconds(7168), now)
+		require.NoError(t, err)
+		require.Equal(t, int64(496), got)
+
+		got, err = locktimeRemainingAtExit(conf, tip, seconds(10752), seconds(7168), now)
+		require.NoError(t, err)
+		require.Zero(t, got)
+	})
+
+	t.Run("mixed types keep the wall-clock reading", func(t *testing.T) {
+		got, err := locktimeRemainingAtExit(conf, tip, blocks(1000), seconds(7168), now)
+		require.NoError(t, err)
+		require.Zero(t, got, "1000 read as seconds is inside the 10768s window")
+
+		got, err = locktimeRemainingAtExit(conf, tip, seconds(11264), blocks(144), now)
+		require.NoError(t, err)
+		require.Equal(t, int64(11264-(144+3600)), got)
+	})
+
+	t.Run("block-typed needs a tip and a real confirmation height", func(t *testing.T) {
+		_, err := locktimeRemainingAtExit(conf, nil, blocks(1000), blocks(144), now)
+		require.ErrorContains(t, err, "chain tip")
+
+		_, err = locktimeRemainingAtExit(
+			&ports.BlockTimestamp{Height: 0}, tip, blocks(1000), blocks(144), now,
+		)
+		require.ErrorContains(t, err, "confirmation height")
+	})
+
+	t.Run("the clock path needs a confirmation timestamp", func(t *testing.T) {
+		_, err := locktimeRemainingAtExit(nil, tip, seconds(1024), seconds(7168), now)
+		require.ErrorContains(t, err, "confirmation timestamp")
 	})
 }
 

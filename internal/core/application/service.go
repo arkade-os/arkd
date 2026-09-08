@@ -4461,12 +4461,19 @@ func validateBoardingInput(
 	// by shifitng the current "now" in the future of the duration of the smallest exit delay.
 	// This way, any exit order guaranteed by the exit path is maintained at intent registration
 	if !input.locktimeDisabled {
-		delta := now.Add(time.Duration(exitDelay.Seconds())*time.Second).
-			Unix() -
-			blockTimestamp.Time
-		if diff := input.locktime.Seconds() - delta; diff > 0 {
+		remaining, err := locktimeRemainingAtExit(
+			blockTimestamp, tip, *input.locktime, *exitDelay, now,
+		)
+		if err != nil {
+			return err
+		}
+		if remaining > 0 {
+			unit := "seconds"
+			if input.locktime.Type == arklib.LocktimeTypeBlock {
+				unit = "blocks"
+			}
 			return fmt.Errorf(
-				"vtxo script can be used for intent registration in %d seconds", diff,
+				"vtxo script can be used for intent registration in %d %s", remaining, unit,
 			)
 		}
 	}
