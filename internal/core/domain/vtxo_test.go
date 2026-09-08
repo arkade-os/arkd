@@ -107,6 +107,39 @@ func TestVtxo_IsSettled(t *testing.T) {
 	}
 }
 
+func TestVtxo_HasBatchExpiry(t *testing.T) {
+	fixtures := []struct {
+		name string
+		vtxo domain.Vtxo
+		want bool
+	}{
+		{
+			name: "a batch vtxo has an expiry",
+			vtxo: domain.Vtxo{ExpiresAt: 2_000_000_000},
+			want: true,
+		},
+		{
+			// No batch behind it, so its zero ExpiresAt is an absence rather
+			// than a deadline, and callers reading the field raw must skip it.
+			name: "an onchain-kind vtxo has none",
+			vtxo: domain.Vtxo{Kind: domain.VtxoKindOnchain},
+			want: false,
+		},
+		{
+			// The kind decides, not the value: a zero on a batch vtxo is still
+			// a batch expiry as far as this predicate is concerned.
+			name: "a zero expiry on a batch vtxo still counts",
+			vtxo: domain.Vtxo{},
+			want: true,
+		},
+	}
+	for _, f := range fixtures {
+		t.Run(f.name, func(t *testing.T) {
+			require.Equal(t, f.want, f.vtxo.HasBatchExpiry())
+		})
+	}
+}
+
 func TestVtxo_IsExpired(t *testing.T) {
 	fixtures := []struct {
 		name      string

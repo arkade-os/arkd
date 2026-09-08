@@ -118,6 +118,16 @@ func (v Vtxo) OutputScript() ([]byte, error) {
 	return script.P2TRScript(pubkey)
 }
 
+// HasBatchExpiry reports whether ExpiresAt means anything for this vtxo. A vtxo
+// held in an on-chain Arkade UTXO has no batch behind it and so no expiry, and
+// stores a zero rather than a timestamp that would not be true. Callers that
+// read ExpiresAt directly, rather than through IsExpired, must ask this first:
+// a zero is a smaller number than any real deadline and silently wins any
+// comparison against one.
+func (v Vtxo) HasBatchExpiry() bool {
+	return v.Kind != VtxoKindOnchain
+}
+
 func (v Vtxo) IsExpired() bool {
 	// An on-chain Arkade UTXO has no batch expiry, so ExpiresAt is not
 	// meaningful for it. Without this an on-chain vtxo (which carries a zero

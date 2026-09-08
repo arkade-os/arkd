@@ -130,9 +130,17 @@ func toArkFeeOffchainInput(input domain.Vtxo) arkfee.OffchainInput {
 		t = arkfee.VtxoTypeNote
 	}
 
+	// A vtxo with no batch expiry gets the zero time, which is how OffchainInput
+	// says "no expiry": toArgs omits the CEL expiry variable entirely. Passing
+	// time.Unix(0, 0) instead would hand the fee expression a 1970 deadline.
+	expiry := time.Time{}
+	if input.HasBatchExpiry() {
+		expiry = time.Unix(input.ExpiresAt, 0)
+	}
+
 	return arkfee.OffchainInput{
 		Amount: input.Amount,
-		Expiry: time.Unix(input.ExpiresAt, 0),
+		Expiry: expiry,
 		Birth:  time.Unix(input.CreatedAt, 0),
 		Type:   t,
 	}
