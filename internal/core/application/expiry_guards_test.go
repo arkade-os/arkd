@@ -21,11 +21,12 @@ func TestBatchExpiryGuards(t *testing.T) {
 
 	t.Run("earliest batch expiry", func(t *testing.T) {
 		t.Run("picks the soonest expiry and its commitment", func(t *testing.T) {
-			expiry, txid := earliestBatchExpiry([]domain.Vtxo{
+			expiry, txid, ok := earliestBatchExpiry([]domain.Vtxo{
 				{ExpiresAt: late, RootCommitmentTxid: "late-batch"},
 				{ExpiresAt: soon, RootCommitmentTxid: "soon-batch"},
 			})
 
+			require.True(t, ok)
 			require.Equal(t, soon, expiry)
 			require.Equal(t, "soon-batch", txid)
 		})
@@ -33,32 +34,48 @@ func TestBatchExpiryGuards(t *testing.T) {
 		// The case this guard exists for. Without it the zero wins outright and
 		// dates the resulting vtxo to the epoch, carrying the wrong commitment.
 		t.Run("an onchain-kind input never wins the comparison", func(t *testing.T) {
-			expiry, txid := earliestBatchExpiry([]domain.Vtxo{
+			expiry, txid, ok := earliestBatchExpiry([]domain.Vtxo{
 				{ExpiresAt: soon, RootCommitmentTxid: "soon-batch"},
 				{Kind: domain.VtxoKindOnchain, ExpiresAt: 0, RootCommitmentTxid: ""},
 			})
 
+			require.True(t, ok)
 			require.Equal(t, soon, expiry)
 			require.Equal(t, "soon-batch", txid)
 		})
 
-		// With nothing that has a batch, the caller must see the same starting
-		// values it used before any input was considered.
-		t.Run("only onchain-kind inputs leaves the starting values", func(t *testing.T) {
-			expiry, txid := earliestBatchExpiry([]domain.Vtxo{
+		// The caller must reject this rather than pass it on. The expiry left
+		// behind is MaxInt64, a far-future sentinel, and Accept only rejects an
+		// expiry of zero or less, so it would be stored as if it were real.
+		t.Run("only onchain-kind inputs reports nothing found", func(t *testing.T) {
+			expiry, txid, ok := earliestBatchExpiry([]domain.Vtxo{
 				{Kind: domain.VtxoKindOnchain},
 				{Kind: domain.VtxoKindOnchain},
 			})
 
+			require.False(t, ok)
 			require.Equal(t, int64(math.MaxInt64), expiry)
 			require.Empty(t, txid)
 		})
 
-		t.Run("no inputs leaves the starting values", func(t *testing.T) {
-			expiry, txid := earliestBatchExpiry(nil)
+		t.Run("no inputs reports nothing found", func(t *testing.T) {
+			expiry, txid, ok := earliestBatchExpiry(nil)
 
+			require.False(t, ok)
 			require.Equal(t, int64(math.MaxInt64), expiry)
 			require.Empty(t, txid)
+		})
+
+		// A batch-backed input with a zero expiry is still a batch-backed input.
+		// The report must key off the kind, not off the number being non-zero.
+		t.Run("a zero expiry on a batch vtxo still counts as found", func(t *testing.T) {
+			expiry, txid, ok := earliestBatchExpiry([]domain.Vtxo{
+				{ExpiresAt: 0, RootCommitmentTxid: "batch"},
+			})
+
+			require.True(t, ok)
+			require.Zero(t, expiry)
+			require.Equal(t, "batch", txid)
 		})
 	})
 

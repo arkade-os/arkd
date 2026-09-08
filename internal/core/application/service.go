@@ -643,13 +643,16 @@ func (s *service) SubmitOffchainTx(
 
 	indexedSpentVtxos := make(map[domain.Outpoint]domain.Vtxo)
 	commitmentTxsByCheckpointTxid := make(map[string]string)
-	var expiration int64
-	var rootCommitmentTxid string
 	for _, vtxo := range spentVtxos {
 		indexedSpentVtxos[vtxo.Outpoint] = vtxo
 		commitmentTxsByCheckpointTxid[checkpointTxsByVtxoKey[vtxo.Outpoint]] = vtxo.RootCommitmentTxid
 	}
-	expiration, rootCommitmentTxid = earliestBatchExpiry(spentVtxos)
+	expiration, rootCommitmentTxid, hasBatchExpiry := earliestBatchExpiry(spentVtxos)
+	if !hasBatchExpiry {
+		return nil, errors.INVALID_PSBT_INPUT.New(
+			"no input has a batch expiry, so the resulting vtxo cannot be dated",
+		)
+	}
 
 	// index by ark input index for asset packet validation
 	assetInputs := make(map[int][]domain.AssetDenomination)
@@ -4514,11 +4517,16 @@ func (s *service) validateBoardingInput(
 // comparison outright and date the new vtxo to the epoch while carrying the wrong
 // root commitment txid with it.
 //
-// With no eligible vtxo the expiry is MaxInt64 and the txid empty, matching what
-// the caller started from before any input was seen.
-func earliestBatchExpiry(vtxos []domain.Vtxo) (int64, string) {
+// The final return reports whether any vtxo had a batch expiry at all. It is not
+// merely informational: with none, the expiry stays at MaxInt64, which is a
+// far-future sentinel, and Accept only rejects an expiry of zero or less. The
+// sentinel would otherwise reach a stored vtxo whenever the root commitment txid
+// happened to be non-empty, which is the dishonest column value this whole change
+// exists to avoid. The caller must reject that case rather than pass it on.
+func earliestBatchExpiry(vtxos []domain.Vtxo) (int64, string, bool) {
 	expiration := int64(math.MaxInt64)
 	rootCommitmentTxid := ""
+	found := false
 	for _, vtxo := range vtxos {
 		if !vtxo.HasBatchExpiry() {
 			continue
@@ -4527,8 +4535,9 @@ func earliestBatchExpiry(vtxos []domain.Vtxo) (int64, string) {
 			rootCommitmentTxid = vtxo.RootCommitmentTxid
 			expiration = vtxo.ExpiresAt
 		}
+		found = true
 	}
-	return expiration, rootCommitmentTxid
+	return expiration, rootCommitmentTxid, found
 }
 
 // exceedsSettlementExpiryGap reports whether a vtxo expires later than the limit,
