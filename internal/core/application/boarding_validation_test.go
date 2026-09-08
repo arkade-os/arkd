@@ -97,6 +97,47 @@ func TestValidateBoardingInput(t *testing.T) {
 		require.ErrorContains(t, err, "invalid vout index")
 	})
 
+	// The one rule every other subtest switches off. It shifts now forward by
+	// the smallest exit delay and requires the input's own BIP68 locktime to
+	// have elapsed by then, so an intent cannot be registered ahead of the order
+	// its exit path grants. Confirmed 3600s ago with a 7168s exit delay puts the
+	// window at 10768s, and BIP68 seconds are granular to 512.
+	t.Run("locktime must have elapsed once now is shifted by the exit delay", func(t *testing.T) {
+		notYet := boardingInput(0, longTapscripts)
+		notYet.locktimeDisabled = false
+		notYet.locktime = &arklib.RelativeLocktime{
+			Type: arklib.LocktimeTypeSecond, Value: 11264, // 496s past the window
+		}
+		err := validateBoardingInput(tx, blockTimestamp, tip, notYet, now, settings)
+		require.ErrorContains(t, err, "can be used for intent registration")
+
+		elapsed := boardingInput(0, longTapscripts)
+		elapsed.locktimeDisabled = false
+		elapsed.locktime = &arklib.RelativeLocktime{
+			Type: arklib.LocktimeTypeSecond, Value: 10752, // 16s inside it
+		}
+		err = validateBoardingInput(tx, blockTimestamp, tip, elapsed, now, settings)
+		require.NoError(t, err)
+	})
+
+	// The disabled flag is the bypass, so it has to be shown bypassing something
+	// rather than only ever set on inputs that would pass anyway.
+	t.Run("a disabled locktime skips the check entirely", func(t *testing.T) {
+		in := boardingInput(0, longTapscripts)
+		in.locktime = &arklib.RelativeLocktime{
+			Type: arklib.LocktimeTypeSecond, Value: 11264,
+		}
+
+		in.locktimeDisabled = false
+		require.ErrorContains(t,
+			validateBoardingInput(tx, blockTimestamp, tip, in, now, settings),
+			"can be used for intent registration",
+		)
+
+		in.locktimeDisabled = true
+		require.NoError(t, validateBoardingInput(tx, blockTimestamp, tip, in, now, settings))
+	})
+
 	t.Run("unrolled vtxo needs margin before its exit matures", func(t *testing.T) {
 		withMargin := settings
 		withMargin.UnrolledVtxoMinExpiryMargin = 4 * time.Hour
@@ -141,16 +182,6 @@ func TestValidateBoardingInput(t *testing.T) {
 		err = validateBoardingInput(tx, blockTimestamp, nearTip, in, now, blockSettings)
 		require.ErrorContains(t, err, "expires too soon")
 	})
-}
-
-// boardingInput builds a boarding input for the given output index, with the
-// locktime check disabled so tests exercise one rule at a time.
-func boardingInput(vout uint32, tapscripts []string) boardingIntentInput {
-	in := boardingIntentInput{locktimeDisabled: true}
-	in.VOut = vout
-	in.Txid = "0000000000000000000000000000000000000000000000000000000000000001"
-	in.Tapscripts = tapscripts
-	return in
 }
 
 // Block-typed relative locktimes must be evaluated in blocks. Routing them
@@ -250,4 +281,14 @@ func TestExitPathAvailable(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, got)
 	})
+}
+
+// boardingInput builds a boarding input for the given output index, with the
+// locktime check disabled so tests exercise one rule at a time.
+func boardingInput(vout uint32, tapscripts []string) boardingIntentInput {
+	in := boardingIntentInput{locktimeDisabled: true}
+	in.VOut = vout
+	in.Txid = "0000000000000000000000000000000000000000000000000000000000000001"
+	in.Tapscripts = tapscripts
+	return in
 }
