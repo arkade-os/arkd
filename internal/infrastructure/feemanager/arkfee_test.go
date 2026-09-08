@@ -8,11 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestToArkFeeOffchainInputExpiry pins how a vtxo's expiry reaches the fee
-// expression. OffchainInput treats the zero time as "no expiry" and omits the
-// CEL variable entirely, which is the only honest representation for a vtxo with
-// no batch behind it. Converting its zero ExpiresAt with time.Unix would instead
-// hand the expression a 1970 deadline, which is not zero and not true.
+// The fee expression sees no expiry only if the zero time reaches it. A 1970
+// deadline from time.Unix(0, 0) would look like a real one.
 func TestToArkFeeOffchainInputExpiry(t *testing.T) {
 	const expiresAt = int64(2_000_000_000)
 
@@ -34,7 +31,6 @@ func TestToArkFeeOffchainInputExpiry(t *testing.T) {
 		require.NotEqual(t, time.Unix(0, 0), got.Expiry, "1970 is not the same as absent")
 	})
 
-	// The birth is real either way, so only the expiry is special-cased.
 	t.Run("the birth is unaffected", func(t *testing.T) {
 		got := toArkFeeOffchainInput(domain.Vtxo{
 			Kind: domain.VtxoKindOnchain, CreatedAt: 1_900_000_000,

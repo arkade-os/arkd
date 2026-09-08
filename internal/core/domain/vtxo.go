@@ -118,17 +118,10 @@ func (v Vtxo) OutputScript() ([]byte, error) {
 	return script.P2TRScript(pubkey)
 }
 
-// HasBatchExpiry reports whether ExpiresAt holds a real deadline for this vtxo.
-// A vtxo held in an on-chain Arkade UTXO has no batch behind it and so no
-// expiry, and stores a zero rather than a timestamp that would not be true.
-// Callers that read ExpiresAt directly, rather than through IsExpired, must ask
-// this first: a zero is a smaller number than any real deadline and silently
-// wins any comparison against one.
-//
-// It answers on the kind alone, so a note reads as having one. A note has no
-// batch either, but it is rejected before it reaches any raw reader of the
-// field, and widening this to cover notes would change what the fee model sees
-// for them without a decision behind it.
+// HasBatchExpiry reports whether ExpiresAt holds a real deadline. An on-chain
+// Arkade UTXO has no batch, so its zero is an absence and would win any
+// comparison against a real deadline. Notes read as having one. They have no
+// batch either, but never reach a raw reader of the field.
 func (v Vtxo) HasBatchExpiry() bool {
 	return v.Kind != VtxoKindOnchain
 }

@@ -4508,21 +4508,11 @@ func (s *service) validateBoardingInput(
 	return &tx, nil
 }
 
-// earliestBatchExpiry returns the soonest batch expiry among the given vtxos and
-// the root commitment txid it belongs to, which together date the offchain tx
-// built from them.
+// Vtxos with no batch expiry are skipped, since their zero would win the
+// comparison and date the result to the epoch with the wrong commitment txid.
 //
-// Vtxos with no batch expiry are skipped rather than compared. Their ExpiresAt is
-// zero, which is smaller than any real deadline, so including one would win the
-// comparison outright and date the new vtxo to the epoch while carrying the wrong
-// root commitment txid with it.
-//
-// The final return reports whether any vtxo had a batch expiry at all. It is not
-// merely informational: with none, the expiry stays at MaxInt64, which is a
-// far-future sentinel, and Accept only rejects an expiry of zero or less. The
-// sentinel would otherwise reach a stored vtxo whenever the root commitment txid
-// happened to be non-empty, which is the dishonest column value this whole change
-// exists to avoid. The caller must reject that case rather than pass it on.
+// The bool reports whether any vtxo had one. Callers must reject false rather
+// than use the MaxInt64 left behind, which Accept's expiry check lets through.
 func earliestBatchExpiry(vtxos []domain.Vtxo) (int64, string, bool) {
 	expiration := int64(math.MaxInt64)
 	rootCommitmentTxid := ""
@@ -4540,15 +4530,8 @@ func earliestBatchExpiry(vtxos []domain.Vtxo) (int64, string, bool) {
 	return expiration, rootCommitmentTxid, found
 }
 
-// exceedsSettlementExpiryGap reports whether a vtxo expires later than the limit,
-// which is what the settlement minimum expiry gap rejects.
-//
-// The early return for a vtxo with no batch expiry does not change any outcome
-// today, and is not a fix: a zero ExpiresAt reads as 1970 and already fails an
-// After comparison against any future limit. It states the intent instead, that
-// this gap is about how far off a batch deadline is and a vtxo with no deadline
-// cannot be too far off, so that reversing the comparison later cannot silently
-// start rejecting on-chain vtxos.
+// The early return is redundant today, since a zero already fails this
+// comparison. It guards against the comparison being reversed later.
 func exceedsSettlementExpiryGap(vtxo domain.Vtxo, limit time.Time) bool {
 	if !vtxo.HasBatchExpiry() {
 		return false

@@ -119,15 +119,12 @@ func TestVtxo_HasBatchExpiry(t *testing.T) {
 			want: true,
 		},
 		{
-			// No batch behind it, so its zero ExpiresAt is an absence rather
-			// than a deadline, and callers reading the field raw must skip it.
 			name: "an onchain-kind vtxo has none",
 			vtxo: domain.Vtxo{Kind: domain.VtxoKindOnchain},
 			want: false,
 		},
 		{
-			// The kind decides, not the value: a zero on a batch vtxo is still
-			// a batch expiry as far as this predicate is concerned.
+			// The kind decides, not the value.
 			name: "a zero expiry on a batch vtxo still counts",
 			vtxo: domain.Vtxo{},
 			want: true,

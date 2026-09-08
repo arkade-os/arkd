@@ -221,10 +221,8 @@ func TestCheckUnrolledVtxoExpiry(t *testing.T) {
 	}
 }
 
-// TestBatchExpiryGuards covers the sites that read Vtxo.ExpiresAt directly
-// rather than through IsExpired. A vtxo held in an on-chain Arkade UTXO has no
-// batch and stores a zero, which is smaller than any real deadline and so wins
-// every naive comparison against one.
+// Covers the sites that read Vtxo.ExpiresAt directly rather than through
+// IsExpired, where an on-chain vtxo's zero wins any comparison it enters.
 func TestBatchExpiryGuards(t *testing.T) {
 	const (
 		soon = int64(2_000_000_000)
@@ -243,8 +241,6 @@ func TestBatchExpiryGuards(t *testing.T) {
 			require.Equal(t, "soon-batch", txid)
 		})
 
-		// The case this guard exists for. Without it the zero wins outright and
-		// dates the resulting vtxo to the epoch, carrying the wrong commitment.
 		t.Run("an onchain-kind input never wins the comparison", func(t *testing.T) {
 			expiry, txid, ok := earliestBatchExpiry([]domain.Vtxo{
 				{ExpiresAt: soon, RootCommitmentTxid: "soon-batch"},
@@ -256,9 +252,8 @@ func TestBatchExpiryGuards(t *testing.T) {
 			require.Equal(t, "soon-batch", txid)
 		})
 
-		// The caller must reject this rather than pass it on. The expiry left
-		// behind is MaxInt64, a far-future sentinel, and Accept only rejects an
-		// expiry of zero or less, so it would be stored as if it were real.
+		// The MaxInt64 left behind passes Accept's expiry check, so a caller
+		// that ignored the bool would store it as a real deadline.
 		t.Run("only onchain-kind inputs reports nothing found", func(t *testing.T) {
 			expiry, txid, ok := earliestBatchExpiry([]domain.Vtxo{
 				{Kind: domain.VtxoKindOnchain},
@@ -278,8 +273,6 @@ func TestBatchExpiryGuards(t *testing.T) {
 			require.Empty(t, txid)
 		})
 
-		// A batch-backed input with a zero expiry is still a batch-backed input.
-		// The report must key off the kind, not off the number being non-zero.
 		t.Run("a zero expiry on a batch vtxo still counts as found", func(t *testing.T) {
 			expiry, txid, ok := earliestBatchExpiry([]domain.Vtxo{
 				{ExpiresAt: 0, RootCommitmentTxid: "batch"},
@@ -304,10 +297,8 @@ func TestBatchExpiryGuards(t *testing.T) {
 			))
 		})
 
-		// Pins the outcome, not the guard: a zero already fails this comparison,
-		// so this passes with or without the early return. It is here so that
-		// reversing the comparison later fails a test instead of silently
-		// rejecting on-chain vtxos.
+		// Passes with or without the early return, since a zero already fails
+		// the comparison. Here to catch the comparison being reversed.
 		t.Run("an onchain-kind vtxo never exceeds it", func(t *testing.T) {
 			require.False(t, exceedsSettlementExpiryGap(
 				domain.Vtxo{Kind: domain.VtxoKindOnchain, ExpiresAt: 0}, limit,
