@@ -31,12 +31,29 @@ func TestRetractStaleUnrolls(t *testing.T) {
 		vtxos.AssertCalled(t, "UnmarkVtxosUnrolled", mock.Anything, []domain.Outpoint{out})
 	})
 
-	// The stronger of the two signals. An outpoint the wallet still lists as
-	// unspent exists on chain, so no number of passes may retract past it.
-	t.Run("never retracts while the outpoint is still unspent", func(t *testing.T) {
+	// The wallet's unspent set must not veto the node. It is built from the
+	// backend's own index, which keeps an unconfirmed transaction after the node
+	// has dropped it, so an outpoint listed there says nothing about whether the
+	// unroll will confirm.
+	t.Run("a stale unspent listing does not block the retraction", func(t *testing.T) {
 		svc, vtxos := unrollService(t, &mockedScanner{
 			unspent: map[domain.Outpoint]struct{}{out: {}},
 			dropped: map[string]bool{unrolledVtxoTxid: true},
+		})
+		vtxos.On("UnmarkVtxosUnrolled", mock.Anything, mock.Anything).Return(nil)
+
+		for range unrollRetractionObservations {
+			svc.retractStaleUnrolls(ctx, candidates)
+		}
+
+		vtxos.AssertCalled(t, "UnmarkVtxosUnrolled", mock.Anything, []domain.Outpoint{out})
+	})
+
+	// The node still holding the transaction is what blocks a retraction.
+	t.Run("never retracts while the node still holds the tx", func(t *testing.T) {
+		svc, vtxos := unrollService(t, &mockedScanner{
+			unspent: map[domain.Outpoint]struct{}{},
+			dropped: map[string]bool{unrolledVtxoTxid: false},
 		})
 
 		for range unrollRetractionObservations * 2 {
@@ -79,16 +96,6 @@ func TestRetractStaleUnrolls(t *testing.T) {
 			svc.retractStaleUnrolls(ctx, candidates)
 		}
 
-		vtxos.AssertNotCalled(t, "UnmarkVtxosUnrolled", mock.Anything, mock.Anything)
-	})
-
-	t.Run("an unspent-set failure skips the pass without asking further", func(t *testing.T) {
-		scanner := &mockedScanner{unspentErr: errors.New("wallet down")}
-		svc, vtxos := unrollService(t, scanner)
-
-		svc.retractStaleUnrolls(ctx, candidates)
-
-		require.Empty(t, scanner.DroppedCalls(), "no tx lookup without the stronger signal")
 		vtxos.AssertNotCalled(t, "UnmarkVtxosUnrolled", mock.Anything, mock.Anything)
 	})
 

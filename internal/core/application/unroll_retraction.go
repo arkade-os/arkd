@@ -26,24 +26,19 @@ const unrollRetractionObservations = 3
 // the vtxo wrongly unrolled forever, unspendable by its owner and unsweepable by
 // the operator.
 //
-// Retraction runs on positive evidence in both directions, never on absence
-// alone. The outpoint being present in the wallet's unspent set says the output
-// exists, and no number of passes can retract past it. Only once that is absent
-// does the transaction lookup decide, and only a backend that positively has no
-// record of the transaction counts, repeatedly.
+// Retraction runs on one piece of positive evidence: the node itself no longer
+// holds the transaction that would materialise the vtxo, and has not mined it.
+//
+// The wallet's unspent set is deliberately not consulted. It reads as the
+// stronger signal and was used here at first, but it is built from the chain
+// backend's own index, which keeps an unconfirmed transaction long after the
+// node has dropped it. Verified on a live stack: with the unroll evicted, the
+// node reported no such output while the backend still listed the outpoint as
+// unspent, so consulting it vetoed exactly the retraction this exists to make.
+// The node's answer already accounts for confirmation, so nothing is lost.
 func (s *service) retractStaleUnrolls(ctx context.Context, candidates []domain.Vtxo) {
 	if len(candidates) == 0 {
 		s.forgetUnrollObservations(nil)
-		return
-	}
-
-	// The unspent set is the stronger signal and is checked first: an outpoint
-	// listed here exists on chain, whatever the transaction lookup says.
-	unspent, err := s.scanner.GetUnspentOutpoints(ctx)
-	if err != nil {
-		log.WithError(err).Warn(
-			"unroll retraction: failed to fetch unspent outpoints, skipping this pass",
-		)
 		return
 	}
 
@@ -51,11 +46,6 @@ func (s *service) retractStaleUnrolls(ctx context.Context, candidates []domain.V
 	stale := make([]domain.Outpoint, 0)
 	for _, vtxo := range candidates {
 		seen[vtxo.Outpoint] = struct{}{}
-
-		if _, ok := unspent[vtxo.Outpoint]; ok {
-			s.recordUnrollObservation(vtxo.Outpoint, true)
-			continue
-		}
 
 		dropped, err := s.scanner.IsTransactionDropped(ctx, vtxo.Txid)
 		if err != nil {
@@ -89,7 +79,7 @@ func (s *service) retractStaleUnrolls(ctx context.Context, candidates []domain.V
 	for _, outpoint := range stale {
 		s.recordUnrollObservation(outpoint, true)
 		log.Debugf(
-			"vtxo %s unroll retracted, its tx is no longer known to the chain", outpoint,
+			"vtxo %s unroll retracted, its tx is no longer held by the node", outpoint,
 		)
 	}
 }
