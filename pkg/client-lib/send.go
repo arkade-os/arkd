@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -284,83 +283,66 @@ func (a *service) createOffchainTx(
 		}
 	}
 
-	changeAmount := uint64(0)
-
-	if btcAmountToSelect >= 0 {
-		isZero := btcAmountToSelect == 0
-
-		// filter out already-selected vtxos
-		availableVtxos := make([]types.VtxoWithTapTree, 0, len(vtxos))
-		for _, v := range vtxos {
-			if !selectedVtxos[v.Outpoint.String()] {
-				availableVtxos = append(availableVtxos, v)
-			}
+	// filter out already-selected vtxos
+	availableVtxos := make([]types.VtxoWithTapTree, 0, len(vtxos))
+	for _, v := range vtxos {
+		if !selectedVtxos[v.Outpoint.String()] {
+			availableVtxos = append(availableVtxos, v)
 		}
-
-		// skip BTC coin selection if all BTC was covered by asset coins
-		// and there are no more available vtxos (send-all scenario)
-		if isZero && len(availableVtxos) == 0 {
-			changeAmount = 0
-		} else {
-			if isZero {
-				btcAmountToSelect = int64(a.Dust)
-			}
-
-			_, selectedBtcCoins, changeBtcAmount, err := utils.CoinSelect(
-				nil, availableVtxos,
-				// use a "fake" receiver to select only the remaining btc amount
-				// it works for offchain tx because feeEstimator is nil (no offchain fee)
-				[]types.Receiver{{Amount: uint64(btcAmountToSelect)}},
-				a.Dust, opts.withoutExpirySorting, nil,
-			)
-			if err != nil {
-				return "", nil, nil, nil, err
-			}
-
-			// some coins may contain assets, add them to the asset changes
-			for _, coin := range selectedBtcCoins {
-				for _, asset := range coin.Assets {
-					if asset.Amount > 0 {
-						assetChanges[asset.AssetId] += asset.Amount
-					}
-				}
-			}
-
-			selectedCoins = append(selectedCoins, selectedBtcCoins...)
-			changeAmount = changeBtcAmount
-			if isZero {
-				changeAmount = changeBtcAmount + a.Dust
-			}
-		}
-	} else {
-		changeAmount = uint64(math.Abs(float64(btcAmountToSelect)))
 	}
+
+	// The change has to be spendable as a vtxo, so it can never fall below the
+	// dust limit, whatever minimum the caller asked for.
+	minChangeAmount := max(a.Dust, opts.minChangeAmount)
+
+	// An asset change needs an output to ride on. Keep leaving a change output
+	// too when the asset coins cover the receivers exactly and there is still
+	// something to select, unless this is a send-all.
+	needChange := len(assetChanges) > 0 ||
+		(btcAmountToSelect == 0 && len(availableVtxos) > 0)
+
+	selectedBtcCoins, changeAmount, err := selectChangeCoins(
+		btcAmountToSelect, needChange, availableVtxos,
+		minChangeAmount, opts.withoutExpirySorting,
+	)
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	// some coins may contain assets, add them to the asset changes
+	for _, coin := range selectedBtcCoins {
+		for _, asset := range coin.Assets {
+			if asset.Amount > 0 {
+				assetChanges[asset.AssetId] += asset.Amount
+			}
+		}
+	}
+	selectedCoins = append(selectedCoins, selectedBtcCoins...)
 
 	var changeReceiver *types.Receiver
 
-	// enforce a minimum change amount when there are asset changes
+	// a coin selected for its btc may itself carry assets: their change needs
+	// an output to ride on, so make room for one if the btc side left none.
 	if len(assetChanges) > 0 && changeAmount == 0 {
 		// build a set of already-selected coin outpoints to avoid double-selection
 		selectedOutpoints := make(map[string]struct{})
 		for _, coin := range selectedCoins {
-			selectedOutpoints[coin.Txid+fmt.Sprintf(":%d", coin.VOut)] = struct{}{}
+			selectedOutpoints[coin.Outpoint.String()] = struct{}{}
 		}
 
-		availableVtxos := make([]types.VtxoWithTapTree, 0)
+		assetFreeVtxos := make([]types.VtxoWithTapTree, 0)
 		for _, vtxo := range vtxos {
-			outpoint := vtxo.Outpoint.String()
-			if _, selected := selectedOutpoints[outpoint]; selected {
+			if _, selected := selectedOutpoints[vtxo.Outpoint.String()]; selected {
 				continue
 			}
-			// only include vtxos without assets
+			// only include vtxos without assets, to not add yet more changes
 			if len(vtxo.Assets) == 0 {
-				availableVtxos = append(availableVtxos, vtxo)
+				assetFreeVtxos = append(assetFreeVtxos, vtxo)
 			}
 		}
 
-		_, selectedBtcCoins, changeBtcAmount, err := utils.CoinSelect(
-			nil, availableVtxos, []types.Receiver{{Amount: a.Dust}},
-			a.Dust, opts.withoutExpirySorting, nil,
+		moreCoins, change, err := selectChangeCoins(
+			0, true, assetFreeVtxos, minChangeAmount, opts.withoutExpirySorting,
 		)
 		if err != nil {
 			return "", nil, nil, nil, fmt.Errorf(
@@ -369,8 +351,8 @@ func (a *service) createOffchainTx(
 			)
 		}
 
-		selectedCoins = append(selectedCoins, selectedBtcCoins...)
-		changeAmount = changeBtcAmount + a.Dust
+		selectedCoins = append(selectedCoins, moreCoins...)
+		changeAmount = change
 	}
 
 	if changeAmount > 0 {
@@ -426,6 +408,55 @@ func (a *service) createOffchainTx(
 	}
 
 	return arkTx, checkpointTxs, selectedCoins, changeReceiver, nil
+}
+
+// selectChangeCoins selects the extra vtxos needed to settle the btc side of an
+// offchain tx, and returns them along with the resulting change.
+//
+// btcAmountToSelect is what the receivers ask for minus the btc already riding
+// on the coins selected to cover the asset amounts. A negative value means
+// those coins carry a surplus, which is change we hold before selecting
+// anything further.
+//
+// An offchain tx conserves value exactly, so a surplus can never be given up,
+// and the server rejects any output below its min vtxo amount: the change is
+// therefore either exactly 0 or at least minChangeAmount, and when it can't be
+// either the send fails here rather than at the server. needChange forces a
+// change output even when the btc side balances out, so that an asset change
+// has an output to ride on.
+func selectChangeCoins(
+	btcAmountToSelect int64, needChange bool, availableVtxos []types.VtxoWithTapTree,
+	minChangeAmount uint64, withoutExpirySorting bool,
+) ([]types.VtxoWithTapTree, uint64, error) {
+	changeAmount := uint64(0)
+	if btcAmountToSelect < 0 {
+		changeAmount = uint64(-btcAmountToSelect)
+		btcAmountToSelect = 0
+		needChange = true
+	}
+
+	// pull in the sats missing to lift the change up to the minimum
+	if needChange && changeAmount < minChangeAmount {
+		btcAmountToSelect += int64(minChangeAmount - changeAmount)
+		changeAmount = minChangeAmount
+	}
+
+	if btcAmountToSelect <= 0 {
+		return nil, changeAmount, nil
+	}
+
+	_, selected, extraChange, err := utils.CoinSelect(
+		nil, availableVtxos,
+		// use a "fake" receiver to select only the remaining btc amount
+		// it works for offchain tx because feeEstimator is nil (no offchain fee)
+		[]types.Receiver{{Amount: uint64(btcAmountToSelect)}},
+		minChangeAmount, withoutExpirySorting, nil, minChangeAmount,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return selected, changeAmount + extraChange, nil
 }
 
 func (a *service) finalizePendingTxs(

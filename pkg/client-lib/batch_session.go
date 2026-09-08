@@ -350,7 +350,7 @@ func (a *service) getFundsToSettle(
 	}
 
 	selectedBoardingUtxos, selectedVtxos, changeAmount, err := utils.CoinSelect(
-		boardingUtxos, vtxos, outputs, a.Dust, opts.withoutExpirySorting, feeEstimator,
+		boardingUtxos, vtxos, outputs, a.Dust, opts.withoutExpirySorting, feeEstimator, 0,
 	)
 	if err != nil {
 		return nil, nil, nil, err

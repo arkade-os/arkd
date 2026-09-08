@@ -268,6 +268,32 @@ func TestAddExtension(t *testing.T) {
 	})
 }
 
+func TestWithMinChangeAmount(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		testCases := []struct {
+			name   string
+			amount uint64
+		}{
+			{name: "zero", amount: 0},
+			{name: "one", amount: 1},
+			{name: "dust", amount: 330},
+			{name: "above dust", amount: 1000},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				opts := newDefaultSendOptions()
+				require.NoError(t, WithMinChangeAmount(tc.amount).applySend(opts))
+				require.Equal(t, tc.amount, opts.minChangeAmount)
+			})
+		}
+	})
+
+	t.Run("defaults to zero if unset", func(t *testing.T) {
+		require.Zero(t, newDefaultSendOptions().minChangeAmount)
+	})
+}
+
 func TestWithTxOutsTaprootTree(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		t.Run("populates state and defensively copies values", func(t *testing.T) {

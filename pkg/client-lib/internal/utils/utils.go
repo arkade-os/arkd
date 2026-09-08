@@ -28,10 +28,18 @@ import (
 // CoinSelect selects among boarding utxos and vtxos to cover the total amount of the outputs
 // it includes fee computation of the input and output thanks to feeEstimator
 // the change is expressed in btc sats
+// dust and minChangeAmount are both floors on the change, and differ in what
+// happens when the selection can't reach them: a change short of dust alone is
+// given up (it couldn't be turned into a spendable vtxo anyway), while a change
+// short of minChangeAmount is an error, because the caller asked to keep it.
+// Pass minChangeAmount 0 to accept any change the dust limit allows; callers
+// building a tx that must conserve value exactly have to pass one, since giving
+// the change up would unbalance the tx. A selection producing no change at all
+// is always accepted, whatever the floors are.
 func CoinSelect(
 	boardingUtxos []types.Utxo, vtxos []types.VtxoWithTapTree,
 	outputs []types.Receiver, dust uint64, withoutExpirySorting bool,
-	feeEstimator *arkfee.Estimator,
+	feeEstimator *arkfee.Estimator, minChangeAmount uint64,
 ) ([]types.Utxo, []types.VtxoWithTapTree, uint64, error) {
 	selected, notSelected := make([]types.VtxoWithTapTree, 0), make([]types.VtxoWithTapTree, 0)
 	selectedBoarding, notSelectedBoarding := make([]types.Utxo, 0), make([]types.Utxo, 0)
@@ -70,7 +78,7 @@ func CoinSelect(
 	for _, boardingUtxo := range boardingUtxos {
 		if selectedAmount >= amount {
 			notSelectedBoarding = append(notSelectedBoarding, boardingUtxo)
-			break
+			continue
 		}
 
 		selectedBoarding = append(selectedBoarding, boardingUtxo)
@@ -88,7 +96,7 @@ func CoinSelect(
 	for _, vtxo := range vtxos {
 		if selectedAmount >= amount {
 			notSelected = append(notSelected, vtxo)
-			break
+			continue
 		}
 
 		selected = append(selected, vtxo)
@@ -119,32 +127,69 @@ func CoinSelect(
 		change -= uint64(fees.ToSatoshis())
 	}
 
-	if change < dust {
+	// selectMoreCoins moves the next unselected coin into the selection,
+	// preferring vtxos over boarding utxos, and adds its amount, net of the fee
+	// to spend it, to the change. It returns false if no coin is left.
+	selectMoreCoins := func() (bool, error) {
 		if len(notSelected) > 0 {
-			selected = append(selected, notSelected[0])
-			change += notSelected[0].Amount
+			vtxo := notSelected[0]
+			notSelected = notSelected[1:]
+			selected = append(selected, vtxo)
+			change += vtxo.Amount
 
 			if feeEstimator != nil {
-				fees, err := feeEstimator.EvalOffchainInput(notSelected[0].ToArkFeeInput())
+				fees, err := feeEstimator.EvalOffchainInput(vtxo.ToArkFeeInput())
 				if err != nil {
-					return nil, nil, 0, err
+					return false, err
 				}
 				change -= uint64(fees.ToSatoshis())
 			}
-		} else if len(notSelectedBoarding) > 0 {
-			selectedBoarding = append(selectedBoarding, notSelectedBoarding[0])
-			change += notSelectedBoarding[0].Amount
-
-			if feeEstimator != nil {
-				fees, err := feeEstimator.EvalOnchainInput(notSelectedBoarding[0].ToArkFeeInput())
-				if err != nil {
-					return nil, nil, 0, err
-				}
-				change -= uint64(fees.ToSatoshis())
-			}
-		} else {
-			change = 0
+			return true, nil
 		}
+
+		if len(notSelectedBoarding) > 0 {
+			utxo := notSelectedBoarding[0]
+			notSelectedBoarding = notSelectedBoarding[1:]
+			selectedBoarding = append(selectedBoarding, utxo)
+			change += utxo.Amount
+
+			if feeEstimator != nil {
+				fees, err := feeEstimator.EvalOnchainInput(utxo.ToArkFeeInput())
+				if err != nil {
+					return false, err
+				}
+				change -= uint64(fees.ToSatoshis())
+			}
+			return true, nil
+		}
+
+		return false, nil
+	}
+
+	// A change below the dust limit can't be turned into a spendable vtxo, and
+	// the caller may require an even higher minimum: keep pulling in coins
+	// until the change clears both floors, or until nothing is left to pull.
+	floor := max(dust, minChangeAmount)
+	for change > 0 && change < floor {
+		selectedMore, err := selectMoreCoins()
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		if !selectedMore {
+			break
+		}
+	}
+
+	// a selection producing no change is always valid, otherwise a change the
+	// caller explicitly asked to keep above a minimum can't be given up.
+	if change > 0 && change < floor {
+		if change < minChangeAmount {
+			return nil, nil, 0, fmt.Errorf(
+				"selected coins leave a change of %d, below the min change amount %d",
+				change, minChangeAmount,
+			)
+		}
+		change = 0
 	}
 
 	return selectedBoarding, selected, change, nil

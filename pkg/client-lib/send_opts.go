@@ -27,6 +27,19 @@ func WithoutExpirySorting() SendOption {
 	})
 }
 
+// WithMinChangeAmount sets the minimum amount the btc change output must hold.
+// Coin selection keeps adding vtxos until the change reaches it, and fails if
+// the available vtxos can't get there. A send producing no change at all is
+// always valid, whatever the min is.
+//
+// The default, 0, accepts any change amount above the server dust limit.
+func WithMinChangeAmount(amount uint64) SendOption {
+	return sendOptFn(func(o *sendOptions) error {
+		o.minChangeAmount = amount
+		return nil
+	})
+}
+
 // WithExtraPacket appends extra extension.Packet values to the
 // OP_RETURN extension blob that is included in the ark transaction alongside
 // the asset packet (type 0x00).
@@ -89,6 +102,7 @@ type sendOptions struct {
 	extraPackets         []extension.Packet
 	receiver             string
 	outputsTapTree       map[string][]byte // pkScript (hex) -> bip371 taptree
+	minChangeAmount      uint64
 }
 
 func newDefaultSendOptions() *sendOptions {
