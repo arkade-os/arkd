@@ -329,7 +329,7 @@ func (s *service) registerEventHandlers() {
 				return
 			}
 
-			// Depth for new vtxos: max(parent depths) + 1, shared with the
+			// Depth for new vtxos is max(parent depths) + 1, shared with the
 			// accept path via the same domain helper.
 			//
 			// The parent marker IDs are dropped on purpose. Projecting the
@@ -337,11 +337,10 @@ func (s *service) registerEventHandlers() {
 			// the ParentMarkerIDs recorded at Accept, so only depth has to be
 			// carried onto the event payload here.
 			//
-			// An empty spent set yields depth 0, where the old inline code gave
-			// 1. It is unreachable: submission rejects a checkpoint tx without
-			// an input and the ark tx must pass bitcoin sanity, so an accepted
-			// tx always spends at least one vtxo. Were it reached, 0 is the
-			// depth of a tx with no parents.
+			// An empty spent set yields depth 0. It is unreachable, since
+			// submission rejects a checkpoint tx without an input and the ark tx
+			// must pass bitcoin sanity, so an accepted tx always spends at least
+			// one vtxo. Were it reached, 0 is the depth of a tx with no parents.
 			depth, _ := domain.ChainDepthAndParentMarkers(spentVtxos)
 			for i := range newVtxos {
 				newVtxos[i].Depth = depth
