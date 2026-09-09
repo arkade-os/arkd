@@ -676,9 +676,8 @@ const targetBlockInterval = 10 * time.Minute
 // that threshold earlier, so a non-zero margin refuses inputs that are close to
 // maturing rather than only those that already have.
 //
-// margin is a duration because that is what it protects: the wall-clock time a
-// batch needs to finalize. Against a block-typed delay it is converted with
-// blocksForDuration.
+// margin is a duration because it protects wall-clock time, the span a batch
+// needs to finalize. Against a block-typed delay blocksForDuration converts it.
 func exitPathAvailable(
 	confirmedAt, tip *ports.BlockTimestamp,
 	delay arklib.RelativeLocktime, margin time.Duration, now time.Time,

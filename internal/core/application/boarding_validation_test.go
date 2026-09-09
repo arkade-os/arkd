@@ -14,8 +14,7 @@ import (
 
 // Two boarding inputs can share one funding tx while carrying different
 // tapscripts, exit delays and amounts, so every check in validateBoardingInput
-// is per-output. These tests pin that: the same funding tx and block timestamp
-// yield different verdicts depending only on which output is being spent.
+// has to be per-output.
 func TestValidateBoardingInput(t *testing.T) {
 	signerKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
@@ -64,9 +63,6 @@ func TestValidateBoardingInput(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	// The regression this guards: validation used to be memoized per funding
-	// txid, so a second input on the same tx skipped its own expiry check and a
-	// matured exit path slipped through.
 	t.Run("vout 1 with a matured exit path is rejected", func(t *testing.T) {
 		err := validateBoardingInput(tx, blockTimestamp, tip, boardingInput(1, shortTapscripts), now, settings)
 		require.ErrorContains(t, err, "expired")
@@ -174,12 +170,8 @@ func TestValidateBoardingInput(t *testing.T) {
 		require.ErrorContains(t, err, "expires too soon")
 	})
 
-	// The unrolled-vtxo margin used to be measured against a csvExpiresAt built
-	// from RelativeLocktime.Seconds(), so a block-typed delay was read at
-	// SECONDS_PER_BLOCK = 1: a 144-block exit looked like it matured 144 seconds
-	// after confirmation, and every unrolled vtxo on a block-typed config was
-	// rejected as "expires too soon". Regtest runs block-typed
-	// (ARKD_VTXO_TREE_EXPIRY=40 is under the 512 threshold), so this was live.
+	// Regtest runs block-typed, since ARKD_VTXO_TREE_EXPIRY=40 is under BIP68's
+	// 512 threshold, so this path is the live one there.
 	t.Run("unrolled vtxo with a block-typed delay is measured in blocks", func(t *testing.T) {
 		blockDelay := arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144}
 		blockScript := script.NewDefaultVtxoScript(owner, signer, blockDelay)
@@ -196,12 +188,11 @@ func TestValidateBoardingInput(t *testing.T) {
 		in.isUnrolledVtxo = true
 
 		// Confirmed at 100, matures at 244. A 5m margin is one block, so the
-		// threshold is tip+1+1 >= 244. At tip 200 there are ~43 blocks to go and
-		// the input must be accepted, which the seconds reading got wrong.
+		// threshold is tip+1+1 >= 244, and at tip 200 there are ~43 blocks to go.
 		err = validateBoardingInput(tx, blockTimestamp, tip, in, now, blockSettings)
 		require.NoError(t, err)
 
-		// At tip 242 the margin block bites: 242+1+1 == 244.
+		// At tip 242 the margin block bites, since 242+1+1 == 244.
 		nearTip := &ports.BlockTimestamp{Height: 242, Time: now.Unix()}
 		err = validateBoardingInput(tx, blockTimestamp, nearTip, in, now, blockSettings)
 		require.ErrorContains(t, err, "expires too soon")
@@ -249,7 +240,7 @@ func TestExitPathAvailable(t *testing.T) {
 
 	// The margin is a duration, so against a block-typed delay it has to be
 	// converted. Rounding down would silently drop every margin shorter than one
-	// block interval, which is most of them: the default is 5 minutes.
+	// block interval, which is most of them, the default being 5 minutes.
 	t.Run("duration margin converts to whole blocks, rounding up", func(t *testing.T) {
 		for _, tc := range []struct {
 			margin time.Duration

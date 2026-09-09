@@ -4322,8 +4322,8 @@ func (s *service) processBoardingInputs(
 	boardingTxs := make(map[string]fundingTx, 0) // txid -> funding tx
 	now := time.Now()
 
-	// Fetched once per request: block-typed exit delays are evaluated against
-	// the chain tip, and the lookup is an uncached round trip to the wallet.
+	// Fetched once per request, since the lookup is an uncached round trip to the
+	// wallet and block-typed exit delays are evaluated against the chain tip.
 	tip, err := s.wallet.GetCurrentBlockTime(ctx)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to get chain tip: %w", err)
@@ -4499,8 +4499,7 @@ func validateBoardingInput(
 	}
 
 	// if the exit path is available, forbid registering the boarding utxo.
-	// No margin here: this gate is about an exit path that is already open. The
-	// on-chain confirmation-window setting is what will supply one (#1159).
+	// No margin here, since this gate is about an exit path that is already open.
 	available, err := exitPathAvailable(blockTimestamp, tip, *exitDelay, 0, now)
 	if err != nil {
 		return err
@@ -4512,8 +4511,7 @@ func validateBoardingInput(
 	// For unrolled VTXOs, ensure the CSV is far enough from expiring so the
 	// batch has time to finalize before the exit path becomes available. This
 	// is the same question as above asked with a margin, so it goes through the
-	// same helper: computing it separately is what let block-typed delays be
-	// measured in seconds here.
+	// same helper rather than being computed separately.
 	if input.isUnrolledVtxo {
 		expiresSoon, err := exitPathAvailable(
 			blockTimestamp, tip, *exitDelay, unrolledVtxoMinExpiryMargin, now,
