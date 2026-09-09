@@ -13,41 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	testGroupID = "test-group-id"
-	testTxID    = "0000000000000000000000000000000000000000000000000000000000000001"
-)
-
-func testScript() string {
-	return "5120" + strings.Repeat("11", 32)
-}
-
-// newTransactionEventJSON builds a raw websocket "newtransaction" event message
-// with the given tracked source, transaction id, confirmation count and outputs
-// JSON array.
-func newTransactionEventJSON(
-	trackedSource, txid string, confirmations uint32, outputs string,
-) []byte {
-	return []byte(fmt.Sprintf(
-		`{"type":"newtransaction","eventId":1,"data":{`+
-			`"trackedSource":%q,"cryptoCode":"BTC",`+
-			`"transactionData":{"transactionHash":%q,"confirmations":%d,"timestamp":1700000000},`+
-			`"outputs":%s}}`,
-		trackedSource, txid, confirmations, outputs,
-	))
-}
-
-func output(script, address string, index, value uint64, keyPath string) string {
-	kp := ""
-	if keyPath != "" {
-		kp = fmt.Sprintf(`"keyPath":%q,`, keyPath)
-	}
-	return fmt.Sprintf(
-		`{%s"scriptPubKey":%q,"index":%d,"keyIndex":0,"value":%d,"address":%q}`,
-		kp, script, index, value, address,
-	)
-}
-
 func TestGroupTrackedSource(t *testing.T) {
 	require.Equal(t, "GROUP:abc", groupTrackedSource("abc"))
 }
@@ -175,7 +140,81 @@ func TestCastUtxoCarriesKeyPath(t *testing.T) {
 
 // fetchAndFilterGroupUtxos replicates the previous (pre-optimization) behavior:
 // on every event it fetched the whole group UTXO set over HTTP and filtered it
-// client-side by transaction hash. It is kept here only as a benchmark baseline.
+
+func BenchmarkNotificationProcessing(b *testing.B) {
+	eventMsg := newTransactionEventJSON(
+		groupTrackedSource(testGroupID), testTxID, 0,
+		"["+output(testScript(), "bcrt1paddr", 1, 100000, "")+"]",
+	)
+
+	b.Run("event-parse", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			utxos, err := utxosFromTransactionEvent(eventMsg, testGroupID)
+			if err != nil || len(utxos) != 1 {
+				b.Fatalf("unexpected result: %v %v", utxos, err)
+			}
+		}
+	})
+
+	for _, n := range []int{10, 100, 1000, 10000} {
+		body := buildGroupUtxosBody(n, testTxID)
+		srv := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write(body)
+			},
+		))
+		client := srv.Client()
+
+		b.Run(fmt.Sprintf("http-fetch-group-size-%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				utxos, err := fetchAndFilterGroupUtxos(client, srv.URL, testTxID)
+				if err != nil || len(utxos) != 1 {
+					b.Fatalf("unexpected result: %v %v", utxos, err)
+				}
+			}
+		})
+
+		srv.Close()
+	}
+}
+
+const (
+	testGroupID = "test-group-id"
+	testTxID    = "0000000000000000000000000000000000000000000000000000000000000001"
+)
+
+func testScript() string {
+	return "5120" + strings.Repeat("11", 32)
+}
+
+// newTransactionEventJSON builds a raw websocket "newtransaction" event message
+// with the given tracked source, transaction id, confirmation count and outputs
+// JSON array.
+func newTransactionEventJSON(
+	trackedSource, txid string, confirmations uint32, outputs string,
+) []byte {
+	return []byte(fmt.Sprintf(
+		`{"type":"newtransaction","eventId":1,"data":{`+
+			`"trackedSource":%q,"cryptoCode":"BTC",`+
+			`"transactionData":{"transactionHash":%q,"confirmations":%d,"timestamp":1700000000},`+
+			`"outputs":%s}}`,
+		trackedSource, txid, confirmations, outputs,
+	))
+}
+
+func output(script, address string, index, value uint64, keyPath string) string {
+	kp := ""
+	if keyPath != "" {
+		kp = fmt.Sprintf(`"keyPath":%q,`, keyPath)
+	}
+	return fmt.Sprintf(
+		`{%s"scriptPubKey":%q,"index":%d,"keyIndex":0,"value":%d,"address":%q}`,
+		kp, script, index, value, address,
+	)
+}
+
 func fetchAndFilterGroupUtxos(client *http.Client, url, txHash string) ([]ports.Utxo, error) {
 	resp, err := client.Get(url)
 	if err != nil {
@@ -241,42 +280,3 @@ func buildGroupUtxosBody(n int, matchTxHash string) []byte {
 // BenchmarkNotificationProcessing compares the per-event work of the new
 // event-payload parsing against the old approach of fetching and filtering the
 // whole group UTXO set. The old approach scales with the group size; the new one
-// does not depend on it and performs no network round trip.
-func BenchmarkNotificationProcessing(b *testing.B) {
-	eventMsg := newTransactionEventJSON(
-		groupTrackedSource(testGroupID), testTxID, 0,
-		"["+output(testScript(), "bcrt1paddr", 1, 100000, "")+"]",
-	)
-
-	b.Run("event-parse", func(b *testing.B) {
-		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
-			utxos, err := utxosFromTransactionEvent(eventMsg, testGroupID)
-			if err != nil || len(utxos) != 1 {
-				b.Fatalf("unexpected result: %v %v", utxos, err)
-			}
-		}
-	})
-
-	for _, n := range []int{10, 100, 1000, 10000} {
-		body := buildGroupUtxosBody(n, testTxID)
-		srv := httptest.NewServer(http.HandlerFunc(
-			func(w http.ResponseWriter, _ *http.Request) {
-				_, _ = w.Write(body)
-			},
-		))
-		client := srv.Client()
-
-		b.Run(fmt.Sprintf("http-fetch-group-size-%d", n), func(b *testing.B) {
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				utxos, err := fetchAndFilterGroupUtxos(client, srv.URL, testTxID)
-				if err != nil || len(utxos) != 1 {
-					b.Fatalf("unexpected result: %v %v", utxos, err)
-				}
-			}
-		})
-
-		srv.Close()
-	}
-}

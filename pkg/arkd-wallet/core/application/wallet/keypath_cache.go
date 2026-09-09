@@ -21,7 +21,7 @@ type keyPathEntry struct {
 // keyPathCache is a bounded, concurrency-safe cache of the script ->
 // (derivation scheme, key path) mapping.
 //
-// The mapping is immutable: a given script always derives from the same key
+// The mapping is immutable, since a given script always derives from the same key
 // path under the same account, so cached entries are never stale. The cache lets
 // the wallet skip the per-input NBXplorer script lookups when signing inputs it
 // has already seen as UTXOs.
