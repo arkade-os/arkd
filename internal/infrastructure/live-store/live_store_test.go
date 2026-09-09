@@ -2,6 +2,7 @@ package livestore_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,10 +14,11 @@ import (
 	inmemory "github.com/arkade-os/arkd/internal/infrastructure/live-store/inmemory"
 	redislivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/redis"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
@@ -291,6 +293,140 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			require.Equal(t, vtxo.Outpoint.String(), res)
 
 			require.NoError(t, store.Intents().DeleteAll(ctx))
+		})
+	})
+
+	// A note is an input like any other as far as double spending goes, so both
+	// backends have to reject a second intent carrying one that is already
+	// registered. The redis store used to skip notes when it filled and checked
+	// its dedup set, which let two intents hold the same note at once.
+	t.Run("IntentStoreNoteDedup", func(t *testing.T) {
+		t.Run("rejects a second intent holding the same note", func(t *testing.T) {
+			ctx := t.Context()
+
+			noteVtxo := issueNoteVtxo(t, 10_000)
+			noteOutpoint := noteVtxo.Outpoint
+			first := noteIntent(noteVtxo)
+			second := noteIntent(noteVtxo)
+
+			require.NoError(t, store.Intents().Push(ctx, first, nil, nil))
+
+			err := store.Intents().Push(ctx, second, nil, nil)
+			require.Error(t, err, "a note already held by another intent must be rejected")
+			require.Contains(t, err.Error(), "duplicated input")
+
+			// The guard that asks whether any of a set of outpoints is already
+			// spoken for reads the same set, so it has to see the note too.
+			exists, got := store.Intents().IncludesAny(ctx, []domain.Outpoint{noteOutpoint})
+			require.True(t, exists)
+			require.Equal(t, noteOutpoint.String(), got)
+
+			require.NoError(t, store.Intents().Delete(ctx, []string{first.Id}))
+		})
+
+		// Deleting the holding intent is the failed-round path.
+		t.Run("delete releases the note", func(t *testing.T) {
+			ctx := t.Context()
+
+			noteVtxo := issueNoteVtxo(t, 10_000)
+			noteOutpoint := noteVtxo.Outpoint
+			held := noteIntent(noteVtxo)
+			require.NoError(t, store.Intents().Push(ctx, held, nil, nil))
+
+			require.NoError(t, store.Intents().Delete(ctx, []string{held.Id}))
+
+			exists, _ := store.Intents().IncludesAny(ctx, []domain.Outpoint{noteOutpoint})
+			require.False(t, exists, "deleting the intent must release the note")
+
+			retry := noteIntent(noteVtxo)
+			require.NoError(
+				t, store.Intents().Push(ctx, retry, nil, nil),
+				"a released note must be registrable again",
+			)
+			require.NoError(t, store.Intents().Delete(ctx, []string{retry.Id}))
+		})
+
+		// Popping is the successful-round path, and it releases inputs in two
+		// steps: Pop lists them, DeleteVtxos removes them. A note that never
+		// made it into the set had nothing to remove, so this is the path that
+		// would strand it once the set starts tracking notes.
+		t.Run("pop then DeleteVtxos releases the note", func(t *testing.T) {
+			ctx := t.Context()
+			// Pop parks what it selected under its own key, and only DeleteAll
+			// clears that. Leave the store as this subtest found it so a re-run
+			// against the same redis starts from the same place. Cleanup runs
+			// after t.Context is canceled, so it needs its own.
+			t.Cleanup(func() {
+				require.NoError(t, store.Intents().DeleteAll(context.Background()))
+			})
+
+			noteVtxo := issueNoteVtxo(t, 10_000)
+			noteOutpoint := noteVtxo.Outpoint
+			held := noteIntent(noteVtxo)
+			require.NoError(t, store.Intents().Push(ctx, held, nil, nil))
+
+			popped, err := store.Intents().Pop(ctx, 1)
+			require.NoError(t, err)
+			require.Len(t, popped, 1)
+			require.Equal(t, held.Id, popped[0].Id)
+
+			// Still claimed between the two steps: the round is in flight.
+			exists, _ := store.Intents().IncludesAny(ctx, []domain.Outpoint{noteOutpoint})
+			require.True(t, exists, "a popped note stays claimed until DeleteVtxos")
+
+			require.NoError(t, store.Intents().DeleteVtxos(ctx))
+
+			exists, _ = store.Intents().IncludesAny(ctx, []domain.Outpoint{noteOutpoint})
+			require.False(t, exists, "DeleteVtxos must release the note")
+
+			retry := noteIntent(noteVtxo)
+			require.NoError(
+				t, store.Intents().Push(ctx, retry, nil, nil),
+				"a swept up note must be registrable again",
+			)
+			require.NoError(t, store.Intents().Delete(ctx, []string{retry.Id}))
+		})
+
+		// The set is what serializes two registrations racing for one note, so
+		// exactly one of them may win no matter how they interleave.
+		t.Run("only one of several concurrent intents gets the note", func(t *testing.T) {
+			ctx := t.Context()
+			const racers = 6
+
+			noteVtxo := issueNoteVtxo(t, 10_000)
+			intents := make([]domain.Intent, racers)
+			for i := range intents {
+				intents[i] = noteIntent(noteVtxo)
+			}
+
+			var wg sync.WaitGroup
+			errs := make([]error, racers)
+			start := make(chan struct{})
+			for i := range racers {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					<-start
+					errs[i] = store.Intents().Push(ctx, intents[i], nil, nil)
+				}(i)
+			}
+			close(start)
+			wg.Wait()
+
+			winners := make([]string, 0, 1)
+			for i, err := range errs {
+				if err == nil {
+					winners = append(winners, intents[i].Id)
+					continue
+				}
+				require.Contains(
+					t, err.Error(), "duplicated input",
+					"a loser must be turned away for the note, not for something else",
+				)
+			}
+			require.Len(t, winners, 1, "exactly one intent may hold the note")
+
+			require.NoError(t, store.Intents().Delete(ctx, winners))
 		})
 	})
 
@@ -570,7 +706,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		var uniqueSigners map[string]struct{}
 		err := json.Unmarshal([]byte(uniqueSignersJSON), &uniqueSigners)
 		require.NoError(t, err)
-		err = store.TreeSigingSessions().New(ctx, roundId1, uniqueSigners)
+		err = store.TreeSigingSessions().New(ctx, roundId1, uniqueSigners, ports.SigningContext{})
 		require.NoError(t, err)
 
 		// Get
@@ -635,6 +771,22 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.Error(t, doSubmitNonces(unknown, roundId1))
 		require.Error(t, doSubmitSigs(unknown, roundId1))
 
+		stopReads := make(chan struct{})
+		go func() {
+			for {
+				select {
+				case <-stopReads:
+					return
+				default:
+					session, err := store.TreeSigingSessions().Get(ctx, roundId1)
+					if err == nil && session != nil {
+						for range session.Nonces {
+						}
+					}
+				}
+			}
+		}()
+
 		for _, signer := range signers {
 			go func() {
 				err := doSubmitNonces(signer, roundId1)
@@ -649,6 +801,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			require.Fail(t, "signing session not completed")
 		case <-doneCh:
 		}
+		close(stopReads)
 
 		// Delete
 		err = store.TreeSigingSessions().Delete(ctx, roundId1)
@@ -662,7 +815,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		roundId2 := uuid.New().String()
 
 		// redo the signing process but with delete in the middle
-		err = store.TreeSigingSessions().New(ctx, roundId2, uniqueSigners)
+		err = store.TreeSigingSessions().New(ctx, roundId2, uniqueSigners, ports.SigningContext{})
 		require.NoError(t, err)
 		noncesCollectedCh = store.TreeSigingSessions().NoncesCollected(roundId2)
 		signaturesCollectedCh = store.TreeSigingSessions().SignaturesCollected(roundId2)
@@ -700,7 +853,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		// cosigner overwriting its own entry leaves the count unchanged, while the
 		// coordinator receives at most once. Submitting again must not block.
 		roundId3 := uuid.New().String()
-		require.NoError(t, store.TreeSigingSessions().New(ctx, roundId3, uniqueSigners))
+		require.NoError(t, store.TreeSigingSessions().New(ctx, roundId3, uniqueSigners, ports.SigningContext{}))
 
 		collected := make(chan struct{})
 		go func() {
@@ -1000,6 +1153,40 @@ type intentPushFixture struct {
 	Intent              domain.Intent         `json:"intent"`
 	BoardingInputs      []ports.BoardingInput `json:"boardingInputs"`
 	CosignersPublicKeys []string              `json:"cosignerPubkeys"`
+}
+
+func noteIntent(vtxo domain.Vtxo) domain.Intent {
+	return domain.Intent{
+		Id:     uuid.New().String(),
+		Inputs: []domain.Vtxo{vtxo},
+		Receivers: []domain.Receiver{
+			{Amount: vtxo.Amount, PubKey: vtxo.PubKey},
+		},
+	}
+}
+
+// issueNoteVtxo mints a note and shapes it into the vtxo row that
+// adminService.CreateNotes persists, so these cases run against the input the
+// issuing API actually produces rather than a stand in. That row carries no
+// commitment, which is what makes IsNote true and what put it on the wrong side
+// of the guard this change removes.
+func issueNoteVtxo(t *testing.T, value uint32) domain.Vtxo {
+	t.Helper()
+
+	n, err := note.NewNote(value)
+	require.NoError(t, err)
+	outpoint, pInput, err := n.IntentProofInput()
+	require.NoError(t, err)
+
+	vtxo := domain.Vtxo{
+		Outpoint: domain.Outpoint{Txid: outpoint.Hash.String(), VOut: outpoint.Index},
+		Amount:   uint64(n.Value),
+		PubKey:   hex.EncodeToString(pInput.WitnessUtxo.PkScript[2:]),
+	}
+	require.True(t, vtxo.IsNote(), "an issued note must be an IsNote vtxo")
+	require.False(t, vtxo.RequiresForfeit(), "no forfeit tx binds a note")
+
+	return vtxo
 }
 
 func parseIntentFixtures(fixtureJSON string) (*intentPushFixture, error) {

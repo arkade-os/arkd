@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 type Tx struct {

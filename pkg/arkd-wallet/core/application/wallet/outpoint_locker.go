@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 type outpointLocker struct {

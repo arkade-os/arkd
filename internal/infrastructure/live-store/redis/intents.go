@@ -71,11 +71,7 @@ func (s *intentStore) Push(
 			if exists {
 				return fmt.Errorf("duplicated intent %s", intent.Id)
 			}
-			// Check input duplicates directly in Redis set
 			for _, input := range intent.Inputs {
-				if input.IsNote() {
-					continue
-				}
 				key := input.Outpoint.String()
 				exists, err := s.rdb.SIsMember(ctx, intentStoreVtxosKey, key).Result()
 				if err != nil {
@@ -120,9 +116,6 @@ func (s *intentStore) Push(
 
 				pipe.SAdd(ctx, intentStoreIdsKey, intent.Id)
 				for _, vtxo := range intent.Inputs {
-					if vtxo.IsNote() {
-						continue
-					}
 					pipe.SAdd(ctx, intentStoreVtxosKey, vtxo.Outpoint.String())
 				}
 				for _, boardingInput := range boardingInputs {

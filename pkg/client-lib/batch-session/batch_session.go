@@ -9,7 +9,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
 	batcheventhandler "github.com/arkade-os/arkd/pkg/client-lib/batch-session/handler"
-	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/psbt/v2"
 	log "github.com/sirupsen/logrus"
 )
 

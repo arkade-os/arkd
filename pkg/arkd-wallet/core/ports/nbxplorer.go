@@ -3,7 +3,7 @@ package ports
 import (
 	"context"
 
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 

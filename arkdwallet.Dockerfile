@@ -27,7 +27,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-X 'main.Version=${VERSION}'" -o /app/bin/arkd-wallet ./cmd/arkd-wallet/main.go
 
 # Second stage: minimal runtime image
-FROM alpine:3.24
+FROM alpine:3.24 AS runtime
 
 RUN apk update && apk upgrade
 

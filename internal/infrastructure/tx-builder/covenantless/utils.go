@@ -5,13 +5,13 @@ import (
 	"fmt"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcd/chaincfg/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 )
 
 func getOnchainOutputs(
@@ -21,7 +21,7 @@ func getOnchainOutputs(
 	for _, intent := range intents {
 		for _, receiver := range intent.Receivers {
 			if receiver.IsOnchain() {
-				receiverAddr, err := btcutil.DecodeAddress(receiver.OnchainAddress, network)
+				receiverAddr, err := arklib.DecodeBitcoinAddress(receiver.OnchainAddress, network)
 				if err != nil {
 					return nil, err
 				}
