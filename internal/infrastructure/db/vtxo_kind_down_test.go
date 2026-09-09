@@ -13,17 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	addVtxoKindMigrationVersion = 20260901000000
-	// addVtxoKindPostgresDsn names a database this test owns on the same test
-	// server TestService uses, so the two never share state.
-	addVtxoKindPostgresDsn = "postgresql://root:secret@127.0.0.1:5432/vtxo_kind_migration?sslmode=disable"
-)
-
 // TestAddVtxoKindDownMigration verifies the add_vtxo_kind migration is
-// reversible on both SQL backends: up adds the vtxo_kind column and surfaces
-// it through vtxo_vw, down drops the column and recreates the views without
-// it, and a re-apply works cleanly.
+// reversible on both SQL backends. Up adds the vtxo_kind column and surfaces it
+// through vtxo_vw, down drops the column and recreates the views without it,
+// and a re-apply works cleanly.
 func TestAddVtxoKindDownMigration(t *testing.T) {
 	t.Run("sqlite", func(t *testing.T) {
 		m, db := newSweptVtxoMigrator(t)
@@ -47,7 +40,7 @@ func TestAddVtxoKindDownMigration(t *testing.T) {
 func testAddVtxoKindDownMigration(t *testing.T, m *migrate.Migrate, s schema) {
 	require.NoError(t, m.Migrate(addVtxoKindMigrationVersion))
 
-	// Up: vtxo_kind exists on the base table and is visible through vtxo_vw.
+	// Up leaves vtxo_kind on the base table and visible through vtxo_vw.
 	require.True(t, s.hasColumn(t, "vtxo", "vtxo_kind"),
 		"vtxo.vtxo_kind should exist after the up migration")
 	require.True(t, s.hasColumn(t, "vtxo_vw", "vtxo_kind"),
@@ -174,3 +167,10 @@ func viewExists(t *testing.T, db *sql.DB, name string) bool {
 	require.NoError(t, err)
 	return got == name
 }
+
+const (
+	addVtxoKindMigrationVersion = 20260901000000
+	// addVtxoKindPostgresDsn names a database this test owns on the same test
+	// server TestService uses, so the two never share state.
+	addVtxoKindPostgresDsn = "postgresql://root:secret@127.0.0.1:5432/vtxo_kind_migration?sslmode=disable"
+)
