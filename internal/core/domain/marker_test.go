@@ -659,3 +659,38 @@ func TestDepth20k_MarkerBoundaryAndInheritance(t *testing.T) {
 		require.False(t, isAtMarkerBoundary(20099))
 	})
 }
+
+func TestChainDepthAndParentMarkers(t *testing.T) {
+	t.Run("empty spent input yields depth 0 and no markers", func(t *testing.T) {
+		depth, markers := ChainDepthAndParentMarkers(nil)
+		require.Equal(t, uint32(0), depth)
+		require.Empty(t, markers)
+	})
+
+	t.Run("single parent increments depth and inherits its marker", func(t *testing.T) {
+		depth, markers := ChainDepthAndParentMarkers([]Vtxo{
+			{Depth: 5, MarkerIDs: []string{"a"}},
+		})
+		require.Equal(t, uint32(6), depth)
+		require.Equal(t, []string{"a"}, markers)
+	})
+
+	t.Run("depth is max parent plus one, markers deduped sorted empties dropped", func(t *testing.T) {
+		depth, markers := ChainDepthAndParentMarkers([]Vtxo{
+			{Depth: 3, MarkerIDs: []string{"b"}},
+			{Depth: 7, MarkerIDs: []string{"a"}},
+			{Depth: 7, MarkerIDs: []string{"a", ""}},
+		})
+		require.Equal(t, uint32(8), depth)
+		require.Equal(t, []string{"a", "b"}, markers)
+	})
+
+	t.Run("parents without markers still increment depth", func(t *testing.T) {
+		depth, markers := ChainDepthAndParentMarkers([]Vtxo{
+			{Depth: 2, MarkerIDs: nil},
+			{Depth: 4, MarkerIDs: nil},
+		})
+		require.Equal(t, uint32(5), depth)
+		require.Empty(t, markers)
+	})
+}
