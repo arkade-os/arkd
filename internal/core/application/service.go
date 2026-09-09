@@ -1169,7 +1169,7 @@ func (s *service) SubmitOffchainTx(
 
 	// The spent vtxos were read from the DB earlier in this call, but an accepted
 	// offchain tx is evicted from the cache once it is projected, so that read can
-	// be stale by now: a vtxo spent and projected in the meantime is no longer in
+	// be stale by now, since a vtxo spent and projected in the meantime is gone from
 	// the cache for the claim below to conflict against. Re-read before claiming.
 	freshSpentVtxos, err := vtxoRepo.GetVtxos(ctx, spentVtxoKeys)
 	if err != nil {
@@ -1239,7 +1239,7 @@ func (s *service) SubmitOffchainTx(
 		return accepted, nil
 	}
 
-	// ClaimFresh: apply the Accepted event.
+	// ClaimFresh, then apply the Accepted event.
 	changes = append(changes, change)
 	return accepted, nil
 }
@@ -2246,12 +2246,11 @@ func (s *service) RegisterIntent(
 		}
 	}
 
-	// Claim the vtxo inputs in the shared conflict domain, replacing the
-	// offchainTxMu-guarded check this used to do. The claim is atomic across
-	// processes, as Add is, and reserves rather than only checking, so it also
-	// stops two intents registering the same vtxo.
+	// Claim the vtxo inputs in the shared conflict domain. The claim is atomic
+	// across processes, as Add is, and reserves rather than only checking, so it
+	// also stops two intents registering the same vtxo.
 	//
-	// Every claim taken here is released again: at the next round start once Pop
+	// Every claim taken here is released again, at the next round start once Pop
 	// has selected the intent and it was either registered on the round or
 	// dropped, on delete by proof, and on admin delete. That holds because every
 	// registered intent is eventually selected by Pop. Pop skips intents

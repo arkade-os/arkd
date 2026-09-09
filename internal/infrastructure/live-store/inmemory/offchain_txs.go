@@ -144,7 +144,7 @@ func (m *offChainTxStore) claimLocked(
 
 // checkpointInputs returns every spent-input outpoint of every checkpoint tx of
 // the offchain tx, matching what the conflict domain registers. It is all or
-// nothing: a checkpoint tx that fails to parse fails the call, so no caller ever
+// nothing, since a checkpoint tx that fails to parse fails the call and no caller ever
 // registers or releases a subset of a tx's inputs.
 func checkpointInputs(offchainTx domain.OffchainTx) ([]domain.Outpoint, error) {
 	out := make([]domain.Outpoint, 0)

@@ -1229,7 +1229,7 @@ func TestOffchainTx(t *testing.T) {
 		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
 		require.NoError(t, err)
 
-		// the destinations must be distinct: the ark txid is computed over the
+		// the destinations must be distinct, since the ark txid is computed over the
 		// unsigned tx, so two submissions sharing a destination are the same txid,
 		// and a same-txid resubmission is idempotent by design. That would make the
 		// success count ambiguous instead of testing distinct double spends.

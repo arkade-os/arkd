@@ -10,7 +10,8 @@ import (
 
 // releaseIntentClaims drops the conflict-domain claims an intent holds. Releasing
 // is per-owner and idempotent, so a claim already gone, or one since taken by
-// someone else, is left alone. Failure is logged rather than returned: the caller
+// someone else, is left alone. Failure is logged rather than returned, since
+// the caller
 // is always on a path that drops the intent regardless, and a lost release only
 // leaves a stale claim, which is worse to turn into a caller-visible error.
 func releaseIntentClaims(
@@ -44,7 +45,7 @@ func releaseClaimsOfIntents(
 }
 
 // intentsOf strips the queue metadata the intent store carries, leaving what the
-// claim release needs: the intent id and its inputs.
+// claim release needs, namely the intent id and its inputs.
 func intentsOf(timed []ports.TimedIntent) []domain.Intent {
 	intents := make([]domain.Intent, 0, len(timed))
 	for _, t := range timed {

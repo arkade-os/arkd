@@ -554,7 +554,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 		require.NotNil(t, offchainTx)
 
-		// Includes: every checkpoint TxIn the tx registered is visible.
+		// Includes finds every checkpoint TxIn the tx registered.
 		outpointJSON := `{"Txid":"fefcc1d90510aa15a77b3bac88a745f7cc58a02a1d4ebe631901bff7f327c51a","VOut":0}`
 		var outpoint domain.Outpoint
 		err = json.Unmarshal([]byte(outpointJSON), &outpoint)
@@ -564,7 +564,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.True(t, exists)
 
 		// A DIFFERENT owner claiming an outpoint the off-chain Add registered
-		// conflicts: both writers share one owner-tagged domain.
+		// conflicts, because both writers share one owner-tagged domain.
 		status, conflict, err = store.OffchainTxs().ClaimOutpoints(
 			ctx, "other-owner", []domain.Outpoint{outpoint},
 		)
@@ -594,7 +594,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 		require.Equal(t, ports.ClaimConflict, status)
 
-		// Release is owner-scoped: the wrong owner cannot release it, the right
+		// Release is owner-scoped, so the wrong owner cannot release it and the right
 		// owner can.
 		require.NoError(t,
 			store.OffchainTxs().ReleaseOutpoints(ctx, "owner-y", []domain.Outpoint{fresh}),
@@ -686,7 +686,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			require.Equal(t, ports.ClaimFresh, status)
 		})
 
-		// Run under -race: exactly one of N distinct-owner claimers of the same
+		// Run under -race. Exactly one of N distinct-owner claimers of the same
 		// outpoint wins fresh, the rest conflict.
 		t.Run("concurrent distinct owners, exactly one wins", func(t *testing.T) {
 			x := claimOutpoint(4)

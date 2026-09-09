@@ -71,7 +71,7 @@ const (
 // OffChainTxStore holds the in-flight offchain txs and the single spent-input
 // conflict domain shared by the off-chain and on-chain single-spend guards.
 //
-// The conflict domain is owner-tagged: every registered outpoint records the
+// The conflict domain is owner-tagged, so every registered outpoint records the
 // arkTxid that claimed it. A claim by a different owner conflicts; the same
 // owner re-claiming is idempotent, which retries and cross-process double-submits
 // rely on. Registration and the conflict
@@ -85,7 +85,7 @@ type OffChainTxStore interface {
 	// the same arkTxid over the same inputs returns ClaimAlreadyOwned so the
 	// caller can skip re-applying the acceptance.
 	//
-	// A re-add carries the same inputs by construction, and Add relies on it: an
+	// A re-add carries the same inputs by construction, and Add relies on that. An
 	// arkTxid is the txid of the ark tx, which commits to the checkpoint outputs
 	// it spends, so a different input set is a different arkTxid. The caller
 	// enforces it too, rebuilding the checkpoint and ark txs from the spent
@@ -100,8 +100,8 @@ type OffChainTxStore interface {
 	Includes(ctx context.Context, outpoint domain.Outpoint) (bool, error)
 	// ClaimOutpoints atomically claims the outpoints for owner in the same
 	// conflict domain Add uses, for spends that carry no checkpoint txs
-	// (on-chain Arkade cosigns, issue #1159). Same owner-tagged semantics as
-	// Add: ClaimConflict + the conflicting outpoint on a different owner,
+	// (on-chain Arkade cosigns). Same owner-tagged semantics as Add, so
+	// ClaimConflict plus the conflicting outpoint on a different owner,
 	// ClaimAlreadyOwned when the owner already held them all, ClaimFresh
 	// otherwise.
 	ClaimOutpoints(

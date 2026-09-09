@@ -16,16 +16,16 @@ import (
 )
 
 // rebuildTimeout bounds the startup rebuild of the inputs hash. Generous on
-// purpose: a rebuild that does not complete fails the start, and the first
+// purpose, since a rebuild that does not complete fails the start and the first
 // start after an upgrade may carry a backlog over a slow link.
 const rebuildTimeout = 2 * time.Minute
 
 const (
 	offChainTxsHashKey = "offChainTxStore:txs"
-	// offChainInputsHashKey is an owner-tagged HASH: field = spent-input
-	// outpoint string, value = owning arkTxid. It replaces the former untagged
-	// SET (a deliberately new key name, so a mixed-version rollout cannot hit a
-	// WRONGTYPE on the old key; the set is an ephemeral in-flight cache).
+	// offChainInputsHashKey is an owner-tagged HASH, mapping a spent-input
+	// outpoint string to the owning arkTxid. The key name is deliberately new so
+	// that a mixed-version rollout cannot hit a WRONGTYPE against the untagged
+	// SET it supersedes, which is only an ephemeral in-flight cache.
 	offChainInputsHashKey = "offChainTxStore:inputsByOwner"
 )
 
@@ -214,7 +214,7 @@ func (s *offChainTxStore) reregisterInputs(
 	if len(inputs) == 0 {
 		return 0, nil
 	}
-	// rebuildScript ARGV layout: the owner (arkTxid) first, then one entry per input.
+	// rebuildScript ARGV layout, the owner (arkTxid) first, then one entry per input.
 	args := make([]interface{}, 0, 1+len(inputs))
 	args = append(args, arkTxid)
 	for _, in := range inputs {
@@ -249,7 +249,7 @@ func (s *offChainTxStore) Add(
 		)
 	}
 
-	// addScript ARGV layout: the owner (arkTxid) and the tx body first, then one
+	// addScript ARGV layout, the owner (arkTxid) and the tx body first, then one
 	// entry per input.
 	args := make([]interface{}, 0, 2+len(inputs))
 	args = append(args, offchainTx.ArkTxid, string(val))
@@ -282,7 +282,7 @@ func (s *offChainTxStore) Remove(ctx context.Context, arkTxid string) error {
 		return fmt.Errorf("malformed offchain checkpoint tx in storage %s: %v", arkTxid, err)
 	}
 
-	// removeScript ARGV layout: the owner (arkTxid) first, then one entry per input.
+	// removeScript ARGV layout, the owner (arkTxid) first, then one entry per input.
 	args := make([]interface{}, 0, 1+len(inputs))
 	args = append(args, arkTxid)
 	for _, in := range inputs {
@@ -319,7 +319,7 @@ func (s *offChainTxStore) ClaimOutpoints(
 	if len(outpoints) == 0 {
 		return ports.ClaimAlreadyOwned, nil, nil
 	}
-	// claimScript ARGV layout: the owner first, then one entry per outpoint.
+	// claimScript ARGV layout, the owner first, then one entry per outpoint.
 	args := make([]interface{}, 0, 1+len(outpoints))
 	args = append(args, owner)
 	for _, o := range outpoints {
@@ -338,7 +338,7 @@ func (s *offChainTxStore) ReleaseOutpoints(
 	if len(outpoints) == 0 {
 		return nil
 	}
-	// releaseScript ARGV layout: the owner first, then one entry per outpoint.
+	// releaseScript ARGV layout, the owner first, then one entry per outpoint.
 	args := make([]interface{}, 0, 1+len(outpoints))
 	args = append(args, owner)
 	for _, o := range outpoints {
