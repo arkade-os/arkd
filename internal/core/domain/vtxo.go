@@ -70,8 +70,8 @@ type Vtxo struct {
 
 // VtxoKind distinguishes how a vtxo is held. Offchain (the default) is a batch
 // leaf or an offchain-tx output. Onchain marks a vtxo held in an on-chain
-// Arkade UTXO (issue #1159). It is an open enum so future on-chain sub-kinds can
-// be added without another schema migration.
+// Arkade UTXO. It is an open enum so future on-chain sub-kinds can be added
+// without another schema migration.
 type VtxoKind uint8
 
 const (
