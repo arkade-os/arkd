@@ -138,9 +138,10 @@ func TestCastUtxoCarriesKeyPath(t *testing.T) {
 	require.Equal(t, uint32(3), utxo.Confirmations)
 }
 
-// fetchAndFilterGroupUtxos replicates the previous (pre-optimization) behavior:
-// on every event it fetched the whole group UTXO set over HTTP and filtered it
-
+// BenchmarkNotificationProcessing compares the per-event work of the new
+// event-payload parsing against the old approach of fetching and filtering the
+// whole group UTXO set. The old approach scales with the group size, and the new
+// one does not depend on it and performs no network round trip.
 func BenchmarkNotificationProcessing(b *testing.B) {
 	eventMsg := newTransactionEventJSON(
 		groupTrackedSource(testGroupID), testTxID, 0,
@@ -215,6 +216,10 @@ func output(script, address string, index, value uint64, keyPath string) string 
 	)
 }
 
+// fetchAndFilterGroupUtxos fetches the whole group UTXO set over HTTP on every
+// event and filters it client-side by transaction hash, which is what the code
+// did before the event payload carried the outputs. Kept only as a benchmark
+// baseline.
 func fetchAndFilterGroupUtxos(client *http.Client, url, txHash string) ([]ports.Utxo, error) {
 	resp, err := client.Get(url)
 	if err != nil {
@@ -276,7 +281,3 @@ func buildGroupUtxosBody(n int, matchTxHash string) []byte {
 	b, _ := json.Marshal(resp)
 	return b
 }
-
-// BenchmarkNotificationProcessing compares the per-event work of the new
-// event-payload parsing against the old approach of fetching and filtering the
-// whole group UTXO set. The old approach scales with the group size; the new one
