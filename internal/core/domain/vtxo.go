@@ -69,15 +69,29 @@ type Vtxo struct {
 }
 
 // VtxoKind distinguishes how a vtxo is held. Offchain (the default) is a batch
-// leaf or an offchain-tx output. Onchain marks a vtxo held in an on-chain
-// Arkade UTXO. It is an open enum so future on-chain sub-kinds can be added
+// leaf or an offchain-tx output. The on-chain kinds mark a vtxo held in an
+// on-chain Arkade UTXO. It is an open enum so further sub-kinds can be added
 // without another schema migration.
 type VtxoKind uint8
 
 const (
 	VtxoKindOffchain VtxoKind = iota
 	VtxoKindOnchain
+	// VtxoKindOnchainPending is an output of a transaction arkd cosigned that
+	// has not confirmed. It exists so the indexer can show the output during
+	// the confirmation window without claiming it is spendable. The
+	// per-transaction lifecycle promotes it to VtxoKindOnchain on confirmation
+	// and deletes it if the transaction dies.
+	VtxoKindOnchainPending
 )
+
+// IsOnchainKind reports a vtxo held in an on-chain Arkade UTXO, confirmed or
+// still pending. Every rule that turns on the distinction between on-chain and
+// off-chain has to ask this rather than compare against a single kind, since a
+// pending output is as far from a batch leaf as a confirmed one is.
+func (v Vtxo) IsOnchainKind() bool {
+	return v.Kind == VtxoKindOnchain || v.Kind == VtxoKindOnchainPending
+}
 
 func (v Vtxo) String() string {
 	// nolint
@@ -88,14 +102,14 @@ func (v Vtxo) String() string {
 func (v Vtxo) IsNote() bool {
 	// An on-chain Arkade UTXO also has no commitment txids, so the kind check
 	// keeps it from reading as a note.
-	return v.Kind != VtxoKindOnchain &&
+	return !v.IsOnchainKind() &&
 		len(v.CommitmentTxids) <= 0 && v.RootCommitmentTxid == ""
 }
 
 func (v Vtxo) RequiresForfeit() bool {
 	// An on-chain Arkade UTXO joins a batch as a boarding input, which is
 	// signed directly and never forfeited.
-	return v.Kind != VtxoKindOnchain && !v.Swept && !v.IsNote() && !v.Unrolled
+	return !v.IsOnchainKind() && !v.Swept && !v.IsNote() && !v.Unrolled
 }
 
 func (v Vtxo) IsSettled() bool {
@@ -123,7 +137,7 @@ func (v Vtxo) OutputScript() ([]byte, error) {
 // comparison against a real deadline. Notes read as having one. They have no
 // batch either, but never reach a raw reader of the field.
 func (v Vtxo) HasBatchExpiry() bool {
-	return v.Kind != VtxoKindOnchain
+	return !v.IsOnchainKind()
 }
 
 func (v Vtxo) IsExpired() bool {
@@ -131,7 +145,7 @@ func (v Vtxo) IsExpired() bool {
 	// meaningful for it. Without this an on-chain vtxo (which carries a zero
 	// ExpiresAt) would read as permanently expired and be treated as
 	// unspendable by every caller.
-	if v.Kind == VtxoKindOnchain {
+	if v.IsOnchainKind() {
 		return false
 	}
 	return time.Now().After(time.Unix(v.ExpiresAt, 0))

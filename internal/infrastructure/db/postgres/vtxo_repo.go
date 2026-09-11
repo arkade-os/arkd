@@ -38,76 +38,117 @@ func (v *vtxoRepository) Close() {
 	_ = v.db.Close()
 }
 
-func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) error {
-	txBody := func(querierWithTx *queries.Queries) error {
-		for i := range vtxos {
-			vtxo := vtxos[i]
+// addVtxosTx writes the vtxos through an existing transaction. AddVtxos and
+// RecordCosignedTx both insert vtxos, and RecordCosignedTx has to do so in the
+// same transaction as its input marks, so the row building lives here once.
+func (v *vtxoRepository) addVtxosTx(
+	ctx context.Context, querierWithTx *queries.Queries, vtxos []domain.Vtxo,
+) error {
+	for i := range vtxos {
+		vtxo := vtxos[i]
 
-			markersToMarshal := vtxo.MarkerIDs
-			if markersToMarshal == nil {
-				markersToMarshal = []string{}
-			}
-			data, err := json.Marshal(markersToMarshal)
-			if err != nil {
-				return fmt.Errorf("failed to marshal markers: %w", err)
-			}
-			markersJSON := json.RawMessage(data)
+		markersToMarshal := vtxo.MarkerIDs
+		if markersToMarshal == nil {
+			markersToMarshal = []string{}
+		}
+		data, err := json.Marshal(markersToMarshal)
+		if err != nil {
+			return fmt.Errorf("failed to marshal markers: %w", err)
+		}
+		markersJSON := json.RawMessage(data)
 
-			if err := querierWithTx.UpsertVtxo(
-				ctx, queries.UpsertVtxoParams{
-					Txid:           vtxo.Txid,
-					Vout:           int32(vtxo.VOut),
-					Pubkey:         vtxo.PubKey,
-					Amount:         int64(vtxo.Amount),
-					CommitmentTxid: vtxo.RootCommitmentTxid,
-					Spent:          vtxo.Spent,
-					Unrolled:       vtxo.Unrolled,
-					Preconfirmed:   vtxo.Preconfirmed,
-					ExpiresAt:      vtxo.ExpiresAt,
-					CreatedAt:      vtxo.CreatedAt,
-					SpentBy: sql.NullString{
-						String: vtxo.SpentBy, Valid: len(vtxo.SpentBy) > 0,
-					},
-					SettledBy: sql.NullString{
-						String: vtxo.SettledBy, Valid: len(vtxo.SettledBy) > 0,
-					},
-					ArkTxid: sql.NullString{
-						String: vtxo.ArkTxid, Valid: len(vtxo.ArkTxid) > 0,
-					},
-					Depth:    int32(vtxo.Depth),
-					Markers:  markersJSON,
-					VtxoKind: int32(vtxo.Kind),
+		if err := querierWithTx.UpsertVtxo(
+			ctx, queries.UpsertVtxoParams{
+				Txid:           vtxo.Txid,
+				Vout:           int32(vtxo.VOut),
+				Pubkey:         vtxo.PubKey,
+				Amount:         int64(vtxo.Amount),
+				CommitmentTxid: vtxo.RootCommitmentTxid,
+				Spent:          vtxo.Spent,
+				Unrolled:       vtxo.Unrolled,
+				Preconfirmed:   vtxo.Preconfirmed,
+				ExpiresAt:      vtxo.ExpiresAt,
+				CreatedAt:      vtxo.CreatedAt,
+				SpentBy: sql.NullString{
+					String: vtxo.SpentBy, Valid: len(vtxo.SpentBy) > 0,
+				},
+				SettledBy: sql.NullString{
+					String: vtxo.SettledBy, Valid: len(vtxo.SettledBy) > 0,
+				},
+				ArkTxid: sql.NullString{
+					String: vtxo.ArkTxid, Valid: len(vtxo.ArkTxid) > 0,
+				},
+				Depth:    int32(vtxo.Depth),
+				Markers:  markersJSON,
+				VtxoKind: int32(vtxo.Kind),
+			},
+		); err != nil {
+			return err
+		}
+
+		for _, txid := range vtxo.CommitmentTxids {
+			if err := querierWithTx.InsertVtxoCommitmentTxid(
+				ctx, queries.InsertVtxoCommitmentTxidParams{
+					VtxoTxid:       vtxo.Txid,
+					VtxoVout:       int32(vtxo.VOut),
+					CommitmentTxid: txid,
 				},
 			); err != nil {
 				return err
 			}
+		}
 
-			for _, txid := range vtxo.CommitmentTxids {
-				if err := querierWithTx.InsertVtxoCommitmentTxid(
-					ctx, queries.InsertVtxoCommitmentTxidParams{
-						VtxoTxid:       vtxo.Txid,
-						VtxoVout:       int32(vtxo.VOut),
-						CommitmentTxid: txid,
-					},
-				); err != nil {
-					return err
-				}
-			}
-
-			for _, asset := range vtxo.Assets {
-				if err := querierWithTx.InsertVtxoAssetProjection(
-					ctx, queries.InsertVtxoAssetProjectionParams{
-						AssetID: asset.AssetId,
-						Txid:    vtxo.Txid,
-						Vout:    int32(vtxo.VOut),
-						Amount:  strconv.FormatUint(asset.Amount, 10),
-					},
-				); err != nil {
-					return err
-				}
+		for _, asset := range vtxo.Assets {
+			if err := querierWithTx.InsertVtxoAssetProjection(
+				ctx, queries.InsertVtxoAssetProjectionParams{
+					AssetID: asset.AssetId,
+					Txid:    vtxo.Txid,
+					Vout:    int32(vtxo.VOut),
+					Amount:  strconv.FormatUint(asset.Amount, 10),
+				},
+			); err != nil {
+				return err
 			}
 		}
-		return nil
+	}
+	return nil
+}
+
+func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) error {
+	txBody := func(querierWithTx *queries.Queries) error {
+		return v.addVtxosTx(ctx, querierWithTx, vtxos)
+	}
+
+	return execTx(ctx, v.db, txBody)
+}
+
+// RecordCosignedTx implements domain.VtxoRepository.
+func (v *vtxoRepository) RecordCosignedTx(
+	ctx context.Context, txid string, inputs []domain.Outpoint, outputs []domain.Vtxo,
+) error {
+	pending := make([]domain.Vtxo, 0, len(outputs))
+	for _, out := range outputs {
+		out.Kind = domain.VtxoKindOnchainPending
+		pending = append(pending, out)
+	}
+
+	txBody := func(querierWithTx *queries.Queries) error {
+		for _, in := range inputs {
+			if err := querierWithTx.UpdateVtxoSpent(
+				ctx, queries.UpdateVtxoSpentParams{
+					SpentBy: sql.NullString{String: txid, Valid: len(txid) > 0},
+					// Left NULL on purpose. Its absence is what marks the spend
+					// as onchain rather than in-Ark.
+					ArkTxid: sql.NullString{},
+					Txid:    in.Txid,
+					Vout:    int32(in.VOut),
+				},
+			); err != nil {
+				return err
+			}
+		}
+
+		return v.addVtxosTx(ctx, querierWithTx, pending)
 	}
 
 	return execTx(ctx, v.db, txBody)

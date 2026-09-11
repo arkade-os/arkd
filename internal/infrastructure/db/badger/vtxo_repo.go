@@ -94,6 +94,55 @@ func (r *VtxoRepository) SpendVtxos(
 	return nil
 }
 
+// RecordCosignedTx implements domain.VtxoRepository.
+func (r *VtxoRepository) RecordCosignedTx(
+	ctx context.Context, txid string, inputs []domain.Outpoint, outputs []domain.Vtxo,
+) error {
+	pending := make([]domain.Vtxo, 0, len(outputs))
+	for _, out := range outputs {
+		out.Kind = domain.VtxoKindOnchainPending
+		pending = append(pending, out)
+	}
+
+	var err error
+	for range maxRetries {
+		err = func() error {
+			tx := r.store.Badger().NewTransaction(true)
+			defer tx.Discard()
+
+			// spendVtxo and addVtxos both pick a transaction up from the
+			// context, so the marks and the pending outputs commit together or
+			// not at all.
+			//nolint:staticcheck // the helpers read this key as a bare string
+			txCtx := context.WithValue(ctx, "tx", tx)
+
+			for _, in := range inputs {
+				// No ark txid. Its absence is what marks the spend as onchain
+				// rather than in-Ark.
+				if err := r.spendVtxo(txCtx, in, txid, ""); err != nil {
+					return err
+				}
+			}
+
+			if err := r.addVtxos(txCtx, pending); err != nil {
+				return err
+			}
+
+			return tx.Commit()
+		}()
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, badger.ErrConflict) {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		return err
+	}
+
+	return err
+}
+
 func (r *VtxoRepository) UnrollVtxos(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) error {

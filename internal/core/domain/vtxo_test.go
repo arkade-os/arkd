@@ -75,10 +75,47 @@ func TestVtxo_IsNote(t *testing.T) {
 			},
 			isNote: false,
 		},
+		{
+			name:   "pending onchain kind is not a note either",
+			vtxo:   domain.Vtxo{Kind: domain.VtxoKindOnchainPending},
+			isNote: false,
+		},
 	}
 	for _, f := range fixtures {
 		t.Run(f.name, func(t *testing.T) {
 			require.Equal(t, f.isNote, f.vtxo.IsNote())
+		})
+	}
+}
+
+// Every rule keyed on the kind has to treat a pending output the same as a
+// confirmed one. A comparison against VtxoKindOnchain alone would let a pending
+// output read as a note, require a forfeit, and expire at the epoch.
+func TestVtxo_IsOnchainKind(t *testing.T) {
+	fixtures := []struct {
+		name string
+		vtxo domain.Vtxo
+		want bool
+	}{
+		{
+			name: "a batch vtxo is not onchain",
+			vtxo: domain.Vtxo{},
+			want: false,
+		},
+		{
+			name: "a confirmed onchain vtxo is",
+			vtxo: domain.Vtxo{Kind: domain.VtxoKindOnchain},
+			want: true,
+		},
+		{
+			name: "a pending onchain vtxo is too",
+			vtxo: domain.Vtxo{Kind: domain.VtxoKindOnchainPending},
+			want: true,
+		},
+	}
+	for _, f := range fixtures {
+		t.Run(f.name, func(t *testing.T) {
+			require.Equal(t, f.want, f.vtxo.IsOnchainKind())
 		})
 	}
 }
@@ -124,6 +161,11 @@ func TestVtxo_HasBatchExpiry(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "a pending onchain-kind vtxo has none either",
+			vtxo: domain.Vtxo{Kind: domain.VtxoKindOnchainPending},
+			want: false,
+		},
+		{
 			// The kind decides, not the value.
 			name: "a zero expiry on a batch vtxo still counts",
 			vtxo: domain.Vtxo{},
@@ -161,6 +203,11 @@ func TestVtxo_IsExpired(t *testing.T) {
 				Kind:      domain.VtxoKindOnchain,
 				ExpiresAt: time.Now().Add(-time.Hour).Unix(),
 			},
+			isExpired: false,
+		},
+		{
+			name:      "pending onchain kind never expires either",
+			vtxo:      domain.Vtxo{Kind: domain.VtxoKindOnchainPending, ExpiresAt: 1},
 			isExpired: false,
 		},
 	}
@@ -231,6 +278,11 @@ func TestVtxo_RequiresForfeit(t *testing.T) {
 				ExpiresAt:       futureExpiry,
 				Kind:            domain.VtxoKindOnchain,
 			},
+			requiresForfeit: false,
+		},
+		{
+			name:            "should be false (pending onchain kind)",
+			vtxo:            domain.Vtxo{Kind: domain.VtxoKindOnchainPending},
 			requiresForfeit: false,
 		},
 	}
