@@ -5,8 +5,8 @@ import lru "github.com/hashicorp/golang-lru/v2"
 // keyPathCacheSize bounds the number of cached script -> key path entries.
 //
 // A signing operation only needs the scripts of the inputs being signed, which
-// are the most recently listed UTXOs, so evicting older entries is always safe:
-// a miss simply falls back to the NBXplorer lookup. The bound keeps memory flat
+// are the most recently listed UTXOs, so evicting older entries is always safe.
+// A miss simply falls back to the NBXplorer lookup. The bound keeps memory flat
 // on a long-running server whose wallet churns through many addresses (e.g. the
 // connector account across many rounds).
 const keyPathCacheSize = 50_000
