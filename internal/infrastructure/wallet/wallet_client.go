@@ -206,7 +206,7 @@ func (w *walletDaemonClient) SignMessage(ctx context.Context, message []byte) ([
 
 // notificationListener pairs a consumer channel with the context that consumer
 // is bound to. The context is kept so a delivery can abandon a consumer that has
-// gone away: the dispatcher sends to every listener from one goroutine, so a
+// gone away. The dispatcher sends to every listener from one goroutine, so a
 // single abandoned channel with a full buffer would otherwise stall notifications
 // for everybody.
 type notificationListener[T any] struct {
@@ -268,7 +268,7 @@ func (w *walletDaemonClient) GetSpendNotificationChannel(
 }
 
 // removeListenerOnDone deregisters a listener once its consumer's context ends.
-// It deliberately does not close the channel: the dispatcher may be mid-send on
+// It deliberately does not close the channel. The dispatcher may be mid-send on
 // a snapshot of the listener slice, and closing under it would panic. A consumer
 // whose context is done is by definition no longer reading.
 func (w *walletDaemonClient) removeListenerOnDone(ctx context.Context, remove func()) {
@@ -279,7 +279,7 @@ func (w *walletDaemonClient) removeListenerOnDone(ctx context.Context, remove fu
 }
 
 // startNotificationStream opens the shared stream on first use. It deliberately
-// does not take a caller's context: the stream outlives any single consumer, and
+// does not take a caller's context. The stream outlives any single consumer, and
 // tying it to whichever consumer registered first would silently stop feeding
 // the others once that one went away.
 func (w *walletDaemonClient) startNotificationStream() {
@@ -302,14 +302,14 @@ func (w *walletDaemonClient) startNotificationStream() {
 
 	go func() {
 		// Closing every listener when the stream dies preserves the behaviour
-		// consumers already rely on: a range over the channel terminates.
+		// consumers already rely on. A range over the channel terminates.
 		// dispatchNotification and this teardown both run on this goroutine, so
 		// a send can never race the close.
 		//
 		// There is deliberately no reconnect here, which matches what the
-		// per-consumer streams did before they were muxed: consumers observe the
+		// per-consumer streams did before they were muxed. Consumers observe the
 		// close and stop, and nothing re-registers on its own. Push is the
-		// latency path, not the correctness one — the reconcile loop is what
+		// latency path, not the correctness one, since the reconcile loop is what
 		// keeps arkd correct while the stream is down, and clearing
 		// notifyStarted lets a later registration open a fresh stream.
 		defer w.closeNotificationListeners()

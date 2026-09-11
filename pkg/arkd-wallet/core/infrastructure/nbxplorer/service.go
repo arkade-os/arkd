@@ -175,7 +175,7 @@ func (n *nbxplorer) GetTransaction(ctx context.Context, txid string) (*ports.Tra
 	if err != nil {
 		// Matched on the sentinel rather than the message. A transaction the
 		// node has not seen yet is an ordinary outcome, and the caller chain
-		// depends on it being reported as ErrTransactionNotFound: the gRPC
+		// depends on it being reported as ErrTransactionNotFound. The gRPC
 		// handler turns that into "not confirmed", and the sweeper reads a
 		// failure here as "cannot schedule this sweep" instead.
 		if errors.Is(err, errNotFound) {
@@ -721,7 +721,7 @@ func (n *nbxplorer) GetAddressNotifications(
 							txid := newTxEvent.TransactionData.TransactionHash
 
 							// A failure here must not discard the spend half of
-							// the event: the two lookups are independent, and
+							// the event. The two lookups are independent, and
 							// returning early would silently drop a spend the
 							// transaction-specific query could still resolve.
 							newUtxos, err := n.searchNewUTXOs(ctx, txid)
@@ -733,7 +733,7 @@ func (n *nbxplorer) GetAddressNotifications(
 							}
 
 							// The same event carries spends of watched outputs.
-							// searchNewUTXOs cannot see them: a transaction that
+							// searchNewUTXOs cannot see them. A transaction that
 							// spends a watched output creates no new UTXO at that
 							// script, so it would look like nothing happened.
 							spends, err := n.GetTxSpends(ctx, txid)
@@ -807,7 +807,7 @@ func (n *nbxplorer) makeRequest(ctx context.Context, method, endpoint string, bo
 		if resp.StatusCode == http.StatusNotFound {
 			// Callers should match errNotFound, not this text. The status stays
 			// in the message anyway, because dropping it is what silently broke
-			// GetTransaction once: it detected a missing transaction by looking
+			// GetTransaction once. It detected a missing transaction by looking
 			// for "404" here, and rewording the error turned every unseen
 			// transaction into an opaque failure several layers up.
 			return nil, fmt.Errorf(
@@ -952,7 +952,7 @@ func (n *nbxplorer) rescanUTXOs(ctx context.Context, outpoints []wire.OutPoint) 
 }
 
 // groupTransactionsEndpoint builds the group transactions URL. includeTransaction
-// is always false: the raw tx hex dominates the payload and nothing here needs
+// is always false. The raw tx hex dominates the payload and nothing here needs
 // it. from, when set, is a unix timestamp in seconds, which is the only format
 // NBXplorer's DateTimeOffsetModelBinder accepts.
 func (n *nbxplorer) groupTransactionsEndpoint(txid string, from *time.Time) string {
@@ -1008,7 +1008,7 @@ func (n *nbxplorer) GetSpends(ctx context.Context, from *time.Time) ([]ports.Spe
 		return nil, fmt.Errorf("failed to unmarshal group transactions: %w", err)
 	}
 
-	// Replaced transactions are deliberately skipped: after an RBF the spender
+	// Replaced transactions are deliberately skipped. After an RBF the spender
 	// that matters is the replacement, which appears in the unconfirmed set.
 	spends := make([]ports.Spend, 0)
 	for _, tx := range resp.ConfirmedTransactions.Transactions {
@@ -1028,7 +1028,7 @@ func (n *nbxplorer) GetTxSpends(ctx context.Context, txid string) ([]ports.Spend
 	data, err := n.makeRequest(ctx, "GET", n.groupTransactionsEndpoint(txid, nil), nil)
 	if err != nil {
 		// A transaction that spends nothing the group tracks is a 404, and is
-		// the common case: every new transaction on a watched script triggers
+		// the common case. Every new transaction on a watched script triggers
 		// this lookup, most of them only paying to it.
 		if errors.Is(err, errNotFound) {
 			return nil, nil
@@ -1103,14 +1103,14 @@ func (n *nbxplorer) GetUnspentOutpoints(
 	return unspent, nil
 }
 
-// parseOutpoint reads an outpoint as NBXplorer serialises one in a response:
+// parseOutpoint reads an outpoint as NBXplorer serialises one in a response.
 // 36 bytes of hex, being the 32-byte hash in internal (reversed) byte order
 // followed by a little-endian uint32 index.
 //
 // This is NOT the "<txid>-<index>" form rescanUTXOs sends. That form is what
 // the rescan *request* accepts; responses use NBitcoin's OutPoint encoding.
 // Verified against NBXplorer 2.6.7, which returned
-// bca470...631900000000 for 19631d10...a4bc:0. Getting this wrong is silent:
+// bca470...631900000000 for 19631d10...a4bc:0. Getting this wrong is silent.
 // every spent outpoint fails to parse, the unspent set is never reduced, and a
 // caller using it to retract spends undoes each mempool spend one tick after
 // recording it. The dashed form is still accepted so a caller that passes the

@@ -3780,7 +3780,7 @@ func (s *service) listenToScannerNotifications() {
 						// Fraud here means the vtxo was spent inside the Ark and
 						// then redeemed onchain, which reactToFraud answers by
 						// broadcasting the checkpoint or forfeit tx recorded
-						// against SpentBy. A vtxo spent onchain has no such tx:
+						// against SpentBy. A vtxo spent onchain has no such tx.
 						// its SpentBy is the spending txid, so reacting would
 						// only log a failure against a checkpoint that never
 						// existed.
@@ -4145,13 +4145,13 @@ func (s *service) restoreWatchingVtxos() error {
 
 	// Unrolled vtxos are watched independently of any round. Their batch may
 	// no longer be sweepable, so the loop above would not restore them, and an
-	// unwatched script is invisible to onchain spend tracking twice over: no
+	// unwatched script is invisible to onchain spend tracking twice over. No
 	// push notification arrives, and NBXplorer only records the matched inputs
 	// the reconciler reads for sources it was tracking when it indexed the
-	// spending transaction. Both directions are restored: still-unspent vtxos
+	// spending transaction. Both directions are restored. Still-unspent vtxos
 	// so a spend is seen, and already onchain-spent ones so a spend that is
 	// later reorged out can be retracted.
-	// Soft-fail: a DB error here must not block startup.
+	// Soft-fail. A DB error here must not block startup.
 	for _, load := range []func(context.Context) ([]domain.Vtxo, error){
 		s.repoManager.Vtxos().GetUnrolledUnspentVtxos,
 		s.repoManager.Vtxos().GetOnchainSpentVtxos,
@@ -4314,7 +4314,7 @@ func (s *service) processBoardingInputs(
 
 	scripts := make([]string, 0)
 	// Scripts to unwatch once this intent has been processed. An unrolled vtxo's
-	// script is deliberately excluded: it is watched for the whole lifetime of
+	// script is deliberately excluded. It is watched for the whole lifetime of
 	// the vtxo so onchain spends of it keep being reported, and unwatching it
 	// here would blind that tracking from the moment its owner tried to register
 	// it in an intent.

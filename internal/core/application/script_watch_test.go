@@ -551,8 +551,8 @@ func arkTxPsbtB64(t *testing.T, outputScripts [][]byte) string {
 // tapkeys.
 // TestRestoreWatchingUnrolledVtxos covers the case the sweepable-rounds restore
 // misses. An unrolled vtxo's batch may no longer be sweepable, so nothing in
-// the round-driven path re-registers its script after a restart — and an
-// unwatched script is invisible to onchain spend tracking in both directions:
+// the round-driven path re-registers its script after a restart, and an
+// unwatched script is invisible to onchain spend tracking in both directions.
 // no push notification arrives, and NBXplorer only records the matched inputs
 // the reconciler reads for sources it was tracking when it indexed the spending
 // transaction. Before this, a restart could silently and permanently stop

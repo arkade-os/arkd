@@ -812,7 +812,7 @@ func (r *VtxoRepository) unrollVtxo(
 
 // markOnchainSpentVtxo records an unrolled vtxo as spent onchain, or re-points an
 // already onchain-spent one at a new spender when RBF replaces it. ArkTxid is
-// deliberately left empty: its absence is what identifies the spend as onchain.
+// deliberately left empty. Its absence is what identifies the spend as onchain.
 // A vtxo already spent inside the Ark is left alone, so this can never erase the
 // ArkTxid the sweeper and the fraud reaction depend on. The read and the write
 // share the caller's transaction, so that guard is evaluated against the state

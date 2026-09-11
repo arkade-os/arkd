@@ -86,7 +86,7 @@ func (v Vtxo) IsSettled() bool {
 }
 
 // IsOnchainSpent reports a vtxo that was unrolled and then spent onchain,
-// outside the Ark. There is no dedicated column: an in-Ark spend always sets
+// outside the Ark. There is no dedicated column. An in-Ark spend always sets
 // either ArkTxid (SpendVtxos, on an accepted offchain tx) or SettledBy
 // (SettleVtxos, at batch settlement), so their absence on a spent and unrolled
 // vtxo is what identifies the spend as onchain.

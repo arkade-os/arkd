@@ -52,7 +52,7 @@ func TestOnchainSpendRepository(t *testing.T) {
 			})
 
 			// The guard that makes reusing spent/spent_by safe. If an offchain
-			// spend lands first, the onchain writer must not overwrite it: doing
+			// spend lands first, the onchain writer must not overwrite it. Doing
 			// so would clear ark_txid and hide a real fraud case from the sweeper.
 			t.Run("never clobbers a vtxo spent offchain", func(t *testing.T) {
 				vtxo := onchainSpendVtxo(randomString(32))
@@ -71,7 +71,7 @@ func TestOnchainSpendRepository(t *testing.T) {
 				require.Equal(t, "arktxid", got.ArkTxid)
 				require.False(t, got.IsOnchainSpent())
 
-				// Retraction is scoped the same way: an offchain spend can never
+				// Retraction is scoped the same way. An offchain spend can never
 				// be undone by the onchain reconciler.
 				require.NoError(t, repo.UnmarkVtxosOnchainSpent(
 					ctx, []domain.Outpoint{vtxo.Outpoint},
@@ -261,7 +261,7 @@ func newOnchainSpendRepos(t *testing.T) map[string]domain.VtxoRepository {
 
 	// badger is built from the repository constructor rather than a full
 	// RepoManager. Opening a second badger data store in one process after the
-	// first is closed fails with "DB Closed" — reproducible on the base commit
+	// first is closed fails with "DB Closed", reproducible on the base commit
 	// with `go test -count=2 -run TestRoundSummariesBadger`, so it predates this
 	// change. Standing up a RepoManager here would make that latent bug fail an
 	// unrelated test in this package, and nothing here needs one.
