@@ -1251,6 +1251,26 @@ func (m *mockVtxoRepoForIndexer) GetAllSweepableUnrolledVtxos(
 ) ([]domain.Vtxo, error) {
 	return nil, nil
 }
+func (m *mockVtxoRepoForIndexer) GetUnrolledUnspentVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	return nil, nil
+}
+func (m *mockVtxoRepoForIndexer) GetOnchainSpentVtxos(
+	ctx context.Context,
+) ([]domain.Vtxo, error) {
+	return nil, nil
+}
+func (m *mockVtxoRepoForIndexer) MarkVtxosOnchainSpent(
+	ctx context.Context, spentBy map[domain.Outpoint]string,
+) error {
+	return nil
+}
+func (m *mockVtxoRepoForIndexer) UnmarkVtxosOnchainSpent(
+	ctx context.Context, outpoints []domain.Outpoint,
+) error {
+	return nil
+}
 func (m *mockVtxoRepoForIndexer) GetAllVtxos(ctx context.Context) ([]domain.Vtxo, error) {
 	return nil, nil
 }
