@@ -7,6 +7,12 @@ type VtxoRepository interface {
 	SettleVtxos(ctx context.Context, spentVtxos map[Outpoint]string, commitmentTxid string) error
 	SpendVtxos(ctx context.Context, spentVtxos map[Outpoint]string, arkTxid string) error
 	UnrollVtxos(ctx context.Context, outpoints []Outpoint) error
+	// UnmarkVtxosUnrolled retracts the unrolled mark of vtxos whose materialising
+	// transaction the chain backend no longer has any record of, so an unroll
+	// that never confirmed stops making the vtxo permanently unspendable and
+	// permanently unsweepable. Scoped to vtxos still believed unspent, so it can
+	// never clear the mark on one spent inside the Ark and then unrolled.
+	UnmarkVtxosUnrolled(ctx context.Context, outpoints []Outpoint) error
 	// MarkVtxosOnchainSpent records unrolled vtxos spent onchain, outside the
 	// Ark, mapping each outpoint to the txid that spent it. It also re-points an
 	// already onchain-spent vtxo at a new spender, so an RBF replacement is

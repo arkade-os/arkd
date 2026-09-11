@@ -31,6 +31,17 @@ type BlockchainScanner interface {
 	IsTransactionConfirmed(
 		ctx context.Context, txid string,
 	) (isConfirmed bool, blockTimestamp *BlockTimestamp, err error)
+	// IsTransactionDropped reports that the chain backend has positively
+	// determined the transaction will not confirm, namely that it was superseded
+	// by another transaction, or that the backend has no record of it at all.
+	//
+	// It is deliberately not the negation of IsTransactionConfirmed, which
+	// answers false for a transaction merely waiting in the mempool. Against a
+	// live NBXplorer a replaced transaction keeps answering zero confirmations
+	// indefinitely and is never reported as missing, so being superseded is the
+	// only positive statement the backend makes, and it makes it once the
+	// replacement confirms.
+	IsTransactionDropped(ctx context.Context, txid string) (bool, error)
 	// GetSpends returns every watched output spent by a confirmed or unconfirmed
 	// transaction, windowed from the given instant when one is supplied.
 	GetSpends(ctx context.Context, from *time.Time) ([]Spend, error)

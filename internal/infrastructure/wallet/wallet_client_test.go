@@ -294,6 +294,104 @@ func TestNotificationStreamIsShared(t *testing.T) {
 	}
 }
 
+// TestIsTransactionDropped pins the reading that keeps an unroll retraction
+// safe. The wallet answers "not confirmed" for a transaction waiting in the
+// mempool, for one that was replaced, and for one its backend has never seen,
+// so the caller depends on the two explicit signals to tell them apart, and on
+// an older wallet that sets neither reading as still live.
+func TestIsTransactionDropped(t *testing.T) {
+	const txid = "4ba63c204f39841e3a7c98e458586307cf6d33bbed9a9a520c827ab043f32701"
+
+	t.Run("a transaction the node no longer holds is dropped", func(t *testing.T) {
+		w := &walletDaemonClient{client: &confirmFakeClient{
+			resp: &arkwalletv1.IsTransactionConfirmedResponse{Dropped: true},
+		}}
+
+		dropped, err := w.IsTransactionDropped(t.Context(), txid)
+
+		require.NoError(t, err)
+		require.True(t, dropped)
+	})
+
+	// The case that actually fires in production. A replaced transaction is
+	// still known to the backend and still answers "not confirmed", so only the
+	// replacement signal distinguishes it from one merely waiting.
+	t.Run("a replaced transaction is dropped", func(t *testing.T) {
+		w := &walletDaemonClient{client: &confirmFakeClient{
+			resp: &arkwalletv1.IsTransactionConfirmedResponse{
+				ReplacedBy: "4dc2f8e63b9dc3825f69c8295a48a9b87ba4c663f42ea7b49fa335746d626246",
+				Dropped:    true,
+			},
+		}}
+
+		dropped, err := w.IsTransactionDropped(t.Context(), txid)
+
+		require.NoError(t, err)
+		require.True(t, dropped)
+	})
+
+	t.Run("a transaction the backend has no record of is dropped", func(t *testing.T) {
+		w := &walletDaemonClient{client: &confirmFakeClient{
+			resp: &arkwalletv1.IsTransactionConfirmedResponse{NotFound: true, Dropped: true},
+		}}
+
+		dropped, err := w.IsTransactionDropped(t.Context(), txid)
+
+		require.NoError(t, err)
+		require.True(t, dropped)
+	})
+
+	t.Run("an unconfirmed transaction is not dropped", func(t *testing.T) {
+		w := &walletDaemonClient{client: &confirmFakeClient{
+			resp: &arkwalletv1.IsTransactionConfirmedResponse{Confirmed: false},
+		}}
+
+		dropped, err := w.IsTransactionDropped(t.Context(), txid)
+
+		require.NoError(t, err)
+		require.False(t, dropped, "waiting in the mempool is not the same as gone")
+	})
+
+	// The compatibility case. A wallet predating both signals sets neither, and
+	// the caller must read that as still live, so no retraction can ever fire
+	// against an old wallet.
+	t.Run("an older wallet that sets neither signal reads as live", func(t *testing.T) {
+		w := &walletDaemonClient{client: &confirmFakeClient{
+			resp: &arkwalletv1.IsTransactionConfirmedResponse{},
+		}}
+
+		dropped, err := w.IsTransactionDropped(t.Context(), txid)
+
+		require.NoError(t, err)
+		require.False(t, dropped)
+	})
+
+	t.Run("a transport failure is reported, not read as dropped", func(t *testing.T) {
+		w := &walletDaemonClient{client: &confirmFakeClient{err: errors.New("wallet down")}}
+
+		dropped, err := w.IsTransactionDropped(t.Context(), txid)
+
+		require.Error(t, err)
+		require.False(t, dropped)
+	})
+}
+
+// confirmFakeClient answers IsTransactionConfirmed with a fixed response.
+type confirmFakeClient struct {
+	arkwalletv1.WalletServiceClient
+	resp *arkwalletv1.IsTransactionConfirmedResponse
+	err  error
+}
+
+func (f *confirmFakeClient) IsTransactionConfirmed(
+	_ context.Context, _ *arkwalletv1.IsTransactionConfirmedRequest, _ ...grpc.CallOption,
+) (*arkwalletv1.IsTransactionConfirmedResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.resp, nil
+}
+
 // fakeNotificationStream replays a fixed set of responses, then blocks until
 // its context is cancelled so the reader goroutine behaves like a live stream
 // rather than terminating immediately.

@@ -276,6 +276,22 @@ func (s *scanner) IsTransactionConfirmed(ctx context.Context, txid string) (isCo
 	return details.Confirmations > 0, int64(details.Height), details.Timestamp, nil
 }
 
+func (s *scanner) IsTransactionInMempool(ctx context.Context, txid string) (bool, error) {
+	return s.nbxplorer.IsInMempool(ctx, txid)
+}
+
+func (s *scanner) TransactionReplacedBy(ctx context.Context, txid string) (string, error) {
+	details, err := s.nbxplorer.GetTransaction(ctx, txid)
+	if err != nil {
+		return "", err
+	}
+	if details == nil {
+		return "", nil
+	}
+
+	return details.ReplacedBy, nil
+}
+
 func (s *scanner) GetOutpointStatus(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error) {
 	spent, err = s.nbxplorer.IsSpent(ctx, outpoint)
 	if err != nil {

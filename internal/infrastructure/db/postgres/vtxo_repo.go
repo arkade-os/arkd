@@ -309,6 +309,25 @@ func (v *vtxoRepository) GetCheckpointTxsByVtxoPubKeys(
 	return txs, nil
 }
 
+func (v *vtxoRepository) UnmarkVtxosUnrolled(
+	ctx context.Context, vtxos []domain.Outpoint,
+) error {
+	txBody := func(querierWithTx *queries.Queries) error {
+		for _, vtxo := range vtxos {
+			if err := querierWithTx.UpdateVtxoUnrollRetracted(
+				ctx,
+				queries.UpdateVtxoUnrollRetractedParams{Txid: vtxo.Txid, Vout: int32(vtxo.VOut)},
+			); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}
+
+	return execTx(ctx, v.db, txBody)
+}
+
 func (v *vtxoRepository) UnrollVtxos(ctx context.Context, vtxos []domain.Outpoint) error {
 	txBody := func(querierWithTx *queries.Queries) error {
 		for _, vtxo := range vtxos {

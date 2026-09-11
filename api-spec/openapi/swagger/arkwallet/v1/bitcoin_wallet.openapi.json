@@ -1712,6 +1712,18 @@
           },
           "confirmed": {
             "type": "boolean"
+          },
+          "dropped": {
+            "type": "boolean",
+            "description": "dropped is the wallet's judgement that this transaction will not confirm:\nsuperseded, unknown to the backend, or unconfirmed and no longer held by\nthe node. It is computed here because only the wallet can see all three.\n\nFalse whenever the wallet cannot tell, including on an older wallet that\nnever sets it, so a caller acting on this can never act on a live\ntransaction."
+          },
+          "notFound": {
+            "type": "boolean",
+            "description": "not_found separates a transaction the backend has no record of from one it\nknows and sees unconfirmed. Both answer confirmed = false, which is why the\ndistinction needs its own field.\n\nAdded after the other fields, and phrased so false is the safe reading: an\nolder wallet never sets it, and a caller then sees \"not known to be\nmissing\" rather than \"missing\"."
+          },
+          "replacedBy": {
+            "type": "string",
+            "description": "replaced_by names the transaction that superseded this one. It is the\nbackend's only positive statement that a transaction will not confirm: a\nreplaced transaction keeps answering confirmed = false and not_found =\nfalse forever, so neither of those can stand in for it.\n\nEmpty when the transaction was not replaced, which is also what an older\nwallet returns, so the safe reading is the zero value here too."
           }
         }
       },

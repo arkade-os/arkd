@@ -74,6 +74,12 @@ func (m *mockedVtxoRepo) GetVtxoPubKeysByCommitmentTxids(
 	return nil, args.Error(1)
 }
 
+func (m *mockedVtxoRepo) UnmarkVtxosUnrolled(
+	ctx context.Context, outpoints []domain.Outpoint,
+) error {
+	return m.Called(ctx, outpoints).Error(0)
+}
+
 func (m *mockedVtxoRepo) MarkVtxosOnchainSpent(
 	ctx context.Context, spentBy map[domain.Outpoint]string,
 ) error {
@@ -207,12 +213,17 @@ type mockedScanner struct {
 	mu        sync.Mutex
 
 	// onchain-spend fixtures, read by the reconcile tests
-	spendCh    chan []ports.Spend
-	spends     []ports.Spend
-	spendsErr  error
-	spendsFrom []*time.Time
-	unspent    map[domain.Outpoint]struct{}
-	unspentErr error
+	// dropped maps a txid to whether the backend says it will not confirm; a
+	// txid absent from the map reads as still live, the safe default.
+	dropped      map[string]bool
+	droppedErr   error
+	droppedCalls []string
+	spendCh      chan []ports.Spend
+	spends       []ports.Spend
+	spendsErr    error
+	spendsFrom   []*time.Time
+	unspent      map[domain.Outpoint]struct{}
+	unspentErr   error
 }
 
 func (m *mockedScanner) WatchScripts(
@@ -263,6 +274,23 @@ func (m *mockedScanner) IsTransactionConfirmed(
 
 func (m *mockedScanner) RescanUtxos(_ context.Context, _ []wire.OutPoint) error {
 	return nil
+}
+
+func (m *mockedScanner) IsTransactionDropped(_ context.Context, txid string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.droppedCalls = append(m.droppedCalls, txid)
+	if m.droppedErr != nil {
+		return false, m.droppedErr
+	}
+	return m.dropped[txid], nil
+}
+
+// DroppedCalls returns every txid IsTransactionDropped was asked about.
+func (m *mockedScanner) DroppedCalls() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.droppedCalls...)
 }
 
 func (m *mockedScanner) GetSpendNotificationChannel(

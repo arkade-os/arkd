@@ -21,6 +21,11 @@ type TransactionDetails struct {
 	Height        uint32
 	Timestamp     int64
 	Confirmations uint32
+	// ReplacedBy names the transaction that superseded this one, and is the
+	// backend's only positive statement that a transaction will not confirm. It
+	// is populated once the replacement itself confirms; a transaction merely
+	// dropped from the mempool keeps reporting zero confirmations forever.
+	ReplacedBy string
 }
 
 type Utxo struct {
@@ -82,6 +87,10 @@ type Nbxplorer interface {
 	// here is positive evidence both that an outpoint is unspent and that its
 	// script is still tracked, which is what makes it safe to retract a spend.
 	GetUnspentOutpoints(ctx context.Context) (map[wire.OutPoint]struct{}, error)
+	// IsInMempool reports whether the node itself is holding the transaction.
+	// NBXplorer's own index keeps a transaction after the node has dropped it,
+	// so this is the only way to tell one waiting from one that is gone.
+	IsInMempool(ctx context.Context, txid string) (bool, error)
 	WatchAddresses(ctx context.Context, addresses ...string) error
 	UnwatchAddresses(ctx context.Context, addresses ...string) error
 	GetAddressNotifications(ctx context.Context) (<-chan ChainNotification, error)
