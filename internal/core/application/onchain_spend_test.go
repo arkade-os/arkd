@@ -72,7 +72,7 @@ func TestOnchainSpends(t *testing.T) {
 			vtxos.AssertNotCalled(t, "MarkVtxosOnchainSpent", mock.Anything, mock.Anything)
 		})
 
-		// This is the case that must never be overwritten: the vtxo was spent inside
+		// This is the case that must never be overwritten. The vtxo was spent inside
 		// the Ark and then unrolled, which is the fraud/sweep path. Its ArkTxid is
 		// what the sweeper resolves as a checkpoint tx.
 		t.Run("ignores a vtxo already spent offchain", func(t *testing.T) {
@@ -114,7 +114,7 @@ func TestOnchainSpends(t *testing.T) {
 			vtxos.AssertNotCalled(t, "MarkVtxosOnchainSpent", mock.Anything, mock.Anything)
 		})
 
-		// RBF: the replacement becomes the spender, so spent_by has to follow it.
+		// After an RBF the replacement becomes the spender, so spent_by follows it.
 		t.Run("re-points an onchain spend when the spender is replaced", func(t *testing.T) {
 			svc, vtxos := newService(t, []domain.Vtxo{{
 				Outpoint: out, Unrolled: true, Spent: true, SpentBy: spendingTxid,
@@ -172,7 +172,7 @@ func TestOnchainSpends(t *testing.T) {
 		})
 
 		// The critical safety property. An outpoint missing from the unspent set is
-		// ambiguous: it may be genuinely spent, or its script may have fallen out of
+		// ambiguous. It may be genuinely spent, or its script may have fallen out of
 		// the wallet's tracking. Retracting on absence would mark a live vtxo
 		// unspent-then-spent at random and, worse, could clear a real spend. Only
 		// positive presence retracts.
@@ -276,7 +276,7 @@ func TestOnchainSpends(t *testing.T) {
 
 	// Guards the backfill of vtxos spent before
 	// this tracking existed. Periodic passes only need to cover what push
-	// notifications could have missed, so they window the query to keep it cheap —
+	// notifications could have missed, so they window the query to keep it cheap,
 	// but applying that window to the first pass would make a spend older than
 	// reconcileLookback permanently invisible, leaving a vtxo usable whose onchain
 	// outpoint is gone.
@@ -293,7 +293,7 @@ func TestOnchainSpends(t *testing.T) {
 		rm := &mockedRepoManager{}
 		rm.On("Vtxos").Return(vtxos)
 
-		// A spend far older than the rolling window: only an unwindowed query
+		// A spend far older than the rolling window. Only an unwindowed query
 		// reaches it.
 		scanner := &mockedScanner{spends: []ports.Spend{spendOf(out, spendingTxid, 5000)}}
 		ctx, cancel := context.WithCancel(context.Background())
@@ -350,7 +350,7 @@ func TestOnchainSpends(t *testing.T) {
 
 // --- fixtures ---
 
-// The mainnet vtxo that motivated onchain spend tracking: unrolled and confirmed
+// The mainnet vtxo that motivated onchain spend tracking. Unrolled and confirmed
 // at height 960277, then spent onchain at 964276, while arkd kept reporting it
 // unspent because a spend of a watched output produces no new UTXO to notice.
 const (

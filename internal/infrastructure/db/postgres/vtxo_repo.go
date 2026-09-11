@@ -393,7 +393,7 @@ func (v *vtxoRepository) SpendVtxos(
 }
 
 // MarkVtxosOnchainSpent issues both the initial mark and the RBF re-point. The
-// two statements are complementary rather than redundant: UpdateVtxoOnchainSpent
+// two statements are complementary rather than redundant. UpdateVtxoOnchainSpent
 // only fires while spent = false, so once a vtxo is recorded as onchain-spent it
 // is UpdateVtxoOnchainSpentBy that keeps spent_by pointing at the current
 // spender. Running both makes the call idempotent whichever state the row is in.

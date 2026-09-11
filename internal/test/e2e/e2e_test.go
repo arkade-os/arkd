@@ -7648,7 +7648,7 @@ func TestDeprecatedSignerKey(t *testing.T) {
 
 // TestUnrolledVtxoOnchainSpend is the end-to-end proof of onchain spend
 // tracking. Every other test for it sits at unit, repository or
-// NBXplorer-contract level, and none of those exercises the whole path: a real
+// NBXplorer-contract level, and none of those exercises the whole path. A real
 // spend on the chain, through the wallet's notification stream, into the vtxo
 // the indexer serves.
 //
@@ -7662,7 +7662,7 @@ func TestUnrolledVtxoOnchainSpend(t *testing.T) {
 	// Offchain funds plus a little onchain to cover the unroll fees.
 	faucet(t, alice, 0.00021)
 
-	// Captured before the unroll: this outpoint is what appears onchain
+	// Captured before the unroll. This outpoint is what appears onchain
 	// afterwards, and it is the row the indexer must end up reporting as spent.
 	spendable, _, err := alice.ListVtxos(ctx)
 	require.NoError(t, err)
@@ -7681,7 +7681,7 @@ func TestUnrolledVtxoOnchainSpend(t *testing.T) {
 	waitForMatureOnchainFunds(t, alice)
 
 	// Claiming the matured funds spends the unrolled outpoint onchain. This is
-	// precisely the event arkd used to be blind to.
+	// precisely the event push notifications alone cannot deliver.
 	spendTxid, err := alice.CompleteUnroll(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, spendTxid)
@@ -7715,7 +7715,7 @@ func TestUnrolledVtxoOnchainSpend(t *testing.T) {
 					)
 				}
 				// An onchain spend must never be attributed to an Arkade
-				// transaction: the absence of ark_txid is the discriminator the
+				// transaction. The absence of ark_txid is the discriminator the
 				// sweeper and the fraud reaction both key off.
 				if vtxo.ArkTxid != "" {
 					return fmt.Errorf(
@@ -7735,7 +7735,7 @@ func TestUnrolledVtxoOnchainSpend(t *testing.T) {
 //
 // TestUnrolledVtxoOnchainSpend exercises a spend that happens while arkd is
 // listening. Here the spend happens while arkd is stopped, so no notification is
-// ever delivered for it: the only way the vtxo can end up correctly marked is
+// ever delivered for it. The only way the vtxo can end up correctly marked is
 // the unwindowed reconcile pass arkd runs at startup. That pass exists because a
 // windowed query would never reach a spend older than the window, which is
 // exactly how a vtxo stays wrongly unspent forever.
@@ -7787,7 +7787,7 @@ func TestUnrolledVtxoOnchainSpendBackfill(t *testing.T) {
 	require.NoError(t, waitUntilReady(adminHttpClient))
 	require.NoError(t, waitUntilArkServiceReady())
 
-	// serverWait rather than indexerWait: unlike the push test, a short deadline
+	// serverWait rather than indexerWait. Unlike the push test, a short deadline
 	// carries no meaning here. There push is the only thing that can meet it, so
 	// the deadline is part of the assertion; here push is impossible and the
 	// startup reconcile is the only candidate, so a tighter bound would only add
@@ -7803,7 +7803,7 @@ func TestUnrolledVtxoOnchainSpendBackfill(t *testing.T) {
 				if vtxo.Outpoint != target {
 					continue
 				}
-				// Asserted for parity with the push test: recording an onchain
+				// Asserted for parity with the push test. Recording an onchain
 				// spend must not clear the flag that marks the vtxo unrolled,
 				// which is half of the onchain-spend discriminator.
 				if !vtxo.Unrolled {

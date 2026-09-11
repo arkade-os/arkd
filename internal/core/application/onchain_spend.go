@@ -22,11 +22,11 @@ const reconcileLookback = 30 * 24 * time.Hour
 //
 // This is the low-latency half of onchain spend tracking. It rides the same
 // chain event that already tells arkd a vtxo was unrolled, so a spend is picked
-// up as soon as it hits the mempool. It is not sufficient on its own: nothing
+// up as soon as it hits the mempool. It is not sufficient on its own. Nothing
 // arrives while arkd is down, and nothing here ever retracts a spend that fails
 // to confirm. reconcileOnchainSpends covers both.
 func (s *service) watchOnchainSpends() {
-	// s.ctx rather than context.Background: the scanner drops its listener when
+	// s.ctx rather than context.Background. The scanner drops its listener when
 	// the context it was given is cancelled, and selecting on Done lets this
 	// goroutine exit on shutdown instead of blocking on a channel nobody feeds.
 	ch := s.scanner.GetSpendNotificationChannel(s.ctx)
@@ -68,7 +68,7 @@ func (s *service) applyOnchainSpends(ctx context.Context, spends []ports.Spend) 
 	spentBy := make(map[domain.Outpoint]string)
 	for _, vtxo := range vtxos {
 		// Only an unrolled vtxo has an onchain output to spend. A vtxo already
-		// spent inside the Ark is left alone: MarkVtxosOnchainSpent would ignore
+		// spent inside the Ark is left alone, since MarkVtxosOnchainSpent would ignore
 		// it anyway, and filtering here keeps the log honest.
 		if !vtxo.Unrolled {
 			continue
@@ -101,7 +101,7 @@ func (s *service) applyOnchainSpends(ctx context.Context, spends []ports.Spend) 
 // reconcileOnchainSpends periodically re-derives the onchain state of every
 // unrolled vtxo from the wallet's view of the chain.
 //
-// It exists for three things push notifications cannot do: backfill vtxos
+// It exists for three things push notifications cannot do, namely backfill vtxos
 // unrolled and spent before this tracking existed, recover spends that arrived
 // while arkd was down, and retract a spend whose transaction was replaced or
 // evicted without ever confirming.

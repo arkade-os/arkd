@@ -128,7 +128,7 @@ func (s *scanner) start(ctx context.Context) error {
 				// Each delivery is registered on inFlight before the goroutine
 				// starts, while the lock is held. Close waits on inFlight before
 				// closing the listener channels, because a select whose Done
-				// case and send case are both ready may still pick the send —
+				// case and send case are both ready may still pick the send,
 				// and a send on a closed channel panics the whole process.
 				s.lock.RLock()
 				if len(notificationsMap) > 0 {
@@ -303,7 +303,7 @@ func (s *scanner) GetOutpointStatus(ctx context.Context, outpoint wire.OutPoint)
 func (s *scanner) Close() {
 	s.cancel()
 	// Cancelling is not enough to make the fan-out goroutines stop before the
-	// channels close: their select can still choose a ready send over a ready
+	// channels close. Their select can still choose a ready send over a ready
 	// Done. Wait for them, then close.
 	s.inFlight.Wait()
 	s.lock.Lock()

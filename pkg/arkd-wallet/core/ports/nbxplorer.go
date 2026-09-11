@@ -53,7 +53,7 @@ type Spend struct {
 	Confirmations uint32
 }
 
-// ChainNotification is one transaction's effect on the tracked scripts: the
+// ChainNotification is one transaction's effect on the tracked scripts. The
 // outputs it created, and the tracked outputs it spent. Both halves come from
 // the same event, so a caller sees them together.
 type ChainNotification struct {

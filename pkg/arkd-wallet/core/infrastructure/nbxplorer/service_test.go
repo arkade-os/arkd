@@ -14,10 +14,10 @@ import (
 func TestNbxplorerNotFound(t *testing.T) {
 	// GetTransaction pins the contract the whole confirmation path
 	// depends on. NBXplorer answers 404 for a transaction it has not seen, which is
-	// an ordinary outcome rather than a fault: GetTransaction must report it as
+	// an ordinary outcome rather than a fault, so GetTransaction must report it as
 	// ErrTransactionNotFound so the gRPC handler can translate it into "not
 	// confirmed". When that translation is lost, the sweeper reads the resulting
-	// error as "cannot schedule this sweep" and silently stops sweeping batches —
+	// error as "cannot schedule this sweep" and silently stops sweeping batches,
 	// which is exactly what happened when the 404 error message stopped containing
 	// the substring an earlier version of this function matched on.
 	t.Run("GetTransaction", func(t *testing.T) {
@@ -32,7 +32,7 @@ func TestNbxplorerNotFound(t *testing.T) {
 			require.ErrorIs(t, err, application.ErrTransactionNotFound)
 		})
 
-		// Any other failure must stay a failure: reporting it as "not found" would
+		// Any other failure must stay a failure. Reporting it as "not found" would
 		// tell the caller the transaction is merely unconfirmed.
 		t.Run("does not mistake another error for not found", func(t *testing.T) {
 			n := newTestNbxplorer(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -63,7 +63,7 @@ func TestNbxplorerNotFound(t *testing.T) {
 		})
 	})
 
-	// GetTxSpends covers the other side of the same 404: a transaction
+	// GetTxSpends covers the other side of the same 404, a transaction
 	// that touches nothing the group tracks is the common case on every chain
 	// event, so it must yield no spends rather than an error.
 	t.Run("GetTxSpends yields no spends for an untracked transaction", func(t *testing.T) {
@@ -113,14 +113,14 @@ func TestNbxplorerNotFound(t *testing.T) {
 }
 
 // TestParseOutpoint uses the exact encoding NBXplorer 2.6.7 returned on a live
-// regtest instance. Responses serialise an outpoint as 36 bytes of hex — the
-// hash in internal (reversed) byte order followed by a little-endian index —
+// regtest instance. Responses serialise an outpoint as 36 bytes of hex, the
+// hash in internal (reversed) byte order followed by a little-endian index,
 // not the "<txid>-<index>" form the rescan *request* accepts. Confusing the two
-// fails silently in the worst way: every spent outpoint is skipped, the unspent
+// fails silently in the worst way. Every spent outpoint is skipped, the unspent
 // set is never reduced, and a caller using it to retract spends undoes each
 // mempool spend one tick after recording it.
 func TestParseOutpoint(t *testing.T) {
-	// Observed live: funding tx 19631d10...a4bc vout 0 appeared in
+	// Observed live. Funding tx 19631d10...a4bc vout 0 appeared in
 	// unconfirmed.spentOutpoints as the value below once its spend hit the
 	// mempool.
 	const (

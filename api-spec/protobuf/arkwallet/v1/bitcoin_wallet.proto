@@ -279,7 +279,7 @@ message GetSpendsRequest {
   // instant are returned, which keeps the response bounded on a wallet with a
   // long history.
   //
-  // Zero means unbounded, and is deliberate rather than a missing default: the
+  // Zero means unbounded, and is deliberate rather than a missing default. The
   // reconciler's first pass after a restart must reach spends older than any
   // rolling window, or a vtxo spent long ago stays wrongly unspent forever.
   // Callers that do not need that should always set a bound, because the
