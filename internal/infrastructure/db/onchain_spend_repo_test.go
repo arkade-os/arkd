@@ -368,8 +368,8 @@ func onchainSpendVtxo(txid string) domain.Vtxo {
 	}
 }
 
-// onchainKindVtxo is an on-chain Arkade UTXO as #1161 records it: onchain
-// kind, no commitment and no batch expiry, never unrolled.
+// onchainKindVtxo is an on-chain Arkade UTXO, meaning onchain kind, no
+// commitment, no batch expiry and never unrolled.
 func onchainKindVtxo(txid string) domain.Vtxo {
 	vtxo := onchainSpendVtxo(txid)
 	vtxo.Kind = domain.VtxoKindOnchain
