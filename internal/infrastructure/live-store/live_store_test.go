@@ -725,7 +725,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			require.Equal(t, int64(n-1), conflicts)
 		})
 
-		// Run under -race: N same-owner claimers of the same outpoint all succeed
+		// Run under -race. N same-owner claimers of the same outpoint all succeed
 		// (fresh or already-owned), never conflict.
 		t.Run("concurrent same owner, none conflict", func(t *testing.T) {
 			x := claimOutpoint(5)
