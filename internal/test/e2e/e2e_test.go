@@ -728,7 +728,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 			}
 			require.NotZero(t, unrolledVtxo.Amount)
 
-			// Mine past the unilateral exit delay (regtest: 20 blocks) so the
+			// Mine past the unilateral exit delay, 20 blocks on regtest, so the
 			// exit path is genuinely open. The server should then refuse to
 			// accept the unrolled VTXO as a boarding input.
 			//
