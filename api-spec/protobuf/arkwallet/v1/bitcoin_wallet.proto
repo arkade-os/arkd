@@ -227,20 +227,20 @@ message IsTransactionConfirmedResponse {
   // knows and sees unconfirmed. Both answer confirmed = false, which is why the
   // distinction needs its own field.
   //
-  // Added after the other fields, and phrased so false is the safe reading: an
+  // Added after the other fields, and phrased so false is the safe reading. An
   // older wallet never sets it, and a caller then sees "not known to be
   // missing" rather than "missing".
   bool not_found = 4;
   // replaced_by names the transaction that superseded this one. It is the
-  // backend's only positive statement that a transaction will not confirm: a
-  // replaced transaction keeps answering confirmed = false and not_found =
+  // backend's only positive statement that a transaction will not confirm, since
+  // a replaced transaction keeps answering confirmed = false and not_found =
   // false forever, so neither of those can stand in for it.
   //
   // Empty when the transaction was not replaced, which is also what an older
   // wallet returns, so the safe reading is the zero value here too.
   string replaced_by = 5;
-  // dropped is the wallet's judgement that this transaction will not confirm:
-  // superseded, unknown to the backend, or unconfirmed and no longer held by
+  // dropped is the wallet's judgement that this transaction will not confirm,
+  // whether superseded, unknown to the backend, or unconfirmed and no longer held by
   // the node. It is computed here because only the wallet can see all three.
   //
   // False whenever the wallet cannot tell, including on an older wallet that
