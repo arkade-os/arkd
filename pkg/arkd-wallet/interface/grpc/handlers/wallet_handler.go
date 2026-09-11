@@ -358,8 +358,8 @@ func (h *walletHandler) IsTransactionConfirmed(
 	}
 	// A confirmed transaction is settled, so neither extra question is asked.
 	// For an unconfirmed one both are, and a failure to answer either leaves the
-	// result empty or false rather than asserting anything: the caller must
-	// never read "cannot tell" as "gone".
+	// result empty or false rather than asserting anything, since the caller
+	// must never read "cannot tell" as "gone".
 	var replacedBy string
 	var dropped bool
 	if !confirmed {
@@ -373,7 +373,7 @@ func (h *walletHandler) IsTransactionConfirmed(
 		}
 
 		// The node is the only component that knows it has dropped a
-		// transaction: NBXplorer keeps reporting one at zero confirmations long
+		// transaction. NBXplorer keeps reporting one at zero confirmations long
 		// after the node let it go.
 		inMempool, err := h.scanner.IsTransactionInMempool(ctx, req.GetTxid())
 		if err != nil {

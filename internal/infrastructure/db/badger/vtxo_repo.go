@@ -109,10 +109,9 @@ func (r *VtxoRepository) UnrollVtxos(
 // UnmarkVtxosUnrolled retracts an unroll whose transaction the chain backend no
 // longer has any record of.
 //
-// ExpiresAt is deliberately not restored: unrollVtxo zeroes it and the original
-// value is gone, so a retracted vtxo keeps a zero expiry here where the SQL
-// backends keep the value they never cleared. That divergence predates this
-// method and is recorded rather than papered over.
+// ExpiresAt is deliberately not restored, since unrollVtxo zeroes it and the
+// original value is gone, so a retracted vtxo keeps a zero expiry here where the
+// SQL backends keep the value they never cleared.
 func (r *VtxoRepository) UnmarkVtxosUnrolled(
 	ctx context.Context, outpoints []domain.Outpoint,
 ) error {

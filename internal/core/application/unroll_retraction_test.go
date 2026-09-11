@@ -117,9 +117,9 @@ func TestRetractStaleUnrolls(t *testing.T) {
 		vtxos.AssertNotCalled(t, "UnmarkVtxosUnrolled", mock.Anything, mock.Anything)
 	})
 
-	// Without this the retraction is unreachable in production: every unit above
-	// calls retractStaleUnrolls directly, so removing its one call site from the
-	// reconcile pass would leave them all green.
+	// Without this the retraction is unreachable in production, since every unit
+	// above calls retractStaleUnrolls directly, so removing its one call site
+	// from the reconcile pass would leave them all green.
 	t.Run("the reconcile pass drives the retraction", func(t *testing.T) {
 		vtxos := &mockedVtxoRepo{}
 		vtxos.On("GetUnrolledUnspentVtxos", mock.Anything).Return(candidates, nil)

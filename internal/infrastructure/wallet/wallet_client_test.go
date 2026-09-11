@@ -302,9 +302,6 @@ func TestNotificationStreamIsShared(t *testing.T) {
 func TestIsTransactionDropped(t *testing.T) {
 	const txid = "4ba63c204f39841e3a7c98e458586307cf6d33bbed9a9a520c827ab043f32701"
 
-	// The case that actually fires in production. A replaced transaction is
-	// still known to the backend and still answers "not confirmed", so only the
-	// replacement signal distinguishes it from one merely waiting.
 	t.Run("a transaction the node no longer holds is dropped", func(t *testing.T) {
 		w := &walletDaemonClient{client: &confirmFakeClient{
 			resp: &arkwalletv1.IsTransactionConfirmedResponse{Dropped: true},
@@ -316,6 +313,9 @@ func TestIsTransactionDropped(t *testing.T) {
 		require.True(t, dropped)
 	})
 
+	// The case that actually fires in production. A replaced transaction is
+	// still known to the backend and still answers "not confirmed", so only the
+	// replacement signal distinguishes it from one merely waiting.
 	t.Run("a replaced transaction is dropped", func(t *testing.T) {
 		w := &walletDaemonClient{client: &confirmFakeClient{
 			resp: &arkwalletv1.IsTransactionConfirmedResponse{

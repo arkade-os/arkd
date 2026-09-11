@@ -443,9 +443,9 @@ func castSpends(spends []*arkwalletv1.SpendInfo) []ports.Spend {
 }
 
 // IsTransactionDropped reads the two ways the wallet says a transaction will
-// not confirm: replaced by another one, or unknown to its backend. An older
-// wallet sets neither, so every transaction reads as still live and no caller
-// can act on one that is gone.
+// not confirm, namely replaced by another one, or unknown to its backend. An
+// older wallet sets neither, so every transaction reads as still live and no
+// caller can act on one that is gone.
 func (w *walletDaemonClient) IsTransactionDropped(
 	ctx context.Context, txid string,
 ) (bool, error) {

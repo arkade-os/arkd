@@ -30,9 +30,9 @@ func TestIsTransactionConfirmedNotFound(t *testing.T) {
 		require.True(t, resp.GetNotFound())
 	})
 
-	// The case the flag exists to distinguish: known to the backend, just not
-	// mined yet. Flagging this one would let a caller treat a live transaction
-	// as gone.
+	// The case the flag exists to distinguish, namely known to the backend, just
+	// not mined yet. Flagging this one would let a caller treat a live
+	// transaction as gone.
 	t.Run("an unconfirmed transaction is not flagged not found", func(t *testing.T) {
 		h := &walletHandler{scanner: &confirmScanner{inMempool: true}}
 
@@ -60,9 +60,7 @@ func TestIsTransactionConfirmedNotFound(t *testing.T) {
 		require.EqualValues(t, 964276, resp.GetBlocknumber())
 	})
 
-	// Any other failure stays a failure. Reporting it as not found would tell
-	// the caller the transaction is gone when the backend simply could not say.
-	// The signal the retraction actually depends on: a replaced transaction is
+	// The signal the retraction actually depends on. A replaced transaction is
 	// still known and still answers "not confirmed", so only this names it.
 	t.Run("a replaced transaction reports its replacement", func(t *testing.T) {
 		const replacement = "4dc2f8e63b9dc3825f69c8295a48a9b87ba4c663f42ea7b49fa335746d626246"
@@ -140,6 +138,8 @@ func TestIsTransactionConfirmedNotFound(t *testing.T) {
 		require.False(t, resp.GetDropped(), "cannot tell must never read as gone")
 	})
 
+	// Any other failure stays a failure. Reporting it as not found would tell
+	// the caller the transaction is gone when the backend simply could not say.
 	t.Run("another failure is returned as an error", func(t *testing.T) {
 		h := &walletHandler{scanner: &confirmScanner{err: errors.New("backend down")}}
 

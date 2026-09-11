@@ -1050,24 +1050,16 @@ func (n *nbxplorer) GetTxSpends(ctx context.Context, txid string) ([]ports.Spend
 	return castSpends(tx), nil
 }
 
-// GetUnspentOutpoints returns the tracked outputs that are currently unspent.
-//
-// The subtraction matters: NBXplorer keeps a confirmed output in Confirmed.UtxOs
-// even while the transaction spending it sits in the mempool, listing it in
-// Unconfirmed.SpentOutpoints at the same time. Taking Confirmed.UtxOs at face
-// value would therefore report a mempool-spent output as unspent, and a caller
-// using this to retract spends would undo every mempool spend one tick after
-// recording it.
 // IsInMempool asks the node, through NBXplorer's RPC proxy, whether it is
 // holding the transaction.
 //
 // The node is the only component that knows this. NBXplorer keeps a transaction
 // in its own index after the node has dropped it, reporting zero confirmations
 // indefinitely, so its view cannot separate one waiting in the mempool from one
-// that is gone. Verified against a live regtest node: a replaced transaction the
-// node no longer holds answers "Transaction not in mempool", exactly as a
-// confirmed one does, which is why the caller must combine this with the
-// confirmation state rather than read it alone.
+// that is gone. Against a live regtest node a replaced transaction the node no
+// longer holds answers "Transaction not in mempool", exactly as a confirmed one
+// does, which is why the caller must combine this with the confirmation state
+// rather than read it alone.
 func (n *nbxplorer) IsInMempool(ctx context.Context, txid string) (bool, error) {
 	if _, err := chainhash.NewHashFromStr(txid); err != nil {
 		return false, fmt.Errorf("invalid txid format: %w", err)
@@ -1109,6 +1101,14 @@ func (n *nbxplorer) IsInMempool(ctx context.Context, txid string) (bool, error) 
 	return len(resp.Result) > 0 && string(resp.Result) != "null", nil
 }
 
+// GetUnspentOutpoints returns the tracked outputs that are currently unspent.
+//
+// The subtraction matters: NBXplorer keeps a confirmed output in Confirmed.UtxOs
+// even while the transaction spending it sits in the mempool, listing it in
+// Unconfirmed.SpentOutpoints at the same time. Taking Confirmed.UtxOs at face
+// value would therefore report a mempool-spent output as unspent, and a caller
+// using this to retract spends would undo every mempool spend one tick after
+// recording it.
 func (n *nbxplorer) GetUnspentOutpoints(
 	ctx context.Context,
 ) (map[wire.OutPoint]struct{}, error) {

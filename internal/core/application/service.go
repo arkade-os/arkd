@@ -59,8 +59,9 @@ type service struct {
 	onchainSpendReconcileInterval time.Duration
 
 	// consecutive reconcile passes that found a vtxo's materialising tx unknown
-	// to the chain backend, keyed by outpoint. In memory on purpose: losing it
-	// on restart only delays a retraction, which is the safe direction.
+	// to the chain backend, keyed by outpoint. In memory on purpose, since
+	// losing it on restart only delays a retraction, which is the safe
+	// direction.
 	unrollObservations   map[domain.Outpoint]int
 	unrollObservationsMu sync.Mutex
 

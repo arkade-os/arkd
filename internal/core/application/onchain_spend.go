@@ -167,7 +167,7 @@ func (s *service) reconcileOnchainSpendsOnce(ctx context.Context, from *time.Tim
 
 	s.retractStaleOnchainSpends(ctx, recorded)
 
-	// Same candidate set, the other direction: a spend that never confirmed is
+	// Same candidate set, the other direction. A spend that never confirmed is
 	// retracted above, an unroll that never confirmed is retracted here.
 	s.retractStaleUnrolls(ctx, candidates)
 }
