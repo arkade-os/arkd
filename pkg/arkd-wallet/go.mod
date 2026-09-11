@@ -23,6 +23,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/grafana/pyroscope-go v1.2.7
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/lightningnetwork/lnd v0.21.0-beta.rc2.0.20260828055859-d24719e0a3d3
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.20.1

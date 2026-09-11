@@ -1,5 +1,7 @@
 package nbxplorer
 
+import "encoding/json"
+
 type bitcoinStatusResponse struct {
 	BitcoinStatus struct {
 		Blocks               uint32  `json:"blocks"`
@@ -111,19 +113,33 @@ type rpcError struct {
 }
 
 type event struct {
-	EventID int         `json:"eventId"`
-	Type    string      `json:"type"`
-	Data    interface{} `json:"data"`
+	EventID int             `json:"eventId"`
+	Type    string          `json:"type"`
+	Data    json.RawMessage `json:"data"`
+}
+
+// matchedOutput is an output of a transaction that matched a tracked source.
+// It is embedded in newtransaction events, carrying everything needed to build
+// a UTXO without an additional NBXplorer call.
+type matchedOutput struct {
+	KeyPath      string `json:"keyPath,omitempty"`
+	ScriptPubKey string `json:"scriptPubKey"`
+	Index        uint32 `json:"index"`
+	KeyIndex     uint32 `json:"keyIndex"`
+	Feature      string `json:"feature,omitempty"`
+	Value        uint64 `json:"value"`
+	Address      string `json:"address"`
 }
 
 type newTransactionEvent struct {
-	BlockID            string `json:"blockId,omitempty"`
-	TrackedSource      string `json:"trackedSource"`
-	DerivationStrategy string `json:"derivationStrategy"`
-	CryptoCode         string `json:"cryptoCode"`
+	BlockID            string          `json:"blockId,omitempty"`
+	TrackedSource      string          `json:"trackedSource"`
+	DerivationStrategy string          `json:"derivationStrategy"`
+	CryptoCode         string          `json:"cryptoCode"`
+	Outputs            []matchedOutput `json:"outputs"`
 	TransactionData    struct {
 		TransactionHash string `json:"transactionHash"`
-		Confirmations   int    `json:"confirmations"`
+		Confirmations   uint32 `json:"confirmations"`
 		Height          *int   `json:"height,omitempty"`
 		Timestamp       int64  `json:"timestamp"`
 	} `json:"transactionData"`
