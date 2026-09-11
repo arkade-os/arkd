@@ -331,6 +331,7 @@ func rowToVtxoFromVtxoVw(row queries.VtxoVw) domain.Vtxo {
 		CreatedAt:          row.CreatedAt,
 		Depth:              uint32(row.Depth),
 		MarkerIDs:          parseMarkersJSONB(row.Markers),
+		Kind:               domain.VtxoKind(row.VtxoKind),
 	}
 }
 
@@ -369,6 +370,7 @@ func rowToVtxoFromMarkerQuery(row queries.SelectVtxosByMarkerIdRow) domain.Vtxo 
 		ExpiresAt:          row.VtxoVw.ExpiresAt,
 		CreatedAt:          row.VtxoVw.CreatedAt,
 		Depth:              uint32(row.VtxoVw.Depth),
+		Kind:               domain.VtxoKind(row.VtxoVw.VtxoKind),
 		MarkerIDs:          parseMarkersJSONB(row.VtxoVw.Markers),
 	}
 }

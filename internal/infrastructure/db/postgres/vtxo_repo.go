@@ -74,8 +74,9 @@ func (v *vtxoRepository) AddVtxos(ctx context.Context, vtxos []domain.Vtxo) erro
 					ArkTxid: sql.NullString{
 						String: vtxo.ArkTxid, Valid: len(vtxo.ArkTxid) > 0,
 					},
-					Depth:   int32(vtxo.Depth),
-					Markers: markersJSON,
+					Depth:    int32(vtxo.Depth),
+					Markers:  markersJSON,
+					VtxoKind: int32(vtxo.Kind),
 				},
 			); err != nil {
 				return err
@@ -582,6 +583,7 @@ func rowToVtxo(row queries.VtxoVw) domain.Vtxo {
 		Depth:              uint32(row.Depth),
 		MarkerIDs:          parseMarkersJSONBFromVtxo(row.Markers),
 		Assets:             assets,
+		Kind:               domain.VtxoKind(row.VtxoKind),
 	}
 }
 
