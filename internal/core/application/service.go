@@ -3781,7 +3781,7 @@ func (s *service) listenToScannerNotifications() {
 						// then redeemed onchain, which reactToFraud answers by
 						// broadcasting the checkpoint or forfeit tx recorded
 						// against SpentBy. A vtxo spent onchain has no such tx.
-						// its SpentBy is the spending txid, so reacting would
+						// Its SpentBy is the spending txid, so reacting would
 						// only log a failure against a checkpoint that never
 						// existed.
 						if vtxo.Spent && !vtxo.IsOnchainSpent() {

@@ -1103,7 +1103,7 @@ func (n *nbxplorer) GetUnspentOutpoints(
 	return unspent, nil
 }
 
-// parseOutpoint reads an outpoint as NBXplorer serialises one in a response.
+// parseOutpoint reads an outpoint as NBXplorer serialises one in a response,
 // 36 bytes of hex, being the 32-byte hash in internal (reversed) byte order
 // followed by a little-endian uint32 index.
 //
@@ -1111,7 +1111,7 @@ func (n *nbxplorer) GetUnspentOutpoints(
 // the rescan *request* accepts; responses use NBitcoin's OutPoint encoding.
 // Verified against NBXplorer 2.6.7, which returned
 // bca470...631900000000 for 19631d10...a4bc:0. Getting this wrong is silent.
-// every spent outpoint fails to parse, the unspent set is never reduced, and a
+// Every spent outpoint fails to parse, the unspent set is never reduced, and a
 // caller using it to retract spends undoes each mempool spend one tick after
 // recording it. The dashed form is still accepted so a caller that passes the
 // request encoding keeps working.
