@@ -452,10 +452,28 @@ func (s *adminService) ListIntents(
 }
 
 func (s *adminService) DeleteIntents(ctx context.Context, intentIds ...string) error {
-	if len(intentIds) == 0 {
-		return s.liveStore.Intents().DeleteAll(ctx)
+	// Snapshot the intents, release their claims, then delete exactly that
+	// snapshot. ViewAll with no ids returns every intent, so delete-all takes the
+	// same path. Wiping the store instead would also remove an intent registered
+	// after the snapshot, whose claim was never released and which the
+	// round-start reconcile cannot see since it was never popped, leaving its
+	// vtxos claimed forever. It would also drop the selected-intent set that
+	// reconcile reads, leaking the claims of the intents in the running round.
+	intents, err := s.liveStore.Intents().ViewAll(ctx, intentIds)
+	if err != nil {
+		return fmt.Errorf("failed to view intents to delete: %s", err)
 	}
-	return s.liveStore.Intents().Delete(ctx, intentIds)
+	if len(intents) == 0 {
+		return nil
+	}
+
+	releaseClaimsOfIntents(ctx, s.liveStore.OffchainTxs(), intentsOf(intents))
+
+	ids := make([]string, 0, len(intents))
+	for _, intent := range intents {
+		ids = append(ids, intent.Id)
+	}
+	return s.liveStore.Intents().Delete(ctx, ids)
 }
 
 func (s *adminService) GetBatchFees(ctx context.Context) (*domain.BatchFees, error) {

@@ -16,17 +16,23 @@ type redisLiveStore struct {
 	settingsStore             ports.SettingsStore
 }
 
-func NewLiveStore(rdb *redis.Client, builder ports.TxBuilder, numOfRetries int) ports.LiveStore {
+func NewLiveStore(
+	rdb *redis.Client, builder ports.TxBuilder, numOfRetries int,
+) (ports.LiveStore, error) {
+	offChainTxStore, err := NewOffChainTxStore(rdb, numOfRetries)
+	if err != nil {
+		return nil, err
+	}
 	return &redisLiveStore{
 		intentStore:               NewIntentStore(rdb, numOfRetries),
 		forfeitTxsStore:           NewForfeitTxsStore(rdb, builder, numOfRetries),
-		offChainTxStore:           NewOffChainTxStore(rdb, numOfRetries),
+		offChainTxStore:           offChainTxStore,
 		currentRoundStore:         NewCurrentRoundStore(rdb, numOfRetries),
 		confirmationSessionsStore: NewConfirmationSessionsStore(rdb, numOfRetries),
 		treeSigningSessions:       NewTreeSigningSessionsStore(rdb, numOfRetries),
 		boardingInputsStore:       NewBoardingInputsStore(rdb, numOfRetries),
 		settingsStore:             NewSettingsStore(rdb, numOfRetries),
-	}
+	}, nil
 }
 
 func (s *redisLiveStore) Intents() ports.IntentStore            { return s.intentStore }

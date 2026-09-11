@@ -53,11 +53,64 @@ type ForfeitTxsStore interface {
 	GetConnectorsIndexes(ctx context.Context) (map[string]domain.Outpoint, error)
 }
 
+// ClaimStatus is the outcome of an owner-tagged claim over the shared
+// spent-input conflict domain.
+type ClaimStatus int
+
+const (
+	// ClaimFresh means at least one outpoint was newly registered to the owner.
+	ClaimFresh ClaimStatus = iota
+	// ClaimAlreadyOwned means every outpoint was already held by the owner, so
+	// the call registered nothing new (an idempotent retry).
+	ClaimAlreadyOwned
+	// ClaimConflict means an outpoint is held by a different owner; the returned
+	// outpoint identifies it and nothing was registered.
+	ClaimConflict
+)
+
+// OffChainTxStore holds the in-flight offchain txs and the single spent-input
+// conflict domain shared by the off-chain and on-chain single-spend guards.
+//
+// The conflict domain is owner-tagged, so every registered outpoint records the
+// arkTxid that claimed it. A claim by a different owner conflicts; the same
+// owner re-claiming is idempotent, which retries and cross-process double-submits
+// rely on. Registration and the conflict
+// check are one atomic step per backend (inmemory under a single lock, redis
+// via a Lua script), so off-chain Add and on-chain ClaimOutpoints are mutually
+// exclusive across processes.
 type OffChainTxStore interface {
-	Add(ctx context.Context, offchainTx domain.OffchainTx) error
+	// Add atomically claims every checkpoint-tx input of offchainTx for
+	// offchainTx.ArkTxid and stores the tx. On a different-owner conflict it
+	// stores nothing and returns (ClaimConflict, &outpoint, nil). A re-add of
+	// the same arkTxid over the same inputs returns ClaimAlreadyOwned so the
+	// caller can skip re-applying the acceptance.
+	//
+	// A re-add carries the same inputs by construction, and Add relies on that. An
+	// arkTxid is the txid of the ark tx, which commits to the checkpoint outputs
+	// it spends, so a different input set is a different arkTxid. The caller
+	// enforces it too, rebuilding the checkpoint and ark txs from the spent
+	// vtxos and rejecting any mismatch before calling here. Were a re-add ever
+	// to arrive with a changed input set, the inputs only the previous body
+	// named would stay claimed, since Remove finds a tx's inputs through the
+	// body it replaced.
+	Add(ctx context.Context, offchainTx domain.OffchainTx) (ClaimStatus, *domain.Outpoint, error)
 	Remove(ctx context.Context, arkTxid string) error
 	Get(ctx context.Context, arkTxid string) (*domain.OffchainTx, error)
+	// Includes reports whether the outpoint is registered under any owner.
 	Includes(ctx context.Context, outpoint domain.Outpoint) (bool, error)
+	// ClaimOutpoints atomically claims the outpoints for owner in the same
+	// conflict domain Add uses, for spends that carry no checkpoint txs
+	// (on-chain Arkade cosigns). Same owner-tagged semantics as Add, so
+	// ClaimConflict plus the conflicting outpoint on a different owner,
+	// ClaimAlreadyOwned when the owner already held them all, ClaimFresh
+	// otherwise.
+	ClaimOutpoints(
+		ctx context.Context, owner string, outpoints []domain.Outpoint,
+	) (ClaimStatus, *domain.Outpoint, error)
+	// ReleaseOutpoints removes the outpoints owned by owner. It leaves outpoints
+	// held by a different owner untouched, and releasing an absent outpoint is a
+	// no-op.
+	ReleaseOutpoints(ctx context.Context, owner string, outpoints []domain.Outpoint) error
 }
 
 type CurrentRoundStore interface {
