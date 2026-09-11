@@ -406,6 +406,9 @@ func (e *indexerService) GetVirtualTxs(
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	if page == nil {
+		page = &application.Page{PageSize: maxPageRequestSize, PageNum: 1}
+	}
 
 	var resp *application.VirtualTxsResp
 	if request.GetIntent() != nil {
@@ -922,9 +925,17 @@ func parsePage(page *arkv1.IndexerPageRequest) (*application.Page, error) {
 	}, nil
 }
 
+// maxTxidsPerRequest caps the gRPC request size; the application layer
+// transparently chunks these lookups further (see getVirtualTxs in
+// internal/core/application/indexer.go) to stay under SQLite's parameter limit.
+const maxTxidsPerRequest = 10_000
+
 func parseTxids(txids []string) ([]string, error) {
 	if len(txids) == 0 {
 		return nil, fmt.Errorf("missing txids")
+	}
+	if len(txids) > maxTxidsPerRequest {
+		return nil, fmt.Errorf("txids list exceeds maximum limit of %d", maxTxidsPerRequest)
 	}
 	for _, txid := range txids {
 		if _, err := parseTxid(txid); err != nil {

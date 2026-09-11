@@ -341,3 +341,23 @@ func TestParseDeleteIntent(t *testing.T) {
 		}
 	})
 }
+
+func TestParseTxids(t *testing.T) {
+	validTxid := "0000000000000000000000000000000000000000000000000000000000000001"
+
+	t.Run("empty txids", func(t *testing.T) {
+		_, err := parseTxids(nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "missing txids")
+	})
+
+	t.Run("large txid batch parsed cleanly", func(t *testing.T) {
+		txids := make([]string, 500)
+		for i := range txids {
+			txids[i] = validTxid
+		}
+		res, err := parseTxids(txids)
+		require.NoError(t, err)
+		require.Len(t, res, 500)
+	})
+}
