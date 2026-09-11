@@ -71,30 +71,29 @@ func (s *intentStore) Push(
 			if exists {
 				return fmt.Errorf("duplicated intent %s", intent.Id)
 			}
+			inputKeys := make([]string, 0, len(intent.Inputs)+len(boardingInputs))
+
 			for _, input := range intent.Inputs {
-				key := input.Outpoint.String()
-				exists, err := s.rdb.SIsMember(ctx, intentStoreVtxosKey, key).Result()
-				if err != nil {
-					return fmt.Errorf(
-						"failed to check existence of intent input %s: %v", input.Outpoint, err,
-					)
-				}
-				if exists {
-					return fmt.Errorf(
-						"duplicated input, %s already registered by another intent", key,
-					)
-				}
+				inputKeys = append(inputKeys, input.Outpoint.String())
+			}
+			for _, boardingInput := range boardingInputs {
+				inputKeys = append(inputKeys, boardingInput.String())
 			}
 
-			for _, boardingInput := range boardingInputs {
-				key := boardingInput.String()
+			for _, key := range inputKeys {
 				exists, err := s.rdb.SIsMember(ctx, intentStoreVtxosKey, key).Result()
 				if err != nil {
-					return fmt.Errorf(
-						"failed to check existence of boarding input %s: %v", key, err,
-					)
+					return fmt.Errorf("failed to check existence of input %s: %v", key, err)
 				}
-				if exists {
+				if !exists {
+					continue
+				}
+				// Only the intent that reserved a popped input may re-queue it.
+				poppedBy, err := s.rdb.HGet(ctx, intentStoreVtxosToRemoveKey, key).Result()
+				if err != nil && !errors.Is(err, redis.Nil) {
+					return fmt.Errorf("failed to check pending removal of input %s: %v", key, err)
+				}
+				if errors.Is(err, redis.Nil) || poppedBy != intent.Id {
 					return fmt.Errorf(
 						"duplicated input, %s already registered by another intent", key,
 					)
@@ -115,18 +114,16 @@ func (s *intentStore) Push(
 				}
 
 				pipe.SAdd(ctx, intentStoreIdsKey, intent.Id)
-				for _, vtxo := range intent.Inputs {
-					pipe.SAdd(ctx, intentStoreVtxosKey, vtxo.Outpoint.String())
-				}
-				for _, boardingInput := range boardingInputs {
-					pipe.SAdd(ctx, intentStoreVtxosKey, boardingInput.String())
+				if len(inputKeys) > 0 {
+					pipe.SAdd(ctx, intentStoreVtxosKey, inputKeys)
+					pipe.HDel(ctx, intentStoreVtxosToRemoveKey, inputKeys...)
 				}
 
 				return nil
 			})
 
 			return err
-		}, intentStoreVtxosKey, intentStoreIdsKey) // WATCH dedup keys
+		}, intentStoreVtxosKey, intentStoreVtxosToRemoveKey, intentStoreIdsKey) // WATCH dedup keys
 		if err == nil {
 			return nil
 		}
@@ -192,13 +189,17 @@ func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, 
 			selected := intentsByTime[:n]
 
 			// list outpoints to remove
-			var inputsToRemove []interface{}
+			var pendingInputOwners []interface{}
 			for _, intent := range selected {
 				for _, vtxo := range intent.Inputs {
-					inputsToRemove = append(inputsToRemove, vtxo.Outpoint.String())
+					pendingInputOwners = append(
+						pendingInputOwners, vtxo.Outpoint.String(), intent.Id,
+					)
 				}
 				for _, boardingInput := range intent.BoardingInputs {
-					inputsToRemove = append(inputsToRemove, boardingInput.String())
+					pendingInputOwners = append(
+						pendingInputOwners, boardingInput.String(), intent.Id,
+					)
 				}
 			}
 
@@ -216,8 +217,8 @@ func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, 
 					}
 				}
 
-				if len(inputsToRemove) > 0 {
-					pipe.SAdd(ctx, intentStoreVtxosToRemoveKey, inputsToRemove...)
+				if len(pendingInputOwners) > 0 {
+					pipe.HSet(ctx, intentStoreVtxosToRemoveKey, pendingInputOwners...)
 				}
 				return nil
 			})
@@ -401,14 +402,14 @@ func (s *intentStore) DeleteAll(ctx context.Context) error {
 }
 
 func (s *intentStore) DeleteVtxos(ctx context.Context) error {
-	inputsToRemove, err := s.rdb.SMembers(ctx, intentStoreVtxosToRemoveKey).Result()
-	if err != nil {
-		return fmt.Errorf("failed to get inputs to remove: %v", err)
-	}
-
+	var err error
 	for range s.numOfRetries {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			inputsToRemove, err := tx.HKeys(ctx, intentStoreVtxosToRemoveKey).Result()
+			if err != nil {
+				return fmt.Errorf("failed to get inputs to remove: %v", err)
+			}
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				if len(inputsToRemove) > 0 {
 					members := make([]interface{}, len(inputsToRemove))
 					for i, v := range inputsToRemove {

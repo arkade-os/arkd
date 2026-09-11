@@ -16,14 +16,14 @@ type intentStore struct {
 	lock            sync.RWMutex
 	intents         map[string]*ports.TimedIntent
 	vtxos           map[string]struct{}
-	vtxosToRemove   []string
+	vtxosToRemove   map[string]string
 	selectedIntents []ports.TimedIntent
 }
 
 func NewIntentStore() ports.IntentStore {
 	intentsById := make(map[string]*ports.TimedIntent)
 	vtxos := make(map[string]struct{})
-	vtxosToRemove := make([]string, 0)
+	vtxosToRemove := make(map[string]string)
 	selectedIntents := make([]ports.TimedIntent, 0)
 	return &intentStore{
 		intents:         intentsById,
@@ -57,29 +57,22 @@ func (m *intentStore) Push(
 		return fmt.Errorf("duplicated intent %s", intent.Id)
 	}
 
+	inputKeys := make([]string, 0, len(intent.Inputs)+len(boardingInputs))
 	for _, input := range intent.Inputs {
-		for _, pay := range m.intents {
-			for _, pInput := range pay.Inputs {
-				if input.Txid == pInput.Txid && input.VOut == pInput.VOut {
-					return fmt.Errorf(
-						"duplicated input, %s already registered by another intent",
-						input.Outpoint.String(),
-					)
-				}
-			}
-		}
+		inputKeys = append(inputKeys, input.Outpoint.String())
+	}
+	for _, input := range boardingInputs {
+		inputKeys = append(inputKeys, input.String())
 	}
 
-	for _, input := range boardingInputs {
-		for _, intent := range m.intents {
-			for _, pBoardingInput := range intent.BoardingInputs {
-				if input.Txid == pBoardingInput.Txid && input.VOut == pBoardingInput.VOut {
-					return fmt.Errorf(
-						"duplicated input, %s already registered by another intent",
-						input.String(),
-					)
-				}
-			}
+	for _, key := range inputKeys {
+		if _, exists := m.vtxos[key]; !exists {
+			continue
+		}
+		if poppedBy, popped := m.vtxosToRemove[key]; !popped || poppedBy != intent.Id {
+			return fmt.Errorf(
+				"duplicated input, %s already registered by another intent", key,
+			)
 		}
 	}
 
@@ -90,8 +83,9 @@ func (m *intentStore) Push(
 		Timestamp:           now,
 		CosignersPublicKeys: cosignersPubkeys,
 	}
-	for _, vtxo := range intent.Inputs {
-		m.vtxos[vtxo.Outpoint.String()] = struct{}{}
+	for _, key := range inputKeys {
+		m.vtxos[key] = struct{}{}
+		delete(m.vtxosToRemove, key)
 	}
 	return nil
 }
@@ -123,7 +117,10 @@ func (m *intentStore) Pop(_ context.Context, num int64) ([]ports.TimedIntent, er
 	for _, p := range intentsByTime[:num] {
 		result = append(result, p)
 		for _, vtxo := range m.intents[p.Id].Inputs {
-			m.vtxosToRemove = append(m.vtxosToRemove, vtxo.Outpoint.String())
+			m.vtxosToRemove[vtxo.Outpoint.String()] = p.Id
+		}
+		for _, boardingInput := range m.intents[p.Id].BoardingInputs {
+			m.vtxosToRemove[boardingInput.String()] = p.Id
 		}
 		delete(m.intents, p.Id)
 	}
@@ -191,6 +188,9 @@ func (m *intentStore) Delete(_ context.Context, ids []string) error {
 		for _, vtxo := range intent.Inputs {
 			delete(m.vtxos, vtxo.Outpoint.String())
 		}
+		for _, boardingInput := range intent.BoardingInputs {
+			delete(m.vtxos, boardingInput.String())
+		}
 		delete(m.intents, id)
 	}
 	return nil
@@ -202,7 +202,7 @@ func (m *intentStore) DeleteAll(_ context.Context) error {
 
 	m.intents = make(map[string]*ports.TimedIntent)
 	m.vtxos = make(map[string]struct{})
-	m.vtxosToRemove = make([]string, 0)
+	m.vtxosToRemove = make(map[string]string)
 	m.selectedIntents = make([]ports.TimedIntent, 0)
 	return nil
 }
@@ -211,10 +211,10 @@ func (m *intentStore) DeleteVtxos(_ context.Context) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	for _, vtxo := range m.vtxosToRemove {
+	for vtxo := range m.vtxosToRemove {
 		delete(m.vtxos, vtxo)
 	}
-	m.vtxosToRemove = make([]string, 0)
+	m.vtxosToRemove = make(map[string]string)
 	return nil
 }
 

@@ -3,6 +3,7 @@ package livestore_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -113,116 +114,394 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 	t.Run("IntentStore", func(t *testing.T) {
 		ctx := t.Context()
 
-		intent1, err := parseIntentFixtures(intentFixture1)
-		require.NoError(t, err)
-		intent2, err := parseIntentFixtures(intentFixture2)
-		require.NoError(t, err)
-		intent3, err := parseIntentFixtures(intentFixture3)
-		require.NoError(t, err)
+		t.Run("lifecycle", func(t *testing.T) {
+			intent1, err := parseIntentFixtures(intentFixture1)
+			require.NoError(t, err)
+			intent2, err := parseIntentFixtures(intentFixture2)
+			require.NoError(t, err)
+			intent3, err := parseIntentFixtures(intentFixture3)
+			require.NoError(t, err)
 
-		// Push
-		err = store.Intents().Push(
-			ctx, intent1.Intent, intent1.BoardingInputs, intent1.CosignersPublicKeys,
-		)
-		require.NoError(t, err)
+			// Push
+			err = store.Intents().Push(
+				ctx, intent1.Intent, intent1.BoardingInputs, intent1.CosignersPublicKeys,
+			)
+			require.NoError(t, err)
 
-		err = store.Intents().Push(
-			ctx, intent1.Intent, intent1.BoardingInputs, intent1.CosignersPublicKeys,
-		)
-		require.Contains(t, err.Error(), "duplicated intent")
+			err = store.Intents().Push(
+				ctx, intent1.Intent, intent1.BoardingInputs, intent1.CosignersPublicKeys,
+			)
+			require.Contains(t, err.Error(), "duplicated intent")
 
-		err = store.Intents().Push(
-			ctx, intent3.Intent, intent3.BoardingInputs, intent3.CosignersPublicKeys,
-		)
-		require.Contains(t, err.Error(), "duplicated input")
+			err = store.Intents().Push(
+				ctx, intent3.Intent, intent3.BoardingInputs, intent3.CosignersPublicKeys,
+			)
+			require.Contains(t, err.Error(), "duplicated input")
 
-		err = store.Intents().Push(
-			ctx, intent2.Intent, intent2.BoardingInputs, intent2.CosignersPublicKeys,
-		)
-		require.NoError(t, err)
+			err = store.Intents().Push(
+				ctx, intent2.Intent, intent2.BoardingInputs, intent2.CosignersPublicKeys,
+			)
+			require.NoError(t, err)
 
-		// try to push an intent with the same boarding input but different Id
-		intent2DuplicateBoarding := intent2.Intent
-		intent2DuplicateBoarding.Id = uuid.New().String()
-		err = store.Intents().Push(
-			ctx, intent2DuplicateBoarding, intent2.BoardingInputs, intent2.CosignersPublicKeys,
-		)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "duplicated input")
+			// try to push an intent with the same boarding input but different Id
+			intent2DuplicateBoarding := intent2.Intent
+			intent2DuplicateBoarding.Id = uuid.New().String()
+			err = store.Intents().Push(
+				ctx, intent2DuplicateBoarding, intent2.BoardingInputs, intent2.CosignersPublicKeys,
+			)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "duplicated input")
 
-		// ViewAll
-		all, err := store.Intents().ViewAll(
-			ctx, []string{intent1.Intent.Id, intent2.Intent.Id, "nonexistent"},
-		)
-		require.NoError(t, err)
-		foundIds := map[string]bool{intent1.Intent.Id: false, intent2.Intent.Id: false}
-		for _, r := range all {
-			foundIds[r.Id] = true
-		}
-		for id := range foundIds {
-			require.True(t, foundIds[id])
-		}
+			// ViewAll
+			all, err := store.Intents().ViewAll(
+				ctx, []string{intent1.Intent.Id, intent2.Intent.Id, "nonexistent"},
+			)
+			require.NoError(t, err)
+			foundIds := map[string]bool{intent1.Intent.Id: false, intent2.Intent.Id: false}
+			for _, r := range all {
+				foundIds[r.Id] = true
+			}
+			for id := range foundIds {
+				require.True(t, foundIds[id])
+			}
 
-		// IncludesAny
-		found, res := store.Intents().IncludesAny(ctx, []domain.Outpoint{})
-		require.False(t, found)
-		require.Empty(t, res)
+			// IncludesAny
+			found, res := store.Intents().IncludesAny(ctx, []domain.Outpoint{})
+			require.False(t, found)
+			require.Empty(t, res)
 
-		found, res = store.Intents().IncludesAny(ctx, []domain.Outpoint{{
-			Txid: "24de502601c21cf7b227c0667ffe1175841cdd4f6e5b20d3063387333d0b10da", VOut: 0,
-		}})
-		require.True(t, found)
-		require.NotEmpty(t, res)
+			found, res = store.Intents().IncludesAny(ctx, []domain.Outpoint{{
+				Txid: "24de502601c21cf7b227c0667ffe1175841cdd4f6e5b20d3063387333d0b10da", VOut: 0,
+			}})
+			require.True(t, found)
+			require.NotEmpty(t, res)
 
-		// Len
-		ln, err := store.Intents().Len(ctx)
-		require.NoError(t, err)
-		require.EqualValues(t, 2, ln)
+			// Len
+			ln, err := store.Intents().Len(ctx)
+			require.NoError(t, err)
+			require.EqualValues(t, 2, ln)
 
-		// GetSelectedIntents before any pop - should return empty
-		selectedIntents, err := store.Intents().GetSelectedIntents(ctx)
-		require.NoError(t, err)
-		require.Empty(t, selectedIntents)
+			// GetSelectedIntents before any pop - should return empty
+			selectedIntents, err := store.Intents().GetSelectedIntents(ctx)
+			require.NoError(t, err)
+			require.Empty(t, selectedIntents)
 
-		// Pop
-		selected, err := store.Intents().Pop(ctx, 2)
-		require.NoError(t, err)
-		require.Len(t, selected, 2)
+			// Pop
+			selected, err := store.Intents().Pop(ctx, 2)
+			require.NoError(t, err)
+			require.Len(t, selected, 2)
 
-		// GetSelectedIntents - should return the same intents that were selected
-		selectedIntents, err = store.Intents().GetSelectedIntents(ctx)
-		require.NoError(t, err)
-		require.Len(t, selectedIntents, 2)
-		intentsEqual(t, selected, selectedIntents)
+			// GetSelectedIntents - should return the same intents that were selected
+			selectedIntents, err = store.Intents().GetSelectedIntents(ctx)
+			require.NoError(t, err)
+			require.Len(t, selectedIntents, 2)
+			intentsEqual(t, selected, selectedIntents)
 
-		ln, err = store.Intents().Len(ctx)
-		require.NoError(t, err)
-		require.Zero(t, ln)
+			ln, err = store.Intents().Len(ctx)
+			require.NoError(t, err)
+			require.Zero(t, ln)
 
-		selected, err = store.Intents().Pop(ctx, 100)
-		require.NoError(t, err)
-		require.Empty(t, selected)
+			selected, err = store.Intents().Pop(ctx, 100)
+			require.NoError(t, err)
+			require.Empty(t, selected)
 
-		// GetSelectedIntents after empty pop - should return empty
-		selectedIntents, err = store.Intents().GetSelectedIntents(ctx)
-		require.NoError(t, err)
-		require.Empty(t, selectedIntents)
+			// GetSelectedIntents after empty pop - should return empty
+			selectedIntents, err = store.Intents().GetSelectedIntents(ctx)
+			require.NoError(t, err)
+			require.Empty(t, selectedIntents)
 
-		// Delete
-		err = store.Intents().Delete(ctx, []string{intent1.Intent.Id})
-		require.NoError(t, err)
+			// Delete
+			err = store.Intents().Delete(ctx, []string{intent1.Intent.Id})
+			require.NoError(t, err)
 
-		// Delete non-existent
-		err = store.Intents().Delete(ctx, []string{"doesnotexist"})
-		require.NoError(t, err)
+			// Delete non-existent
+			err = store.Intents().Delete(ctx, []string{"doesnotexist"})
+			require.NoError(t, err)
 
-		// DeleteAll
-		err = store.Intents().DeleteAll(ctx)
-		require.NoError(t, err)
+			// DeleteAll
+			err = store.Intents().DeleteAll(ctx)
+			require.NoError(t, err)
 
-		// Make sure DeleteVtxos doesn't panic
-		err = store.Intents().DeleteVtxos(ctx)
-		require.NoError(t, err)
+			// Make sure DeleteVtxos doesn't panic
+			err = store.Intents().DeleteVtxos(ctx)
+			require.NoError(t, err)
+		})
+
+		// At most one intent may hold an input. Pop takes an intent out of the
+		// queue but leaves its inputs held, so only an explicit release frees
+		// them, and only the intent already holding an input may push it again.
+		t.Run("input ownership", func(t *testing.T) {
+			// pushArgs is the Push a case asserts on, once arrange has driven
+			// the store into the state under test.
+			type pushArgs struct {
+				intent   domain.Intent
+				boarding []ports.BoardingInput
+			}
+
+			reset := func(t *testing.T) {
+				t.Helper()
+				// Pop parks what it selected under its own key and only
+				// DeleteAll clears that, so every case has to hand the store
+				// back as it found it. Cleanup runs after t.Context is
+				// canceled, hence its own ctx.
+				t.Cleanup(func() {
+					require.NoError(t, store.Intents().DeleteAll(context.Background()))
+				})
+			}
+			push := func(t *testing.T, ctx context.Context, inputs ...domain.Vtxo) domain.Intent {
+				t.Helper()
+				intent := intentWith(inputs...)
+				require.NoError(t, store.Intents().Push(ctx, intent, nil, nil))
+				return intent
+			}
+			popOne := func(t *testing.T, ctx context.Context) ports.TimedIntent {
+				t.Helper()
+				popped, err := store.Intents().Pop(ctx, 1)
+				require.NoError(t, err)
+				require.Len(t, popped, 1)
+				return popped[0]
+			}
+			held := func(t *testing.T, ctx context.Context, outpoint domain.Outpoint) bool {
+				t.Helper()
+				found, _ := store.Intents().IncludesAny(ctx, []domain.Outpoint{outpoint})
+				return found
+			}
+
+			t.Run("Push", func(t *testing.T) {
+				t.Run("valid", func(t *testing.T) {
+					tests := []struct {
+						name    string
+						arrange func(t *testing.T, ctx context.Context) pushArgs
+					}{
+						{
+							name: "an input no intent holds",
+							arrange: func(t *testing.T, ctx context.Context) pushArgs {
+								return pushArgs{intent: intentWith(vtxoInput())}
+							},
+						},
+						{
+							// Only a different intent is refused, so the holder
+							// can be pushed back exactly as Pop returned it.
+							name: "an input the same intent already holds",
+							arrange: func(t *testing.T, ctx context.Context) pushArgs {
+								push(t, ctx, vtxoInput())
+								popped := popOne(t, ctx)
+								return pushArgs{
+									intent: popped.Intent, boarding: popped.BoardingInputs,
+								}
+							},
+						},
+						{
+							name: "an input DeleteVtxos released",
+							arrange: func(t *testing.T, ctx context.Context) pushArgs {
+								vtxo := vtxoInput()
+								push(t, ctx, vtxo)
+								popOne(t, ctx)
+								require.NoError(t, store.Intents().DeleteVtxos(ctx))
+								require.False(t, held(t, ctx, vtxo.Outpoint))
+								return pushArgs{intent: intentWith(vtxo)}
+							},
+						},
+					}
+
+					for _, tt := range tests {
+						t.Run(tt.name, func(t *testing.T) {
+							ctx := t.Context()
+							reset(t)
+
+							args := tt.arrange(t, ctx)
+							require.NoError(
+								t, store.Intents().Push(ctx, args.intent, args.boarding, nil),
+							)
+						})
+					}
+				})
+
+				t.Run("invalid", func(t *testing.T) {
+					tests := []struct {
+						name        string
+						arrange     func(t *testing.T, ctx context.Context) pushArgs
+						errContains string
+					}{
+						{
+							name: "an input another queued intent holds",
+							arrange: func(t *testing.T, ctx context.Context) pushArgs {
+								vtxo := vtxoInput()
+								push(t, ctx, vtxo)
+								return pushArgs{intent: intentWith(vtxo)}
+							},
+							errContains: "duplicated input",
+						},
+						{
+							name: "an input another popped intent holds",
+							arrange: func(t *testing.T, ctx context.Context) pushArgs {
+								vtxo := vtxoInput()
+								push(t, ctx, vtxo)
+								popOne(t, ctx)
+								require.True(
+									t, held(t, ctx, vtxo.Outpoint),
+									"Pop must leave the input held",
+								)
+								return pushArgs{intent: intentWith(vtxo)}
+							},
+							errContains: "duplicated input",
+						},
+						{
+							name: "an input another intent holds after being pushed again",
+							arrange: func(t *testing.T, ctx context.Context) pushArgs {
+								vtxo := vtxoInput()
+								push(t, ctx, vtxo)
+								popped := popOne(t, ctx)
+								require.NoError(t, store.Intents().Push(
+									ctx, popped.Intent, popped.BoardingInputs,
+									popped.CosignersPublicKeys,
+								))
+								return pushArgs{intent: intentWith(vtxo)}
+							},
+							errContains: "duplicated input",
+						},
+						{
+							// Pop lists the inputs it took for the next
+							// release. Pushing the holder again takes them off
+							// that list, so DeleteVtxos has to leave them held.
+							name: "an input another intent still holds after DeleteVtxos",
+							arrange: func(t *testing.T, ctx context.Context) pushArgs {
+								vtxo := vtxoInput()
+								push(t, ctx, vtxo)
+								popped := popOne(t, ctx)
+								require.NoError(t, store.Intents().Push(
+									ctx, popped.Intent, popped.BoardingInputs,
+									popped.CosignersPublicKeys,
+								))
+								require.NoError(t, store.Intents().DeleteVtxos(ctx))
+								require.True(
+									t, held(t, ctx, vtxo.Outpoint),
+									"pushing the holder again must keep the input held",
+								)
+								return pushArgs{intent: intentWith(vtxo)}
+							},
+							errContains: "duplicated input",
+						},
+						{
+							// Boarding inputs are held like vtxo inputs, they
+							// just reach Push through their own argument.
+							name: "a boarding input another popped intent holds",
+							arrange: func(t *testing.T, ctx context.Context) pushArgs {
+								boarding := boardingInputs()
+								require.NoError(
+									t, store.Intents().Push(ctx, boardingIntent(), boarding, nil),
+								)
+								popOne(t, ctx)
+								return pushArgs{intent: boardingIntent(), boarding: boarding}
+							},
+							errContains: "duplicated input",
+						},
+					}
+
+					for _, tt := range tests {
+						t.Run(tt.name, func(t *testing.T) {
+							ctx := t.Context()
+							reset(t)
+
+							args := tt.arrange(t, ctx)
+							err := store.Intents().Push(ctx, args.intent, args.boarding, nil)
+							require.Error(t, err)
+							if tt.errContains != "" {
+								require.Contains(t, err.Error(), tt.errContains)
+							}
+						})
+					}
+				})
+			})
+
+			t.Run("concurrent pushes resolved to a single one", func(t *testing.T) {
+				ctx := t.Context()
+				reset(t)
+				const racers = 6
+
+				vtxo := vtxoInput()
+				intents := make([]domain.Intent, racers)
+				for i := range intents {
+					intents[i] = intentWith(vtxo)
+				}
+
+				var wg sync.WaitGroup
+				errs := make([]error, racers)
+				start := make(chan struct{})
+				for i := range racers {
+					wg.Add(1)
+					go func(i int) {
+						defer wg.Done()
+						<-start
+						errs[i] = store.Intents().Push(ctx, intents[i], nil, nil)
+					}(i)
+				}
+				close(start)
+				wg.Wait()
+
+				winners := make([]string, 0, 1)
+				for i, err := range errs {
+					if err == nil {
+						winners = append(winners, intents[i].Id)
+						continue
+					}
+					require.Contains(
+						t, err.Error(), "duplicated input",
+						"a loser must be turned away for the input, not for something else",
+					)
+				}
+				require.Len(t, winners, 1, "only one push should be accepted")
+			})
+
+			// Delete is the other release: it frees the inputs of the intents
+			// it removes, both kinds of them.
+			t.Run("Delete releases vtxo and boarding inputs", func(t *testing.T) {
+				ctx := t.Context()
+				reset(t)
+
+				vtxo := vtxoInput()
+				boarding := boardingInputs()
+				intent := intentWith(vtxo)
+				require.NoError(t, store.Intents().Push(ctx, intent, boarding, nil))
+				require.NoError(t, store.Intents().Delete(ctx, []string{intent.Id}))
+
+				require.False(t, held(t, ctx, vtxo.Outpoint), "the vtxo input is free again")
+				require.NoError(
+					t, store.Intents().Push(ctx, intentWith(vtxo), boarding, nil),
+					"another intent can hold both",
+				)
+			})
+
+			// Push and DeleteVtxos decide separately which inputs they touch,
+			// so they can disagree on a kind and leave one held for good. A
+			// note is an input like any other to both.
+			t.Run("DeleteVtxos releases notes like any other input", func(t *testing.T) {
+				ctx := t.Context()
+				reset(t)
+
+				vtxo, noteVtxo := vtxoInput(), issueNoteVtxo(t, 10_000)
+				push(t, ctx, vtxo, noteVtxo)
+				popOne(t, ctx)
+
+				for _, outpoint := range []domain.Outpoint{vtxo.Outpoint, noteVtxo.Outpoint} {
+					require.True(
+						t, held(t, ctx, outpoint), "%s is not held after Pop", outpoint,
+					)
+				}
+
+				require.NoError(t, store.Intents().DeleteVtxos(ctx))
+
+				stillHeld, key := store.Intents().IncludesAny(
+					ctx, []domain.Outpoint{vtxo.Outpoint, noteVtxo.Outpoint},
+				)
+				require.False(t, stillHeld, "%s is still held after DeleteVtxos", key)
+
+				require.NoError(
+					t, store.Intents().Push(ctx, intentWith(vtxo, noteVtxo), nil, nil),
+					"every released input can be pushed again",
+				)
+			})
+		})
 	})
 
 	t.Run("IntentStore vtxo guard set", func(t *testing.T) {
@@ -266,6 +545,56 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 
 			found, _ = store.Intents().IncludesAny(ctx, outpoints)
 			require.False(t, found)
+		})
+
+		t.Run("re-pushed popped intent keeps the guard", func(t *testing.T) {
+			require.NoError(t, pushIntent())
+
+			popped, err := store.Intents().Pop(ctx, 1)
+			require.NoError(t, err)
+			require.Len(t, popped, 1)
+
+			// confirmation timeout / not enough participants: the round
+			// re-queues the popped intent as is
+			require.NoError(t, store.Intents().Push(
+				ctx, popped[0].Intent, popped[0].BoardingInputs, popped[0].CosignersPublicKeys,
+			))
+
+			// next round resets the cache: the pending removal from the
+			// aborted round must not evict a vtxo that is queued again
+			require.NoError(t, store.Intents().DeleteVtxos(ctx))
+
+			found, res := store.Intents().IncludesAny(ctx, outpoints)
+			require.True(t, found)
+			require.Equal(t, vtxo.Outpoint.String(), res)
+
+			require.NoError(t, store.Intents().Delete(ctx, []string{popped[0].Id}))
+
+			found, _ = store.Intents().IncludesAny(ctx, outpoints)
+			require.False(t, found)
+		})
+
+		t.Run("popped input cannot be claimed by another intent", func(t *testing.T) {
+			t.Cleanup(func() {
+				require.NoError(t, store.Intents().DeleteAll(context.Background()))
+			})
+
+			require.NoError(t, pushIntent())
+
+			popped, err := store.Intents().Pop(ctx, 1)
+			require.NoError(t, err)
+			require.Len(t, popped, 1)
+
+			conflicting := popped[0].Intent
+			conflicting.Id = uuid.New().String()
+
+			err = store.Intents().Push(
+				ctx, conflicting, popped[0].BoardingInputs, popped[0].CosignersPublicKeys,
+			)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "duplicated input")
+
+			require.NoError(t, store.Intents().DeleteVtxos(ctx))
 		})
 
 		t.Run("DeleteAll flushes pending guard set removals", func(t *testing.T) {
@@ -1153,6 +1482,62 @@ type intentPushFixture struct {
 	Intent              domain.Intent         `json:"intent"`
 	BoardingInputs      []ports.BoardingInput `json:"boardingInputs"`
 	CosignersPublicKeys []string              `json:"cosignerPubkeys"`
+}
+
+const intentPubkey = "7594c9acd996ccf667431769bb4b238b29a9ed32b73f39185c121cf770aa0a63"
+
+// vtxoInput builds a settleable vtxo input. It carries a commitment, so
+// IsNote is false for it.
+func vtxoInput() domain.Vtxo {
+	return domain.Vtxo{
+		Outpoint:           domain.Outpoint{Txid: randomIntentTxid(), VOut: 0},
+		PubKey:             intentPubkey,
+		Amount:             1000,
+		RootCommitmentTxid: "commitment",
+		CommitmentTxids:    []string{"commitment"},
+	}
+}
+
+// boardingInputs builds a boarding input, held like a vtxo input but reaching
+// Push through its own argument.
+func boardingInputs() []ports.BoardingInput {
+	return []ports.BoardingInput{{
+		Input: ports.Input{
+			Outpoint:   domain.Outpoint{Txid: randomIntentTxid(), VOut: 1},
+			Tapscripts: []string{"00"},
+		},
+		Amount: 1000,
+	}}
+}
+
+// boardingIntent is an intent with no vtxo inputs at all, for the cases where
+// the only thing held is a boarding input.
+func boardingIntent() domain.Intent {
+	return domain.Intent{
+		Id:        uuid.New().String(),
+		Receivers: []domain.Receiver{{Amount: 1000, PubKey: intentPubkey}},
+	}
+}
+
+func intentWith(inputs ...domain.Vtxo) domain.Intent {
+	receivers := make([]domain.Receiver, 0, len(inputs))
+	for _, input := range inputs {
+		receivers = append(
+			receivers, domain.Receiver{Amount: input.Amount, PubKey: input.PubKey},
+		)
+	}
+	return domain.Intent{
+		Id:        uuid.New().String(),
+		Inputs:    inputs,
+		Receivers: receivers,
+	}
+}
+
+func randomIntentTxid() string {
+	buf := make([]byte, 32)
+	// nolint:errcheck
+	rand.Read(buf)
+	return hex.EncodeToString(buf)
 }
 
 func noteIntent(vtxo domain.Vtxo) domain.Intent {
