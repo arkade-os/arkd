@@ -1,5 +1,5 @@
--- Add the vtxo_kind discriminator: 0 = offchain (batch leaf or offchain-tx
--- output), 1 = onchain (on-chain Arkade UTXO, issue #1159). Existing rows
+-- Add the vtxo_kind discriminator, where 0 = offchain (batch leaf or
+-- offchain-tx output) and 1 = onchain (on-chain Arkade UTXO). Existing rows
 -- default to offchain, so no backfill is needed.
 ALTER TABLE vtxo ADD COLUMN vtxo_kind INTEGER NOT NULL DEFAULT 0;
 

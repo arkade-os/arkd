@@ -1,5 +1,5 @@
--- Reverse add_vtxo_kind: drop the views, drop the column, recreate the views
--- without vtxo_kind.
+-- Reverse add_vtxo_kind by dropping the views, dropping the column, then
+-- recreating the views without vtxo_kind.
 DROP VIEW IF EXISTS intent_with_inputs_vw;
 DROP VIEW IF EXISTS vtxo_vw;
 
