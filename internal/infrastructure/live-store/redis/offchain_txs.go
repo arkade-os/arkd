@@ -179,8 +179,8 @@ func (s *offChainTxStore) rebuildInputs(ctx context.Context) error {
 			log.WithError(err).Warnf("skipping malformed stored offchain tx %s", arkTxid)
 			continue
 		}
-		// A tx whose input set cannot be fully parsed is skipped as a whole:
-		// registering a subset would leave claims that Remove, which fails on
+		// A tx whose input set cannot be fully parsed is skipped as a whole.
+		// Registering a subset would leave claims that Remove, which fails on
 		// the same parse error, could never clear.
 		inputs, err := checkpointInputs(offchainTx)
 		if err != nil {
@@ -406,8 +406,8 @@ func parseClaimResult(res interface{}) (ports.ClaimStatus, *domain.Outpoint, err
 }
 
 // checkpointInputs returns every spent-input outpoint of every checkpoint tx of
-// the offchain tx, the set the conflict domain registers. It is all or nothing:
-// a checkpoint tx that fails to parse fails the call, so no caller ever
+// the offchain tx, the set the conflict domain registers. It is all or nothing,
+// since a checkpoint tx that fails to parse fails the call, so no caller ever
 // registers or releases a subset of a tx's inputs.
 func checkpointInputs(offchainTx domain.OffchainTx) ([]string, error) {
 	inputs := make([]string, 0)
