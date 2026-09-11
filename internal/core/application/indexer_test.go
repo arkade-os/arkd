@@ -1232,6 +1232,15 @@ func (m *mockVtxoRepoForIndexer) SpendVtxos(
 	return nil
 }
 
+func (m *mockVtxoRepoForIndexer) RecordCosignedTx(
+	ctx context.Context,
+	txid string,
+	inputs []domain.Outpoint,
+	outputs []domain.Vtxo,
+) error {
+	return nil
+}
+
 func (m *mockVtxoRepoForIndexer) UnrollVtxos(
 	ctx context.Context,
 	outpoints []domain.Outpoint,

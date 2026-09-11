@@ -420,6 +420,12 @@ func (m *mockVtxoRepository) SpendVtxos(
 ) error {
 	return nil
 }
+func (m *mockVtxoRepository) RecordCosignedTx(
+	ctx context.Context, txid string, inputs []domain.Outpoint, outputs []domain.Vtxo,
+) error {
+	return nil
+}
+
 func (m *mockVtxoRepository) UnrollVtxos(ctx context.Context, outpoints []domain.Outpoint) error {
 	return nil
 }

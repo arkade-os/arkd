@@ -7,6 +7,16 @@ type VtxoRepository interface {
 	SettleVtxos(ctx context.Context, spentVtxos map[Outpoint]string, commitmentTxid string) error
 	SpendVtxos(ctx context.Context, spentVtxos map[Outpoint]string, arkTxid string) error
 	UnrollVtxos(ctx context.Context, outpoints []Outpoint) error
+	// RecordCosignedTx records a transaction arkd cosigned in one durable write.
+	// The inputs are marked spent by txid and left with no ark txid, which is
+	// what distinguishes an onchain spend from an in-Ark one. The outputs are
+	// inserted as VtxoKindOnchainPending regardless of the kind the caller set,
+	// since nothing arkd has only cosigned is spendable yet.
+	//
+	// Both halves land together or not at all. The caller holds a claim on the
+	// inputs across this write and releases it afterwards, so a partial write
+	// would free an input whose spend was never recorded.
+	RecordCosignedTx(ctx context.Context, txid string, inputs []Outpoint, outputs []Vtxo) error
 	GetVtxos(ctx context.Context, outpoints []Outpoint) ([]Vtxo, error)
 	GetAllNonUnrolledVtxos(ctx context.Context, pubkey string) ([]Vtxo, []Vtxo, error)
 	GetAllSweepableUnrolledVtxos(ctx context.Context) ([]Vtxo, error)
