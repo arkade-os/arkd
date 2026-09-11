@@ -925,6 +925,9 @@ func parsePage(page *arkv1.IndexerPageRequest) (*application.Page, error) {
 	}, nil
 }
 
+// maxTxidsPerRequest caps the gRPC request size; the application layer
+// transparently chunks these lookups further (see getVirtualTxs in
+// internal/core/application/indexer.go) to stay under SQLite's parameter limit.
 const maxTxidsPerRequest = 10_000
 
 func parseTxids(txids []string) ([]string, error) {

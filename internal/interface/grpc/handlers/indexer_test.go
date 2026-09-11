@@ -16,6 +16,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	arkdErrors "github.com/arkade-os/arkd/pkg/errors"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/require"
@@ -102,6 +103,31 @@ func TestGetVirtualTxsDefaultsPage(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, &application.Page{PageSize: maxPageRequestSize, PageNum: 1}, mockSvc.gotVirtualTxsPage)
+}
+
+func TestGetVirtualTxsByIntentDefaultsPage(t *testing.T) {
+	mockSvc := &mockAppIndexer{}
+	svc := newTestIndexerService(t)
+	svc.indexerSvc = mockSvc
+
+	message, err := intent.GetDataMessage{
+		BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeGetData},
+	}.Encode()
+	require.NoError(t, err)
+
+	fixtures := loadParserFixtures(t)
+
+	_, err = svc.GetVirtualTxs(context.Background(), &arkv1.GetVirtualTxsRequest{
+		Auth: &arkv1.GetVirtualTxsRequest_Intent{
+			Intent: &arkv1.IndexerIntent{
+				Proof:   fixtures.ValidProof,
+				Message: message,
+			},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, &application.Page{PageSize: maxPageRequestSize, PageNum: 1}, mockSvc.gotIntentPage)
 }
 
 func TestGetVtxoChain(t *testing.T) {
@@ -2110,6 +2136,7 @@ type mockAppIndexer struct {
 	application.IndexerService
 	gotPageToken      string
 	gotVirtualTxsPage *application.Page
+	gotIntentPage     *application.Page
 	resp              *application.VtxoChainResp
 	err               error
 }
@@ -2125,5 +2152,12 @@ func (m *mockAppIndexer) GetVirtualTxs(
 	_ context.Context, _ string, _ []string, page *application.Page,
 ) (*application.VirtualTxsResp, error) {
 	m.gotVirtualTxsPage = page
+	return &application.VirtualTxsResp{}, m.err
+}
+
+func (m *mockAppIndexer) GetVirtualTxsByIntent(
+	_ context.Context, _ application.Intent, page *application.Page,
+) (*application.VirtualTxsResp, error) {
+	m.gotIntentPage = page
 	return &application.VirtualTxsResp{}, m.err
 }
