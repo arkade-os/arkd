@@ -130,9 +130,16 @@ func toArkFeeOffchainInput(input domain.Vtxo) arkfee.OffchainInput {
 		t = arkfee.VtxoTypeNote
 	}
 
+	// OffchainInput reads the zero time as "no expiry" and omits the CEL
+	// variable. time.Unix(0, 0) is 1970, which is not zero.
+	expiry := time.Time{}
+	if input.HasBatchExpiry() {
+		expiry = time.Unix(input.ExpiresAt, 0)
+	}
+
 	return arkfee.OffchainInput{
 		Amount: input.Amount,
-		Expiry: time.Unix(input.ExpiresAt, 0),
+		Expiry: expiry,
 		Birth:  time.Unix(input.CreatedAt, 0),
 		Type:   t,
 	}

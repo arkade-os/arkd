@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -218,6 +219,92 @@ func TestCheckUnrolledVtxoExpiry(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Covers the sites that read Vtxo.ExpiresAt directly rather than through
+// IsExpired, where an on-chain vtxo's zero wins any comparison it enters.
+func TestBatchExpiryGuards(t *testing.T) {
+	const (
+		soon = int64(2_000_000_000)
+		late = int64(2_000_003_600)
+	)
+
+	t.Run("earliest batch expiry", func(t *testing.T) {
+		t.Run("picks the soonest expiry and its commitment", func(t *testing.T) {
+			expiry, txid, ok := earliestBatchExpiry([]domain.Vtxo{
+				{ExpiresAt: late, RootCommitmentTxid: "late-batch"},
+				{ExpiresAt: soon, RootCommitmentTxid: "soon-batch"},
+			})
+
+			require.True(t, ok)
+			require.Equal(t, soon, expiry)
+			require.Equal(t, "soon-batch", txid)
+		})
+
+		t.Run("an onchain-kind input never wins the comparison", func(t *testing.T) {
+			expiry, txid, ok := earliestBatchExpiry([]domain.Vtxo{
+				{ExpiresAt: soon, RootCommitmentTxid: "soon-batch"},
+				{Kind: domain.VtxoKindOnchain, ExpiresAt: 0, RootCommitmentTxid: ""},
+			})
+
+			require.True(t, ok)
+			require.Equal(t, soon, expiry)
+			require.Equal(t, "soon-batch", txid)
+		})
+
+		// The MaxInt64 left behind passes Accept's expiry check, so a caller
+		// that ignored the bool would store it as a real deadline.
+		t.Run("only onchain-kind inputs reports nothing found", func(t *testing.T) {
+			expiry, txid, ok := earliestBatchExpiry([]domain.Vtxo{
+				{Kind: domain.VtxoKindOnchain},
+				{Kind: domain.VtxoKindOnchain},
+			})
+
+			require.False(t, ok)
+			require.Equal(t, int64(math.MaxInt64), expiry)
+			require.Empty(t, txid)
+		})
+
+		t.Run("no inputs reports nothing found", func(t *testing.T) {
+			expiry, txid, ok := earliestBatchExpiry(nil)
+
+			require.False(t, ok)
+			require.Equal(t, int64(math.MaxInt64), expiry)
+			require.Empty(t, txid)
+		})
+
+		t.Run("a zero expiry on a batch vtxo still counts as found", func(t *testing.T) {
+			expiry, txid, ok := earliestBatchExpiry([]domain.Vtxo{
+				{ExpiresAt: 0, RootCommitmentTxid: "batch"},
+			})
+
+			require.True(t, ok)
+			require.Zero(t, expiry)
+			require.Equal(t, "batch", txid)
+		})
+	})
+
+	t.Run("settlement expiry gap", func(t *testing.T) {
+		limit := time.Unix(soon, 0)
+
+		t.Run("a vtxo expiring after the limit exceeds it", func(t *testing.T) {
+			require.True(t, exceedsSettlementExpiryGap(domain.Vtxo{ExpiresAt: late}, limit))
+		})
+
+		t.Run("a vtxo expiring before the limit does not", func(t *testing.T) {
+			require.False(t, exceedsSettlementExpiryGap(
+				domain.Vtxo{ExpiresAt: soon - 1}, limit,
+			))
+		})
+
+		// Passes with or without the early return, since a zero already fails
+		// the comparison. Here to catch the comparison being reversed.
+		t.Run("an onchain-kind vtxo never exceeds it", func(t *testing.T) {
+			require.False(t, exceedsSettlementExpiryGap(
+				domain.Vtxo{Kind: domain.VtxoKindOnchain, ExpiresAt: 0}, limit,
+			))
+		})
+	})
 }
 
 func TestValidateOffchainTxOutputs(t *testing.T) {

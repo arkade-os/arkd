@@ -643,15 +643,15 @@ func (s *service) SubmitOffchainTx(
 
 	indexedSpentVtxos := make(map[domain.Outpoint]domain.Vtxo)
 	commitmentTxsByCheckpointTxid := make(map[string]string)
-	expiration := int64(math.MaxInt64)
-	rootCommitmentTxid := ""
 	for _, vtxo := range spentVtxos {
 		indexedSpentVtxos[vtxo.Outpoint] = vtxo
 		commitmentTxsByCheckpointTxid[checkpointTxsByVtxoKey[vtxo.Outpoint]] = vtxo.RootCommitmentTxid
-		if vtxo.ExpiresAt < expiration {
-			rootCommitmentTxid = vtxo.RootCommitmentTxid
-			expiration = vtxo.ExpiresAt
-		}
+	}
+	expiration, rootCommitmentTxid, hasBatchExpiry := earliestBatchExpiry(spentVtxos)
+	if !hasBatchExpiry {
+		return nil, errors.INVALID_PSBT_INPUT.New(
+			"no input has a batch expiry, so the resulting vtxo cannot be dated",
+		)
 	}
 
 	// index by ark input index for asset packet validation
@@ -1792,9 +1792,8 @@ func (s *service) RegisterIntent(
 
 		if settlementMinExpiryGap > 0 && !vtxo.Swept {
 			// reject if expires after now + settlementMinExpiryGap
-			expiresAt := time.Unix(vtxo.ExpiresAt, 0)
 			limit := time.Now().Add(settlementMinExpiryGap)
-			if expiresAt.After(limit) {
+			if exceedsSettlementExpiryGap(vtxo, limit) {
 				return "", errors.INVALID_PSBT_INPUT.New(
 					"vtxo %s expires after %s (minExpiryGap: %s)",
 					vtxo.Outpoint.String(), limit, settlementMinExpiryGap,
@@ -4507,6 +4506,37 @@ func (s *service) validateBoardingInput(
 	}
 
 	return &tx, nil
+}
+
+// Vtxos with no batch expiry are skipped, since their zero would win the
+// comparison and date the result to the epoch with the wrong commitment txid.
+//
+// The bool reports whether any vtxo had one. Callers must reject false rather
+// than use the MaxInt64 left behind, which Accept's expiry check lets through.
+func earliestBatchExpiry(vtxos []domain.Vtxo) (int64, string, bool) {
+	expiration := int64(math.MaxInt64)
+	rootCommitmentTxid := ""
+	found := false
+	for _, vtxo := range vtxos {
+		if !vtxo.HasBatchExpiry() {
+			continue
+		}
+		if vtxo.ExpiresAt < expiration {
+			rootCommitmentTxid = vtxo.RootCommitmentTxid
+			expiration = vtxo.ExpiresAt
+		}
+		found = true
+	}
+	return expiration, rootCommitmentTxid, found
+}
+
+// The early return is redundant today, since a zero already fails this
+// comparison. It guards against the comparison being reversed later.
+func exceedsSettlementExpiryGap(vtxo domain.Vtxo, limit time.Time) bool {
+	if !vtxo.HasBatchExpiry() {
+		return false
+	}
+	return time.Unix(vtxo.ExpiresAt, 0).After(limit)
 }
 
 func checkUnrolledVtxoExpiry(
