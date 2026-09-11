@@ -112,7 +112,8 @@ UPDATE vtxo SET spent = true, spent_by = @spent_by, ark_txid = @ark_txid, update
 WHERE txid = @txid AND vout = @vout;
 
 -- Records an unrolled vtxo spent onchain, outside the Ark. ark_txid is left
--- untouched (NULL) on purpose: its absence is what marks the spend as onchain.
+-- untouched (NULL) on purpose, since its absence is what marks the spend as
+-- onchain.
 -- The spent = false guard makes the write idempotent and prevents it clobbering
 -- an offchain spend that lands concurrently, which would erase that vtxo's
 -- ark_txid and hide a genuine fraud case from the sweeper.
@@ -129,8 +130,8 @@ WHERE txid = @txid AND vout = @vout AND unrolled = true AND spent = true
   AND COALESCE(settled_by, '') = '' AND COALESCE(ark_txid, '') = '';
 
 -- Retracts an onchain spend whose transaction was evicted or reorged out. Same
--- scoping as the re-point: an offchain spend or a settlement can never be undone
--- by this statement.
+-- scoping as the re-point, since an offchain spend or a settlement can never
+-- be undone by this statement.
 -- name: UpdateVtxoOnchainUnspent :exec
 UPDATE vtxo SET spent = false, spent_by = NULL, updated_at = (CAST((strftime('%s','now') || substr(strftime('%f','now'),4,3)) AS INTEGER))
 WHERE txid = @txid AND vout = @vout AND unrolled = true AND spent = true
@@ -433,7 +434,7 @@ ORDER BY depth, txid, vout;
 -- name: SelectSweepableUnrolledVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE spent = true AND unrolled = true AND swept = false AND (COALESCE(settled_by, '') = '') AND (COALESCE(ark_txid, '') <> '');
 
--- Candidates for onchain-spend reconciliation: unrolled vtxos we currently
+-- Candidates for onchain-spend reconciliation, meaning unrolled vtxos we currently
 -- believe are unspent.
 -- name: SelectUnrolledUnspentVtxos :many
 SELECT sqlc.embed(vtxo_vw) FROM vtxo_vw WHERE unrolled = true AND spent = false AND swept = false;

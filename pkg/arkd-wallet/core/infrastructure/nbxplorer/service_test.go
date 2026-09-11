@@ -14,7 +14,7 @@ import (
 func TestNbxplorerNotFound(t *testing.T) {
 	// GetTransaction pins the contract the whole confirmation path
 	// depends on. NBXplorer answers 404 for a transaction it has not seen, which is
-	// an ordinary outcome rather than a fault: GetTransaction must report it as
+	// an ordinary outcome rather than a fault, so GetTransaction must report it as
 	// ErrTransactionNotFound so the gRPC handler can translate it into "not
 	// confirmed". When that translation is lost, the sweeper reads the resulting
 	// error as "cannot schedule this sweep" and silently stops sweeping batches,
@@ -63,7 +63,7 @@ func TestNbxplorerNotFound(t *testing.T) {
 		})
 	})
 
-	// GetTxSpends covers the other side of the same 404: a transaction
+	// GetTxSpends covers the other side of the same 404, a transaction
 	// that touches nothing the group tracks is the common case on every chain
 	// event, so it must yield no spends rather than an error.
 	t.Run("GetTxSpends yields no spends for an untracked transaction", func(t *testing.T) {

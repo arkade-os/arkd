@@ -1047,12 +1047,12 @@ func (n *nbxplorer) GetTxSpends(ctx context.Context, txid string) ([]ports.Spend
 
 // GetUnspentOutpoints returns the tracked outputs that are currently unspent.
 //
-// The subtraction matters: NBXplorer keeps a confirmed output in Confirmed.UtxOs
-// even while the transaction spending it sits in the mempool, listing it in
-// Unconfirmed.SpentOutpoints at the same time. Taking Confirmed.UtxOs at face
-// value would therefore report a mempool-spent output as unspent, and a caller
-// using this to retract spends would undo every mempool spend one tick after
-// recording it.
+// The subtraction matters, since NBXplorer keeps a confirmed output in
+// Confirmed.UtxOs even while the transaction spending it sits in the mempool,
+// listing it in Unconfirmed.SpentOutpoints at the same time. Taking
+// Confirmed.UtxOs at face value would therefore report a mempool-spent output
+// as unspent, and a caller using this to retract spends would undo every
+// mempool spend one tick after recording it.
 func (n *nbxplorer) GetUnspentOutpoints(
 	ctx context.Context,
 ) (map[wire.OutPoint]struct{}, error) {

@@ -68,7 +68,7 @@ func (s *service) applyOnchainSpends(ctx context.Context, spends []ports.Spend) 
 	spentBy := make(map[domain.Outpoint]string)
 	for _, vtxo := range vtxos {
 		// Only an unrolled vtxo has an onchain output to spend. A vtxo already
-		// spent inside the Ark is left alone: MarkVtxosOnchainSpent would ignore
+		// spent inside the Ark is left alone, since MarkVtxosOnchainSpent would ignore
 		// it anyway, and filtering here keeps the log honest.
 		if !vtxo.Unrolled {
 			continue
