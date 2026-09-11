@@ -21,7 +21,7 @@ type VtxoRepository interface {
 	GetAllNonUnrolledVtxos(ctx context.Context, pubkey string) ([]Vtxo, []Vtxo, error)
 	GetAllSweepableUnrolledVtxos(ctx context.Context) ([]Vtxo, error)
 	// GetUnrolledUnspentVtxos returns the vtxos with an onchain output, unrolled
-	// or onchain-kind, currently believed unspent: the candidate set the
+	// or onchain-kind, currently believed unspent, the candidate set the
 	// onchain-spend reconciler checks against the chain.
 	GetUnrolledUnspentVtxos(ctx context.Context) ([]Vtxo, error)
 	// GetOnchainSpentVtxos returns vtxos currently recorded as spent onchain, so

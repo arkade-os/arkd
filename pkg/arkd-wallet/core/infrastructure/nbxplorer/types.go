@@ -185,7 +185,7 @@ type transactionInformationSet struct {
 }
 
 // transactionsResponse mirrors NBXplorer's GetTransactionsResponse. Only the
-// confirmed and unconfirmed sets are consumed: replacedTransactions holds
+// confirmed and unconfirmed sets are consumed. ReplacedTransactions holds
 // transactions superseded by RBF, and reading them would re-point a vtxo at a
 // spender that no longer exists.
 type transactionsResponse struct {

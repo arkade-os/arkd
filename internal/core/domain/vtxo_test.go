@@ -213,7 +213,7 @@ func TestVtxo_RequiresForfeit(t *testing.T) {
 
 // TestVtxo_IsOnchainSpent pins the discriminator that separates a vtxo spent
 // onchain, outside the Ark, from one spent inside it. There is no dedicated
-// column: an in-Ark spend always carries either ArkTxid (set by SpendVtxos when
+// column. An in-Ark spend always carries either ArkTxid (set by SpendVtxos when
 // an offchain tx is accepted) or SettledBy (set by SettleVtxos at batch
 // settlement), so their absence on a spent+unrolled vtxo is what identifies an
 // onchain spend. The sweeper and the fraud reaction both key off this.
