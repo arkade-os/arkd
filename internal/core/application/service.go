@@ -63,6 +63,10 @@ type service struct {
 	forfeitsBoardingSigsChan chan struct{}
 	indexerTxEventsCh        chan TransactionEvent
 
+	// batchSessions tells startRound when a finished batch's projection has
+	// been written.
+	batchSessions *batchSessionManager
+
 	// stop and round-execution go routine handlers
 	stop         func()
 	ctx          context.Context
@@ -155,6 +159,7 @@ func NewService(
 		eventsCh:                 make(chan []domain.Event, 64),
 		transactionEventsCh:      make(chan TransactionEvent, 64),
 		indexerTxEventsCh:        make(chan TransactionEvent, 64),
+		batchSessions:            newBatchSessionManager(),
 		stop:                     cancel,
 		ctx:                      ctx,
 		wg:                       &sync.WaitGroup{},
@@ -236,6 +241,12 @@ func (s *service) Start() error {
 func (s *service) registerEventHandlers() {
 	s.repoManager.RegisterBatchUpdateHandler(
 		func(round domain.Round) {
+			// Dispatched only once the projection writes have returned, so an
+			// ended round reaching here is what startRound waits on.
+			if round.IsEnded() {
+				s.batchSessions.markProjected(round.Id)
+			}
+
 			go s.propagateEvents(context.Background(), round)
 
 			events := round.Events()
@@ -2820,6 +2831,22 @@ func (s *service) startRound() {
 	}
 
 	if existingRound != nil {
+		// A settled vtxo is refused either by the intent claim, dropped by
+		// DeleteVtxos just below, or by the spent mark registration reads from
+		// the projection. Dropping the claim before the mark lands leaves a
+		// window where neither refuses it, so wait for the projection first.
+		if existingRound.IsEnded() {
+			if !s.batchSessions.waitForProjection(
+				s.ctx, existingRound.Id, batchProjectionTimeout,
+			) {
+				log.Warnf(
+					"projection of round %s not written after %s, "+
+						"starting the next batch anyway",
+					existingRound.Id, batchProjectionTimeout,
+				)
+			}
+		}
+
 		// Reset the cache for the new batch
 		if err := s.cache.ForfeitTxs().Reset(ctx); err != nil {
 			log.WithError(err).Warnf(
@@ -3523,6 +3550,10 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming, setting
 		if stopped {
 			return
 		}
+
+		// Before the save, so the projection it triggers cannot land before the
+		// next batch knows to wait for it.
+		s.batchSessions.track(round)
 
 		if err := s.saveEvents(ctx, roundId, changes); err != nil {
 			log.WithError(err).Error("failed to store new round events")

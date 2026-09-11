@@ -118,6 +118,9 @@ type mockedRepoManager struct {
 	// RegisterOffchainTxUpdateHandler so tests can dispatch it directly
 	// to exercise the inline closure in registerEventHandlers.
 	offchainTxHandler func(domain.OffchainTx)
+	// batchHandler captures the handler registered via
+	// RegisterBatchUpdateHandler, for the same reason.
+	batchHandler func(domain.Round)
 }
 
 func (m *mockedRepoManager) Rounds() domain.RoundRepository {
@@ -149,7 +152,9 @@ func (m *mockedRepoManager) RegisterOffchainTxUpdateHandler(h func(domain.Offcha
 	m.offchainTxHandler = h
 }
 
-func (m *mockedRepoManager) RegisterBatchUpdateHandler(func(domain.Round)) {}
+func (m *mockedRepoManager) RegisterBatchUpdateHandler(h func(domain.Round)) {
+	m.batchHandler = h
+}
 
 func (m *mockedRepoManager) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {
 }
