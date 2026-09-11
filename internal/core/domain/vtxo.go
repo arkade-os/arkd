@@ -65,7 +65,19 @@ type Vtxo struct {
 	Depth              uint32   // chain depth: 0 for vtxos from batch, increments on each chain
 	MarkerIDs          []string // marker IDs for DAG traversal optimization (supports multiple parent markers)
 	Assets             []AssetDenomination
+	Kind               VtxoKind // how the vtxo is held (offchain by default, onchain for on-chain Arkade UTXOs)
 }
+
+// VtxoKind distinguishes how a vtxo is held. Offchain (the default) is a batch
+// leaf or an offchain-tx output. Onchain marks a vtxo held in an on-chain
+// Arkade UTXO. It is an open enum so future on-chain sub-kinds can be added
+// without another schema migration.
+type VtxoKind uint8
+
+const (
+	VtxoKindOffchain VtxoKind = iota
+	VtxoKindOnchain
+)
 
 func (v Vtxo) String() string {
 	// nolint
@@ -74,24 +86,36 @@ func (v Vtxo) String() string {
 }
 
 func (v Vtxo) IsNote() bool {
-	return len(v.CommitmentTxids) <= 0 && v.RootCommitmentTxid == ""
+	// An on-chain Arkade UTXO also has no commitment txids, so the kind check
+	// keeps it from reading as a note.
+	return v.Kind != VtxoKindOnchain &&
+		len(v.CommitmentTxids) <= 0 && v.RootCommitmentTxid == ""
 }
 
 func (v Vtxo) RequiresForfeit() bool {
-	return !v.Swept && !v.IsNote() && !v.Unrolled
+	// An on-chain Arkade UTXO joins a batch as a boarding input, which is
+	// signed directly and never forfeited.
+	return v.Kind != VtxoKindOnchain && !v.Swept && !v.IsNote() && !v.Unrolled
 }
 
 func (v Vtxo) IsSettled() bool {
 	return v.SettledBy != ""
 }
 
-// IsOnchainSpent reports a vtxo that was unrolled and then spent onchain,
-// outside the Ark. There is no dedicated column. An in-Ark spend always sets
-// either ArkTxid (SpendVtxos, on an accepted offchain tx) or SettledBy
-// (SettleVtxos, at batch settlement), so their absence on a spent and unrolled
-// vtxo is what identifies the spend as onchain.
+// HasOnchainOutput reports a vtxo with an output that can be spent onchain,
+// outside the Ark, either one that was unrolled or one held in an on-chain
+// Arkade UTXO. Those are the vtxos the onchain spend tracking watches.
+func (v Vtxo) HasOnchainOutput() bool {
+	return v.Unrolled || v.Kind == VtxoKindOnchain
+}
+
+// IsOnchainSpent reports a vtxo with an onchain output that was then spent
+// onchain, outside the Ark. There is no dedicated column. An in-Ark spend
+// always sets either ArkTxid (SpendVtxos, on an accepted offchain tx) or
+// SettledBy (SettleVtxos, at batch settlement), so their absence on a spent
+// vtxo with an onchain output is what identifies the spend as onchain.
 func (v Vtxo) IsOnchainSpent() bool {
-	return v.Unrolled && v.Spent && v.SettledBy == "" && v.ArkTxid == ""
+	return v.HasOnchainOutput() && v.Spent && v.SettledBy == "" && v.ArkTxid == ""
 }
 
 func (v Vtxo) TapKey() (*btcec.PublicKey, error) {
@@ -111,5 +135,12 @@ func (v Vtxo) OutputScript() ([]byte, error) {
 }
 
 func (v Vtxo) IsExpired() bool {
+	// An on-chain Arkade UTXO has no batch expiry, so ExpiresAt is not
+	// meaningful for it. Without this an on-chain vtxo (which carries a zero
+	// ExpiresAt) would read as permanently expired and be treated as
+	// unspendable by every caller.
+	if v.Kind == VtxoKindOnchain {
+		return false
+	}
 	return time.Now().After(time.Unix(v.ExpiresAt, 0))
 }

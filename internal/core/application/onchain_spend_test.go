@@ -60,6 +60,24 @@ func TestOnchainSpends(t *testing.T) {
 			)
 		})
 
+		// An on-chain Arkade UTXO is never unrolled but has an onchain output all
+		// the same, so its spend is recorded like an unrolled vtxo's.
+		t.Run("records an onchain-kind vtxo spent onchain", func(t *testing.T) {
+			svc, vtxos := newService(t, []domain.Vtxo{
+				{Outpoint: out, Kind: domain.VtxoKindOnchain},
+			})
+			vtxos.On("MarkVtxosOnchainSpent", mock.Anything, mock.Anything).Return(nil)
+
+			require.NoError(t, svc.applyOnchainSpends(
+				context.Background(), []ports.Spend{spendOf(out, spendingTxid, 1)},
+			))
+
+			vtxos.AssertCalled(
+				t, "MarkVtxosOnchainSpent", mock.Anything,
+				map[domain.Outpoint]string{out: spendingTxid},
+			)
+		})
+
 		// The wallet watches boarding scripts as well as vtxo scripts, so most
 		// notified spends refer to outputs that are not unrolled vtxos at all.
 		t.Run("ignores a vtxo that was never unrolled", func(t *testing.T) {

@@ -95,6 +95,74 @@ func TestOnchainSpendRepository(t *testing.T) {
 				require.Empty(t, got.SpentBy)
 			})
 
+			// An on-chain Arkade UTXO has an onchain output without ever being
+			// unrolled, so the same mark, re-point and retract apply to it.
+			t.Run("marks, re-points and retracts an onchain-kind vtxo", func(t *testing.T) {
+				vtxo := onchainKindVtxo(randomString(32))
+				require.NoError(t, repo.AddVtxos(ctx, []domain.Vtxo{vtxo}))
+
+				require.NoError(t, repo.MarkVtxosOnchainSpent(
+					ctx, map[domain.Outpoint]string{vtxo.Outpoint: "spendingtxid"},
+				))
+				got := getOnchainSpendVtxo(t, repo, vtxo.Outpoint)
+				require.True(t, got.Spent)
+				require.Equal(t, "spendingtxid", got.SpentBy)
+				require.True(t, got.IsOnchainSpent())
+				require.Equal(t, domain.VtxoKindOnchain, got.Kind)
+
+				require.NoError(t, repo.MarkVtxosOnchainSpent(
+					ctx, map[domain.Outpoint]string{vtxo.Outpoint: "replacementtxid"},
+				))
+				got = getOnchainSpendVtxo(t, repo, vtxo.Outpoint)
+				require.Equal(t, "replacementtxid", got.SpentBy)
+
+				require.NoError(t, repo.UnmarkVtxosOnchainSpent(
+					ctx, []domain.Outpoint{vtxo.Outpoint},
+				))
+				got = getOnchainSpendVtxo(t, repo, vtxo.Outpoint)
+				require.False(t, got.Spent)
+				require.Empty(t, got.SpentBy)
+				require.False(t, got.Unrolled, "an onchain-kind vtxo is never unrolled")
+				require.Equal(t, domain.VtxoKindOnchain, got.Kind)
+			})
+
+			t.Run("selectors partition by kind as by unrolled", func(t *testing.T) {
+				unspent := onchainKindVtxo(randomString(32))
+				spent := onchainKindVtxo(randomString(32))
+				offchain := onchainSpendVtxo(randomString(32))
+				require.NoError(t, repo.AddVtxos(ctx, []domain.Vtxo{unspent, spent, offchain}))
+				require.NoError(t, repo.MarkVtxosOnchainSpent(
+					ctx, map[domain.Outpoint]string{spent.Outpoint: "spendingtxid"},
+				))
+
+				candidates, err := repo.GetUnrolledUnspentVtxos(ctx)
+				require.NoError(t, err)
+				require.True(t, containsOutpoint(candidates, unspent.Outpoint))
+				require.False(t, containsOutpoint(candidates, spent.Outpoint))
+				require.False(t, containsOutpoint(candidates, offchain.Outpoint),
+					"an offchain vtxo that was never unrolled has no onchain output")
+
+				recorded, err := repo.GetOnchainSpentVtxos(ctx)
+				require.NoError(t, err)
+				require.True(t, containsOutpoint(recorded, spent.Outpoint))
+				require.False(t, containsOutpoint(recorded, unspent.Outpoint))
+				require.False(t, containsOutpoint(recorded, offchain.Outpoint))
+			})
+
+			// The sweeper resolves SpentBy as a checkpoint tx. An onchain-kind
+			// UTXO has none, so its onchain spend must never reach the sweeper.
+			t.Run("an onchain-kind vtxo never enters the sweepable set", func(t *testing.T) {
+				vtxo := onchainKindVtxo(randomString(32))
+				require.NoError(t, repo.AddVtxos(ctx, []domain.Vtxo{vtxo}))
+				require.NoError(t, repo.MarkVtxosOnchainSpent(
+					ctx, map[domain.Outpoint]string{vtxo.Outpoint: "spendingtxid"},
+				))
+
+				sweepable, err := repo.GetAllSweepableUnrolledVtxos(ctx)
+				require.NoError(t, err)
+				require.False(t, containsOutpoint(sweepable, vtxo.Outpoint))
+			})
+
 			// The sweeper resolves SpentBy as a checkpoint tx, so an onchain
 			// spend must stay out of its candidate set while an in-Ark spend that
 			// was later unrolled must stay in it.
@@ -298,6 +366,17 @@ func onchainSpendVtxo(txid string) domain.Vtxo {
 		ExpiresAt:          1785690467,
 		CreatedAt:          1783098211,
 	}
+}
+
+// onchainKindVtxo is an on-chain Arkade UTXO, meaning onchain kind, no
+// commitment, no batch expiry and never unrolled.
+func onchainKindVtxo(txid string) domain.Vtxo {
+	vtxo := onchainSpendVtxo(txid)
+	vtxo.Kind = domain.VtxoKindOnchain
+	vtxo.CommitmentTxids = nil
+	vtxo.RootCommitmentTxid = ""
+	vtxo.ExpiresAt = 0
+	return vtxo
 }
 
 func getOnchainSpendVtxo(

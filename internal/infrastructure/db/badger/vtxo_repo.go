@@ -266,12 +266,20 @@ func (r *VtxoRepository) GetAllSweepableUnrolledVtxos(
 func (r *VtxoRepository) GetUnrolledUnspentVtxos(
 	ctx context.Context,
 ) ([]domain.Vtxo, error) {
+	// An onchain-kind vtxo has an onchain output without being unrolled, so
+	// both shapes are candidates.
 	query := badgerhold.Where("Unrolled").
 		Eq(true).
 		And("Spent").
 		Eq(false).
 		And("Swept").
-		Eq(false)
+		Eq(false).
+		Or(badgerhold.Where("Kind").
+			Eq(domain.VtxoKindOnchain).
+			And("Spent").
+			Eq(false).
+			And("Swept").
+			Eq(false))
 	return r.findVtxos(ctx, query)
 }
 
@@ -285,7 +293,15 @@ func (r *VtxoRepository) GetOnchainSpentVtxos(
 		And("SettledBy").
 		Eq("").
 		And("ArkTxid").
-		Eq("")
+		Eq("").
+		Or(badgerhold.Where("Kind").
+			Eq(domain.VtxoKindOnchain).
+			And("Spent").
+			Eq(true).
+			And("SettledBy").
+			Eq("").
+			And("ArkTxid").
+			Eq(""))
 	return r.findVtxos(ctx, query)
 }
 
@@ -821,7 +837,7 @@ func (r *VtxoRepository) markOnchainSpentVtxo(
 	tx *badger.Txn, outpoint domain.Outpoint, spendingTxid string,
 ) error {
 	vtxo, err := r.getVtxoTx(tx, outpoint)
-	if err != nil || vtxo == nil || !vtxo.Unrolled {
+	if err != nil || vtxo == nil || !vtxo.HasOnchainOutput() {
 		return err
 	}
 	if vtxo.Spent && !vtxo.IsOnchainSpent() {

@@ -866,6 +866,7 @@ func combinedRowToVtxo(row queries.IntentWithInputsVw) domain.Vtxo {
 		CreatedAt:          row.CreatedAt.Int64,
 		ArkTxid:            row.ArkTxid.String,
 		SettledBy:          row.SettledBy.String,
+		Kind:               domain.VtxoKind(row.VtxoKind.Int64),
 	}
 }
 

@@ -78,6 +78,7 @@ type IntentWithInputsVw struct {
 	UpdatedAt      sql.NullInt64
 	Depth          sql.NullInt64
 	Markers        sql.NullString
+	VtxoKind       sql.NullInt64
 	Commitments    interface{}
 	Swept          interface{}
 	AssetID        string
@@ -280,6 +281,7 @@ type Vtxo struct {
 	UpdatedAt      sql.NullInt64
 	Depth          int64
 	Markers        string
+	VtxoKind       int64
 }
 
 type VtxoCommitmentTxid struct {
@@ -306,6 +308,7 @@ type VtxoVw struct {
 	UpdatedAt      sql.NullInt64
 	Depth          int64
 	Markers        string
+	VtxoKind       int64
 	Commitments    interface{}
 	Swept          interface{}
 	AssetID        string
