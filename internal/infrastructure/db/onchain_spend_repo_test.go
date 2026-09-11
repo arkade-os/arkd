@@ -32,7 +32,7 @@ func TestOnchainSpendRepository(t *testing.T) {
 				require.Empty(t, got.ArkTxid, "an onchain spend must leave ark_txid unset")
 				require.True(t, got.IsOnchainSpent())
 
-				// RBF: the spender is replaced, so spent_by must follow it even
+				// After an RBF the spender is replaced, so spent_by must follow it even
 				// though the vtxo is already marked spent.
 				require.NoError(t, repo.MarkVtxosOnchainSpent(
 					ctx, map[domain.Outpoint]string{vtxo.Outpoint: "replacementtxid"},

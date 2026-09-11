@@ -132,7 +132,7 @@ func TestOnchainSpends(t *testing.T) {
 			vtxos.AssertNotCalled(t, "MarkVtxosOnchainSpent", mock.Anything, mock.Anything)
 		})
 
-		// RBF: the replacement becomes the spender, so spent_by has to follow it.
+		// After an RBF the replacement becomes the spender, so spent_by follows it.
 		t.Run("re-points an onchain spend when the spender is replaced", func(t *testing.T) {
 			svc, vtxos := newService(t, []domain.Vtxo{{
 				Outpoint: out, Unrolled: true, Spent: true, SpentBy: spendingTxid,
