@@ -604,30 +604,63 @@ func (s *service) SubmitOffchainTx(
 			})
 	}
 
+	// check if banned, over every input at once
+	bannedCandidates := make([]banCandidate, 0, len(spentVtxos))
 	for _, vtxo := range spentVtxos {
-		// check if banned
-		if err := s.checkIfBanned(ctx, banThreshold, vtxo); err != nil {
-			return nil, errors.VTXO_BANNED.Wrap(err).
-				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
-		}
-
-		// check if already spent by another offchain tx
-		isSpent, err := s.cache.OffchainTxs().Includes(ctx, vtxo.Outpoint)
-		if err != nil {
-			log.WithError(err).Errorf("failed to check spent status of inputs against tx in cache")
-			return nil, errors.INTERNAL_ERROR.New("something went wrong").
-				WithMetadata(map[string]any{"vtxos": vtxo.Outpoint.String()})
-		}
-
-		if isSpent {
-			return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", vtxo.Outpoint.String()).
-				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
-		}
+		bannedCandidates = append(
+			bannedCandidates, banCandidate{outpoint: vtxo.Outpoint, script: vtxo},
+		)
+	}
+	bans, err := s.checkIfBanned(ctx, banThreshold, bannedCandidates)
+	if err != nil {
+		log.WithError(err).Error("failed to check for banned vtxos")
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithMetadata(map[string]any{
+				"txid":  txid,
+				"vtxos": spentVtxoKeys,
+			})
+	}
+	if len(bans) > 0 {
+		return nil, vtxoBannedError(bans)
 	}
 
-	if exists, vtxo := s.cache.Intents().IncludesAny(ctx, spentVtxoKeys); exists {
-		return nil, errors.VTXO_ALREADY_REGISTERED.New("%s already registered", vtxo).
-			WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo})
+	// check if already spent by another offchain tx
+	alreadySpentVtxos, err := s.cache.OffchainTxs().IncludesAny(ctx, spentVtxoKeys)
+	if err != nil {
+		log.WithError(err).Error("failed to check spent status of tx inputs in cache")
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithMetadata(map[string]any{
+				"txid":  txid,
+				"vtxos": spentVtxoKeys,
+			})
+	}
+	if len(alreadySpentVtxos) > 0 {
+		outpoints := make([]string, 0, len(alreadySpentVtxos))
+		for _, vtxo := range alreadySpentVtxos {
+			outpoints = append(outpoints, vtxo.String())
+		}
+		return nil, errors.VTXO_ALREADY_SPENT.New("vtxo(s) already spent").
+			WithMetadata(errors.VtxoMetadata{VtxoOutpoints: outpoints})
+	}
+
+	alreadyRegisteredVtxos, err := s.cache.Intents().IncludesAny(ctx, spentVtxoKeys)
+	if err != nil {
+		log.WithError(err).Errorf(
+			"failed to check registered status of inputs against intents in cache",
+		)
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithMetadata(map[string]any{
+				"txid":  txid,
+				"vtxos": spentVtxoKeys,
+			})
+	}
+	if len(alreadyRegisteredVtxos) > 0 {
+		outpoints := make([]string, 0, len(alreadyRegisteredVtxos))
+		for _, vtxo := range alreadyRegisteredVtxos {
+			outpoints = append(outpoints, vtxo.String())
+		}
+		return nil, errors.VTXO_ALREADY_REGISTERED.New("vtxo(s) already registered").
+			WithMetadata(errors.VtxoMetadata{VtxoOutpoints: outpoints})
 	}
 
 	// Create the request event only after VTXO preflight checks so rejected payloads are not persisted.
@@ -764,24 +797,24 @@ func (s *service) SubmitOffchainTx(
 
 		if vtxo.Spent {
 			return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", vtxo.Outpoint).
-				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
+				WithMetadata(errors.VtxoMetadata{VtxoOutpoints: []string{vtxoOutpoint}})
 		}
 
 		if vtxo.Unrolled {
 			return nil, errors.VTXO_ALREADY_UNROLLED.New(
 				"%s already unrolled", vtxo.Outpoint,
-			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
+			).WithMetadata(errors.VtxoMetadata{VtxoOutpoints: []string{vtxoOutpoint}})
 		}
 		if vtxo.Swept || vtxo.IsExpired() {
 			// if we reach this point, it means vtxo.Spent = false so the vtxo is recoverable
 			return nil, errors.VTXO_RECOVERABLE.New("%s is recoverable", vtxo.Outpoint).
-				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
+				WithMetadata(errors.VtxoMetadata{VtxoOutpoints: []string{vtxoOutpoint}})
 		}
 
 		if vtxo.IsNote() {
 			return nil, errors.OFFCHAIN_TX_SPENDING_NOTE.New(
 				"%s is a note", vtxo.Outpoint,
-			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint})
+			).WithMetadata(errors.VtxoMetadata{VtxoOutpoints: []string{vtxoOutpoint}})
 		}
 
 		// if the vtxo was created before the vtxoNoCsvValidationCutoffTime date, we use the
@@ -1219,24 +1252,44 @@ func (s *service) SubmitOffchainTx(
 
 	// before pushing to the cache, check if any of the spent vtxos are already spent by another offchain tx
 	// we redo this check after locking the mutex to avoid race conditions between concurrent offchain tx submissions
-	for _, spentVtxo := range spentVtxos {
-		isSpent, err := s.cache.OffchainTxs().Includes(ctx, spentVtxo.Outpoint)
-		if err != nil {
-			log.WithError(err).Errorf(
-				"failed to check again spent status of inputs against tx in cache",
-			)
-			return nil, errors.INTERNAL_ERROR.New("something went wrong").
-				WithMetadata(map[string]any{"vtxo": spentVtxo.Outpoint.String()})
+	alreadySpentVtxos, err = s.cache.OffchainTxs().IncludesAny(ctx, spentVtxoKeys)
+	if err != nil {
+		log.WithError(err).Errorf(
+			"failed to check again spent status of inputs against tx in cache",
+		)
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").WithMetadata(map[string]any{
+			"txid":  txid,
+			"vtxos": spentVtxoKeys,
+		})
+	}
+	if len(alreadySpentVtxos) > 0 {
+		outpoints := make([]string, 0, len(alreadySpentVtxos))
+		for _, vtxo := range alreadySpentVtxos {
+			outpoints = append(outpoints, vtxo.String())
 		}
-		if isSpent {
-			return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", spentVtxo.Outpoint.String()).
-				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: spentVtxo.Outpoint.String()})
-		}
+		return nil, errors.VTXO_ALREADY_SPENT.New("vtxo(s) already spent").
+			WithMetadata(errors.VtxoMetadata{VtxoOutpoints: outpoints})
 	}
 
-	if exists, vtxo := s.cache.Intents().IncludesAny(ctx, spentVtxoKeys); exists {
-		return nil, errors.VTXO_ALREADY_REGISTERED.New("%s already registered", vtxo).
-			WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo})
+	alreadyRegisteredVtxos, err = s.cache.Intents().IncludesAny(ctx, spentVtxoKeys)
+	if err != nil {
+		log.WithError(err).Errorf(
+			"failed to check again registered status of inputs against intents in cache",
+		)
+		return nil, errors.INTERNAL_ERROR.New(
+			"something went wrong",
+		).WithMetadata(map[string]any{
+			"txid":  txid,
+			"vtxos": spentVtxoKeys,
+		})
+	}
+	if len(alreadyRegisteredVtxos) > 0 {
+		outpoints := make([]string, 0, len(alreadyRegisteredVtxos))
+		for _, vtxo := range alreadyRegisteredVtxos {
+			outpoints = append(outpoints, vtxo.String())
+		}
+		return nil, errors.VTXO_ALREADY_REGISTERED.New("vtxo(s) already registered").
+			WithMetadata(errors.VtxoMetadata{VtxoOutpoints: outpoints})
 	}
 
 	// Cache entries are removed after DB projection completes
@@ -1266,15 +1319,15 @@ func (s *service) SubmitOffchainTx(
 		outpoint := vtxo.Outpoint.String()
 		if vtxo.Spent {
 			return nil, errors.VTXO_ALREADY_SPENT.New("%s already spent", outpoint).
-				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: outpoint})
+				WithMetadata(errors.VtxoMetadata{VtxoOutpoints: []string{outpoint}})
 		}
 		if vtxo.Unrolled {
 			return nil, errors.VTXO_ALREADY_UNROLLED.New("%s already unrolled", outpoint).
-				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: outpoint})
+				WithMetadata(errors.VtxoMetadata{VtxoOutpoints: []string{outpoint}})
 		}
 		if vtxo.Swept || vtxo.IsExpired() {
 			return nil, errors.VTXO_RECOVERABLE.New("%s is recoverable", outpoint).
-				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: outpoint})
+				WithMetadata(errors.VtxoMetadata{VtxoOutpoints: []string{outpoint}})
 		}
 	}
 
@@ -1377,12 +1430,17 @@ func (s *service) FinalizeOffchainTx(
 		return errors.INTERNAL_ERROR.New("failed to fetch vtxos: %w", err).
 			WithMetadata(map[string]any{"vtxos": spentVtxoKeys})
 	}
+
+	unrolledOutpoints := make([]string, 0, len(spentVtxos))
 	for _, vtxo := range spentVtxos {
-		if vtxo.Unrolled {
-			return errors.VTXO_ALREADY_UNROLLED.New(
-				"%s already unrolled", vtxo.Outpoint,
-			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+		if !vtxo.Unrolled {
+			continue
 		}
+		unrolledOutpoints = append(unrolledOutpoints, vtxo.Outpoint.String())
+	}
+	if len(unrolledOutpoints) > 0 {
+		return errors.VTXO_ALREADY_UNROLLED.New("vtxo(s) already unrolled").
+			WithMetadata(errors.VtxoMetadata{VtxoOutpoints: unrolledOutpoints})
 	}
 
 	finalCheckpointTxsMap := make(map[string]string)
@@ -1716,6 +1774,17 @@ func (s *service) RegisterIntent(
 	}
 
 	seenOutpoints := make(map[wire.OutPoint]struct{})
+	for _, outpoint := range outpoints {
+		if _, ok := seenOutpoints[outpoint]; ok {
+			return "", errors.INVALID_INTENT_PROOF.New(
+				"duplicated input %s", outpoint.String(),
+			).WithMetadata(errors.InvalidIntentProofMetadata{
+				Proof:   encodedProof,
+				Message: encodedMessage,
+			})
+		}
+		seenOutpoints[outpoint] = struct{}{}
+	}
 
 	banThreshold := settings.BanThreshold
 	settlementMinExpiryGap := settings.SettlementMinExpiryGap
@@ -1727,34 +1796,57 @@ func (s *service) RegisterIntent(
 	network := settings.Network
 	maxAssetsPerVtxo := settings.MaxAssetsPerVtxo()
 
-	for i, outpoint := range outpoints {
-		if _, seen := seenOutpoints[outpoint]; seen {
-			return "", errors.INVALID_INTENT_PROOF.New(
-				"duplicated input %s", outpoint.String(),
-			).WithMetadata(errors.InvalidIntentProofMetadata{
-				Proof:   encodedProof,
-				Message: encodedMessage,
+	// Held from here, the first read of an input, to the push that claims it.
+	// A batch cannot release the claims that refuse these inputs in between, so
+	// what is read here is still true at the push.
+	s.batchSessions.beginRegistration()
+	defer s.batchSessions.endRegistration()
+
+	// The reads below cover every input at once, so this section, which the next
+	// batch waits on, does not grow a round trip per input.
+	inputOutpoints := make([]domain.Outpoint, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		inputOutpoints = append(inputOutpoints, domain.Outpoint{
+			Txid: outpoint.Hash.String(), VOut: outpoint.Index,
+		})
+	}
+
+	alreadySpentVtxos, err := s.cache.OffchainTxs().IncludesAny(ctx, inputOutpoints)
+	if err != nil {
+		log.WithError(err).Errorf("failed to check spent status of inputs against tx in cache")
+		return "", errors.INTERNAL_ERROR.New("something went wrong").
+			WithMetadata(map[string]any{
+				"vtxos": inputOutpoints,
 			})
+	}
+	if len(alreadySpentVtxos) > 0 {
+		outpoints := make([]string, 0, len(alreadySpentVtxos))
+		for _, vtxo := range alreadySpentVtxos {
+			outpoints = append(outpoints, vtxo.String())
 		}
-		seenOutpoints[outpoint] = struct{}{}
+		return "", errors.VTXO_ALREADY_SPENT.New("vtxo(s) already spent").
+			WithMetadata(errors.VtxoMetadata{VtxoOutpoints: outpoints})
+	}
 
-		psbtInput := proof.Inputs[i+1]
+	indexedVtxos := make(map[domain.Outpoint]domain.Vtxo)
+	found, err := s.repoManager.Vtxos().GetVtxos(ctx, inputOutpoints)
+	if err != nil {
+		log.WithError(err).Error("failed to get vtxo from db for requested intent")
+		return "", errors.INTERNAL_ERROR.New("something went wrong").
+			WithMetadata(map[string]any{
+				"vtxos": inputOutpoints,
+			})
+	}
+	for _, vtxo := range found {
+		indexedVtxos[vtxo.Outpoint] = vtxo
+	}
 
+	bannedCandidates := make([]banCandidate, 0, len(outpoints))
+	inputTapscripts := make(map[wire.OutPoint][]string, len(outpoints))
+	for i, outpoint := range outpoints {
 		vtxoOutpoint := domain.Outpoint{
 			Txid: outpoint.Hash.String(),
 			VOut: outpoint.Index,
-		}
-
-		isSpent, err := s.cache.OffchainTxs().Includes(ctx, vtxoOutpoint)
-		if err != nil {
-			log.WithError(err).Errorf("failed to check spent status of inputs against tx in cache")
-			return "", errors.INTERNAL_ERROR.New("something went wrong").
-				WithMetadata(map[string]any{"vtxo": vtxoOutpoint.String()})
-		}
-		if isSpent {
-			return "", errors.VTXO_ALREADY_SPENT.New(
-				"vtxo %s is currently being spent", vtxoOutpoint.String(),
-			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint.String()})
 		}
 
 		// we ignore error cause sometimes the taproot tree is not required
@@ -1765,14 +1857,56 @@ func (s *service) RegisterIntent(
 		if len(taptreeFields) > 0 {
 			tapscripts = taptreeFields[0]
 		}
+		inputTapscripts[outpoint] = tapscripts
+
+		// A known vtxo is checked by the script stored for it. Its taptree comes from
+		// the client, can be missing or a note script, and is only matched to that
+		// script when the vtxo needs a forfeit.
+		if vtxo, ok := indexedVtxos[vtxoOutpoint]; ok {
+			bannedCandidates = append(
+				bannedCandidates, banCandidate{outpoint: vtxoOutpoint, script: vtxo},
+			)
+			continue
+		}
+		input := ports.Input{Outpoint: vtxoOutpoint, Tapscripts: tapscripts}
+		// A boarding input whose taptree gives no script is refused later as an
+		// invalid script, so there is no script to check for a ban.
+		if _, err := input.OutputScript(); err != nil {
+			continue
+		}
+		bannedCandidates = append(bannedCandidates, banCandidate{
+			outpoint: vtxoOutpoint,
+			script:   input,
+		})
+	}
+
+	bans, err := s.checkIfBanned(ctx, banThreshold, bannedCandidates)
+	if err != nil {
+		log.WithError(err).Error("failed to check for banned vtxos")
+		return "", errors.INTERNAL_ERROR.New("something went wrong").
+			WithMetadata(map[string]any{"vtxos": inputOutpoints})
+	}
+	if len(bans) > 0 {
+		return "", vtxoBannedError(bans)
+	}
+
+	for i, outpoint := range outpoints {
+		vtxoOutpoint := domain.Outpoint{
+			Txid: outpoint.Hash.String(),
+			VOut: outpoint.Index,
+		}
+
+		psbtInput := proof.Inputs[i+1]
+
+		tapscripts := inputTapscripts[outpoint]
 
 		now := time.Now()
 		locktime, locktimeDisabled := arklib.BIP68DecodeSequence(
 			proof.UnsignedTx.TxIn[i+1].Sequence,
 		)
 
-		vtxosResult, err := s.repoManager.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxoOutpoint})
-		if err != nil || len(vtxosResult) == 0 {
+		vtxo, registered := indexedVtxos[vtxoOutpoint]
+		if !registered {
 			// reject if intent specifies onchain outputs and boarding inputs
 			if len(message.OnchainOutputIndexes) > 0 {
 				return "", errors.INVALID_INTENT_PROOF.New(
@@ -1788,11 +1922,6 @@ func (s *service) RegisterIntent(
 				Tapscripts: tapscripts,
 			}
 
-			if err := s.checkIfBanned(ctx, banThreshold, input); err != nil {
-				return "", errors.VTXO_BANNED.Wrap(err).
-					WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxoOutpoint.String()})
-			}
-
 			boardingUtxos = append(boardingUtxos, boardingIntentInput{
 				Input:            input,
 				locktime:         locktime,
@@ -1803,16 +1932,10 @@ func (s *service) RegisterIntent(
 			continue
 		}
 
-		vtxo := vtxosResult[0]
-		if err := s.checkIfBanned(ctx, banThreshold, vtxo); err != nil {
-			return "", errors.VTXO_BANNED.Wrap(err).
-				WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
-		}
-
 		if vtxo.Spent {
 			return "", errors.VTXO_ALREADY_SPENT.New(
 				"input %s already spent", vtxo.Outpoint.String(),
-			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
+			).WithMetadata(errors.VtxoMetadata{VtxoOutpoints: []string{vtxo.Outpoint.String()}})
 		}
 
 		if vtxo.Unrolled {
@@ -2254,19 +2377,26 @@ func (s *service) RegisterIntent(
 	s.offchainTxMu.Lock()
 	defer s.offchainTxMu.Unlock()
 
+	// Read again under the lock, so an offchain tx cannot land between the check
+	// and the push.
+	pushedOutpoints := make([]domain.Outpoint, 0, len(vtxoInputs))
 	for _, vtxo := range vtxoInputs {
-		isSpent, err := s.cache.OffchainTxs().Includes(ctx, vtxo.Outpoint)
-		if err != nil {
-			log.WithError(err).
-				Errorf("failed to check again spent status of input against tx in cache")
-			return "", errors.INTERNAL_ERROR.New("something went wrong").
-				WithMetadata(map[string]any{"vtxo": vtxo.Outpoint.String()})
+		pushedOutpoints = append(pushedOutpoints, vtxo.Outpoint)
+	}
+	alreadySpentVtxos, err = s.cache.OffchainTxs().IncludesAny(ctx, pushedOutpoints)
+	if err != nil {
+		log.WithError(err).
+			Errorf("failed to check again spent status of input against tx in cache")
+		return "", errors.INTERNAL_ERROR.New("something went wrong")
+	}
+	if len(alreadySpentVtxos) > 0 {
+		spendingOutpoints := make([]string, 0, len(alreadySpentVtxos))
+		for _, outpoint := range alreadySpentVtxos {
+			spendingOutpoints = append(spendingOutpoints, outpoint.String())
 		}
-		if isSpent {
-			return "", errors.VTXO_ALREADY_SPENT.New(
-				"vtxo %s is currently being spent", vtxo.Outpoint.String(),
-			).WithMetadata(errors.VtxoMetadata{VtxoOutpoint: vtxo.Outpoint.String()})
-		}
+		return "", errors.VTXO_ALREADY_SPENT.New(
+			"registering intent with already spent vtxo(s) is not allowed",
+		).WithMetadata(errors.VtxoMetadata{VtxoOutpoints: spendingOutpoints})
 	}
 
 	if err := s.cache.Intents().Push(
@@ -2831,21 +2961,16 @@ func (s *service) startRound() {
 	}
 
 	if existingRound != nil {
-		// A settled vtxo is refused either by the intent claim, dropped by
-		// DeleteVtxos just below, or by the spent mark registration reads from
-		// the projection. Dropping the claim before the mark lands leaves a
-		// window where neither refuses it, so wait for the projection first.
-		if existingRound.IsEnded() {
-			if !s.batchSessions.waitForProjection(
-				s.ctx, existingRound.Id, batchProjectionTimeout,
-			) {
-				log.Warnf(
-					"projection of round %s not written after %s, "+
-						"starting the next batch anyway",
-					existingRound.Id, batchProjectionTimeout,
-				)
-			}
-		}
+		// Clean the cache only for the batches that were actually completed. Done in sync with
+		// RegisterIntent so that there's no window for possible double spending attacks.
+		// Only the batches this process finished and saw projected.
+		projected := s.batchSessions.waitForProjections(s.ctx, batchProjectionTimeout)
+
+		// The registrations in flight read these claims before they were
+		// released, so let them finish and keep new ones out until the reset is
+		// done. A registration that starts after it reads the projection
+		// instead, which the wait above has just made readable.
+		s.batchSessions.holdRegistrations()
 
 		// Reset the cache for the new batch
 		if err := s.cache.ForfeitTxs().Reset(ctx); err != nil {
@@ -2853,10 +2978,21 @@ func (s *service) startRound() {
 				"failed to delete forfeit txs from cache for round %s", existingRound.Id,
 			)
 		}
-		if err := s.cache.Intents().DeleteVtxos(ctx); err != nil {
-			log.WithError(err).Warnf(
-				"failed to delete spent vtxos from cache after round %s", existingRound.Id,
-			)
+		for _, batchId := range projected {
+			if err := s.cache.Intents().DeleteVtxos(ctx, batchId); err != nil {
+				log.WithError(err).Warnf(
+					"failed to delete spent vtxos from cache after round %s", batchId,
+				)
+			}
+		}
+		// A batch that did not end spent none of its inputs, so its claims are
+		// released without waiting for a projection.
+		if !existingRound.IsEnded() {
+			if err := s.cache.Intents().DeleteVtxos(ctx, existingRound.Id); err != nil {
+				log.WithError(err).Warnf(
+					"failed to delete spent vtxos from cache after round %s", existingRound.Id,
+				)
+			}
 		}
 		if err := s.cache.ConfirmationSessions().Reset(ctx); err != nil {
 			log.WithError(err).Errorf(
@@ -2881,6 +3017,8 @@ func (s *service) startRound() {
 				)
 			}
 		}
+
+		s.batchSessions.resumeRegistrations()
 	}
 
 	shouldStart, err := settings.ShouldStartBatch(
@@ -3022,7 +3160,7 @@ func (s *service) startConfirmation(
 	}
 
 	// TODO take into account available liquidity
-	selectedIntents, err := s.cache.Intents().Pop(ctx, num)
+	selectedIntents, err := s.cache.Intents().Pop(ctx, num, round.Id)
 	if err != nil {
 		roundAborted = true
 		log.WithError(err).Warn("failed to get selected intents from cache")
@@ -4338,13 +4476,9 @@ func (s *service) processBoardingInputs(
 	for _, input := range boardingUtxos {
 		script, err := input.OutputScript()
 		if err != nil {
-			return nil, errors.INTERNAL_ERROR.New(
-				"failed to compute output script from tapscripts: %w", err,
-			).WithMetadata(map[string]any{
-				"txid":       input.Txid,
-				"vout":       input.VOut,
-				"tapscripts": input.Tapscripts,
-			})
+			return nil, errors.INVALID_VTXO_SCRIPT.New(
+				"failed to compute output script of boarding input %s: %w", input.Outpoint, err,
+			).WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: input.Tapscripts})
 		}
 		scripts = append(scripts, hex.EncodeToString(script))
 

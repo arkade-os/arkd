@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"testing"
@@ -9,6 +10,14 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	"github.com/arkade-os/arkd/pkg/errors"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,14 +26,16 @@ import (
 // releases the batch's intent claims. These pin the two halves of that: the
 // wait itself, and the handler that ends it.
 func TestBatchSessionManager(t *testing.T) {
-	t.Run("waitForProjection", func(t *testing.T) {
+	t.Run("waitForProjections", func(t *testing.T) {
 		t.Run("returns at once when the batch is already projected", func(t *testing.T) {
 			m := newBatchSessionManager()
 			m.track(endedRound(t))
 			m.markProjected(projectedRoundId)
 
 			start := time.Now()
-			require.True(t, m.waitForProjection(context.Background(), projectedRoundId, 5*time.Second))
+			require.Equal(
+				t, []string{projectedRoundId}, m.waitForProjections(t.Context(), 5*time.Second),
+			)
 			require.Less(t, time.Since(start), time.Second)
 		})
 
@@ -32,34 +43,34 @@ func TestBatchSessionManager(t *testing.T) {
 			m := newBatchSessionManager()
 			m.track(endedRound(t))
 
-			waited := make(chan bool, 1)
-			go func() { waited <- m.waitForProjection(context.Background(), projectedRoundId, 5*time.Second) }()
+			waited := make(chan []string, 1)
+			go func() { waited <- m.waitForProjections(t.Context(), 5*time.Second) }()
 			requireBlocked(t, waited)
 
 			m.markProjected(projectedRoundId)
 			select {
-			case ok := <-waited:
-				require.True(t, ok)
+			case released := <-waited:
+				require.Equal(t, []string{projectedRoundId}, released)
 			case <-time.After(5 * time.Second):
 				require.FailNow(t, "the wait did not end when the round was projected")
 			}
 		})
 
 		// Every round event projects, not just the last one, so a wait must
-		// only end on the round it was asked about.
+		// only end once the batches it waits on are projected.
 		t.Run("another batch being projected does not end the wait", func(t *testing.T) {
 			m := newBatchSessionManager()
 			m.track(endedRound(t))
 
-			waited := make(chan bool, 1)
-			go func() { waited <- m.waitForProjection(context.Background(), projectedRoundId, 5*time.Second) }()
+			waited := make(chan []string, 1)
+			go func() { waited <- m.waitForProjections(t.Context(), 5*time.Second) }()
 
 			m.track(endedRoundWithId(t, "another-round"))
 			m.markProjected("another-round")
 			requireBlocked(t, waited)
 
 			m.markProjected(projectedRoundId)
-			require.True(t, <-waited)
+			require.ElementsMatch(t, []string{"another-round", projectedRoundId}, <-waited)
 		})
 
 		t.Run("gives up on the timeout", func(t *testing.T) {
@@ -67,8 +78,8 @@ func TestBatchSessionManager(t *testing.T) {
 			m.track(endedRound(t))
 
 			start := time.Now()
-			require.False(
-				t, m.waitForProjection(context.Background(), projectedRoundId, 100*time.Millisecond),
+			require.Empty(
+				t, m.waitForProjections(t.Context(), 100*time.Millisecond),
 				"a projection that never arrives must not stall the round loop",
 			)
 			require.Less(t, time.Since(start), 5*time.Second)
@@ -77,87 +88,100 @@ func TestBatchSessionManager(t *testing.T) {
 		t.Run("gives up when the context is cancelled", func(t *testing.T) {
 			m := newBatchSessionManager()
 			m.track(endedRound(t))
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(t.Context())
 
-			waited := make(chan bool, 1)
-			go func() { waited <- m.waitForProjection(ctx, projectedRoundId, time.Minute) }()
+			waited := make(chan []string, 1)
+			go func() { waited <- m.waitForProjections(ctx, time.Minute) }()
 			requireBlocked(t, waited)
 
 			cancel()
 			select {
-			case ok := <-waited:
-				require.False(t, ok, "shutdown must not be held up by the wait")
+			case released := <-waited:
+				require.Empty(t, released, "shutdown must not be held up by the wait")
 			case <-time.After(5 * time.Second):
 				require.FailNow(t, "the wait did not end when the context was cancelled")
 			}
 		})
 
-		// The reason for a map: several batches can be in flight, and each wait
-		// ends on its own batch.
-		t.Run("tracks batches independently", func(t *testing.T) {
+		// The reason for a map: when a projection is late several batches can be
+		// in flight, and the wait covers all of them.
+		t.Run("waits for every batch in flight", func(t *testing.T) {
 			m := newBatchSessionManager()
 			m.track(endedRound(t))
 			m.track(endedRoundWithId(t, "other-batch"))
 
-			first := make(chan bool, 1)
-			go func() {
-				first <- m.waitForProjection(context.Background(), projectedRoundId, 5*time.Second)
-			}()
-			second := make(chan bool, 1)
-			go func() {
-				second <- m.waitForProjection(context.Background(), "other-batch", 5*time.Second)
-			}()
-			requireBlocked(t, first)
-			requireBlocked(t, second)
+			waited := make(chan []string, 1)
+			go func() { waited <- m.waitForProjections(t.Context(), 5*time.Second) }()
+			requireBlocked(t, waited)
 
 			m.markProjected("other-batch")
-			require.True(t, <-second)
-			requireBlocked(t, first, "the other batch's projection must not end this wait")
+			requireBlocked(t, waited, "one batch's projection must not end the wait for the other")
 
 			m.markProjected(projectedRoundId)
-			require.True(t, <-first)
+			require.ElementsMatch(t, []string{"other-batch", projectedRoundId}, <-waited)
 		})
 
-		// The map holds the batches in flight, so a finished wait leaves nothing
-		// behind and a sweep of a batch long gone adds nothing.
-		t.Run("stops tracking a batch once its wait ends", func(t *testing.T) {
+		// The map holds the batches still missing their projection, so a
+		// projected batch leaves nothing behind, a batch whose wait gave up is
+		// waited on again, and a sweep of a batch long gone adds nothing.
+		t.Run("tracks a batch until it is projected", func(t *testing.T) {
 			m := newBatchSessionManager()
 			m.track(endedRound(t))
 			m.markProjected(projectedRoundId)
-			require.True(
-				t, m.waitForProjection(context.Background(), projectedRoundId, time.Second),
+			require.Equal(
+				t, []string{projectedRoundId}, m.waitForProjections(t.Context(), time.Second),
 			)
 			requireNotTracked(t, m, projectedRoundId)
 
 			m.track(endedRound(t))
-			require.False(
-				t, m.waitForProjection(context.Background(), projectedRoundId, 50*time.Millisecond),
+			require.Empty(t, m.waitForProjections(t.Context(), 50*time.Millisecond))
+			requireTracked(t, m, projectedRoundId, "a wait that gave up keeps the batch")
+
+			m.markProjected(projectedRoundId)
+			require.Equal(
+				t, []string{projectedRoundId}, m.waitForProjections(t.Context(), time.Second),
 			)
-			requireNotTracked(t, m, projectedRoundId, "a wait that gave up leaves nothing behind")
+			requireNotTracked(t, m, projectedRoundId)
 
 			m.markProjected(projectedRoundId)
 			requireNotTracked(t, m, projectedRoundId, "a batch nothing waits on is not tracked")
 		})
 
-		t.Run("releases every waiter", func(t *testing.T) {
+		// A batch stops being tracked as soon as a wait reports it, so of several
+		// waits ending on the same projection exactly one carries the batch and
+		// releases its claims. The rest are released too, with nothing to do.
+		t.Run("releases every waiter, and only one carries the batch", func(t *testing.T) {
 			m := newBatchSessionManager()
 			m.track(endedRound(t))
 
 			var wg sync.WaitGroup
-			results := make([]bool, concurrentWaiters)
+			results := make([][]string, concurrentWaiters)
+			done := make(chan struct{})
 			for i := range results {
 				wg.Add(1)
 				go func(i int) {
 					defer wg.Done()
-					results[i] = m.waitForProjection(context.Background(), projectedRoundId, 5*time.Second)
+					results[i] = m.waitForProjections(t.Context(), 5*time.Second)
 				}(i)
 			}
 
 			m.markProjected(projectedRoundId)
-			wg.Wait()
-			for i, ok := range results {
-				require.True(t, ok, "waiter %d was not released", i)
+			go func() { wg.Wait(); close(done) }()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				require.FailNow(t, "a waiter was never released")
 			}
+
+			carried := 0
+			for _, released := range results {
+				if len(released) == 0 {
+					continue
+				}
+				require.Equal(t, []string{projectedRoundId}, released)
+				carried++
+			}
+			require.Equal(t, 1, carried, "the batch must be released exactly once")
 		})
 
 		// A round that failed writes no vtxo rows and never marks, so expecting
@@ -167,7 +191,7 @@ func TestBatchSessionManager(t *testing.T) {
 			m.track(startedRoundOf(t))
 
 			start := time.Now()
-			require.True(t, m.waitForProjection(context.Background(), projectedRoundId, 5*time.Second))
+			require.Empty(t, m.waitForProjections(t.Context(), 5*time.Second))
 			require.Less(t, time.Since(start), time.Second)
 		})
 
@@ -195,12 +219,83 @@ func TestBatchSessionManager(t *testing.T) {
 		// A round finished by a previous process is still in the cache after a
 		// restart. Its projection was written before this process started, so
 		// waiting for it here would stall every restart.
-		t.Run("does not wait for a batch it never tracked", func(t *testing.T) {
+		t.Run("does not wait when no batch is tracked", func(t *testing.T) {
 			m := newBatchSessionManager()
 
 			start := time.Now()
-			require.True(t, m.waitForProjection(context.Background(), projectedRoundId, 5*time.Second))
+			require.Empty(t, m.waitForProjections(t.Context(), 5*time.Second))
 			require.Less(t, time.Since(start), time.Second)
+		})
+	})
+
+	t.Run("registrations and the claim release exclude each other", func(t *testing.T) {
+		t.Run("registrations run alongside each other", func(t *testing.T) {
+			m := newBatchSessionManager()
+
+			m.beginRegistration()
+			second := make(chan struct{})
+			go func() {
+				m.beginRegistration()
+				m.endRegistration()
+				close(second)
+			}()
+
+			select {
+			case <-second:
+			case <-time.After(5 * time.Second):
+				require.FailNow(t, "one registration must not block another")
+			}
+			m.endRegistration()
+		})
+
+		t.Run("the release waits for a registration in flight", func(t *testing.T) {
+			m := newBatchSessionManager()
+			m.beginRegistration()
+
+			held := make(chan struct{})
+			go func() {
+				m.holdRegistrations()
+				close(held)
+			}()
+
+			select {
+			case <-held:
+				require.FailNow(t, "the claims were released with a registration in flight")
+			case <-time.After(100 * time.Millisecond):
+			}
+
+			m.endRegistration()
+			select {
+			case <-held:
+				m.resumeRegistrations()
+			case <-time.After(5 * time.Second):
+				require.FailNow(t, "the release never happened after the registration finished")
+			}
+		})
+
+		t.Run("a registration waits for the release to finish", func(t *testing.T) {
+			m := newBatchSessionManager()
+			m.holdRegistrations()
+
+			registered := make(chan struct{})
+			go func() {
+				m.beginRegistration()
+				m.endRegistration()
+				close(registered)
+			}()
+
+			select {
+			case <-registered:
+				require.FailNow(t, "a registration ran while the claims were being released")
+			case <-time.After(100 * time.Millisecond):
+			}
+
+			m.resumeRegistrations()
+			select {
+			case <-registered:
+			case <-time.After(5 * time.Second):
+				require.FailNow(t, "the registration never ran after the release finished")
+			}
 		})
 	})
 
@@ -213,10 +308,435 @@ func TestBatchSessionManager(t *testing.T) {
 
 		rm.batchHandler(sweptRound(t))
 
-		require.True(
-			t, svc.batchSessions.waitForProjection(context.Background(), projectedRoundId, time.Second),
+		require.Equal(
+			t, []string{projectedRoundId},
+			svc.batchSessions.waitForProjections(t.Context(), time.Second),
 			"a finished round must be marked projected",
 		)
+	})
+
+	// Both reads happen once for the whole intent now, and the loop decides from
+	// what they returned. These pin that it reads the right answer per input.
+	t.Run("the batched reads still decide input by input", func(t *testing.T) {
+		// The proof commits to the encoded message, so the message has to be
+		// complete before the proof is built.
+		newProof := func(
+			t *testing.T, message intent.RegisterMessage,
+		) (*intent.Proof, domain.Outpoint) {
+			t.Helper()
+
+			encoded, err := message.Encode()
+			require.NoError(t, err)
+			proof := testNoteIntentProof(t, encoded, &wire.TxOut{
+				Value: int64(testDust) * 2, PkScript: []byte{txscript.OP_TRUE},
+			})
+
+			outpoints := proof.GetOutpoints()
+			require.Len(t, outpoints, 1)
+			return proof, domain.Outpoint{
+				Txid: outpoints[0].Hash.String(), VOut: outpoints[0].Index,
+			}
+		}
+
+		registerMessage := func() intent.RegisterMessage {
+			return intent.RegisterMessage{
+				BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
+			}
+		}
+
+		t.Run("an input the projection has as spent is refused", func(t *testing.T) {
+			message := registerMessage()
+			proof, outpoint := newProof(t, message)
+
+			vtxos := &mockedVtxoRepo{}
+			vtxos.On("GetVtxos", mock.Anything, mock.Anything).
+				Return([]domain.Vtxo{{Outpoint: outpoint, Spent: true}}, nil)
+			repos := &mockedRepoManager{}
+			repos.On("Vtxos").Return(vtxos)
+
+			svc := newRegisterIntentTestService(t, repos)
+			_, appErr := svc.RegisterIntent(t.Context(), *proof, message)
+			require.Error(t, appErr)
+			require.Equal(t, errors.VTXO_ALREADY_SPENT.Code, appErr.Code())
+			require.Contains(t, appErr.Error(), "input "+outpoint.String()+" already spent")
+		})
+
+		t.Run("an input an offchain tx is spending is refused", func(t *testing.T) {
+			message := registerMessage()
+			proof, outpoint := newProof(t, message)
+
+			vtxos := &mockedVtxoRepo{}
+			vtxos.On("GetVtxos", mock.Anything, mock.Anything).
+				Return([]domain.Vtxo{{Outpoint: outpoint}}, nil)
+			repos := &mockedRepoManager{}
+			repos.On("Vtxos").Return(vtxos)
+
+			svc := newRegisterIntentTestService(t, repos)
+			svc.cache = testLiveStore{
+				settings:    registerIntentTestSettings(t),
+				offchainTxs: spendingOffchainTxStore{spending: outpoint},
+			}
+
+			_, appErr := svc.RegisterIntent(t.Context(), *proof, message)
+			require.Error(t, appErr)
+			require.Equal(t, errors.VTXO_ALREADY_SPENT.Code, appErr.Code())
+			require.Contains(t, appErr.Error(), "vtxo(s) already spent")
+		})
+
+		// Every input is read in one call, and the loop still names the input
+		// that is wrong rather than the first one.
+		t.Run("a spent input after a valid one is refused by its own outpoint", func(t *testing.T) {
+			message := registerMessage()
+			encoded, err := message.Encode()
+			require.NoError(t, err)
+			proof := testNotesIntentProof(t, encoded, &wire.TxOut{
+				Value: int64(testDust) * 2, PkScript: []byte{txscript.OP_TRUE},
+			}, 2)
+			inputs := proof.GetOutpoints()
+			require.Len(t, inputs, 2)
+			valid := domain.Outpoint{Txid: inputs[0].Hash.String(), VOut: inputs[0].Index}
+			spent := domain.Outpoint{Txid: inputs[1].Hash.String(), VOut: inputs[1].Index}
+			utxo := proof.Inputs[1].WitnessUtxo
+
+			vtxos := &mockedVtxoRepo{}
+			vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{valid, spent}).
+				Return([]domain.Vtxo{
+					{
+						Outpoint: valid,
+						Amount:   uint64(utxo.Value),
+						PubKey:   hex.EncodeToString(utxo.PkScript[2:]),
+					},
+					{Outpoint: spent, Spent: true},
+				}, nil).Once()
+			repos := &mockedRepoManager{}
+			repos.On("Vtxos").Return(vtxos)
+
+			svc := newRegisterIntentTestService(t, repos)
+			_, appErr := svc.RegisterIntent(t.Context(), *proof, message)
+			require.Error(t, appErr)
+			require.Equal(t, errors.VTXO_ALREADY_SPENT.Code, appErr.Code())
+			require.Equal(t, spent.String(), appErr.Metadata()["vtxo_outpoint"])
+			vtxos.AssertExpectations(t)
+		})
+
+		// An input the projection does not have is a boarding input, which an
+		// intent declaring onchain outputs may not mix with. That refusal is
+		// only reachable through the not-found branch, so it is what pins it.
+		t.Run("an input the projection does not have is taken for boarding", func(t *testing.T) {
+			message := registerMessage()
+			message.OnchainOutputIndexes = []int{0}
+			proof, _ := newProof(t, message)
+
+			vtxos := &mockedVtxoRepo{}
+			vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return(nil, nil)
+			repos := &mockedRepoManager{}
+			repos.On("Vtxos").Return(vtxos)
+
+			svc := newRegisterIntentTestService(t, repos)
+			_, appErr := svc.RegisterIntent(t.Context(), *proof, message)
+			require.NotNil(t, appErr)
+			require.Equal(t, errors.INVALID_INTENT_PROOF.Code, appErr.Code())
+			require.Contains(t, appErr.Error(), "cannot include onchain inputs and outputs")
+		})
+
+		// A known vtxo's taptree comes from the client and can be missing, a note
+		// script or another vtxo's script, so the ban check has to read the script
+		// stored for the vtxo.
+		t.Run("a known input is checked for bans by its stored script", func(t *testing.T) {
+			t.Run("without a taptree", func(t *testing.T) {
+				message := registerMessage()
+				proof, outpoint := newProof(t, message)
+				pkScript := proof.Inputs[1].WitnessUtxo.PkScript
+
+				appErr := registerWithBans(t, message, proof, []domain.Vtxo{{
+					Outpoint: outpoint, PubKey: hex.EncodeToString(pkScript[2:]),
+				}}, hex.EncodeToString(pkScript))
+				require.Error(t, appErr)
+				require.Equal(t, errors.VTXO_BANNED.Code, appErr.Code())
+				require.Equal(t, outpoint.String(), appErr.Metadata()["vtxo_outpoint"])
+			})
+
+			t.Run("a note sending its note script as taptree", func(t *testing.T) {
+				message := registerMessage()
+				proof, outpoint := newProof(t, message)
+				pkScript := proof.Inputs[1].WitnessUtxo.PkScript
+				noteScript := proof.Inputs[1].TaprootLeafScript[0].Script
+				require.NoError(t, txutils.SetArkPsbtField(
+					&proof.Packet, 1, txutils.VtxoTaprootTreeField,
+					txutils.TapTree{hex.EncodeToString(noteScript)},
+				))
+
+				appErr := registerWithBans(t, message, proof, []domain.Vtxo{{
+					Outpoint: outpoint, PubKey: hex.EncodeToString(pkScript[2:]),
+				}}, hex.EncodeToString(pkScript))
+				require.Error(t, appErr)
+				require.Equal(t, errors.VTXO_BANNED.Code, appErr.Code())
+			})
+
+			t.Run("a swept vtxo sending another vtxo's script as taptree", func(t *testing.T) {
+				message := registerMessage()
+				proof, outpoint := newProof(t, message)
+				pkScript := proof.Inputs[1].WitnessUtxo.PkScript
+				otherScript, err := script.NewDefaultVtxoScript(
+					testPubkey(t), testPubkey(t),
+					arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144},
+				).Encode()
+				require.NoError(t, err)
+				require.NoError(t, txutils.SetArkPsbtField(
+					&proof.Packet, 1, txutils.VtxoTaprootTreeField, txutils.TapTree(otherScript),
+				))
+
+				appErr := registerWithBans(t, message, proof, []domain.Vtxo{{
+					Outpoint:           outpoint,
+					PubKey:             hex.EncodeToString(pkScript[2:]),
+					Swept:              true,
+					CommitmentTxids:    []string{"commitmenttxid"},
+					RootCommitmentTxid: "commitmenttxid",
+				}}, hex.EncodeToString(pkScript))
+				require.Error(t, appErr)
+				require.Equal(t, errors.VTXO_BANNED.Code, appErr.Code())
+			})
+		})
+
+		// A boarding input has nothing stored, so its ban script is the one its
+		// taptree describes.
+		t.Run("a boarding input is checked for bans by its taptree", func(t *testing.T) {
+			message := registerMessage()
+			proof, outpoint := newProof(t, message)
+			boardingScript := script.NewDefaultVtxoScript(
+				testPubkey(t), testPubkey(t),
+				arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144},
+			)
+			tapscripts, err := boardingScript.Encode()
+			require.NoError(t, err)
+			require.NoError(t, txutils.SetArkPsbtField(
+				&proof.Packet, 1, txutils.VtxoTaprootTreeField, txutils.TapTree(tapscripts),
+			))
+			tapKey, _, err := boardingScript.TapTree()
+			require.NoError(t, err)
+			pkScript, err := script.P2TRScript(tapKey)
+			require.NoError(t, err)
+
+			appErr := registerWithBans(t, message, proof, nil, hex.EncodeToString(pkScript))
+			require.Error(t, appErr)
+			require.Equal(t, errors.VTXO_BANNED.Code, appErr.Code())
+			require.Equal(t, outpoint.String(), appErr.Metadata()["vtxo_outpoint"])
+		})
+
+		// A boarding input whose taptree gives no script is a malformed request, so
+		// it is refused as an invalid script whether banning is on or off, never as
+		// a ban or an internal error.
+		t.Run("a boarding input whose taptree gives no script is refused as invalid", func(t *testing.T) {
+			for _, banThreshold := range []uint64{0, 1} {
+				t.Run(fmt.Sprintf("ban threshold %d", banThreshold), func(t *testing.T) {
+					reg := newPushingRegistration(t)
+					reg.vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return(nil, nil)
+					reg.repos.On("Convictions").Return(convictionRepoStub{})
+					settings := registerIntentTestSettings(t)
+					settings.settings.BanThreshold = banThreshold
+					reg.svc.cache = testLiveStore{
+						settings:    settings,
+						offchainTxs: testOffchainTxStore{},
+					}
+
+					_, appErr := reg.svc.RegisterIntent(t.Context(), *reg.proof, reg.message)
+					require.Error(t, appErr)
+					require.Equal(t, errors.INVALID_VTXO_SCRIPT.Code, appErr.Code())
+					require.Contains(t, appErr.Error(), reg.vtxo.Outpoint.String())
+				})
+			}
+		})
+	})
+
+	// The registration side of the same call-site guarantee: while a batch is
+	// releasing its claims, a registration does not get to read them.
+	t.Run("a registration waits while the claims are being released", func(t *testing.T) {
+		reads := make(chan string, 2)
+		repos := &mockedRepoManager{}
+		vtxos := &mockedVtxoRepo{}
+		vtxos.On("GetVtxos", mock.Anything, mock.Anything).
+			Run(func(mock.Arguments) {
+				select {
+				case reads <- "GetVtxos":
+				default:
+				}
+			}).
+			Return(nil, nil)
+		repos.On("Vtxos").Return(vtxos)
+		svc := newRegisterIntentTestService(t, repos)
+		svc.cache = testLiveStore{
+			settings:    registerIntentTestSettings(t),
+			offchainTxs: readReportingOffchainTxStore{reads: reads},
+		}
+		svc.batchSessions.holdRegistrations()
+
+		message := intent.RegisterMessage{
+			BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
+		}
+		encodedMessage, err := message.Encode()
+		require.NoError(t, err)
+		proof := testNoteIntentProof(t, encodedMessage, &wire.TxOut{
+			Value: int64(testDust) * 2, PkScript: []byte{txscript.OP_TRUE},
+		})
+
+		registered := make(chan struct{})
+		go func() {
+			defer close(registered)
+			// The proof is rejected on its own merits; what this pins is that
+			// the call does not get that far while the claims are in flux.
+			_, _ = svc.RegisterIntent(t.Context(), *proof, message)
+		}()
+
+		select {
+		case read := <-reads:
+			require.FailNow(t, "a registration read the claims while they were being released", read)
+		case <-registered:
+			require.FailNow(t, "a registration read the claims while they were being released")
+		case <-time.After(200 * time.Millisecond):
+		}
+
+		svc.batchSessions.resumeRegistrations()
+		select {
+		case <-registered:
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "the registration never ran after the release finished")
+		}
+		require.Len(t, reads, 2, "the registration read its inputs once it ran")
+		require.Equal(t, "IncludesAny", <-reads)
+		require.Equal(t, "GetVtxos", <-reads)
+	})
+
+	// A registration that fails still gives the lock back, or the next release
+	// would wait on it forever.
+	t.Run("a failed registration releases the lock", func(t *testing.T) {
+		repos := &mockedRepoManager{}
+		vtxos := &mockedVtxoRepo{}
+		vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return(nil, nil)
+		repos.On("Vtxos").Return(vtxos)
+		svc := newRegisterIntentTestService(t, repos)
+
+		message := intent.RegisterMessage{
+			BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
+		}
+		encodedMessage, err := message.Encode()
+		require.NoError(t, err)
+		proof := testNoteIntentProof(t, encodedMessage, &wire.TxOut{
+			Value: int64(testDust) * 2, PkScript: []byte{txscript.OP_TRUE},
+		})
+
+		_, appErr := svc.RegisterIntent(t.Context(), *proof, message)
+		require.Error(t, appErr)
+		require.Equal(t, errors.INVALID_PKSCRIPT.Code, appErr.Code())
+
+		held := make(chan struct{})
+		go func() {
+			svc.batchSessions.holdRegistrations()
+			close(held)
+		}()
+		select {
+		case <-held:
+			svc.batchSessions.resumeRegistrations()
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "a failed registration kept the lock")
+		}
+	})
+
+	// The other half of the same guarantee, at the call site: a registration
+	// holds the release back from its first read until its push is done.
+	t.Run("the next batch releases no claim until a registration has pushed", func(t *testing.T) {
+		reg := newPushingRegistration(t)
+		reg.vtxos.On("GetVtxos", mock.Anything, mock.Anything).
+			Return([]domain.Vtxo{reg.vtxo}, nil)
+		intents := pausingIntentStore{
+			pushing:  make(chan struct{}),
+			proceed:  make(chan struct{}),
+			released: make(chan struct{}),
+		}
+
+		svc := reg.svc
+		ctx, cancel := context.WithCancel(t.Context())
+		t.Cleanup(cancel)
+		svc.ctx = ctx
+		svc.wg = &sync.WaitGroup{}
+		svc.wg.Add(1)
+		svc.wallet = &mockedWallet{}
+		svc.cache = registrationRoundTestStore{
+			startRoundTestStore: startRoundTestStore{round: endedRound(t)},
+			settings:            registerIntentTestSettings(t),
+			offchainTxs:         testOffchainTxStore{},
+			intents:             intents,
+		}
+		// Only a batch this process finished and saw projected has its claims
+		// released, so this case tracks it to reach the release it is about.
+		svc.batchSessions.track(endedRound(t))
+		svc.batchSessions.markProjected(projectedRoundId)
+
+		registered := make(chan errors.Error, 1)
+		go func() {
+			_, appErr := svc.RegisterIntent(t.Context(), *reg.proof, reg.message)
+			registered <- appErr
+		}()
+		select {
+		case <-intents.pushing:
+		case appErr := <-registered:
+			require.FailNow(t, "the registration did not reach the push", "%v", appErr)
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "the registration did not reach the push")
+		}
+
+		go func() {
+			// startRound is driven with only the stores it touches before the
+			// release, so recover keeps a later nil from failing the suite on
+			// something this case does not assert.
+			defer func() { _ = recover() }()
+			svc.startRound()
+		}()
+		select {
+		case <-intents.released:
+			require.FailNow(t, "the claims were released while a registration was pushing")
+		case <-time.After(200 * time.Millisecond):
+		}
+
+		close(intents.proceed)
+		select {
+		case appErr := <-registered:
+			require.Nil(t, appErr)
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "the registration never finished its push")
+		}
+		select {
+		case <-intents.released:
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "the claims were never released after the registration pushed")
+		}
+	})
+
+	// The offchain spend check runs again right before the push, so a spend that
+	// lands while the inputs are being validated is still refused.
+	t.Run("an input spent during validation is refused before pushing", func(t *testing.T) {
+		reg := newPushingRegistration(t)
+		intents := &registrationTestIntents{}
+		cache := testLiveStore{
+			settings:    registerIntentTestSettings(t),
+			offchainTxs: testOffchainTxStore{},
+			intents:     intents,
+		}
+		reg.svc.cache = cache
+
+		reg.vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{reg.vtxo.Outpoint}).
+			Return([]domain.Vtxo{reg.vtxo}, nil).
+			Run(func(mock.Arguments) {
+				// The first spend check has passed; a spend now appears in the cache.
+				cache.offchainTxs = spendingOffchainTxStore{spending: reg.vtxo.Outpoint}
+				reg.svc.cache = cache
+			}).Once()
+
+		id, appErr := reg.svc.RegisterIntent(t.Context(), *reg.proof, reg.message)
+		require.False(t, intents.pushed, "the refused intent must not be pushed")
+		require.Empty(t, id)
+		require.Error(t, appErr)
+		require.Equal(t, errors.VTXO_ALREADY_SPENT.Code, appErr.Code())
+		reg.vtxos.AssertExpectations(t)
 	})
 
 	// The point of the wait: startRound must not release the finished batch's
@@ -250,14 +770,69 @@ func TestBatchSessionManager(t *testing.T) {
 		}
 	})
 
+	// A projection still missing when the wait gives up keeps the claims, and its
+	// batch stays tracked, so a later start waits for it again and releases the
+	// claims once it lands.
+	t.Run("the next batch keeps the claims while a projection is missing", func(t *testing.T) {
+		svc, released := newStartRoundTestService(t, endedRound(t))
+		svc.batchSessions.track(endedRound(t))
+		ctx, cancel := context.WithCancel(t.Context())
+		t.Cleanup(cancel)
+		svc.ctx = ctx
+
+		ended := make(chan struct{})
+		go func() {
+			defer close(ended)
+			// startRound is driven with only the stores it touches around the
+			// release, so recover keeps a later nil from failing the suite on
+			// something this case does not assert.
+			defer func() { _ = recover() }()
+			svc.startRound()
+		}()
+		select {
+		case <-ended:
+			require.FailNow(t, "the next batch did not wait for the projection")
+		case <-time.After(200 * time.Millisecond):
+		}
+
+		// Cancelling ends the wait the way the timeout does, without sitting it out.
+		cancel()
+		select {
+		case <-ended:
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "the next batch did not go on after the wait gave up")
+		}
+		select {
+		case <-released:
+			require.FailNow(t, "the claims were released with a projection still missing")
+		default:
+		}
+		requireTracked(t, svc.batchSessions, projectedRoundId, "the batch stays tracked")
+
+		svc.batchSessions.markProjected(projectedRoundId)
+		nextCtx, stop := context.WithCancel(t.Context())
+		t.Cleanup(stop)
+		svc.ctx = nextCtx
+		svc.wg.Add(1)
+		go func() {
+			defer func() { _ = recover() }()
+			svc.startRound()
+		}()
+		select {
+		case <-released:
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "the claims were never released after the projection landed")
+		}
+	})
+
 	t.Run("an unfinished batch is not marked", func(t *testing.T) {
 		svc, rm := newProjectionTestService(t)
 		svc.batchSessions.track(endedRound(t))
 
 		rm.batchHandler(startedRound(t))
 
-		require.False(
-			t, svc.batchSessions.waitForProjection(context.Background(), projectedRoundId, 100*time.Millisecond),
+		require.Empty(
+			t, svc.batchSessions.waitForProjections(t.Context(), 100*time.Millisecond),
 			"only the projection of a finished batch releases the next one",
 		)
 	})
@@ -352,7 +927,7 @@ func newStartRoundTestService(t *testing.T, round *domain.Round) (*service, <-ch
 	t.Helper()
 
 	released := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
 	wallet := &mockedWallet{}
@@ -432,7 +1007,7 @@ type startRoundTestIntents struct {
 	released chan struct{}
 }
 
-func (i startRoundTestIntents) DeleteVtxos(context.Context) error {
+func (i startRoundTestIntents) DeleteVtxos(context.Context, string) error {
 	close(i.released)
 	return nil
 }
@@ -472,8 +1047,182 @@ func endedRound(t *testing.T) *domain.Round {
 	return round
 }
 
+// newRegisterIntentTestService builds the service RegisterIntent needs to reach
+// its input reads, which is as far as these cases go.
+func newRegisterIntentTestService(t *testing.T, repos *mockedRepoManager) *service {
+	t.Helper()
+
+	return &service{
+		repoManager:   repos,
+		batchSessions: newBatchSessionManager(),
+		offchainTxMu:  &sync.Mutex{},
+		cache: testLiveStore{
+			settings:    registerIntentTestSettings(t),
+			offchainTxs: testOffchainTxStore{},
+		},
+	}
+}
+
+func registerIntentTestSettings(t *testing.T) testSettingsStore {
+	t.Helper()
+
+	return testSettingsStore{settings: &ports.Settings{
+		Settings: domain.Settings{
+			VtxoMaxAmount: -1,
+			UtxoMaxAmount: -1,
+			MaxTxWeight:   400_000,
+		},
+		DustAmount:   testDust,
+		SignerPubkey: testPubkey(t),
+	}}
+}
+
+// spendingOffchainTxStore reports one outpoint as being spent by a pending
+// offchain tx, and every other one as free.
+type spendingOffchainTxStore struct {
+	ports.OffChainTxStore
+	spending domain.Outpoint
+}
+
+func (s spendingOffchainTxStore) IncludesAny(
+	_ context.Context, outpoints []domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	spending := make([]domain.Outpoint, 0, 1)
+	for _, outpoint := range outpoints {
+		if outpoint == s.spending {
+			spending = append(spending, outpoint)
+		}
+	}
+	return spending, nil
+}
+
+// readReportingOffchainTxStore reports each IncludesAny call on reads and finds
+// nothing spent.
+type readReportingOffchainTxStore struct {
+	ports.OffChainTxStore
+	reads chan<- string
+}
+
+func (s readReportingOffchainTxStore) IncludesAny(
+	context.Context, []domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	select {
+	case s.reads <- "IncludesAny":
+	default:
+	}
+	return nil, nil
+}
+
+// pushingRegistration is a service and an intent that RegisterIntent accepts
+// all the way to the push, once vtxos returns vtxo.
+type pushingRegistration struct {
+	svc     *service
+	repos   *mockedRepoManager
+	vtxos   *mockedVtxoRepo
+	proof   *intent.Proof
+	message intent.RegisterMessage
+	vtxo    domain.Vtxo
+}
+
+func newPushingRegistration(t *testing.T) pushingRegistration {
+	t.Helper()
+
+	message := intent.RegisterMessage{
+		BaseMessage:         intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
+		CosignersPublicKeys: []string{hex.EncodeToString(testPubkey(t).SerializeCompressed())},
+	}
+	encoded, err := message.Encode()
+	require.NoError(t, err)
+	proof := testNoteIntentProof(t, encoded, &wire.TxOut{
+		Value: int64(testDust) * 2, PkScript: testP2TRScript(t),
+	})
+	input := proof.GetOutpoints()[0]
+	utxo := proof.Inputs[1].WitnessUtxo
+
+	vtxos := &mockedVtxoRepo{}
+	repos := &mockedRepoManager{RepoManager: &mockRepoManagerForIndexer{}}
+	repos.On("Vtxos").Return(vtxos)
+	svc := newRegisterIntentTestService(t, repos)
+	svc.operatorPubkey = testPubkey(t)
+	svc.feeManager = registrationTestFees{}
+
+	return pushingRegistration{
+		svc:     svc,
+		repos:   repos,
+		vtxos:   vtxos,
+		proof:   proof,
+		message: message,
+		vtxo: domain.Vtxo{
+			Outpoint: domain.Outpoint{Txid: input.Hash.String(), VOut: input.Index},
+			Amount:   uint64(utxo.Value),
+			PubKey:   hex.EncodeToString(utxo.PkScript[2:]),
+		},
+	}
+}
+
+type registrationTestFees struct{ ports.FeeManager }
+
+func (registrationTestFees) ComputeIntentFees(
+	context.Context, []wire.TxOut, []domain.Vtxo, []wire.TxOut, []wire.TxOut,
+) (int64, error) {
+	return 0, nil
+}
+
+type registrationTestIntents struct {
+	ports.IntentStore
+	pushed bool
+}
+
+func (s *registrationTestIntents) Push(
+	context.Context, domain.Intent, []ports.BoardingInput, []string,
+) error {
+	s.pushed = true
+	return nil
+}
+
+// pausingIntentStore holds Push until proceed is closed, closing pushing once it
+// is entered, and closes released when DeleteVtxos drops the claims.
+type pausingIntentStore struct {
+	ports.IntentStore
+	pushing  chan struct{}
+	proceed  chan struct{}
+	released chan struct{}
+}
+
+func (s pausingIntentStore) Push(
+	context.Context, domain.Intent, []ports.BoardingInput, []string,
+) error {
+	close(s.pushing)
+	<-s.proceed
+	return nil
+}
+
+func (s pausingIntentStore) DeleteVtxos(context.Context, string) error {
+	close(s.released)
+	return nil
+}
+
+func (s pausingIntentStore) ViewAll(context.Context, []string) ([]ports.TimedIntent, error) {
+	return nil, fmt.Errorf("no intents in this test")
+}
+
+// registrationRoundTestStore serves a registration and the start of the next
+// batch from one cache.
+type registrationRoundTestStore struct {
+	startRoundTestStore
+	settings    ports.SettingsStore
+	offchainTxs ports.OffChainTxStore
+	intents     ports.IntentStore
+}
+
+func (s registrationRoundTestStore) Settings() ports.SettingsStore { return s.settings }
+
+func (s registrationRoundTestStore) OffchainTxs() ports.OffChainTxStore { return s.offchainTxs }
+
+func (s registrationRoundTestStore) Intents() ports.IntentStore { return s.intents }
+
 // requireBlocked fails unless the wait is still running.
-func requireBlocked(t *testing.T, waited <-chan bool, msg ...string) {
+func requireBlocked(t *testing.T, waited <-chan []string, msg ...string) {
 	t.Helper()
 
 	reason := "the wait ended before the batch was projected"
@@ -502,6 +1251,17 @@ func requireNotTracked(t *testing.T, m *batchSessionManager, batchId string, msg
 	require.False(t, tracked, reason)
 }
 
+// requireTracked fails unless the batch is still in flight.
+func requireTracked(t *testing.T, m *batchSessionManager, batchId string, msg string) {
+	t.Helper()
+
+	m.lock.Lock()
+	_, tracked := m.inflightBatches[batchId]
+	m.lock.Unlock()
+
+	require.True(t, tracked, msg)
+}
+
 // endedRoundWithId is endedRound under another id, for the cases that need two
 // batches in flight.
 func endedRoundWithId(t *testing.T, id string) *domain.Round {
@@ -525,4 +1285,32 @@ func endedRoundWithId(t *testing.T, id string) *domain.Round {
 	require.True(t, round.IsEnded())
 	require.Equal(t, id, round.Id)
 	return round
+}
+
+// registerWithBans registers proof with banning on, vtxos stored and only
+// bannedScript convicted.
+func registerWithBans(
+	t *testing.T, message intent.RegisterMessage, proof *intent.Proof,
+	vtxos []domain.Vtxo, bannedScript string,
+) errors.Error {
+	t.Helper()
+
+	vtxoRepo := &mockedVtxoRepo{}
+	vtxoRepo.On("GetVtxos", mock.Anything, mock.Anything).Return(vtxos, nil)
+	repos := &mockedRepoManager{}
+	repos.On("Vtxos").Return(vtxoRepo)
+	repos.On("Convictions").Return(convictionRepoStub{
+		convictions: map[string][]domain.ScriptConviction{bannedScript: {{}}},
+	})
+
+	settings := registerIntentTestSettings(t)
+	settings.settings.BanThreshold = 1
+	svc := newRegisterIntentTestService(t, repos)
+	svc.cache = testLiveStore{
+		settings:    settings,
+		offchainTxs: testOffchainTxStore{},
+	}
+
+	_, appErr := svc.RegisterIntent(t.Context(), *proof, message)
+	return appErr
 }

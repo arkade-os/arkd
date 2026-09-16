@@ -541,7 +541,11 @@ func (s *adminService) GetConvictionsByRound(
 func (s *adminService) GetActiveScriptConvictions(
 	ctx context.Context, script string,
 ) ([]domain.ScriptConviction, error) {
-	return s.repoManager.Convictions().GetActiveScriptConvictions(ctx, script)
+	res, err := s.repoManager.Convictions().GetActiveScriptsConvictions(ctx, []string{script})
+	if err != nil {
+		return nil, err
+	}
+	return res[script], nil
 }
 
 func (s *adminService) PardonConviction(ctx context.Context, id string) error {

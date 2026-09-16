@@ -16,6 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testRoundId names the batch a test Pops for, so DeleteVtxos releases the
+// inputs that same batch took.
+const testRoundId = "test-round"
+
 // TestPopNilIntent ensures Pop doesn't panic when intent:ids contains an id whose intent:<id> body is "nil"
 func TestPopNilIntent(t *testing.T) {
 	ctx := t.Context()
@@ -40,7 +44,7 @@ func TestPopNilIntent(t *testing.T) {
 
 	// try to pop the intent, verify it doesn't panic
 	require.NotPanics(t, func() {
-		popped, err := store.Pop(ctx, 10)
+		popped, err := store.Pop(ctx, 10, testRoundId)
 		require.NoError(t, err)
 		require.Empty(t, popped)
 	})
@@ -89,7 +93,7 @@ func TestPopAndDeleteWatchIntentBody(t *testing.T) {
 		hook.sets = nil
 		hook.mu.Unlock()
 
-		_, err := s.Pop(ctx, 1)
+		_, err := s.Pop(ctx, 1, testRoundId)
 		require.NoError(t, err)
 
 		watched := hook.watchedKeys()

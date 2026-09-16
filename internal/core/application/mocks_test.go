@@ -137,6 +137,13 @@ func (m *mockedRepoManager) Vtxos() domain.VtxoRepository {
 	return nil
 }
 
+func (m *mockedRepoManager) Convictions() domain.ConvictionRepository {
+	if v := m.Called().Get(0); v != nil {
+		return v.(domain.ConvictionRepository)
+	}
+	return nil
+}
+
 func (m *mockedRepoManager) Markers() domain.MarkerRepository {
 	return nil
 }

@@ -10,7 +10,8 @@ import (
 
 // batchProjectionTimeout bounds the wait for a finished batch's projection, so
 // one that never arrives delays the next batch rather than stopping the loop.
-const batchProjectionTimeout = 30 * time.Second
+// A var so a test driving startRound does not wait it out.
+var batchProjectionTimeout = 30 * time.Second
 
 // batchSessionManager tracks the batches this process finished, and whether the
 // projection of each has been written.
@@ -20,11 +21,41 @@ const batchProjectionTimeout = 30 * time.Second
 // the batch update handler only once those writes have returned, which is what
 // markProjected records.
 type batchSessionManager struct {
+	// registrations is held for the whole of a registration, and taken
+	// exclusively while a finished batch's claims are released. A registration
+	// in flight holds the release back, so its inputs are still claimed when it
+	// pushes; one that starts after the release reads a projection that has
+	// already landed. Between them there is no moment where an input a batch
+	// settled is refused by neither.
+	registrations sync.RWMutex
+
 	lock sync.Mutex
 	// inflightBatches maps a finished batch's id to whether its projection has
 	// been written. Absent means this process is not waiting on that batch.
 	inflightBatches map[string]bool
 	updated         chan struct{}
+}
+
+// beginRegistration marks a registration as in flight, and endRegistration
+// marks it done. They bracket everything from the first read of an input to the
+// push that claims it.
+func (m *batchSessionManager) beginRegistration() {
+	m.registrations.RLock()
+}
+
+func (m *batchSessionManager) endRegistration() {
+	m.registrations.RUnlock()
+}
+
+// holdRegistrations waits for the registrations in flight and keeps new ones out
+// until resumeRegistrations. The claims of a finished batch are released in
+// between, which is the one moment a registration must not run through.
+func (m *batchSessionManager) holdRegistrations() {
+	m.registrations.Lock()
+}
+
+func (m *batchSessionManager) resumeRegistrations() {
+	m.registrations.Unlock()
 }
 
 func newBatchSessionManager() *batchSessionManager {
@@ -69,42 +100,60 @@ func (m *batchSessionManager) markProjected(batchId string) {
 	m.updated = make(chan struct{})
 }
 
-// waitForProjection blocks until the batch's projection has been written and
-// reports whether it was. One already projected, or never tracked, returns at
-// once. It gives up on the timeout or on ctx, so neither the round loop nor
-// shutdown is held up. The batch stops being tracked however this ends, since
-// the wait is the only thing that cares about it.
-func (m *batchSessionManager) waitForProjection(
-	ctx context.Context, batchId string, timeout time.Duration,
-) bool {
-	defer m.forget(batchId)
-
+// waitForProjections blocks until every tracked batch's projection has been
+// written and returns the batches for which the cache can be cleared. It gives up on
+// the timeout or on ctx, so neither the round loop nor shutdown is held up, and
+// returns what did project by then: a batch still missing its projection stays
+// tracked, without holding back the batches around it.
+// Returns nil early if no batches are inflight.
+func (m *batchSessionManager) waitForProjections(
+	ctx context.Context, timeout time.Duration,
+) []string {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 
+	m.lock.Lock()
+	if len(m.inflightBatches) == 0 {
+		m.lock.Unlock()
+		return nil
+	}
+	m.lock.Unlock()
+
+	projected := make([]string, 0)
 	for {
 		m.lock.Lock()
-		projected, tracked := m.inflightBatches[batchId]
+		done, pending := m.forgetProjected()
 		updated := m.updated
 		m.lock.Unlock()
 
-		if projected || !tracked {
-			return true
+		projected = append(projected, done...)
+		if !pending {
+			return projected
 		}
 
 		select {
 		case <-updated:
 		case <-timer.C:
-			return false
+			return projected
 		case <-ctx.Done():
-			return false
+			return projected
 		}
 	}
 }
 
-func (m *batchSessionManager) forget(batchId string) {
-	m.lock.Lock()
-	defer m.lock.Unlock()
-
-	delete(m.inflightBatches, batchId)
+// forgetProjected stops tracking the projected batches, returns them, and
+// reports whether any is still missing its projection. The caller holds the
+// lock.
+func (m *batchSessionManager) forgetProjected() ([]string, bool) {
+	pending := false
+	done := make([]string, 0, len(m.inflightBatches))
+	for batchId, projected := range m.inflightBatches {
+		if projected {
+			done = append(done, batchId)
+			delete(m.inflightBatches, batchId)
+			continue
+		}
+		pending = true
+	}
+	return done, pending
 }

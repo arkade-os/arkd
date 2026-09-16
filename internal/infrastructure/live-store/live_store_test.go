@@ -86,6 +86,10 @@ var (
 	}
 )
 
+// testRoundId names the batch a test Pops for, so DeleteVtxos releases the
+// inputs that same batch took.
+const testRoundId = "test-round"
+
 func TestLiveStoreImplementations(t *testing.T) {
 	redisOpts, err := redis.ParseURL("redis://localhost:6379/0")
 	require.NoError(t, err)
@@ -166,15 +170,17 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			}
 
 			// IncludesAny
-			found, res := store.Intents().IncludesAny(ctx, []domain.Outpoint{})
-			require.False(t, found)
-			require.Empty(t, res)
+			found, err := store.Intents().IncludesAny(ctx, []domain.Outpoint{})
+			require.NoError(t, err)
+			require.Empty(t, found)
 
-			found, res = store.Intents().IncludesAny(ctx, []domain.Outpoint{{
-				Txid: "24de502601c21cf7b227c0667ffe1175841cdd4f6e5b20d3063387333d0b10da", VOut: 0,
-			}})
-			require.True(t, found)
-			require.NotEmpty(t, res)
+			existingOutpoints := []domain.Outpoint{
+				intent2.BoardingInputs[0].Outpoint,
+				intent1.Intent.Inputs[0].Outpoint,
+			}
+			found, err = store.Intents().IncludesAny(ctx, existingOutpoints)
+			require.NoError(t, err)
+			require.Equal(t, existingOutpoints, found)
 
 			// Len
 			ln, err := store.Intents().Len(ctx)
@@ -187,7 +193,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			require.Empty(t, selectedIntents)
 
 			// Pop
-			selected, err := store.Intents().Pop(ctx, 2)
+			selected, err := store.Intents().Pop(ctx, 2, testRoundId)
 			require.NoError(t, err)
 			require.Len(t, selected, 2)
 
@@ -201,7 +207,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			require.NoError(t, err)
 			require.Zero(t, ln)
 
-			selected, err = store.Intents().Pop(ctx, 100)
+			selected, err = store.Intents().Pop(ctx, 100, testRoundId)
 			require.NoError(t, err)
 			require.Empty(t, selected)
 
@@ -223,7 +229,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			require.NoError(t, err)
 
 			// Make sure DeleteVtxos doesn't panic
-			err = store.Intents().DeleteVtxos(ctx)
+			err = store.Intents().DeleteVtxos(ctx, testRoundId)
 			require.NoError(t, err)
 		})
 
@@ -256,7 +262,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			}
 			popOne := func(t *testing.T, ctx context.Context) ports.TimedIntent {
 				t.Helper()
-				popped, err := store.Intents().Pop(ctx, 1)
+				popped, err := store.Intents().Pop(ctx, 1, testRoundId)
 				require.NoError(t, err)
 				require.Len(t, popped, 1)
 				return popped[0]
@@ -264,7 +270,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			held := func(t *testing.T, ctx context.Context, outpoint domain.Outpoint) bool {
 				t.Helper()
 				found, _ := store.Intents().IncludesAny(ctx, []domain.Outpoint{outpoint})
-				return found
+				return len(found) > 0
 			}
 
 			t.Run("Push", func(t *testing.T) {
@@ -297,7 +303,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 								vtxo := vtxoInput()
 								push(t, ctx, vtxo)
 								popOne(t, ctx)
-								require.NoError(t, store.Intents().DeleteVtxos(ctx))
+								require.NoError(t, store.Intents().DeleteVtxos(ctx, testRoundId))
 								require.False(t, held(t, ctx, vtxo.Outpoint))
 								return pushArgs{intent: intentWith(vtxo)}
 							},
@@ -373,7 +379,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 									ctx, popped.Intent, popped.BoardingInputs,
 									popped.CosignersPublicKeys,
 								))
-								require.NoError(t, store.Intents().DeleteVtxos(ctx))
+								require.NoError(t, store.Intents().DeleteVtxos(ctx, testRoundId))
 								require.True(
 									t, held(t, ctx, vtxo.Outpoint),
 									"pushing the holder again must keep the input held",
@@ -489,12 +495,12 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 					)
 				}
 
-				require.NoError(t, store.Intents().DeleteVtxos(ctx))
+				require.NoError(t, store.Intents().DeleteVtxos(ctx, testRoundId))
 
 				stillHeld, key := store.Intents().IncludesAny(
 					ctx, []domain.Outpoint{vtxo.Outpoint, noteVtxo.Outpoint},
 				)
-				require.False(t, stillHeld, "%s is still held after DeleteVtxos", key)
+				require.Empty(t, stillHeld, "%s is still held after DeleteVtxos", key)
 
 				require.NoError(
 					t, store.Intents().Push(ctx, intentWith(vtxo, noteVtxo), nil, nil),
@@ -531,26 +537,26 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			require.NoError(t, pushIntent())
 
 			found, _ := store.Intents().IncludesAny(ctx, outpoints)
-			require.True(t, found)
+			require.NotEmpty(t, found)
 
-			popped, err := store.Intents().Pop(ctx, 1)
+			popped, err := store.Intents().Pop(ctx, 1, testRoundId)
 			require.NoError(t, err)
 			require.Len(t, popped, 1)
 
 			// the vtxo stays guarded while the round is in flight
 			found, _ = store.Intents().IncludesAny(ctx, outpoints)
-			require.True(t, found)
+			require.NotEmpty(t, found)
 
-			require.NoError(t, store.Intents().DeleteVtxos(ctx))
+			require.NoError(t, store.Intents().DeleteVtxos(ctx, testRoundId))
 
 			found, _ = store.Intents().IncludesAny(ctx, outpoints)
-			require.False(t, found)
+			require.Empty(t, found)
 		})
 
 		t.Run("re-pushed popped intent keeps the guard", func(t *testing.T) {
 			require.NoError(t, pushIntent())
 
-			popped, err := store.Intents().Pop(ctx, 1)
+			popped, err := store.Intents().Pop(ctx, 1, testRoundId)
 			require.NoError(t, err)
 			require.Len(t, popped, 1)
 
@@ -562,16 +568,18 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 
 			// next round resets the cache: the pending removal from the
 			// aborted round must not evict a vtxo that is queued again
-			require.NoError(t, store.Intents().DeleteVtxos(ctx))
+			require.NoError(t, store.Intents().DeleteVtxos(ctx, testRoundId))
 
-			found, res := store.Intents().IncludesAny(ctx, outpoints)
-			require.True(t, found)
-			require.Equal(t, vtxo.Outpoint.String(), res)
+			found, err := store.Intents().IncludesAny(ctx, outpoints)
+			require.NoError(t, err)
+			require.NotEmpty(t, found)
+			require.ElementsMatch(t, outpoints, found)
 
 			require.NoError(t, store.Intents().Delete(ctx, []string{popped[0].Id}))
 
-			found, _ = store.Intents().IncludesAny(ctx, outpoints)
-			require.False(t, found)
+			found, err = store.Intents().IncludesAny(ctx, outpoints)
+			require.NoError(t, err)
+			require.Empty(t, found)
 		})
 
 		t.Run("popped input cannot be claimed by another intent", func(t *testing.T) {
@@ -581,7 +589,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 
 			require.NoError(t, pushIntent())
 
-			popped, err := store.Intents().Pop(ctx, 1)
+			popped, err := store.Intents().Pop(ctx, 1, testRoundId)
 			require.NoError(t, err)
 			require.Len(t, popped, 1)
 
@@ -594,32 +602,34 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "duplicated input")
 
-			require.NoError(t, store.Intents().DeleteVtxos(ctx))
+			require.NoError(t, store.Intents().DeleteVtxos(ctx, testRoundId))
 		})
 
 		t.Run("DeleteAll flushes pending guard set removals", func(t *testing.T) {
 			require.NoError(t, pushIntent())
 
-			popped, err := store.Intents().Pop(ctx, 1)
+			popped, err := store.Intents().Pop(ctx, 1, testRoundId)
 			require.NoError(t, err)
 			require.Len(t, popped, 1)
 
 			// admin flush while the round is in flight
 			require.NoError(t, store.Intents().DeleteAll(ctx))
 
-			found, _ := store.Intents().IncludesAny(ctx, outpoints)
-			require.False(t, found)
+			found, err := store.Intents().IncludesAny(ctx, outpoints)
+			require.NoError(t, err)
+			require.Empty(t, found)
 
 			// the same vtxo can be registered again by a new intent
 			require.NoError(t, pushIntent())
 
 			// draining the pending removals must not evict the vtxo still
 			// referenced by the live intent
-			require.NoError(t, store.Intents().DeleteVtxos(ctx))
+			require.NoError(t, store.Intents().DeleteVtxos(ctx, testRoundId))
 
-			found, res := store.Intents().IncludesAny(ctx, outpoints)
-			require.True(t, found)
-			require.Equal(t, vtxo.Outpoint.String(), res)
+			found, err = store.Intents().IncludesAny(ctx, outpoints)
+			require.NoError(t, err)
+			require.NotEmpty(t, found)
+			require.ElementsMatch(t, outpoints, found)
 
 			require.NoError(t, store.Intents().DeleteAll(ctx))
 		})
@@ -646,9 +656,10 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 
 			// The guard that asks whether any of a set of outpoints is already
 			// spoken for reads the same set, so it has to see the note too.
-			exists, got := store.Intents().IncludesAny(ctx, []domain.Outpoint{noteOutpoint})
-			require.True(t, exists)
-			require.Equal(t, noteOutpoint.String(), got)
+			found, err := store.Intents().IncludesAny(ctx, []domain.Outpoint{noteOutpoint})
+			require.NoError(t, err)
+			require.NotEmpty(t, found)
+			require.ElementsMatch(t, []domain.Outpoint{noteOutpoint}, found)
 
 			require.NoError(t, store.Intents().Delete(ctx, []string{first.Id}))
 		})
@@ -662,10 +673,16 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			held := noteIntent(noteVtxo)
 			require.NoError(t, store.Intents().Push(ctx, held, nil, nil))
 
+			found, err := store.Intents().IncludesAny(ctx, []domain.Outpoint{noteOutpoint})
+			require.NoError(t, err)
+			require.NotEmpty(t, found)
+			require.ElementsMatch(t, []domain.Outpoint{noteOutpoint}, found)
+
 			require.NoError(t, store.Intents().Delete(ctx, []string{held.Id}))
 
-			exists, _ := store.Intents().IncludesAny(ctx, []domain.Outpoint{noteOutpoint})
-			require.False(t, exists, "deleting the intent must release the note")
+			found, err = store.Intents().IncludesAny(ctx, []domain.Outpoint{noteOutpoint})
+			require.NoError(t, err)
+			require.Empty(t, found, "deleting the intent must release the note")
 
 			retry := noteIntent(noteVtxo)
 			require.NoError(
@@ -694,19 +711,22 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			held := noteIntent(noteVtxo)
 			require.NoError(t, store.Intents().Push(ctx, held, nil, nil))
 
-			popped, err := store.Intents().Pop(ctx, 1)
+			popped, err := store.Intents().Pop(ctx, 1, testRoundId)
 			require.NoError(t, err)
 			require.Len(t, popped, 1)
 			require.Equal(t, held.Id, popped[0].Id)
 
 			// Still claimed between the two steps: the round is in flight.
-			exists, _ := store.Intents().IncludesAny(ctx, []domain.Outpoint{noteOutpoint})
-			require.True(t, exists, "a popped note stays claimed until DeleteVtxos")
+			found, err := store.Intents().IncludesAny(ctx, []domain.Outpoint{noteOutpoint})
+			require.NoError(t, err)
+			require.NotEmpty(t, found)
+			require.ElementsMatch(t, []domain.Outpoint{noteOutpoint}, found)
 
-			require.NoError(t, store.Intents().DeleteVtxos(ctx))
+			require.NoError(t, store.Intents().DeleteVtxos(ctx, testRoundId))
 
-			exists, _ = store.Intents().IncludesAny(ctx, []domain.Outpoint{noteOutpoint})
-			require.False(t, exists, "DeleteVtxos must release the note")
+			found, err = store.Intents().IncludesAny(ctx, []domain.Outpoint{noteOutpoint})
+			require.NoError(t, err)
+			require.Empty(t, found, "DeleteVtxos must release the note")
 
 			retry := noteIntent(noteVtxo)
 			require.NoError(
@@ -870,14 +890,26 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 		require.NotNil(t, offchainTx)
 
-		// Includes
+		// IncludesAny
 		outpointJSON := `{"Txid":"fefcc1d90510aa15a77b3bac88a745f7cc58a02a1d4ebe631901bff7f327c51a","VOut":0}`
 		var outpoint domain.Outpoint
 		err = json.Unmarshal([]byte(outpointJSON), &outpoint)
 		require.NoError(t, err)
-		exists, err := store.OffchainTxs().Includes(ctx, outpoint)
+
+		absent := domain.Outpoint{Txid: outpoint.Txid, VOut: outpoint.VOut + 1}
+		included, err := store.OffchainTxs().IncludesAny(
+			ctx, []domain.Outpoint{outpoint, absent, outpoint},
+		)
 		require.NoError(t, err)
-		require.True(t, exists)
+		require.Equal(t, []domain.Outpoint{outpoint, outpoint}, included)
+
+		included, err = store.OffchainTxs().IncludesAny(ctx, nil)
+		require.NoError(t, err)
+		require.Empty(t, included)
+
+		included, err = store.OffchainTxs().IncludesAny(ctx, []domain.Outpoint{absent})
+		require.NoError(t, err)
+		require.Empty(t, included)
 
 		// Remove
 		err = store.OffchainTxs().Remove(ctx, tx.ArkTxid)

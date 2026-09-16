@@ -31,15 +31,20 @@ type IntentStore interface {
 	Push(
 		ctx context.Context, intent domain.Intent, boardingInputs []BoardingInput, cosignersPublicKeys []string,
 	) error
-	Pop(ctx context.Context, num int64) ([]TimedIntent, error)
+	// Pop picks intents from the queue for the given batch and moves the vtxos from the intent
+	// queue to a temporary one that is cleared with DeleteVtxos.
+	Pop(ctx context.Context, num int64, roundId string) ([]TimedIntent, error)
 	GetSelectedIntents(ctx context.Context) ([]TimedIntent, error)
 	// TODO uncomment when we have a way to register outputs outside of intent proof
 	// Update(intent domain.Intent, cosignersPublicKeys []string) error
 	Delete(ctx context.Context, ids []string) error
 	DeleteAll(ctx context.Context) error
-	DeleteVtxos(ctx context.Context) error
+	// DeleteVtxos removes all vtxos that Pop picked for the given batch.
+	DeleteVtxos(ctx context.Context, roundId string) error
 	ViewAll(ctx context.Context, ids []string) ([]TimedIntent, error)
-	IncludesAny(ctx context.Context, outpoints []domain.Outpoint) (bool, string)
+	// IncludesAny returns the given outpoints that a queued intent already
+	// includes, in the order they were given, and nil otherwise.
+	IncludesAny(ctx context.Context, outpoints []domain.Outpoint) ([]domain.Outpoint, error)
 }
 
 type ForfeitTxsStore interface {
@@ -57,7 +62,9 @@ type OffChainTxStore interface {
 	Add(ctx context.Context, offchainTx domain.OffchainTx) error
 	Remove(ctx context.Context, arkTxid string) error
 	Get(ctx context.Context, arkTxid string) (*domain.OffchainTx, error)
-	Includes(ctx context.Context, outpoint domain.Outpoint) (bool, error)
+	// IncludesAny returns the given outpoints that another cached offchain tx
+	// already spends, in the order they were given, and nil otherwise.
+	IncludesAny(ctx context.Context, outpoints []domain.Outpoint) ([]domain.Outpoint, error)
 }
 
 type CurrentRoundStore interface {

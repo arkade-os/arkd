@@ -132,21 +132,21 @@ func (q *Queries) IsMarkerSwept(ctx context.Context, markerID string) (bool, err
 	return is_swept, err
 }
 
-const selectActiveScriptConvictions = `-- name: SelectActiveScriptConvictions :many
+const selectActiveScriptsConvictions = `-- name: SelectActiveScriptsConvictions :many
 SELECT id, type, created_at, expires_at, crime_type, crime_round_id, crime_reason, pardoned, script FROM conviction 
-WHERE script = $1 
+WHERE script = ANY($1::text[])
 AND pardoned = false 
 AND (expires_at IS NULL OR expires_at > $2)
 ORDER BY created_at ASC
 `
 
-type SelectActiveScriptConvictionsParams struct {
-	Script    sql.NullString
+type SelectActiveScriptsConvictionsParams struct {
+	Scripts   []string
 	ExpiresAt sql.NullInt64
 }
 
-func (q *Queries) SelectActiveScriptConvictions(ctx context.Context, arg SelectActiveScriptConvictionsParams) ([]Conviction, error) {
-	rows, err := q.db.QueryContext(ctx, selectActiveScriptConvictions, arg.Script, arg.ExpiresAt)
+func (q *Queries) SelectActiveScriptsConvictions(ctx context.Context, arg SelectActiveScriptsConvictionsParams) ([]Conviction, error) {
+	rows, err := q.db.QueryContext(ctx, selectActiveScriptsConvictions, pq.Array(arg.Scripts), arg.ExpiresAt)
 	if err != nil {
 		return nil, err
 	}

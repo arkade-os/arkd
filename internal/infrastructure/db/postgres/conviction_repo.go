@@ -49,19 +49,15 @@ func (r *convictionRepository) Get(ctx context.Context, id string) (domain.Convi
 	return r.convertToDomainConviction(conviction)
 }
 
-func (r *convictionRepository) GetActiveScriptConvictions(
-	ctx context.Context,
-	script string,
-) ([]domain.ScriptConviction, error) {
+func (r *convictionRepository) GetActiveScriptsConvictions(
+	ctx context.Context, scripts []string,
+) (map[string][]domain.ScriptConviction, error) {
 	currentTime := time.Now().Unix()
 
-	convictions, err := r.querier.SelectActiveScriptConvictions(
+	records, err := r.querier.SelectActiveScriptsConvictions(
 		ctx,
-		queries.SelectActiveScriptConvictionsParams{
-			Script: sql.NullString{
-				String: script,
-				Valid:  true,
-			},
+		queries.SelectActiveScriptsConvictionsParams{
+			Scripts: scripts,
 			ExpiresAt: sql.NullInt64{
 				Int64: currentTime,
 				Valid: true,
@@ -74,18 +70,21 @@ func (r *convictionRepository) GetActiveScriptConvictions(
 		}
 		return nil, fmt.Errorf("failed to get active script convictions: %w", err)
 	}
+	if len(records) == 0 {
+		return nil, nil
+	}
 
-	domainConvictions := make([]domain.ScriptConviction, 0, len(convictions))
-	for _, c := range convictions {
-		domainConviction, err := r.convertToDomainConviction(c)
+	convictions := make(map[string][]domain.ScriptConviction, len(records))
+	for _, record := range records {
+		conviction, err := r.convertToDomainConviction(record)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert conviction: %w", err)
 		}
 
-		domainConvictions = append(domainConvictions, domainConviction)
+		convictions[record.Script.String] = append(convictions[record.Script.String], conviction)
 	}
 
-	return domainConvictions, nil
+	return convictions, nil
 }
 
 func (r *convictionRepository) Add(ctx context.Context, convictions ...domain.Conviction) error {

@@ -60,15 +60,17 @@ func (r *convictionRepository) Get(ctx context.Context, id string) (domain.Convi
 	return r.convertToDomainConviction(conviction)
 }
 
-func (r *convictionRepository) GetActiveScriptConvictions(
-	ctx context.Context,
-	script string,
-) ([]domain.ScriptConviction, error) {
+func (r *convictionRepository) GetActiveScriptsConvictions(
+	ctx context.Context, scripts []string,
+) (map[string][]domain.ScriptConviction, error) {
 	currentTime := time.Now()
 
 	// Get all convictions for the script that are not pardoned
-	query := badgerhold.Where("Script").Eq(script).
-		And("Pardoned").Eq(false)
+	params := make([]interface{}, 0, len(scripts))
+	for _, script := range scripts {
+		params = append(params, script)
+	}
+	query := badgerhold.Where("Script").In(params...).And("Pardoned").Eq(false)
 
 	var allConvictions []Conviction
 	if err := r.store.Find(&allConvictions, query); err != nil {
@@ -94,16 +96,16 @@ func (r *convictionRepository) GetActiveScriptConvictions(
 		return nil, nil
 	}
 
-	domainConvictions := make([]domain.ScriptConviction, 0, len(activeConvictions))
+	convictions := make(map[string][]domain.ScriptConviction, len(activeConvictions))
 	for _, c := range activeConvictions {
 		domainConviction, err := r.convertToDomainConviction(c)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert conviction: %w", err)
 		}
-		domainConvictions = append(domainConvictions, domainConviction)
+		convictions[c.Script] = append(convictions[c.Script], domainConviction)
 	}
 
-	return domainConvictions, nil
+	return convictions, nil
 }
 
 func (r *convictionRepository) Add(ctx context.Context, convictions ...domain.Conviction) error {

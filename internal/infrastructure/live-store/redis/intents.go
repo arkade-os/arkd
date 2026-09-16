@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -19,6 +20,10 @@ const (
 	intentStoreVtxosKey         = "intent:vtxos"
 	intentStoreVtxosToRemoveKey = "intent:vtxosToRemove"
 	selectedIntentsKey          = "intent:selected"
+
+	// pendingOwnerSep joins the two halves of a vtxosToRemove value. A round id
+	// is a uuid and an intent id is a uuid, so neither carries it.
+	pendingOwnerSep = ":"
 )
 
 type intentStore struct {
@@ -89,10 +94,11 @@ func (s *intentStore) Push(
 					continue
 				}
 				// Only the intent that reserved a popped input may re-queue it.
-				poppedBy, err := s.rdb.HGet(ctx, intentStoreVtxosToRemoveKey, key).Result()
+				owner, err := s.rdb.HGet(ctx, intentStoreVtxosToRemoveKey, key).Result()
 				if err != nil && !errors.Is(err, redis.Nil) {
 					return fmt.Errorf("failed to check pending removal of input %s: %v", key, err)
 				}
+				_, poppedBy := splitPendingOwner(owner)
 				if errors.Is(err, redis.Nil) || poppedBy != intent.Id {
 					return fmt.Errorf(
 						"duplicated input, %s already registered by another intent", key,
@@ -132,7 +138,24 @@ func (s *intentStore) Push(
 	return fmt.Errorf("failed to push intent after max number of retries: %v", err)
 }
 
-func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, error) {
+// pendingOwner is the value stored for an input awaiting release: the batch
+// that took it and the intent that holds it. The batch lets DeleteVtxos release
+// one batch at a time, the intent lets Push tell a re-queue from another claim.
+func pendingOwner(roundId, intentId string) string {
+	return roundId + pendingOwnerSep + intentId
+}
+
+func splitPendingOwner(owner string) (roundId, intentId string) {
+	roundId, intentId, found := strings.Cut(owner, pendingOwnerSep)
+	if !found {
+		return "", owner
+	}
+	return roundId, intentId
+}
+
+func (s *intentStore) Pop(
+	ctx context.Context, num int64, roundId string,
+) ([]ports.TimedIntent, error) {
 	watchKeys := []string{
 		intentStoreIdsKey,
 		intentStoreVtxosToRemoveKey,
@@ -188,17 +211,19 @@ func (s *intentStore) Pop(ctx context.Context, num int64) ([]ports.TimedIntent, 
 			}
 			selected := intentsByTime[:n]
 
-			// list outpoints to remove
+			// list outpoints to remove, each tagged with the batch that took it
+			// and the intent that holds it
 			var pendingInputOwners []interface{}
 			for _, intent := range selected {
+				owner := pendingOwner(roundId, intent.Id)
 				for _, vtxo := range intent.Inputs {
 					pendingInputOwners = append(
-						pendingInputOwners, vtxo.Outpoint.String(), intent.Id,
+						pendingInputOwners, vtxo.Outpoint.String(), owner,
 					)
 				}
 				for _, boardingInput := range intent.BoardingInputs {
 					pendingInputOwners = append(
-						pendingInputOwners, boardingInput.String(), intent.Id,
+						pendingInputOwners, boardingInput.String(), owner,
 					)
 				}
 			}
@@ -401,23 +426,35 @@ func (s *intentStore) DeleteAll(ctx context.Context) error {
 	return fmt.Errorf("failed to delete all intents after max number of retries: %v", err)
 }
 
-func (s *intentStore) DeleteVtxos(ctx context.Context) error {
+func (s *intentStore) DeleteVtxos(ctx context.Context, roundId string) error {
 	var err error
 	for range s.numOfRetries {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			inputsToRemove, err := tx.HKeys(ctx, intentStoreVtxosToRemoveKey).Result()
+			owners, err := tx.HGetAll(ctx, intentStoreVtxosToRemoveKey).Result()
 			if err != nil {
 				return fmt.Errorf("failed to get inputs to remove: %v", err)
 			}
-			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				if len(inputsToRemove) > 0 {
-					members := make([]interface{}, len(inputsToRemove))
-					for i, v := range inputsToRemove {
-						members[i] = v
-					}
-					pipe.SRem(ctx, intentStoreVtxosKey, members...)
+
+			// Only what this batch took. The inputs of a batch whose projection
+			// has not landed stay claimed, so they are refused rather than
+			// registrable while nothing records them as spent.
+			inputsToRemove := make([]string, 0, len(owners))
+			for input, owner := range owners {
+				if poppedFor, _ := splitPendingOwner(owner); poppedFor == roundId {
+					inputsToRemove = append(inputsToRemove, input)
 				}
-				pipe.Del(ctx, intentStoreVtxosToRemoveKey)
+			}
+			if len(inputsToRemove) == 0 {
+				return nil
+			}
+
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				members := make([]interface{}, len(inputsToRemove))
+				for i, v := range inputsToRemove {
+					members[i] = v
+				}
+				pipe.SRem(ctx, intentStoreVtxosKey, members...)
+				pipe.HDel(ctx, intentStoreVtxosToRemoveKey, inputsToRemove...)
 				return nil
 			})
 			return err
@@ -429,14 +466,36 @@ func (s *intentStore) DeleteVtxos(ctx context.Context) error {
 	return fmt.Errorf("failed to delete vtxos after max number of retries: %v", err)
 }
 
-func (s *intentStore) IncludesAny(ctx context.Context, outpoints []domain.Outpoint) (bool, string) {
-	for _, out := range outpoints {
-		exists, err := s.rdb.SIsMember(ctx, intentStoreVtxosKey, out.String()).Result()
-		if err == nil && exists {
-			return true, out.String()
-		} else if err != nil {
-			log.Warnf("includesAny: failed to check vtxo %s: %v", out.String(), err)
+func (s *intentStore) IncludesAny(
+	ctx context.Context, outpoints []domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	if len(outpoints) == 0 {
+		return nil, nil
+	}
+
+	members := make([]interface{}, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		members = append(members, outpoint.String())
+	}
+
+	exists, err := s.rdb.SMIsMember(ctx, intentStoreVtxosKey, members...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to check existence of %d inputs: %v", len(outpoints), err)
+	}
+	if len(exists) != len(outpoints) {
+		return nil, fmt.Errorf(
+			"checked %d inputs but got %d answers", len(outpoints), len(exists),
+		)
+	}
+
+	var included []domain.Outpoint
+	for i, outpoint := range outpoints {
+		if exists[i] {
+			included = append(included, outpoint)
 		}
 	}
-	return false, ""
+	if len(included) == 0 {
+		return nil, nil
+	}
+	return included, nil
 }

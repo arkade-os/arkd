@@ -10,6 +10,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	"github.com/arkade-os/arkd/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -17,36 +18,90 @@ type withOutputScript interface {
 	OutputScript() ([]byte, error)
 }
 
+// banCandidate is an input of a request and what its ban script is read from.
+type banCandidate struct {
+	outpoint domain.Outpoint
+	script   withOutputScript
+}
+
+// scriptBan is a banned script with the inputs of the request it covers and the
+// convictions that ban it.
+type scriptBan struct {
+	script      string
+	outpoints   []string
+	convictions []string
+}
+
+// checkIfBanned returns every script of a request carrying at least banThreshold
+// active convictions, in the order the scripts first appear, so the first
+// outpoint of the first ban is the first banned input. It reads all scripts in
+// one query, and each script once however many inputs resolve to it.
 func (s *service) checkIfBanned(
-	ctx context.Context, banThreshold uint64, script withOutputScript,
-) error {
+	ctx context.Context, banThreshold uint64, candidates []banCandidate,
+) ([]scriptBan, error) {
 	// If ban threshold is 0, we disable banning
 	if banThreshold == 0 {
-		return nil
+		return nil, nil
 	}
 
-	scriptBytes, err := script.OutputScript()
-	if err != nil {
-		return err
-	}
-	conviction, err := s.repoManager.Convictions().
-		GetActiveScriptConvictions(ctx, hex.EncodeToString(scriptBytes))
-	if err != nil {
-		return err
-	}
-	// len() is never negative, so comparing as uint64 can't wrap for huge thresholds
-	if uint64(len(conviction)) >= banThreshold {
-		convictionsStr := make([]string, 0)
-		for _, conviction := range conviction {
-			convictionsStr = append(convictionsStr, conviction.String())
+	scripts := make([]string, 0, len(candidates))
+	outpointsByScript := make(map[string][]string, len(candidates))
+	for _, candidate := range candidates {
+		scriptBytes, err := candidate.script.OutputScript()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get output script: %w", err)
 		}
-		return fmt.Errorf(
-			"script %s is banned by %d convictions: %s",
-			script, len(conviction), strings.Join(convictionsStr, ", "),
+		hexScript := hex.EncodeToString(scriptBytes)
+		if _, seen := outpointsByScript[hexScript]; !seen {
+			scripts = append(scripts, hexScript)
+		}
+		outpointsByScript[hexScript] = append(
+			outpointsByScript[hexScript], candidate.outpoint.String(),
 		)
 	}
 
-	return nil
+	allConvictions, err := s.repoManager.Convictions().GetActiveScriptsConvictions(ctx, scripts)
+	if err != nil {
+		return nil, err
+	}
+	banned := make([]scriptBan, 0)
+	for _, script := range scripts {
+		convictions := allConvictions[script]
+		if uint64(len(convictions)) < banThreshold {
+			continue
+		}
+
+		formattedConvictions := make([]string, 0, len(convictions))
+		for _, conviction := range convictions {
+			formattedConvictions = append(formattedConvictions, conviction.String())
+		}
+		banned = append(banned, scriptBan{
+			script:      script,
+			outpoints:   outpointsByScript[script],
+			convictions: formattedConvictions,
+		})
+	}
+	if len(banned) == 0 {
+		return nil, nil
+	}
+
+	return banned, nil
+}
+
+func vtxoBannedError(bans []scriptBan) errors.Error {
+	scripts := make([]string, 0, len(bans))
+	outpoints := make([]string, 0, len(bans))
+	reasons := make([]string, 0, len(bans))
+	for _, ban := range bans {
+		scripts = append(scripts, ban.script)
+		outpoints = append(outpoints, ban.outpoints...)
+		reasons = append(reasons, fmt.Sprintf(
+			"script %s is banned by %d convictions: %s",
+			ban.script, len(ban.convictions), strings.Join(ban.convictions, ", "),
+		))
+	}
+	return errors.VTXO_BANNED.New("%s", strings.Join(reasons, "; ")).
+		WithMetadata(errors.VtxoBannedMetadata{VtxoOutpoints: outpoints, Scripts: scripts})
 }
 
 func (s *service) banCosignerInputs(

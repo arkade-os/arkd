@@ -128,10 +128,36 @@ func (s *offChainTxStore) Get(ctx context.Context, arkTxid string) (*domain.Offc
 	return &offchainTx, nil
 }
 
-func (s *offChainTxStore) Includes(ctx context.Context, outpoint domain.Outpoint) (bool, error) {
-	exists, err := s.rdb.SIsMember(ctx, offChainInputsSetKey, outpoint.String()).Result()
-	if err != nil {
-		return false, fmt.Errorf("failed to check existence of input %s: %v", outpoint, err)
+func (s *offChainTxStore) IncludesAny(
+	ctx context.Context, outpoints []domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	if len(outpoints) == 0 {
+		return nil, nil
 	}
-	return exists, nil
+
+	members := make([]interface{}, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		members = append(members, outpoint.String())
+	}
+
+	exists, err := s.rdb.SMIsMember(ctx, offChainInputsSetKey, members...).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to check existence of %d inputs: %v", len(outpoints), err)
+	}
+	if len(exists) != len(outpoints) {
+		return nil, fmt.Errorf(
+			"checked %d inputs but got %d answers", len(outpoints), len(exists),
+		)
+	}
+
+	var included []domain.Outpoint
+	for i, outpoint := range outpoints {
+		if exists[i] {
+			included = append(included, outpoint)
+		}
+	}
+	if len(included) == 0 {
+		return nil, nil
+	}
+	return included, nil
 }

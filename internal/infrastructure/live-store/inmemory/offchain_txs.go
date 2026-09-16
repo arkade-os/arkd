@@ -67,10 +67,21 @@ func (m *offChainTxStore) Get(_ context.Context, arkTxid string) (*domain.Offcha
 	return &offchainTx, nil
 }
 
-func (m *offChainTxStore) Includes(_ context.Context, outpoint domain.Outpoint) (bool, error) {
+func (m *offChainTxStore) IncludesAny(
+	_ context.Context, outpoints []domain.Outpoint,
+) ([]domain.Outpoint, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	_, exists := m.inputs[outpoint.String()]
-	return exists, nil
+	included := make([]domain.Outpoint, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		if _, exists := m.inputs[outpoint.String()]; !exists {
+			continue
+		}
+		included = append(included, outpoint)
+	}
+	if len(included) == 0 {
+		return nil, nil
+	}
+	return included, nil
 }

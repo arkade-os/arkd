@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
@@ -818,27 +820,45 @@ func TestRegisterIntent(t *testing.T) {
 				repos := &mockedRepoManager{}
 				repos.On("Vtxos").Return(vtxos)
 
-				svc := &service{
-					repoManager: repos,
-					cache: testLiveStore{
-						settings: testSettingsStore{settings: &ports.Settings{
-							Settings: domain.Settings{
-								VtxoMaxAmount: -1,
-								UtxoMaxAmount: -1,
-								MaxTxWeight:   400_000,
-							},
-							DustAmount:   testDust,
-							SignerPubkey: testPubkey(t),
-						}},
-						offchainTxs: testOffchainTxStore{},
-					},
-				}
+				svc := newRegisterIntentTestService(t, repos)
 
 				_, appErr := svc.RegisterIntent(ctx, *proof, message)
 				require.Error(t, appErr)
 				require.Equal(t, errors.INVALID_PKSCRIPT.Code, appErr.Code())
 			})
 		}
+	})
+}
+
+func TestSubmitOffchainTx(t *testing.T) {
+	t.Run("an input is checked for bans by its stored script", func(t *testing.T) {
+		spend := testOffchainTxSpendingVtxo(t)
+		svc := testSubmitOffchainTxService(t, spend.vtxo, convictionRepoStub{
+			convictions: map[string][]domain.ScriptConviction{spend.vtxoScript: {{}}},
+		})
+
+		_, appErr := svc.SubmitOffchainTx(
+			t.Context(), []string{spend.checkpointTx}, spend.arkTx,
+		)
+		require.Error(t, appErr)
+		require.Equal(t, errors.VTXO_BANNED.Code, appErr.Code())
+		require.Equal(t, spend.vtxo.Outpoint.String(), appErr.Metadata()["vtxo_outpoint"])
+		require.Equal(t, "["+spend.vtxoScript+"]", appErr.Metadata()["scripts"])
+	})
+
+	t.Run("a failed ban lookup reports the tx and its inputs", func(t *testing.T) {
+		spend := testOffchainTxSpendingVtxo(t)
+		svc := testSubmitOffchainTxService(t, spend.vtxo, convictionRepoStub{
+			err: fmt.Errorf("convictions unavailable"),
+		})
+
+		_, appErr := svc.SubmitOffchainTx(
+			t.Context(), []string{spend.checkpointTx}, spend.arkTx,
+		)
+		require.Error(t, appErr)
+		require.Equal(t, errors.INTERNAL_ERROR.Code, appErr.Code())
+		require.Equal(t, spend.arkTxid, appErr.Metadata()["txid"])
+		require.Contains(t, appErr.Metadata()["vtxos"], spend.vtxo.Outpoint.Txid)
 	})
 }
 
@@ -891,56 +911,153 @@ func testExtensionScript(t *testing.T) []byte {
 	return s
 }
 
+// testOffchainTxSpend is a stored vtxo and an unsigned ark tx spending it through
+// one checkpoint tx, encoded the way SubmitOffchainTx takes them.
+type testOffchainTxSpend struct {
+	vtxo         domain.Vtxo
+	vtxoScript   string
+	arkTx        string
+	arkTxid      string
+	checkpointTx string
+}
+
+func testOffchainTxSpendingVtxo(t *testing.T) testOffchainTxSpend {
+	t.Helper()
+
+	var vtxoOutpoint wire.OutPoint
+	_, err := rand.Read(vtxoOutpoint.Hash[:])
+	require.NoError(t, err)
+
+	owner := testPubkey(t)
+	vtxoScript, err := script.P2TRScript(owner)
+	require.NoError(t, err)
+	vtxo := domain.Vtxo{
+		Outpoint: domain.Outpoint{Txid: vtxoOutpoint.Hash.String(), VOut: vtxoOutpoint.Index},
+		PubKey:   hex.EncodeToString(schnorr.SerializePubKey(owner)),
+		Amount:   1000,
+	}
+
+	checkpoint, err := psbt.New(
+		[]*wire.OutPoint{&vtxoOutpoint},
+		[]*wire.TxOut{{Value: int64(vtxo.Amount), PkScript: []byte{txscript.OP_TRUE}}},
+		3, 0, []uint32{wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+	checkpointTx, err := checkpoint.B64Encode()
+	require.NoError(t, err)
+
+	arkPtx, err := psbt.New(
+		[]*wire.OutPoint{{Hash: checkpoint.UnsignedTx.TxHash(), Index: 0}},
+		[]*wire.TxOut{{Value: int64(vtxo.Amount), PkScript: []byte{txscript.OP_TRUE}}},
+		3, 0, []uint32{wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+	arkPtx.Inputs[0].WitnessUtxo = checkpoint.UnsignedTx.TxOut[0]
+	arkTx, err := arkPtx.B64Encode()
+	require.NoError(t, err)
+
+	return testOffchainTxSpend{
+		vtxo:         vtxo,
+		vtxoScript:   hex.EncodeToString(vtxoScript),
+		arkTx:        arkTx,
+		arkTxid:      arkPtx.UnsignedTx.TxID(),
+		checkpointTx: checkpointTx,
+	}
+}
+
+// testSubmitOffchainTxService builds the service SubmitOffchainTx needs to reach
+// its ban check, with banning on, vtxo stored and convictions answering.
+func testSubmitOffchainTxService(
+	t *testing.T, vtxo domain.Vtxo, convictions domain.ConvictionRepository,
+) *service {
+	t.Helper()
+
+	offchainTxs := &mockedOffchainTxRepo{}
+	offchainTxs.On("GetOffchainTx", mock.Anything, mock.Anything).Return(nil, nil)
+	vtxos := &mockedVtxoRepo{}
+	vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return([]domain.Vtxo{vtxo}, nil)
+	repos := &mockedRepoManager{}
+	repos.On("OffchainTxs").Return(offchainTxs)
+	repos.On("Vtxos").Return(vtxos)
+	repos.On("Convictions").Return(convictions)
+
+	return &service{
+		repoManager: repos,
+		cache: testLiveStore{settings: testSettingsStore{settings: &ports.Settings{
+			Settings: domain.Settings{BanThreshold: 1},
+		}}},
+	}
+}
+
 // testNoteIntentProof builds an intent proof whose only ownership input is a
 // note closure, ie. a hash-lock requiring the preimage instead of a signature.
 func testNoteIntentProof(t *testing.T, message string, out *wire.TxOut) *intent.Proof {
 	t.Helper()
 
-	preimage := make([]byte, 32)
-	_, err := rand.Read(preimage)
+	return testNotesIntentProof(t, message, out, 1)
+}
+
+// testNotesIntentProof builds an intent proof with one note closure ownership
+// input per note, each holding out's value.
+func testNotesIntentProof(
+	t *testing.T, message string, out *wire.TxOut, notes int,
+) *intent.Proof {
+	t.Helper()
+
+	inputs := make([]intent.Input, 0, notes)
+	leafScripts := make([][]*psbt.TaprootTapLeafScript, 0, notes)
+	preimages := make([][]byte, 0, notes)
+	for range notes {
+		preimage := make([]byte, 32)
+		_, err := rand.Read(preimage)
+		require.NoError(t, err)
+
+		noteClosure := &note.NoteClosure{PreimageHash: sha256.Sum256(preimage)}
+		noteScript, err := noteClosure.Script()
+		require.NoError(t, err)
+
+		leaf := txscript.NewBaseTapLeaf(noteScript)
+		tapTree := txscript.AssembleTaprootScriptTree(leaf)
+		root := tapTree.RootNode.TapHash()
+
+		unspendableKey := script.UnspendableKey()
+		p2trScript, err := script.P2TRScript(
+			txscript.ComputeTaprootOutputKey(unspendableKey, root[:]),
+		)
+		require.NoError(t, err)
+
+		leafIndex := tapTree.LeafProofIndex[leaf.TapHash()]
+		cb := tapTree.LeafMerkleProofs[leafIndex].ToControlBlock(unspendableKey)
+		controlBlock, err := cb.ToBytes()
+		require.NoError(t, err)
+
+		var prevHash [32]byte
+		_, err = rand.Read(prevHash[:])
+		require.NoError(t, err)
+
+		inputs = append(inputs, intent.Input{
+			OutPoint:    &wire.OutPoint{Hash: prevHash, Index: 0},
+			WitnessUtxo: &wire.TxOut{Value: out.Value, PkScript: p2trScript},
+		})
+		leafScripts = append(leafScripts, []*psbt.TaprootTapLeafScript{{
+			ControlBlock: controlBlock,
+			Script:       noteScript,
+			LeafVersion:  txscript.BaseLeafVersion,
+		}})
+		preimages = append(preimages, preimage)
+	}
+
+	proof, err := intent.New(message, inputs, []*wire.TxOut{out})
 	require.NoError(t, err)
 
-	noteClosure := &note.NoteClosure{PreimageHash: sha256.Sum256(preimage)}
-	noteScript, err := noteClosure.Script()
-	require.NoError(t, err)
-
-	leaf := txscript.NewBaseTapLeaf(noteScript)
-	tapTree := txscript.AssembleTaprootScriptTree(leaf)
-	root := tapTree.RootNode.TapHash()
-
-	unspendableKey := script.UnspendableKey()
-	p2trScript, err := script.P2TRScript(
-		txscript.ComputeTaprootOutputKey(unspendableKey, root[:]),
-	)
-	require.NoError(t, err)
-
-	leafIndex := tapTree.LeafProofIndex[leaf.TapHash()]
-	cb := tapTree.LeafMerkleProofs[leafIndex].ToControlBlock(unspendableKey)
-	controlBlock, err := cb.ToBytes()
-	require.NoError(t, err)
-
-	var prevHash [32]byte
-	_, err = rand.Read(prevHash[:])
-	require.NoError(t, err)
-
-	proof, err := intent.New(message, []intent.Input{{
-		OutPoint:    &wire.OutPoint{Hash: prevHash, Index: 0},
-		WitnessUtxo: &wire.TxOut{Value: out.Value, PkScript: p2trScript},
-	}}, []*wire.TxOut{out})
-	require.NoError(t, err)
-
-	leafScript := []*psbt.TaprootTapLeafScript{{
-		ControlBlock: controlBlock,
-		Script:       noteScript,
-		LeafVersion:  txscript.BaseLeafVersion,
-	}}
-	// index 0 is the toSpend input, index 1 is the ownership input
-	proof.Inputs[0].TaprootLeafScript = leafScript
-	proof.Inputs[1].TaprootLeafScript = leafScript
-
-	require.NoError(t, txutils.SetArkPsbtField(
-		&proof.Packet, 1, txutils.ConditionWitnessField, wire.TxWitness{preimage},
-	))
+	// index 0 is the toSpend input, the ownership inputs follow from index 1
+	proof.Inputs[0].TaprootLeafScript = leafScripts[0]
+	for i := range notes {
+		proof.Inputs[i+1].TaprootLeafScript = leafScripts[i]
+		require.NoError(t, txutils.SetArkPsbtField(
+			&proof.Packet, i+1, txutils.ConditionWitnessField, wire.TxWitness{preimages[i]},
+		))
+	}
 
 	return proof
 }
@@ -986,10 +1103,10 @@ type testOffchainTxStore struct {
 
 func (s testOffchainTxStore) Remove(context.Context, string) error { return nil }
 
-func (s testOffchainTxStore) Includes(
-	context.Context, domain.Outpoint,
-) (bool, error) {
-	return false, nil
+func (s testOffchainTxStore) IncludesAny(
+	_ context.Context, outpoints []domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	return nil, nil
 }
 
 type testIntentStore struct {

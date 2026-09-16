@@ -120,3 +120,16 @@ func TestQueryFilterLimitExceededContract(t *testing.T) {
 		t.Fatalf("Metadata()[got_items] = %q, want 101", got)
 	}
 }
+
+func TestVtxoMetadataContract(t *testing.T) {
+	err := VTXO_ALREADY_SPENT.
+		New("vtxo(s) already spent").
+		WithMetadata(VtxoMetadata{VtxoOutpoints: []string{"aa:0", "bb:1"}})
+
+	if got := err.Metadata()["vtxo_outpoint"]; got != "aa:0" {
+		t.Fatalf("Metadata()[vtxo_outpoint] = %q, want aa:0", got)
+	}
+	if got := err.Metadata()["vtxo_outpoints"]; got != "[aa:0 bb:1]" {
+		t.Fatalf("Metadata()[vtxo_outpoints] = %q, want [aa:0 bb:1]", got)
+	}
+}

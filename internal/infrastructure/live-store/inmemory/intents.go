@@ -16,14 +16,22 @@ type intentStore struct {
 	lock            sync.RWMutex
 	intents         map[string]*ports.TimedIntent
 	vtxos           map[string]struct{}
-	vtxosToRemove   map[string]string
+	vtxosToRemove   map[string]pendingOwner
 	selectedIntents []ports.TimedIntent
+}
+
+// pendingOwner records who holds an input awaiting release: the batch that took
+// it, so DeleteVtxos can release one batch at a time, and the intent that holds
+// it, so Push can tell a re-queue from another intent's claim.
+type pendingOwner struct {
+	roundId  string
+	intentId string
 }
 
 func NewIntentStore() ports.IntentStore {
 	intentsById := make(map[string]*ports.TimedIntent)
 	vtxos := make(map[string]struct{})
-	vtxosToRemove := make(map[string]string)
+	vtxosToRemove := make(map[string]pendingOwner)
 	selectedIntents := make([]ports.TimedIntent, 0)
 	return &intentStore{
 		intents:         intentsById,
@@ -69,7 +77,7 @@ func (m *intentStore) Push(
 		if _, exists := m.vtxos[key]; !exists {
 			continue
 		}
-		if poppedBy, popped := m.vtxosToRemove[key]; !popped || poppedBy != intent.Id {
+		if owner, popped := m.vtxosToRemove[key]; !popped || owner.intentId != intent.Id {
 			return fmt.Errorf(
 				"duplicated input, %s already registered by another intent", key,
 			)
@@ -90,7 +98,9 @@ func (m *intentStore) Push(
 	return nil
 }
 
-func (m *intentStore) Pop(_ context.Context, num int64) ([]ports.TimedIntent, error) {
+func (m *intentStore) Pop(
+	_ context.Context, num int64, roundId string,
+) ([]ports.TimedIntent, error) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	m.selectedIntents = make([]ports.TimedIntent, 0)
@@ -116,11 +126,12 @@ func (m *intentStore) Pop(_ context.Context, num int64) ([]ports.TimedIntent, er
 
 	for _, p := range intentsByTime[:num] {
 		result = append(result, p)
+		owner := pendingOwner{roundId: roundId, intentId: p.Id}
 		for _, vtxo := range m.intents[p.Id].Inputs {
-			m.vtxosToRemove[vtxo.Outpoint.String()] = p.Id
+			m.vtxosToRemove[vtxo.Outpoint.String()] = owner
 		}
 		for _, boardingInput := range m.intents[p.Id].BoardingInputs {
-			m.vtxosToRemove[boardingInput.String()] = p.Id
+			m.vtxosToRemove[boardingInput.String()] = owner
 		}
 		delete(m.intents, p.Id)
 	}
@@ -202,19 +213,25 @@ func (m *intentStore) DeleteAll(_ context.Context) error {
 
 	m.intents = make(map[string]*ports.TimedIntent)
 	m.vtxos = make(map[string]struct{})
-	m.vtxosToRemove = make(map[string]string)
+	m.vtxosToRemove = make(map[string]pendingOwner)
 	m.selectedIntents = make([]ports.TimedIntent, 0)
 	return nil
 }
 
-func (m *intentStore) DeleteVtxos(_ context.Context) error {
+func (m *intentStore) DeleteVtxos(_ context.Context, roundId string) error {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	for vtxo := range m.vtxosToRemove {
+	// Only what this batch took. The inputs of a batch whose projection has not
+	// landed stay claimed, so they are refused rather than registrable while
+	// nothing records them as spent.
+	for vtxo, owner := range m.vtxosToRemove {
+		if owner.roundId != roundId {
+			continue
+		}
 		delete(m.vtxos, vtxo)
+		delete(m.vtxosToRemove, vtxo)
 	}
-	m.vtxosToRemove = make(map[string]string)
 	return nil
 }
 
@@ -238,15 +255,22 @@ func (m *intentStore) ViewAll(_ context.Context, ids []string) ([]ports.TimedInt
 	return intents, nil
 }
 
-func (m *intentStore) IncludesAny(_ context.Context, outpoints []domain.Outpoint) (bool, string) {
+func (m *intentStore) IncludesAny(
+	_ context.Context, outpoints []domain.Outpoint,
+) ([]domain.Outpoint, error) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
+	included := make([]domain.Outpoint, 0, len(outpoints))
 	for _, out := range outpoints {
-		if _, exists := m.vtxos[out.String()]; exists {
-			return true, out.String()
+		if _, exists := m.vtxos[out.String()]; !exists {
+			continue
 		}
+		included = append(included, out)
+	}
+	if len(included) == 0 {
+		return nil, nil
 	}
 
-	return false, ""
+	return included, nil
 }

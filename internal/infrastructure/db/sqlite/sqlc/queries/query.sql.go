@@ -116,21 +116,36 @@ func (q *Queries) IsMarkerSwept(ctx context.Context, markerID string) (int64, er
 	return is_swept, err
 }
 
-const selectActiveScriptConvictions = `-- name: SelectActiveScriptConvictions :many
-SELECT id, type, created_at, expires_at, crime_type, crime_round_id, crime_reason, pardoned, script FROM conviction 
-WHERE script = ?1 
-AND pardoned = false 
-AND (expires_at IS NULL OR expires_at > ?2)
+const selectActiveScriptsConvictions = `-- name: SelectActiveScriptsConvictions :many
+SELECT id, type, created_at, expires_at, crime_type, crime_round_id, crime_reason, pardoned, script FROM conviction
+WHERE pardoned = false
+AND (expires_at IS NULL OR expires_at > ?1)
+AND script IN (/*SLICE:scripts*/?)
 ORDER BY created_at ASC
 `
 
-type SelectActiveScriptConvictionsParams struct {
-	Script    sql.NullString
+type SelectActiveScriptsConvictionsParams struct {
 	ExpiresAt sql.NullInt64
+	Scripts   []sql.NullString
 }
 
-func (q *Queries) SelectActiveScriptConvictions(ctx context.Context, arg SelectActiveScriptConvictionsParams) ([]Conviction, error) {
-	rows, err := q.db.QueryContext(ctx, selectActiveScriptConvictions, arg.Script, arg.ExpiresAt)
+// The slice comes last on purpose: sqlite numbers a bare ? one past the highest
+// number used so far, so the placeholders the slice expands to would take the
+// positions a numbered parameter before them was given, and @expires_at would
+// read a script instead of the timestamp.
+func (q *Queries) SelectActiveScriptsConvictions(ctx context.Context, arg SelectActiveScriptsConvictionsParams) ([]Conviction, error) {
+	query := selectActiveScriptsConvictions
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.ExpiresAt)
+	if len(arg.Scripts) > 0 {
+		for _, v := range arg.Scripts {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:scripts*/?", strings.Repeat(",?", len(arg.Scripts))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:scripts*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}

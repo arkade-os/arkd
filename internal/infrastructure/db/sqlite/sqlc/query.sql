@@ -478,11 +478,15 @@ ON CONFLICT(id) DO UPDATE SET
 -- name: SelectConviction :one
 SELECT * FROM conviction WHERE id = @id;
 
--- name: SelectActiveScriptConvictions :many
-SELECT * FROM conviction 
-WHERE script = @script 
-AND pardoned = false 
+-- name: SelectActiveScriptsConvictions :many
+-- The slice comes last on purpose: sqlite numbers a bare ? one past the highest
+-- number used so far, so the placeholders the slice expands to would take the
+-- positions a numbered parameter before them was given, and @expires_at would
+-- read a script instead of the timestamp.
+SELECT * FROM conviction
+WHERE pardoned = false
 AND (expires_at IS NULL OR expires_at > @expires_at)
+AND script IN (sqlc.slice('scripts'))
 ORDER BY created_at ASC;
 
 -- name: UpdateConvictionPardoned :exec

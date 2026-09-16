@@ -465,9 +465,9 @@ ON CONFLICT(id) DO UPDATE SET
 -- name: SelectConviction :one
 SELECT * FROM conviction WHERE id = @id;
 
--- name: SelectActiveScriptConvictions :many
+-- name: SelectActiveScriptsConvictions :many
 SELECT * FROM conviction 
-WHERE script = @script 
+WHERE script = ANY(@scripts::text[])
 AND pardoned = false 
 AND (expires_at IS NULL OR expires_at > @expires_at)
 ORDER BY created_at ASC;

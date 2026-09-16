@@ -105,7 +105,25 @@ func (e *ErrorImpl[MT]) WithMetadata(metadata MT) TypedError[MT] {
 }
 
 type VtxoMetadata struct {
-	VtxoOutpoint string `json:"vtxo_outpoint"`
+	VtxoOutpoints []string `json:"vtxo_outpoints"`
+}
+
+// MarshalJSON also writes the first outpoint as vtxo_outpoint.
+func (m VtxoMetadata) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		VtxoOutpoint  string   `json:"vtxo_outpoint"`
+		VtxoOutpoints []string `json:"vtxo_outpoints"`
+	}{
+		VtxoOutpoint:  firstOutpoint(m.VtxoOutpoints),
+		VtxoOutpoints: m.VtxoOutpoints,
+	})
+}
+
+func firstOutpoint(outpoints []string) string {
+	if len(outpoints) == 0 {
+		return ""
+	}
+	return outpoints[0]
 }
 
 type PsbtMetadata struct {
@@ -322,7 +340,27 @@ var INVALID_BOARDING_INPUT_SIG = Code[InvalidBoardingInputSigMetadata]{
 	grpccodes.InvalidArgument,
 }
 var SIGNING_SESSION_TIMED_OUT = Code[any]{28, "SIGNING_SESSION_TIMED_OUT", grpccodes.Internal}
-var VTXO_BANNED = Code[VtxoMetadata]{29, "VTXO_BANNED", grpccodes.InvalidArgument}
+
+type VtxoBannedMetadata struct {
+	VtxoOutpoints []string `json:"vtxo_outpoints"`
+	Scripts       []string `json:"scripts"`
+}
+
+// MarshalJSON also writes the first banned outpoint as vtxo_outpoint, like
+// VtxoMetadata does.
+func (m VtxoBannedMetadata) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		VtxoOutpoint  string   `json:"vtxo_outpoint"`
+		VtxoOutpoints []string `json:"vtxo_outpoints"`
+		Scripts       []string `json:"scripts"`
+	}{
+		VtxoOutpoint:  firstOutpoint(m.VtxoOutpoints),
+		VtxoOutpoints: m.VtxoOutpoints,
+		Scripts:       m.Scripts,
+	})
+}
+
+var VTXO_BANNED = Code[VtxoBannedMetadata]{29, "VTXO_BANNED", grpccodes.InvalidArgument}
 var VTXO_NOT_FOUND = Code[VtxoNotFoundMetadata]{30, "VTXO_NOT_FOUND", grpccodes.NotFound}
 
 var INTENT_INSUFFICIENT_FEE = Code[IntentInsufficientFeeMetadata]{
