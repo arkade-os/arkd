@@ -199,6 +199,24 @@ func (m *mockedWallet) GetTransaction(ctx context.Context, txid string) (string,
 	return args.String(0), args.Error(1)
 }
 
+func (m *mockedWallet) IsTransactionConfirmed(
+	ctx context.Context, txid string,
+) (bool, *ports.BlockTimestamp, error) {
+	args := m.Called(ctx, txid)
+	if v := args.Get(1); v != nil {
+		return args.Bool(0), v.(*ports.BlockTimestamp), args.Error(2)
+	}
+	return args.Bool(0), nil, args.Error(2)
+}
+
+func (m *mockedWallet) GetCurrentBlockTime(ctx context.Context) (*ports.BlockTimestamp, error) {
+	args := m.Called(ctx)
+	if v := args.Get(0); v != nil {
+		return v.(*ports.BlockTimestamp), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
 func (m *mockedWallet) GetDustAmount(ctx context.Context) (uint64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)

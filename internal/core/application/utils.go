@@ -655,3 +655,70 @@ func calculateBoardingInputAmount(ptx *psbt.Packet) uint64 {
 func isBoardingInput(in psbt.PInput) bool {
 	return in.WitnessUtxo != nil && len(in.TaprootLeafScript) > 0
 }
+
+// isExitDelayExpired returns whether the given delay (+ optional margin) is expired, meaning the
+// exit path of a script is now avaialble and user can move funds unilaterally.
+// tip is only read for block-typed delays and may be nil otherwise.
+func isExitDelayExpired(
+	confirmedAt, tip *ports.BlockTimestamp,
+	delay arklib.RelativeLocktime, margin time.Duration, now time.Time,
+) (bool, error) {
+	if delay.Type == arklib.LocktimeTypeBlock {
+		if tip == nil {
+			return false, fmt.Errorf("missing chain tip for block-typed exit delay")
+		}
+		// Height 0 is the not-found sentinel on the confirmation lookup, never a
+		// real confirmation height for a boarding utxo.
+		if confirmedAt == nil || confirmedAt.Height == 0 {
+			return false, fmt.Errorf("missing confirmation height for block-typed exit delay")
+		}
+		// Block-typed delays are allowed only on regtest, where a block counts as
+		// arklib.SECONDS_PER_BLOCK seconds, so the margin is converted at that rate.
+		marginBlocks := int64(margin/time.Second) / arklib.SECONDS_PER_BLOCK
+		nextHeight := int64(tip.Height) + 1 + marginBlocks
+		maturesAt := int64(confirmedAt.Height) + int64(delay.Value)
+		return nextHeight >= maturesAt, nil
+	}
+
+	if confirmedAt == nil {
+		return false, fmt.Errorf("missing confirmation timestamp for exit delay")
+	}
+	expiresAt := time.Unix(confirmedAt.Time, 0).
+		Add(time.Duration(delay.Seconds()) * time.Second)
+	return !expiresAt.After(now.Add(margin)), nil
+}
+
+// locktimeTillExitDelay answers in the locktime's own unit, zero once elapsed.
+//
+// Block-typed values must be counted in blocks, as in isExitDelayExpired, since
+// Seconds() converts them at SECONDS_PER_BLOCK = 1 and the elapsed term is a real
+// clock reading that dwarfs them.
+//
+// Mixed types keep the clock reading on purpose. A block-typed sequence cannot
+// satisfy a seconds-typed CSV on chain, and reading it as blocks would reject
+// sequences set for other reasons, such as signalling RBF.
+func locktimeTillExitDelay(
+	confirmedAt, tip *ports.BlockTimestamp,
+	locktime, exitDelay arklib.RelativeLocktime, now time.Time,
+) (int64, error) {
+	if locktime.Type == arklib.LocktimeTypeBlock &&
+		exitDelay.Type == arklib.LocktimeTypeBlock {
+		if tip == nil {
+			return 0, fmt.Errorf("missing chain tip for block-typed locktime")
+		}
+		if confirmedAt == nil || confirmedAt.Height == 0 {
+			return 0, fmt.Errorf("missing confirmation height for block-typed locktime")
+		}
+		heightAtExit := int64(tip.Height) + int64(exitDelay.Value)
+		elapsed := heightAtExit - int64(confirmedAt.Height)
+		return max(int64(locktime.Value)-elapsed, 0), nil
+	}
+
+	if confirmedAt == nil {
+		return 0, fmt.Errorf("missing confirmation timestamp for locktime")
+	}
+	elapsed := now.Add(time.Duration(exitDelay.Seconds())*time.Second).
+		Unix() -
+		confirmedAt.Time
+	return max(locktime.Seconds()-elapsed, 0), nil
+}

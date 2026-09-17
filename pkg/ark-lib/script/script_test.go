@@ -1455,6 +1455,111 @@ func TestParseVtxoScript(t *testing.T) {
 	}
 }
 
+func TestTapscriptsVtxoScriptValidate(t *testing.T) {
+	// Exit delays in blocks are allowed only when the configured delays are in blocks
+	// (regtest). A configuration in seconds rejects any exit delay in blocks, while
+	// a configuration in blocks accepts exit delays in blocks, in seconds, or both.
+	t.Run("exit delay type", func(t *testing.T) {
+		ownerKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		owner := ownerKey.PubKey()
+		signerKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		signer := signerKey.PubKey()
+
+		seconds := func(v uint32) arklib.RelativeLocktime {
+			return arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: v}
+		}
+		blocks := func(v uint32) arklib.RelativeLocktime {
+			return arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: v}
+		}
+		// vtxoScript builds a script with the collaborative closure and one CSV
+		// exit closure per delay.
+		vtxoScript := func(delays ...arklib.RelativeLocktime) *script.TapscriptsVtxoScript {
+			closures := []script.Closure{
+				&script.MultisigClosure{PubKeys: []*btcec.PublicKey{owner, signer}},
+			}
+			for _, delay := range delays {
+				closures = append(closures, &script.CSVMultisigClosure{
+					MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{owner}},
+					Locktime:        delay,
+				})
+			}
+			return &script.TapscriptsVtxoScript{Closures: closures}
+		}
+
+		t.Run("valid", func(t *testing.T) {
+			tests := []struct {
+				name             string
+				script           *script.TapscriptsVtxoScript
+				minLocktime      arklib.RelativeLocktime
+				blockTypeAllowed bool
+			}{
+				{
+					name:        "exit delays in seconds, configured delay in seconds",
+					script:      vtxoScript(seconds(1024), seconds(2048)),
+					minLocktime: seconds(512),
+				},
+				{
+					name:             "exit delays in blocks, configured delay in blocks",
+					script:           vtxoScript(blocks(144), blocks(288)),
+					minLocktime:      blocks(20),
+					blockTypeAllowed: true,
+				},
+				{
+					name:             "exit delays in seconds, configured delay in blocks",
+					script:           vtxoScript(seconds(1024)),
+					minLocktime:      blocks(20),
+					blockTypeAllowed: true,
+				},
+				{
+					name:             "exit delays in seconds and blocks, configured delay in blocks",
+					script:           vtxoScript(blocks(144), seconds(1024)),
+					minLocktime:      blocks(20),
+					blockTypeAllowed: true,
+				},
+			}
+
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					err := tt.script.Validate(signer, tt.minLocktime, tt.blockTypeAllowed)
+					require.NoError(t, err)
+				})
+			}
+		})
+
+		t.Run("invalid", func(t *testing.T) {
+			tests := []struct {
+				name             string
+				script           *script.TapscriptsVtxoScript
+				minLocktime      arklib.RelativeLocktime
+				blockTypeAllowed bool
+				errContains      string
+			}{
+				{
+					name:        "exit delays in blocks, configured delay in seconds",
+					script:      vtxoScript(blocks(144)),
+					minLocktime: seconds(512),
+					errContains: "CSV block type not allowed",
+				},
+				{
+					name:        "exit delays in seconds and blocks, configured delay in seconds",
+					script:      vtxoScript(seconds(1024), blocks(144)),
+					minLocktime: seconds(512),
+					errContains: "CSV block type not allowed",
+				},
+			}
+
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					err := tt.script.Validate(signer, tt.minLocktime, tt.blockTypeAllowed)
+					require.ErrorContains(t, err, tt.errContains)
+				})
+			}
+		})
+	})
+}
+
 func TestTapscriptsVtxoScript(t *testing.T) {
 	for _, fixture := range parseVtxoScriptFixtures(t) {
 		t.Run(fixture.Name, func(t *testing.T) {

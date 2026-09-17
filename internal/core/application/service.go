@@ -4519,21 +4519,37 @@ func (s *service) processBoardingInputs(
 	}
 
 	boardingInputs := make([]ports.BoardingInput, 0)
-	boardingTxs := make(map[string]wire.MsgTx, 0) // txid -> txhex
+	// Only the funding tx and its confirmation are memoized per txid. The
+	// per-output validation below runs for every input, since two boarding
+	// utxos can share a funding tx while carrying different tapscripts, exit
+	// delays and amounts.
+	boardingTxs := make(map[string]fundingTx, 0) // txid -> funding tx
 	now := time.Now()
 
-	for _, input := range boardingUtxos {
-		if _, ok := boardingTxs[input.Txid]; !ok {
-			if len(input.Tapscripts) == 0 {
-				return nil, errors.INVALID_PSBT_INPUT.New(
-					"missing taptree for input %s", input.Outpoint,
-				).WithMetadata(errors.InputMetadata{
-					Txid:       intentTxid,
-					InputIndex: int(input.VOut),
-				})
-			}
+	// Get the tip only once for all boarding utxos we have to check. This is used only in dev
+	// mode if the delays are configured in blocks.
+	var tip *ports.BlockTimestamp
+	var tipErr error
+	getTip := func() (*ports.BlockTimestamp, error) {
+		if tip == nil && tipErr == nil {
+			tip, tipErr = s.wallet.GetCurrentBlockTime(ctx)
+		}
+		return tip, tipErr
+	}
 
-			tx, err := s.validateBoardingInput(ctx, input, now, settings)
+	for _, input := range boardingUtxos {
+		if len(input.Tapscripts) == 0 {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"missing taptree for input %s", input.Outpoint,
+			).WithMetadata(errors.InputMetadata{
+				Txid:       intentTxid,
+				InputIndex: int(input.VOut),
+			})
+		}
+
+		funding, ok := boardingTxs[input.Txid]
+		if !ok {
+			fetchedTx, blockTimestamp, err := s.fetchConfirmedTx(ctx, input.Txid)
 			if err != nil {
 				return nil, errors.INVALID_PSBT_INPUT.New(
 					"failed to validate boarding input: %w", err,
@@ -4542,20 +4558,24 @@ func (s *service) processBoardingInputs(
 					InputIndex: int(input.VOut),
 				})
 			}
-
-			boardingTxs[input.Txid] = *tx
+			funding = fundingTx{tx: *fetchedTx, blockTimestamp: blockTimestamp}
+			boardingTxs[input.Txid] = funding
 		}
 
-		tx := boardingTxs[input.Txid]
-		if int(input.VOut) >= len(tx.TxOut) {
+		if err := validateBoardingInput(funding, getTip, input, now, settings); err != nil {
+			if tipErr != nil {
+				return nil, errors.INTERNAL_ERROR.New("failed to get chain tip: %w", tipErr)
+			}
 			return nil, errors.INVALID_PSBT_INPUT.New(
-				"invalid vout index %d for tx %s (tx has %d outputs)",
-				input.VOut, input.Txid, len(tx.TxOut),
+				"failed to validate boarding input: %w", err,
 			).WithMetadata(errors.InputMetadata{
 				Txid:       intentTxid,
 				InputIndex: int(input.VOut),
 			})
 		}
+
+		// validateBoardingInput already checked the vout is in range.
+		tx := funding.tx
 		prevout := tx.TxOut[input.VOut]
 
 		if !bytes.Equal(prevout.PkScript, input.witnessUtxo.PkScript) {
@@ -4602,9 +4622,50 @@ func (s *service) processBoardingInputs(
 	return boardingInputs, nil
 }
 
-func (s *service) validateBoardingInput(
-	ctx context.Context, input boardingIntentInput, now time.Time, settings ports.Settings,
-) (*wire.MsgTx, error) {
+// fundingTx is a boarding input's funding transaction plus its confirmation,
+// both of which are per-transaction and so safe to memoize across inputs.
+type fundingTx struct {
+	tx             wire.MsgTx
+	blockTimestamp *ports.BlockTimestamp
+}
+
+// fetchConfirmedTx retrieves a funding tx and asserts it is confirmed. Both are
+// properties of the transaction, not of an individual output, so the caller may
+// memoize the result per txid.
+func (s *service) fetchConfirmedTx(
+	ctx context.Context, txid string,
+) (*wire.MsgTx, *ports.BlockTimestamp, error) {
+	txhex, err := s.wallet.GetTransaction(ctx, txid)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get tx %s: %s", txid, err)
+	}
+
+	var tx wire.MsgTx
+	if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(txhex))); err != nil {
+		return nil, nil, fmt.Errorf("failed to deserialize tx %s: %s", txid, err)
+	}
+
+	confirmed, blockTimestamp, err := s.wallet.IsTransactionConfirmed(ctx, txid)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to check tx %s: %s", txid, err)
+	}
+
+	if !confirmed {
+		return nil, nil, fmt.Errorf("tx %s not confirmed", txid)
+	}
+
+	return &tx, blockTimestamp, nil
+}
+
+// validateBoardingInput validates a single boarding input against its already
+// fetched funding tx. Every check here depends on the specific output being
+// spent (its tapscripts, its exit delay, its amount), so it must run for every
+// input, even when several inputs share one funding tx. getTip is called only
+// when the exit delay is block-typed.
+func validateBoardingInput(
+	funding fundingTx, getTip func() (*ports.BlockTimestamp, error),
+	input boardingIntentInput, now time.Time, settings ports.Settings,
+) error {
 	boardingExitDelay := settings.BoardingExitDelay
 	unilateralExitDelay := settings.UnilateralExitDelay
 	utxoMinAmount := settings.UtxoMinAmount
@@ -4613,27 +4674,7 @@ func (s *service) validateBoardingInput(
 
 	vtxoScript, err := script.ParseVtxoScript(input.Tapscripts)
 	if err != nil {
-		return nil, err
-	}
-
-	// check if the tx exists and is confirmed
-	txhex, err := s.wallet.GetTransaction(ctx, input.Txid)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get tx %s: %s", input.Txid, err)
-	}
-
-	var tx wire.MsgTx
-	if err := tx.Deserialize(hex.NewDecoder(strings.NewReader(txhex))); err != nil {
-		return nil, fmt.Errorf("failed to deserialize tx %s: %s", input.Txid, err)
-	}
-
-	confirmed, blockTimestamp, err := s.wallet.IsTransactionConfirmed(ctx, input.Txid)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check tx %s: %s", input.Txid, err)
-	}
-
-	if !confirmed {
-		return nil, fmt.Errorf("tx %s not confirmed", input.Txid)
+		return err
 	}
 
 	// validate the vtxo script
@@ -4651,28 +4692,47 @@ func (s *service) validateBoardingInput(
 		vtxoScript, settings.SignerPubkey, settings.DeprecatedSignerPubkeys,
 		time.Now(), minAllowedCSV, settings.AllowCSVBlockType(),
 	); err != nil {
-		return nil, fmt.Errorf("invalid vtxo script: %s", err)
+		return fmt.Errorf("invalid vtxo script: %s", err)
 	}
 
 	exitDelay, err := vtxoScript.SmallestExitDelay()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get exit delay: %s", err)
+		return fmt.Errorf("failed to get exit delay: %s", err)
 	}
 
-	// if the exit path is available, forbid registering the boarding utxo
-	csvExpiresAt := time.Unix(blockTimestamp.Time, 0).
-		Add(time.Duration(exitDelay.Seconds()) * time.Second)
-	if csvExpiresAt.Before(now) {
-		return nil, fmt.Errorf("tx %s expired", input.Txid)
+	// Get the tip only if delays are configured in blocks.
+	var tip *ports.BlockTimestamp
+	if exitDelay.Type == arklib.LocktimeTypeBlock {
+		if tip, err = getTip(); err != nil {
+			return fmt.Errorf("failed to get chain tip: %w", err)
+		}
+	}
+
+	// if the exit path is available, forbid registering the boarding utxo.
+	// No margin here, since this gate is about an exit path that is already open.
+	available, err := isExitDelayExpired(funding.blockTimestamp, tip, *exitDelay, 0, now)
+	if err != nil {
+		return err
+	}
+	if available {
+		return fmt.Errorf("tx %s expired", input.Txid)
 	}
 
 	// For unrolled VTXOs, ensure the CSV is far enough from expiring so the
-	// batch has time to finalize before the exit path becomes available.
+	// batch has time to finalize before the exit path becomes available. This
+	// is the same question as above asked with a margin, so it goes through the
+	// same helper rather than being computed separately.
 	if input.isUnrolledVtxo {
-		if err := checkUnrolledVtxoExpiry(
-			csvExpiresAt, now, unrolledVtxoMinExpiryMargin,
-		); err != nil {
-			return nil, err
+		expiresSoon, err := isExitDelayExpired(
+			funding.blockTimestamp, tip, *exitDelay, unrolledVtxoMinExpiryMargin, now,
+		)
+		if err != nil {
+			return err
+		}
+		if expiresSoon {
+			return fmt.Errorf(
+				"unrolled vtxo CSV expires too soon (within %s)", unrolledVtxoMinExpiryMargin,
+			)
 		}
 	}
 
@@ -4680,47 +4740,43 @@ func (s *service) validateBoardingInput(
 	// by shifitng the current "now" in the future of the duration of the smallest exit delay.
 	// This way, any exit order guaranteed by the exit path is maintained at intent registration
 	if !input.locktimeDisabled {
-		delta := now.Add(time.Duration(exitDelay.Seconds())*time.Second).
-			Unix() -
-			blockTimestamp.Time
-		if diff := input.locktime.Seconds() - delta; diff > 0 {
-			return nil, fmt.Errorf(
-				"vtxo script can be used for intent registration in %d seconds", diff,
+		remaining, err := locktimeTillExitDelay(
+			funding.blockTimestamp, tip, *input.locktime, *exitDelay, now,
+		)
+		if err != nil {
+			return err
+		}
+		if remaining > 0 {
+			unit := "seconds"
+			if input.locktime.Type == arklib.LocktimeTypeBlock {
+				unit = "blocks"
+			}
+			return fmt.Errorf(
+				"vtxo script can be used for intent registration in %d %s", remaining, unit,
 			)
 		}
 	}
 
-	if int(input.VOut) >= len(tx.TxOut) {
-		return nil, fmt.Errorf(
+	if int(input.VOut) >= len(funding.tx.TxOut) {
+		return fmt.Errorf(
 			"invalid vout index %d for tx %s (tx has %d outputs)",
-			input.VOut, input.Txid, len(tx.TxOut),
+			input.VOut, input.Txid, len(funding.tx.TxOut),
 		)
 	}
 
 	if utxoMaxAmount >= 0 {
-		if tx.TxOut[input.VOut].Value > utxoMaxAmount {
-			return nil, fmt.Errorf(
+		if funding.tx.TxOut[input.VOut].Value > utxoMaxAmount {
+			return fmt.Errorf(
 				"boarding input amount is higher than max utxo amount:%d", utxoMaxAmount,
 			)
 		}
 	}
-	if tx.TxOut[input.VOut].Value < utxoMinAmount {
-		return nil, fmt.Errorf(
+	if funding.tx.TxOut[input.VOut].Value < utxoMinAmount {
+		return fmt.Errorf(
 			"boarding input amount is lower than min utxo amount:%d", utxoMinAmount,
 		)
 	}
 
-	return &tx, nil
-}
-
-func checkUnrolledVtxoExpiry(
-	csvExpiresAt, now time.Time, unrolledVtxoMinExpiryMargin time.Duration,
-) error {
-	if csvExpiresAt.Before(now.Add(unrolledVtxoMinExpiryMargin)) {
-		return fmt.Errorf(
-			"unrolled vtxo CSV expires too soon (within %s)", unrolledVtxoMinExpiryMargin,
-		)
-	}
 	return nil
 }
 
