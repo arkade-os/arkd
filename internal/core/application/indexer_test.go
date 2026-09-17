@@ -1320,6 +1320,12 @@ func (m *mockVtxoRepoForIndexer) GetSweepableVtxosByCommitmentTxid(
 	return nil, nil
 }
 
+func (m *mockVtxoRepoForIndexer) GetSweepableVtxosByCommitmentTxids(
+	context.Context, []string,
+) ([]domain.Outpoint, error) {
+	return nil, nil
+}
+
 func (m *mockVtxoRepoForIndexer) GetAllChildrenVtxos(
 	ctx context.Context,
 	outpoint domain.Outpoint,
@@ -1558,14 +1564,22 @@ func (m *mockRepoManagerForIndexer) OffchainTxs() domain.OffchainTxRepository {
 	}
 	return m.offchainTxs
 }
-func (m *mockRepoManagerForIndexer) Convictions() domain.ConvictionRepository                { return nil }
-func (m *mockRepoManagerForIndexer) Assets() domain.AssetRepository                          { return nil }
-func (m *mockRepoManagerForIndexer) Settings() domain.SettingsRepository                     { return nil }
-func (m *mockRepoManagerForIndexer) RegisterBatchUpdateHandler(func(data domain.Round))      {}
-func (m *mockRepoManagerForIndexer) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx)) {}
-func (m *mockRepoManagerForIndexer) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {
+func (m *mockRepoManagerForIndexer) Convictions() domain.ConvictionRepository {
+	return nil
 }
-func (m *mockRepoManagerForIndexer) Close() {}
+func (m *mockRepoManagerForIndexer) Assets() domain.AssetRepository {
+	return nil
+}
+func (m *mockRepoManagerForIndexer) Settings() domain.SettingsRepository {
+	return nil
+}
+func (m *mockRepoManagerForIndexer) Open() error {
+	return nil
+}
+func (m *mockRepoManagerForIndexer) RegisterBatchUpdateHandler(func(data domain.Round))            {}
+func (m *mockRepoManagerForIndexer) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx))       {}
+func (m *mockRepoManagerForIndexer) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {}
+func (m *mockRepoManagerForIndexer) Close()                                                        {}
 
 // newTestIndexer creates a fresh set of mock repos and an indexerService for testing.
 func newChainTestIndexer() (

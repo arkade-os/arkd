@@ -11,7 +11,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const tipHeightEndpoint = "/blocks/tip/height"
+const (
+	tipHeightEndpoint          = "/blocks/tip/height"
+	defaultTickerInterval      = 10 * time.Second
+	defaultTaskShutdownTimeout = 30 * time.Second
+)
 
 type Option func(*service)
 
@@ -27,6 +31,8 @@ type service struct {
 	taskes         map[int64][]func()
 	stopCh         chan struct{}
 	tickerInterval time.Duration
+	tasks          sync.WaitGroup
+	tasksTimeout   time.Duration
 }
 
 func NewScheduler(esploraURL string, opts ...Option) (ports.SchedulerService, error) {
@@ -40,11 +46,12 @@ func NewScheduler(esploraURL string, opts ...Option) (ports.SchedulerService, er
 	}
 
 	svc := &service{
-		tipURL,
-		&sync.Mutex{},
-		make(map[int64][]func()),
-		make(chan struct{}),
-		time.Second * 10,
+		tipURL:         tipURL,
+		lock:           &sync.Mutex{},
+		taskes:         make(map[int64][]func()),
+		stopCh:         make(chan struct{}),
+		tickerInterval: defaultTickerInterval,
+		tasksTimeout:   defaultTaskShutdownTimeout,
 	}
 
 	for _, opt := range opts {
@@ -71,7 +78,7 @@ func (s *service) Start() {
 
 				log.Debugf("fetched %d tasks", len(taskes))
 				for _, task := range taskes {
-					go task()
+					s.tasks.Go(task)
 				}
 			}
 		}
@@ -79,8 +86,20 @@ func (s *service) Start() {
 }
 
 func (s *service) Stop() {
+	// The send waits for the tick loop to stop launching tasks before Wait starts.
 	s.stopCh <- struct{}{}
 	close(s.stopCh)
+
+	done := make(chan struct{})
+	go func() {
+		s.tasks.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(s.tasksTimeout):
+		log.Warnf("tasks still running after %s, giving up waiting", s.tasksTimeout)
+	}
 }
 
 func (s *service) Unit() ports.TimeUnit {

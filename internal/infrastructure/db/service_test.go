@@ -926,6 +926,21 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 
 		require.Equal(t, expectedOutpoints, children)
 
+		// The set form, which the startup reconciliation reads, must agree with
+		// the single form and ignore batches that do not exist.
+		batched, err := svc.Vtxos().GetSweepableVtxosByCommitmentTxids(
+			ctx, []string{vtxo1.RootCommitmentTxid, randomString(32)},
+		)
+		require.NoError(t, err)
+		sort.Slice(batched, func(i, j int) bool {
+			return batched[i].Txid < batched[j].Txid
+		})
+		require.Equal(t, expectedOutpoints, batched)
+
+		batched, err = svc.Vtxos().GetSweepableVtxosByCommitmentTxids(ctx, nil)
+		require.NoError(t, err)
+		require.Empty(t, batched)
+
 		// Test with non-existent txid
 		children, err = svc.Vtxos().GetSweepableVtxosByCommitmentTxid(ctx, randomString(32))
 		require.NoError(t, err)

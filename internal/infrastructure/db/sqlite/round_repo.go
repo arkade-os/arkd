@@ -411,6 +411,16 @@ func (r *roundRepository) GetSweepableRounds(ctx context.Context) ([]string, err
 	return rounds, err
 }
 
+func (r *roundRepository) GetSweptRounds(ctx context.Context) ([]string, error) {
+	var rounds []string
+	err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rounds, err = q.SelectSweptRounds(ctx)
+		return err
+	})
+	return rounds, err
+}
+
 func (r *roundRepository) GetExpiredRounds(
 	ctx context.Context, expiredBefore int64,
 ) ([]domain.ExpiredRound, error) {

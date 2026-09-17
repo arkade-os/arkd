@@ -424,6 +424,27 @@ func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 	return outpoints, nil
 }
 
+func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxids(
+	ctx context.Context, commitmentTxids []string,
+) ([]domain.Outpoint, error) {
+	if len(commitmentTxids) == 0 {
+		return nil, nil
+	}
+	res, err := v.querier.SelectSweepableVtxoOutpointsByCommitmentTxids(ctx, commitmentTxids)
+	if err != nil {
+		return nil, err
+	}
+
+	outpoints := make([]domain.Outpoint, 0, len(res))
+	for _, row := range res {
+		outpoints = append(outpoints, domain.Outpoint{
+			Txid: row.VtxoTxid,
+			VOut: uint32(row.VtxoVout),
+		})
+	}
+	return outpoints, nil
+}
+
 func (v *vtxoRepository) GetAllChildrenVtxos(
 	ctx context.Context, outpoint domain.Outpoint,
 ) ([]domain.Outpoint, error) {

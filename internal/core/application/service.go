@@ -58,6 +58,7 @@ type service struct {
 	operatorPubkey *btcec.PublicKey
 
 	// channels
+	// Never close eventsCh: untracked propagateEvents goroutines can still send after repoManager.Close.
 	eventsCh                 chan []domain.Event
 	transactionEventsCh      chan TransactionEvent
 	forfeitsBoardingSigsChan chan struct{}
@@ -174,6 +175,11 @@ func NewService(
 func (s *service) Start() error {
 	if !s.started.CompareAndSwap(false, true) {
 		return fmt.Errorf("service already started")
+	}
+
+	// Reconcile the projections before anything below can produce an event.
+	if err := s.repoManager.Open(); err != nil {
+		return fmt.Errorf("failed to open repositories: %w", err)
 	}
 
 	settings, err := s.cache.Settings().Get(s.ctx)
@@ -464,7 +470,6 @@ func (s *service) Stop() {
 	log.Debug("closed connection to wallet")
 	s.repoManager.Close()
 	log.Debug("closed connection to db")
-	close(s.eventsCh)
 }
 
 func (s *service) SubmitOffchainTx(

@@ -1863,11 +1863,14 @@ func (q *Queries) SelectSweepableUnrolledVtxos(ctx context.Context) ([]SelectSwe
 }
 
 const selectSweepableVtxoOutpointsByCommitmentTxid = `-- name: SelectSweepableVtxoOutpointsByCommitmentTxid :many
-SELECT DISTINCT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+SELECT v.txid AS vtxo_txid, v.vout AS vtxo_vout
 FROM vtxo_vw v
-WHERE v.swept = false
-  AND (v.commitment_txid = $1
-    OR (',' || COALESCE(v.commitments::text, '') || ',') LIKE '%,' || $1 || ',%')
+WHERE v.swept = false AND v.commitment_txid = $1
+UNION
+SELECT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+JOIN vtxo_commitment_txid vc ON vc.vtxo_txid = v.txid AND vc.vtxo_vout = v.vout
+WHERE v.swept = false AND vc.commitment_txid = $1
 `
 
 type SelectSweepableVtxoOutpointsByCommitmentTxidRow struct {
@@ -1875,6 +1878,9 @@ type SelectSweepableVtxoOutpointsByCommitmentTxidRow struct {
 	VtxoVout int32
 }
 
+// Two indexed lookups joined by UNION: vtxo(commitment_txid) for the batch's
+// own vtxos and vtxo_commitment_txid(commitment_txid) for the ones descending
+// from it. An OR over the two falls back to a full scan of vtxo.
 func (q *Queries) SelectSweepableVtxoOutpointsByCommitmentTxid(ctx context.Context, commitmentTxid string) ([]SelectSweepableVtxoOutpointsByCommitmentTxidRow, error) {
 	rows, err := q.db.QueryContext(ctx, selectSweepableVtxoOutpointsByCommitmentTxid, commitmentTxid)
 	if err != nil {
@@ -1884,6 +1890,46 @@ func (q *Queries) SelectSweepableVtxoOutpointsByCommitmentTxid(ctx context.Conte
 	var items []SelectSweepableVtxoOutpointsByCommitmentTxidRow
 	for rows.Next() {
 		var i SelectSweepableVtxoOutpointsByCommitmentTxidRow
+		if err := rows.Scan(&i.VtxoTxid, &i.VtxoVout); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectSweepableVtxoOutpointsByCommitmentTxids = `-- name: SelectSweepableVtxoOutpointsByCommitmentTxids :many
+SELECT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+WHERE v.swept = false AND v.commitment_txid = ANY($1::text[])
+UNION
+SELECT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+JOIN vtxo_commitment_txid vc ON vc.vtxo_txid = v.txid AND vc.vtxo_vout = v.vout
+WHERE v.swept = false AND vc.commitment_txid = ANY($1::text[])
+`
+
+type SelectSweepableVtxoOutpointsByCommitmentTxidsRow struct {
+	VtxoTxid string
+	VtxoVout int32
+}
+
+// The set form of the query above, for the startup reconciliation.
+func (q *Queries) SelectSweepableVtxoOutpointsByCommitmentTxids(ctx context.Context, commitmentTxids []string) ([]SelectSweepableVtxoOutpointsByCommitmentTxidsRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectSweepableVtxoOutpointsByCommitmentTxids, pq.Array(commitmentTxids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectSweepableVtxoOutpointsByCommitmentTxidsRow
+	for rows.Next() {
+		var i SelectSweepableVtxoOutpointsByCommitmentTxidsRow
 		if err := rows.Scan(&i.VtxoTxid, &i.VtxoVout); err != nil {
 			return nil, err
 		}
@@ -1915,6 +1961,38 @@ func (q *Queries) SelectSweptMarkersByIds(ctx context.Context, markerIds []strin
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectSweptRounds = `-- name: SelectSweptRounds :many
+SELECT txid FROM round_with_commitment_tx_vw r
+WHERE r.swept = true AND r.ended = true AND r.failed = false
+AND EXISTS (
+    SELECT 1 FROM tx tree_tx
+    WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
+)
+`
+
+func (q *Queries) SelectSweptRounds(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectSweptRounds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var txid string
+		if err := rows.Scan(&txid); err != nil {
+			return nil, err
+		}
+		items = append(items, txid)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

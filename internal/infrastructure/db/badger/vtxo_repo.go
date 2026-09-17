@@ -855,6 +855,27 @@ func (r *VtxoRepository) GetSweepableVtxosByCommitmentTxid(
 	return outpoints, nil
 }
 
+func (r *VtxoRepository) GetSweepableVtxosByCommitmentTxids(
+	ctx context.Context, commitmentTxids []string,
+) ([]domain.Outpoint, error) {
+	seen := make(map[string]struct{})
+	outpoints := make([]domain.Outpoint, 0)
+	for _, commitmentTxid := range commitmentTxids {
+		found, err := r.GetSweepableVtxosByCommitmentTxid(ctx, commitmentTxid)
+		if err != nil {
+			return nil, err
+		}
+		for _, outpoint := range found {
+			if _, dup := seen[outpoint.String()]; dup {
+				continue
+			}
+			seen[outpoint.String()] = struct{}{}
+			outpoints = append(outpoints, outpoint)
+		}
+	}
+	return outpoints, nil
+}
+
 func (r *VtxoRepository) GetAllChildrenVtxos(
 	ctx context.Context,
 	outpoint domain.Outpoint,

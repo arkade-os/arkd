@@ -1905,11 +1905,14 @@ func (q *Queries) SelectSweepableUnrolledVtxos(ctx context.Context) ([]SelectSwe
 }
 
 const selectSweepableVtxoOutpointsByCommitmentTxid = `-- name: SelectSweepableVtxoOutpointsByCommitmentTxid :many
-SELECT DISTINCT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+SELECT v.txid AS vtxo_txid, v.vout AS vtxo_vout
 FROM vtxo_vw v
-WHERE v.swept = false
-  AND (v.commitment_txid = ?1
-    OR (',' || COALESCE(v.commitments, '') || ',') LIKE '%,' || ?1 || ',%')
+WHERE v.swept = false AND v.commitment_txid = ?1
+UNION
+SELECT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+JOIN vtxo_commitment_txid vc ON vc.vtxo_txid = v.txid AND vc.vtxo_vout = v.vout
+WHERE v.swept = false AND vc.commitment_txid = ?1
 `
 
 type SelectSweepableVtxoOutpointsByCommitmentTxidRow struct {
@@ -1917,6 +1920,9 @@ type SelectSweepableVtxoOutpointsByCommitmentTxidRow struct {
 	VtxoVout int64
 }
 
+// Two indexed lookups joined by UNION: vtxo(commitment_txid) for the batch's
+// own vtxos and vtxo_commitment_txid(commitment_txid) for the ones descending
+// from it. An OR over the two falls back to a full scan of vtxo.
 func (q *Queries) SelectSweepableVtxoOutpointsByCommitmentTxid(ctx context.Context, commitmentTxid string) ([]SelectSweepableVtxoOutpointsByCommitmentTxidRow, error) {
 	rows, err := q.db.QueryContext(ctx, selectSweepableVtxoOutpointsByCommitmentTxid, commitmentTxid)
 	if err != nil {
@@ -1926,6 +1932,98 @@ func (q *Queries) SelectSweepableVtxoOutpointsByCommitmentTxid(ctx context.Conte
 	var items []SelectSweepableVtxoOutpointsByCommitmentTxidRow
 	for rows.Next() {
 		var i SelectSweepableVtxoOutpointsByCommitmentTxidRow
+		if err := rows.Scan(&i.VtxoTxid, &i.VtxoVout); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectSweepableVtxoOutpointsByLinkedCommitmentTxids = `-- name: SelectSweepableVtxoOutpointsByLinkedCommitmentTxids :many
+SELECT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+JOIN vtxo_commitment_txid vc ON vc.vtxo_txid = v.txid AND vc.vtxo_vout = v.vout
+WHERE v.swept = false AND vc.commitment_txid IN (/*SLICE:commitment_txids*/?)
+`
+
+type SelectSweepableVtxoOutpointsByLinkedCommitmentTxidsRow struct {
+	VtxoTxid string
+	VtxoVout int64
+}
+
+func (q *Queries) SelectSweepableVtxoOutpointsByLinkedCommitmentTxids(ctx context.Context, commitmentTxids []string) ([]SelectSweepableVtxoOutpointsByLinkedCommitmentTxidsRow, error) {
+	query := selectSweepableVtxoOutpointsByLinkedCommitmentTxids
+	var queryParams []interface{}
+	if len(commitmentTxids) > 0 {
+		for _, v := range commitmentTxids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:commitment_txids*/?", strings.Repeat(",?", len(commitmentTxids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:commitment_txids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectSweepableVtxoOutpointsByLinkedCommitmentTxidsRow
+	for rows.Next() {
+		var i SelectSweepableVtxoOutpointsByLinkedCommitmentTxidsRow
+		if err := rows.Scan(&i.VtxoTxid, &i.VtxoVout); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectSweepableVtxoOutpointsByRootCommitmentTxids = `-- name: SelectSweepableVtxoOutpointsByRootCommitmentTxids :many
+SELECT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+WHERE v.swept = false AND v.commitment_txid IN (/*SLICE:commitment_txids*/?)
+`
+
+type SelectSweepableVtxoOutpointsByRootCommitmentTxidsRow struct {
+	VtxoTxid string
+	VtxoVout int64
+}
+
+// The set form of the query above, one statement per indexed lookup because a
+// sqlc.slice cannot appear twice in one statement. The repository runs both and
+// merges them.
+func (q *Queries) SelectSweepableVtxoOutpointsByRootCommitmentTxids(ctx context.Context, commitmentTxids []string) ([]SelectSweepableVtxoOutpointsByRootCommitmentTxidsRow, error) {
+	query := selectSweepableVtxoOutpointsByRootCommitmentTxids
+	var queryParams []interface{}
+	if len(commitmentTxids) > 0 {
+		for _, v := range commitmentTxids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:commitment_txids*/?", strings.Repeat(",?", len(commitmentTxids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:commitment_txids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectSweepableVtxoOutpointsByRootCommitmentTxidsRow
+	for rows.Next() {
+		var i SelectSweepableVtxoOutpointsByRootCommitmentTxidsRow
 		if err := rows.Scan(&i.VtxoTxid, &i.VtxoVout); err != nil {
 			return nil, err
 		}
@@ -1967,6 +2065,38 @@ func (q *Queries) SelectSweptMarkersByIds(ctx context.Context, markerIds []strin
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectSweptRounds = `-- name: SelectSweptRounds :many
+SELECT txid FROM round_with_commitment_tx_vw r
+WHERE r.swept = true AND r.ended = true AND r.failed = false
+AND EXISTS (
+    SELECT 1 FROM tx tree_tx
+    WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
+)
+`
+
+func (q *Queries) SelectSweptRounds(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectSweptRounds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var txid string
+		if err := rows.Scan(&txid); err != nil {
+			return nil, err
+		}
+		items = append(items, txid)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

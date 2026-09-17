@@ -31,7 +31,7 @@ func TestUpdateProjectionsAfterOffchainTxEvents(t *testing.T) {
 		// A non-dust output of a swept (here, expired) tx must land in swept_vtxo or
 		// it reads back as unswept despite Swept being set on the struct.
 		t.Run("non-dust output persisted as swept", func(t *testing.T) {
-			svc := newProjectionTestService(t)
+			svc := newProjectionTestService(t, t.TempDir())
 
 			// Ark tx with one non-dust taproot output.
 			prevoutHash, err := chainhash.NewHashFromStr(randomString(t, 32))
@@ -94,7 +94,7 @@ func TestUpdateProjectionsAfterOffchainTxEvents(t *testing.T) {
 		// A sub-dust (OP_RETURN) output is swept via its dust marker landing in
 		// swept_marker, independent of tx expiry.
 		t.Run("sub-dust output persisted as swept", func(t *testing.T) {
-			svc := newProjectionTestService(t)
+			svc := newProjectionTestService(t, t.TempDir())
 
 			outpoint, events := finalizedSubDustEvents(t)
 			svc.(*service).updateProjectionsAfterOffchainTxEvents(events)
@@ -109,7 +109,7 @@ func TestUpdateProjectionsAfterOffchainTxEvents(t *testing.T) {
 		// Money-safety: if the dust marker sweep fails, the projection must abort
 		// before AddVtxos so no spendable sub-dust vtxo is ever created.
 		t.Run("dust marker sweep failure leaves no spendable vtxo", func(t *testing.T) {
-			svc := newProjectionTestService(t)
+			svc := newProjectionTestService(t, t.TempDir())
 
 			// A failed projection must not notify downstream, so record any dispatch.
 			var dispatched atomic.Bool
@@ -140,18 +140,22 @@ func TestUpdateProjectionsAfterOffchainTxEvents(t *testing.T) {
 	})
 }
 
-func newProjectionTestService(t *testing.T) ports.RepoManager {
+// newProjectionTestService opens a service over dir the way the application
+// does, NewService then Open, so a test can close it and reopen the same stores
+// to exercise what Open does at startup.
+func newProjectionTestService(t *testing.T, dir string) ports.RepoManager {
 	t.Helper()
 	svc, err := NewService(ServiceConfig{
 		EventStoreType:   "badger",
 		DataStoreType:    "sqlite",
 		EventStoreConfig: []interface{}{"", nil},
-		DataStoreConfig:  []interface{}{t.TempDir()},
+		DataStoreConfig:  []interface{}{dir},
 		Settings:         validSettings(t),
 	}, bitcointxdecoder.NewService())
 	require.NoError(t, err)
 	require.NotNil(t, svc)
 	t.Cleanup(svc.Close)
+	require.NoError(t, svc.Open())
 	return svc
 }
 

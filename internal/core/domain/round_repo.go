@@ -16,6 +16,10 @@ type RoundRepository interface {
 	GetRoundConnectorTree(ctx context.Context, commitmentTxid string) (tree.FlatTxTree, error)
 	GetRoundVtxoTree(ctx context.Context, txid string) (tree.FlatTxTree, error)
 	GetSweepableRounds(ctx context.Context) ([]string, error)
+	// GetSweptRounds returns the commitment txids of the batches recorded as
+	// fully swept. Reconciliation reads it to find the batches whose vtxos
+	// should carry a swept mark.
+	GetSweptRounds(ctx context.Context) ([]string, error)
 	// GetScheduledSweeps returns the batches awaiting a sweep, soonest due first,
 	// capped at limit (0 means no limit). The due time is derived in the query
 	// from ending_timestamp + vtxo_tree_expiration, so this costs one round trip

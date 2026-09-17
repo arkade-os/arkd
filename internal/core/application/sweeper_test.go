@@ -463,6 +463,12 @@ func (m *mockVtxoRepository) GetSweepableVtxosByCommitmentTxid(
 	return nil, nil
 }
 
+func (m *mockVtxoRepository) GetSweepableVtxosByCommitmentTxids(
+	context.Context, []string,
+) ([]domain.Outpoint, error) {
+	return nil, nil
+}
+
 func (m *mockVtxoRepository) GetVtxoPubKeysByCommitmentTxid(
 	ctx context.Context, commitmentTxid string, withMinimumAmount uint64,
 ) ([]string, error) {
@@ -643,6 +649,9 @@ func (m *mockRepoManager) Assets() domain.AssetRepository {
 	return nil
 }
 func (m *mockRepoManager) Settings() domain.SettingsRepository {
+	return nil
+}
+func (m *mockRepoManager) Open() error {
 	return nil
 }
 func (m *mockRepoManager) RegisterBatchUpdateHandler(func(data domain.Round))            {}

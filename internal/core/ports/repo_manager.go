@@ -1,6 +1,8 @@
 package ports
 
-import "github.com/arkade-os/arkd/internal/core/domain"
+import (
+	"github.com/arkade-os/arkd/internal/core/domain"
+)
 
 type RepoManager interface {
 	Events() domain.EventRepository
@@ -14,5 +16,7 @@ type RepoManager interface {
 	RegisterBatchUpdateHandler(handler func(data domain.Round))
 	RegisterOffchainTxUpdateHandler(handler func(data domain.OffchainTx))
 	RegisterSettingsUpdateHandler(handler func(data domain.Settings, changelog []string))
+
+	Open() error
 	Close()
 }

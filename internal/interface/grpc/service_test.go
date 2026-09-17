@@ -2,12 +2,19 @@ package grpcservice
 
 import (
 	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/arkade-os/arkd/internal/interface/grpc/handlers"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	grpchealth "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 // Mock connection object implementing grpc.ClientConnInterface
@@ -128,4 +135,109 @@ func TestSplitConnNewStream(t *testing.T) {
 				"stream pool[%d] distribution", i)
 		}
 	})
+}
+
+func TestStopWaitsForGrpcHandlers(t *testing.T) {
+	tests := []struct {
+		name           string
+		waitForTimeout bool
+	}{
+		{name: "waits for canceled handler cleanup"},
+		{name: "gives up after timeout", waitForTimeout: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entered, canceled := make(chan struct{}), make(chan struct{})
+			release, finished := make(chan struct{}), make(chan struct{})
+			releaseHandler := sync.OnceFunc(func() { close(release) })
+
+			grpcServer := grpc.NewServer(grpc.UnaryInterceptor(func(
+				ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
+			) (any, error) {
+				defer close(finished)
+				close(entered)
+				<-ctx.Done()
+				close(canceled)
+				// Keep the RPC running after cancellation, as slow cleanup or a blocked
+				// dependency can. Closing the HTTP transport must not count as its exit.
+				<-release
+				return handler(ctx, req)
+			}))
+			t.Cleanup(grpcServer.Stop)
+			grpchealth.RegisterHealthServer(grpcServer, handlers.NewHealthHandler())
+
+			server := httptest.NewUnstartedServer(router(grpcServer, http.NotFoundHandler()))
+			server.Config.Protocols = new(http.Protocols)
+			server.Config.Protocols.SetUnencryptedHTTP2(true)
+			server.Start()
+			t.Cleanup(server.Close)
+
+			conn, err := grpc.NewClient(
+				server.Listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()),
+			)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = conn.Close() })
+			t.Cleanup(releaseHandler)
+			client := grpchealth.NewHealthClient(conn)
+			result := make(chan error, 1)
+			go func() {
+				_, err := client.Check(t.Context(), &grpchealth.HealthCheckRequest{})
+				result <- err
+			}()
+			waitForShutdownSignal(t, entered, "RPC did not start")
+
+			svc := &service{server: server.Config, grpcServer: grpcServer}
+			stopped := make(chan time.Duration, 1)
+			go func() {
+				start := time.Now()
+				svc.stop()
+				stopped <- time.Since(start)
+			}()
+			waitForShutdownSignal(t, canceled, "RPC was not canceled")
+
+			// The HTTP listener must close while handler cleanup is still pending.
+			newConn, err := net.DialTimeout("tcp", server.Listener.Addr().String(), time.Second)
+			if newConn != nil {
+				_ = newConn.Close()
+			}
+			require.Error(t, err)
+			select {
+			case <-stopped:
+				t.Fatal("stop returned before handler cleanup or timeout")
+			case <-time.After(100 * time.Millisecond):
+			}
+
+			bound := 5 * time.Second
+			if tt.waitForTimeout {
+				bound += handlersShutdownTimeout
+			} else {
+				releaseHandler()
+			}
+			select {
+			case elapsed := <-stopped:
+				if tt.waitForTimeout {
+					require.GreaterOrEqual(t, elapsed, handlersShutdownTimeout)
+				}
+			case <-time.After(bound):
+				t.Fatal("stop blocked past the shutdown bound")
+			}
+			releaseHandler()
+			waitForShutdownSignal(t, finished, "handler did not exit")
+			select {
+			case err := <-result:
+				require.Error(t, err, "HTTP Close interrupts the client response")
+			case <-time.After(5 * time.Second):
+				t.Fatal("client did not observe connection closure")
+			}
+		})
+	}
+}
+
+func waitForShutdownSignal(t *testing.T, ch <-chan struct{}, msg string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatal(msg)
+	}
 }

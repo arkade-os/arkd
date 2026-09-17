@@ -114,13 +114,9 @@ func (m *mockedVtxoRepo) GetCheckpointTxsByVtxoPubKeys(
 type mockedRepoManager struct {
 	mock.Mock
 	ports.RepoManager // unimplemented methods panic on call
-	// offchainTxHandler captures the handler registered via
-	// RegisterOffchainTxUpdateHandler so tests can dispatch it directly
-	// to exercise the inline closure in registerEventHandlers.
+	// Capture registered handlers so tests can exercise the callbacks directly.
+	batchHandler      func(domain.Round)
 	offchainTxHandler func(domain.OffchainTx)
-	// batchHandler captures the handler registered via
-	// RegisterBatchUpdateHandler, for the same reason.
-	batchHandler func(domain.Round)
 }
 
 func (m *mockedRepoManager) Rounds() domain.RoundRepository {
@@ -161,6 +157,10 @@ func (m *mockedRepoManager) RegisterOffchainTxUpdateHandler(h func(domain.Offcha
 
 func (m *mockedRepoManager) RegisterBatchUpdateHandler(h func(domain.Round)) {
 	m.batchHandler = h
+}
+
+func (m *mockedRepoManager) Close() {
+	m.Called()
 }
 
 func (m *mockedRepoManager) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {

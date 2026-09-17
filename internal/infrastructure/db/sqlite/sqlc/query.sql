@@ -149,6 +149,14 @@ AND EXISTS (
     WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
 );
 
+-- name: SelectSweptRounds :many
+SELECT txid FROM round_with_commitment_tx_vw r
+WHERE r.swept = true AND r.ended = true AND r.failed = false
+AND EXISTS (
+    SELECT 1 FROM tx tree_tx
+    WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
+);
+
 -- name: SelectExpiredRounds :many
 SELECT r.id, r.txid, CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS expired_at
 FROM round_with_commitment_tx_vw r
@@ -400,12 +408,32 @@ WHERE v.amount >= sqlc.arg('min_amount')
     )
   );
 
+-- Two indexed lookups joined by UNION: vtxo(commitment_txid) for the batch's
+-- own vtxos and vtxo_commitment_txid(commitment_txid) for the ones descending
+-- from it. An OR over the two falls back to a full scan of vtxo.
 -- name: SelectSweepableVtxoOutpointsByCommitmentTxid :many
-SELECT DISTINCT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+SELECT v.txid AS vtxo_txid, v.vout AS vtxo_vout
 FROM vtxo_vw v
-WHERE v.swept = false
-  AND (v.commitment_txid = @commitment_txid
-    OR (',' || COALESCE(v.commitments, '') || ',') LIKE '%,' || @commitment_txid || ',%');
+WHERE v.swept = false AND v.commitment_txid = @commitment_txid
+UNION
+SELECT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+JOIN vtxo_commitment_txid vc ON vc.vtxo_txid = v.txid AND vc.vtxo_vout = v.vout
+WHERE v.swept = false AND vc.commitment_txid = @commitment_txid;
+
+-- The set form of the query above, one statement per indexed lookup because a
+-- sqlc.slice cannot appear twice in one statement. The repository runs both and
+-- merges them.
+-- name: SelectSweepableVtxoOutpointsByRootCommitmentTxids :many
+SELECT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+WHERE v.swept = false AND v.commitment_txid IN (sqlc.slice('commitment_txids'));
+
+-- name: SelectSweepableVtxoOutpointsByLinkedCommitmentTxids :many
+SELECT v.txid AS vtxo_txid, v.vout AS vtxo_vout
+FROM vtxo_vw v
+JOIN vtxo_commitment_txid vc ON vc.vtxo_txid = v.txid AND vc.vtxo_vout = v.vout
+WHERE v.swept = false AND vc.commitment_txid IN (sqlc.slice('commitment_txids'));
 
 -- name: SelectVtxosOutpointsByArkTxidRecursive :many
 -- Returns the seed outpoint (txid, vout) and all VTXOs descending from it

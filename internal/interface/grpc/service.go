@@ -40,6 +40,10 @@ const (
 	tlsKeyFile  = "key.pem"
 	tlsCertFile = "cert.pem"
 	tlsFolder   = "tls"
+
+	// handlersShutdownTimeout bounds how long each gRPC server waits for handlers before
+	// proceeding with application shutdown, even if a handler is still running.
+	handlersShutdownTimeout = 30 * time.Second
 )
 
 type service struct {
@@ -169,7 +173,25 @@ func (s *service) start() error {
 	return nil
 }
 
+// stop shuts the servers down before the app service, because stopping the app service closes the
+// db: a request handler still running at that point could be cut off in the middle of its writes.
 func (s *service) stop() {
+	// Hard-close HTTP listeners/conns first to avoid mixed HTTP/gRPC window.
+	if s.server != nil {
+		_ = s.server.Close()
+	}
+	if s.adminServer != nil {
+		_ = s.adminServer.Close()
+	}
+
+	// Then close gRPC servers/transports, waiting for the handlers still running.
+	if s.grpcServer != nil {
+		stopGrpcServer(s.grpcServer)
+	}
+	if s.adminGrpcSrvr != nil {
+		stopGrpcServer(s.adminGrpcSrvr)
+	}
+
 	if s.appSvcStarted.CompareAndSwap(true, false) {
 		// app service is started, stop it
 		appSvc, _ := s.appConfig.AppService()
@@ -179,22 +201,6 @@ func (s *service) stop() {
 		if s.readinessSvc != nil {
 			s.readinessSvc.MarkAppServiceStopped()
 		}
-	}
-
-	// Hard-close HTTP listeners/conns first to avoid mixed HTTP/gRPC window.
-	if s.server != nil {
-		_ = s.server.Close()
-	}
-	if s.adminServer != nil {
-		_ = s.adminServer.Close()
-	}
-
-	// Then close gRPC servers/transports.
-	if s.grpcServer != nil {
-		s.grpcServer.Stop()
-	}
-	if s.adminGrpcSrvr != nil {
-		s.adminGrpcSrvr.Stop()
 	}
 
 	// Close gateway reverse-proxy client connections.
@@ -663,6 +669,30 @@ func (s *service) autoUnlock() error {
 
 	log.Debug("service auto unlocked")
 	return nil
+}
+
+// stopGrpcServer is called after the HTTP connections have been closed. On the ServeHTTP path,
+// GracefulStop closes the transports and waits for their handlers. After the timeout, shutdown
+// proceeds even though a handler may still use the application or database.
+func stopGrpcServer(srv *grpc.Server) {
+	stopped := make(chan struct{})
+	go func() {
+		srv.GracefulStop()
+		close(stopped)
+	}()
+
+	timer := time.NewTimer(handlersShutdownTimeout)
+	defer timer.Stop()
+	select {
+	case <-stopped:
+	case <-timer.C:
+		log.Warnf(
+			"grpc handlers still running after %s, proceeding with application shutdown",
+			handlersShutdownTimeout,
+		)
+		// Do not call srv.Stop() here: srv.GracefulStop() holds the server mutex while waiting for
+		// handlers, so Stop can block indefinitely on that mutex. Transports are already closed.
+	}
 }
 
 func router(

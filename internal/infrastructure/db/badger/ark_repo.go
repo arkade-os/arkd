@@ -124,6 +124,25 @@ func (r *arkRepository) GetSweepableRounds(
 	return txids, nil
 }
 
+func (r *arkRepository) GetSweptRounds(
+	ctx context.Context,
+) ([]string, error) {
+	query := badgerhold.Where("Stage.Code").Eq(int(domain.RoundFinalizationStage)).
+		And("Stage.Ended").Eq(true).And("Stage.Failed").Eq(false).And("Swept").Eq(true)
+	rounds, err := r.findRound(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	txids := make([]string, 0, len(rounds))
+	for _, r := range rounds {
+		if len(r.VtxoTree) > 0 {
+			txids = append(txids, r.CommitmentTxid)
+		}
+	}
+	return txids, nil
+}
+
 func (r *arkRepository) GetScheduledSweeps(
 	ctx context.Context, limit int64,
 ) ([]domain.ScheduledSweep, error) {

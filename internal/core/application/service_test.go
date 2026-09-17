@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -28,6 +30,49 @@ import (
 )
 
 const testDust uint64 = 546
+
+func TestStopWithPendingEventPropagation(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rounds := &mockedRoundRepo{}
+		rounds.On("GetSweepableRounds", mock.Anything).Return(nil, nil)
+		repos := &mockedRepoManager{}
+		repos.On("Rounds").Return(rounds)
+		repos.On("Close").Return()
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		svc := &service{
+			repoManager: repos,
+			wallet:      &mockWalletService{},
+			sweeper:     &sweeper{scheduler: &mockScheduler{}},
+			eventsCh:    make(chan []domain.Event, 64),
+			ctx:         ctx,
+			stop:        cancel,
+			wg:          &sync.WaitGroup{},
+		}
+		svc.registerEventHandlers()
+
+		// A full buffer parks the untracked propagateEvents goroutine on its send,
+		// even though the registered callback has already returned.
+		for range cap(svc.eventsCh) {
+			svc.eventsCh <- nil
+		}
+		round := domain.NewRound()
+		events, err := round.StartRegistration()
+		require.NoError(t, err)
+		repos.batchHandler(*round)
+		synctest.Wait()
+
+		svc.Stop()
+		synctest.Wait() // Closing eventsCh would panic in the pending sender here.
+
+		for range cap(svc.eventsCh) {
+			<-svc.eventsCh
+		}
+		require.Equal(t, events, <-svc.eventsCh)
+		repos.AssertExpectations(t)
+	})
+}
 
 func TestEstimateIntentFeeRejectsNegativeBoardingAmount(t *testing.T) {
 	message := intent.EstimateIntentFeeMessage{

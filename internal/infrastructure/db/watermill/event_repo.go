@@ -24,6 +24,11 @@ type eventRepository struct {
 
 	subscribers    map[string][]subscriber // topic -> subscribers
 	subscriberLock *sync.Mutex
+
+	// handlers counts the handler goroutines dispatch started, so Close can wait for them. closed
+	// stops dispatch from starting new ones once Close began. Both are guarded by subscriberLock.
+	handlers sync.WaitGroup
+	closed   bool
 }
 
 func NewWatermillEventRepository(publisher message.Publisher, db *sql.DB) domain.EventRepository {
@@ -49,7 +54,15 @@ func (e *eventRepository) ClearRegisteredHandlers(topics ...string) {
 	}
 }
 
+// Close stops dispatching events and waits for the handlers already dispatched to return before
+// closing the publisher, so that a handler is not left writing to a store closed right after.
 func (e *eventRepository) Close() {
+	e.subscriberLock.Lock()
+	e.closed = true
+	e.subscriberLock.Unlock()
+
+	e.handlers.Wait()
+
 	//nolint:errcheck
 	e.publisher.Close()
 }
@@ -99,8 +112,15 @@ func (e *eventRepository) dispatch(topic string, id string) error {
 	// run the handlers in go routines
 	e.subscriberLock.Lock()
 	defer e.subscriberLock.Unlock()
+	if e.closed {
+		return fmt.Errorf("event repository closed")
+	}
 	for _, subscriber := range e.subscribers[topic] {
-		go subscriber.handler(events)
+		e.handlers.Add(1)
+		go func(handler func(events []domain.Event)) {
+			defer e.handlers.Done()
+			handler(events)
+		}(subscriber.handler)
 	}
 	return nil
 }

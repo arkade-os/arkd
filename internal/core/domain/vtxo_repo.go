@@ -37,6 +37,11 @@ type VtxoRepository interface {
 	GetSweepableVtxosByCommitmentTxid(
 		ctx context.Context, commitmentTxid string,
 	) ([]Outpoint, error)
+	// GetSweepableVtxosByCommitmentTxids is GetSweepableVtxosByCommitmentTxid
+	// over a set of batches in one read, for the startup reconciliation.
+	GetSweepableVtxosByCommitmentTxids(
+		ctx context.Context, commitmentTxids []string,
+	) ([]Outpoint, error)
 	GetAllChildrenVtxos(ctx context.Context, outpoint Outpoint) ([]Outpoint, error)
 	GetVtxoPubKeysByCommitmentTxid(
 		ctx context.Context, commitmentTxid string, withMinimumAmount uint64,

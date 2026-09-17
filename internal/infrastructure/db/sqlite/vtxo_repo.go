@@ -472,6 +472,49 @@ func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 	return outpoints, nil
 }
 
+// sqliteSweepableVtxosBatchSize keeps each of the two slice placeholders under
+// the bound parameter cap described at sqliteVtxoPubKeysBatchSize.
+const sqliteSweepableVtxosBatchSize = 5000
+
+func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxids(
+	ctx context.Context, commitmentTxids []string,
+) ([]domain.Outpoint, error) {
+	seen := make(map[domain.Outpoint]struct{})
+	outpoints := make([]domain.Outpoint, 0)
+	add := func(txid string, vout int64) {
+		outpoint := domain.Outpoint{Txid: txid, VOut: uint32(vout)}
+		if _, dup := seen[outpoint]; dup {
+			return
+		}
+		seen[outpoint] = struct{}{}
+		outpoints = append(outpoints, outpoint)
+	}
+
+	for start := 0; start < len(commitmentTxids); start += sqliteSweepableVtxosBatchSize {
+		chunk := commitmentTxids[start:min(start+sqliteSweepableVtxosBatchSize, len(commitmentTxids))]
+		if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+			roots, err := q.SelectSweepableVtxoOutpointsByRootCommitmentTxids(ctx, chunk)
+			if err != nil {
+				return err
+			}
+			for _, row := range roots {
+				add(row.VtxoTxid, row.VtxoVout)
+			}
+			linked, err := q.SelectSweepableVtxoOutpointsByLinkedCommitmentTxids(ctx, chunk)
+			if err != nil {
+				return err
+			}
+			for _, row := range linked {
+				add(row.VtxoTxid, row.VtxoVout)
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return outpoints, nil
+}
+
 func (v *vtxoRepository) GetAllChildrenVtxos(
 	ctx context.Context, outpoint domain.Outpoint,
 ) ([]domain.Outpoint, error) {

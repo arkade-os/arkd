@@ -114,9 +114,12 @@ func (r *eventRepository) ClearRegisteredHandlers(topics ...string) {
 }
 
 func (r *eventRepository) Close() {
+	// Closing done is enough to stop both ends: listen returns on it and
+	// publishUpdate selects on it. r.chUpdates is deliberately left open because
+	// a publishUpdate parked in that select would have both cases ready and
+	// would send on a closed channel about half the time.
 	close(r.done)
 
-	close(r.chUpdates)
 	// nolint:all
 	r.store.Close()
 }

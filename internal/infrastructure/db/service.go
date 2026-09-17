@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -80,7 +81,14 @@ var (
 	}
 )
 
-const sqliteDbFile = "sqlite.db"
+const (
+	sqliteDbFile = "sqlite.db"
+
+	// projectionsShutdownTimeout bounds how long Close waits for in-flight
+	// projection updates. Long enough for the store writes of one update to
+	// finish, short enough that a wedged update cannot hold the process open.
+	projectionsShutdownTimeout = 30 * time.Second
+)
 
 type ServiceConfig struct {
 	EventStoreType string
@@ -106,6 +114,12 @@ type service struct {
 	txDecoder              ports.TxDecoder
 	batchEventHandler      *updateHandler[domain.Round]
 	offchainTxEventHandler *updateHandler[domain.OffchainTx]
+
+	// projections counts the updates in flight, the subscriber dispatches they
+	// spawn and Open, so Close can wait for them instead of closing a store one
+	// of them is still writing to.
+	projections sync.WaitGroup
+	closeOnce   sync.Once
 }
 
 func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoManager, error) {
@@ -508,17 +522,124 @@ func (s *service) RegisterSettingsUpdateHandler(handler func(domain.Settings, []
 	s.settingsStore.RegisterUpdatesHandler(handler)
 }
 
+// Open takes care of reconciling the projection db in case any event in the past session failed to
+// be processed. Close waits for Open to finish in case it's called while the latter is running to
+// not leave any update in mid-state.
+func (s *service) Open() error {
+	s.projections.Add(1)
+	defer s.projections.Done()
+	return s.reconcileProjections()
+}
+
+// Close waits for in flight operation, then closes the stores, so
+// no update is cut off between its writes.
 func (s *service) Close() {
-	s.eventStore.Close()
+	s.closeOnce.Do(s.close)
+}
+
+func (s *service) close() {
+	if !s.drainProjections(projectionsShutdownTimeout) {
+		log.Warnf(
+			"projection updates still running after %s, closing stores anyway",
+			projectionsShutdownTimeout,
+		)
+	}
+
 	s.roundStore.Close()
 	s.vtxoStore.Close()
 	s.markerStore.Close()
 	s.offchainTxStore.Close()
 	s.convictionStore.Close()
+	s.assetStore.Close()
 	s.settingsStore.Close()
 }
 
+// goTracked runs fn in a goroutine Close waits for. Subscriber dispatches go
+// through here because the caller closes the channel they publish to right
+// after Close returns.
+func (s *service) goTracked(fn func()) {
+	s.projections.Add(1)
+	go func() {
+		defer s.projections.Done()
+		fn()
+	}()
+}
+
+// drainProjections closes the event store, which stops dispatching events and
+// waits for the handlers already dispatched, then waits for the projection work
+// still in flight. It reports whether both finished in time. On a timeout the
+// goroutine it started stays parked until they do or the process exits; it
+// holds nothing, so that is not a leak.
+func (s *service) drainProjections(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		s.eventStore.Close()
+		s.projections.Wait()
+		close(done)
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
+// reconcileProjections repairs projections a previous run left half written.
+// Open runs it before the application produces events, so it sees a quiescent
+// store. A failing repair is logged and cannot stop the node from starting.
+func (s *service) reconcileProjections() error {
+	return s.ensureSweptVtxos()
+}
+
+// ensureSweptVtxos marks the vtxos of fully swept batches that are missing a
+// swept mark. A sweep is recorded with two writes that are not one transaction,
+// the round then the vtxo outpoints, so an interruption between them leaves a
+// batch marked swept whose vtxos still look unswept. The swept insert ignores
+// duplicates, so a consistent store costs two reads and nothing else.
+func (s *service) ensureSweptVtxos() error {
+	ctx := context.Background()
+	commitmentTxids, err := s.roundStore.GetSweptRounds(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get swept batches: %w", err)
+	}
+	if len(commitmentTxids) == 0 {
+		return nil
+	}
+
+	// One read across every swept batch, with the predicate the sweeper uses
+	// to pick what a batch sweep covers, so reconciliation marks exactly what
+	// the sweep would have.
+	outpoints, err := s.vtxoStore.GetSweepableVtxosByCommitmentTxids(ctx, commitmentTxids)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to read the unswept vtxos of %d swept batches: %w",
+			len(commitmentTxids), err,
+		)
+	}
+	if len(outpoints) == 0 {
+		return nil
+	}
+
+	// sweptAt is the time of the repair, not of the original sweep, which the
+	// projection no longer knows.
+	if err := s.markerStore.SweepVtxoOutpoints(ctx, outpoints, time.Now().Unix()); err != nil {
+		return fmt.Errorf("failed to sweep %d vtxos of swept batches: %w", len(outpoints), err)
+	}
+	log.Debugf("reconciled %d vtxos missed to be marked as swept", len(outpoints))
+	return nil
+}
+
+// updateProjectionsAfterRoundEvents updates the projections as soon as round events are recorded
+// to the event db. It makes use of a background context and Close waits for it to complete before
+// closing the stores.
 func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
+	s.projections.Add(1)
+	defer s.projections.Done()
+
 	ctx := context.Background()
 	round := domain.NewRoundFromEvents(events)
 	updateFn := func() bool {
@@ -599,11 +720,17 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 
 	dispatch := updateFn()
 	if dispatch {
-		go s.batchEventHandler.dispatch(*round)
+		s.goTracked(func() { s.batchEventHandler.dispatch(*round) })
 	}
 }
 
+// updateProjectionsAfterOffchainTxEvents updates the projections as soon as offchain tx events are
+// recorded to the event db. It makes use of a background context and Close waits for it to
+// complete before closing the stores.
 func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) {
+	s.projections.Add(1)
+	defer s.projections.Done()
+
 	ctx := context.Background()
 	offchainTx := domain.NewOffchainTxFromEvents(events)
 	updateFn := func() bool {
@@ -828,7 +955,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 
 	dispatch := updateFn()
 	if dispatch {
-		go s.offchainTxEventHandler.dispatch(*offchainTx)
+		s.goTracked(func() { s.offchainTxEventHandler.dispatch(*offchainTx) })
 	}
 }
 
