@@ -2494,7 +2494,7 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 		return errors.INTERNAL_ERROR.New("something went wrong")
 	}
 
-	for _, b64 := range forfeitTxs {
+	verifyForfeit := func(b64 string) errors.Error {
 		forfeitPtx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
 		if err != nil {
 			return errors.INVALID_FORFEIT_TXS.New("malformed forfeit psbt")
@@ -2512,6 +2512,64 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 				forfeitPtx.UnsignedTx.TxID(),
 			)
 		}
+
+		// Checked here rather than only at finalization: a signature that
+		// cannot be verified is the sender's error, and answering it now keeps
+		// an unusable forfeit out of the store instead of failing the batch for
+		// everyone and convicting whoever the tx named.
+		valid, _, err := s.builder.VerifyVtxoTapscriptSigs(b64, false)
+		if err != nil {
+			return errors.INVALID_FORFEIT_TXS.New(
+				"failed to verify signatures of forfeit tx %s: %s",
+				forfeitPtx.UnsignedTx.TxID(), err,
+			).WithMetadata(errors.InvalidForfeitTxsMetadata{ForfeitTxs: forfeitTxs})
+		}
+		if !valid {
+			return errors.INVALID_FORFEIT_TXS.New(
+				"forfeit tx %s carries an invalid signature",
+				forfeitPtx.UnsignedTx.TxID(),
+			).WithMetadata(errors.InvalidForfeitTxsMetadata{ForfeitTxs: forfeitTxs})
+		}
+		return nil
+	}
+
+	nbWorkers := min(runtime.NumCPU(), len(forfeitTxs))
+	jobs := make(chan string, len(forfeitTxs))
+	done := make(chan struct{})
+	var stopOnce sync.Once
+	var verificationErr errors.Error
+
+	wg := sync.WaitGroup{}
+	wg.Add(nbWorkers)
+
+	for range nbWorkers {
+		go func() {
+			defer wg.Done()
+			for b64 := range jobs {
+				// exit if done is closed otherwise default lets this verification proceed
+				select {
+				case <-done:
+					return
+				default:
+				}
+				if err := verifyForfeit(b64); err != nil {
+					stopOnce.Do(func() {
+						verificationErr = err
+						close(done)
+					})
+					return
+				}
+			}
+		}()
+	}
+
+	for _, b64 := range forfeitTxs {
+		jobs <- b64
+	}
+	close(jobs)
+	wg.Wait()
+	if verificationErr != nil {
+		return verificationErr
 	}
 
 	round, err := s.cache.CurrentRound().Get(ctx)
@@ -3756,6 +3814,7 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming, setting
 
 		// verify is forfeit tx signatures are valid, if not we ban the associated scripts
 		if convictions := s.verifyForfeitTxsSigs(
+			ctx,
 			roundId, forfeitTxList, banDuration,
 		); len(convictions) > 0 {
 			changes = round.Fail(errors.INTERNAL_ERROR.New("invalid forfeit txs signature"))
@@ -4848,13 +4907,13 @@ func (s *service) validateVtxoInput(
 }
 
 func (s *service) verifyForfeitTxsSigs(
-	roundId string, txs []string, banDuration *time.Duration,
+	ctx context.Context, roundId string, txs []string, banDuration *time.Duration,
 ) []domain.Conviction {
 	nbWorkers := runtime.NumCPU()
 	jobs := make(chan string, len(txs))
 
 	mutx := &sync.Mutex{}
-	crimes := make(map[string]domain.Crime) // vtxo script -> crime
+	crimes := make(map[domain.Outpoint]domain.Crime) // vtxo outpoint -> crime
 
 	wg := sync.WaitGroup{}
 	wg.Add(nbWorkers)
@@ -4870,11 +4929,11 @@ func (s *service) verifyForfeitTxsSigs(
 				}
 				if err != nil {
 					verificationErr := err
-					vtxoOutputScript, extractErr := extractVtxoScriptFromSignedForfeitTx(tx)
+					vtxoOutpoint, extractErr := extractVtxoOutpointFromSignedForfeitTx(tx)
 					if extractErr != nil {
 						log.WithError(extractErr).
 							Errorf(
-								"failed to extract vtxo script from forfeit tx in round %s, "+
+								"failed to extract vtxo outpoint from forfeit tx in round %s, "+
 									"cannot ban", roundId,
 							)
 						continue
@@ -4887,10 +4946,10 @@ func (s *service) verifyForfeitTxsSigs(
 					}
 
 					mutx.Lock()
-					if _, ok := crimes[vtxoOutputScript]; ok {
-						crime.Reason += fmt.Sprintf(", %s", crimes[vtxoOutputScript].Reason)
+					if _, ok := crimes[vtxoOutpoint]; ok {
+						crime.Reason += fmt.Sprintf(", %s", crimes[vtxoOutpoint].Reason)
 					}
-					crimes[vtxoOutputScript] = crime
+					crimes[vtxoOutpoint] = crime
 					mutx.Unlock()
 				}
 			}
@@ -4903,10 +4962,40 @@ func (s *service) verifyForfeitTxsSigs(
 	close(jobs)
 	wg.Wait()
 
-	convictions := make([]domain.Conviction, 0, len(crimes))
-	for outScript, crime := range crimes {
+	if len(crimes) == 0 {
+		return nil
+	}
+
+	outpoints := make([]domain.Outpoint, 0, len(crimes))
+	for outpoint := range crimes {
+		outpoints = append(outpoints, outpoint)
+	}
+
+	// Read from the vtxo the forfeit spends, not from the leaf the tx carries:
+	// the leaf is the sender's to choose, so deriving the script from it lets a
+	// forfeit name a script its sender does not own.
+	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, outpoints)
+	if err != nil {
+		log.WithError(err).Errorf(
+			"failed to load vtxos for forfeit convictions in round %s, cannot ban", roundId,
+		)
+		return nil
+	}
+
+	convictions := make([]domain.Conviction, 0, len(vtxos))
+	for _, vtxo := range vtxos {
+		crime, ok := crimes[vtxo.Outpoint]
+		if !ok {
+			continue
+		}
+		outputScript, err := vtxo.OutputScript()
+		if err != nil {
+			log.WithError(err).
+				Warnf("failed to compute output script for vtxo %s", vtxo.Outpoint)
+			continue
+		}
 		convictions = append(convictions, domain.NewScriptConviction(
-			outScript, crime, banDuration,
+			hex.EncodeToString(outputScript), crime, banDuration,
 		))
 	}
 
@@ -5306,27 +5395,28 @@ func validateOffchainTxOutputs(
 	return outputs, ext, nil
 }
 
-func extractVtxoScriptFromSignedForfeitTx(tx string) (string, error) {
+func extractVtxoOutpointFromSignedForfeitTx(tx string) (domain.Outpoint, error) {
 	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse psbt: %s", err)
+		return domain.Outpoint{}, fmt.Errorf("failed to parse psbt: %s", err)
 	}
 
-	for _, input := range ptx.Inputs {
+	for i, input := range ptx.Inputs {
 		// at this point, the connector is not signed so the vtxo input is the one with
 		// Tapscript sigs
 		if len(input.TaprootScriptSpendSig) == 0 {
 			continue
 		}
 
-		if len(input.TaprootLeafScript) == 0 {
-			return "", fmt.Errorf("missing taproot leaf script for vtxo input, invalid forfeit tx")
+		if i >= len(ptx.UnsignedTx.TxIn) {
+			return domain.Outpoint{}, fmt.Errorf("input %d out of range, invalid forfeit tx", i)
 		}
 
-		return outputScriptFromTaprootLeafScript(*input.TaprootLeafScript[0])
+		prevout := ptx.UnsignedTx.TxIn[i].PreviousOutPoint
+		return domain.Outpoint{Txid: prevout.Hash.String(), VOut: prevout.Index}, nil
 	}
 
-	return "", fmt.Errorf("no vtxo script found in forfeit tx")
+	return domain.Outpoint{}, fmt.Errorf("no signed vtxo input found in forfeit tx")
 }
 
 func outputScriptFromTaprootLeafScript(tapLeaf psbt.TaprootTapLeafScript) (string, error) {

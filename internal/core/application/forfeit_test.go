@@ -3,7 +3,9 @@ package application
 import (
 	"context"
 	"errors"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -121,6 +123,54 @@ func TestForfeitTxs(t *testing.T) {
 			require.Error(t, s.SubmitForfeitTxs(ctx, []string{b64}))
 		})
 	})
+
+	t.Run("stops queued verifications after the first failure", func(t *testing.T) {
+		for _, verifyErr := range []error{nil, errors.New("verification failed")} {
+			name := "invalid signature"
+			if verifyErr != nil {
+				name = "verification error"
+			}
+			t.Run(name, func(t *testing.T) {
+				operatorKey, err := btcec.NewPrivateKey()
+				require.NoError(t, err)
+				builder := &failingForfeitBuilder{err: verifyErr}
+				s := &service{
+					builder: builder,
+					cache: testLiveStore{settings: testSettingsStore{
+						settings: &ports.Settings{SignerPubkey: operatorKey.PubKey()},
+					}},
+				}
+				b64 := unsignedPsbt(t, 0xaa)
+				forfeits := make([]string, runtime.NumCPU()*4)
+				for i := range forfeits {
+					forfeits[i] = b64
+				}
+
+				err = s.SubmitForfeitTxs(t.Context(), forfeits)
+
+				require.Error(t, err)
+				if verifyErr != nil {
+					require.Contains(t, err.Error(), verifyErr.Error())
+				} else {
+					require.Contains(t, err.Error(), "invalid signature")
+				}
+				require.Positive(t, builder.calls.Load())
+				require.LessOrEqual(t, builder.calls.Load(), int32(runtime.NumCPU()),
+					"only verifications already in flight may finish after a failure")
+			})
+		}
+	})
+}
+
+type failingForfeitBuilder struct {
+	ports.TxBuilder
+	err   error
+	calls atomic.Int32
+}
+
+func (b *failingForfeitBuilder) VerifyVtxoTapscriptSigs(string, bool) (bool, *psbt.Packet, error) {
+	b.calls.Add(1)
+	return false, nil, b.err
 }
 
 const txscriptOpTrue = 0x51
