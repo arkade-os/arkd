@@ -1330,20 +1330,36 @@ func recreateArkdWallet(signerKey, deprecated string) error {
 		return fmt.Errorf("failed to recreate arkd-wallet: %w", err)
 	}
 
-	if err := unlockArkdWallet(); err != nil {
+	// Only wait for the recreated wallet to answer, don't unlock it: restartArkd
+	// unlocks it after the restart anyway, and unlocking here races the wallet's
+	// deferred ready notification with the shutdown lock of the old arkd.
+	if err := waitForArkdWallet(); err != nil {
 		return err
 	}
 
-	// restartArkd waits for arkd to report ready, so there is nothing to wait
-	// on here beyond the wallet accepting the unlock.
 	return restartArkd()
 }
 
-func unlockArkdWallet() error {
+// waitForArkdWallet polls the admin wallet status through the running arkd until the
+// wallet accepts requests again.
+func waitForArkdWallet() error {
 	adminHttpClient := &http.Client{Timeout: 15 * time.Second}
-	url := fmt.Sprintf("%s/v1/admin/wallet/unlock", adminUrl)
-	body := fmt.Sprintf(`{"password": "%s"}`, password)
-	return postWithRetry(adminHttpClient, url, body, "unlock", time.Minute)
+	url := fmt.Sprintf("%s/v1/admin/wallet/status", adminUrl)
+	deadline := time.Now().Add(time.Minute)
+	lastErr := fmt.Errorf("wallet not initialized")
+	for time.Now().Before(deadline) {
+		// While the wallet is unreachable the gateway answers with an error body that
+		// decodes to a zeroed status, so a nil error alone doesn't mean it's back.
+		status, err := get[statusResp](adminHttpClient, url, "status")
+		if err == nil && status.Initialized {
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("timed out waiting for arkd-wallet to be ready: %w", lastErr)
 }
 
 func setupArkd() error {

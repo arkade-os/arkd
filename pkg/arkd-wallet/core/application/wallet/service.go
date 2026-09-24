@@ -159,6 +159,10 @@ func (w *wallet) Unlock(ctx context.Context, password string) error {
 	go func() {
 		// To not send the notification immediately after unlocking
 		<-time.After(500 * time.Millisecond)
+		// The wallet may have been locked in the meantime, don't send a stale ready update.
+		if w.keyMgr == nil {
+			return
+		}
 		select {
 		case w.readyCh <- true:
 		default:
