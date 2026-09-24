@@ -5196,6 +5196,16 @@ func (s *service) verifyIntentProofAndFindMatches(
 				}
 			}
 		}
+		for _, in := range ti.BoardingInputs {
+			for _, op := range outpoints {
+				if in.Txid == op.Hash.String() && in.VOut == op.Index {
+					if _, ok := seen[ti.Id]; !ok {
+						seen[ti.Id] = struct{}{}
+						matches = append(matches, ti)
+					}
+				}
+			}
+		}
 	}
 
 	return matches, nil

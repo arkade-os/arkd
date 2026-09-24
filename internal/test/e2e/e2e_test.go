@@ -4429,6 +4429,35 @@ func TestIntent(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("register and delete boarding only", func(t *testing.T) {
+		ctx := t.Context()
+		alice := setupClientWallet(t)
+		_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
+		require.NoError(t, err)
+
+		faucetOnchainAndWait(t, boardingAddr.Address, 0.00021)
+		faucetOnchainAndWait(t, boardingAddr.Address, 0.00021)
+		raw := waitForOnchainUtxos(t, boardingAddr.Address, 2)
+		a := clientlib.Utxo{Outpoint: clientlib.Outpoint{Txid: raw[0].Txid, VOut: raw[0].Vout}, Amount: raw[0].Amount}
+		b := clientlib.Utxo{Outpoint: clientlib.Outpoint{Txid: raw[1].Txid, VOut: raw[1].Vout}, Amount: raw[1].Amount}
+
+		cosignerKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		cosigners := []string{hex.EncodeToString(cosignerKey.PubKey().SerializeCompressed())}
+		outs := []clientlib.Receiver{{To: offchainAddr.Address, Amount: a.Amount}}
+
+		_, err = alice.RegisterIntent(ctx, nil, []clientlib.Utxo{a}, nil, outs, cosigners)
+		require.NoError(t, err)
+		require.NoError(t, alice.DeleteIntent(ctx, nil, []clientlib.Utxo{a}, nil))
+		_, err = alice.RegisterIntent(ctx, nil, []clientlib.Utxo{a}, nil, outs, cosigners)
+		require.NoError(t, err)
+		require.ErrorContains(
+			t, alice.DeleteIntent(ctx, nil, []clientlib.Utxo{b}, nil),
+			"no matching intents found for intent proof",
+		)
+		require.NoError(t, alice.DeleteIntent(ctx, nil, []clientlib.Utxo{a}, nil))
+	})
+
 	t.Run("concurrent register", func(t *testing.T) {
 		ctx := t.Context()
 		alice := setupClientWallet(t)
