@@ -557,6 +557,44 @@ func (q *Queries) SelectConvictionsInTimeRange(ctx context.Context, arg SelectCo
 	return items, nil
 }
 
+const selectExpiredButNotSweptRounds = `-- name: SelectExpiredButNotSweptRounds :many
+SELECT r.txid FROM round_with_commitment_tx_vw r
+WHERE r.swept = false
+AND EXISTS (
+    SELECT 1 FROM vtxo_vw v
+    WHERE v.commitment_txid = r.txid
+      AND v.swept = false AND v.spent = false AND v.unrolled = false
+      AND v.expires_at > 1 AND v.expires_at < ?1
+)
+AND NOT EXISTS (
+    SELECT 1 FROM vtxo_vw v
+    WHERE v.commitment_txid = r.txid AND v.unrolled = true
+)
+`
+
+func (q *Queries) SelectExpiredButNotSweptRounds(ctx context.Context, now int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectExpiredButNotSweptRounds, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var txid string
+		if err := rows.Scan(&txid); err != nil {
+			return nil, err
+		}
+		items = append(items, txid)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectExpiredRounds = `-- name: SelectExpiredRounds :many
 SELECT r.id, r.txid, CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS expired_at
 FROM round_with_commitment_tx_vw r
@@ -2922,6 +2960,27 @@ func (q *Queries) SelectVtxosWithPubkeysPage(ctx context.Context, arg SelectVtxo
 		return nil, err
 	}
 	return items, nil
+}
+
+const sweepRounds = `-- name: SweepRounds :exec
+UPDATE round SET swept = true WHERE id IN (
+  SELECT id FROM round_with_commitment_tx_vw WHERE txid IN (/*SLICE:txids*/?)
+)
+`
+
+func (q *Queries) SweepRounds(ctx context.Context, txids []string) error {
+	query := sweepRounds
+	var queryParams []interface{}
+	if len(txids) > 0 {
+		for _, v := range txids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:txids*/?", strings.Repeat(",?", len(txids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:txids*/?", "NULL", 1)
+	}
+	_, err := q.db.ExecContext(ctx, query, queryParams...)
+	return err
 }
 
 const updateConvictionPardoned = `-- name: UpdateConvictionPardoned :exec

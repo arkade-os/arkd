@@ -651,7 +651,7 @@ func (m *mockRepoManager) Assets() domain.AssetRepository {
 func (m *mockRepoManager) Settings() domain.SettingsRepository {
 	return nil
 }
-func (m *mockRepoManager) Open() error {
+func (m *mockRepoManager) Reconcile() error {
 	return nil
 }
 func (m *mockRepoManager) RegisterBatchUpdateHandler(func(data domain.Round))            {}

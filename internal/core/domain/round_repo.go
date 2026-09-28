@@ -20,6 +20,9 @@ type RoundRepository interface {
 	// fully swept. Reconciliation reads it to find the batches whose vtxos
 	// should carry a swept mark.
 	GetSweptRounds(ctx context.Context) ([]string, error)
+	// GetExpiredButNotSweptRounds returns the commitment txids of the expired batches not
+	// recorded as swept that have unspent, unswept and not unrolled vtxos.
+	GetExpiredButNotSweptRounds(ctx context.Context) ([]string, error)
 	// GetScheduledSweeps returns the batches awaiting a sweep, soonest due first,
 	// capped at limit (0 means no limit). The due time is derived in the query
 	// from ending_timestamp + vtxo_tree_expiration, so this costs one round trip
@@ -48,6 +51,8 @@ type RoundRepository interface {
 	// the given range (0 means unbounded). It reports what storage holds: batches
 	// finalized before fees were persisted count as zero.
 	SumCollectedFees(ctx context.Context, after, before int64) (uint64, error)
+	// SweepRounds marks the rounds given their commitment txids as swept.
+	SweepRounds(ctx context.Context, commitmentTxids []string) error
 	Close()
 }
 

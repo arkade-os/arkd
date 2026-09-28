@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -64,6 +65,42 @@ func TestReconcileProjections(t *testing.T) {
 			requireSwept(t, reopened, outpoints, true)
 		})
 	})
+
+	t.Run("GetExpiredButNotSweptRounds", func(t *testing.T) {
+		for _, dataStoreType := range []string{"sqlite", "badger"} {
+			t.Run(dataStoreType, func(t *testing.T) {
+				svc := newTestRepoManager(t, dataStoreType)
+
+				expired, _ := seedBatch(t, svc, false)
+				seedBatch(t, svc, true)
+
+				_, sweptOutpoints := seedBatch(t, svc, false)
+				require.NoError(t, svc.Markers().SweepVtxoOutpoints(
+					ctx, sweptOutpoints, sweptAtFixture,
+				))
+
+				_, unrolledOutpoints := seedBatch(t, svc, false)
+				require.NoError(t, svc.Vtxos().UnrollVtxos(ctx, unrolledOutpoints[:1]))
+
+				seedBatchExpiringAt(t, svc, false, time.Now().Add(time.Hour).Unix())
+
+				spentBatch, spentOutpoints := seedBatch(t, svc, false)
+				spentVtxos := make(map[domain.Outpoint]string, len(spentOutpoints))
+				for _, outpoint := range spentOutpoints {
+					spentVtxos[outpoint] = randomString(t, 32)
+				}
+				require.NoError(t, svc.Vtxos().SettleVtxos(ctx, spentVtxos, spentBatch))
+
+				commitmentTxids, err := svc.Rounds().GetExpiredButNotSweptRounds(ctx)
+				require.NoError(t, err)
+				require.Equal(
+					t, []string{expired}, commitmentTxids,
+					"swept batches, batches with any unrolled vtxo, and batches with only "+
+						"swept, not expired or spent vtxos must be left out",
+				)
+			})
+		}
+	})
 }
 
 const sweptAtFixture = int64(1767225600)
@@ -72,6 +109,14 @@ const sweptAtFixture = int64(1767225600)
 // swept. swept sets the batch's own flag, which is what tells reconciliation
 // whether those vtxos should have been marked.
 func seedBatch(t *testing.T, svc ports.RepoManager, swept bool) (string, []domain.Outpoint) {
+	t.Helper()
+	return seedBatchExpiringAt(t, svc, swept, sweptAtFixture)
+}
+
+// seedBatchExpiringAt is seedBatch with vtxos that expire at expiresAt.
+func seedBatchExpiringAt(
+	t *testing.T, svc ports.RepoManager, swept bool, expiresAt int64,
+) (string, []domain.Outpoint) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -95,6 +140,9 @@ func seedBatch(t *testing.T, svc ports.RepoManager, swept bool) (string, []domai
 	vtxos := []domain.Vtxo{
 		newBatchVtxo(t, commitmentTxid),
 		newBatchVtxo(t, commitmentTxid),
+	}
+	for i := range vtxos {
+		vtxos[i].ExpiresAt = expiresAt
 	}
 	require.NoError(t, svc.Vtxos().AddVtxos(ctx, vtxos))
 
@@ -134,4 +182,23 @@ func requireSwept(
 		}
 		require.Equal(t, swept, v.Swept, "vtxo %s", v.Outpoint)
 	}
+}
+
+// newTestRepoManager opens a service over a fresh dir with the given data store.
+func newTestRepoManager(t *testing.T, dataStoreType string) ports.RepoManager {
+	t.Helper()
+	dataStoreConfig := []interface{}{t.TempDir()}
+	if dataStoreType == "badger" {
+		dataStoreConfig = append(dataStoreConfig, nil)
+	}
+	svc, err := NewService(ServiceConfig{
+		EventStoreType:   "badger",
+		DataStoreType:    dataStoreType,
+		EventStoreConfig: []interface{}{"", nil},
+		DataStoreConfig:  dataStoreConfig,
+		Settings:         validSettings(t),
+	}, nil)
+	require.NoError(t, err)
+	t.Cleanup(svc.Close)
+	return svc
 }

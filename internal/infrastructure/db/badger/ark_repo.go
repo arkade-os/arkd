@@ -18,13 +18,15 @@ import (
 const arkStoreDir = "ark"
 
 type arkRepository struct {
-	store *badgerhold.Store
+	store     *badgerhold.Store
+	vtxoStore *badgerhold.Store
 }
 
 type ArkRepository interface {
 	domain.RoundRepository
 	domain.OffchainTxRepository
 	Store() *badgerhold.Store
+	SetVtxoStore(store *badgerhold.Store)
 }
 
 type IntentIndex struct {
@@ -58,7 +60,7 @@ func NewArkRepository(config ...interface{}) (ArkRepository, error) {
 		return nil, fmt.Errorf("failed to open round events store: %s", err)
 	}
 
-	return &arkRepository{store}, nil
+	return &arkRepository{store: store}, nil
 }
 
 func (r *arkRepository) AddOrUpdateRound(
@@ -139,6 +141,63 @@ func (r *arkRepository) GetSweptRounds(
 		if len(r.VtxoTree) > 0 {
 			txids = append(txids, r.CommitmentTxid)
 		}
+	}
+	return txids, nil
+}
+
+func (r *arkRepository) GetExpiredButNotSweptRounds(ctx context.Context) ([]string, error) {
+	if r.vtxoStore == nil {
+		return nil, arkerrors.INTERNAL_ERROR.New("vtxo store not configured")
+	}
+
+	var unrolledVtxos []vtxoDTO
+	if err := r.vtxoStore.Find(
+		&unrolledVtxos, badgerhold.Where("Unrolled").Eq(true),
+	); err != nil {
+		return nil, err
+	}
+	unrolledBatches := make(map[string]struct{}, len(unrolledVtxos))
+	for _, vtxo := range unrolledVtxos {
+		unrolledBatches[vtxo.RootCommitmentTxid] = struct{}{}
+	}
+
+	var expiredVtxos []vtxoDTO
+	query := badgerhold.Where("Swept").Eq(false).And("Spent").Eq(false).
+		And("Unrolled").Eq(false).
+		And("ExpiresAt").Gt(int64(1)).And("ExpiresAt").Lt(time.Now().Unix())
+	if err := r.vtxoStore.Find(&expiredVtxos, query); err != nil {
+		return nil, err
+	}
+	batches := make([]interface{}, 0)
+	seen := make(map[string]struct{})
+	for _, vtxo := range expiredVtxos {
+		txid := vtxo.RootCommitmentTxid
+		if txid == "" {
+			continue
+		}
+		if _, ok := unrolledBatches[txid]; ok {
+			continue
+		}
+		if _, ok := seen[txid]; ok {
+			continue
+		}
+		seen[txid] = struct{}{}
+		batches = append(batches, txid)
+	}
+	if len(batches) == 0 {
+		return nil, nil
+	}
+
+	rounds, err := r.findRound(
+		ctx, badgerhold.Where("CommitmentTxid").In(batches...).And("Swept").Eq(false),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	txids := make([]string, 0, len(rounds))
+	for _, round := range rounds {
+		txids = append(txids, round.CommitmentTxid)
 	}
 	return txids, nil
 }
@@ -457,9 +516,17 @@ func (r *arkRepository) GetOffchainTxsByTxids(
 	return txs, nil
 }
 
+func (r *arkRepository) SweepRounds(_ context.Context, _ []string) error {
+	return fmt.Errorf("not implemented ")
+}
+
 func (r *arkRepository) Close() {
 	// nolint:all
 	r.store.Close()
+}
+
+func (r *arkRepository) SetVtxoStore(store *badgerhold.Store) {
+	r.vtxoStore = store
 }
 
 func (r *arkRepository) Store() *badgerhold.Store {

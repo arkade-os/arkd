@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
@@ -324,6 +325,10 @@ func (r *roundRepository) GetSweptRounds(ctx context.Context) ([]string, error) 
 	return r.querier.SelectSweptRounds(ctx)
 }
 
+func (r *roundRepository) GetExpiredButNotSweptRounds(ctx context.Context) ([]string, error) {
+	return r.querier.SelectExpiredButNotSweptRounds(ctx, time.Now().Unix())
+}
+
 func (r *roundRepository) GetExpiredRounds(
 	ctx context.Context, expiredBefore int64,
 ) ([]domain.ExpiredRound, error) {
@@ -526,6 +531,10 @@ func (r *roundRepository) GetScheduledSweeps(
 		})
 	}
 	return sweeps, nil
+}
+
+func (r *roundRepository) SweepRounds(ctx context.Context, commitmentTxids []string) error {
+	return r.querier.SweepRounds(ctx, commitmentTxids)
 }
 
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {

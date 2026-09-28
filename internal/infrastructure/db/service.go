@@ -116,7 +116,7 @@ type service struct {
 	offchainTxEventHandler *updateHandler[domain.OffchainTx]
 
 	// projections counts the updates in flight, the subscriber dispatches they
-	// spawn and Open, so Close can wait for them instead of closing a store one
+	// spawn and Reconcile, so Close can wait for them instead of closing a store one
 	// of them is still writing to.
 	projections sync.WaitGroup
 	closeOnce   sync.Once
@@ -206,6 +206,9 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 
 	switch config.DataStoreType {
 	case "badger":
+		// The round and offchain tx stores share one ark repository per service,
+		// never the one a previous, possibly closed, service opened.
+		arkRepo = nil
 		roundStore, err = roundStoreFactory(config.DataStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open round store: %s", err)
@@ -251,6 +254,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if !ok {
 			return nil, fmt.Errorf("failed to get badger vtxo repository")
 		}
+		roundStore.(badgerdb.ArkRepository).SetVtxoStore(badgerVtxoRepo.GetStore())
 		markerConfig := make(
 			[]interface{},
 			len(config.DataStoreConfig),
@@ -522,10 +526,10 @@ func (s *service) RegisterSettingsUpdateHandler(handler func(domain.Settings, []
 	s.settingsStore.RegisterUpdatesHandler(handler)
 }
 
-// Open takes care of reconciling the projection db in case any event in the past session failed to
-// be processed. Close waits for Open to finish in case it's called while the latter is running to
-// not leave any update in mid-state.
-func (s *service) Open() error {
+// Reconcile takes care of repairing the projection db in case any event in the past session
+// failed to be processed. Close waits for Reconcile to finish in case it's called while the
+// latter is running to not leave any update in mid-state.
+func (s *service) Reconcile() error {
 	s.projections.Add(1)
 	defer s.projections.Done()
 	return s.reconcileProjections()
@@ -589,7 +593,7 @@ func (s *service) drainProjections(timeout time.Duration) bool {
 }
 
 // reconcileProjections repairs projections a previous run left half written.
-// Open runs it before the application produces events, so it sees a quiescent
+// Reconcile runs it before the application produces events, so it sees a quiescent
 // store. A failing repair is logged and cannot stop the node from starting.
 func (s *service) reconcileProjections() error {
 	return s.ensureSweptVtxos()

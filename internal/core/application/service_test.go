@@ -18,6 +18,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -863,6 +864,197 @@ func TestSubmitOffchainTx(t *testing.T) {
 	})
 }
 
+func TestMarkSweptBatches(t *testing.T) {
+	errUnavailable := fmt.Errorf("unavailable")
+
+	t.Run("valid", func(t *testing.T) {
+		tests := []struct {
+			name          string
+			fixture       testSweptBatchFixture
+			expectedSwept bool
+		}{
+			{
+				name:          "swept batch",
+				fixture:       testSweptBatchFixture{spent: true},
+				expectedSwept: true,
+			},
+			{
+				name:          "unspent batch output",
+				fixture:       testSweptBatchFixture{},
+				expectedSwept: false,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				batch := testSweptBatchService(t, tt.fixture)
+
+				batch.svc.markSweptBatches(t.Context())
+
+				batch.rounds.AssertNotCalled(t, "GetRoundVtxoTree", mock.Anything, mock.Anything)
+				batch.wallet.AssertNotCalled(t, "GetTransaction", mock.Anything, mock.Anything)
+				if !tt.expectedSwept {
+					batch.rounds.AssertNotCalled(t, "SweepRounds", mock.Anything, mock.Anything)
+					return
+				}
+				batch.rounds.AssertCalled(
+					t, "SweepRounds", mock.Anything, []string{batch.round.CommitmentTxid},
+				)
+			})
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		tests := []struct {
+			name          string
+			fixture       testSweptBatchFixture
+			expectedSweep bool
+		}{
+			{
+				name:          "failed to get expired batches",
+				fixture:       testSweptBatchFixture{spent: true, expiredErr: errUnavailable},
+				expectedSweep: false,
+			},
+			{
+				name:          "failed to get batch output status",
+				fixture:       testSweptBatchFixture{spent: true, spentErr: errUnavailable},
+				expectedSweep: false,
+			},
+			{
+				name:          "failed to mark batches as swept",
+				fixture:       testSweptBatchFixture{spent: true, sweepErr: errUnavailable},
+				expectedSweep: true,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				batch := testSweptBatchService(t, tt.fixture)
+
+				batch.svc.markSweptBatches(t.Context())
+
+				if !tt.expectedSweep {
+					batch.rounds.AssertNotCalled(t, "SweepRounds", mock.Anything, mock.Anything)
+					return
+				}
+				batch.rounds.AssertCalled(
+					t, "SweepRounds", mock.Anything, []string{batch.round.CommitmentTxid},
+				)
+			})
+		}
+	})
+}
+
+func TestIsBatchSwept(t *testing.T) {
+	errUnavailable := fmt.Errorf("unavailable")
+	errRootNotFound := fmt.Errorf("rpc error: code = Unknown desc = transaction not found")
+
+	t.Run("valid", func(t *testing.T) {
+		tests := []struct {
+			name             string
+			withCheckUnroll  bool
+			fixture          testSweptBatchFixture
+			expectedSwept    bool
+			expectedRootRead bool
+		}{
+			{
+				name:             "swept batch without unroll check",
+				fixture:          testSweptBatchFixture{spent: true, rootTxErr: errRootNotFound},
+				expectedSwept:    true,
+				expectedRootRead: false,
+			},
+			{
+				name:             "unswept batch without unroll check",
+				fixture:          testSweptBatchFixture{rootTxErr: errRootNotFound},
+				expectedSwept:    false,
+				expectedRootRead: false,
+			},
+			{
+				name:             "swept batch with unroll check",
+				withCheckUnroll:  true,
+				fixture:          testSweptBatchFixture{spent: true, rootTxErr: errRootNotFound},
+				expectedSwept:    true,
+				expectedRootRead: true,
+			},
+			{
+				name:             "unrolled batch with unroll check",
+				withCheckUnroll:  true,
+				fixture:          testSweptBatchFixture{spent: true, rootTx: "rootTx"},
+				expectedSwept:    false,
+				expectedRootRead: true,
+			},
+			{
+				name:             "unspent batch output with unroll check",
+				withCheckUnroll:  true,
+				fixture:          testSweptBatchFixture{rootTxErr: errRootNotFound},
+				expectedSwept:    false,
+				expectedRootRead: false,
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				batch := testSweptBatchService(t, tt.fixture)
+
+				isSwept, err := batch.svc.isBatchSwept(
+					t.Context(), batch.round.CommitmentTxid, tt.withCheckUnroll,
+				)
+				require.NoError(t, err)
+				require.Equal(t, tt.expectedSwept, isSwept)
+				if tt.expectedRootRead {
+					batch.rounds.AssertCalled(
+						t, "GetRoundVtxoTree", mock.Anything, batch.round.CommitmentTxid,
+					)
+					batch.wallet.AssertCalled(t, "GetTransaction", mock.Anything, batch.rootTxid)
+					return
+				}
+				batch.rounds.AssertNotCalled(t, "GetRoundVtxoTree", mock.Anything, mock.Anything)
+				batch.wallet.AssertNotCalled(t, "GetTransaction", mock.Anything, mock.Anything)
+			})
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		tests := []struct {
+			name            string
+			withCheckUnroll bool
+			fixture         testSweptBatchFixture
+		}{
+			{
+				name:    "failed to get batch output status without unroll check",
+				fixture: testSweptBatchFixture{spent: true, spentErr: errUnavailable},
+			},
+			{
+				name:            "failed to get batch output status with unroll check",
+				withCheckUnroll: true,
+				fixture:         testSweptBatchFixture{spent: true, spentErr: errUnavailable},
+			},
+			{
+				name:            "failed to get vtxo tree with unroll check",
+				withCheckUnroll: true,
+				fixture:         testSweptBatchFixture{spent: true, vtxoTreeErr: errUnavailable},
+			},
+			{
+				name:            "failed to get root tx with unroll check",
+				withCheckUnroll: true,
+				fixture:         testSweptBatchFixture{spent: true, rootTxErr: errUnavailable},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				batch := testSweptBatchService(t, tt.fixture)
+
+				isSwept, err := batch.svc.isBatchSwept(
+					t.Context(), batch.round.CommitmentTxid, tt.withCheckUnroll,
+				)
+				require.ErrorIs(t, err, errUnavailable)
+				require.False(t, isSwept)
+			})
+		}
+	})
+}
+
 func parseTime(t *testing.T, value string) time.Time {
 	tm, err := time.ParseInLocation(time.DateTime, value, time.UTC)
 	require.NoError(t, err)
@@ -1120,4 +1312,83 @@ func (s testIntentStore) ViewAll(
 	context.Context, []string,
 ) ([]ports.TimedIntent, error) {
 	return s.intents, s.err
+}
+
+// testSweptBatchFixture describes what the round repo and the wallet return for
+// the batch of testSweepableRound.
+type testSweptBatchFixture struct {
+	expiredErr  error
+	spent       bool
+	spentErr    error
+	vtxoTreeErr error
+	rootTx      string
+	rootTxErr   error
+	sweepErr    error
+}
+
+type testSweptBatch struct {
+	svc      *service
+	rounds   *mockedRoundRepo
+	wallet   *mockedWallet
+	round    domain.Round
+	rootTxid string
+}
+
+func testSweptBatchService(t *testing.T, fixture testSweptBatchFixture) testSweptBatch {
+	t.Helper()
+	round, rootTxid := testSweepableRound(t)
+	batchOutput := domain.Outpoint{Txid: round.CommitmentTxid, VOut: 0}
+
+	rounds := &mockedRoundRepo{}
+	if fixture.expiredErr != nil {
+		rounds.On("GetExpiredButNotSweptRounds", mock.Anything).Return(nil, fixture.expiredErr)
+	} else {
+		rounds.On("GetExpiredButNotSweptRounds", mock.Anything).
+			Return([]string{round.CommitmentTxid}, nil)
+	}
+	if fixture.vtxoTreeErr != nil {
+		rounds.On("GetRoundVtxoTree", mock.Anything, round.CommitmentTxid).
+			Return(nil, fixture.vtxoTreeErr)
+	} else {
+		rounds.On("GetRoundVtxoTree", mock.Anything, round.CommitmentTxid).
+			Return(round.VtxoTree, nil)
+	}
+	rounds.On("SweepRounds", mock.Anything, mock.Anything).Return(fixture.sweepErr)
+	rm := &mockedRepoManager{}
+	rm.On("Rounds").Return(rounds)
+	wallet := &mockedWallet{}
+	wallet.On("GetOutpointStatus", mock.Anything, batchOutput).
+		Return(fixture.spent, fixture.spentErr)
+	wallet.On("GetTransaction", mock.Anything, rootTxid).
+		Return(fixture.rootTx, fixture.rootTxErr)
+
+	return testSweptBatch{
+		svc:      &service{repoManager: rm, wallet: wallet},
+		rounds:   rounds,
+		wallet:   wallet,
+		round:    round,
+		rootTxid: rootTxid,
+	}
+}
+
+// testSweepableRound returns a round whose vtxo tree is a single tx with a vtxo
+// and an anchor output, and the txid of that tx.
+func testSweepableRound(t *testing.T) (domain.Round, string) {
+	t.Helper()
+	ptx, err := psbt.New(
+		[]*wire.OutPoint{{Index: 0}},
+		[]*wire.TxOut{{Value: 1000, PkScript: testP2TRScript(t)}, txutils.AnchorOutput()},
+		3, 0,
+		[]uint32{wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+	rootTx, err := ptx.B64Encode()
+	require.NoError(t, err)
+	rootTxid := ptx.UnsignedTx.TxID()
+
+	return domain.Round{
+		Id:             "round",
+		CommitmentTxid: "commitment",
+		VtxoTree:       tree.FlatTxTree{{Txid: rootTxid, Tx: rootTx}},
+	}, rootTxid
 }

@@ -157,6 +157,20 @@ AND EXISTS (
     WHERE tree_tx.round_id = r.id AND tree_tx.type = 'tree'
 );
 
+-- name: SelectExpiredButNotSweptRounds :many
+SELECT r.txid FROM round_with_commitment_tx_vw r
+WHERE r.swept = false
+AND EXISTS (
+    SELECT 1 FROM vtxo_vw v
+    WHERE v.commitment_txid = r.txid
+      AND v.swept = false AND v.spent = false AND v.unrolled = false
+      AND v.expires_at > 1 AND v.expires_at < @now
+)
+AND NOT EXISTS (
+    SELECT 1 FROM vtxo_vw v
+    WHERE v.commitment_txid = r.txid AND v.unrolled = true
+);
+
 -- name: SelectExpiredRounds :many
 SELECT r.id, r.txid, CAST(r.ending_timestamp + r.vtxo_tree_expiration AS BIGINT) AS expired_at
 FROM round_with_commitment_tx_vw r
@@ -257,6 +271,11 @@ WHERE r.txid = @txid;
 -- name: SelectSweptRoundsConnectorAddress :many
 SELECT round.connector_address FROM round
 WHERE round.swept = true AND round.failed = false AND round.ended = true AND round.connector_address <> '';
+
+-- name: SweepRounds :exec
+UPDATE round SET swept = true WHERE id IN (
+  SELECT id FROM round_with_commitment_tx_vw WHERE txid IN (sqlc.slice('txids'))
+);
 
 -- name: SelectTxs :many
 SELECT tx.txid, tx.tx AS data FROM tx WHERE tx.txid IN (sqlc.slice('ids1'))

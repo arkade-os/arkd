@@ -1573,7 +1573,7 @@ func (m *mockRepoManagerForIndexer) Assets() domain.AssetRepository {
 func (m *mockRepoManagerForIndexer) Settings() domain.SettingsRepository {
 	return nil
 }
-func (m *mockRepoManagerForIndexer) Open() error {
+func (m *mockRepoManagerForIndexer) Reconcile() error {
 	return nil
 }
 func (m *mockRepoManagerForIndexer) RegisterBatchUpdateHandler(func(data domain.Round))            {}

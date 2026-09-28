@@ -141,8 +141,8 @@ func TestUpdateProjectionsAfterOffchainTxEvents(t *testing.T) {
 }
 
 // newProjectionTestService opens a service over dir the way the application
-// does, NewService then Open, so a test can close it and reopen the same stores
-// to exercise what Open does at startup.
+// does, NewService then Reconcile, so a test can close it and reopen the same stores
+// to exercise what Reconcile does at startup.
 func newProjectionTestService(t *testing.T, dir string) ports.RepoManager {
 	t.Helper()
 	svc, err := NewService(ServiceConfig{
@@ -155,7 +155,7 @@ func newProjectionTestService(t *testing.T, dir string) ports.RepoManager {
 	require.NoError(t, err)
 	require.NotNil(t, svc)
 	t.Cleanup(svc.Close)
-	require.NoError(t, svc.Open())
+	require.NoError(t, svc.Reconcile())
 	return svc
 }
 

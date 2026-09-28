@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOpen(t *testing.T) {
+func TestReconcile(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("valid", func(t *testing.T) {
@@ -56,12 +56,12 @@ func TestOpen(t *testing.T) {
 				}
 				requireSwept(t, svc, outpoints, tt.vtxosSwept)
 
-				require.NoError(t, svc.Open())
+				require.NoError(t, svc.Reconcile())
 				requireSwept(t, svc, outpoints, tt.expectedSwept)
 
-				// The swept insert ignores duplicates, so opening again over a
+				// The swept insert ignores duplicates, so reconciling again over a
 				// reconciled store must neither fail nor change anything.
-				require.NoError(t, svc.Open())
+				require.NoError(t, svc.Reconcile())
 				requireSwept(t, svc, outpoints, tt.expectedSwept)
 			})
 		}
@@ -85,7 +85,7 @@ func TestOpen(t *testing.T) {
 				svc := newProjectionTestService(t, t.TempDir()).(*service)
 				tt.setup(svc)
 
-				require.ErrorContains(t, svc.Open(), tt.errContains)
+				require.ErrorContains(t, svc.Reconcile(), tt.errContains)
 			})
 		}
 	})
@@ -231,26 +231,26 @@ func TestClose(t *testing.T) {
 			},
 		},
 		{
-			name:  "inflight open",
+			name:  "inflight reconcile",
 			calls: 1,
 			hold: func(t *testing.T, svc *service) func() {
-				// A swept batch with unmarked vtxos takes Open to the swept insert,
+				// A swept batch with unmarked vtxos takes Reconcile to the swept insert,
 				// where the blocking store parks it.
 				seedBatch(t, svc, true)
 				sweep := newBlockingMarkerStore(svc.markerStore)
 				svc.markerStore = sweep
 
-				opened := make(chan error, 1)
-				go func() { opened <- svc.Open() }()
+				reconciled := make(chan error, 1)
+				go func() { reconciled <- svc.Reconcile() }()
 
 				select {
 				case <-sweep.entered:
 				case <-time.After(5 * time.Second):
-					require.FailNow(t, "Open never reached the swept insert")
+					require.FailNow(t, "Reconcile never reached the swept insert")
 				}
 				return func() {
 					close(sweep.release)
-					require.NoError(t, <-opened)
+					require.NoError(t, <-reconciled)
 					require.NoError(t, sweep.err, "the swept insert must land on an open store")
 				}
 			},
@@ -292,7 +292,7 @@ func TestClose(t *testing.T) {
 			}
 
 			// The stores are closed, so the reconciliation can't read them.
-			require.Error(t, svc.Open())
+			require.Error(t, svc.Reconcile())
 		})
 	}
 }

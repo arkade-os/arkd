@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/sqlite/sqlc/queries"
@@ -421,6 +422,16 @@ func (r *roundRepository) GetSweptRounds(ctx context.Context) ([]string, error) 
 	return rounds, err
 }
 
+func (r *roundRepository) GetExpiredButNotSweptRounds(ctx context.Context) ([]string, error) {
+	var rounds []string
+	err := withReadQuerier(ctx, r.db, func(q *queries.Queries) error {
+		var err error
+		rounds, err = q.SelectExpiredButNotSweptRounds(ctx, time.Now().Unix())
+		return err
+	})
+	return rounds, err
+}
+
 func (r *roundRepository) GetExpiredRounds(
 	ctx context.Context, expiredBefore int64,
 ) ([]domain.ExpiredRound, error) {
@@ -668,6 +679,12 @@ func (r *roundRepository) GetScheduledSweeps(
 		})
 	}
 	return sweeps, nil
+}
+
+func (r *roundRepository) SweepRounds(ctx context.Context, commitmentTxids []string) error {
+	return withWriteQuerier(ctx, r.db, func(q *queries.Queries) error {
+		return q.SweepRounds(ctx, commitmentTxids)
+	})
 }
 
 func rowToReceiver(row queries.IntentWithReceiversVw) domain.Receiver {

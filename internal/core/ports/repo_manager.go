@@ -17,6 +17,6 @@ type RepoManager interface {
 	RegisterOffchainTxUpdateHandler(handler func(data domain.OffchainTx))
 	RegisterSettingsUpdateHandler(handler func(data domain.Settings, changelog []string))
 
-	Open() error
+	Reconcile() error
 	Close()
 }

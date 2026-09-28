@@ -42,6 +42,32 @@ func (m *mockedRoundRepo) GetSweepableRounds(ctx context.Context) ([]string, err
 	return nil, args.Error(1)
 }
 
+func (m *mockedRoundRepo) GetExpiredButNotSweptRounds(ctx context.Context) ([]string, error) {
+	args := m.Called(ctx)
+	if v := args.Get(0); v != nil {
+		return v.([]string), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+func (m *mockedRoundRepo) GetRoundWithCommitmentTxid(
+	ctx context.Context, txid string,
+) (*domain.Round, error) {
+	args := m.Called(ctx, txid)
+	if v := args.Get(0); v != nil {
+		return v.(*domain.Round), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+func (m *mockedRoundRepo) AddOrUpdateRound(ctx context.Context, round domain.Round) error {
+	return m.Called(ctx, round).Error(0)
+}
+
+func (m *mockedRoundRepo) SweepRounds(ctx context.Context, commitmentTxids []string) error {
+	return m.Called(ctx, commitmentTxids).Error(0)
+}
+
 type mockedVtxoRepo struct {
 	mock.Mock
 	domain.VtxoRepository // unimplemented methods panic on call
@@ -207,6 +233,13 @@ func (m *mockedWallet) IsTransactionConfirmed(
 		return args.Bool(0), v.(*ports.BlockTimestamp), args.Error(2)
 	}
 	return args.Bool(0), nil, args.Error(2)
+}
+
+func (m *mockedWallet) GetOutpointStatus(
+	ctx context.Context, outpoint domain.Outpoint,
+) (bool, error) {
+	args := m.Called(ctx, outpoint)
+	return args.Bool(0), args.Error(1)
 }
 
 func (m *mockedWallet) GetCurrentBlockTime(ctx context.Context) (*ports.BlockTimestamp, error) {

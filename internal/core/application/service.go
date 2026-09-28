@@ -177,9 +177,10 @@ func (s *service) Start() error {
 		return fmt.Errorf("service already started")
 	}
 
-	// Reconcile the projections before anything below can produce an event.
-	if err := s.repoManager.Open(); err != nil {
-		return fmt.Errorf("failed to open repositories: %w", err)
+	s.markSweptBatches(s.ctx)
+
+	if err := s.repoManager.Reconcile(); err != nil {
+		return fmt.Errorf("failed to reconcile repositories: %w", err)
 	}
 
 	settings, err := s.cache.Settings().Get(s.ctx)
@@ -4411,6 +4412,85 @@ func (s *service) restoreWatchingVtxos() error {
 		len(scripts), len(commitmentTxIds),
 	)
 	return nil
+}
+
+// markSweptBatches marks as swept the expired batches whose output was swept
+// onchain but that were never recorded as such. It runs before
+// repoManager.Reconcile, which then marks the vtxos of these batches as swept.
+// Failures are logged and don't stop the node from starting.
+func (s *service) markSweptBatches(ctx context.Context) {
+	commitmentTxids, err := s.repoManager.Rounds().GetExpiredButNotSweptRounds(ctx)
+	if err != nil {
+		log.WithError(err).Warn("failed to get expired but not swept batches")
+		return
+	}
+
+	batchesToSweep := make([]string, 0, len(commitmentTxids))
+	for _, txid := range commitmentTxids {
+		// For now, we assume we can trust the db about the unrolled state of vtxos, so we skip
+		// checking in isBatchSwept whether the root of the tree is onchain to spare a call to the
+		// onchain explorer.
+		withCheckUnroll := false
+		isSwept, err := s.isBatchSwept(ctx, txid, withCheckUnroll)
+		if err != nil {
+			log.WithError(err).Warnf("failed to check if batch %s is swept", txid)
+			continue
+		}
+		if !isSwept {
+			continue
+		}
+
+		batchesToSweep = append(batchesToSweep, txid)
+	}
+
+	if len(batchesToSweep) > 0 {
+		if err := s.repoManager.Rounds().SweepRounds(ctx, batchesToSweep); err != nil {
+			log.WithError(err).Warnf(
+				"failed to mark %d/%d expired batches as swept",
+				len(batchesToSweep), len(commitmentTxids),
+			)
+			return
+		}
+		log.Debugf(
+			"marked %d/%d expired batches as swept", len(batchesToSweep), len(commitmentTxids),
+		)
+	}
+}
+
+// isBatchSwept takes an expired batch (commitment txid) and returns wheter it can be marked swept.
+// withCheckUnroll should be set to true only if the assumption that the given batch doesn't
+// include any unrolled vtxos can't be trusted. In that case, we check if the root of the tree
+// is in mempool or blockchain to determine if the spent batch output was unrolled or swept.
+func (s *service) isBatchSwept(
+	ctx context.Context, commitmentTxid string, withCheckUnroll bool,
+) (bool, error) {
+	spent, err := s.wallet.GetOutpointStatus(ctx, domain.Outpoint{Txid: commitmentTxid, VOut: 0})
+	if err != nil || !spent {
+		return false, err
+	}
+
+	if !withCheckUnroll {
+		return spent, nil
+	}
+
+	// Checking the root of the tree is onchain is enough to understand if the batch was unrolled
+	// and return a nil round, or swept and return the actual one.
+	vtxoTree, err := s.repoManager.Rounds().GetRoundVtxoTree(ctx, commitmentTxid)
+	if err != nil {
+		return false, err
+	}
+
+	tx, err := s.wallet.GetTransaction(ctx, vtxoTree.RootTxid())
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return true, nil
+		}
+		return false, err
+	}
+	if len(tx) > 0 {
+		return false, nil
+	}
+	return true, nil
 }
 
 func (s *service) stopWatchingVtxos(tapkeys []string) {
