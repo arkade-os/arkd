@@ -499,9 +499,9 @@ func (s *service) SubmitOffchainTx(
 		sumOfOutputs += int64(output.Value)
 	}
 
-	if sumOfInputs != sumOfOutputs {
+	if sumOfOutputs > sumOfInputs {
 		return nil, errors.INVALID_ARK_PSBT.New(
-			"sum(inputs) != sum(outputs) (%d != %d)",
+			"sum(inputs) < sum(outputs) (%d < %d)",
 			sumOfInputs,
 			sumOfOutputs,
 		)
@@ -1076,7 +1076,7 @@ func (s *service) SubmitOffchainTx(
 	var rebuiltArkTx *psbt.Packet
 	var rebuiltCheckpointTxs []*psbt.Packet
 	// recompute all txs (checkpoint txs + ark tx)
-	rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildTxs(
+	rebuiltArkTx, rebuiltCheckpointTxs, err = offchain.BuildTxsWithFee(
 		ins, outputs, checkpointTapscript,
 	)
 

@@ -31,6 +31,19 @@ type VtxoInput struct {
 func BuildTxs(
 	vtxos []VtxoInput, outputs []*wire.TxOut, signerUnrollScript []byte,
 ) (*psbt.Packet, []*psbt.Packet, error) {
+	return buildTxs(vtxos, outputs, signerUnrollScript, false)
+}
+
+// BuildTxsWithFee is BuildTxs, but inputs may exceed outputs; the difference is the fee.
+func BuildTxsWithFee(
+	vtxos []VtxoInput, outputs []*wire.TxOut, signerUnrollScript []byte,
+) (*psbt.Packet, []*psbt.Packet, error) {
+	return buildTxs(vtxos, outputs, signerUnrollScript, true)
+}
+
+func buildTxs(
+	vtxos []VtxoInput, outputs []*wire.TxOut, signerUnrollScript []byte, allowFee bool,
+) (*psbt.Packet, []*psbt.Packet, error) {
 	checkpointInputs := make([]VtxoInput, 0, len(vtxos))
 	checkpointTxs := make([]*psbt.Packet, 0, len(vtxos))
 	inputAmount := int64(0)
@@ -60,7 +73,10 @@ func BuildTxs(
 		outputAmount += output.Value
 	}
 
-	if inputAmount != outputAmount {
+	if outputAmount > inputAmount {
+		return nil, nil, fmt.Errorf("output amount exceeds input amount")
+	}
+	if !allowFee && inputAmount != outputAmount {
 		return nil, nil, fmt.Errorf("input amount is not equal to output amount")
 	}
 
