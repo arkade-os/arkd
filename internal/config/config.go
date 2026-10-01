@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,11 @@ import (
 
 const (
 	bitcoinBlockWeight = 4_000_000
+)
+
+const (
+	redactedValue    = "••••••"
+	redactedPassword = "redacted"
 )
 
 var (
@@ -169,16 +175,62 @@ type Config struct {
 func (c *Config) String() string {
 	clone := *c
 	if clone.UnlockerPassword != "" {
-		clone.UnlockerPassword = "••••••"
+		clone.UnlockerPassword = redactedValue
 	}
 	if clone.IndexerSigningKey != "" {
-		clone.IndexerSigningKey = "••••••"
+		clone.IndexerSigningKey = redactedValue
 	}
+	clone.DbUrl = redactDSN(clone.DbUrl)
+	clone.EventDbUrl = redactDSN(clone.EventDbUrl)
+	clone.RedisUrl = redactDSN(clone.RedisUrl)
+
 	json, err := json.MarshalIndent(clone, "", "  ")
 	if err != nil {
 		return fmt.Sprintf("error while marshalling config JSON: %s", err)
 	}
 	return string(json)
+}
+
+func redactDSN(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" {
+		return redactedValue
+	}
+
+	_, userRedacted := u.User.Password()
+	if userRedacted {
+		u.User = url.UserPassword(u.User.Username(), redactedPassword)
+	}
+
+	query := u.Query()
+	queryRedacted := false
+	for key, values := range query {
+		if !isSecretQueryParam(key) {
+			continue
+		}
+		for i := range values {
+			values[i] = redactedPassword
+		}
+		queryRedacted = true
+	}
+	if queryRedacted {
+		u.RawQuery = query.Encode()
+	}
+
+	if !userRedacted && !queryRedacted {
+		return raw
+	}
+	return u.String()
+}
+
+func isSecretQueryParam(key string) bool {
+	key = strings.ToLower(key)
+	return strings.Contains(key, "password") ||
+		strings.Contains(key, "secret") ||
+		strings.Contains(key, "token")
 }
 
 var (

@@ -8,44 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func delay(v uint32) arklib.RelativeLocktime {
-	lt, _ := arklib.ParseRelativeLocktime(v)
-	return lt
-}
-
-// validConfig returns a config that passes every early Validate() check and
-// produces valid settings. Tests mutate a copy to exercise a single failure.
-func validConfig() Config {
-	return Config{
-		EventDbType:                   "badger",
-		DbType:                        "sqlite",
-		TxBuilderType:                 "covenantless",
-		IndexerExposure:               "public",
-		MaxConcurrentStreams:          1,
-		SessionDuration:               30,
-		UnrolledVtxoMinExpiryMargin:   30,
-		BanThreshold:                  0,
-		BanDuration:                   60,
-		SettlementMinExpiryGap:        60,
-		VtxoNoCsvValidationCutoffDate: 0,
-		RoundMinParticipantsCount:     1,
-		RoundMaxParticipantsCount:     10,
-		VtxoMinAmount:                 1,
-		VtxoMaxAmount:                 -1,
-		UtxoMinAmount:                 1,
-		UtxoMaxAmount:                 -1,
-		UnilateralExitDelay:           delay(512),
-		PublicUnilateralExitDelay:     delay(512),
-		CheckpointExitDelay:           delay(1024),
-		BoardingExitDelay:             delay(1536),
-		VtxoTreeExpiry:                delay(1024),
-		MaxTxWeight:                   400000,
-		MaxOpReturnOutputs:            3,
-		AssetTxMaxWeightRatio:         0.5,
-		NoteUriPrefix:                 "",
-	}
-}
-
 func TestSupportedTypeSupports(t *testing.T) {
 	st := supportedType{"sqlite": {}, "postgres": {}}
 
@@ -70,7 +32,7 @@ func TestSupportedTypeSupports(t *testing.T) {
 func TestConfigGetSettings(t *testing.T) {
 	t.Run("valid", func(t *testing.T) {
 		t.Run("maps config into domain settings", func(t *testing.T) {
-			c := validConfig()
+			c := testConfig()
 
 			settings, err := c.getSettings()
 			require.NoError(t, err)
@@ -85,7 +47,7 @@ func TestConfigGetSettings(t *testing.T) {
 		})
 
 		t.Run("result is memoized", func(t *testing.T) {
-			c := validConfig()
+			c := testConfig()
 
 			first, err := c.getSettings()
 			require.NoError(t, err)
@@ -138,7 +100,7 @@ func TestConfigGetSettings(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				c := validConfig()
+				c := testConfig()
 				tt.mutate(&c)
 
 				settings, err := c.getSettings()
@@ -220,7 +182,7 @@ func TestConfigValidateEarlyChecks(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				c := validConfig()
+				c := testConfig()
 				tt.mutate(&c)
 				require.ErrorContains(t, c.Validate(), tt.errContains)
 			})
@@ -228,45 +190,163 @@ func TestConfigValidateEarlyChecks(t *testing.T) {
 	})
 }
 
-func TestConfigStringRedactsSecrets(t *testing.T) {
-	tests := []struct {
-		name     string
-		mutate   func(c *Config)
-		value    string
-		redacted bool
-	}{
-		{
-			"unlocker password is redacted",
-			func(c *Config) { c.UnlockerPassword = "super-secret-password" },
-			"super-secret-password",
-			true,
-		},
-		{
-			"indexer signing key is redacted",
-			func(c *Config) { c.IndexerSigningKey = "deadbeefsigningkey" },
-			"deadbeefsigningkey",
-			true,
-		},
-		{
-			"non-sensitive field is preserved",
-			func(c *Config) { c.WalletAddr = "localhost:6060" },
-			"localhost:6060",
-			false,
-		},
-	}
+func TestConfigString(t *testing.T) {
+	t.Run("redacted", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			mutate  func(c *Config)
+			secrets []string
+			kept    []string
+		}{
+			{
+				name:    "unlocker password",
+				mutate:  func(c *Config) { c.UnlockerPassword = "super-secret-password" },
+				secrets: []string{"super-secret-password"},
+				kept:    []string{redactedValue},
+			},
+			{
+				name:    "indexer signing key",
+				mutate:  func(c *Config) { c.IndexerSigningKey = "deadbeefsigningkey" },
+				secrets: []string{"deadbeefsigningkey"},
+				kept:    []string{redactedValue},
+			},
+			{
+				name: "url credentials",
+				mutate: func(c *Config) {
+					c.DbUrl = "postgres://arkd:sup3rs3cr3t@db.internal:5432/projection?sslmode=verify-full"
+					c.EventDbUrl = "postgres://arkd:ev3nts3cr3t@db.internal:5432/event?sslmode=verify-full"
+					c.RedisUrl = "redis://default:r3diss3cr3t@cache.internal:6379/0"
+				},
+				secrets: []string{"sup3rs3cr3t", "ev3nts3cr3t", "r3diss3cr3t"},
+				// Non-sensitive parts stay readable so the logged config is still useful.
+				kept: []string{
+					"arkd:redacted@db.internal:5432", "projection", "sslmode=verify-full",
+					"default:redacted@cache.internal:6379",
+				},
+			},
+			{
+				name: "url secret query params",
+				mutate: func(c *Config) {
+					c.DbUrl = "postgres://arkd@db.internal:5432/projection?password=qp4rams3cr3t&sslmode=verify-full"
+					c.EventDbUrl = "postgres://arkd@db.internal:5432/event?sslpassword=k3ys3cr3t"
+				},
+				secrets: []string{"qp4rams3cr3t", "k3ys3cr3t"},
+				kept:    []string{"db.internal:5432", "projection", "sslmode=verify-full"},
+			},
+			{
+				name:    "keyword dsn",
+				mutate:  func(c *Config) { c.DbUrl = "host=db.internal user=arkd password=kw0rds3cr3t dbname=projection" },
+				secrets: []string{"host=db.internal user=arkd password=kw0rds3cr3t dbname=projection"},
+				kept:    []string{`"DbUrl": "` + redactedValue + `"`},
+			},
+			{
+				name:    "dsn with missing scheme",
+				mutate:  func(c *Config) { c.DbUrl = "://broken" },
+				secrets: []string{"://broken"},
+				kept:    []string{`"DbUrl": "` + redactedValue + `"`},
+			},
+			{
+				name:    "dsn with invalid percent escape",
+				mutate:  func(c *Config) { c.DbUrl = "%%%" },
+				secrets: []string{"%%%"},
+				kept:    []string{`"DbUrl": "` + redactedValue + `"`},
+			},
+			{
+				name:    "dsn with unterminated ipv6 host",
+				mutate:  func(c *Config) { c.DbUrl = "http://[::1" },
+				secrets: []string{"http://[::1"},
+				kept:    []string{`"DbUrl": "` + redactedValue + `"`},
+			},
+			{
+				name:    "dsn with space in password",
+				mutate:  func(c *Config) { c.DbUrl = "postgres://arkd:pa ss@db.internal:5432/projection" },
+				secrets: []string{"postgres://arkd:pa ss@db.internal:5432/projection"},
+				kept:    []string{`"DbUrl": "` + redactedValue + `"`},
+			},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := validConfig()
-			tt.mutate(&c)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				c := testConfig()
+				tt.mutate(&c)
 
-			out := c.String()
-			if tt.redacted {
-				require.NotContains(t, out, tt.value)
-				require.Contains(t, out, "••••••")
-			} else {
-				require.Contains(t, out, tt.value)
-			}
-		})
+				out := c.String()
+				for _, secret := range tt.secrets {
+					require.NotContains(t, out, secret, "secret leaked into Config.String()")
+				}
+				for _, kept := range tt.kept {
+					require.Contains(t, out, kept)
+				}
+			})
+		}
+	})
+
+	t.Run("not redacted", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			mutate func(c *Config)
+			kept   []string
+		}{
+			{
+				name:   "non-sensitive field",
+				mutate: func(c *Config) { c.WalletAddr = "localhost:6060" },
+				kept:   []string{"localhost:6060"},
+			},
+			{
+				name:   "passwordless dsn",
+				mutate: func(c *Config) { c.DbUrl = "postgres://arkd@db.internal:5432/projection?sslmode=verify-full" },
+				kept:   []string{"postgres://arkd@db.internal:5432/projection?sslmode=verify-full"},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				c := testConfig()
+				tt.mutate(&c)
+
+				out := c.String()
+				for _, kept := range tt.kept {
+					require.Contains(t, out, kept)
+				}
+			})
+		}
+	})
+}
+
+// testConfig returns a config that passes every early Validate() check and
+// produces valid settings. Tests mutate a copy to exercise a single failure.
+func testConfig() Config {
+	return Config{
+		EventDbType:                   "badger",
+		DbType:                        "sqlite",
+		TxBuilderType:                 "covenantless",
+		IndexerExposure:               "public",
+		MaxConcurrentStreams:          1,
+		SessionDuration:               30,
+		UnrolledVtxoMinExpiryMargin:   30,
+		BanThreshold:                  0,
+		BanDuration:                   60,
+		SettlementMinExpiryGap:        60,
+		VtxoNoCsvValidationCutoffDate: 0,
+		RoundMinParticipantsCount:     1,
+		RoundMaxParticipantsCount:     10,
+		VtxoMinAmount:                 1,
+		VtxoMaxAmount:                 -1,
+		UtxoMinAmount:                 1,
+		UtxoMaxAmount:                 -1,
+		UnilateralExitDelay:           delay(512),
+		PublicUnilateralExitDelay:     delay(512),
+		CheckpointExitDelay:           delay(1024),
+		BoardingExitDelay:             delay(1536),
+		VtxoTreeExpiry:                delay(1024),
+		MaxTxWeight:                   400000,
+		MaxOpReturnOutputs:            3,
+		AssetTxMaxWeightRatio:         0.5,
+		NoteUriPrefix:                 "",
 	}
+}
+
+func delay(v uint32) arklib.RelativeLocktime {
+	lt, _ := arklib.ParseRelativeLocktime(v)
+	return lt
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -97,18 +98,72 @@ type Config struct {
 	OtelPushInterval      int64
 	PyroscopeServerURL    string
 
-	WalletSvc  application.WalletService
-	ScannerSvc application.BlockchainScanner
+	WalletSvc  application.WalletService     `json:"-"`
+	ScannerSvc application.BlockchainScanner `json:"-"`
 }
+
+const (
+	redactedValue    = "••••••"
+	redactedPassword = "redacted"
+)
 
 func (c *Config) String() string {
 	clone := *c
+	if clone.SignerKey != "" {
+		clone.SignerKey = redactedValue
+	}
+	if clone.DeprecatedSignerKeys != "" {
+		clone.DeprecatedSignerKeys = redactedValue
+	}
+	clone.NbxplorerURL = redactURLPassword(clone.NbxplorerURL)
 
 	json, err := json.MarshalIndent(clone, "", "  ")
 	if err != nil {
 		return fmt.Sprintf("error while marshalling config JSON: %s", err)
 	}
 	return string(json)
+}
+
+func redactURLPassword(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" {
+		return redactedValue
+	}
+
+	_, userRedacted := u.User.Password()
+	if userRedacted {
+		u.User = url.UserPassword(u.User.Username(), redactedPassword)
+	}
+
+	query := u.Query()
+	queryRedacted := false
+	for key, values := range query {
+		if !isSecretQueryParam(key) {
+			continue
+		}
+		for i := range values {
+			values[i] = redactedPassword
+		}
+		queryRedacted = true
+	}
+	if queryRedacted {
+		u.RawQuery = query.Encode()
+	}
+
+	if !userRedacted && !queryRedacted {
+		return raw
+	}
+	return u.String()
+}
+
+func isSecretQueryParam(key string) bool {
+	key = strings.ToLower(key)
+	return strings.Contains(key, "password") ||
+		strings.Contains(key, "secret") ||
+		strings.Contains(key, "token")
 }
 
 func (c *Config) initServices() error {
@@ -226,7 +281,7 @@ func parseDeprecatedSignerKeys(raw string) ([]wallet.DeprecatedSignerKey, error)
 			return nil, fmt.Errorf("invalid signer key format, must be hex: %s", keyPart)
 		}
 		if len(buf) != 32 {
-			return nil, fmt.Errorf("invalid signer key format") 
+			return nil, fmt.Errorf("invalid signer key format")
 		}
 		key, _ := btcec.PrivKeyFromBytes(buf)
 
@@ -240,7 +295,7 @@ func parseDeprecatedSignerKeys(raw string) ([]wallet.DeprecatedSignerKey, error)
 			}
 			cutoffDate = cutoff
 		}
-		
+
 		keys = append(keys, wallet.DeprecatedSignerKey{Key: key, CutoffDate: cutoffDate})
 	}
 	return keys, nil
