@@ -1152,6 +1152,7 @@ type roundSettings struct {
 type adminSettings struct {
 	RoundMinParticipantsCount string `json:"roundMinParticipantsCount"`
 	SessionDuration           string `json:"sessionDuration"`
+	BanThreshold              string `json:"banThreshold"`
 }
 
 type adminSettingsResponse struct {
@@ -1204,6 +1205,59 @@ func updateRoundMinParticipants(count int64) error {
 	url := fmt.Sprintf("%s/v1/admin/settings", adminUrl)
 	if err := post(adminHttpClient, url, body, "updateSettings"); err != nil {
 		return fmt.Errorf("failed to update round min participants count: %s", err)
+	}
+
+	return nil
+}
+
+// getBanThreshold returns the server's current ban threshold, for tests that
+// raise it and restore it afterwards.
+func getBanThreshold() (int64, error) {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	url := fmt.Sprintf("%s/v1/admin/settings", adminUrl)
+	resp, err := get[adminSettingsResponse](adminHttpClient, url, "settings")
+	if err != nil {
+		return 0, fmt.Errorf("failed to get settings: %w", err)
+	}
+
+	threshold, err := parseSettingsInt(resp.Settings.BanThreshold)
+	if err != nil {
+		return 0, fmt.Errorf("invalid ban threshold: %w", err)
+	}
+
+	return threshold, nil
+}
+
+func updateBanThreshold(threshold int64) error {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	body := fmt.Sprintf(`{"settings": {"banThreshold": "%d"}}`, threshold)
+
+	url := fmt.Sprintf("%s/v1/admin/settings", adminUrl)
+	if err := post(adminHttpClient, url, body, "updateSettings"); err != nil {
+		return fmt.Errorf("failed to update ban threshold: %s", err)
+	}
+
+	return nil
+}
+
+// banScript bans a script through the BanScript admin RPC, creating the same
+// manual-ban conviction the admin API creates for operators.
+func banScript(script, reason string) error {
+	adminHttpClient := &http.Client{
+		Timeout: 15 * time.Second,
+	}
+
+	body := fmt.Sprintf(`{"script": "%s", "reason": "%s"}`, script, reason)
+
+	url := fmt.Sprintf("%s/v1/admin/conviction/ban", adminUrl)
+	if err := post(adminHttpClient, url, body, "ban script"); err != nil {
+		return fmt.Errorf("failed to ban script %s: %s", script, err)
 	}
 
 	return nil

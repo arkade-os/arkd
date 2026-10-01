@@ -5916,6 +5916,35 @@ func TestBan(t *testing.T) {
 		_, err = settleBounded(t.Context(), alice)
 		require.Error(t, err)
 	})
+
+	t.Run("manual ban bans without reaching the threshold", func(t *testing.T) {
+		alice := setupClientWallet(t)
+
+		// raise the ban threshold above the single conviction this test
+		// creates, so only a manual ban can ban the script on its own
+		threshold, err := getBanThreshold()
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, updateBanThreshold(threshold))
+		})
+		require.NoError(t, updateBanThreshold(3))
+
+		// faucet the alice's wallet
+		_, aliceAddr, _, err := alice.Receive(t.Context())
+		require.NoError(t, err)
+		aliceVtxo := faucetOffchain(t, alice, 0.001)
+
+		require.NoError(t, banScript(aliceVtxo.Script, "e2e manual ban"))
+
+		_, err = settleBounded(t.Context(), alice)
+		require.ErrorContains(t, err, "VTXO_BANNED")
+
+		_, err = sendOffChainBounded(t.Context(), alice, []clientlib.Receiver{{
+			Amount: aliceVtxo.Amount,
+			To:     aliceAddr.Address,
+		}})
+		require.ErrorContains(t, err, "VTXO_BANNED")
+	})
 }
 
 // TestUnauthenticatedCosignerSubmission checks that the operator refuses tree nonces and

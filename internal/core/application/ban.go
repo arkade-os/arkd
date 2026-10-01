@@ -32,9 +32,10 @@ type scriptBan struct {
 	convictions []string
 }
 
-// checkIfBanned returns every script of a request carrying at least banThreshold
-// active convictions, in the order the scripts first appear, so the first
-// outpoint of the first ban is the first banned input. It reads all scripts in
+// checkIfBanned returns every banned script of a request, in the order the
+// scripts first appear, so the first outpoint of the first ban is the first
+// banned input. A script is banned once it carries at least banThreshold active
+// convictions, or as soon as it carries a manual one. It reads all scripts in
 // one query, and each script once however many inputs resolve to it.
 func (s *service) checkIfBanned(
 	ctx context.Context, banThreshold uint64, candidates []banCandidate,
@@ -67,7 +68,7 @@ func (s *service) checkIfBanned(
 	banned := make([]scriptBan, 0)
 	for _, script := range scripts {
 		convictions := allConvictions[script]
-		if uint64(len(convictions)) < banThreshold {
+		if !hasManualBan(convictions) && uint64(len(convictions)) < banThreshold {
 			continue
 		}
 
@@ -86,22 +87,6 @@ func (s *service) checkIfBanned(
 	}
 
 	return banned, nil
-}
-
-func vtxoBannedError(bans []scriptBan) errors.Error {
-	scripts := make([]string, 0, len(bans))
-	outpoints := make([]string, 0, len(bans))
-	reasons := make([]string, 0, len(bans))
-	for _, ban := range bans {
-		scripts = append(scripts, ban.script)
-		outpoints = append(outpoints, ban.outpoints...)
-		reasons = append(reasons, fmt.Sprintf(
-			"script %s is banned by %d convictions: %s",
-			ban.script, len(ban.convictions), strings.Join(ban.convictions, ", "),
-		))
-	}
-	return errors.VTXO_BANNED.New("%s", strings.Join(reasons, "; ")).
-		WithMetadata(errors.VtxoBannedMetadata{VtxoOutpoints: outpoints, Scripts: scripts})
 }
 
 func (s *service) banCosignerInputs(
@@ -233,4 +218,33 @@ func (s *service) banForfeitCollectionTimeout(
 	if err := s.repoManager.Convictions().Add(ctx, convictions...); err != nil {
 		log.WithError(err).Warn("failed to ban vtxos")
 	}
+}
+
+// hasManualBan reports whether an operator banned the script through the
+// BanScript admin RPC. banThreshold asks for an offence to repeat before a
+// script is punished for it, which an operator ban has no reason to wait for,
+// so one is enough on its own.
+func hasManualBan(convictions []domain.ScriptConviction) bool {
+	for _, conviction := range convictions {
+		if conviction.GetCrime().Type == domain.CrimeTypeManualBan {
+			return true
+		}
+	}
+	return false
+}
+
+func vtxoBannedError(bans []scriptBan) errors.Error {
+	scripts := make([]string, 0, len(bans))
+	outpoints := make([]string, 0, len(bans))
+	reasons := make([]string, 0, len(bans))
+	for _, ban := range bans {
+		scripts = append(scripts, ban.script)
+		outpoints = append(outpoints, ban.outpoints...)
+		reasons = append(reasons, fmt.Sprintf(
+			"script %s is banned by %d convictions: %s",
+			ban.script, len(ban.convictions), strings.Join(ban.convictions, ", "),
+		))
+	}
+	return errors.VTXO_BANNED.New("%s", strings.Join(reasons, "; ")).
+		WithMetadata(errors.VtxoBannedMetadata{VtxoOutpoints: outpoints, Scripts: scripts})
 }
