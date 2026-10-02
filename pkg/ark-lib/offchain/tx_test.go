@@ -6,6 +6,7 @@ import (
 
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
@@ -141,6 +142,10 @@ func TestBuildTxsWithFee(t *testing.T) {
 				require.Equal(t, testInputAmount, checkpointTxs[0].UnsignedTx.TxOut[0].Value)
 				require.Equal(t, testInputAmount, arkTx.Inputs[0].WitnessUtxo.Value)
 				require.Equal(t, tt.outputAmount, arkTx.UnsignedTx.TxOut[0].Value)
+
+				anchor := arkTx.UnsignedTx.TxOut[1]
+				require.Equal(t, txutils.ANCHOR_PKSCRIPT, anchor.PkScript)
+				require.Equal(t, testInputAmount-tt.outputAmount, anchor.Value)
 			})
 		}
 	})

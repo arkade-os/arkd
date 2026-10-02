@@ -573,15 +573,23 @@ func TestBroadcast(t *testing.T) {
 
 		t.Run("package", func(t *testing.T) {
 			ts := newTestServer(t)
-			const expectedTxid = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-			ts.handle("/txs/package", ts.textResponse(http.StatusOK, expectedTxid))
+			// The package endpoint proxies bitcoind's submitpackage result.
+			ts.handle("/txs/package", ts.jsonResponse(http.StatusOK, map[string]any{
+				"package_msg": "success",
+				"tx-results": map[string]any{
+					"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": map[string]any{
+						"txid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+					},
+				},
+				"replaced-transactions": []string{},
+			}))
 
 			svc := makeExplorer(t, ts.URL)
 
 			txHex := validTxHex(t)
-			txid, err := svc.Broadcast(txHex, txHex)
+			res, err := svc.Broadcast(txHex, txHex)
 			require.NoError(t, err)
-			require.Equal(t, expectedTxid, txid)
+			require.Contains(t, res, `"package_msg":"success"`)
 		})
 	})
 
@@ -628,6 +636,42 @@ func TestBroadcast(t *testing.T) {
 			_, err := svc.Broadcast(txHex, txHex)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "failed to broadcast package")
+		})
+
+		t.Run("package rejected with 200", func(t *testing.T) {
+			ts := newTestServer(t)
+			// bitcoind returns 200 with a non-success package_msg when the
+			// package is rejected by mempool policy.
+			ts.handle("/txs/package", ts.jsonResponse(http.StatusOK, map[string]any{
+				"package_msg": "transaction failed",
+				"tx-results": map[string]any{
+					"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": map[string]any{
+						"txid":  "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+						"error": "min relay fee not met",
+					},
+				},
+				"replaced-transactions": []string{},
+			}))
+
+			svc := makeExplorer(t, ts.URL)
+
+			txHex := validTxHex(t)
+			_, err := svc.Broadcast(txHex, txHex)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "failed to broadcast package")
+			require.Contains(t, err.Error(), "transaction failed")
+		})
+
+		t.Run("package response not json", func(t *testing.T) {
+			ts := newTestServer(t)
+			ts.handle("/txs/package", ts.textResponse(http.StatusOK, "not json"))
+
+			svc := makeExplorer(t, ts.URL)
+
+			txHex := validTxHex(t)
+			_, err := svc.Broadcast(txHex, txHex)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "failed to parse broadcast package response")
 		})
 	})
 }

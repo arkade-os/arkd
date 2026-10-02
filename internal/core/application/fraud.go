@@ -425,7 +425,7 @@ func (s *service) bumpAnchorTx(
 		return "", err
 	}
 
-	ptx.Inputs[0].WitnessUtxo = txutils.AnchorOutput()
+	ptx.Inputs[0].WitnessUtxo = parent.TxOut[anchor.Index]
 
 	b64, err := ptx.B64Encode()
 	if err != nil {

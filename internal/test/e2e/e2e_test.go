@@ -429,6 +429,174 @@ func TestUnilateralExit(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, txid)
 	})
+
+	// In this test Alice sends to Bob offchain leaving a fee and Bob tries to unroll
+	// the received VTXO onchain
+	t.Run("preconfirmed vtxo with fee", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
+
+		vtxo := faucetOffchain(t, alice, 0.00005)
+		require.Equal(t, uint64(5000), vtxo.Amount)
+
+		bob := setupClientWallet(t)
+		bobOnchainAddr, bobOffchainAddr, _, err := bob.Receive(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, bobOnchainAddr)
+		require.NotEmpty(t, bobOffchainAddr)
+
+		_, offchainAddresses, _, _, err := alice.GetAddresses(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddresses)
+		offchainAddress := offchainAddresses[0]
+
+		serverParams, err := aliceClient.GetInfo(ctx)
+		require.NoError(t, err)
+
+		vtxoScript, err := offchainAddress.RawScript()
+		require.NoError(t, err)
+		require.NotNil(t, vtxoScript)
+
+		closure, err := offchainAddress.CollaborativeClosure()
+		require.NoError(t, err)
+		require.NotNil(t, closure)
+
+		scriptBytes, err := closure.Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+		)
+		require.NoError(t, err)
+
+		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+		require.NoError(t, err)
+
+		tapscript := &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: merkleProof.Script,
+		}
+
+		checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		bobAddr, err := arklib.DecodeAddressV0(bobOffchainAddr.Address)
+		require.NoError(t, err)
+		bobPkScript, err := bobAddr.GetPkScript()
+		require.NoError(t, err)
+
+		aliceAddr, err := arklib.DecodeAddressV0(offchainAddress.Address)
+		require.NoError(t, err)
+		alicePkScript, err := aliceAddr.GetPkScript()
+		require.NoError(t, err)
+
+		// Alice pays Bob 4000 sats and keeps 600 as change, the 400 sats left over are the fee and
+		// go to the anchor output.
+		ptx, checkpointsPtxs, err := offchain.BuildTxsWithFee(
+			[]offchain.VtxoInput{
+				{
+					Outpoint: &wire.OutPoint{
+						Hash:  *vtxoHash,
+						Index: vtxo.VOut,
+					},
+					Tapscript:          tapscript,
+					Amount:             int64(vtxo.Amount),
+					RevealedTapscripts: offchainAddress.Tapscripts,
+				},
+			},
+			[]*wire.TxOut{
+				{
+					Value:    4000,
+					PkScript: bobPkScript,
+				},
+				{
+					Value:    600,
+					PkScript: alicePkScript,
+				},
+			},
+			checkpointTapscript,
+		)
+		require.NoError(t, err)
+
+		encodedCheckpoints := make([]string, 0, len(checkpointsPtxs))
+		for _, checkpoint := range checkpointsPtxs {
+			encoded, err := checkpoint.B64Encode()
+			require.NoError(t, err)
+			encodedCheckpoints = append(encodedCheckpoints, encoded)
+		}
+
+		encodedArkTx, err := ptx.B64Encode()
+		require.NoError(t, err)
+		signedArkTx, err := alice.SignTransaction(ctx, encodedArkTx)
+		require.NoError(t, err)
+
+		txid, _, signedCheckpoints, err := aliceClient.SubmitTx(
+			ctx, signedArkTx, encodedCheckpoints,
+		)
+		require.NoError(t, err)
+		require.NotEmpty(t, txid)
+
+		finalCheckpoints := make([]string, 0, len(signedCheckpoints))
+		for _, checkpoint := range signedCheckpoints {
+			finalCheckpoint, err := alice.SignTransaction(ctx, checkpoint)
+			require.NoError(t, err)
+			finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
+		}
+
+		err = aliceClient.FinalizeTx(ctx, txid, finalCheckpoints)
+		require.NoError(t, err)
+
+		waitForBalance(t, bob, indexerWait, "bob's offchain balance to be 4000",
+			func(b *types.Balance) bool { return b.OffchainBalance.Total == 4000 })
+		waitForBalance(t, alice, indexerWait, "alice's offchain balance to be 600",
+			func(b *types.Balance) bool { return b.OffchainBalance.Total == 600 })
+
+		// Fund Bob's onchain wallet to cover network fees for the unroll
+		faucetOnchainAndWait(t, bobOnchainAddr, 0.0001)
+
+		// Unroll the whole chain until the checkpoint tx
+		res, err := bob.Unroll(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, res)
+
+		// Generate some blocks to ensure the checkpoint tx is confirmed
+		err = generateBlocks(1)
+		require.NoError(t, err)
+		time.Sleep(5 * time.Second)
+		err = generateBlocks(1)
+		require.NoError(t, err)
+		time.Sleep(5 * time.Second)
+
+		// Finish the unroll and broadcast the ark tx.
+		res, err = bob.Unroll(ctx)
+		require.NoError(t, err)
+		require.Len(t, res, 1)
+		require.Equal(t, txid, res[0].ParentTxid)
+
+		err = generateBlocks(1)
+		require.NoError(t, err)
+
+		// Bob now just needs to wait for the unilateral exit delay to spend the unrolled VTXOs
+		bobBalance := waitForUnrolledOnchainFunds(t, bob)
+		require.NotNil(t, bobBalance)
+
+		err = generateBlocks(20)
+		require.NoError(t, err)
+
+		waitForMatureOnchainFunds(t, bob)
+
+		txid, err = bob.CompleteUnroll(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, txid)
+	})
 }
 
 // TestUnrolledVtxoRejoinBatch verifies that an unrolled VTXO can rejoin the
@@ -3133,24 +3301,21 @@ func TestReactToFraud(t *testing.T) {
 
 			bumpAndBroadcastTx(t, leafTx, explorer)
 
-			// The vtxo is now unrolled and unspent in the Bitcoin mempool, once
-			// the explorer has tracked down the broadcasted txs.
-			spentStatus := waitForOutspendsIndexed(t, explorer, vtxo.Txid, vtxo.VOut)
-			require.False(t, spentStatus[vtxo.VOut].Spent)
-			require.Empty(t, spentStatus[vtxo.VOut].SpentBy)
-
-			// Include the tx in a block.
+			// The vtxo is now unrolled onchain. The server is notified as soon as the
+			// leaf tx is seen and reacts by broadcasting the forfeit, so give it time to catch up,
+			// then just mine a block to make the forfeit tx confirmed.
+			time.Sleep(5 * time.Second)
 			err = generateBlocks(1)
 			require.NoError(t, err)
 
-			// Ensure the unrolled vtxo is now spent. The server swept it by broadcasting the forfeit tx.
 			waitForOutspend(t, explorer, vtxo.Txid, vtxo.VOut)
 
-			spentStatus, err = explorer.GetTxOutspends(vtxo.Txid)
+			// Ensure the unrolled vtxo is spent onchain by the forfeit tx.
+			spentStatus, err := explorer.GetTxOutspends(vtxo.Txid)
 			require.NoError(t, err)
 			require.NotEmpty(t, spentStatus)
 			require.True(t, spentStatus[vtxo.VOut].Spent)
-			require.NotEmpty(t, spentStatus[vtxo.VOut].SpentBy)
+			require.Equal(t, vtxo.SpentBy, spentStatus[vtxo.VOut].SpentBy)
 		})
 		// In this test Alice onboards, settles, then exits all, and finally tries to unroll the
 		// tree of the forfeited VTXO.
@@ -3225,20 +3390,16 @@ func TestReactToFraud(t *testing.T) {
 
 			bumpAndBroadcastTx(t, leafTx, explorer)
 
-			// The vtxo is now unrolled and unspent in the Bitcoin mempool, once
-			// the explorer has tracked down the broadcasted txs.
-			spentStatus := waitForOutspendsIndexed(t, explorer, vtxo.Txid, vtxo.VOut)
-			require.False(t, spentStatus[vtxo.VOut].Spent)
-			require.Empty(t, spentStatus[vtxo.VOut].SpentBy)
-
-			// Include the tx in a block.
+			// The vtxo is now unrolled onchain. The server is notified as soon as the
+			// leaf tx is seen and reacts by broadcasting the forfeit tx, so there is no
+			// reliable window in which to observe the vtxo unspent. Only assert the
+			// outcome: the server sweeps the unrolled vtxo.
 			err = generateBlocks(1)
 			require.NoError(t, err)
 
-			// Ensure the unrolled vtxo is now spent. The server swept it by broadcasting the forfeit tx.
 			waitForOutspend(t, explorer, vtxo.Txid, vtxo.VOut)
 
-			spentStatus, err = explorer.GetTxOutspends(vtxo.Txid)
+			spentStatus, err := explorer.GetTxOutspends(vtxo.Txid)
 			require.NoError(t, err)
 			require.NotEmpty(t, spentStatus)
 			require.True(t, spentStatus[vtxo.VOut].Spent)
@@ -3822,8 +3983,15 @@ func TestSweep(t *testing.T) {
 			bumpAndBroadcastTx(t, parentTx, explorer)
 		}
 
-		// give some time for the server to process the unroll and broadcast the checkpoint
-		time.Sleep(5 * time.Second)
+		// The server reacts to the unroll by broadcasting the checkpoint tx, which
+		// spends the unrolled vtxo. Wait for it to show up in the mempool.
+		waitForOutspend(t, explorer, boardedVtxo.Txid, boardedVtxo.VOut)
+
+		// Confirm the checkpoint tx. The sweep is scheduled at its confirmation
+		// height plus the checkpoint exit delay, so this block must land before the
+		// expiry blocks are counted.
+		err = generateBlocks(1)
+		require.NoError(t, err)
 
 		// generate 10 blocks to expire the checkpoint output
 		err = generateBlocks(10)

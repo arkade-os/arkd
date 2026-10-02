@@ -499,9 +499,9 @@ func (s *service) SubmitOffchainTx(
 		sumOfOutputs += int64(output.Value)
 	}
 
-	if sumOfOutputs > sumOfInputs {
+	if sumOfInputs != sumOfOutputs {
 		return nil, errors.INVALID_ARK_PSBT.New(
-			"sum(inputs) < sum(outputs) (%d < %d)",
+			"sum(inputs) != sum(outputs) (%d != %d)",
 			sumOfInputs,
 			sumOfOutputs,
 		)

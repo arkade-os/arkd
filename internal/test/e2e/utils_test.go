@@ -709,6 +709,20 @@ func bumpAndBroadcastTx(t *testing.T, tx string, explorer clientlib.Explorer) {
 
 	err = generateBlocks(1)
 	require.NoError(t, err)
+
+	// Wait for the explorer to track the tx confirmation.
+	txid := transaction.TxHash().String()
+	waitUntil(t, chainWait, fmt.Sprintf("explorer to confirm tx %s", txid),
+		func(context.Context) error {
+			confirmed, _, err := explorer.GetTxBlockTime(txid)
+			if err != nil {
+				return err
+			}
+			if !confirmed {
+				return fmt.Errorf("tx %s still unconfirmed", txid)
+			}
+			return nil
+		})
 }
 
 // bumpAnchorTx is crafting and signing a transaction bumping the fees for a given tx with P2A output
@@ -778,7 +792,7 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc clientlib.Explor
 	)
 	require.NoError(t, err)
 
-	ptx.Inputs[0].WitnessUtxo = txutils.AnchorOutput()
+	ptx.Inputs[0].WitnessUtxo = parent.TxOut[anchor.Index]
 	ptx.Inputs[1].WitnessUtxo = &wire.TxOut{
 		Value:    int64(selectedCoins[0].Amount),
 		PkScript: pkScript,
@@ -788,7 +802,7 @@ func bumpAnchorTx(t *testing.T, parent *wire.MsgTx, explorerSvc clientlib.Explor
 	require.NoError(t, err)
 
 	prevoutFetcher := txscript.NewMultiPrevOutFetcher(map[wire.OutPoint]*wire.TxOut{
-		*anchor: txutils.AnchorOutput(),
+		*anchor: parent.TxOut[anchor.Index],
 		{
 			Hash:  *coinTxHash,
 			Index: selectedCoins[0].Vout,

@@ -1042,6 +1042,13 @@ func (e *explorerSvc) broadcastPackage(txs ...string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("failed to broadcast package: %s", string(bodyResponse))
 	}
+	var res broadcastPackageResponse
+	if err := json.Unmarshal(bodyResponse, &res); err != nil {
+		return "", fmt.Errorf("failed to parse broadcast package response: %w", err)
+	}
+	if !strings.Contains(res.Msg, "success") {
+		return "", fmt.Errorf("failed to broadcast package: %s", string(bodyResponse))
+	}
 
 	return string(bodyResponse), nil
 }
@@ -1096,4 +1103,8 @@ func (e *explorerSvc) get(path string, target any) (int, error) {
 	}
 
 	return http.StatusOK, nil
+}
+
+type broadcastPackageResponse struct {
+	Msg string `json:"package_msg"`
 }

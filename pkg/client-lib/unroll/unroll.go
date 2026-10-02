@@ -244,7 +244,7 @@ func bumpAnchorTx(
 		return "", "", err
 	}
 
-	ptx.Inputs[0].WitnessUtxo = txutils.AnchorOutput()
+	ptx.Inputs[0].WitnessUtxo = parent.TxOut[anchor.Index]
 
 	for i, utxo := range selectedCoins {
 		pkScript, err := hex.DecodeString(utxo.Script)

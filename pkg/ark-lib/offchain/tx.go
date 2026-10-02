@@ -34,7 +34,8 @@ func BuildTxs(
 	return buildTxs(vtxos, outputs, signerUnrollScript, false)
 }
 
-// BuildTxsWithFee is BuildTxs, but inputs may exceed outputs; the difference is the fee.
+// BuildTxsWithFee is BuildTxs, but inputs may exceed outputs. The difference goes to the P2A
+// output: a tx with ephemeral dust must pay zero fee, so the CPFP child spends it as fee.
 func BuildTxsWithFee(
 	vtxos []VtxoInput, outputs []*wire.TxOut, signerUnrollScript []byte,
 ) (*psbt.Packet, []*psbt.Packet, error) {
@@ -84,6 +85,7 @@ func buildTxs(
 	if err != nil {
 		return nil, nil, err
 	}
+	arkTx.UnsignedTx.TxOut[len(outputs)].Value = inputAmount - outputAmount
 
 	return arkTx, checkpointTxs, nil
 }
