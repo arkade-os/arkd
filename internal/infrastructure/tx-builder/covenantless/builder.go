@@ -283,7 +283,7 @@ func (b *txBuilder) BuildSweepTx(inputs []ports.TxInput) (
 	return sweepTransaction(ctx, b.wallet, inputs)
 }
 
-func (b *txBuilder) VerifyForfeitTxs(
+func (b *txBuilder) VerifyAndRebuildForfeitTxs(
 	vtxos []domain.Vtxo, connectors tree.FlatTxTree, forfeitTxs []string,
 ) (map[domain.Outpoint]ports.ValidForfeitTx, error) {
 	connectorsLeaves := tree.FlatTxTree(connectors).Leaves()
@@ -326,7 +326,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 		var vtxoInput, connectorInput *wire.TxIn
 		var vtxoTapscript *psbt.TaprootTapLeafScript
 		var connectorOutput *wire.TxOut
-		var vtxoFirst bool
+		var vtxoInputIndex int
 
 		// search for the connector output and the vtxo input in the tx
 		for i, input := range tx.UnsignedTx.TxIn {
@@ -347,11 +347,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 					connectorOutput = connectorTx.UnsignedTx.TxOut[input.PreviousOutPoint.Index]
 
 					// the vtxo input is the other input in the tx
-					vtxoInputIndex := 0
-					if i == 0 {
-						vtxoInputIndex = 1
-					}
-					vtxoFirst = vtxoInputIndex == 0
+					vtxoInputIndex = 1 - i
 					vtxoInput = tx.UnsignedTx.TxIn[vtxoInputIndex]
 					connectorInput = tx.UnsignedTx.TxIn[i]
 
@@ -470,7 +466,7 @@ func (b *txBuilder) VerifyForfeitTxs(
 			txLocktime = *locktime
 		}
 
-		if vtxoFirst {
+		if vtxoInputIndex == 0 {
 			inputs = []*wire.OutPoint{
 				&vtxoInput.PreviousOutPoint, &connectorInput.PreviousOutPoint,
 			}
@@ -524,8 +520,32 @@ func (b *txBuilder) VerifyForfeitTxs(
 			}
 		}
 
+		// Carry only the VTXO spending proof into the server-built PSBT.
+		// Other client metadata must never reach the signer.
+		rebuilt.Inputs[vtxoInputIndex].TaprootLeafScript = []*psbt.TaprootTapLeafScript{
+			vtxoTapscript,
+		}
+		rebuilt.Inputs[vtxoInputIndex].TaprootScriptSpendSig = tx.Inputs[vtxoInputIndex].TaprootScriptSpendSig
+		if _, ok := closure.(*script.ConditionMultisigClosure); ok {
+			witness, err := txutils.GetArkPsbtConditionWitness(tx, vtxoInputIndex)
+			if err != nil {
+				return nil, err
+			}
+			if witness != nil {
+				if err := txutils.SetArkPsbtField(
+					rebuilt, vtxoInputIndex, txutils.ConditionWitnessField, witness,
+				); err != nil {
+					return nil, err
+				}
+			}
+		}
+		rebuiltTx, err := rebuilt.B64Encode()
+		if err != nil {
+			return nil, err
+		}
+
 		validForfeitTxs[vtxoKey] = ports.ValidForfeitTx{
-			Tx: forfeitTx,
+			Tx: rebuiltTx,
 			Connector: domain.Outpoint{
 				Txid: connectorInput.PreviousOutPoint.Hash.String(),
 				VOut: connectorInput.PreviousOutPoint.Index,

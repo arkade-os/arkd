@@ -597,7 +597,7 @@ func (m *mockTxBuilder) BuildCommitmentTx(
 	return "", nil, "", nil, nil
 }
 
-func (m *mockTxBuilder) VerifyForfeitTxs(
+func (m *mockTxBuilder) VerifyAndRebuildForfeitTxs(
 	vtxos []domain.Vtxo, connectors tree.FlatTxTree, txs []string,
 ) (map[domain.Outpoint]ports.ValidForfeitTx, error) {
 	return nil, nil

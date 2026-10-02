@@ -151,7 +151,7 @@ func (s *forfeitTxsStore) Sign(ctx context.Context, txs []string) error {
 			"malformed connector indexes in storage (out=%s): %v", string(idxBytes), err,
 		)
 	}
-	validTxs, err := s.builder.VerifyForfeitTxs(vtxos, connectors, txs)
+	validTxs, err := s.builder.VerifyAndRebuildForfeitTxs(vtxos, connectors, txs)
 	if err != nil {
 		return err
 	}

@@ -595,6 +595,26 @@ func (n *nbxplorer) broadcastPackageTransactions(ctx context.Context, txs []stri
 		return "", fmt.Errorf("failed to marshal RPC result: %w", err)
 	}
 
+	var result submitPackageResult
+	if err := json.Unmarshal(resultBytes, &result); err != nil {
+		return "", fmt.Errorf("failed to unmarshal submitpackage result: %w", err)
+	}
+
+	// Core reports package and transaction rejections inside a successful RPC response.
+	var txErrors []string
+	for wtxid, txResult := range result.TxResults {
+		if txResult.Error != "" {
+			txErrors = append(txErrors, fmt.Sprintf("wtxid %s: %s", wtxid, txResult.Error))
+		}
+	}
+	if len(txErrors) > 0 {
+		slices.Sort(txErrors)
+		return "", fmt.Errorf("submitpackage failed: package_msg=%q; %s", result.PackageMsg, strings.Join(txErrors, "; "))
+	}
+	if result.PackageMsg != "success" {
+		return "", fmt.Errorf("submitpackage failed: package_msg=%q", result.PackageMsg)
+	}
+
 	return string(resultBytes), nil
 }
 

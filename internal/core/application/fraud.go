@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -241,11 +242,69 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 	}
 
 	if _, err = s.wallet.BroadcastTransaction(ctx, forfeitTxHex, childForfeit); err != nil {
-		return fmt.Errorf("failed to broadcast forfeit tx: %s", err)
+		if !strings.Contains(err.Error(), "transaction failed") {
+			return fmt.Errorf("failed to broadcast forfeit tx: %w", err)
+		}
+		log.WithError(err).
+			Warnf("forfeit tx %s rejected, rebuilding and retrying", forfeit.TxHash())
+
+		rebuilt, err := s.rebuildForfeitTx(ctx, vtxo, round.Connectors, forfeitTxB64)
+		if err != nil {
+			return fmt.Errorf("failed to rebuild forfeit tx: %w", err)
+		}
+		signed, err := s.signer.SignTransactionTapscript(ctx, rebuilt, nil)
+		if err != nil {
+			return fmt.Errorf("failed to sign rebuilt forfeit tx: %w", err)
+		}
+		forfeitTxHex, err = s.builder.FinalizeAndExtract(signed)
+		if err != nil {
+			return fmt.Errorf("failed to finalize rebuilt forfeit tx: %w", err)
+		}
+		// The rebuild preserves the txid, so the child still spends the same anchor.
+		if _, err := s.wallet.BroadcastTransaction(ctx, forfeitTxHex, childForfeit); err != nil {
+			return fmt.Errorf("failed to broadcast rebuilt forfeit tx: %w", err)
+		}
 	}
 
 	log.Debugf("broadcasted forfeit tx %s", forfeit.TxHash().String())
 	return nil
+}
+
+// rebuildForfeitTx keeps the VTXO spending proof and other parties' signatures,
+// discarding operator signatures and metadata before asking the signer to retry.
+func (s *service) rebuildForfeitTx(
+	ctx context.Context, vtxo domain.Vtxo, connectors tree.FlatTxTree, forfeitTx string,
+) (string, error) {
+	verified, err := s.builder.VerifyAndRebuildForfeitTxs(
+		[]domain.Vtxo{vtxo},
+		connectors,
+		[]string{forfeitTx},
+	)
+	if err != nil {
+		return "", err
+	}
+	forfeit, ok := verified[vtxo.Outpoint]
+	if !ok {
+		return "", fmt.Errorf("rebuilt forfeit tx not found for vtxo %s", vtxo.Outpoint)
+	}
+	rebuilt, err := psbt.NewFromRawBytes(strings.NewReader(forfeit.Tx), true)
+	if err != nil {
+		return "", err
+	}
+	operatorKeys, err := s.operatorXOnlyKeys(ctx)
+	if err != nil {
+		return "", err
+	}
+	for i := range rebuilt.Inputs {
+		rebuilt.Inputs[i].TaprootScriptSpendSig = slices.DeleteFunc(
+			rebuilt.Inputs[i].TaprootScriptSpendSig, func(sig *psbt.TaprootScriptSpendSig) bool {
+				return slices.ContainsFunc(operatorKeys, func(key []byte) bool {
+					return bytes.Equal(sig.XOnlyPubKey, key)
+				})
+			},
+		)
+	}
+	return rebuilt.B64Encode()
 }
 
 // broadcastConnectorBranch broadcasts the connector branch of txs until the target connector

@@ -100,7 +100,7 @@ func (m *forfeitTxsStore) Sign(_ context.Context, txs []string) error {
 	}
 
 	// verify the txs are valid
-	validTxs, err := m.builder.VerifyForfeitTxs(m.vtxos, m.connectors, txs)
+	validTxs, err := m.builder.VerifyAndRebuildForfeitTxs(m.vtxos, m.connectors, txs)
 	if err != nil {
 		return err
 	}

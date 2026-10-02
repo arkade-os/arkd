@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/psbt/v2"
@@ -12,17 +13,33 @@ import (
 )
 
 // ForfeitTxReadyToBroadcast reports whether a forfeit psbt carries every
-// signature its finalizer needs. It checks presence, not validity: a signature
-// counts when it is under a pubkey the leaf commits to and over that same leaf.
+// signature its finalizer needs. Connector key-spend signatures are verified
+// against the prevout output key. VTXO signatures are checked for presence under
+// each pubkey the spending leaf commits to and over that same leaf.
 func ForfeitTxReadyToBroadcast(ptx *psbt.Packet) bool {
-	if len(ptx.Inputs) <= 0 {
+	if ptx == nil || ptx.UnsignedTx == nil || len(ptx.Inputs) == 0 ||
+		len(ptx.Inputs) != len(ptx.UnsignedTx.TxIn) {
 		return false
 	}
 
-	for _, in := range ptx.Inputs {
-		// key path (the connector): the wallet key spend sig is all it needs
+	prevouts, err := txutils.GetPrevOutputFetcher(ptx)
+	if err != nil {
+		return false
+	}
+	sigHashes := txscript.NewTxSigHashes(ptx.UnsignedTx, prevouts)
+
+	for i, in := range ptx.Inputs {
+		// key path (the connector): verify the wallet signature against the
+		// output key, independently of any PSBT metadata used by the signer.
 		if len(in.TaprootLeafScript) <= 0 {
-			if len(in.TaprootKeySpendSig) <= 0 {
+			if len(in.TaprootKeySpendSig) == 0 ||
+				!txscript.IsPayToTaproot(in.WitnessUtxo.PkScript) {
+				return false
+			}
+			if err := txscript.VerifyTaprootKeySpend(
+				in.WitnessUtxo.PkScript[2:], in.TaprootKeySpendSig,
+				ptx.UnsignedTx, i, prevouts, sigHashes, nil,
+			); err != nil {
 				return false
 			}
 			continue

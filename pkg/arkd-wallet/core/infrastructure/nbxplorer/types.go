@@ -110,6 +110,13 @@ type rpcError struct {
 	Message string `json:"message"`
 }
 
+type submitPackageResult struct {
+	PackageMsg string `json:"package_msg"`
+	TxResults  map[string]struct {
+		Error string `json:"error"`
+	} `json:"tx-results"`
+}
+
 type event struct {
 	EventID int         `json:"eventId"`
 	Type    string      `json:"type"`

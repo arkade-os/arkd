@@ -2,6 +2,7 @@ package txbuilder_test
 
 import (
 	"encoding/hex"
+	"strings"
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -10,6 +11,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -22,15 +24,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestVerifyForfeitTxsPrevoutBinding pins that the psbt prevout metadata of a forfeit tx is
+// TestVerifyAndRebuildForfeitTxsPrevoutBinding pins that the psbt prevout metadata of a forfeit tx is
 // bound to what the operator knows. The txid comparison alone does not cover it: a txid commits
 // to the wire tx only, so a client can leave the tx itself correct and forge the WitnessUtxo the
 // sighash is computed over, yielding a forfeit tx the operator accepts but bitcoin rejects.
-func TestVerifyForfeitTxsPrevoutBinding(t *testing.T) {
+func TestVerifyAndRebuildForfeitTxsPrevoutBinding(t *testing.T) {
 	t.Run("valid forfeit tx is accepted", func(t *testing.T) {
 		builder, vtxos, connectors, forfeit := newForfeitScenario(t)
 
-		valid, err := builder.VerifyForfeitTxs(vtxos, connectors, []string{encodeTx(t, forfeit)})
+		valid, err := builder.VerifyAndRebuildForfeitTxs(vtxos, connectors, []string{encodeTx(t, forfeit)})
 		require.NoError(t, err)
 		require.Len(t, valid, 1)
 	})
@@ -43,7 +45,7 @@ func TestVerifyForfeitTxsPrevoutBinding(t *testing.T) {
 		require.Equal(t, txidBefore, forfeit.UnsignedTx.TxID(),
 			"forging the prevout must not change the txid, otherwise the txid check catches it")
 
-		_, err := builder.VerifyForfeitTxs(vtxos, connectors, []string{encodeTx(t, forfeit)})
+		_, err := builder.VerifyAndRebuildForfeitTxs(vtxos, connectors, []string{encodeTx(t, forfeit)})
 		require.ErrorContains(t, err, "invalid witness utxo for input 0")
 	})
 
@@ -52,7 +54,7 @@ func TestVerifyForfeitTxsPrevoutBinding(t *testing.T) {
 
 		forfeit.Inputs[0].WitnessUtxo.PkScript = []byte{txscript.OP_TRUE}
 
-		_, err := builder.VerifyForfeitTxs(vtxos, connectors, []string{encodeTx(t, forfeit)})
+		_, err := builder.VerifyAndRebuildForfeitTxs(vtxos, connectors, []string{encodeTx(t, forfeit)})
 		require.ErrorContains(t, err, "invalid witness utxo for input 0")
 	})
 
@@ -61,12 +63,89 @@ func TestVerifyForfeitTxsPrevoutBinding(t *testing.T) {
 
 		forfeit.Inputs[0].WitnessUtxo = nil
 
-		_, err := builder.VerifyForfeitTxs(vtxos, connectors, []string{encodeTx(t, forfeit)})
+		_, err := builder.VerifyAndRebuildForfeitTxs(vtxos, connectors, []string{encodeTx(t, forfeit)})
 		require.ErrorContains(t, err, "invalid witness utxo for input 0")
 	})
 }
 
-// newForfeitScenario builds the minimum a forfeit tx needs to pass VerifyForfeitTxs: one vtxo
+func TestVerifyAndRebuildForfeitTxsDiscardsClientMetadata(t *testing.T) {
+	for _, vtxoFirst := range []bool{true, false} {
+		name := "vtxo first"
+		if !vtxoFirst {
+			name = "connector first"
+		}
+		t.Run(name, func(t *testing.T) {
+			builder, vtxos, connectors, forfeit := newForfeitScenario(t)
+			if !vtxoFirst {
+				forfeit.UnsignedTx.TxIn[0], forfeit.UnsignedTx.TxIn[1] =
+					forfeit.UnsignedTx.TxIn[1], forfeit.UnsignedTx.TxIn[0]
+				forfeit.Inputs[0], forfeit.Inputs[1] = forfeit.Inputs[1], forfeit.Inputs[0]
+			}
+			want := encodeTx(t, forfeit)
+			poison := []*psbt.Unknown{{Key: []byte{0xfc, 0x01}, Value: []byte("poison")}}
+			root := txscript.NewBaseTapLeaf([]byte{txscript.OP_TRUE}).TapHash()
+			forfeit.Unknowns = poison
+			for i := range forfeit.Inputs {
+				forfeit.Inputs[i].TaprootMerkleRoot = root[:]
+				forfeit.Inputs[i].TaprootInternalKey = schnorr.SerializePubKey(pubkey)
+				forfeit.Inputs[i].SighashType = txscript.SigHashAll
+				forfeit.Inputs[i].RedeemScript = []byte{txscript.OP_TRUE}
+				forfeit.Inputs[i].WitnessScript = []byte{txscript.OP_TRUE}
+				forfeit.Inputs[i].Unknowns = poison
+			}
+			for i := range forfeit.Outputs {
+				forfeit.Outputs[i].TaprootInternalKey = schnorr.SerializePubKey(pubkey)
+				forfeit.Outputs[i].Unknowns = poison
+			}
+
+			valid, err := builder.VerifyAndRebuildForfeitTxs(vtxos, connectors, []string{encodeTx(t, forfeit)})
+			require.NoError(t, err)
+			require.Len(t, valid, 1)
+			require.Equal(t, want, valid[vtxos[0].Outpoint].Tx,
+				"only the VTXO signatures and spending proof should survive the rebuild")
+		})
+	}
+}
+
+func TestVerifyAndRebuildForfeitTxsPreservesConditionWitness(t *testing.T) {
+	builder, vtxos, connectors, forfeit := newForfeitScenario(t)
+	key, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	closureScript, err := (&script.ConditionMultisigClosure{
+		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{key.PubKey()}},
+		Condition:       []byte{txscript.OP_DROP, txscript.OP_TRUE},
+	}).Script()
+	require.NoError(t, err)
+	setup := buildVtxoSetupFromScript(t, key, key, closureScript)
+	vtxos[0].PubKey = hex.EncodeToString(setup.p2trScript[2:])
+	forfeit.Inputs[0].WitnessUtxo.PkScript = setup.p2trScript
+	forfeit.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{{
+		ControlBlock: setup.cbBytes,
+		Script:       setup.closureScript,
+		LeafVersion:  txscript.BaseLeafVersion,
+	}}
+	forfeit.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{
+		makeVtxoSig(t, key, forfeit, setup.leaf),
+	}
+	witness := wire.TxWitness{[]byte("condition witness")}
+	require.NoError(t, txutils.SetArkPsbtField(forfeit, 0, txutils.ConditionWitnessField, witness))
+	forfeit.Inputs[0].Unknowns = append(forfeit.Inputs[0].Unknowns,
+		&psbt.Unknown{Key: []byte{0xfc, 0x01}, Value: []byte("poison")})
+
+	valid, err := builder.VerifyAndRebuildForfeitTxs(vtxos, connectors, []string{encodeTx(t, forfeit)})
+	require.NoError(t, err)
+	rebuilt, err := psbt.NewFromRawBytes(strings.NewReader(valid[vtxos[0].Outpoint].Tx), true)
+	require.NoError(t, err)
+	gotWitness, err := txutils.GetArkPsbtConditionWitness(rebuilt, 0)
+	require.NoError(t, err)
+	require.Equal(t, witness, gotWitness)
+	require.Len(t, rebuilt.Inputs[0].Unknowns, 1)
+	ok, _, err := builder.VerifyVtxoTapscriptSigs(valid[vtxos[0].Outpoint].Tx, false)
+	require.NoError(t, err)
+	require.True(t, ok)
+}
+
+// newForfeitScenario builds the minimum a forfeit tx needs to pass VerifyAndRebuildForfeitTxs: one vtxo
 // known to the operator, a one-leaf connector tree, and a forfeit tx spending both. Only the
 // prevout metadata is interesting, the signature itself is never checked by this function.
 func newForfeitScenario(
@@ -157,7 +236,7 @@ func newForfeitScenario(
 	return builder, []domain.Vtxo{vtxo}, connectors, forfeit
 }
 
-func TestVerifyForfeitTxsRejectsMalformedCltvLeaf(t *testing.T) {
+func TestVerifyAndRebuildForfeitTxsRejectsMalformedCltvLeaf(t *testing.T) {
 	wallet.On("GetCurrentBlockTime", mock.Anything).
 		Return(&ports.BlockTimestamp{Height: 100, Time: 1_700_000_000}, nil).Maybe()
 
@@ -244,14 +323,14 @@ func TestVerifyForfeitTxsRejectsMalformedCltvLeaf(t *testing.T) {
 		makeVtxoSig(t, closureKey, forfeit, setup.leaf),
 	}
 
-	valid, err := builder.VerifyForfeitTxs(
+	valid, err := builder.VerifyAndRebuildForfeitTxs(
 		[]domain.Vtxo{vtxo}, connectors, []string{encodeTx(t, forfeit)},
 	)
 	require.Error(t, err)
 	require.Empty(t, valid)
 }
 
-func TestVerifyForfeitTxsZeroLocktimeCltvNeedsNonFinalSequence(t *testing.T) {
+func TestVerifyAndRebuildForfeitTxsZeroLocktimeCltvNeedsNonFinalSequence(t *testing.T) {
 	wallet.On("GetCurrentBlockTime", mock.Anything).
 		Return(&ports.BlockTimestamp{Height: 100, Time: 1_700_000_000}, nil).Maybe()
 
@@ -344,12 +423,12 @@ func TestVerifyForfeitTxsZeroLocktimeCltvNeedsNonFinalSequence(t *testing.T) {
 	}
 
 	// a final sequence makes OP_CLTV fail, so the operator must not accept it
-	_, err = builder.VerifyForfeitTxs(
+	_, err = builder.VerifyAndRebuildForfeitTxs(
 		[]domain.Vtxo{vtxo}, connectors, []string{buildWithSequence(wire.MaxTxInSequenceNum)},
 	)
 	require.Error(t, err)
 
-	valid, err := builder.VerifyForfeitTxs(
+	valid, err := builder.VerifyAndRebuildForfeitTxs(
 		[]domain.Vtxo{vtxo}, connectors, []string{buildWithSequence(wire.MaxTxInSequenceNum - 1)},
 	)
 	require.NoError(t, err)

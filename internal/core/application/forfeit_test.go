@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/ports"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chainhash/v2"
@@ -23,9 +25,7 @@ func TestForfeitTxs(t *testing.T) {
 
 	t.Run("sign at collection time", func(t *testing.T) {
 		// The user-signed forfeit tx submitted at collection time.
-		userSigned := unsignedPsbt(t, 0xaa)
-		// What the operator signer returns: a distinct, fully signed forfeit tx.
-		operatorSigned := unsignedPsbt(t, 0xbb)
+		userSigned, operatorSigned := signedForfeitPsbt(t, nil)
 		wantPtx, err := psbt.NewFromRawBytes(strings.NewReader(operatorSigned), true)
 		require.NoError(t, err)
 		wantTxid := wantPtx.UnsignedTx.TxID()
@@ -62,6 +62,27 @@ func TestForfeitTxs(t *testing.T) {
 			_, err := s.signForfeitTxs(ctx, []string{userSigned})
 
 			require.Error(t, err)
+		})
+
+		t.Run("rejects a poisoned connector signature", func(t *testing.T) {
+			root := txscript.NewBaseTapLeaf([]byte{txscript.OP_TRUE}).TapHash()
+			userSigned, operatorSigned := signedForfeitPsbt(t, root[:])
+			s := &service{signer: &fakeForfeitSigner{returnTx: operatorSigned}}
+			got, err := s.signForfeitTxs(ctx, []string{userSigned})
+			require.ErrorContains(t, err, "signed forfeit tx is not ready to broadcast")
+			require.Nil(t, got)
+		})
+
+		t.Run("rejects a missing connector signature", func(t *testing.T) {
+			p, err := psbt.NewFromRawBytes(strings.NewReader(operatorSigned), true)
+			require.NoError(t, err)
+			p.Inputs[1].TaprootKeySpendSig = nil
+			missingSig, err := p.B64Encode()
+			require.NoError(t, err)
+			s := &service{signer: &fakeForfeitSigner{returnTx: missingSig}}
+			got, err := s.signForfeitTxs(ctx, []string{userSigned})
+			require.ErrorContains(t, err, "signed forfeit tx is not ready to broadcast")
+			require.Nil(t, got)
 		})
 	})
 
@@ -234,6 +255,52 @@ func forfeitPsbt(t *testing.T, mutate func(*psbt.Packet)) string {
 	b64, err := p.B64Encode()
 	require.NoError(t, err)
 	return b64
+}
+
+// signedForfeitPsbt returns the client and operator versions of a forfeit. The
+// connector signature uses merkleRoot, allowing a poisoned wallet tweak to be
+// reproduced even when the returned PSBT carries no merkle-root metadata.
+// ponytail: input order is covered by the domain and builder tests.
+func signedForfeitPsbt(t *testing.T, merkleRoot []byte) (string, string) {
+	t.Helper()
+	userKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	operatorKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	connectorKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	pkScript, err := script.P2TRScript(txscript.ComputeTaprootKeyNoScript(connectorKey.PubKey()))
+	require.NoError(t, err)
+	leaf, err := (&script.MultisigClosure{
+		PubKeys: []*btcec.PublicKey{userKey.PubKey(), operatorKey.PubKey()},
+	}).Script()
+	require.NoError(t, err)
+	p := forfeitPacket(t)
+	p.Inputs[0].WitnessUtxo = wire.NewTxOut(1000, pkScript)
+	p.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{{
+		ControlBlock: append([]byte{byte(txscript.BaseLeafVersion)}, schnorr.SerializePubKey(userKey.PubKey())...),
+		Script:       leaf,
+		LeafVersion:  txscript.BaseLeafVersion,
+	}}
+	p.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{
+		spendSig(userKey.PubKey(), leaf),
+	}
+	p.Inputs[1].WitnessUtxo = wire.NewTxOut(330, pkScript)
+	userSigned, err := p.B64Encode()
+	require.NoError(t, err)
+	p.Inputs[0].TaprootScriptSpendSig = append(
+		p.Inputs[0].TaprootScriptSpendSig, spendSig(operatorKey.PubKey(), leaf),
+	)
+	prevouts, err := txutils.GetPrevOutputFetcher(p)
+	require.NoError(t, err)
+	p.Inputs[1].TaprootKeySpendSig, err = txscript.RawTxInTaprootSignature(
+		p.UnsignedTx, txscript.NewTxSigHashes(p.UnsignedTx, prevouts), 1,
+		330, pkScript, merkleRoot, txscript.SigHashDefault, connectorKey,
+	)
+	require.NoError(t, err)
+	operatorSigned, err := p.B64Encode()
+	require.NoError(t, err)
+	return userSigned, operatorSigned
 }
 
 // spendSig is a well-formed tapscript spend sig entry under pubkey, committing to

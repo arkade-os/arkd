@@ -3317,6 +3317,78 @@ func TestReactToFraud(t *testing.T) {
 			require.True(t, spentStatus[vtxo.VOut].Spent)
 			require.Equal(t, vtxo.SpentBy, spentStatus[vtxo.VOut].SpentBy)
 		})
+		t.Run("with client-supplied TaprootMerkleRoot", func(t *testing.T) {
+			ctx := t.Context()
+			client := setupClientWallet(t)
+
+			_, arkAddr, boardingAddress, err := client.Receive(ctx)
+			require.NoError(t, err)
+			faucetOnchainAndWait(t, boardingAddress.Address, 0.00021)
+
+			_, err = settleBounded(ctx, client)
+			require.NoError(t, err)
+			vtxo := waitForSpendableVtxos(t, client, 1)[0]
+			require.False(t, vtxo.Preconfirmed)
+
+			params, err := client.GetConfigData(ctx)
+			require.NoError(t, err)
+			root := txscript.NewBaseTapLeaf([]byte{txscript.OP_TRUE}).TapHash()
+			res, err := batchSettleBounded(ctx, batchsession.SettleArgs{
+				Client:       client.Client(),
+				ServerParams: *params,
+				Vtxos:        []clientlib.Vtxo{vtxo},
+				ReceiverAddr: arkAddr.Address,
+				SignTx: func(ctx context.Context, tx string) (string, error) {
+					signed, err := client.SignTransaction(ctx, tx)
+					if err != nil {
+						return "", err
+					}
+					ptx, err := psbt.NewFromRawBytes(strings.NewReader(signed), true)
+					if err != nil {
+						return "", err
+					}
+					// Forfeits spend the VTXO first and the connector second.
+					// Intent proofs use a synthetic first input and stay unchanged.
+					if len(ptx.Inputs) == 2 &&
+						ptx.UnsignedTx.TxIn[0].PreviousOutPoint.String() == vtxo.Outpoint.String() {
+						// The connector is a BIP86 output. This untrusted root must
+						// not affect the operator's key-path signature.
+						ptx.Inputs[1].TaprootMerkleRoot = root[:]
+					}
+					return ptx.B64Encode()
+				},
+			})
+			require.NoError(t, err)
+			require.NotEmpty(t, res.CommitmentTxid)
+			require.Len(t, res.ForfeitTxs, 1)
+
+			forfeit, err := psbt.NewFromRawBytes(strings.NewReader(res.ForfeitTxs[0]), true)
+			require.NoError(t, err)
+			require.Len(t, forfeit.Inputs, 2)
+			require.Equal(t, root[:], forfeit.Inputs[1].TaprootMerkleRoot)
+			require.NotEmpty(t, forfeit.Inputs[0].TaprootScriptSpendSig)
+
+			// Unroll the forfeited VTXO and confirm it to trigger fraud detection.
+			branch, err := unroll.NewRedeemBranch(ctx, testExplorer, client.Indexer(), vtxo)
+			require.NoError(t, err)
+			leafTx, err := branch.NextRedeemTx()
+			require.NoError(t, err)
+			require.NotEmpty(t, leafTx)
+			bumpAndBroadcastTx(t, leafTx, testExplorer)
+
+			// Wait for the server's connector before mining its confirmation.
+			connector := forfeit.UnsignedTx.TxIn[1].PreviousOutPoint
+			waitForOutspendsIndexed(t, testExplorer, connector.Hash.String(), connector.Index)
+			require.NoError(t, generateBlocks(1))
+
+			waitForOutspend(t, testExplorer, vtxo.Txid, vtxo.VOut)
+			spentStatus, err := testExplorer.GetTxOutspends(vtxo.Txid)
+			require.NoError(t, err)
+			require.Greater(t, len(spentStatus), int(vtxo.VOut))
+			require.True(t, spentStatus[vtxo.VOut].Spent)
+			require.Equal(t, forfeit.UnsignedTx.TxID(), spentStatus[vtxo.VOut].SpentBy,
+				"fraud detection must broadcast the forfeit despite the client-supplied merkle root")
+		})
 		// In this test Alice onboards, settles, then exits all, and finally tries to unroll the
 		// tree of the forfeited VTXO.
 		// The server should react by broadcasting the forfeit tx and claiming the unrolled VTXO before

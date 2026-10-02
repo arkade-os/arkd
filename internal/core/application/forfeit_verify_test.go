@@ -23,7 +23,7 @@ func (b nilPacketTxBuilder) VerifyVtxoTapscriptSigs(
 	return false, nil, fmt.Errorf("invalid control block")
 }
 
-func TestVerifyForfeitTxsSigsSurvivesNilPacket(t *testing.T) {
+func TestVerifyAndRebuildForfeitTxsSigsSurvivesNilPacket(t *testing.T) {
 	s := &service{builder: nilPacketTxBuilder{}}
 
 	require.NotPanics(t, func() {

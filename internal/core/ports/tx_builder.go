@@ -55,9 +55,9 @@ type TxBuilder interface {
 		commitmentTx string, vtxoTree *tree.TxTree,
 		connectorAddress string, connectors *tree.TxTree, err error,
 	)
-	// VerifyForfeitTxs verifies a list of forfeit txs against a set of VTXOs and
-	// connectors.
-	VerifyForfeitTxs(
+	// VerifyAndRebuildForfeitTxs verifies a list of forfeit txs against a set of VTXOs and
+	// connectors, returning rebuilt PSBTs with only the client's VTXO spending proof.
+	VerifyAndRebuildForfeitTxs(
 		vtxos []domain.Vtxo, connectors tree.FlatTxTree, txs []string,
 	) (valid map[domain.Outpoint]ValidForfeitTx, err error)
 	BuildSweepTx(inputs []TxInput) (txid string, signedSweepTx string, err error)

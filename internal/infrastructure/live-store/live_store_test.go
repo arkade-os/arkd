@@ -96,7 +96,7 @@ func TestLiveStoreImplementations(t *testing.T) {
 	rdb := redis.NewClient(redisOpts)
 
 	txBuilder := new(mockedTxBuilder)
-	txBuilder.On("VerifyForfeitTxs", mock.Anything, mock.Anything, mock.Anything).
+	txBuilder.On("VerifyAndRebuildForfeitTxs", mock.Anything, mock.Anything, mock.Anything).
 		Return(validTx, nil)
 
 	stores := []struct {
@@ -1643,7 +1643,7 @@ type mockedTxBuilder struct {
 	mock.Mock
 }
 
-func (m *mockedTxBuilder) VerifyForfeitTxs(
+func (m *mockedTxBuilder) VerifyAndRebuildForfeitTxs(
 	vtxos []domain.Vtxo, connectors tree.FlatTxTree, txs []string,
 ) (valid map[domain.Outpoint]ports.ValidForfeitTx, err error) {
 	args := m.Called(vtxos, connectors, txs)

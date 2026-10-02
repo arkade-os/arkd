@@ -2446,6 +2446,9 @@ func (s *service) signForfeitTxs(
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse signed forfeit tx: %w", err)
 		}
+		if !domain.ForfeitTxReadyToBroadcast(ptx) {
+			return nil, fmt.Errorf("signed forfeit tx is not ready to broadcast")
+		}
 		signed = append(signed, domain.ForfeitTx{
 			Txid: ptx.UnsignedTx.TxID(),
 			Tx:   signedTx,

@@ -5,6 +5,7 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chainhash/v2"
@@ -19,6 +20,21 @@ func TestForfeitTxReadyToBroadcast(t *testing.T) {
 	require.NoError(t, err)
 	userKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
+	connectorKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	connectorScript, err := script.P2TRScript(txscript.ComputeTaprootKeyNoScript(connectorKey.PubKey()))
+	require.NoError(t, err)
+
+	signConnector := func(p *psbt.Packet, index int, root []byte, hashType txscript.SigHashType) {
+		prevouts, err := txutils.GetPrevOutputFetcher(p)
+		require.NoError(t, err)
+		prevout := p.Inputs[index].WitnessUtxo
+		p.Inputs[index].TaprootKeySpendSig, err = txscript.RawTxInTaprootSignature(
+			p.UnsignedTx, txscript.NewTxSigHashes(p.UnsignedTx, prevouts), index,
+			prevout.Value, prevout.PkScript, root, hashType, connectorKey,
+		)
+		require.NoError(t, err)
+	}
 
 	leaf := multisigLeaf(t, userKey.PubKey(), operatorKey.PubKey())
 
@@ -36,7 +52,9 @@ func TestForfeitTxReadyToBroadcast(t *testing.T) {
 				p.Inputs[0].TaprootScriptSpendSig, spendSig(signer, leaf),
 			)
 		}
-		p.Inputs[1].TaprootKeySpendSig = make([]byte, 64)
+		p.Inputs[0].WitnessUtxo = wire.NewTxOut(1000, connectorScript)
+		p.Inputs[1].WitnessUtxo = wire.NewTxOut(330, connectorScript)
+		signConnector(p, 1, nil, txscript.SigHashDefault)
 		return p
 	}
 
@@ -55,6 +73,60 @@ func TestForfeitTxReadyToBroadcast(t *testing.T) {
 		p.Inputs[1].TaprootKeySpendSig = nil
 		require.False(t, domain.ForfeitTxReadyToBroadcast(p))
 	})
+
+	t.Run("ready with connector first", func(t *testing.T) {
+		p := build(userKey.PubKey(), operatorKey.PubKey())
+		p.Inputs[0], p.Inputs[1] = p.Inputs[1], p.Inputs[0]
+		p.UnsignedTx.TxIn[0], p.UnsignedTx.TxIn[1] = p.UnsignedTx.TxIn[1], p.UnsignedTx.TxIn[0]
+		signConnector(p, 0, nil, txscript.SigHashDefault)
+		require.True(t, domain.ForfeitTxReadyToBroadcast(p))
+	})
+
+	t.Run("ready with explicit sighash byte", func(t *testing.T) {
+		p := build(userKey.PubKey(), operatorKey.PubKey())
+		signConnector(p, 1, nil, txscript.SigHashAll)
+		require.Len(t, p.Inputs[1].TaprootKeySpendSig, 65)
+		require.True(t, domain.ForfeitTxReadyToBroadcast(p))
+	})
+
+	t.Run("not ready with a poisoned connector tweak", func(t *testing.T) {
+		p := build(userKey.PubKey(), operatorKey.PubKey())
+		root := txscript.NewBaseTapLeaf([]byte{txscript.OP_TRUE}).TapHash()
+		signConnector(p, 1, root[:], txscript.SigHashDefault)
+		require.False(t, domain.ForfeitTxReadyToBroadcast(p))
+	})
+
+	for name, mutate := range map[string]func(*psbt.Packet){
+		"invalid connector signature": func(p *psbt.Packet) {
+			p.Inputs[1].TaprootKeySpendSig = make([]byte, 64)
+		},
+		"changed transaction": func(p *psbt.Packet) {
+			p.UnsignedTx.TxOut[0].Value--
+		},
+		"changed vtxo prevout amount": func(p *psbt.Packet) {
+			p.Inputs[0].WitnessUtxo.Value++
+		},
+		"changed connector output key": func(p *psbt.Packet) {
+			pkScript, err := script.P2TRScript(txscript.ComputeTaprootKeyNoScript(userKey.PubKey()))
+			require.NoError(t, err)
+			p.Inputs[1].WitnessUtxo.PkScript = pkScript
+		},
+		"non-taproot connector": func(p *psbt.Packet) {
+			p.Inputs[1].WitnessUtxo.PkScript = []byte{txscript.OP_TRUE}
+		},
+		"missing connector prevout": func(p *psbt.Packet) {
+			p.Inputs[1].WitnessUtxo = nil
+		},
+		"missing vtxo prevout": func(p *psbt.Packet) {
+			p.Inputs[0].WitnessUtxo = nil
+		},
+	} {
+		t.Run("not ready with "+name, func(t *testing.T) {
+			p := build(userKey.PubKey(), operatorKey.PubKey())
+			mutate(p)
+			require.False(t, domain.ForfeitTxReadyToBroadcast(p))
+		})
+	}
 
 	t.Run("not ready when a leaf pubkey signed a different leaf", func(t *testing.T) {
 		// A sig under the right key but committing to another leaf does not
