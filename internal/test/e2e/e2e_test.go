@@ -518,7 +518,7 @@ func TestUnilateralExit(t *testing.T) {
 					PkScript: bobPkScript,
 				},
 				{
-					Value:    600,
+					Value:    800,
 					PkScript: alicePkScript,
 				},
 			},
@@ -556,8 +556,8 @@ func TestUnilateralExit(t *testing.T) {
 
 		waitForBalance(t, bob, indexerWait, "bob's offchain balance to be 4000",
 			func(b *types.Balance) bool { return b.OffchainBalance.Total == 4000 })
-		waitForBalance(t, alice, indexerWait, "alice's offchain balance to be 600",
-			func(b *types.Balance) bool { return b.OffchainBalance.Total == 600 })
+		waitForBalance(t, alice, indexerWait, "alice's offchain balance to be 800",
+			func(b *types.Balance) bool { return b.OffchainBalance.Total == 800 })
 
 		// Fund Bob's onchain wallet to cover network fees for the unroll
 		faucetOnchainAndWait(t, bobOnchainAddr, 0.0001)
@@ -2481,6 +2481,190 @@ func TestOffchainTx(t *testing.T) {
 				})
 				require.ErrorContains(t, err, "tapscript leaf version mismatch")
 			}
+		})
+	})
+
+	// In this test Alice sends to Bob offchain leaving a fee and Bob tries to unroll
+	// the received VTXO onchain
+	t.Run("with fees", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupClientWallet(t)
+		aliceClient := alice.Client()
+
+		vtxo := faucetOffchain(t, alice, 0.00005)
+		require.Equal(t, uint64(5000), vtxo.Amount)
+
+		bob := setupClientWallet(t)
+		bobOnchainAddr, bobOffchainAddr, _, err := bob.Receive(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, bobOnchainAddr)
+		require.NotEmpty(t, bobOffchainAddr)
+
+		_, offchainAddresses, _, _, err := alice.GetAddresses(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, offchainAddresses)
+		offchainAddress := offchainAddresses[0]
+
+		serverParams, err := aliceClient.GetInfo(ctx)
+		require.NoError(t, err)
+
+		vtxoScript, err := offchainAddress.RawScript()
+		require.NoError(t, err)
+		require.NotNil(t, vtxoScript)
+
+		closure, err := offchainAddress.CollaborativeClosure()
+		require.NoError(t, err)
+		require.NotNil(t, closure)
+
+		scriptBytes, err := closure.Script()
+		require.NoError(t, err)
+
+		_, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(scriptBytes).TapHash(),
+		)
+		require.NoError(t, err)
+
+		ctrlBlock, err := txscript.ParseControlBlock(merkleProof.ControlBlock)
+		require.NoError(t, err)
+
+		tapscript := &waddrmgr.Tapscript{
+			ControlBlock:   ctrlBlock,
+			RevealedScript: merkleProof.Script,
+		}
+
+		checkpointTapscript, err := hex.DecodeString(serverParams.CheckpointTapscript)
+		require.NoError(t, err)
+
+		vtxoHash, err := chainhash.NewHashFromStr(vtxo.Txid)
+		require.NoError(t, err)
+
+		bobAddr, err := arklib.DecodeAddressV0(bobOffchainAddr.Address)
+		require.NoError(t, err)
+		bobPkScript, err := bobAddr.GetPkScript()
+		require.NoError(t, err)
+
+		aliceAddr, err := arklib.DecodeAddressV0(offchainAddress.Address)
+		require.NoError(t, err)
+		alicePkScript, err := aliceAddr.GetPkScript()
+		require.NoError(t, err)
+
+		// Alice has 5000 sats, pays Bob 4000 and keeps 670 as change, the 330 sats left over are
+		// the fee and go to the anchor output.
+		// The tx is rejected because the anchor output amount is above or equal to the dust limit.
+		t.Run("invalid above max anchor output amount", func(t *testing.T) {
+			ptx, checkpointsPtxs, err := offchain.BuildTxsWithFee(
+				[]offchain.VtxoInput{
+					{
+						Outpoint: &wire.OutPoint{
+							Hash:  *vtxoHash,
+							Index: vtxo.VOut,
+						},
+						Tapscript:          tapscript,
+						Amount:             int64(vtxo.Amount),
+						RevealedTapscripts: offchainAddress.Tapscripts,
+					},
+				},
+				[]*wire.TxOut{
+					{
+						Value:    4000,
+						PkScript: bobPkScript,
+					},
+					{
+						Value:    670,
+						PkScript: alicePkScript,
+					},
+				},
+				checkpointTapscript,
+			)
+			require.NoError(t, err)
+
+			encodedCheckpoints := make([]string, 0, len(checkpointsPtxs))
+			for _, checkpoint := range checkpointsPtxs {
+				encoded, err := checkpoint.B64Encode()
+				require.NoError(t, err)
+				encodedCheckpoints = append(encodedCheckpoints, encoded)
+			}
+
+			encodedArkTx, err := ptx.B64Encode()
+			require.NoError(t, err)
+			signedArkTx, err := alice.SignTransaction(ctx, encodedArkTx)
+			require.NoError(t, err)
+
+			txid, finalTx, signedCheckpoints, err := aliceClient.SubmitTx(
+				ctx, signedArkTx, encodedCheckpoints,
+			)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "invalid anchor output amount")
+			require.Empty(t, txid)
+			require.Empty(t, finalTx)
+			require.Empty(t, signedCheckpoints)
+		})
+
+		// Alice pays Bob 4000 sats and keeps 800 as change, the 200 sats left over are the fee and
+		// go to the anchor output.
+		t.Run("valid below max anchor output amount", func(t *testing.T) {
+			ptx, checkpointsPtxs, err := offchain.BuildTxsWithFee(
+				[]offchain.VtxoInput{
+					{
+						Outpoint: &wire.OutPoint{
+							Hash:  *vtxoHash,
+							Index: vtxo.VOut,
+						},
+						Tapscript:          tapscript,
+						Amount:             int64(vtxo.Amount),
+						RevealedTapscripts: offchainAddress.Tapscripts,
+					},
+				},
+				[]*wire.TxOut{
+					{
+						Value:    4000,
+						PkScript: bobPkScript,
+					},
+					{
+						Value:    800,
+						PkScript: alicePkScript,
+					},
+				},
+				checkpointTapscript,
+			)
+			require.NoError(t, err)
+
+			encodedCheckpoints := make([]string, 0, len(checkpointsPtxs))
+			for _, checkpoint := range checkpointsPtxs {
+				encoded, err := checkpoint.B64Encode()
+				require.NoError(t, err)
+				encodedCheckpoints = append(encodedCheckpoints, encoded)
+			}
+
+			encodedArkTx, err := ptx.B64Encode()
+			require.NoError(t, err)
+			signedArkTx, err := alice.SignTransaction(ctx, encodedArkTx)
+			require.NoError(t, err)
+
+			txid, _, signedCheckpoints, err := aliceClient.SubmitTx(
+				ctx, signedArkTx, encodedCheckpoints,
+			)
+			require.NoError(t, err)
+			require.NotEmpty(t, txid)
+
+			finalCheckpoints := make([]string, 0, len(signedCheckpoints))
+			for _, checkpoint := range signedCheckpoints {
+				finalCheckpoint, err := alice.SignTransaction(ctx, checkpoint)
+				require.NoError(t, err)
+				finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
+			}
+
+			err = aliceClient.FinalizeTx(ctx, txid, finalCheckpoints)
+			require.NoError(t, err)
+
+			waitForBalance(t, bob, indexerWait, "bob's offchain balance to be 4000",
+				func(b *types.Balance) bool { return b.OffchainBalance.Total == 4000 })
+			waitForBalance(t, alice, indexerWait, "alice's offchain balance to be 800",
+				func(b *types.Balance) bool { return b.OffchainBalance.Total == 800 })
 		})
 	})
 }

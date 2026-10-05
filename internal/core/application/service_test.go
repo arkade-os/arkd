@@ -226,429 +226,494 @@ func TestResolveMinAmounts(t *testing.T) {
 
 func TestValidateOffchainTxOutputs(t *testing.T) {
 	anchor := txutils.AnchorOutput()
-
-	tests := []struct {
-		description             string
-		txOuts                  []*wire.TxOut
-		dust                    uint64
-		vtxoMaxAmount           int64
-		vtxoMinOffchainTxAmount int64
-		wantErr                 bool
-		wantErrCode             uint16
-		wantErrContains         string
-		wantOutputCount         int
-		wantAmount              int // expected Amount in AmountTooLowMetadata (only checked when wantErrCode == AMOUNT_TOO_LOW)
-		maxOpReturnOutputs      uint32
-	}{
-		{
-			description: "valid: anchor + regular output",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 1000, PkScript: testP2TRScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         1,
-		},
-		{
-			description: "valid: subdust OP_RETURN below dust",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 100, PkScript: testSubdustScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         1,
-		},
-		{
-			description: "valid: subdust OP_RETURN with zero value",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 0, PkScript: testSubdustScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         1,
-		},
-		{
-			description: "valid: bare OP_RETURN with zero value",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 0, PkScript: bareOpReturn(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         1,
-		},
-		// subdust OP_RETURN with value >= dust must be rejected
-		{
-			description: "reject: subdust OP_RETURN with value == dust",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: int64(testDust), PkScript: testSubdustScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantErr:                 true,
-			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "subdust OP_RETURN output",
-		},
-		{
-			description: "reject: subdust OP_RETURN with value > dust",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 10000, PkScript: testSubdustScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantErr:                 true,
-			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "subdust OP_RETURN output",
-		},
-		// non-subdust OP_RETURN with value > 0 must be rejected
-		{
-			description: "reject: bare OP_RETURN with non-zero value",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 1000, PkScript: bareOpReturn(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantErr:                 true,
-			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "not a subdust output",
-		},
-		{
-			description: "reject: bare OP_RETURN with value == 1",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 1, PkScript: bareOpReturn(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantErr:                 true,
-			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "not a subdust output",
-		},
-		{
-			description: "reject: missing anchor",
-			txOuts: []*wire.TxOut{
-				{Value: 1000, PkScript: testP2TRScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantErr:                 true,
-			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "missing anchor",
-		},
-		{
-			description: "reject: multiple anchors",
-			txOuts: []*wire.TxOut{
-				anchor,
-				anchor,
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantErr:                 true,
-			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "multiple anchor",
-		},
-		{
-			description: "reject: multiple OP_RETURN outputs",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 0, PkScript: bareOpReturn(t)},
-				{Value: 0, PkScript: bareOpReturn(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			maxOpReturnOutputs:      1,
-			wantErr:                 true,
-			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "OP_RETURN outputs, max",
-		},
-		{
-			description: "reject: regular output exceeds max amount",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 5000, PkScript: testP2TRScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           1000,
-			vtxoMinOffchainTxAmount: 0,
-			wantErr:                 true,
-			wantErrCode:             errors.AMOUNT_TOO_HIGH.Code,
-			wantErrContains:         "higher than max vtxo amount",
-		},
-		{
-			description: "reject: regular output below min amount",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 600, PkScript: testP2TRScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 1000,
-			wantErr:                 true,
-			wantErrCode:             errors.AMOUNT_TOO_LOW.Code,
-			wantErrContains:         "lower than min vtxo amount",
-			wantAmount:              600,
-		},
-		{
-			description: "reject: non-OP_RETURN below dust without subdust script",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 100, PkScript: testP2TRScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantErr:                 true,
-			wantErrCode:             errors.AMOUNT_TOO_LOW.Code,
-			wantErrContains:         "below dust limit",
-		},
-		// Subdust outputs are subject to min amount check
-		{
-			description: "reject: subdust output below min amount",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 100, PkScript: testSubdustScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 1000,
-			wantErr:                 true,
-			wantErrCode:             errors.AMOUNT_TOO_LOW.Code,
-			wantErrContains:         "lower than min vtxo amount",
-			wantAmount:              100,
-		},
-		{
-			description: "valid: anchor only, no other outputs",
-			txOuts: []*wire.TxOut{
-				anchor,
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         0,
-		},
-		// Boundary: subdust at dust-1 (max valid subdust value)
-		{
-			description: "valid: subdust OP_RETURN with value == dust-1",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: int64(testDust) - 1, PkScript: testSubdustScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         1,
-		},
-		// Boundary: regular output at exact max (> not >=, should pass)
-		{
-			description: "valid: regular output value == vtxoMaxAmount",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 1000, PkScript: testP2TRScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           1000,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         1,
-		},
-		// Boundary: regular output at exact min (< not <=, should pass)
-		{
-			description: "valid: regular output value == vtxoMinOffchainTxAmount",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 1000, PkScript: testP2TRScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 1000,
-			wantOutputCount:         1,
-		},
-		// Boundary: regular output exactly at dust (not below, should pass)
-		{
-			description: "valid: regular output value == dust",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: int64(testDust), PkScript: testP2TRScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         1,
-		},
-		// Multiple valid regular outputs all collected
-		{
-			description: "valid: multiple regular outputs",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 1000, PkScript: testP2TRScript(t)},
-				{Value: 2000, PkScript: testP2TRScript(t)},
-				{Value: 3000, PkScript: testP2TRScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         3,
-		},
-		// Mixed: regular + subdust coexist
-		{
-			description: "valid: regular output + subdust OP_RETURN",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 1000, PkScript: testP2TRScript(t)},
-				{Value: 100, PkScript: testSubdustScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         2,
-		},
-		// Mixed: regular + bare OP_RETURN coexist
-		{
-			description: "valid: regular output + bare OP_RETURN with zero value",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 1000, PkScript: testP2TRScript(t)},
-				{Value: 0, PkScript: bareOpReturn(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         2,
-		},
-		// Two OP_RETURN variants still trigger duplicate check
-		{
-			description: "reject: subdust OP_RETURN then bare OP_RETURN",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 100, PkScript: testSubdustScript(t)},
-				{Value: 0, PkScript: bareOpReturn(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			maxOpReturnOutputs:      1,
-			wantErr:                 true,
-			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "OP_RETURN outputs, max",
-		},
-		// Empty txOuts → missing anchor
-		{
-			description:             "reject: empty outputs",
-			txOuts:                  []*wire.TxOut{},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantErr:                 true,
-			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "missing anchor",
-		},
-		// Minimal OP_RETURN: just the opcode, no data push
-		{
-			description: "valid: OP_RETURN opcode only with zero value",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 0, PkScript: []byte{txscript.OP_RETURN}},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         1,
-		},
-		// Extension OP_RETURN must have value == 0
-		{
-			description: "reject: extension OP_RETURN with non-zero value",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 1000, PkScript: testExtensionScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantErr:                 true,
-			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "extension OP_RETURN output",
-		},
-		{
-			description: "reject: extension OP_RETURN with value == 1",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 1, PkScript: testExtensionScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantErr:                 true,
-			wantErrCode:             errors.MALFORMED_ARK_TX.Code,
-			wantErrContains:         "extension OP_RETURN output",
-		},
-		{
-			description: "valid: extension OP_RETURN with zero value",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 0, PkScript: testExtensionScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           -1,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         1,
-		},
-		// Subdust output not subject to max amount check
-		{
-			description: "valid: subdust output is not subject to max amount check",
-			txOuts: []*wire.TxOut{
-				anchor,
-				{Value: 100, PkScript: testSubdustScript(t)},
-			},
-			dust:                    testDust,
-			vtxoMaxAmount:           50,
-			vtxoMinOffchainTxAmount: 0,
-			wantOutputCount:         1,
-		},
+	// anchorWithValue is the anchor carrying a fee, which the CPFP child spends.
+	anchorWithValue := func(value int64) *wire.TxOut {
+		return &wire.TxOut{Value: value, PkScript: txutils.ANCHOR_PKSCRIPT}
 	}
+	malformedExtension, err := txscript.NewScriptBuilder().
+		AddOp(txscript.OP_RETURN).
+		AddData(extension.ArkadeMagic).
+		Script()
+	require.NoError(t, err)
+	nonTaprootScript, err := txscript.NewScriptBuilder().
+		AddOp(txscript.OP_0).
+		AddData(make([]byte, 20)).
+		Script()
+	require.NoError(t, err)
+	const noMaxAmount = int64(-1)
+	const defaultMaxOpReturnOutputs = int64(3)
 
-	for _, tc := range tests {
-		t.Run(tc.description, func(t *testing.T) {
-			maxOpRet := tc.maxOpReturnOutputs
-			if maxOpRet == 0 {
-				maxOpRet = 3
-			}
-			outputs, _, err := validateOffchainTxOutputs(
-				tc.txOuts, tc.dust,
-				tc.vtxoMaxAmount, tc.vtxoMinOffchainTxAmount,
-				int64(maxOpRet), "signed-tx-hex", "test-txid",
-			)
+	t.Run("valid", func(t *testing.T) {
+		tests := []struct {
+			name                    string
+			txOuts                  []*wire.TxOut
+			vtxoMaxAmount           int64
+			vtxoMinOffchainTxAmount int64
+			expectedOutputs         int
+		}{
+			{
+				name: "anchor and regular output",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 1000, PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 1,
+			},
+			{
+				name:            "anchor only",
+				txOuts:          []*wire.TxOut{anchor},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 0,
+			},
+			{
+				name: "anchor with value below dust",
+				txOuts: []*wire.TxOut{
+					anchorWithValue(int64(testDust) - 1),
+					{Value: 1000, PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 1,
+			},
+			{
+				name: "anchor with value above dust but below min offchain tx amount",
+				txOuts: []*wire.TxOut{
+					anchorWithValue(int64(testDust) + 100),
+					{Value: 5000, PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:           noMaxAmount,
+				vtxoMinOffchainTxAmount: int64(testDust) + 1000,
+				expectedOutputs:         1,
+			},
+			{
+				name: "subdust OP_RETURN below dust",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 100, PkScript: testSubdustScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 1,
+			},
+			{
+				name: "subdust OP_RETURN with zero value",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 0, PkScript: testSubdustScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 1,
+			},
+			{
+				name: "subdust OP_RETURN with value equal to dust-1",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: int64(testDust) - 1, PkScript: testSubdustScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 1,
+			},
+			{
+				name: "subdust output is not subject to max amount check",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 100, PkScript: testSubdustScript(t)},
+				},
+				vtxoMaxAmount:   50,
+				expectedOutputs: 1,
+			},
+			{
+				name: "bare OP_RETURN with zero value",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 0, PkScript: bareOpReturn(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 1,
+			},
+			{
+				name: "OP_RETURN opcode only with zero value",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 0, PkScript: []byte{txscript.OP_RETURN}},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 1,
+			},
+			{
+				name: "extension OP_RETURN with zero value",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 0, PkScript: testExtensionScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 1,
+			},
+			{
+				name: "exactly the maximum number of OP_RETURN outputs",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 0, PkScript: bareOpReturn(t)},
+					{Value: 0, PkScript: bareOpReturn(t)},
+					{Value: 0, PkScript: bareOpReturn(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 3,
+			},
+			{
+				name: "subdust output with value equal to min offchain tx amount",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 100, PkScript: testSubdustScript(t)},
+				},
+				vtxoMaxAmount:           noMaxAmount,
+				vtxoMinOffchainTxAmount: 100,
+				expectedOutputs:         1,
+			},
+			{
+				name: "zero-value OP_RETURN outputs are not subject to min amount check",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 0, PkScript: bareOpReturn(t)},
+					{Value: 0, PkScript: testExtensionScript(t)},
+				},
+				vtxoMaxAmount:           noMaxAmount,
+				vtxoMinOffchainTxAmount: 1000,
+				expectedOutputs:         2,
+			},
+			{
+				name: "regular output with value equal to max amount",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 1000, PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:   1000,
+				expectedOutputs: 1,
+			},
+			{
+				name: "regular output with value equal to min offchain tx amount",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 1000, PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:           noMaxAmount,
+				vtxoMinOffchainTxAmount: 1000,
+				expectedOutputs:         1,
+			},
+			{
+				name: "regular output with value equal to dust",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: int64(testDust), PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 1,
+			},
+			{
+				name: "multiple regular outputs",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 1000, PkScript: testP2TRScript(t)},
+					{Value: 2000, PkScript: testP2TRScript(t)},
+					{Value: 3000, PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 3,
+			},
+			{
+				name: "regular output and subdust OP_RETURN",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 1000, PkScript: testP2TRScript(t)},
+					{Value: 100, PkScript: testSubdustScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 2,
+			},
+			{
+				name: "regular output and bare OP_RETURN with zero value",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 1000, PkScript: testP2TRScript(t)},
+					{Value: 0, PkScript: bareOpReturn(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedOutputs: 2,
+			},
+		}
 
-			if tc.wantErr {
-				require.NotNil(t, err, "expected error")
-				require.Equal(t, tc.wantErrCode, err.Code())
-				require.Contains(t, err.Error(), tc.wantErrContains)
-				if tc.wantErrCode == errors.AMOUNT_TOO_LOW.Code && tc.wantAmount != 0 {
-					metadata := err.Metadata()
-					require.Equal(t, fmt.Sprintf("%d", tc.wantAmount), metadata["amount"])
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				outputs, _, err := validateOffchainTxOutputs(
+					tt.txOuts, testDust, tt.vtxoMaxAmount, tt.vtxoMinOffchainTxAmount,
+					defaultMaxOpReturnOutputs, "signed-tx-hex", "test-txid",
+				)
+				require.Nil(t, err)
+				require.Len(t, outputs, tt.expectedOutputs)
+			})
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		tests := []struct {
+			name                    string
+			txOuts                  []*wire.TxOut
+			vtxoMaxAmount           int64
+			vtxoMinOffchainTxAmount int64
+			maxOpReturnOutputs      int64
+			expectedErrCode         uint16
+			expectedErr             string
+			// expectedAmount is the Amount in AmountTooLowMetadata, checked when set.
+			expectedAmount int
+		}{
+			{
+				name:            "empty outputs",
+				txOuts:          []*wire.TxOut{},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "missing anchor",
+			},
+			{
+				name: "missing anchor",
+				txOuts: []*wire.TxOut{
+					{Value: 1000, PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "missing anchor",
+			},
+			{
+				name:            "multiple anchors",
+				txOuts:          []*wire.TxOut{anchor, anchor},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "multiple anchor",
+			},
+			{
+				name: "anchor with value equal to dust",
+				txOuts: []*wire.TxOut{
+					anchorWithValue(int64(testDust)),
+					{Value: 1000, PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "invalid anchor output amount",
+			},
+			{
+				name: "anchor with value above dust",
+				txOuts: []*wire.TxOut{
+					anchorWithValue(10000),
+					{Value: 1000, PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "invalid anchor output amount",
+			},
+			{
+				name: "anchor with value equal to min offchain tx amount above dust",
+				txOuts: []*wire.TxOut{
+					anchorWithValue(int64(testDust) + 1000),
+					{Value: 5000, PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:           noMaxAmount,
+				vtxoMinOffchainTxAmount: int64(testDust) + 1000,
+				expectedErrCode:         errors.MALFORMED_ARK_TX.Code,
+				expectedErr:             "invalid anchor output amount",
+			},
+			{
+				name: "subdust OP_RETURN with value equal to dust",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: int64(testDust), PkScript: testSubdustScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "subdust OP_RETURN output",
+			},
+			{
+				name: "subdust OP_RETURN with value above dust",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 10000, PkScript: testSubdustScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "subdust OP_RETURN output",
+			},
+			{
+				name: "subdust output below min offchain tx amount",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 100, PkScript: testSubdustScript(t)},
+				},
+				vtxoMaxAmount:           noMaxAmount,
+				vtxoMinOffchainTxAmount: 1000,
+				expectedErrCode:         errors.AMOUNT_TOO_LOW.Code,
+				expectedErr:             "lower than min vtxo amount",
+				expectedAmount:          100,
+			},
+			{
+				name: "bare OP_RETURN with non-zero value",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 1000, PkScript: bareOpReturn(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "not a subdust output",
+			},
+			{
+				name: "bare OP_RETURN with value equal to 1",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 1, PkScript: bareOpReturn(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "not a subdust output",
+			},
+			{
+				name: "extension OP_RETURN with non-zero value",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 1000, PkScript: testExtensionScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "extension OP_RETURN output",
+			},
+			{
+				name: "extension OP_RETURN with value equal to 1",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 1, PkScript: testExtensionScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "extension OP_RETURN output",
+			},
+			{
+				name: "multiple extension outputs",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 0, PkScript: testExtensionScript(t)},
+					{Value: 0, PkScript: testExtensionScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "multiple extension outputs",
+			},
+			{
+				name: "malformed extension output",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 0, PkScript: malformedExtension},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "malformed extension output",
+			},
+			{
+				name: "more OP_RETURN outputs than allowed",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 0, PkScript: bareOpReturn(t)},
+					{Value: 0, PkScript: bareOpReturn(t)},
+				},
+				vtxoMaxAmount:      noMaxAmount,
+				maxOpReturnOutputs: 1,
+				expectedErrCode:    errors.MALFORMED_ARK_TX.Code,
+				expectedErr:        "OP_RETURN outputs, max",
+			},
+			{
+				name: "subdust OP_RETURN and bare OP_RETURN count towards the OP_RETURN limit",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 100, PkScript: testSubdustScript(t)},
+					{Value: 0, PkScript: bareOpReturn(t)},
+				},
+				vtxoMaxAmount:      noMaxAmount,
+				maxOpReturnOutputs: 1,
+				expectedErrCode:    errors.MALFORMED_ARK_TX.Code,
+				expectedErr:        "OP_RETURN outputs, max",
+			},
+			{
+				name: "extension OP_RETURN counts towards the OP_RETURN limit",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 0, PkScript: testExtensionScript(t)},
+					{Value: 0, PkScript: bareOpReturn(t)},
+				},
+				vtxoMaxAmount:      noMaxAmount,
+				maxOpReturnOutputs: 1,
+				expectedErrCode:    errors.MALFORMED_ARK_TX.Code,
+				expectedErr:        "OP_RETURN outputs, max",
+			},
+			{
+				name: "regular output above max amount",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 5000, PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:   1000,
+				expectedErrCode: errors.AMOUNT_TOO_HIGH.Code,
+				expectedErr:     "higher than max vtxo amount",
+			},
+			{
+				name: "regular output below min offchain tx amount",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 600, PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:           noMaxAmount,
+				vtxoMinOffchainTxAmount: 1000,
+				expectedErrCode:         errors.AMOUNT_TOO_LOW.Code,
+				expectedErr:             "lower than min vtxo amount",
+				expectedAmount:          600,
+			},
+			{
+				name: "regular output below dust",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: 100, PkScript: testP2TRScript(t)},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.AMOUNT_TOO_LOW.Code,
+				expectedErr:     "below dust limit",
+			},
+			{
+				name: "regular output with non-taproot script",
+				txOuts: []*wire.TxOut{
+					anchor,
+					{Value: int64(testDust), PkScript: nonTaprootScript},
+				},
+				vtxoMaxAmount:   noMaxAmount,
+				expectedErrCode: errors.MALFORMED_ARK_TX.Code,
+				expectedErr:     "not a taproot pkscript",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				maxOpReturnOutputs := tt.maxOpReturnOutputs
+				if maxOpReturnOutputs == 0 {
+					maxOpReturnOutputs = defaultMaxOpReturnOutputs
 				}
-				return
-			}
-
-			require.Nil(t, err, "unexpected error")
-			require.Len(t, outputs, tc.wantOutputCount)
-		})
-	}
+				outputs, _, err := validateOffchainTxOutputs(
+					tt.txOuts, testDust, tt.vtxoMaxAmount, tt.vtxoMinOffchainTxAmount,
+					maxOpReturnOutputs, "signed-tx-hex", "test-txid",
+				)
+				require.NotNil(t, err)
+				require.Equal(t, tt.expectedErrCode, err.Code())
+				require.Contains(t, err.Error(), tt.expectedErr)
+				if tt.expectedAmount != 0 {
+					require.Equal(
+						t, fmt.Sprintf("%d", tt.expectedAmount), err.Metadata()["amount"],
+					)
+				}
+				require.Nil(t, outputs)
+			})
+		}
+	})
 }
 
 // TestCollectTriggerContext ensures collectTriggerContext returns the correct context for batch

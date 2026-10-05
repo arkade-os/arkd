@@ -5334,13 +5334,9 @@ func allSignerPubkeys(settings *ports.Settings) []*btcec.PublicKey {
 }
 
 func validateOffchainTxOutputs(
-	txOuts []*wire.TxOut,
-	dust uint64,
-	vtxoMaxAmount int64,
-	vtxoMinOffchainTxAmount int64,
-	maxOpReturnOutputs int64,
-	signedArkTx string,
-	txid string,
+	txOuts []*wire.TxOut, dust uint64,
+	vtxoMaxAmount, vtxoMinOffchainTxAmount, maxOpReturnOutputs int64,
+	signedArkTx, txid string,
 ) ([]*wire.TxOut, extension.Extension, errors.Error) {
 	outputs := make([]*wire.TxOut, 0)
 	foundAnchor := false
@@ -5353,6 +5349,13 @@ func validateOffchainTxOutputs(
 			if foundAnchor {
 				return nil, nil, errors.MALFORMED_ARK_TX.New(
 					"tx %s has multiple anchor outputs", txid,
+				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
+			}
+			// The anchor carries the fee the CPFP child spends. It is meant for the change
+			// too small to be a vtxo, so it must stay below dust/minOffchainTxAmount.
+			if maxAmount := max(int64(dust), vtxoMinOffchainTxAmount); out.Value >= maxAmount {
+				return nil, nil, errors.MALFORMED_ARK_TX.New(
+					"invalid anchor output amount: got %d, expected max %d", out.Value, maxAmount-1,
 				).WithMetadata(errors.PsbtMetadata{Tx: signedArkTx})
 			}
 			foundAnchor = true
