@@ -4850,32 +4850,19 @@ func validateBoardingInput(
 		}
 	}
 
-	// if the exit path is available, forbid registering the boarding utxo.
-	// No margin here, since this gate is about an exit path that is already open.
-	available, err := isExitDelayExpired(funding.blockTimestamp, tip, *exitDelay, 0, now)
+	// Ensure the CSV is far enough from expiring so the batch has time to finalize before the exit
+	// path becomes available.
+	expiresSoon, err := isExitDelayExpired(
+		funding.blockTimestamp, tip, *exitDelay, unrolledVtxoMinExpiryMargin, now,
+	)
 	if err != nil {
 		return err
 	}
-	if available {
-		return fmt.Errorf("tx %s expired", input.Txid)
-	}
-
-	// For unrolled VTXOs, ensure the CSV is far enough from expiring so the
-	// batch has time to finalize before the exit path becomes available. This
-	// is the same question as above asked with a margin, so it goes through the
-	// same helper rather than being computed separately.
-	if input.isUnrolledVtxo {
-		expiresSoon, err := isExitDelayExpired(
-			funding.blockTimestamp, tip, *exitDelay, unrolledVtxoMinExpiryMargin, now,
+	if expiresSoon {
+		return fmt.Errorf(
+			"CSV of utxo %s expires too soon (within %s)",
+			input.String(), unrolledVtxoMinExpiryMargin,
 		)
-		if err != nil {
-			return err
-		}
-		if expiresSoon {
-			return fmt.Errorf(
-				"unrolled vtxo CSV expires too soon (within %s)", unrolledVtxoMinExpiryMargin,
-			)
-		}
 	}
 
 	// If the intent is registered using a exit path that contains CSV delay, we want to verify it

@@ -313,6 +313,53 @@ func TestBatchSession(t *testing.T) {
 			require.Zero(t, batch.boardingSurplus(aliceBoardingAmount))
 		})
 	})
+
+	// In this test Alice attempts to join a batch with a boarding utxo that is really close to
+	// expiration of the exit path locktime. In this case the server rejects the request at
+	// RegisterIntent saying the CSV locking the utxo is too close to expiration
+	t.Run("reject boarding utxo with csv too close to expiry", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupClientWallet(t)
+
+		_, _, boardingAddr, err := alice.Receive(ctx)
+		require.NoError(t, err)
+
+		vtxoScript, err := boardingAddr.RawScript()
+		require.NoError(t, err)
+		exitDelay, err := vtxoScript.SmallestExitDelay()
+		require.NoError(t, err)
+		require.Equal(
+			t, arklib.LocktimeTypeBlock, exitDelay.Type,
+			"this test drives the exit path by mining blocks, it needs block-typed delays",
+		)
+
+		faucetOnchainAndWait(t, boardingAddr.Address, 0.00021)
+
+		boardingUtxos, err := testExplorer.GetUtxos([]string{boardingAddr.Address})
+		require.NoError(t, err)
+		require.Len(t, boardingUtxos, 1)
+
+		// The exit path can be used from block fundingHeight+exitDelay on. The server refuses
+		// the boarding utxo only once the next block satisfies the CSV, so bring the chain to
+		// one block short of that: the utxo is still accepted, and a single empty block later
+		// opens the exit path.
+		fundingHeight, err := getBlockHeight()
+		require.NoError(t, err)
+
+		tip, err := getBlockHeight()
+		require.NoError(t, err)
+		lastAllowedTip := fundingHeight + exitDelay.Value - 2
+		require.LessOrEqual(t, tip, lastAllowedTip)
+		if toMine := lastAllowedTip - tip; toMine > 0 {
+			require.NoError(t, generateBlocks(int(toMine)))
+		}
+
+		res, err := settleBounded(ctx, alice)
+		require.Nil(t, res)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "expires too soon")
+	})
 }
 
 func TestUnilateralExit(t *testing.T) {
@@ -930,7 +977,7 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 				ReceiverAddr:  offchainAddr.Address,
 			})
 			require.Error(t, err)
-			require.ErrorContains(t, err, "expired")
+			require.ErrorContains(t, err, "expires too soon")
 		})
 
 		// Alice unrolls a regular BTC-only VTXO and then attempts to

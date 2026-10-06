@@ -164,7 +164,7 @@ func TestProcessBoardingInputs(t *testing.T) {
 				settings:    secondsSettings,
 				delays:      []arklib.RelativeLocktime{secondsLong, secondsShort},
 				errCode:     errors.INVALID_PSBT_INPUT.Code,
-				errContains: "expired",
+				errContains: "expires too soon",
 			},
 			{
 				// Tip 130 is past the short delay's 120 and short of the long one's 244.
@@ -173,7 +173,7 @@ func TestProcessBoardingInputs(t *testing.T) {
 				delays:      []arklib.RelativeLocktime{blocksLong, blocksShort},
 				tip:         &ports.BlockTimestamp{Height: 130},
 				errCode:     errors.INVALID_PSBT_INPUT.Code,
-				errContains: "expired",
+				errContains: "expires too soon",
 			},
 			{
 				// A wallet failure is not the input's fault.
@@ -341,6 +341,14 @@ func TestValidateBoardingInput(t *testing.T) {
 				input:    asUnrolled(boardingInput(0, blockTapscripts)),
 				settings: blockMarginSettings,
 			},
+			{
+				// Same margin check for a plain boarding utxo: 200+1+10 < 244.
+				name:     "boarding utxo, exit delay in blocks not expiring within margin",
+				funding:  funding,
+				getTip:   tipAt(200),
+				input:    boardingInput(0, blockTapscripts),
+				settings: blockMarginSettings,
+			},
 		}
 
 		for _, tt := range tests {
@@ -366,7 +374,27 @@ func TestValidateBoardingInput(t *testing.T) {
 				getTip:      noTip,
 				input:       boardingInput(1, shortTapscripts),
 				settings:    settings,
-				errContains: "expired",
+				errContains: "expires too soon",
+			},
+			{
+				// The margin applies to every boarding utxo, not only unrolled vtxos: a
+				// utxo whose exit path opens before the batch can confirm is refused.
+				// Expires in ~1h, margin is 4h.
+				name:        "boarding utxo, exit delay in seconds expiring within margin",
+				funding:     funding,
+				getTip:      noTip,
+				input:       boardingInput(0, longTapscripts),
+				settings:    marginSettings,
+				errContains: "expires too soon",
+			},
+			{
+				// Expires at 244, margin is 10 blocks: 233+1+10 == 244.
+				name:        "boarding utxo, exit delay in blocks expiring within margin",
+				funding:     funding,
+				getTip:      tipAt(233),
+				input:       boardingInput(0, blockTapscripts),
+				settings:    blockMarginSettings,
+				errContains: "expires too soon",
 			},
 			{
 				name:        "amount below min utxo amount",
