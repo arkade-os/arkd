@@ -4351,6 +4351,172 @@ func TestSweep(t *testing.T) {
 		require.False(t, secondOffchainTxVtxo.Spent)
 	})
 
+	// In this test alice sends to bob some funds that are locked by a script with a CLTV expiring
+	// after the expiration of the funds. The test ensures bob can recover the funds only after the
+	// locktime expired even if the funds are swept, ensuring CLTVs are always honored.
+	t.Run("CLTV-locked funds can be recovered after locktime", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupClientWallet(t)
+
+		bob := setupClientWallet(t)
+		keyRef, err := bob.Identity().GetKey(ctx, "")
+		require.NoError(t, err)
+		bobPubkey := keyRef.PubKey
+
+		_, offchainAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+		aliceAddr, err := arklib.DecodeAddressV0(offchainAddr.Address)
+		require.NoError(t, err)
+
+		// Send funds to Alice
+		faucetOffchain(t, alice, 0.00021)
+
+		currentHeight, err := getBlockHeight()
+		require.NoError(t, err)
+
+		// Bob's only path is a collaborative path locked well after the batch expiry
+		// (40 blocks on regtest).
+		const cltvBlocks = 70
+		const sendAmount = 10000
+
+		vtxoScript := script.TapscriptsVtxoScript{
+			Closures: []script.Closure{
+				&script.CLTVMultisigClosure{
+					Locktime: arklib.AbsoluteLocktime(currentHeight + cltvBlocks),
+					MultisigClosure: script.MultisigClosure{
+						PubKeys: []*btcec.PublicKey{bobPubkey, aliceAddr.Signer},
+					},
+				},
+			},
+		}
+		vtxoTapKey, vtxoTapTree, err := vtxoScript.TapTree()
+		require.NoError(t, err)
+
+		cltvScript, err := vtxoScript.Closures[0].Script()
+		require.NoError(t, err)
+		merkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+			txscript.NewBaseTapLeaf(cltvScript).TapHash(),
+		)
+		require.NoError(t, err)
+
+		bobAddr := arklib.Address{HRP: "tark", VtxoTapKey: vtxoTapKey, Signer: aliceAddr.Signer}
+		bobAddrStr, err := bobAddr.EncodeV0()
+		require.NoError(t, err)
+		bobPkScript, err := script.P2TRScript(vtxoTapKey)
+		require.NoError(t, err)
+		alicePkScript, err := script.P2TRScript(aliceAddr.VtxoTapKey)
+		require.NoError(t, err)
+
+		// Send funds to Bob.
+		wg := &sync.WaitGroup{}
+		wg.Add(1)
+		var incomingFunds []clientlib.Vtxo
+		var incomingErr error
+		go func() {
+			incomingFunds, incomingErr = notifyIncomingFunds(ctx, alice, bobAddrStr)
+			wg.Done()
+		}()
+		_, err = sendOffChainBounded(
+			ctx, alice, []clientlib.Receiver{{To: bobAddrStr, Amount: sendAmount}},
+		)
+		require.NoError(t, err)
+		wg.Wait()
+		require.NoError(t, incomingErr)
+		require.Len(t, incomingFunds, 1)
+		bobVtxo := incomingFunds[0]
+
+		// Make the batch expire and wait for the server to sweep it.
+		require.NoError(t, generateBlocks(50))
+		waitUntil(t, sweepWait, "bob's vtxo to be swept", func(ctx context.Context) error {
+			res, err := alice.Indexer().GetVtxos(
+				ctx,
+				clientlib.WithScripts([]string{hex.EncodeToString(bobPkScript)}),
+				clientlib.WithRecoverableOnly(),
+			)
+			if err != nil {
+				return err
+			}
+			if res == nil || len(res.Vtxos) == 0 {
+				return fmt.Errorf("no recoverable vtxos returned")
+			}
+			if !res.Vtxos[0].Swept {
+				return fmt.Errorf("vtxo not swept yet")
+			}
+			return nil
+		})
+
+		// Bob tries to recover the swept vtxo through the still-locked CLTV closure.
+		cosignerKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		vtxoHash, err := chainhash.NewHashFromStr(bobVtxo.Txid)
+		require.NoError(t, err)
+
+		// signIntentProof returns bob's signed proof of the given message, spending his
+		// vtxo through the CLTV closure to alice.
+		signIntentProof := func(message string) string {
+			t.Helper()
+			intentProof, err := intent.New(
+				message,
+				[]intent.Input{{
+					OutPoint:    &wire.OutPoint{Hash: *vtxoHash, Index: bobVtxo.VOut},
+					Sequence:    wire.MaxTxInSequenceNum,
+					WitnessUtxo: &wire.TxOut{Value: int64(bobVtxo.Amount), PkScript: bobPkScript},
+				}},
+				[]*wire.TxOut{{Value: int64(bobVtxo.Amount), PkScript: alicePkScript}},
+			)
+			require.NoError(t, err)
+
+			tapLeafScript := &psbt.TaprootTapLeafScript{
+				ControlBlock: merkleProof.ControlBlock,
+				Script:       merkleProof.Script,
+				LeafVersion:  txscript.BaseLeafVersion,
+			}
+			intentProof.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
+			intentProof.Inputs[1].TaprootLeafScript = []*psbt.TaprootTapLeafScript{tapLeafScript}
+
+			unsignedIntentProof, err := intentProof.B64Encode()
+			require.NoError(t, err)
+			signedIntentProof, err := bob.SignTransaction(ctx, unsignedIntentProof)
+			require.NoError(t, err)
+			return signedIntentProof
+		}
+
+		intentMessage := intent.RegisterMessage{
+			BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
+			CosignersPublicKeys: []string{
+				hex.EncodeToString(cosignerKey.PubKey().SerializeCompressed()),
+			},
+		}
+		encodedIntentMessage, err := intentMessage.Encode()
+		require.NoError(t, err)
+		encodedIntentProof := signIntentProof(encodedIntentMessage)
+
+		// Ensure request is rejected
+		_, err = bob.Client().RegisterIntent(ctx, encodedIntentProof, encodedIntentMessage)
+		require.ErrorContains(t, err, "CLTV locked")
+
+		// Mine blocks to make the CLTV expire.
+		require.NoError(t, generateBlocks(30))
+
+		// Retry registering the intent, now it should succeed.
+		intentId, err := bob.Client().RegisterIntent(ctx, encodedIntentProof, encodedIntentMessage)
+		require.NoError(t, err)
+		require.NotEmpty(t, intentId)
+
+		// Delete the intent to clean up.
+		deleteIntentMessage := intent.DeleteMessage{
+			BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeDelete},
+		}
+		encodedDeleteIntentMessage, err := deleteIntentMessage.Encode()
+		require.NoError(t, err)
+		require.NotEmpty(t, encodedDeleteIntentMessage)
+		encodedDeleteIntentProof := signIntentProof(encodedDeleteIntentMessage)
+
+		err = bob.Client().DeleteIntent(ctx, encodedDeleteIntentProof, encodedDeleteIntentMessage)
+		require.NoError(t, err)
+	})
+
 	t.Run("with arkd restart", func(t *testing.T) {
 		ctx := t.Context()
 

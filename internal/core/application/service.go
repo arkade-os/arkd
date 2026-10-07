@@ -935,11 +935,8 @@ func (s *service) SubmitOffchainTx(
 				})
 		}
 
-		var locktime *arklib.AbsoluteLocktime
-		switch c := closure.(type) {
-		case *script.CLTVMultisigClosure:
-			locktime = &c.Locktime
-		case *script.MultisigClosure, *script.ConditionMultisigClosure:
+		switch closure.(type) {
+		case *script.CLTVMultisigClosure, *script.MultisigClosure, *script.ConditionMultisigClosure:
 		default:
 			return nil, errors.INVALID_PSBT_INPUT.New(
 				"invalid spending tapscript on input %d: %x", inputIndex, spendingTapscript.Script,
@@ -950,37 +947,8 @@ func (s *service) SubmitOffchainTx(
 				})
 		}
 
-		if locktime != nil {
-			blocktimestamp, err := s.wallet.GetCurrentBlockTime(ctx)
-			if err != nil {
-				return nil, errors.INTERNAL_ERROR.New(
-					"get current block time failed: %w",
-					err,
-				)
-			}
-			if !locktime.IsSeconds() {
-				if *locktime > arklib.AbsoluteLocktime(blocktimestamp.Height) {
-					return nil, errors.FORFEIT_CLOSURE_LOCKED.New(
-						"%d > %d (blockheight)",
-						*locktime, blocktimestamp.Time,
-					).WithMetadata(errors.ForfeitClosureLockedMetadata{
-						Locktime:        int(*locktime),
-						CurrentLocktime: int(blocktimestamp.Height),
-						Type:            "height",
-					})
-				}
-			} else {
-				if *locktime > arklib.AbsoluteLocktime(blocktimestamp.Time) {
-					return nil, errors.FORFEIT_CLOSURE_LOCKED.New(
-						"%d > %d (blocktime)",
-						*locktime, blocktimestamp.Time,
-					).WithMetadata(errors.ForfeitClosureLockedMetadata{
-						Locktime:        int(*locktime),
-						CurrentLocktime: int(blocktimestamp.Time),
-						Type:            "time",
-					})
-				}
-			}
+		if err := s.verifyClosureNotLocked(ctx, closure); err != nil {
+			return nil, err
 		}
 
 		ctrlBlock, err := txscript.ParseControlBlock(spendingTapscript.ControlBlock)
@@ -2020,6 +1988,18 @@ func (s *service) RegisterIntent(
 				Txid:       proofTxid,
 				InputIndex: int(outpoint.Index),
 			})
+		}
+
+		// validate timelocks
+		if leaf := psbtInput.TaprootLeafScript[0].Script; !script.IsNoteClosureScript(leaf) {
+			closure, err := script.DecodeClosure(leaf)
+			if err != nil {
+				return "", errors.INVALID_PSBT_INPUT.Wrap(err).
+					WithMetadata(errors.InputMetadata{Txid: proofTxid, InputIndex: i + 1})
+			}
+			if err := s.verifyClosureNotLocked(ctx, closure); err != nil {
+				return "", err
+			}
 		}
 
 		// validation is required only in case the vtxo can be unrolled = requires a forfeit transaction
@@ -4906,6 +4886,32 @@ func validateBoardingInput(
 		)
 	}
 
+	return nil
+}
+
+// verifyClosureNotLocked rejects a CLTV closure whose locktime is past the chain tip.
+func (s *service) verifyClosureNotLocked(ctx context.Context, closure script.Closure) errors.Error {
+	cltv, ok := closure.(*script.CLTVMultisigClosure)
+	if !ok {
+		return nil
+	}
+	blocktimestamp, err := s.wallet.GetCurrentBlockTime(ctx)
+	if err != nil {
+		return errors.INTERNAL_ERROR.New("get current block time failed: %w", err)
+	}
+	current, locktimeType := int64(blocktimestamp.Height), "height"
+	if cltv.Locktime.IsSeconds() {
+		current, locktimeType = blocktimestamp.Time, "time"
+	}
+	if int64(cltv.Locktime) > current {
+		return errors.FORFEIT_CLOSURE_LOCKED.New(
+			"closure is CLTV locked, %d > %d (block %s)", cltv.Locktime, current, locktimeType,
+		).WithMetadata(errors.ForfeitClosureLockedMetadata{
+			Locktime:        int(cltv.Locktime),
+			CurrentLocktime: int(current),
+			Type:            locktimeType,
+		})
+	}
 	return nil
 }
 
