@@ -93,9 +93,9 @@ services:
       arkd-wallet:
         condition: service_healthy
       pg:
-        condition: service_started
+        condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "7070:7070"
       - "7071:7071"
@@ -119,13 +119,13 @@ services:
       - ARKD_DATADIR=./data/regtest
       - ARKD_WALLET_ADDR=arkd-wallet:6060
       - ARKD_ESPLORA_URL=http://chopsticks:3000
-      - ARKD_DB_TYPE=${ARKD_DB_TYPE:-sqlite}
-      - ARKD_PG_DB_URL=${ARKD_PG_DB_URL:-}
-      - ARKD_PG_EVENT_DB_URL=${ARKD_PG_EVENT_DB_URL:-}
-      - ARKD_PG_DB_AUTOCREATE=${ARKD_PG_DB_AUTOCREATE:-false}
-      - ARKD_EVENT_DB_TYPE=${ARKD_EVENT_DB_TYPE:-badger}
-      - ARKD_LIVE_STORE_TYPE=${ARKD_LIVE_STORE_TYPE:-inmemory}
-      - ARKD_REDIS_URL=${ARKD_REDIS_URL:-}
+      - ARKD_DB_TYPE=postgres
+      - ARKD_PG_DB_URL=${ARKD_PG_DB_URL:-postgresql://postgres@pg:5432/projection?sslmode=disable}
+      - ARKD_PG_EVENT_DB_URL=${ARKD_PG_EVENT_DB_URL:-postgresql://postgres@pg:5432/event?sslmode=disable}
+      - ARKD_PG_DB_AUTOCREATE=${ARKD_PG_DB_AUTOCREATE:-true}
+      - ARKD_EVENT_DB_TYPE=postgres
+      - ARKD_LIVE_STORE_TYPE=redis
+      - ARKD_REDIS_URL=${ARKD_REDIS_URL:-redis://redis:6379/0}
       - ARKD_SESSION_DURATION=${ARKD_SESSION_DURATION:-10}
       - ARKD_UNROLLED_VTXO_MIN_EXPIRY_MARGIN=10
 

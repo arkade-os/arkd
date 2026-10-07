@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
+	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/stretchr/testify/require"
 )
@@ -149,13 +151,31 @@ func seedRounds(t testing.TB, svc ports.RepoManager, n, intentsPerRound int, bas
 	}
 }
 
+// resetPgDBs empties the shared databases, so a test that seeds them at scale starts from
+// the schema NewService migrates and leaves the next test the same.
+func resetPgDBs(tb testing.TB) {
+	tb.Helper()
+	reset := func() {
+		for _, dsn := range []string{pgConnect(tb), pgEventConnect(tb)} {
+			conn, err := sql.Open("postgres", dsn)
+			require.NoError(tb, err)
+			_, err = conn.Exec(`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`)
+			require.NoError(tb, err)
+			require.NoError(tb, conn.Close())
+		}
+	}
+	reset()
+	tb.Cleanup(reset)
+}
+
 func newBenchRepo(t testing.TB) ports.RepoManager {
 	t.Helper()
+	resetPgDBs(t)
 	svc, err := db.NewService(db.ServiceConfig{
-		EventStoreType:   "badger",
-		DataStoreType:    "sqlite",
-		EventStoreConfig: []interface{}{"", nil},
-		DataStoreConfig:  []interface{}{t.TempDir()},
+		EventStoreType:   "postgres",
+		DataStoreType:    "postgres",
+		EventStoreConfig: []interface{}{pgEventConnect(t), false, pgdb.ConnectionConfig{}},
+		DataStoreConfig:  []interface{}{pgConnect(t), false, pgdb.ConnectionConfig{}},
 		Settings:         validSettings(),
 	}, nil)
 	require.NoError(t, err)

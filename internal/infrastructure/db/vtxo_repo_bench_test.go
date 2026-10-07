@@ -11,6 +11,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
+	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -32,17 +33,15 @@ var (
 // the seeded DB is N * vtxosPerRound.
 const vtxosPerRound = 10
 
-// newBenchService spins up a fresh sqlite+badger RepoManager rooted at a
-// throwaway temp dir. Each benchmark sub-run gets its own DB so iteration
-// counts are not biased by warm caches across sizes.
+// Each benchmark sub-run starts from empty databases.
 func newBenchService(tb testing.TB) ports.RepoManager {
 	tb.Helper()
-	dir := tb.TempDir()
+	resetPgDBs(tb)
 	svc, err := db.NewService(db.ServiceConfig{
-		EventStoreType:   "badger",
-		DataStoreType:    "sqlite",
-		EventStoreConfig: []interface{}{"", nil},
-		DataStoreConfig:  []interface{}{dir},
+		EventStoreType:   "postgres",
+		DataStoreType:    "postgres",
+		EventStoreConfig: []interface{}{pgEventConnect(tb), false, pgdb.ConnectionConfig{}},
+		DataStoreConfig:  []interface{}{pgConnect(tb), false, pgdb.ConnectionConfig{}},
 		Settings:         validSettings(),
 	}, nil)
 	if err != nil {

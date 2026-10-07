@@ -8,7 +8,6 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
-	"github.com/arkade-os/arkd/internal/infrastructure/db"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -17,7 +16,7 @@ import (
 
 // testRoundSummaries covers the filtering, ordering and limit semantics of the
 // batch listing. These used to live in the application layer; they are now
-// pushed into SQL, so they have to be verified against every dialect.
+// pushed into SQL, so they have to be verified against Postgres.
 func testRoundSummaries(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_round_summaries", func(t *testing.T) {
 		ctx := context.Background()
@@ -179,11 +178,8 @@ func testRoundSummaries(t *testing.T, svc ports.RepoManager) {
 			}
 		})
 
-		// The stage flags and the filter combinations below are where the
-		// backends used to disagree: badger short-circuited the include filters
-		// when only_failed was set, and the sql projection derived Ended from
-		// the column alone. Its own window so the cases above are untouched.
-		t.Run("stage flags and filters agree across backends", func(t *testing.T) {
+		// Use a separate window so the cases above are untouched.
+		t.Run("stage flags and filters", func(t *testing.T) {
 			parityBase := time.Now().Add(96 * time.Hour).Unix()
 			parityFrom, parityTo := parityBase-1, parityBase+1000
 
@@ -247,21 +243,4 @@ func testRoundSummaries(t *testing.T, svc ports.RepoManager) {
 			})
 		})
 	})
-}
-
-// TestRoundSummariesBadger runs the shared suite against the badger data store.
-// TestService only covers sqlite and postgres, so without this the badger
-// implementations of GetRoundSummaries and GetOffchainTxsInRange ship untested.
-func TestRoundSummariesBadger(t *testing.T) {
-	svc, err := db.NewService(db.ServiceConfig{
-		EventStoreType:   "badger",
-		DataStoreType:    "badger",
-		EventStoreConfig: []interface{}{"", nil},
-		DataStoreConfig:  []interface{}{t.TempDir(), nil},
-		Settings:         validSettings(),
-	}, nil)
-	require.NoError(t, err)
-	defer svc.Close()
-
-	testRoundSummaries(t, svc)
 }

@@ -9,15 +9,15 @@ import (
 )
 
 func TestSupportedTypeSupports(t *testing.T) {
-	st := supportedType{"sqlite": {}, "postgres": {}}
+	st := supportedType{"postgres": {}}
 
 	tests := []struct {
 		name     string
 		query    string
 		expected bool
 	}{
-		{"known type is supported", "sqlite", true},
-		{"another known type is supported", "postgres", true},
+		{"known type is supported", "postgres", true},
+		{"removed type is unsupported", "sqlite", false},
 		{"unknown type is not supported", "mysql", false},
 		{"empty string is not supported", "", false},
 	}
@@ -26,6 +26,17 @@ func TestSupportedTypeSupports(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.expected, st.supports(tt.query))
 		})
+	}
+}
+
+func TestStorageTypes(t *testing.T) {
+	require.True(t, supportedDbs.supports("postgres"))
+	require.True(t, supportedEventDbs.supports("postgres"))
+	require.True(t, supportedLiveStores.supports("redis"))
+	for _, removed := range []string{"sqlite", "badger", "inmemory"} {
+		require.False(t, supportedDbs.supports(removed))
+		require.False(t, supportedEventDbs.supports(removed))
+		require.False(t, supportedLiveStores.supports(removed))
 	}
 }
 
@@ -313,12 +324,12 @@ func TestConfigString(t *testing.T) {
 	})
 }
 
-// testConfig returns a config that passes every early Validate() check and
+// validConfig returns a config that passes every early Validate() check and
 // produces valid settings. Tests mutate a copy to exercise a single failure.
 func testConfig() Config {
 	return Config{
-		EventDbType:                   "badger",
-		DbType:                        "sqlite",
+		EventDbType:                   "postgres",
+		DbType:                        "postgres",
 		TxBuilderType:                 "covenantless",
 		IndexerExposure:               "public",
 		MaxConcurrentStreams:          1,

@@ -1106,7 +1106,7 @@ func newCosignFixture(t *testing.T, opts ...cosignFixtureOption) *cosignFixture 
 	f.svc = &service{
 		ctx:            ctx,
 		repoManager:    repos,
-		cache:          inmemorylivestore.NewLiveStore(nil),
+		cache:          newCosignTestLiveStore(),
 		signer:         signer,
 		wallet:         wallet,
 		scanner:        scanner,
@@ -1135,6 +1135,88 @@ func newCosignFixture(t *testing.T, opts ...cosignFixtureOption) *cosignFixture 
 		SignerPubkey: signerKey.PubKey(),
 	})
 	return f
+}
+
+// cosignTestLiveStore is the live store the cosign flow and RegisterIntent touch: the
+// in-memory utxo reservations, stateful settings, an intent queue that claims the inputs
+// pushed to it, and an offchain tx cache spending nothing.
+type cosignTestLiveStore struct {
+	ports.LiveStore
+	utxos    ports.CosignedUtxosStore
+	settings *cosignTestSettingsStore
+	intents  *cosignTestIntentStore
+}
+
+func newCosignTestLiveStore() *cosignTestLiveStore {
+	return &cosignTestLiveStore{
+		utxos:    inmemorylivestore.NewUtxoStore(),
+		settings: &cosignTestSettingsStore{},
+		intents:  &cosignTestIntentStore{claimed: make(map[domain.Outpoint]struct{})},
+	}
+}
+
+func (s *cosignTestLiveStore) CosignedUtxos() ports.CosignedUtxosStore { return s.utxos }
+
+func (s *cosignTestLiveStore) Settings() ports.SettingsStore { return s.settings }
+
+func (s *cosignTestLiveStore) Intents() ports.IntentStore { return s.intents }
+
+func (s *cosignTestLiveStore) OffchainTxs() ports.OffChainTxStore { return testOffchainTxStore{} }
+
+type cosignTestSettingsStore struct {
+	ports.SettingsStore
+	mu       sync.Mutex
+	settings *ports.Settings
+}
+
+func (s *cosignTestSettingsStore) Get(context.Context) (*ports.Settings, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	settings := *s.settings
+	return &settings, nil
+}
+
+func (s *cosignTestSettingsStore) Upsert(_ context.Context, settings ports.Settings) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.settings = &settings
+	return nil
+}
+
+// cosignTestIntentStore claims the vtxo and boarding inputs of the intents pushed to it,
+// so a later cosign request on one of them is refused like the redis store would.
+type cosignTestIntentStore struct {
+	ports.IntentStore
+	mu      sync.Mutex
+	claimed map[domain.Outpoint]struct{}
+}
+
+func (s *cosignTestIntentStore) Push(
+	_ context.Context, intent domain.Intent, boardingInputs []ports.BoardingInput, _ []string,
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, in := range intent.Inputs {
+		s.claimed[in.Outpoint] = struct{}{}
+	}
+	for _, in := range boardingInputs {
+		s.claimed[in.Outpoint] = struct{}{}
+	}
+	return nil
+}
+
+func (s *cosignTestIntentStore) IncludesAny(
+	_ context.Context, outpoints []domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var included []domain.Outpoint
+	for _, outpoint := range outpoints {
+		if _, ok := s.claimed[outpoint]; ok {
+			included = append(included, outpoint)
+		}
+	}
+	return included, nil
 }
 
 func (f *cosignFixture) settings(ctx context.Context) ports.Settings {

@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	inmemory "github.com/arkade-os/arkd/internal/infrastructure/live-store/inmemory"
 	redislivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/redis"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
@@ -91,9 +90,11 @@ var (
 const testRoundId = "test-round"
 
 func TestLiveStoreImplementations(t *testing.T) {
-	redisOpts, err := redis.ParseURL("redis://localhost:6379/0")
+	redisOpts, err := redis.ParseURL("redis://localhost:6379/14")
 	require.NoError(t, err)
 	rdb := redis.NewClient(redisOpts)
+	t.Cleanup(func() { _ = rdb.Close() })
+	require.NoError(t, rdb.FlushDB(t.Context()).Err())
 
 	txBuilder := new(mockedTxBuilder)
 	txBuilder.On("VerifyAndRebuildForfeitTxs", mock.Anything, mock.Anything, mock.Anything).
@@ -103,7 +104,6 @@ func TestLiveStoreImplementations(t *testing.T) {
 		name  string
 		store ports.LiveStore
 	}{
-		{"inmemory", inmemory.NewLiveStore(txBuilder)},
 		{"redis", redislivestore.NewLiveStore(rdb, txBuilder, 5)},
 	}
 

@@ -13,8 +13,7 @@ import (
 
 func TestIntentTxidMigration(t *testing.T) {
 	ctx := context.Background()
-	dsn := "postgres://root:secret@localhost:5432/event?sslmode=disable"
-	db, err := sql.Open("postgres", dsn)
+	db, err := sql.Open("postgres", pgEventConnect)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {

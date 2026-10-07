@@ -46,7 +46,7 @@ func TestReconcile(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				// Opens the store while it is still empty, with nothing to reconcile.
-				svc := newProjectionTestService(t, t.TempDir())
+				svc := newProjectionTestService(t, newProjectionTestDBs(t))
 
 				_, outpoints := seedBatch(t, svc, tt.batchSwept)
 				if tt.vtxosSwept {
@@ -82,7 +82,7 @@ func TestReconcile(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				svc := newProjectionTestService(t, t.TempDir()).(*service)
+				svc := newProjectionTestService(t, newProjectionTestDBs(t)).(*service)
 				tt.setup(svc)
 
 				require.ErrorContains(t, svc.Reconcile(), tt.errContains)
@@ -259,7 +259,7 @@ func TestClose(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := newProjectionTestService(t, t.TempDir()).(*service)
+			svc := newProjectionTestService(t, newProjectionTestDBs(t)).(*service)
 
 			release := func() {}
 			if tt.hold != nil {

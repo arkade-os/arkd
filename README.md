@@ -66,9 +66,9 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_ADMIN_PORT`                   | Admin port (private) to listen on, fallback to service port if 0                | `7071`                         |
 | `ARKD_ENABLE_CHANNELZ`              | Expose gRPC channelz introspection; query via `grpc_cli` on the admin port      | `false`                        |
 | `ARKD_LOG_LEVEL`                    | Logging level (0-6, where 6 is trace)                                           | `4` (info)                     |
-| `ARKD_DB_TYPE`                      | Database type (postgres, sqlite, badger)                                        | `postgres`                     |
+| `ARKD_DB_TYPE`                      | Database type (postgres)                                                        | `postgres`                     |
 | `ARKD_PG_DB_URL`                    | Postgres connection url if `ARKD_DB_TYPE` is set to `postgres`                  | -                              |
-| `ARKD_EVENT_DB_TYPE`                | Event database type (postgres, badger)                                          | `postgres`                     |
+| `ARKD_EVENT_DB_TYPE`                | Event database type (postgres)                                                  | `postgres`                     |
 | `ARKD_PG_EVENT_DB_URL`              | Event database url if `ARKD_EVENT_DB_TYPE` is set to `postgres`                 | -                              |
 | `ARKD_PG_DB_AUTOCREATE`             | Toggles `postgres` database creation when it does not exist                     | `false`                        |
 | `ARKD_PG_DB_MAX_OPEN_CONN`          | Maximum number of open Postgres connections per pool                            | `50`                           |
@@ -76,7 +76,7 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_PG_DB_CONN_MAX_IDLE_MINS`     | Maximum idle time for Postgres connections in minutes                           | `5`                            |
 | `ARKD_PG_DB_CONN_MAX_LIFE_MINS`     | Maximum lifetime for Postgres connections in minutes                            | `30`                           |
 | `ARKD_TX_BUILDER_TYPE`              | Transaction builder type (covenantless)                                         | `covenantless`                 |
-| `ARKD_LIVE_STORE_TYPE`              | Cache service type (redis, inmemory)                                            | `redis`                        |
+| `ARKD_LIVE_STORE_TYPE`              | Cache service type (redis)                                                      | `redis`                        |
 | `ARKD_REDIS_URL`                    | Redis db connection url if `ARKD_LIVE_STORE_TYPE` is set to `redis`             | -                              |
 | `ARKD_REDIS_NUM_OF_RETRIES`         | Maximum number of retries for Redis write operations in case of conflicts       | -                              |
 | `ARKD_ESPLORA_URL`                  | Esplora API URL                                                                 | `https://blockstream.info/api` |
@@ -332,9 +332,7 @@ To compile the `arkd` binary from source, you can use the following Make command
 7. Run arkd in dev mode:
 
    ```sh
-   # with sqlite db and inmemory cache
-   make run-light
-   # or with postgres db and redis cache
+   # with Postgres and Redis
    make run
    ```
 

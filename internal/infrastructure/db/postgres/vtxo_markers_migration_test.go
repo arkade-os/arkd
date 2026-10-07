@@ -19,7 +19,6 @@ import (
 var vtxoMarkerPgMigrations embed.FS
 
 const (
-	vtxoMarkerPgDSN          = "postgres://root:secret@localhost:5432/event?sslmode=disable"
 	vtxoMarkerPgBaseVersion  = 20260701000000
 	vtxoMarkerBackfillDoneID = "__vtxo_markers_backfill_done__"
 )
@@ -240,12 +239,12 @@ func TestVtxoMarkerMigration_Wiring(t *testing.T) {
 // migrates to the swept_vtxo baseline via the real embedded migration source.
 func newMarkerMigratedPgDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", vtxoMarkerPgDSN)
+	db, err := sql.Open("postgres", pgEventConnect)
 	require.NoError(t, err)
 	if perr := db.Ping(); perr != nil {
 		//nolint:errcheck
 		db.Close()
-		t.Skipf("postgres not reachable at %s: %v", vtxoMarkerPgDSN, perr)
+		t.Skipf("postgres not reachable at %s: %v", pgEventConnect, perr)
 	}
 
 	// start from a clean public schema so migration state is deterministic.

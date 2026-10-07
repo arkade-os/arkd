@@ -1,11 +1,11 @@
 .PHONY: \
 	build build-all build-cli build-wallet clean cov \
-	docker-run docker-run-light docker-stop droppg droppgtest \
-	help integrationtest lint migrate pg pgmigrate pgsqlc pgtest \
+	docker-run docker-stop droppg droppgtest \
+	help integrationtest lint pg migrate sqlc pgtest \
 	pprof proto proto-lint psql \
 	redis-down redis-test-down redis-test-up redis-up \
-	run run-light run-signer run-simulation run-wallet run-wallet-nosigner \
-	sqlc test test-pkg vet
+	run run-signer run-simulation run-wallet run-wallet-nosigner \
+	test test-pkg vet
 
 define setup_env
     $(eval include $(1))
@@ -56,12 +56,6 @@ cov:
 ## docker-run: start docker test environment with postgres
 docker-run:
 	@echo "Running dockerized arkd and arkd wallet in test mode on regtest with postgres..."
-	@set -a && . envs/arkd.dev.docker.env && set +a && \
-		docker compose -f docker-compose.regtest.yml up --build -d
-
-## docker-run-light: start docker test environment with sqlite/badger/inmemory
-docker-run-light:
-	@echo "Running dockerized arkd and arkd wallet in test mode on regtest (light mode)..."
 	@docker compose -f docker-compose.regtest.yml up --build -d
 
 ## docker-stop: tear down docker test environment
@@ -96,21 +90,17 @@ lint:
 	@echo "Linting code..."
 	@$(GOLANGCI_LINT) run --fix --tests=false
 
-## migrate: create sqlite migration file(eg. make FILE=init mig_file)
-migrate:
-	@docker run --rm -v ./internal/infrastructure/db/sqlite/migration:/migration migrate/migrate create -ext sql -dir /migration $(FILE)
-
 ## pg: start postgres db inside docker container
 pg:
 	@echo "Starting postgres db..."
 	@docker compose -f docker-compose.regtest.yml up -d pg
 
-## pgmigrate: create pg migration file (e.g. make FILE=init pgmigrate)
-pgmigrate:
+## migrate: create pg migration file (e.g. make FILE=init migrate)
+migrate:
 	@docker run --rm -v ./internal/infrastructure/db/postgres/migration:/migration migrate/migrate create -ext sql -dir /migration $(FILE)
 
-## pgsqlc: compile sql queries for postgres
-pgsqlc:
+## sqlc: compile sql queries for postgres
+sqlc:
 	@docker run --rm -v ./internal/infrastructure/db/postgres:/src -w /src sqlc/sqlc:1.30.0 generate
 
 ## pgtest: start postgres db inside docker container
@@ -165,12 +155,6 @@ run: clean pg redis-up
 	@sleep 2
 	@echo "Running arkd in dev mode on regtest"
 	$(call setup_env, envs/arkd.dev.env)
-	@go run ./cmd/arkd
-
-## run-light: run arkd in light mode
-run-light: clean
-	@echo "Running arkd in light mode on regtest"
-	$(call setup_env, envs/arkd.light.env)
 	@go run ./cmd/arkd
 
 ## run-signer: run arkd wallet as signer without a wallet
@@ -234,11 +218,6 @@ run-wallet-nosigner:
 	@docker compose -f docker-compose.regtest.yml up -d pg nbxplorer
 	$(call setup_env, envs/arkd-wallet-nosigner.regtest.env)
 	@go run ./cmd/arkd-wallet
-
-## sqlc: compile sql queries for sqlite
-sqlc:
-	@echo "gen sql..."
-	@docker run --rm -v ./internal/infrastructure/db/sqlite:/src -w /src sqlc/sqlc:1.30.0 generate
 
 ## test: run unit tests
 test: pgtest redis-test-up

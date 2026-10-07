@@ -3,11 +3,11 @@ package db_test
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"math"
 	"math/big"
-	"os"
 	"reflect"
 	"slices"
 	"sort"
@@ -27,6 +27,7 @@ import (
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	grpccodes "google.golang.org/grpc/codes"
@@ -143,36 +144,18 @@ var (
 	endTimestamp = now.Add(3 * time.Second).Unix()
 )
 
-func TestMain(m *testing.M) {
-	m.Run()
-	_ = os.Remove("test.db")
-}
-
 func TestService(t *testing.T) {
-	dbDir := t.TempDir()
-	pgDns := "postgresql://root:secret@127.0.0.1:5432/projection?sslmode=disable"
-	pgEventDns := "postgresql://root:secret@127.0.0.1:5432/event?sslmode=disable"
 	tests := []struct {
 		name   string
 		config db.ServiceConfig
 	}{
 		{
-			name: "repo_manager_with_sqlite_stores",
-			config: db.ServiceConfig{
-				EventStoreType:   "badger",
-				DataStoreType:    "sqlite",
-				EventStoreConfig: []interface{}{"", nil},
-				DataStoreConfig:  []interface{}{dbDir},
-				Settings:         validSettings(),
-			},
-		},
-		{
 			name: "repo_manager_with_postgres_stores",
 			config: db.ServiceConfig{
 				EventStoreType:   "postgres",
 				DataStoreType:    "postgres",
-				EventStoreConfig: []interface{}{pgEventDns, false, pgdb.ConnectionConfig{}},
-				DataStoreConfig:  []interface{}{pgDns, false, pgdb.ConnectionConfig{}},
+				EventStoreConfig: []interface{}{pgEventConnect(t), false, pgdb.ConnectionConfig{}},
+				DataStoreConfig:  []interface{}{pgConnect(t), false, pgdb.ConnectionConfig{}},
 				Settings:         validSettings(),
 			},
 		},
@@ -6191,6 +6174,30 @@ func testConvergentMultiParentMarkerDAG(t *testing.T, svc ports.RepoManager) {
 			}
 		}
 	})
+}
+
+// The databases of this test binary, which resets them: no other package uses them.
+func pgConnect(tb testing.TB) string      { return testDatabase(tb, "projection_test") }
+func pgEventConnect(tb testing.TB) string { return testDatabase(tb, "event_test") }
+
+// testDatabase returns the DSN of the named database of the postgres container started by
+// `make pgtest`, creating the database if it does not exist yet.
+func testDatabase(tb testing.TB, name string) string {
+	tb.Helper()
+	const dsn = "postgresql://root:secret@127.0.0.1:5432/%s?sslmode=disable"
+	admin, err := sql.Open("postgres", fmt.Sprintf(dsn, "event"))
+	require.NoError(tb, err)
+	defer func() { _ = admin.Close() }()
+
+	var exists bool
+	require.NoError(tb, admin.QueryRow(
+		"SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)", name,
+	).Scan(&exists))
+	if !exists {
+		_, err = admin.Exec("CREATE DATABASE " + pq.QuoteIdentifier(name))
+		require.NoError(tb, err)
+	}
+	return fmt.Sprintf(dsn, name)
 }
 
 func checkVtxos(t *testing.T, expectedVtxos, gotVtxos []domain.Vtxo) {

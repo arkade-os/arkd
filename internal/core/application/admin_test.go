@@ -322,8 +322,8 @@ func (r *serializeProbeRepo) RegisterUpdatesHandler(_ func(domain.Settings, []st
 func (r *serializeProbeRepo) Close() {}
 
 // TestAdminService_GetRounds pins the argument wiring. The filtering, ordering
-// and limit semantics live in SQL now and are covered against both sqlite and
-// postgres by testRoundRepository; what can still break here is the order of
+// and limit semantics live in SQL and are covered by testRoundRepository;
+// what can still break here is the order of
 // the seven parameters, so that is what this asserts.
 func TestAdminService_GetRounds(t *testing.T) {
 	ctx := context.Background()

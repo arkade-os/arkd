@@ -14,13 +14,8 @@ concurrency:
 
 jobs:
   test:
-    name: ${{ matrix.env_name }}
+    name: postgres/redis
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # sqlite/badger only on master merges, PRs run postgres/redis only
-        include: ${{ github.event_name == 'push' && fromJSON('[{"env_target":"docker-run","env_name":"postgres/redis"},{"env_target":"docker-run-light","env_name":"sqlite/badger"}]') || fromJSON('[{"env_target":"docker-run","env_name":"postgres/redis"}]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
@@ -34,7 +29,7 @@ jobs:
           use_liquid: false
 
       - name: Run Arkd and Arkd Wallet
-        run: make ${{ matrix.env_target }}
+        run: make docker-run
 
       - name: Run test
         run: make integrationtest

@@ -1690,11 +1690,6 @@ func TestOffchainTx(t *testing.T) {
 	})
 
 	t.Run("finalize projected tx after cache eviction", func(t *testing.T) {
-		liveStoreType, err := runDockerExec("arkd", "printenv", "ARKD_LIVE_STORE_TYPE")
-		require.NoError(t, err)
-		if strings.TrimSpace(liveStoreType) != "redis" {
-			t.Skip("cache eviction is only externally observable with the redis live store")
-		}
 		redisClient := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
 		defer redisClient.Close()
 
@@ -4993,9 +4988,7 @@ func TestResubmitOffchainTxAfterFailedFinalize(t *testing.T) {
 	defer db.Close()
 	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := db.PingContext(pingCtx); err != nil {
-		t.Skipf("postgres not reachable (e2e running in light mode): %s", err)
-	}
+	require.NoError(t, db.PingContext(pingCtx))
 	lockTx, err := db.Begin()
 	require.NoError(t, err)
 	//nolint
@@ -5005,11 +4998,6 @@ func TestResubmitOffchainTxAfterFailedFinalize(t *testing.T) {
 		`SELECT txid FROM vtxo WHERE txid = $1 AND vout = $2 FOR UPDATE`,
 		vtxo.Txid, vtxo.VOut,
 	).Scan(&locked)
-	if err == sql.ErrNoRows {
-		// the pg container also runs in light mode, unused: a reachable
-		// database without the vtxo row means arkd is not on postgres
-		t.Skip("arkd is not backed by postgres (e2e running in light mode)")
-	}
 	require.NoError(t, err)
 
 	signedCheckpointsX, err := submit("X", txX)

@@ -1,19 +1,3 @@
-// This Redis-backed implementation of confirmationSessionsStore matches the API and semantics
-// of the in-memory version, but is designed for distributed safety and cross-process correctness.
-//
-// In the in-memory version, session completion is signaled by directly closing a channel when
-// all confirmations are received, because all state and notification are local to the process.
-//
-// In the Redis-backed version, state is shared across processes. As a result, we use a background
-// goroutine (watchSessionCompletion) to poll Redis and close the local sessionCompleteCh channel
-// when the session is complete. This ensures any process using this store can be notified, regardless
-// of which process performed the final confirmation.
-//
-// For a truly distributed event notification, using Redis Pub/Sub should be considered: publish a message when
-// the session completes, and have all interested processes subscribe to the channel and close their
-// local sessionCompleteCh when they receive the event. This avoids polling and provides real-time
-// notification across distributed systems.
-
 package redislivestore
 
 import (

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/arkade-os/arkd/internal/core/application"
@@ -17,7 +16,6 @@ import (
 	"github.com/arkade-os/arkd/internal/infrastructure/db"
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	"github.com/arkade-os/arkd/internal/infrastructure/feemanager"
-	inmemorylivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/inmemory"
 	redislivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/redis"
 	blockscheduler "github.com/arkade-os/arkd/internal/infrastructure/scheduler/block"
 	timescheduler "github.com/arkade-os/arkd/internal/infrastructure/scheduler/gocron"
@@ -45,12 +43,9 @@ const (
 
 var (
 	supportedEventDbs = supportedType{
-		"badger":   {},
 		"postgres": {},
 	}
 	supportedDbs = supportedType{
-		"badger":   {},
-		"sqlite":   {},
 		"postgres": {},
 	}
 	supportedTxBuilders = supportedType{
@@ -61,8 +56,7 @@ var (
 		"file": {},
 	}
 	supportedLiveStores = supportedType{
-		"inmemory": {},
-		"redis":    {},
+		"redis": {},
 	}
 	supportedIndexerExposures = supportedType{
 		"public":   {},
@@ -75,7 +69,6 @@ type Config struct {
 	Datadir         string
 	Port            uint32
 	AdminPort       uint32
-	DbMigrationPath string
 	NoTLS           bool
 	NoMacaroons     bool
 	LogLevel        int
@@ -84,10 +77,8 @@ type Config struct {
 
 	DbType                     string
 	EventDbType                string
-	DbDir                      string
 	DbUrl                      string
 	EventDbUrl                 string
-	EventDbDir                 string
 	PostgresAutoCreateDB       bool
 	PostgresMaxOpenConn        int
 	PostgresMaxIdleConn        int
@@ -417,8 +408,6 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("failed to create datadir: %s", err)
 	}
 
-	dbPath := filepath.Join(viper.GetString(Datadir), "db")
-
 	var eventDbUrl string
 	if viper.GetString(EventDbType) == "postgres" {
 		eventDbUrl = viper.GetString(EventDbUrl)
@@ -514,9 +503,7 @@ func LoadConfig() (*Config, error) {
 		RedisUrl:                  redisUrl,
 		RedisTxNumOfRetries:       viper.GetInt(RedisTxNumOfRetries),
 		NoTLS:                     viper.GetBool(NoTLS),
-		DbDir:                     dbPath,
 		DbUrl:                     dbUrl,
-		EventDbDir:                dbPath,
 		EventDbUrl:                eventDbUrl,
 		PostgresAutoCreateDB:      viper.GetBool(PostgresAutoCreateDB),
 		PostgresMaxOpenConn:       viper.GetInt(PostgresMaxOpenConn),
@@ -790,11 +777,7 @@ func (c *Config) repoManager() error {
 	var err error
 	var eventStoreConfig []interface{}
 	var dataStoreConfig []interface{}
-	logger := log.New()
-
 	switch c.EventDbType {
-	case "badger":
-		eventStoreConfig = []interface{}{c.EventDbDir, logger}
 	case "postgres":
 		eventStoreConfig = []interface{}{
 			c.EventDbUrl,
@@ -810,10 +793,6 @@ func (c *Config) repoManager() error {
 	}
 
 	switch c.DbType {
-	case "badger":
-		dataStoreConfig = []interface{}{c.DbDir, logger}
-	case "sqlite":
-		dataStoreConfig = []interface{}{c.DbDir}
 	case "postgres":
 		dataStoreConfig = []interface{}{
 			c.DbUrl,
@@ -911,8 +890,6 @@ func (c *Config) liveStoreService() error {
 	var liveStoreSvc ports.LiveStore
 	var err error
 	switch c.LiveStoreType {
-	case "inmemory":
-		liveStoreSvc = inmemorylivestore.NewLiveStore(c.txBuilder)
 	case "redis":
 		redisOpts, err := redis.ParseURL(c.RedisUrl)
 		if err != nil {

@@ -24,7 +24,7 @@ const testRoundId = "test-round"
 func TestPopNilIntent(t *testing.T) {
 	ctx := t.Context()
 
-	// use /1 to isolate from TestLiveStoreImplementations which uses /0
+	// use /1 to isolate from TestLiveStoreImplementations which uses /14
 	// it avoids race condition where DeleteAll clean the intent list before the end of the test
 	redisOpts, err := redis.ParseURL("redis://localhost:6379/1")
 	require.NoError(t, err)

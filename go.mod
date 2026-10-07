@@ -36,7 +36,6 @@ require (
 	github.com/btcsuite/btcd/psbt/v2 v2.0.0
 	github.com/btcsuite/btcd/txscript/v2 v2.0.0
 	github.com/btcsuite/btcd/wire/v2 v2.0.1
-	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/go-co-op/gocron v1.37.0
 	github.com/go-macaroon-bakery/macaroonpb v1.0.0
 	github.com/golang-migrate/migrate/v4 v4.17.1
@@ -45,7 +44,6 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/lib/pq v1.10.9
 	github.com/lightningnetwork/lnd v0.21.0-beta.rc2.0.20260828055859-d24719e0a3d3
-	github.com/ltcsuite/ltcd v0.23.5
 	github.com/meshapi/grpc-api-gateway v0.1.0
 	github.com/nbd-wtf/go-nostr v0.40.1
 	github.com/redis/go-redis/v9 v9.10.0
@@ -54,7 +52,6 @@ require (
 	github.com/spf13/viper v1.20.1
 	github.com/sqlc-dev/pqtype v0.3.0
 	github.com/stretchr/testify v1.11.1
-	github.com/timshannon/badgerhold/v4 v4.0.3
 	github.com/urfave/cli/v2 v2.27.4
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0
 	go.opentelemetry.io/otel v1.44.0
@@ -70,7 +67,6 @@ require (
 	google.golang.org/grpc v1.83.2
 	gopkg.in/macaroon-bakery.v2 v2.3.0
 	gopkg.in/macaroon.v2 v2.1.0
-	modernc.org/sqlite v1.33.1
 )
 
 require github.com/stretchr/objx v0.5.2 // indirect
@@ -99,6 +95,7 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.6 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/decred/dcrd/lru v1.1.3 // indirect
+	github.com/dgraph-io/badger/v4 v4.8.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/distribution/reference v0.6.0 // indirect
@@ -120,7 +117,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/jessevdk/go-flags v1.6.1 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
@@ -129,7 +125,6 @@ require (
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/kcalvinalvin/anet v0.0.0-20251112173137-d8ddc1f6dbee // indirect
 	github.com/kkdai/bstream v1.0.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/neutrino v0.18.0 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.4 // indirect
@@ -143,13 +138,11 @@ require (
 	github.com/lithammer/shortuuid/v3 v3.0.7 // indirect
 	github.com/ltcsuite/ltcd/chaincfg/chainhash v1.0.2 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/miekg/dns v1.1.61 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/opencontainers/image-spec v1.1.0 // indirect
 	github.com/prometheus/client_golang v1.23.2 // indirect
@@ -157,7 +150,6 @@ require (
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.4.0 // indirect
-	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rogpeppe/fastuuid v1.2.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
@@ -166,6 +158,7 @@ require (
 	github.com/tidwall/gjson v1.17.3 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/timshannon/badgerhold/v4 v4.0.3 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75 // indirect
 	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
@@ -196,13 +189,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/errgo.v1 v1.0.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
-	lukechampine.com/blake3 v1.3.0 // indirect
-	modernc.org/gc/v3 v3.0.0-20240801135723-a856999a2e4a // indirect
-	modernc.org/libc v1.59.3 // indirect
-	modernc.org/mathutil v1.6.0 // indirect
-	modernc.org/memory v1.8.0 // indirect
-	modernc.org/strutil v1.2.0 // indirect
-	modernc.org/token v1.1.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 

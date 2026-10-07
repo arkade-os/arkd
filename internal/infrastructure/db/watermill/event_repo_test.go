@@ -1,16 +1,17 @@
 package watermilldb_test
 
 import (
+	"database/sql"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
-
-const pgEventDsn = "postgresql://root:secret@127.0.0.1:5432/event?sslmode=disable"
 
 func TestClose(t *testing.T) {
 	startedRoundEvents := func(id string) []domain.Event {
@@ -38,7 +39,7 @@ func TestClose(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			db, err := pgdb.OpenDb(pgEventDsn, false)
+			db, err := pgdb.OpenDb(pgEventConnect(t), false)
 			require.NoError(t, err)
 			// nolint:errcheck
 			t.Cleanup(func() { db.Close() })
@@ -91,4 +92,26 @@ func TestClose(t *testing.T) {
 			require.Error(t, repo.Save(t.Context(), domain.RoundTopic, id, startedRoundEvents(id)))
 		})
 	}
+}
+
+// pgEventConnect returns the DSN of the event database of this package in the postgres container
+// started by `make pgtest`, creating it if it does not exist yet. The other packages reset the
+// databases they use, and packages run in parallel, so this one has a database of its own.
+func pgEventConnect(t *testing.T) string {
+	t.Helper()
+	const dsn = "postgresql://root:secret@127.0.0.1:5432/%s?sslmode=disable"
+	const name = "watermill_events"
+	admin, err := sql.Open("postgres", fmt.Sprintf(dsn, "event"))
+	require.NoError(t, err)
+	defer func() { _ = admin.Close() }()
+
+	var exists bool
+	require.NoError(t, admin.QueryRow(
+		"SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)", name,
+	).Scan(&exists))
+	if !exists {
+		_, err = admin.Exec("CREATE DATABASE " + pq.QuoteIdentifier(name))
+		require.NoError(t, err)
+	}
+	return fmt.Sprintf(dsn, name)
 }

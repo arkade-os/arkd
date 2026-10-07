@@ -8,15 +8,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
-	badgerdb "github.com/arkade-os/arkd/internal/infrastructure/db/badger"
 	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
-	sqlitedb "github.com/arkade-os/arkd/internal/infrastructure/db/sqlite"
 	"github.com/arkade-os/arkd/pkg/ark-lib/asset"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -26,70 +23,45 @@ import (
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
-	sqlitemigrate "github.com/golang-migrate/migrate/v4/database/sqlite"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	log "github.com/sirupsen/logrus"
 )
 
-//go:embed sqlite/migration/*
-var migrations embed.FS
-
 //go:embed postgres/migration/*
 var pgMigration embed.FS
 
-var arkRepo badgerdb.ArkRepository
-
 var (
 	eventStoreTypes = map[string]func(...interface{}) (domain.EventRepository, error){
-		"badger":   badgerdb.NewEventRepository,
 		"postgres": pgdb.NewEventRepository,
 	}
 	roundStoreTypes = map[string]func(...interface{}) (domain.RoundRepository, error){
-		"badger":   newBadgerRoundRepository,
-		"sqlite":   sqlitedb.NewRoundRepository,
 		"postgres": pgdb.NewRoundRepository,
 	}
 	vtxoStoreTypes = map[string]func(...interface{}) (domain.VtxoRepository, error){
-		"badger":   badgerdb.NewVtxoRepository,
-		"sqlite":   sqlitedb.NewVtxoRepository,
 		"postgres": pgdb.NewVtxoRepository,
 	}
 	utxoStoreTypes = map[string]func(...interface{}) (domain.UtxoRepository, error){
-		"badger":   badgerdb.NewUtxoRepository,
-		"sqlite":   sqlitedb.NewUtxoRepository,
 		"postgres": pgdb.NewUtxoRepository,
 	}
 	offchainTxStoreTypes = map[string]func(...interface{}) (domain.OffchainTxRepository, error){
-		"badger":   newBadgerOffchainTxRepository,
-		"sqlite":   sqlitedb.NewOffchainTxRepository,
 		"postgres": pgdb.NewOffchainTxRepository,
 	}
 	convictionStoreTypes = map[string]func(...interface{}) (domain.ConvictionRepository, error){
-		"badger":   badgerdb.NewConvictionRepository,
-		"sqlite":   sqlitedb.NewConvictionRepository,
 		"postgres": pgdb.NewConvictionRepository,
 	}
 	assetStoreTypes = map[string]func(...interface{}) (domain.AssetRepository, error){
-		"sqlite":   sqlitedb.NewAssetRepository,
-		"badger":   badgerdb.NewAssetRepository,
 		"postgres": pgdb.NewAssetRepository,
 	}
 	settingsStoreTypes = map[string]func(...interface{}) (domain.SettingsRepository, error){
-		"badger":   badgerdb.NewSettingsRepository,
-		"sqlite":   sqlitedb.NewSettingsRepository,
 		"postgres": pgdb.NewSettingsRepository,
 	}
 	markerStoreTypes = map[string]func(...interface{}) (domain.MarkerRepository, error){
-		"badger":   badgerdb.NewMarkerRepository,
-		"sqlite":   sqlitedb.NewMarkerRepository,
 		"postgres": pgdb.NewMarkerRepository,
 	}
 )
 
 const (
-	sqliteDbFile = "sqlite.db"
-
 	// projectionsShutdownTimeout bounds how long Close waits for in-flight
 	// projection updates. Long enough for the store writes of one update to
 	// finish, short enough that a wedged update cannot hold the process open.
@@ -176,14 +148,8 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	var convictionStore domain.ConvictionRepository
 	var assetStore domain.AssetRepository
 	var settingsStore domain.SettingsRepository
-	var err error
 
 	switch config.EventStoreType {
-	case "badger":
-		eventStore, err = eventStoreFactory(config.EventStoreConfig...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open event store: %s", err)
-		}
 	case "postgres":
 		if len(config.EventStoreConfig) != 3 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
@@ -218,86 +184,6 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	}
 
 	switch config.DataStoreType {
-	case "badger":
-		// The round and offchain tx stores share one ark repository per service,
-		// never the one a previous, possibly closed, service opened.
-		arkRepo = nil
-		roundStore, err = roundStoreFactory(config.DataStoreConfig...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open round store: %s", err)
-		}
-		arkStore := roundStore.(badgerdb.ArkRepository).Store()
-		vtxoStoreConfig := append(config.DataStoreConfig, arkStore)
-		vtxoStore, err = vtxoStoreFactory(vtxoStoreConfig...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
-		}
-		utxoStore, err = utxoStoreFactory(vtxoStoreConfig...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open utxo store: %s", err)
-		}
-		offchainTxStore, err = offchainTxStoreFactory(config.DataStoreConfig...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create offchain tx store: %w", err)
-		}
-		convictionStore, err = convictionStoreFactory(config.DataStoreConfig...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create conviction store: %w", err)
-		}
-		assetStoreConfig := append(config.DataStoreConfig, vtxoStore)
-		assetStore, err = assetStoreFactory(assetStoreConfig...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create asset store: %w", err)
-		}
-		settingsStore, err = settingsStoreFactory(config.DataStoreConfig...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create settings store: %w", err)
-		}
-		// Badger has no legacy SQL tables, so its seed is just the config
-		// defaults when the store is empty (no backfill).
-		existingSettings, err := settingsStore.Get(context.Background())
-		if err != nil {
-			return nil, fmt.Errorf("failed to read settings for seed: %w", err)
-		}
-		if existingSettings == nil {
-			if err := settingsStore.Upsert(
-				context.Background(), config.Settings, nil,
-			); err != nil {
-				return nil, fmt.Errorf("failed to seed settings: %w", err)
-			}
-		}
-		// Pass the vtxo store to the marker repository so they share the same data
-		badgerVtxoRepo, ok := vtxoStore.(*badgerdb.VtxoRepository)
-		if !ok {
-			return nil, fmt.Errorf("failed to get badger vtxo repository")
-		}
-		roundStore.(badgerdb.ArkRepository).SetVtxoStore(badgerVtxoRepo.GetStore())
-		markerConfig := make(
-			[]interface{},
-			len(config.DataStoreConfig),
-			len(config.DataStoreConfig)+1,
-		)
-		copy(markerConfig, config.DataStoreConfig)
-		markerConfig = append(markerConfig, badgerVtxoRepo.GetStore())
-		markerStore, err = markerStoreFactory(markerConfig...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create marker store: %w", err)
-		}
-		// Badger has no SQL migration path, so rebuild the vtxo marker DAG here
-		// on startup. The internal completion-latch guard makes this a cheap
-		// no-op after the first successful run.
-		markerAccessor, ok := markerStore.(badgerdb.MarkerStoreAccessor)
-		if !ok {
-			return nil, fmt.Errorf("failed to get badger marker store accessor")
-		}
-		if err := badgerdb.BackfillVtxoMarkers(
-			context.Background(),
-			badgerVtxoRepo.GetStore(),
-			markerAccessor.GetMarkerStore(),
-		); err != nil {
-			return nil, fmt.Errorf("failed to backfill vtxo markers: %w", err)
-		}
-
 	case "postgres":
 		if len(config.DataStoreConfig) != 3 {
 			return nil, fmt.Errorf("invalid data store config for postgres")
@@ -393,93 +279,6 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 			return nil, fmt.Errorf("failed to create marker store: %w", err)
 		}
 
-	case "sqlite":
-		if len(config.DataStoreConfig) != 1 {
-			return nil, fmt.Errorf("invalid data store config")
-		}
-
-		baseDir, ok := config.DataStoreConfig[0].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid base directory")
-		}
-
-		dbFile := filepath.Join(baseDir, sqliteDbFile)
-		db, err := sqlitedb.OpenDb(
-			dbFile,
-			sqlitedb.WithJournalModeWAL(),
-			sqlitedb.WithBusyTimeout(5*time.Second),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open db: %s", err)
-		}
-
-		driver, err := sqlitemigrate.WithInstance(db.Write(), &sqlitemigrate.Config{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to init driver: %s", err)
-		}
-
-		source, err := iofs.New(migrations, "sqlite/migration")
-		if err != nil {
-			return nil, fmt.Errorf("failed to embed migrations: %s", err)
-		}
-
-		m, err := migrate.NewWithInstance("iofs", source, "arkdb", driver)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create migration instance: %s", err)
-		}
-
-		err = handleIntentTxidMigration(m, db.Write(), config.DataStoreType)
-		if err != nil {
-			return nil, fmt.Errorf("failed to handle intent txid migration: %w", err)
-		}
-
-		err = handleVtxoMarkersMigration(m, db.Write(), config.DataStoreType)
-		if err != nil {
-			return nil, fmt.Errorf("failed to handle vtxo markers migration: %w", err)
-		}
-
-		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-			return nil, fmt.Errorf("failed to run migrations: %s", err)
-		}
-
-		if err := handleSettingsSeed(
-			context.Background(), db.Write(), config.DataStoreType, config.Settings,
-		); err != nil {
-			return nil, fmt.Errorf("failed to seed settings: %w", err)
-		}
-
-		roundStore, err = roundStoreFactory(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open round store: %s", err)
-		}
-		vtxoStore, err = vtxoStoreFactory(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
-		}
-		utxoStore, err = utxoStoreFactory(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open utxo store: %s", err)
-		}
-		offchainTxStore, err = offchainTxStoreFactory(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create offchain tx store: %w", err)
-		}
-		convictionStore, err = convictionStoreFactory(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create conviction store: %w", err)
-		}
-		assetStore, err = assetStoreFactory(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create asset store: %w", err)
-		}
-		settingsStore, err = settingsStoreFactory(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create settings store: %w", err)
-		}
-		markerStore, err = markerStoreFactory(db)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create marker store: %w", err)
-		}
 	}
 
 	svc := &service{
@@ -923,7 +722,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 						// vtxos, the only other vtxos with that same "not spendable
 						// offchain" trait. If the dust marker can't be persisted the
 						// vtxo would instead look like a normal spendable vtxo
-						// (postgres/sqlite have no swept column), so we abort the
+						// (postgres has no swept column), so we abort the
 						// projection rather than store a mis-categorized vtxo; the
 						// event is not dispatched.
 						log.WithError(err).Warnf("failed to create dust marker %s", dustMarkerID)
@@ -945,8 +744,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 					// mark the vtxo as "swept" if it is below dust limit to prevent it from being spent again in a future offchain tx
 					// the only way to spend a swept vtxo is by collecting enough dust to cover the minSettlementVtxoAmount and then settle.
 					// because sub-dust vtxos are using OP_RETURN output script, they can't be unilaterally exited.
-					// Only badger persists this field directly. Postgres and sqlite
-					// have no swept column, so for them it is persisted via the dust
+					// Postgres has no swept column, so this is persisted via the dust
 					// marker sweep and the swept outpoints insert below.
 					Swept:     outputSwept,
 					Depth:     newDepth,
@@ -1305,25 +1103,6 @@ func getAssetsFromTxOuts(txid string, txOuts []ports.TxOut) (
 	return issuances, assetDenominations, nil
 }
 
-func initBadgerArkRepository(args ...interface{}) (badgerdb.ArkRepository, error) {
-	if arkRepo == nil {
-		repo, err := badgerdb.NewArkRepository(args...)
-		if err != nil {
-			return nil, err
-		}
-		arkRepo = repo
-	}
-	return arkRepo, nil
-}
-
-func newBadgerRoundRepository(args ...interface{}) (domain.RoundRepository, error) {
-	return initBadgerArkRepository(args...)
-}
-
-func newBadgerOffchainTxRepository(args ...interface{}) (domain.OffchainTxRepository, error) {
-	return initBadgerArkRepository(args...)
-}
-
 // stepwise migration for intent txid field addition
 func handleIntentTxidMigration(m *migrate.Migrate, db *sql.DB, dbType string) error {
 	intentTxidMigrationBegin := uint(20260114000000)
@@ -1346,10 +1125,6 @@ func handleIntentTxidMigration(m *migrate.Migrate, db *sql.DB, dbType string) er
 		switch dbType {
 		case "postgres":
 			if err := pgdb.BackfillIntentTxid(context.Background(), db); err != nil {
-				return fmt.Errorf("failed to backfill intent txid field: %w", err)
-			}
-		case "sqlite":
-			if err := sqlitedb.BackfillIntentTxid(context.Background(), db); err != nil {
 				return fmt.Errorf("failed to backfill intent txid field: %w", err)
 			}
 		default:
@@ -1389,10 +1164,6 @@ func handleVtxoMarkersMigration(m *migrate.Migrate, db *sql.DB, dbType string) e
 		if err := pgdb.BackfillVtxoMarkers(context.Background(), db); err != nil {
 			return fmt.Errorf("failed to backfill vtxo markers: %w", err)
 		}
-	case "sqlite":
-		if err := sqlitedb.BackfillVtxoMarkers(context.Background(), db); err != nil {
-			return fmt.Errorf("failed to backfill vtxo markers: %w", err)
-		}
 	default:
 		return fmt.Errorf("unsupported db type for vtxo markers migration: %s", dbType)
 	}
@@ -1409,8 +1180,6 @@ func handleSettingsSeed(
 	switch dbType {
 	case "postgres":
 		return pgdb.SeedSettings(ctx, db, defaults)
-	case "sqlite":
-		return sqlitedb.SeedSettings(ctx, db, defaults)
 	default:
 		return fmt.Errorf("unsupported db type for settings seed: %s", dbType)
 	}

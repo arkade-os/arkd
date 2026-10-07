@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const seedTestDSN = "postgres://root:secret@localhost:5432/event?sslmode=disable"
+const pgEventConnect = "postgres://root:secret@localhost:5432/event?sslmode=disable"
 
 func seedDefaults(t *testing.T) domain.Settings {
 	t.Helper()
@@ -126,7 +126,7 @@ func dropSeedTables(t *testing.T, db *sql.DB) {
 
 func TestPgSeedSettings_BackfillsLegacy(t *testing.T) {
 	ctx := context.Background()
-	db, err := sql.Open("postgres", seedTestDSN)
+	db, err := sql.Open("postgres", pgEventConnect)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		dropSeedTables(t, db)
@@ -183,7 +183,7 @@ func TestPgSeedSettings_BackfillsLegacy(t *testing.T) {
 
 func TestPgSeedSettings_Idempotent(t *testing.T) {
 	ctx := context.Background()
-	db, err := sql.Open("postgres", seedTestDSN)
+	db, err := sql.Open("postgres", pgEventConnect)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		dropSeedTables(t, db)

@@ -5,12 +5,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"slices"
 	"sync"
 	"testing"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
-	inmemorylivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/inmemory"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/wire/v2"
@@ -20,8 +20,8 @@ import (
 
 // A boarding-only intent has no virtual inputs, so a proof over its boarding
 // outpoint has to be matched against BoardingInputs or the intent can never be
-// deleted. These tests drive DeleteIntentsByProof against the in-memory intent
-// store, with the proof inputs resolved as boarding utxos (no vtxo found, tx
+// deleted. These tests drive DeleteIntentsByProof against an in-test intent
+// queue, with the proof inputs resolved as boarding utxos (no vtxo found, tx
 // read from the wallet) or as vtxos (found in the repo).
 func TestDeleteIntentsByProof(t *testing.T) {
 	message := intent.DeleteMessage{
@@ -187,7 +187,7 @@ func newDeleteIntentFixture(
 			Return(boardingTxHex(t, proof.Inputs[i+1].WitnessUtxo), nil)
 	}
 
-	intents := &recordingIntentStore{IntentStore: inmemorylivestore.NewIntentStore()}
+	intents := &recordingIntentStore{}
 
 	return deleteIntentFixture{
 		svc: &service{
@@ -204,15 +204,33 @@ func newDeleteIntentFixture(
 	}
 }
 
-// recordingIntentStore keeps the id batches passed to Delete.
+// recordingIntentStore is an intent queue that keeps the id batches passed to
+// Delete.
 type recordingIntentStore struct {
 	ports.IntentStore
+	intents []ports.TimedIntent
 	deleted [][]string
 }
 
-func (s *recordingIntentStore) Delete(ctx context.Context, ids []string) error {
+func (s *recordingIntentStore) Push(
+	_ context.Context, intent domain.Intent, boardingInputs []ports.BoardingInput, _ []string,
+) error {
+	s.intents = append(s.intents, ports.TimedIntent{
+		Intent: intent, BoardingInputs: boardingInputs,
+	})
+	return nil
+}
+
+func (s *recordingIntentStore) ViewAll(context.Context, []string) ([]ports.TimedIntent, error) {
+	return slices.Clone(s.intents), nil
+}
+
+func (s *recordingIntentStore) Delete(_ context.Context, ids []string) error {
 	s.deleted = append(s.deleted, ids)
-	return s.IntentStore.Delete(ctx, ids)
+	s.intents = slices.DeleteFunc(s.intents, func(intent ports.TimedIntent) bool {
+		return slices.Contains(ids, intent.Id)
+	})
+	return nil
 }
 
 // proofBoardingInputs returns the proof's ownership outpoints as boarding inputs.

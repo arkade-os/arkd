@@ -20,7 +20,7 @@ func TestReconcileProjections(t *testing.T) {
 	// made of it.
 	t.Run("ensureSweptVtxos", func(t *testing.T) {
 		t.Run("marks the vtxos a swept batch left behind", func(t *testing.T) {
-			dir := t.TempDir()
+			dir := newProjectionTestDBs(t)
 			svc := newProjectionTestService(t, dir)
 
 			commitmentTxid, outpoints := seedBatch(t, svc, true)
@@ -37,7 +37,7 @@ func TestReconcileProjections(t *testing.T) {
 		})
 
 		t.Run("leaves the vtxos of an unswept batch alone", func(t *testing.T) {
-			dir := t.TempDir()
+			dir := newProjectionTestDBs(t)
 			svc := newProjectionTestService(t, dir)
 
 			_, outpoints := seedBatch(t, svc, false)
@@ -51,7 +51,7 @@ func TestReconcileProjections(t *testing.T) {
 		})
 
 		t.Run("is a no-op on a projection that is already consistent", func(t *testing.T) {
-			dir := t.TempDir()
+			dir := newProjectionTestDBs(t)
 			svc := newProjectionTestService(t, dir)
 
 			_, outpoints := seedBatch(t, svc, true)
@@ -67,39 +67,35 @@ func TestReconcileProjections(t *testing.T) {
 	})
 
 	t.Run("GetExpiredButNotSweptRounds", func(t *testing.T) {
-		for _, dataStoreType := range []string{"sqlite", "badger"} {
-			t.Run(dataStoreType, func(t *testing.T) {
-				svc := newTestRepoManager(t, dataStoreType)
+		svc := newProjectionTestService(t, newProjectionTestDBs(t))
 
-				expired, _ := seedBatch(t, svc, false)
-				seedBatch(t, svc, true)
+		expired, _ := seedBatch(t, svc, false)
+		seedBatch(t, svc, true)
 
-				_, sweptOutpoints := seedBatch(t, svc, false)
-				require.NoError(t, svc.Markers().SweepVtxoOutpoints(
-					ctx, sweptOutpoints, sweptAtFixture,
-				))
+		_, sweptOutpoints := seedBatch(t, svc, false)
+		require.NoError(t, svc.Markers().SweepVtxoOutpoints(
+			ctx, sweptOutpoints, sweptAtFixture,
+		))
 
-				_, unrolledOutpoints := seedBatch(t, svc, false)
-				require.NoError(t, svc.Vtxos().UnrollVtxos(ctx, unrolledOutpoints[:1]))
+		_, unrolledOutpoints := seedBatch(t, svc, false)
+		require.NoError(t, svc.Vtxos().UnrollVtxos(ctx, unrolledOutpoints[:1]))
 
-				seedBatchExpiringAt(t, svc, false, time.Now().Add(time.Hour).Unix())
+		seedBatchExpiringAt(t, svc, false, time.Now().Add(time.Hour).Unix())
 
-				spentBatch, spentOutpoints := seedBatch(t, svc, false)
-				spentVtxos := make(map[domain.Outpoint]string, len(spentOutpoints))
-				for _, outpoint := range spentOutpoints {
-					spentVtxos[outpoint] = randomString(t, 32)
-				}
-				require.NoError(t, svc.Vtxos().SettleVtxos(ctx, spentVtxos, spentBatch))
-
-				commitmentTxids, err := svc.Rounds().GetExpiredButNotSweptRounds(ctx)
-				require.NoError(t, err)
-				require.Equal(
-					t, []string{expired}, commitmentTxids,
-					"swept batches, batches with any unrolled vtxo, and batches with only "+
-						"swept, not expired or spent vtxos must be left out",
-				)
-			})
+		spentBatch, spentOutpoints := seedBatch(t, svc, false)
+		spentVtxos := make(map[domain.Outpoint]string, len(spentOutpoints))
+		for _, outpoint := range spentOutpoints {
+			spentVtxos[outpoint] = randomString(t, 32)
 		}
+		require.NoError(t, svc.Vtxos().SettleVtxos(ctx, spentVtxos, spentBatch))
+
+		commitmentTxids, err := svc.Rounds().GetExpiredButNotSweptRounds(ctx)
+		require.NoError(t, err)
+		require.Equal(
+			t, []string{expired}, commitmentTxids,
+			"swept batches, batches with any unrolled vtxo, and batches with only "+
+				"swept, not expired or spent vtxos must be left out",
+		)
 	})
 }
 
@@ -182,23 +178,4 @@ func requireSwept(
 		}
 		require.Equal(t, swept, v.Swept, "vtxo %s", v.Outpoint)
 	}
-}
-
-// newTestRepoManager opens a service over a fresh dir with the given data store.
-func newTestRepoManager(t *testing.T, dataStoreType string) ports.RepoManager {
-	t.Helper()
-	dataStoreConfig := []interface{}{t.TempDir()}
-	if dataStoreType == "badger" {
-		dataStoreConfig = append(dataStoreConfig, nil)
-	}
-	svc, err := NewService(ServiceConfig{
-		EventStoreType:   "badger",
-		DataStoreType:    dataStoreType,
-		EventStoreConfig: []interface{}{"", nil},
-		DataStoreConfig:  dataStoreConfig,
-		Settings:         validSettings(t),
-	}, nil)
-	require.NoError(t, err)
-	t.Cleanup(svc.Close)
-	return svc
 }

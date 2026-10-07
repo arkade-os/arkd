@@ -3,14 +3,17 @@ package db
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	pgdb "github.com/arkade-os/arkd/internal/infrastructure/db/postgres"
 	bitcointxdecoder "github.com/arkade-os/arkd/internal/infrastructure/tx-decoder/bitcoin"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -18,6 +21,7 @@ import (
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,7 +35,7 @@ func TestUpdateProjectionsAfterOffchainTxEvents(t *testing.T) {
 		// A non-dust output of a swept (here, expired) tx must land in swept_vtxo or
 		// it reads back as unswept despite Swept being set on the struct.
 		t.Run("non-dust output persisted as swept", func(t *testing.T) {
-			svc := newProjectionTestService(t, t.TempDir())
+			svc := newProjectionTestService(t, newProjectionTestDBs(t))
 
 			// Ark tx with one non-dust taproot output.
 			prevoutHash, err := chainhash.NewHashFromStr(randomString(t, 32))
@@ -95,7 +99,7 @@ func TestUpdateProjectionsAfterOffchainTxEvents(t *testing.T) {
 		// A sub-dust (OP_RETURN) output is swept via its dust marker landing in
 		// swept_marker, independent of tx expiry.
 		t.Run("sub-dust output persisted as swept", func(t *testing.T) {
-			svc := newProjectionTestService(t, t.TempDir())
+			svc := newProjectionTestService(t, newProjectionTestDBs(t))
 
 			outpoint, events := finalizedSubDustEvents(t)
 			svc.(*service).updateProjectionsAfterOffchainTxEvents(events)
@@ -110,7 +114,7 @@ func TestUpdateProjectionsAfterOffchainTxEvents(t *testing.T) {
 		// Money-safety: if the dust marker sweep fails, the projection must abort
 		// before AddVtxos so no spendable sub-dust vtxo is ever created.
 		t.Run("dust marker sweep failure leaves no spendable vtxo", func(t *testing.T) {
-			svc := newProjectionTestService(t, t.TempDir())
+			svc := newProjectionTestService(t, newProjectionTestDBs(t))
 
 			// A failed projection must not notify downstream, so record any dispatch.
 			var dispatched atomic.Bool
@@ -149,7 +153,7 @@ func TestUpdateProjectionsAfterRoundEvents(t *testing.T) {
 	t.Run("finalized round with boarding inputs", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
 			t.Run("boarding utxos are recorded as cosigned", func(t *testing.T) {
-				svc := newProjectionTestService(t, t.TempDir())
+				svc := newProjectionTestService(t, newProjectionTestDBs(t))
 				f := newRoundWithBoardingInputs(t, svc)
 				svc.(*service).txDecoder = f.decoder
 
@@ -178,7 +182,7 @@ func TestUpdateProjectionsAfterRoundEvents(t *testing.T) {
 			// would leave the boarding utxo free to be cosigned again once the intents cache
 			// releases it.
 			t.Run("undecodable proof aborts the projection", func(t *testing.T) {
-				svc := newProjectionTestService(t, t.TempDir())
+				svc := newProjectionTestService(t, newProjectionTestDBs(t))
 				f := newRoundWithBoardingInputs(t, svc)
 				f.decoder.err = errors.New("forced decode failure")
 				svc.(*service).txDecoder = f.decoder
@@ -200,7 +204,7 @@ func TestUpdateProjectionsAfterRoundEvents(t *testing.T) {
 			// A boarding utxo already recorded (already cosigned) must abort the projection
 			// rather than being silently overwritten.
 			t.Run("already cosigned boarding utxo aborts the projection", func(t *testing.T) {
-				svc := newProjectionTestService(t, t.TempDir())
+				svc := newProjectionTestService(t, newProjectionTestDBs(t))
 				f := newRoundWithBoardingInputs(t, svc)
 				svc.(*service).txDecoder = f.decoder
 
@@ -235,7 +239,7 @@ func TestUpdateProjectionsAfterOnchainTxEvents(t *testing.T) {
 	t.Run("cosigned onchain tx", func(t *testing.T) {
 		t.Run("valid", func(t *testing.T) {
 			t.Run("broadcast records the signed inputs, confirmation confirms them", func(t *testing.T) {
-				svc := newProjectionTestService(t, t.TempDir())
+				svc := newProjectionTestService(t, newProjectionTestDBs(t))
 				f := newOnchainTxFixture(t)
 
 				require.NoError(t, svc.Events().Save(
@@ -287,7 +291,7 @@ func TestUpdateProjectionsAfterOnchainTxEvents(t *testing.T) {
 		// These cases are all impossible to happen but we still ensure they're harmless.
 		t.Run("invalid", func(t *testing.T) {
 			t.Run("undecodable tx records nothing", func(t *testing.T) {
-				svc := newProjectionTestService(t, t.TempDir())
+				svc := newProjectionTestService(t, newProjectionTestDBs(t))
 				f := newOnchainTxFixture(t)
 				f.broadcasted.Tx = "not a psbt"
 
@@ -303,7 +307,7 @@ func TestUpdateProjectionsAfterOnchainTxEvents(t *testing.T) {
 			})
 
 			t.Run("confirmation of a tx never broadcasted records nothing", func(t *testing.T) {
-				svc := newProjectionTestService(t, t.TempDir())
+				svc := newProjectionTestService(t, newProjectionTestDBs(t))
 				f := newOnchainTxFixture(t)
 
 				require.NoError(t, svc.Events().Save(
@@ -318,7 +322,7 @@ func TestUpdateProjectionsAfterOnchainTxEvents(t *testing.T) {
 			})
 
 			t.Run("duplicated broadcast leaves the record untouched", func(t *testing.T) {
-				svc := newProjectionTestService(t, t.TempDir())
+				svc := newProjectionTestService(t, newProjectionTestDBs(t))
 				f := newOnchainTxFixture(t)
 
 				require.NoError(t, svc.Events().Save(
@@ -343,16 +347,57 @@ func TestUpdateProjectionsAfterOnchainTxEvents(t *testing.T) {
 	})
 }
 
-// newProjectionTestService opens a service over dir the way the application
-// does, NewService then Reconcile, so a test can close it and reopen the same stores
-// to exercise what Reconcile does at startup.
-func newProjectionTestService(t *testing.T, dir string) ports.RepoManager {
+type projectionTestDBs struct {
+	event string
+	data  string
+}
+
+// testDatabase returns the DSN of the named database of the postgres container started by
+// `make pgtest`, creating the database if it does not exist yet. The tests of this package
+// reset the databases they use, and packages run in parallel, so they use databases of
+// their own.
+func testDatabase(t *testing.T, name string) string {
+	t.Helper()
+	const dsn = "postgresql://root:secret@127.0.0.1:5432/%s?sslmode=disable"
+	admin, err := sql.Open("postgres", fmt.Sprintf(dsn, "event"))
+	require.NoError(t, err)
+	defer func() { _ = admin.Close() }()
+
+	var exists bool
+	require.NoError(t, admin.QueryRow(
+		"SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)", name,
+	).Scan(&exists))
+	if !exists {
+		_, err = admin.Exec("CREATE DATABASE " + pq.QuoteIdentifier(name))
+		require.NoError(t, err)
+	}
+	return fmt.Sprintf(dsn, name)
+}
+
+// newProjectionTestDBs empties the databases of this package and returns their DSNs.
+func newProjectionTestDBs(t *testing.T) projectionTestDBs {
+	t.Helper()
+	dbs := projectionTestDBs{
+		event: testDatabase(t, "db_events"),
+		data:  testDatabase(t, "projection"),
+	}
+	for _, dsn := range []string{dbs.event, dbs.data} {
+		conn, err := sql.Open("postgres", dsn)
+		require.NoError(t, err)
+		_, err = conn.Exec(`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`)
+		require.NoError(t, err)
+		require.NoError(t, conn.Close())
+	}
+	return dbs
+}
+
+func newProjectionTestService(t *testing.T, dbs projectionTestDBs) ports.RepoManager {
 	t.Helper()
 	svc, err := NewService(ServiceConfig{
-		EventStoreType:   "badger",
-		DataStoreType:    "sqlite",
-		EventStoreConfig: []interface{}{"", nil},
-		DataStoreConfig:  []interface{}{dir},
+		EventStoreType:   "postgres",
+		DataStoreType:    "postgres",
+		EventStoreConfig: []interface{}{dbs.event, false, pgdb.ConnectionConfig{}},
+		DataStoreConfig:  []interface{}{dbs.data, false, pgdb.ConnectionConfig{}},
 		Settings:         validSettings(t),
 	}, bitcointxdecoder.NewService())
 	require.NoError(t, err)
