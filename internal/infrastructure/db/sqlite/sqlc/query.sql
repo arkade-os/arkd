@@ -380,6 +380,9 @@ SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid = @txid
 -- name: SelectOffchainTxsByTxids :many
 SELECT sqlc.embed(offchain_tx_vw) FROM offchain_tx_vw WHERE txid IN (sqlc.slice('txids')) AND COALESCE(fail_reason, '') = '';
 
+-- name: SelectCheckpointTxsByTxids :many
+SELECT tx FROM checkpoint_tx WHERE txid IN (sqlc.slice('txids'));
+
 -- Admin-only lookup: unlike SelectOffchainTx it does not filter by stage, so offchain
 -- txs that failed before being accepted can be inspected too.
 -- name: SelectAnyOffchainTx :many
@@ -787,3 +790,46 @@ SELECT d.id, d.txid, d.sweep_at,
     ) AS BIGINT) AS vtxo_count
 FROM due d
 ORDER BY d.sweep_at ASC;
+
+-- name: InsertOnchainTx :exec
+INSERT INTO onchain_tx (txid, tx)
+VALUES (@txid, @tx);
+
+-- name: SelectOnchainTxs :many
+SELECT tx FROM onchain_tx WHERE txid IN (sqlc.slice('txids'));
+
+-- name: InsertUtxo :exec
+INSERT INTO utxo (txid, vout, pubkey, amount, spent_by, created_at)
+VALUES (@txid, @vout, @pubkey, @amount, @spent_by, @created_at);
+
+-- name: UpdateUtxo :execrows
+UPDATE utxo SET spend_confirmed_at_time = @spend_confirmed_at_time, spend_confirmed_at_height = @spend_confirmed_at_height
+WHERE txid = @txid AND vout = @vout AND spend_confirmed_at_time IS NULL;
+
+-- Batch lookup by outpoint. sqlc.slice cannot expand (txid, vout) pairs, so
+-- this matches on txid and the caller drops the sibling vouts.
+-- name: SelectUtxosByTxids :many
+SELECT * FROM utxo_vw WHERE txid IN (sqlc.slice('txids'))
+ORDER BY txid, vout;
+
+-- name: SelectUnconfirmedSpentUtxos :many
+SELECT * FROM utxo_vw WHERE spend_confirmed_at_time IS NULL AND spend_confirmed_at_height IS NULL;
+
+-- Paged, filtered utxo query by pubkeys.
+-- name: SelectUtxosWithPubkeysPage :many
+WITH bounds AS (
+    SELECT CAST(CASE WHEN :lim <= 0 THEN -1 ELSE :lim END AS INTEGER) AS lim,
+           CAST(:off AS INTEGER) AS off
+), matching AS (
+    SELECT DISTINCT u.txid, u.vout, u.created_at
+    FROM utxo_vw u
+    WHERE u.pubkey IN (sqlc.slice('pubkeys'))
+), page AS (
+    SELECT m.txid, m.vout, m.created_at, COUNT(*) OVER () AS total
+    FROM matching m
+    ORDER BY m.created_at DESC, m.txid, m.vout
+    LIMIT (SELECT lim FROM bounds) OFFSET (SELECT off FROM bounds)
+)
+SELECT sqlc.embed(utxo_vw), page.total FROM utxo_vw
+JOIN page ON utxo_vw.txid = page.txid AND utxo_vw.vout = page.vout
+ORDER BY page.created_at DESC, page.txid, page.vout;

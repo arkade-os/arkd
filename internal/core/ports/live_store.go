@@ -15,6 +15,8 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 )
 
+var ErrUtxosAlreadyExist = fmt.Errorf("one or more utxos already exist in cache")
+
 type LiveStore interface {
 	Intents() IntentStore
 	ForfeitTxs() ForfeitTxsStore
@@ -23,6 +25,7 @@ type LiveStore interface {
 	ConfirmationSessions() ConfirmationSessionsStore
 	TreeSigingSessions() TreeSigningSessionsStore
 	BoardingInputs() BoardingInputsStore
+	CosignedUtxos() CosignedUtxosStore
 	Settings() SettingsStore
 }
 
@@ -105,6 +108,12 @@ type BoardingInputsStore interface {
 	) error
 	GetSignatures(ctx context.Context, batchId string) (map[uint32]SignedBoardingInput, error)
 	DeleteSignatures(ctx context.Context, batchId string) error
+}
+
+type CosignedUtxosStore interface {
+	AddUtxos(ctx context.Context, outpoints []domain.Outpoint) error
+	RemoveUtxos(ctx context.Context, outpoints []domain.Outpoint) error
+	IncludesAny(ctx context.Context, outpoints []domain.Outpoint) ([]domain.Outpoint, error)
 }
 
 type SettingsStore interface {

@@ -16,6 +16,13 @@ import (
 //go:embed migration/*
 var assetJoinMigrations embed.FS
 
+// The migration under test and the one applied right before it. Relative steps
+// would break whenever a migration is added in between.
+const (
+	assetJoinBaselineVersion = 20260923161828
+	assetJoinVersion         = 20260925000000
+)
+
 func TestVtxoAssetJoinMigration(t *testing.T) {
 	db, err := sqlitedb.OpenDb("file::memory:", sqlitedb.WithSharedCache())
 	require.NoError(t, err)
@@ -27,7 +34,7 @@ func TestVtxoAssetJoinMigration(t *testing.T) {
 	require.NoError(t, err)
 	m, err := migrate.NewWithInstance("iofs", source, "arkdb", driver)
 	require.NoError(t, err)
-	require.NoError(t, m.Migrate(20260807120000))
+	require.NoError(t, m.Migrate(assetJoinBaselineVersion))
 
 	insertLegacyVtxo(t, db.Write(), "asset-join", 0, "", false)
 	_, err = db.Write().Exec(`UPDATE vtxo SET updated_at = 1 WHERE txid = 'asset-join' AND vout = 0`)
@@ -43,13 +50,13 @@ func TestVtxoAssetJoinMigration(t *testing.T) {
 	require.Equal(t, []string{"asset-a:20", "asset-b:20"}, before)
 	require.Contains(t, queryPlan(t, db.Read()), "MATERIALIZE ap")
 
-	require.NoError(t, m.Steps(1))
+	require.NoError(t, m.Migrate(assetJoinVersion))
 	require.Equal(t, before, assetRows(t, db.Read()))
 	plan := queryPlan(t, db.Read())
 	require.NotContains(t, plan, "MATERIALIZE ap")
 	require.Contains(t, plan, "SEARCH ap USING INDEX idx_asset_projection_vtxo")
 
-	require.NoError(t, m.Steps(-1))
+	require.NoError(t, m.Migrate(assetJoinBaselineVersion))
 	require.Equal(t, before, assetRows(t, db.Read()))
 	require.Contains(t, queryPlan(t, db.Read()), "MATERIALIZE ap")
 }

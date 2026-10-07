@@ -148,6 +148,14 @@ service IndexerService {
       body: "*"
     };
   };
+
+  // GetUtxos returns the utxos spent with the server's signature, either boarding utxos
+  // settled in a batch or utxos cosigned with CosignOnchainTx, by script or by outpoint.
+  rpc GetUtxos(GetUtxosRequest) returns (GetUtxosResponse) {
+    option (meshapi.gateway.http) = {
+      get: "/v1/indexer/utxos"
+    };
+  };
 }
 
 message GetCommitmentTxRequest {
@@ -299,6 +307,19 @@ message GetBatchSweepTransactionsResponse {
   repeated string swept_by = 1;
 }
 
+message GetUtxosRequest {
+  // Either specify a list of scripts.
+  repeated string scripts = 1;
+  // Or specify a list of outpoints. The 2 filters are mutually exclusive.
+  repeated string outpoints = 2;
+  // Option to page the response.
+  IndexerPageRequest page = 3;
+}
+message GetUtxosResponse {
+  repeated IndexerUtxo utxos = 1;
+  IndexerPageResponse page = 2;
+}
+
 message IndexerBatch {
   uint64 total_output_amount = 1;
   int32 total_output_vtxos = 2;
@@ -332,6 +353,24 @@ message IndexerVtxo {
   string ark_txid = 13;
   repeated IndexerAsset assets = 14;
   uint32 depth = 15;
+}
+
+message IndexerUtxo {
+  IndexerOutpoint outpoint = 1;
+  // When the tx spending the utxo was broadcasted.
+  int64 broadcasted_at = 2;
+  uint64 amount = 3;
+  string script = 4;
+  IndexerUtxoSpend spend = 5;
+}
+
+message IndexerUtxoSpend {
+  // Txid of the tx spending the utxo.
+  string txid = 1;
+  // Zero if unconfirmed.
+  int64 confirmed_at_time = 2;
+  // Zero if unconfirmed.
+  uint64 confirmed_at_height = 3;
 }
 
 message IndexerAsset {

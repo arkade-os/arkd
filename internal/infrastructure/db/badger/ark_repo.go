@@ -414,7 +414,11 @@ func (r *arkRepository) GetTxsWithTxids(ctx context.Context, txids []string) ([]
 func (r *arkRepository) GetRoundsWithCommitmentTxids(
 	ctx context.Context, txids []string,
 ) (map[string]any, error) {
-	query := badgerhold.Where("CommitmentTxid").In(txids)
+	var ids []interface{}
+	for _, txid := range txids {
+		ids = append(ids, txid)
+	}
+	query := badgerhold.Where("CommitmentTxid").In(ids...)
 	rounds, err := r.findRound(ctx, query)
 	if err != nil {
 		return nil, err
@@ -514,6 +518,12 @@ func (r *arkRepository) GetOffchainTxsByTxids(
 	}
 
 	return txs, nil
+}
+
+func (r *arkRepository) GetCheckpointTxs(
+	ctx context.Context, txids []string,
+) ([]string, error) {
+	return nil, fmt.Errorf("not implemented")
 }
 
 func (r *arkRepository) SweepRounds(_ context.Context, _ []string) error {

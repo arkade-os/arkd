@@ -24,6 +24,12 @@ const (
 	EventTypeOffchainTxFailed
 )
 
+const (
+	// OnchainTx
+	EventTypeOnchainTxBroadcasted EventType = iota + 200
+	EventTypeOnchainTxConfirmed
+)
+
 type Event interface {
 	GetTopic() string
 	GetType() EventType

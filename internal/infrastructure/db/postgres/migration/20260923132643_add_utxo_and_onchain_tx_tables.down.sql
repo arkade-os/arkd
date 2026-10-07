@@ -1,0 +1,5 @@
+DROP TRIGGER IF EXISTS utxo_shape ON utxo;
+DROP FUNCTION IF EXISTS check_utxo_shape();
+DROP VIEW IF EXISTS utxo_vw;
+DROP TABLE IF EXISTS utxo;
+DROP TABLE IF EXISTS onchain_tx;

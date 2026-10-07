@@ -77,6 +77,10 @@ type IndexerService interface {
 	GetVtxosByOutpoint(
 		ctx context.Context, outpoints []Outpoint, page *Page,
 	) (*GetVtxosResp, error)
+	GetUtxos(ctx context.Context, pubkeys []string, page *Page) (*GetUtxosResp, error)
+	GetUtxosByOutpoint(
+		ctx context.Context, outpoints []Outpoint, page *Page,
+	) (*GetUtxosResp, error)
 	GetVtxoChain(
 		ctx context.Context, authToken string, vtxoKey Outpoint, page *Page, pageToken string,
 	) (*VtxoChainResp, error)
@@ -330,6 +334,51 @@ func (i *indexerService) GetVtxosByOutpoint(
 	vtxos, pageResp := paginate(allVtxos, page, maxPageSizeSpendableVtxos)
 	return &GetVtxosResp{
 		Vtxos: vtxos,
+		Page:  pageResp,
+	}, nil
+}
+
+func (i *indexerService) GetUtxos(
+	ctx context.Context, pubkeys []string, page *Page,
+) (*GetUtxosResp, error) {
+	// A request without a page reads the whole set and carries no page back,
+	// the contract callers had before the query was bounded, so no client has
+	// to change.
+	if page == nil {
+		utxos, _, err := i.repoManager.CosignedUtxos().GetUtxosWithPubKeys(
+			ctx, pubkeys, domain.Page{},
+		)
+		if err != nil {
+			return nil, err
+		}
+		return &GetUtxosResp{Utxos: utxos}, nil
+	}
+
+	pageNum, pageSize, offset := resolvePage(page, maxPageSizeSpendableVtxos)
+	utxos, total, err := i.repoManager.CosignedUtxos().GetUtxosWithPubKeys(
+		ctx, pubkeys, domain.Page{Limit: pageSize, Offset: offset},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GetUtxosResp{
+		Utxos: utxos,
+		Page:  pageRespFor(pageNum, pageSize, total),
+	}, nil
+}
+
+func (i *indexerService) GetUtxosByOutpoint(
+	ctx context.Context, outpoints []Outpoint, page *Page,
+) (*GetUtxosResp, error) {
+	utxos, err := i.repoManager.CosignedUtxos().GetUtxos(ctx, outpoints)
+	if err != nil {
+		return nil, err
+	}
+
+	utxos, pageResp := paginate(utxos, page, maxPageSizeSpendableVtxos)
+	return &GetUtxosResp{
+		Utxos: utxos,
 		Page:  pageResp,
 	}, nil
 }

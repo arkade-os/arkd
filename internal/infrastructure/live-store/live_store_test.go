@@ -924,6 +924,104 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.Nil(t, offchainTx)
 	})
 
+	// The cosigned utxos store is a reservation set: AddUtxos claims all the given
+	// outpoints or none of them, and a claim is released only by RemoveUtxos.
+	t.Run("CosignedUtxosStore", func(t *testing.T) {
+		ctx := t.Context()
+
+		t.Run("add remove and includes any", func(t *testing.T) {
+			outpoints := randomOutpoints(3)
+
+			included, err := store.CosignedUtxos().IncludesAny(ctx, outpoints)
+			require.NoError(t, err)
+			require.Empty(t, included)
+
+			included, err = store.CosignedUtxos().IncludesAny(ctx, nil)
+			require.NoError(t, err)
+			require.Empty(t, included)
+
+			// Empty adds and removes are no-ops.
+			require.NoError(t, store.CosignedUtxos().AddUtxos(ctx, nil))
+			require.NoError(t, store.CosignedUtxos().RemoveUtxos(ctx, nil))
+
+			require.NoError(t, store.CosignedUtxos().AddUtxos(ctx, outpoints))
+
+			included, err = store.CosignedUtxos().IncludesAny(ctx, outpoints)
+			require.NoError(t, err)
+			require.ElementsMatch(t, outpoints, included)
+
+			// Only the reserved ones are reported, in the order they were asked.
+			other := randomOutpoints(2)
+			included, err = store.CosignedUtxos().IncludesAny(
+				ctx, []domain.Outpoint{other[0], outpoints[1], other[1]},
+			)
+			require.NoError(t, err)
+			require.Equal(t, []domain.Outpoint{outpoints[1]}, included)
+
+			// Adding again any of them is rejected as a whole: the fresh one is not
+			// added either.
+			err = store.CosignedUtxos().AddUtxos(ctx, []domain.Outpoint{other[0], outpoints[0]})
+			require.ErrorIs(t, err, ports.ErrUtxosAlreadyExist)
+			included, err = store.CosignedUtxos().IncludesAny(ctx, other)
+			require.NoError(t, err)
+			require.Empty(t, included)
+
+			require.NoError(t, store.CosignedUtxos().RemoveUtxos(ctx, outpoints[:2]))
+			included, err = store.CosignedUtxos().IncludesAny(ctx, outpoints)
+			require.NoError(t, err)
+			require.Equal(t, []domain.Outpoint{outpoints[2]}, included)
+
+			// Removing unknown outpoints is a no-op.
+			require.NoError(t, store.CosignedUtxos().RemoveUtxos(ctx, other))
+
+			// Released outpoints can be reserved again.
+			require.NoError(t, store.CosignedUtxos().AddUtxos(ctx, outpoints[:2]))
+			require.NoError(t, store.CosignedUtxos().RemoveUtxos(ctx, outpoints))
+		})
+
+		// Many clients race to reserve the same outpoint: exactly one succeeds and
+		// all the others get ErrUtxosAlreadyExist without leaving anything behind.
+		t.Run("only one of several concurrent adds gets the utxo", func(t *testing.T) {
+			contended := randomOutpoints(1)[0]
+			const clients = 20
+
+			var wg sync.WaitGroup
+			errs := make([]error, clients)
+			for i := range clients {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					// Each client claims the contended outpoint plus one of its own, so
+					// a rejected claim must not leave its own outpoint behind.
+					errs[i] = store.CosignedUtxos().AddUtxos(
+						ctx, []domain.Outpoint{contended, ownOutpoint(i)},
+					)
+				}(i)
+			}
+			wg.Wait()
+
+			winners := 0
+			for i, err := range errs {
+				included, incErr := store.CosignedUtxos().IncludesAny(
+					ctx, []domain.Outpoint{ownOutpoint(i)},
+				)
+				require.NoError(t, incErr)
+				if err == nil {
+					winners++
+					require.Len(t, included, 1, "winner %d must hold its own outpoint", i)
+					continue
+				}
+				require.ErrorIs(t, err, ports.ErrUtxosAlreadyExist)
+				require.Empty(t, included, "loser %d must not hold its own outpoint", i)
+			}
+			require.Equal(t, 1, winners)
+
+			included, err := store.CosignedUtxos().IncludesAny(ctx, []domain.Outpoint{contended})
+			require.NoError(t, err)
+			require.Equal(t, []domain.Outpoint{contended}, included)
+		})
+	})
+
 	t.Run("CurrentRoundStore", func(t *testing.T) {
 		ctx := t.Context()
 		r := domain.NewRound()
@@ -1517,6 +1615,20 @@ type intentPushFixture struct {
 }
 
 const intentPubkey = "7594c9acd996ccf667431769bb4b238b29a9ed32b73f39185c121cf770aa0a63"
+
+func randomOutpoints(n int) []domain.Outpoint {
+	outpoints := make([]domain.Outpoint, 0, n)
+	for i := range n {
+		outpoints = append(outpoints, domain.Outpoint{Txid: randomIntentTxid(), VOut: uint32(i)})
+	}
+	return outpoints
+}
+
+// ownOutpoint is the outpoint client i claims alongside the contended one in the
+// concurrent add test.
+func ownOutpoint(i int) domain.Outpoint {
+	return domain.Outpoint{Txid: fmt.Sprintf("own-%d", i), VOut: 0}
+}
 
 // vtxoInput builds a settleable vtxo input. It carries a commitment, so
 // IsNote is false for it.

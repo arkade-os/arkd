@@ -354,6 +354,45 @@ func (a *grpcClient) GetVtxos(
 	}, nil
 }
 
+func (a *grpcClient) GetUtxos(
+	ctx context.Context, opts ...clientlib.GetVtxosOption,
+) (*clientlib.UtxosResponse, error) {
+	o, err := clientlib.ApplyGetVtxosOptions(opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(o.Scripts) == 0 && len(o.Outpoints) == 0 {
+		return nil, fmt.Errorf("missing opts")
+	}
+
+	// The server answers a request without a page with page one, capped at its
+	// page size, so a caller that asks for no page is walked through every page
+	// and gets the whole set, as it did before the cap.
+	if o.Page == nil {
+		return a.paginatedGetUtxos(ctx, opts...)
+	}
+
+	req := &arkv1.GetUtxosRequest{
+		Scripts:   o.Scripts,
+		Outpoints: o.FormattedOutpoints(),
+		Page: &arkv1.IndexerPageRequest{
+			Size:  o.Page.Size,
+			Index: o.Page.Index,
+		},
+	}
+
+	resp, err := a.svc().GetUtxos(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clientlib.UtxosResponse{
+		Utxos: newIndexerUtxos(resp.GetUtxos()),
+		Page:  parsePage(resp.GetPage()),
+	}, nil
+}
+
 func (a *grpcClient) GetVtxoChain(
 	ctx context.Context, outpoint clientlib.Outpoint, opts ...clientlib.PageOption,
 ) (*clientlib.VtxoChainResponse, error) {
@@ -780,6 +819,56 @@ func (a *grpcClient) paginatedGetVirtualTxs(
 	return &clientlib.VirtualTxsResponse{Txs: txs}, nil
 }
 
+func (a *grpcClient) paginatedGetUtxos(
+	ctx context.Context, opts ...clientlib.GetVtxosOption,
+) (*clientlib.UtxosResponse, error) {
+	// nolint
+	o, _ := clientlib.ApplyGetVtxosOptions(opts...)
+	svc := a.svc()
+
+	fetchPages := func(
+		scripts []string, outpoints []clientlib.Outpoint,
+	) ([]clientlib.CosignedUtxo, error) {
+		return paginatedFetch(ctx, func(
+			ctx context.Context, page *arkv1.IndexerPageRequest,
+		) ([]clientlib.CosignedUtxo, *arkv1.IndexerPageResponse, error) {
+			resp, err := svc.GetUtxos(ctx, &arkv1.GetUtxosRequest{
+				Scripts:   scripts,
+				Outpoints: formatOutpoints(outpoints),
+				Page:      page,
+			})
+			if err != nil {
+				return nil, nil, err
+			}
+			return newIndexerUtxos(resp.GetUtxos()), resp.GetPage(), nil
+		})
+	}
+
+	var utxos []clientlib.CosignedUtxo
+	appendPages := func(scripts []string, outpoints []clientlib.Outpoint) error {
+		pageVtxos, err := fetchPages(scripts, outpoints)
+		if err != nil {
+			return err
+		}
+		utxos = append(utxos, pageVtxos...)
+		return nil
+	}
+
+	for offset := 0; offset < len(o.Scripts); offset += maxPageSize {
+		end := min(offset+maxPageSize, len(o.Scripts))
+		if err := appendPages(o.Scripts[offset:end], nil); err != nil {
+			return nil, err
+		}
+	}
+	for offset := 0; offset < len(o.Outpoints); offset += maxPageSize {
+		end := min(offset+maxPageSize, len(o.Outpoints))
+		if err := appendPages(nil, o.Outpoints[offset:end]); err != nil {
+			return nil, err
+		}
+	}
+	return &clientlib.UtxosResponse{Utxos: utxos}, nil
+}
+
 // paginatedFetch fetches all pages from a paginated endpoint, throttling
 // requests to stay under the rate limit (20 req/sec).
 func paginatedFetch[T any](
@@ -890,5 +979,34 @@ func newIndexerVtxo(vtxo *arkv1.IndexerVtxo) clientlib.Vtxo {
 		SettledBy:       vtxo.GetSettledBy(),
 		ArkTxid:         vtxo.GetArkTxid(),
 		Assets:          assetLists,
+	}
+}
+
+func newIndexerUtxos(utxos []*arkv1.IndexerUtxo) []clientlib.CosignedUtxo {
+	res := make([]clientlib.CosignedUtxo, 0, len(utxos))
+	for _, utxo := range utxos {
+		res = append(res, newIndexerUtxo(utxo))
+	}
+	return res
+}
+
+func newIndexerUtxo(vtxo *arkv1.IndexerUtxo) clientlib.CosignedUtxo {
+	var confirmedAtTime time.Time
+	if tt := vtxo.GetSpend().GetConfirmedAtTime(); tt > 0 {
+		confirmedAtTime = time.Unix(tt, 0)
+	}
+	return clientlib.CosignedUtxo{
+		Outpoint: clientlib.Outpoint{
+			Txid: vtxo.GetOutpoint().GetTxid(),
+			VOut: vtxo.GetOutpoint().GetVout(),
+		},
+		Script:        vtxo.GetScript(),
+		Amount:        vtxo.GetAmount(),
+		BroadcastedAt: time.Unix(vtxo.GetBroadcastedAt(), 0),
+		Spend: clientlib.UtxoSpend{
+			Txid:              vtxo.GetSpend().GetTxid(),
+			ConfirmedAtTime:   confirmedAtTime,
+			ConfirmedAtHeight: vtxo.GetSpend().GetConfirmedAtHeight(),
+		},
 	}
 }

@@ -71,6 +71,21 @@ func (q *Queries) InsertAsset(ctx context.Context, arg InsertAssetParams) error 
 	return err
 }
 
+const insertOnchainTx = `-- name: InsertOnchainTx :exec
+INSERT INTO onchain_tx (txid, tx)
+VALUES ($1, $2)
+`
+
+type InsertOnchainTxParams struct {
+	Txid string
+	Tx   string
+}
+
+func (q *Queries) InsertOnchainTx(ctx context.Context, arg InsertOnchainTxParams) error {
+	_, err := q.db.ExecContext(ctx, insertOnchainTx, arg.Txid, arg.Tx)
+	return err
+}
+
 const insertSettingsHistory = `-- name: InsertSettingsHistory :exec
 INSERT INTO settings_history (changed_at, changed_fields, settings)
 SELECT s.updated_at, $1::text[], to_jsonb(s.*) - 'id'
@@ -80,6 +95,32 @@ WHERE s.id = 1
 
 func (q *Queries) InsertSettingsHistory(ctx context.Context, changedFields []string) error {
 	_, err := q.db.ExecContext(ctx, insertSettingsHistory, pq.Array(changedFields))
+	return err
+}
+
+const insertUtxo = `-- name: InsertUtxo :exec
+INSERT INTO utxo (txid, vout, pubkey, amount, spent_by, created_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type InsertUtxoParams struct {
+	Txid      string
+	Vout      int32
+	Pubkey    sql.NullString
+	Amount    sql.NullInt64
+	SpentBy   string
+	CreatedAt int64
+}
+
+func (q *Queries) InsertUtxo(ctx context.Context, arg InsertUtxoParams) error {
+	_, err := q.db.ExecContext(ctx, insertUtxo,
+		arg.Txid,
+		arg.Vout,
+		arg.Pubkey,
+		arg.Amount,
+		arg.SpentBy,
+		arg.CreatedAt,
+	)
 	return err
 }
 
@@ -328,6 +369,33 @@ func (q *Queries) SelectAssetsWithUnspentAmountsByIds(ctx context.Context, dolla
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectCheckpointTxsByTxids = `-- name: SelectCheckpointTxsByTxids :many
+SELECT tx FROM checkpoint_tx WHERE txid = ANY($1::varchar[])
+`
+
+func (q *Queries) SelectCheckpointTxsByTxids(ctx context.Context, txids []string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectCheckpointTxsByTxids, pq.Array(txids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var tx string
+		if err := rows.Scan(&tx); err != nil {
+			return nil, err
+		}
+		items = append(items, tx)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -966,6 +1034,33 @@ func (q *Queries) SelectOffchainTxsInRange(ctx context.Context, arg SelectOffcha
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectOnchainTxs = `-- name: SelectOnchainTxs :many
+SELECT tx FROM onchain_tx WHERE txid = ANY($1::varchar[])
+`
+
+func (q *Queries) SelectOnchainTxs(ctx context.Context, txids []string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, selectOnchainTxs, pq.Array(txids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var tx string
+		if err := rows.Scan(&tx); err != nil {
+			return nil, err
+		}
+		items = append(items, tx)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -2105,6 +2200,152 @@ func (q *Queries) SelectTxs(ctx context.Context, dollar_1 []string) ([]SelectTxs
 	return items, nil
 }
 
+const selectUnconfirmedSpentUtxos = `-- name: SelectUnconfirmedSpentUtxos :many
+SELECT txid, vout, pubkey, amount, spent_by, created_at, spend_confirmed_at_time, spend_confirmed_at_height, is_vtxo FROM utxo_vw WHERE spend_confirmed_at_time IS NULL AND spend_confirmed_at_height IS NULL
+`
+
+func (q *Queries) SelectUnconfirmedSpentUtxos(ctx context.Context) ([]UtxoVw, error) {
+	rows, err := q.db.QueryContext(ctx, selectUnconfirmedSpentUtxos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UtxoVw
+	for rows.Next() {
+		var i UtxoVw
+		if err := rows.Scan(
+			&i.Txid,
+			&i.Vout,
+			&i.Pubkey,
+			&i.Amount,
+			&i.SpentBy,
+			&i.CreatedAt,
+			&i.SpendConfirmedAtTime,
+			&i.SpendConfirmedAtHeight,
+			&i.IsVtxo,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectUtxosByOutpoints = `-- name: SelectUtxosByOutpoints :many
+SELECT txid, vout, pubkey, amount, spent_by, created_at, spend_confirmed_at_time, spend_confirmed_at_height, is_vtxo FROM utxo_vw
+WHERE (txid, vout) IN (
+    SELECT unnest($1::text[]), unnest($2::integer[])
+)
+ORDER BY txid, vout
+`
+
+type SelectUtxosByOutpointsParams struct {
+	Txids []string
+	Vouts []int32
+}
+
+func (q *Queries) SelectUtxosByOutpoints(ctx context.Context, arg SelectUtxosByOutpointsParams) ([]UtxoVw, error) {
+	rows, err := q.db.QueryContext(ctx, selectUtxosByOutpoints, pq.Array(arg.Txids), pq.Array(arg.Vouts))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UtxoVw
+	for rows.Next() {
+		var i UtxoVw
+		if err := rows.Scan(
+			&i.Txid,
+			&i.Vout,
+			&i.Pubkey,
+			&i.Amount,
+			&i.SpentBy,
+			&i.CreatedAt,
+			&i.SpendConfirmedAtTime,
+			&i.SpendConfirmedAtHeight,
+			&i.IsVtxo,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectUtxosWithPubkeysPage = `-- name: SelectUtxosWithPubkeysPage :many
+WITH matching AS (
+    SELECT DISTINCT u.txid, u.vout, u.created_at
+    FROM utxo_vw u
+    WHERE u.pubkey = ANY($1::varchar[])
+), page AS (
+    SELECT m.txid, m.vout, m.created_at, COUNT(*) OVER ()::integer AS total
+    FROM matching m
+    ORDER BY m.created_at DESC, m.txid, m.vout
+    LIMIT (CASE WHEN $3::integer <= 0 THEN NULL ELSE $3::integer END)
+    OFFSET $2::integer
+)
+SELECT utxo_vw.txid, utxo_vw.vout, utxo_vw.pubkey, utxo_vw.amount, utxo_vw.spent_by, utxo_vw.created_at, utxo_vw.spend_confirmed_at_time, utxo_vw.spend_confirmed_at_height, utxo_vw.is_vtxo, page.total FROM utxo_vw
+JOIN page ON utxo_vw.txid = page.txid AND utxo_vw.vout = page.vout
+ORDER BY page.created_at DESC, page.txid, page.vout
+`
+
+type SelectUtxosWithPubkeysPageParams struct {
+	Pubkeys []string
+	Off     int32
+	Lim     int32
+}
+
+type SelectUtxosWithPubkeysPageRow struct {
+	UtxoVw UtxoVw
+	Total  int32
+}
+
+// Paged, filtered utxo query by pubkeys.
+func (q *Queries) SelectUtxosWithPubkeysPage(ctx context.Context, arg SelectUtxosWithPubkeysPageParams) ([]SelectUtxosWithPubkeysPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectUtxosWithPubkeysPage, pq.Array(arg.Pubkeys), arg.Off, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectUtxosWithPubkeysPageRow
+	for rows.Next() {
+		var i SelectUtxosWithPubkeysPageRow
+		if err := rows.Scan(
+			&i.UtxoVw.Txid,
+			&i.UtxoVw.Vout,
+			&i.UtxoVw.Pubkey,
+			&i.UtxoVw.Amount,
+			&i.UtxoVw.SpentBy,
+			&i.UtxoVw.CreatedAt,
+			&i.UtxoVw.SpendConfirmedAtTime,
+			&i.UtxoVw.SpendConfirmedAtHeight,
+			&i.UtxoVw.IsVtxo,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectVtxo = `-- name: SelectVtxo :many
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE txid = $1 AND vout = $2
 `
@@ -2728,6 +2969,31 @@ UPDATE conviction SET pardoned = true WHERE id = $1
 func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, updateConvictionPardoned, id)
 	return err
+}
+
+const updateUtxo = `-- name: UpdateUtxo :execrows
+UPDATE utxo SET spend_confirmed_at_time = $1, spend_confirmed_at_height = $2
+WHERE txid = $3 AND vout = $4 AND spend_confirmed_at_time IS NULL
+`
+
+type UpdateUtxoParams struct {
+	SpendConfirmedAtTime   sql.NullInt64
+	SpendConfirmedAtHeight sql.NullInt64
+	Txid                   string
+	Vout                   int32
+}
+
+func (q *Queries) UpdateUtxo(ctx context.Context, arg UpdateUtxoParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateUtxo,
+		arg.SpendConfirmedAtTime,
+		arg.SpendConfirmedAtHeight,
+		arg.Txid,
+		arg.Vout,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateVtxoExpiration = `-- name: UpdateVtxoExpiration :exec

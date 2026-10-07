@@ -8,6 +8,7 @@ type inMemoryLiveStore struct {
 	intentStore               ports.IntentStore
 	forfeitTxsStore           ports.ForfeitTxsStore
 	offChainTxStore           ports.OffChainTxStore
+	utxoStore                 ports.CosignedUtxosStore
 	currentRoundStore         ports.CurrentRoundStore
 	confirmationSessionsStore ports.ConfirmationSessionsStore
 	treeSigningSessions       ports.TreeSigningSessionsStore
@@ -20,6 +21,7 @@ func NewLiveStore(txBuilder ports.TxBuilder) ports.LiveStore {
 		intentStore:               NewIntentStore(),
 		forfeitTxsStore:           NewForfeitTxsStore(txBuilder),
 		offChainTxStore:           NewOffChainTxStore(),
+		utxoStore:                 NewUtxoStore(),
 		currentRoundStore:         NewCurrentRoundStore(),
 		confirmationSessionsStore: NewConfirmationSessionsStore(),
 		treeSigningSessions:       NewTreeSigningSessionsStore(),
@@ -36,6 +38,9 @@ func (s *inMemoryLiveStore) ForfeitTxs() ports.ForfeitTxsStore {
 }
 func (s *inMemoryLiveStore) OffchainTxs() ports.OffChainTxStore {
 	return s.offChainTxStore
+}
+func (s *inMemoryLiveStore) CosignedUtxos() ports.CosignedUtxosStore {
+	return s.utxoStore
 }
 func (s *inMemoryLiveStore) CurrentRound() ports.CurrentRoundStore {
 	return s.currentRoundStore

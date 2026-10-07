@@ -147,6 +147,18 @@ service ArkService {
     };
   }
 
+  // CosignOnchainTx cosigns and broadcasts an onchain tx spending utxos locked with the server,
+  // like boarding utxos. Inputs to cosign must be confirmed, reveal their taptree, be signed by
+  // every other cosigner with sighash ALL or DEFAULT, and have their exit path still far from
+  // maturing. Other inputs are left as is, but must be fully signed.
+  // A utxo is cosigned once: the tx can't be replaced, fee bump it with CPFP.
+  rpc CosignOnchainTx(CosignOnchainTxRequest) returns (CosignOnchainTxResponse) {
+    option (meshapi.gateway.http) = {
+      post: "/v1/tx/onchain/cosign"
+      body: "*"
+    };
+  }
+
   // GetTransactionsStream is a server-side streaming RPC that allows clients to receive
   // notifications in real-time about any commitment tx or ark tx processed and finalized by the
   // server.
@@ -318,6 +330,15 @@ message GetPendingTxRequest {
 }
 message GetPendingTxResponse {
   repeated PendingTx pending_txs = 1;
+}
+
+message CosignOnchainTxRequest {
+  // Base64 PSBT, signed by every cosigner but the server.
+  string tx = 1;
+}
+message CosignOnchainTxResponse {
+  // Txid of the broadcasted tx.
+  string txid = 1;
 }
 
 message GetTransactionsStreamRequest {}

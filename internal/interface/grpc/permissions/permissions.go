@@ -186,6 +186,10 @@ func Whitelist() map[string][]bakery.Op {
 			Entity: EntityArk,
 			Action: "read",
 		}},
+		fmt.Sprintf("/%s/CosignOnchainTx", arkv1.ArkService_ServiceDesc.ServiceName): {{
+			Entity: EntityArk,
+			Action: "write",
+		}},
 		fmt.Sprintf("/%s/Check", grpchealth.Health_ServiceDesc.ServiceName): {{
 			Entity: EntityHealth,
 			Action: "read",
@@ -224,6 +228,10 @@ func Whitelist() map[string][]bakery.Op {
 			Action: "read",
 		}},
 		fmt.Sprintf("/%s/GetVtxos", arkv1.IndexerService_ServiceDesc.ServiceName): {{
+			Entity: EntityIndexer,
+			Action: "read",
+		}},
+		fmt.Sprintf("/%s/GetUtxos", arkv1.IndexerService_ServiceDesc.ServiceName): {{
 			Entity: EntityIndexer,
 			Action: "read",
 		}},

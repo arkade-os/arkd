@@ -35,6 +35,21 @@ func (q *Queries) InsertAsset(ctx context.Context, arg InsertAssetParams) error 
 	return err
 }
 
+const insertOnchainTx = `-- name: InsertOnchainTx :exec
+INSERT INTO onchain_tx (txid, tx)
+VALUES (?1, ?2)
+`
+
+type InsertOnchainTxParams struct {
+	Txid string
+	Tx   string
+}
+
+func (q *Queries) InsertOnchainTx(ctx context.Context, arg InsertOnchainTxParams) error {
+	_, err := q.db.ExecContext(ctx, insertOnchainTx, arg.Txid, arg.Tx)
+	return err
+}
+
 const insertSweptMarker = `-- name: InsertSweptMarker :exec
 INSERT INTO swept_marker (marker_id, swept_at)
 VALUES (?1, ?2)
@@ -64,6 +79,32 @@ type InsertSweptVtxoParams struct {
 
 func (q *Queries) InsertSweptVtxo(ctx context.Context, arg InsertSweptVtxoParams) error {
 	_, err := q.db.ExecContext(ctx, insertSweptVtxo, arg.Txid, arg.Vout, arg.SweptAt)
+	return err
+}
+
+const insertUtxo = `-- name: InsertUtxo :exec
+INSERT INTO utxo (txid, vout, pubkey, amount, spent_by, created_at)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+`
+
+type InsertUtxoParams struct {
+	Txid      string
+	Vout      int64
+	Pubkey    sql.NullString
+	Amount    sql.NullInt64
+	SpentBy   string
+	CreatedAt int64
+}
+
+func (q *Queries) InsertUtxo(ctx context.Context, arg InsertUtxoParams) error {
+	_, err := q.db.ExecContext(ctx, insertUtxo,
+		arg.Txid,
+		arg.Vout,
+		arg.Pubkey,
+		arg.Amount,
+		arg.SpentBy,
+		arg.CreatedAt,
+	)
 	return err
 }
 
@@ -361,6 +402,43 @@ func (q *Queries) SelectAssetsWithUnspentAmountsByIds(ctx context.Context, ids [
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectCheckpointTxsByTxids = `-- name: SelectCheckpointTxsByTxids :many
+SELECT tx FROM checkpoint_tx WHERE txid IN (/*SLICE:txids*/?)
+`
+
+func (q *Queries) SelectCheckpointTxsByTxids(ctx context.Context, txids []string) ([]string, error) {
+	query := selectCheckpointTxsByTxids
+	var queryParams []interface{}
+	if len(txids) > 0 {
+		for _, v := range txids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:txids*/?", strings.Repeat(",?", len(txids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:txids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var tx string
+		if err := rows.Scan(&tx); err != nil {
+			return nil, err
+		}
+		items = append(items, tx)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -1072,6 +1150,43 @@ func (q *Queries) SelectOffchainTxsInRange(ctx context.Context, arg SelectOffcha
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectOnchainTxs = `-- name: SelectOnchainTxs :many
+SELECT tx FROM onchain_tx WHERE txid IN (/*SLICE:txids*/?)
+`
+
+func (q *Queries) SelectOnchainTxs(ctx context.Context, txids []string) ([]string, error) {
+	query := selectOnchainTxs
+	var queryParams []interface{}
+	if len(txids) > 0 {
+		for _, v := range txids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:txids*/?", strings.Repeat(",?", len(txids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:txids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var tx string
+		if err := rows.Scan(&tx); err != nil {
+			return nil, err
+		}
+		items = append(items, tx)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -2241,6 +2356,170 @@ func (q *Queries) SelectTxs(ctx context.Context, arg SelectTxsParams) ([]SelectT
 	return items, nil
 }
 
+const selectUnconfirmedSpentUtxos = `-- name: SelectUnconfirmedSpentUtxos :many
+SELECT txid, vout, pubkey, amount, spent_by, created_at, spend_confirmed_at_time, spend_confirmed_at_height, is_vtxo FROM utxo_vw WHERE spend_confirmed_at_time IS NULL AND spend_confirmed_at_height IS NULL
+`
+
+func (q *Queries) SelectUnconfirmedSpentUtxos(ctx context.Context) ([]UtxoVw, error) {
+	rows, err := q.db.QueryContext(ctx, selectUnconfirmedSpentUtxos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UtxoVw
+	for rows.Next() {
+		var i UtxoVw
+		if err := rows.Scan(
+			&i.Txid,
+			&i.Vout,
+			&i.Pubkey,
+			&i.Amount,
+			&i.SpentBy,
+			&i.CreatedAt,
+			&i.SpendConfirmedAtTime,
+			&i.SpendConfirmedAtHeight,
+			&i.IsVtxo,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectUtxosByTxids = `-- name: SelectUtxosByTxids :many
+SELECT txid, vout, pubkey, amount, spent_by, created_at, spend_confirmed_at_time, spend_confirmed_at_height, is_vtxo FROM utxo_vw WHERE txid IN (/*SLICE:txids*/?)
+ORDER BY txid, vout
+`
+
+// Batch lookup by outpoint. sqlc.slice cannot expand (txid, vout) pairs, so
+// this matches on txid and the caller drops the sibling vouts.
+func (q *Queries) SelectUtxosByTxids(ctx context.Context, txids []string) ([]UtxoVw, error) {
+	query := selectUtxosByTxids
+	var queryParams []interface{}
+	if len(txids) > 0 {
+		for _, v := range txids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:txids*/?", strings.Repeat(",?", len(txids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:txids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UtxoVw
+	for rows.Next() {
+		var i UtxoVw
+		if err := rows.Scan(
+			&i.Txid,
+			&i.Vout,
+			&i.Pubkey,
+			&i.Amount,
+			&i.SpentBy,
+			&i.CreatedAt,
+			&i.SpendConfirmedAtTime,
+			&i.SpendConfirmedAtHeight,
+			&i.IsVtxo,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectUtxosWithPubkeysPage = `-- name: SelectUtxosWithPubkeysPage :many
+WITH bounds AS (
+    SELECT CAST(CASE WHEN ?1 <= 0 THEN -1 ELSE ?1 END AS INTEGER) AS lim,
+           CAST(?2 AS INTEGER) AS off
+), matching AS (
+    SELECT DISTINCT u.txid, u.vout, u.created_at
+    FROM utxo_vw u
+    WHERE u.pubkey IN (/*SLICE:pubkeys*/?)
+), page AS (
+    SELECT m.txid, m.vout, m.created_at, COUNT(*) OVER () AS total
+    FROM matching m
+    ORDER BY m.created_at DESC, m.txid, m.vout
+    LIMIT (SELECT lim FROM bounds) OFFSET (SELECT off FROM bounds)
+)
+SELECT utxo_vw.txid, utxo_vw.vout, utxo_vw.pubkey, utxo_vw.amount, utxo_vw.spent_by, utxo_vw.created_at, utxo_vw.spend_confirmed_at_time, utxo_vw.spend_confirmed_at_height, utxo_vw.is_vtxo, page.total FROM utxo_vw
+JOIN page ON utxo_vw.txid = page.txid AND utxo_vw.vout = page.vout
+ORDER BY page.created_at DESC, page.txid, page.vout
+`
+
+type SelectUtxosWithPubkeysPageParams struct {
+	Lim     interface{}
+	Off     int64
+	Pubkeys []string
+}
+
+type SelectUtxosWithPubkeysPageRow struct {
+	UtxoVw UtxoVw
+	Total  int64
+}
+
+// Paged, filtered utxo query by pubkeys.
+func (q *Queries) SelectUtxosWithPubkeysPage(ctx context.Context, arg SelectUtxosWithPubkeysPageParams) ([]SelectUtxosWithPubkeysPageRow, error) {
+	query := selectUtxosWithPubkeysPage
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.Lim)
+	queryParams = append(queryParams, arg.Off)
+	if len(arg.Pubkeys) > 0 {
+		for _, v := range arg.Pubkeys {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", strings.Repeat(",?", len(arg.Pubkeys))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:pubkeys*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectUtxosWithPubkeysPageRow
+	for rows.Next() {
+		var i SelectUtxosWithPubkeysPageRow
+		if err := rows.Scan(
+			&i.UtxoVw.Txid,
+			&i.UtxoVw.Vout,
+			&i.UtxoVw.Pubkey,
+			&i.UtxoVw.Amount,
+			&i.UtxoVw.SpentBy,
+			&i.UtxoVw.CreatedAt,
+			&i.UtxoVw.SpendConfirmedAtTime,
+			&i.UtxoVw.SpendConfirmedAtHeight,
+			&i.UtxoVw.IsVtxo,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectVtxo = `-- name: SelectVtxo :many
 SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount FROM vtxo_vw WHERE txid = ?1 AND vout = ?2
 `
@@ -2990,6 +3269,31 @@ UPDATE conviction SET pardoned = true WHERE id = ?1
 func (q *Queries) UpdateConvictionPardoned(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, updateConvictionPardoned, id)
 	return err
+}
+
+const updateUtxo = `-- name: UpdateUtxo :execrows
+UPDATE utxo SET spend_confirmed_at_time = ?1, spend_confirmed_at_height = ?2
+WHERE txid = ?3 AND vout = ?4 AND spend_confirmed_at_time IS NULL
+`
+
+type UpdateUtxoParams struct {
+	SpendConfirmedAtTime   sql.NullInt64
+	SpendConfirmedAtHeight sql.NullInt64
+	Txid                   string
+	Vout                   int64
+}
+
+func (q *Queries) UpdateUtxo(ctx context.Context, arg UpdateUtxoParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateUtxo,
+		arg.SpendConfirmedAtTime,
+		arg.SpendConfirmedAtHeight,
+		arg.Txid,
+		arg.Vout,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateVtxoExpiration = `-- name: UpdateVtxoExpiration :exec

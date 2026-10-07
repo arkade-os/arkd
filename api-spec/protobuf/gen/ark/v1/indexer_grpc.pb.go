@@ -33,6 +33,7 @@ const (
 	IndexerService_UnsubscribeForScripts_FullMethodName     = "/ark.v1.IndexerService/UnsubscribeForScripts"
 	IndexerService_GetSubscription_FullMethodName           = "/ark.v1.IndexerService/GetSubscription"
 	IndexerService_UpdateSubscription_FullMethodName        = "/ark.v1.IndexerService/UpdateSubscription"
+	IndexerService_GetUtxos_FullMethodName                  = "/ark.v1.IndexerService/GetUtxos"
 )
 
 // IndexerServiceClient is the client API for IndexerService service.
@@ -96,6 +97,9 @@ type IndexerServiceClient interface {
 	// GetSubscription. See UpdateSubscriptionRequest for the full set of
 	// supported filter combinations and their semantics.
 	UpdateSubscription(ctx context.Context, in *UpdateSubscriptionRequest, opts ...grpc.CallOption) (*UpdateSubscriptionResponse, error)
+	// GetUtxos returns the utxos spent with the server's signature, either boarding utxos
+	// settled in a batch or utxos cosigned with CosignOnchainTx, by script or by outpoint.
+	GetUtxos(ctx context.Context, in *GetUtxosRequest, opts ...grpc.CallOption) (*GetUtxosResponse, error)
 }
 
 type indexerServiceClient struct {
@@ -255,6 +259,16 @@ func (c *indexerServiceClient) UpdateSubscription(ctx context.Context, in *Updat
 	return out, nil
 }
 
+func (c *indexerServiceClient) GetUtxos(ctx context.Context, in *GetUtxosRequest, opts ...grpc.CallOption) (*GetUtxosResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetUtxosResponse)
+	err := c.cc.Invoke(ctx, IndexerService_GetUtxos_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IndexerServiceServer is the server API for IndexerService service.
 // All implementations should embed UnimplementedIndexerServiceServer
 // for forward compatibility.
@@ -316,6 +330,9 @@ type IndexerServiceServer interface {
 	// GetSubscription. See UpdateSubscriptionRequest for the full set of
 	// supported filter combinations and their semantics.
 	UpdateSubscription(context.Context, *UpdateSubscriptionRequest) (*UpdateSubscriptionResponse, error)
+	// GetUtxos returns the utxos spent with the server's signature, either boarding utxos
+	// settled in a batch or utxos cosigned with CosignOnchainTx, by script or by outpoint.
+	GetUtxos(context.Context, *GetUtxosRequest) (*GetUtxosResponse, error)
 }
 
 // UnimplementedIndexerServiceServer should be embedded to have
@@ -366,6 +383,9 @@ func (UnimplementedIndexerServiceServer) GetSubscription(*GetSubscriptionRequest
 }
 func (UnimplementedIndexerServiceServer) UpdateSubscription(context.Context, *UpdateSubscriptionRequest) (*UpdateSubscriptionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateSubscription not implemented")
+}
+func (UnimplementedIndexerServiceServer) GetUtxos(context.Context, *GetUtxosRequest) (*GetUtxosResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetUtxos not implemented")
 }
 func (UnimplementedIndexerServiceServer) testEmbeddedByValue() {}
 
@@ -632,6 +652,24 @@ func _IndexerService_UpdateSubscription_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IndexerService_GetUtxos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetUtxosRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IndexerServiceServer).GetUtxos(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IndexerService_GetUtxos_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IndexerServiceServer).GetUtxos(ctx, req.(*GetUtxosRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IndexerService_ServiceDesc is the grpc.ServiceDesc for IndexerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -690,6 +728,10 @@ var IndexerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateSubscription",
 			Handler:    _IndexerService_UpdateSubscription_Handler,
+		},
+		{
+			MethodName: "GetUtxos",
+			Handler:    _IndexerService_GetUtxos_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

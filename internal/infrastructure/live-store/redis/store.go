@@ -9,6 +9,7 @@ type redisLiveStore struct {
 	intentStore               ports.IntentStore
 	forfeitTxsStore           ports.ForfeitTxsStore
 	offChainTxStore           ports.OffChainTxStore
+	utxoStore                 ports.CosignedUtxosStore
 	currentRoundStore         ports.CurrentRoundStore
 	confirmationSessionsStore ports.ConfirmationSessionsStore
 	treeSigningSessions       ports.TreeSigningSessionsStore
@@ -21,6 +22,7 @@ func NewLiveStore(rdb *redis.Client, builder ports.TxBuilder, numOfRetries int) 
 		intentStore:               NewIntentStore(rdb, numOfRetries),
 		forfeitTxsStore:           NewForfeitTxsStore(rdb, builder, numOfRetries),
 		offChainTxStore:           NewOffChainTxStore(rdb, numOfRetries),
+		utxoStore:                 NewUtxoStore(rdb, numOfRetries),
 		currentRoundStore:         NewCurrentRoundStore(rdb, numOfRetries),
 		confirmationSessionsStore: NewConfirmationSessionsStore(rdb, numOfRetries),
 		treeSigningSessions:       NewTreeSigningSessionsStore(rdb, numOfRetries),
@@ -29,10 +31,11 @@ func NewLiveStore(rdb *redis.Client, builder ports.TxBuilder, numOfRetries int) 
 	}
 }
 
-func (s *redisLiveStore) Intents() ports.IntentStore            { return s.intentStore }
-func (s *redisLiveStore) ForfeitTxs() ports.ForfeitTxsStore     { return s.forfeitTxsStore }
-func (s *redisLiveStore) OffchainTxs() ports.OffChainTxStore    { return s.offChainTxStore }
-func (s *redisLiveStore) CurrentRound() ports.CurrentRoundStore { return s.currentRoundStore }
+func (s *redisLiveStore) Intents() ports.IntentStore              { return s.intentStore }
+func (s *redisLiveStore) ForfeitTxs() ports.ForfeitTxsStore       { return s.forfeitTxsStore }
+func (s *redisLiveStore) OffchainTxs() ports.OffChainTxStore      { return s.offChainTxStore }
+func (s *redisLiveStore) CosignedUtxos() ports.CosignedUtxosStore { return s.utxoStore }
+func (s *redisLiveStore) CurrentRound() ports.CurrentRoundStore   { return s.currentRoundStore }
 func (s *redisLiveStore) ConfirmationSessions() ports.ConfirmationSessionsStore {
 	return s.confirmationSessionsStore
 }

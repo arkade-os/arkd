@@ -32,6 +32,7 @@ const (
 	ArkService_SubmitTx_FullMethodName               = "/ark.v1.ArkService/SubmitTx"
 	ArkService_FinalizeTx_FullMethodName             = "/ark.v1.ArkService/FinalizeTx"
 	ArkService_GetPendingTx_FullMethodName           = "/ark.v1.ArkService/GetPendingTx"
+	ArkService_CosignOnchainTx_FullMethodName        = "/ark.v1.ArkService/CosignOnchainTx"
 	ArkService_GetTransactionsStream_FullMethodName  = "/ark.v1.ArkService/GetTransactionsStream"
 	ArkService_GetIntent_FullMethodName              = "/ark.v1.ArkService/GetIntent"
 )
@@ -101,6 +102,12 @@ type ArkServiceClient interface {
 	// GetPendingTx returns not finalized transaction(s) for a given set of inputs.
 	// the client should provide a BIP322 proof of ownership of the inputs
 	GetPendingTx(ctx context.Context, in *GetPendingTxRequest, opts ...grpc.CallOption) (*GetPendingTxResponse, error)
+	// CosignOnchainTx cosigns and broadcasts an onchain tx spending utxos locked with the server,
+	// like boarding utxos. Inputs to cosign must be confirmed, reveal their taptree, be signed by
+	// every other cosigner with sighash ALL or DEFAULT, and have their exit path still far from
+	// maturing. Other inputs are left as is, but must be fully signed.
+	// A utxo is cosigned once: the tx can't be replaced, fee bump it with CPFP.
+	CosignOnchainTx(ctx context.Context, in *CosignOnchainTxRequest, opts ...grpc.CallOption) (*CosignOnchainTxResponse, error)
 	// GetTransactionsStream is a server-side streaming RPC that allows clients to receive
 	// notifications in real-time about any commitment tx or ark tx processed and finalized by the
 	// server.
@@ -257,6 +264,16 @@ func (c *arkServiceClient) GetPendingTx(ctx context.Context, in *GetPendingTxReq
 	return out, nil
 }
 
+func (c *arkServiceClient) CosignOnchainTx(ctx context.Context, in *CosignOnchainTxRequest, opts ...grpc.CallOption) (*CosignOnchainTxResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CosignOnchainTxResponse)
+	err := c.cc.Invoke(ctx, ArkService_CosignOnchainTx_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *arkServiceClient) GetTransactionsStream(ctx context.Context, in *GetTransactionsStreamRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetTransactionsStreamResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &ArkService_ServiceDesc.Streams[1], ArkService_GetTransactionsStream_FullMethodName, cOpts...)
@@ -351,6 +368,12 @@ type ArkServiceServer interface {
 	// GetPendingTx returns not finalized transaction(s) for a given set of inputs.
 	// the client should provide a BIP322 proof of ownership of the inputs
 	GetPendingTx(context.Context, *GetPendingTxRequest) (*GetPendingTxResponse, error)
+	// CosignOnchainTx cosigns and broadcasts an onchain tx spending utxos locked with the server,
+	// like boarding utxos. Inputs to cosign must be confirmed, reveal their taptree, be signed by
+	// every other cosigner with sighash ALL or DEFAULT, and have their exit path still far from
+	// maturing. Other inputs are left as is, but must be fully signed.
+	// A utxo is cosigned once: the tx can't be replaced, fee bump it with CPFP.
+	CosignOnchainTx(context.Context, *CosignOnchainTxRequest) (*CosignOnchainTxResponse, error)
 	// GetTransactionsStream is a server-side streaming RPC that allows clients to receive
 	// notifications in real-time about any commitment tx or ark tx processed and finalized by the
 	// server.
@@ -405,6 +428,9 @@ func (UnimplementedArkServiceServer) FinalizeTx(context.Context, *FinalizeTxRequ
 }
 func (UnimplementedArkServiceServer) GetPendingTx(context.Context, *GetPendingTxRequest) (*GetPendingTxResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetPendingTx not implemented")
+}
+func (UnimplementedArkServiceServer) CosignOnchainTx(context.Context, *CosignOnchainTxRequest) (*CosignOnchainTxResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CosignOnchainTx not implemented")
 }
 func (UnimplementedArkServiceServer) GetTransactionsStream(*GetTransactionsStreamRequest, grpc.ServerStreamingServer[GetTransactionsStreamResponse]) error {
 	return status.Errorf(codes.Unimplemented, "method GetTransactionsStream not implemented")
@@ -659,6 +685,24 @@ func _ArkService_GetPendingTx_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ArkService_CosignOnchainTx_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CosignOnchainTxRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ArkServiceServer).CosignOnchainTx(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ArkService_CosignOnchainTx_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ArkServiceServer).CosignOnchainTx(ctx, req.(*CosignOnchainTxRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ArkService_GetTransactionsStream_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(GetTransactionsStreamRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -742,6 +786,10 @@ var ArkService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetPendingTx",
 			Handler:    _ArkService_GetPendingTx_Handler,
+		},
+		{
+			MethodName: "CosignOnchainTx",
+			Handler:    _ArkService_CosignOnchainTx_Handler,
 		},
 		{
 			MethodName: "GetIntent",

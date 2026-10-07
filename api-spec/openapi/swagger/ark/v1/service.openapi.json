@@ -541,6 +541,47 @@
         }
       }
     },
+    "/v1/tx/onchain/cosign": {
+      "post": {
+        "tags": [
+          "ArkService"
+        ],
+        "description": "CosignOnchainTx cosigns and broadcasts an onchain tx spending utxos locked with the server,\nlike boarding utxos. Inputs to cosign must be confirmed, reveal their taptree, be signed by\nevery other cosigner with sighash ALL or DEFAULT, and have their exit path still far from\nmaturing. Other inputs are left as is, but must be fully signed.\nA utxo is cosigned once: the tx can't be replaced, fee bump it with CPFP.",
+        "operationId": "ArkService_CosignOnchainTx",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CosignOnchainTxRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CosignOnchainTxResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/tx/pending": {
       "post": {
         "tags": [
@@ -747,6 +788,26 @@
       "ConfirmRegistrationResponse": {
         "title": "ConfirmRegistrationResponse",
         "type": "object"
+      },
+      "CosignOnchainTxRequest": {
+        "title": "CosignOnchainTxRequest",
+        "type": "object",
+        "properties": {
+          "tx": {
+            "type": "string",
+            "description": "Base64 PSBT, signed by every cosigner but the server."
+          }
+        }
+      },
+      "CosignOnchainTxResponse": {
+        "title": "CosignOnchainTxResponse",
+        "type": "object",
+        "properties": {
+          "txid": {
+            "type": "string",
+            "description": "Txid of the broadcasted tx."
+          }
+        }
       },
       "DeleteIntentRequest": {
         "title": "DeleteIntentRequest",

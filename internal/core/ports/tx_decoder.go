@@ -2,7 +2,11 @@ package ports
 
 import "github.com/arkade-os/arkd/internal/core/domain"
 
-type TxIn = domain.Outpoint
+type TxIn struct {
+	domain.Outpoint
+	// Prevout is the output spent by the input, nil if the tx doesn't carry it.
+	Prevout *TxOut
+}
 
 type TxOut struct {
 	Amount   uint64

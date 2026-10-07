@@ -25,6 +25,7 @@ type Indexer interface {
 		ctx context.Context, txid string, opts ...PageOption,
 	) (*ConnectorsResponse, error)
 	GetVtxos(ctx context.Context, opts ...GetVtxosOption) (*VtxosResponse, error)
+	GetUtxos(ctx context.Context, opts ...GetVtxosOption) (*UtxosResponse, error)
 	GetVtxoChain(
 		ctx context.Context, outpoint Outpoint, opts ...PageOption,
 	) (*VtxoChainResponse, error)
@@ -72,6 +73,11 @@ type ConnectorsResponse struct {
 
 type VtxosResponse struct {
 	Vtxos []Vtxo
+	Page  *PageResponse
+}
+
+type UtxosResponse struct {
+	Utxos []CosignedUtxo
 	Page  *PageResponse
 }
 

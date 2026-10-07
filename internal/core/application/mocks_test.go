@@ -60,6 +60,16 @@ func (m *mockedRoundRepo) GetRoundWithCommitmentTxid(
 	return nil, args.Error(1)
 }
 
+func (m *mockedRoundRepo) GetRoundsWithCommitmentTxids(
+	ctx context.Context, txids []string,
+) (map[string]any, error) {
+	args := m.Called(ctx, txids)
+	if v := args.Get(0); v != nil {
+		return v.(map[string]any), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
 func (m *mockedRoundRepo) AddOrUpdateRound(ctx context.Context, round domain.Round) error {
 	return m.Called(ctx, round).Error(0)
 }
@@ -143,6 +153,22 @@ type mockedRepoManager struct {
 	// Capture registered handlers so tests can exercise the callbacks directly.
 	batchHandler      func(domain.Round)
 	offchainTxHandler func(domain.OffchainTx)
+	onchainTxHandler  func(domain.OnchainTx)
+	// utxos and events are served as is, not through expectations, so concurrent tests can
+	// hit them.
+	utxos  domain.UtxoRepository
+	events domain.EventRepository
+}
+
+func (m *mockedRepoManager) CosignedUtxos() domain.UtxoRepository {
+	return m.utxos
+}
+
+func (m *mockedRepoManager) Events() domain.EventRepository {
+	if m.events != nil {
+		return m.events
+	}
+	return m.RepoManager.Events()
 }
 
 func (m *mockedRepoManager) Rounds() domain.RoundRepository {
@@ -183,6 +209,10 @@ func (m *mockedRepoManager) RegisterOffchainTxUpdateHandler(h func(domain.Offcha
 
 func (m *mockedRepoManager) RegisterBatchUpdateHandler(h func(domain.Round)) {
 	m.batchHandler = h
+}
+
+func (m *mockedRepoManager) RegisterOnchainTxUpdateHandler(h func(domain.OnchainTx)) {
+	m.onchainTxHandler = h
 }
 
 func (m *mockedRepoManager) Close() {

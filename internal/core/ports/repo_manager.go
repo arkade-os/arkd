@@ -8,6 +8,7 @@ type RepoManager interface {
 	Events() domain.EventRepository
 	Rounds() domain.RoundRepository
 	Vtxos() domain.VtxoRepository
+	CosignedUtxos() domain.UtxoRepository
 	Markers() domain.MarkerRepository
 	OffchainTxs() domain.OffchainTxRepository
 	Convictions() domain.ConvictionRepository
@@ -15,6 +16,7 @@ type RepoManager interface {
 	Settings() domain.SettingsRepository
 	RegisterBatchUpdateHandler(handler func(data domain.Round))
 	RegisterOffchainTxUpdateHandler(handler func(data domain.OffchainTx))
+	RegisterOnchainTxUpdateHandler(handler func(data domain.OnchainTx))
 	RegisterSettingsUpdateHandler(handler func(data domain.Settings, changelog []string))
 
 	Reconcile() error

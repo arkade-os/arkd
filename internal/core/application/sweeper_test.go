@@ -651,11 +651,15 @@ func (m *mockRepoManager) Assets() domain.AssetRepository {
 func (m *mockRepoManager) Settings() domain.SettingsRepository {
 	return nil
 }
+func (m *mockRepoManager) CosignedUtxos() domain.UtxoRepository {
+	return nil
+}
 func (m *mockRepoManager) Reconcile() error {
 	return nil
 }
 func (m *mockRepoManager) RegisterBatchUpdateHandler(func(data domain.Round))            {}
 func (m *mockRepoManager) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx))       {}
+func (m *mockRepoManager) RegisterOnchainTxUpdateHandler(func(domain.OnchainTx))         {}
 func (m *mockRepoManager) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {}
 func (m *mockRepoManager) Close()                                                        {}
 

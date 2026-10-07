@@ -45,6 +45,7 @@ func TestUpdateProjectionsAfterOffchainTxEvents(t *testing.T) {
 				3, 0, []uint32{wire.MaxTxInSequenceNum},
 			)
 			require.NoError(t, err)
+			addPrevouts(t, ptx)
 			arkTx, err := ptx.B64Encode()
 			require.NoError(t, err)
 			sweptArkTxid := ptx.UnsignedTx.TxID()
@@ -140,6 +141,208 @@ func TestUpdateProjectionsAfterOffchainTxEvents(t *testing.T) {
 	})
 }
 
+func TestUpdateProjectionsAfterRoundEvents(t *testing.T) {
+	ctx := t.Context()
+
+	// When projection a finalized batch that includes boarding inputs, they must be retrievable
+	// with the utxo repository.
+	t.Run("finalized round with boarding inputs", func(t *testing.T) {
+		t.Run("valid", func(t *testing.T) {
+			t.Run("boarding utxos are recorded as cosigned", func(t *testing.T) {
+				svc := newProjectionTestService(t, t.TempDir())
+				f := newRoundWithBoardingInputs(t, svc)
+				svc.(*service).txDecoder = f.decoder
+
+				var dispatched atomic.Bool
+				svc.RegisterBatchUpdateHandler(func(domain.Round) { dispatched.Store(true) })
+
+				svc.(*service).updateProjectionsAfterRoundEvents(f.events)
+
+				utxos, err := svc.CosignedUtxos().GetUtxos(ctx, []domain.Outpoint{
+					f.vtxo.Outpoint, f.unrolledVtxo.Outpoint, f.boarding.Outpoint,
+				})
+				require.NoError(t, err)
+				require.Len(t, utxos, 1, "only the boarding input must be recorded")
+				require.Equal(t, f.boarding.Outpoint, utxos[0].Outpoint)
+				require.Equal(t, f.boarding.Prevout.Amount, utxos[0].Amount)
+				require.Equal(t, hex.EncodeToString(f.boarding.Prevout.PkScript[2:]), utxos[0].PubKey)
+				require.Equal(t, f.commitmentTxid, utxos[0].Spend.Txid)
+				require.False(t, utxos[0].Spend.IsConfirmed())
+				require.Eventually(t, dispatched.Load, time.Second, 20*time.Millisecond)
+			})
+		})
+
+		// These cases are all impossible to happen but we still ensure we're panic safe.
+		t.Run("invalid", func(t *testing.T) {
+			// A proof the decoder can't read must abort the projection: recording nothing
+			// would leave the boarding utxo free to be cosigned again once the intents cache
+			// releases it.
+			t.Run("undecodable proof aborts the projection", func(t *testing.T) {
+				svc := newProjectionTestService(t, t.TempDir())
+				f := newRoundWithBoardingInputs(t, svc)
+				f.decoder.err = errors.New("forced decode failure")
+				svc.(*service).txDecoder = f.decoder
+
+				var dispatched atomic.Bool
+				svc.RegisterBatchUpdateHandler(func(domain.Round) { dispatched.Store(true) })
+
+				svc.(*service).updateProjectionsAfterRoundEvents(f.events)
+
+				utxos, err := svc.CosignedUtxos().GetUtxos(ctx, []domain.Outpoint{f.boarding.Outpoint})
+				require.NoError(t, err)
+				require.Empty(t, utxos)
+				require.Never(
+					t, dispatched.Load, 200*time.Millisecond, 20*time.Millisecond,
+					"a failed projection must not dispatch the round update",
+				)
+			})
+
+			// A boarding utxo already recorded (already cosigned) must abort the projection
+			// rather than being silently overwritten.
+			t.Run("already cosigned boarding utxo aborts the projection", func(t *testing.T) {
+				svc := newProjectionTestService(t, t.TempDir())
+				f := newRoundWithBoardingInputs(t, svc)
+				svc.(*service).txDecoder = f.decoder
+
+				err := svc.CosignedUtxos().AddUtxos(ctx, []domain.Utxo{{
+					Outpoint:  f.boarding.Outpoint,
+					Amount:    f.boarding.Prevout.Amount,
+					PubKey:    hex.EncodeToString(f.boarding.Prevout.PkScript[2:]),
+					Spend:     domain.UtxoSpend{Txid: randomString(t, 32)},
+					CreatedAt: time.Now().Unix(),
+				}}, "")
+				require.NoError(t, err)
+
+				var dispatched atomic.Bool
+				svc.RegisterBatchUpdateHandler(func(domain.Round) { dispatched.Store(true) })
+
+				svc.(*service).updateProjectionsAfterRoundEvents(f.events)
+
+				require.Never(
+					t, dispatched.Load, 200*time.Millisecond, 20*time.Millisecond,
+					"a failed projection must not dispatch the round update",
+				)
+			})
+		})
+	})
+}
+
+// The events go through the real event store, so the projection is exercised the way the
+// application drives it: saved, decoded, replayed and handled.
+func TestUpdateProjectionsAfterOnchainTxEvents(t *testing.T) {
+	ctx := t.Context()
+
+	t.Run("cosigned onchain tx", func(t *testing.T) {
+		t.Run("valid", func(t *testing.T) {
+			t.Run("broadcast records the signed inputs, confirmation confirms them", func(t *testing.T) {
+				svc := newProjectionTestService(t, t.TempDir())
+				f := newOnchainTxFixture(t)
+
+				require.NoError(t, svc.Events().Save(
+					ctx, domain.OnchainTxTopic, f.txid, []domain.Event{f.broadcasted},
+				))
+
+				// Only the signed input is recorded, the foreign one is left alone.
+				require.Eventually(t, func() bool {
+					utxos, err := svc.CosignedUtxos().GetUtxos(ctx, []domain.Outpoint{f.signed})
+					return err == nil && len(utxos) == 1
+				}, 5*time.Second, 50*time.Millisecond)
+				utxos, err := svc.CosignedUtxos().GetUtxos(
+					ctx, []domain.Outpoint{f.signed, f.foreign},
+				)
+				require.NoError(t, err)
+				require.Len(t, utxos, 1)
+				require.Equal(t, f.signed, utxos[0].Outpoint)
+				require.Equal(t, f.amount, utxos[0].Amount)
+				require.Equal(t, hex.EncodeToString(f.pkScript[2:]), utxos[0].PubKey)
+				require.Equal(t, f.broadcasted.Timestamp, utxos[0].CreatedAt)
+				require.Equal(t, f.txid, utxos[0].Spend.Txid)
+				require.False(t, utxos[0].Spend.IsConfirmed())
+
+				// The tx is recorded along with its utxos.
+				txs, err := svc.CosignedUtxos().GetOnchainTxs(ctx, []string{f.txid})
+				require.NoError(t, err)
+				require.Equal(t, []string{f.broadcasted.Tx}, txs)
+
+				require.NoError(t, svc.Events().Save(
+					ctx, domain.OnchainTxTopic, f.txid, []domain.Event{f.confirmed},
+				))
+
+				require.Eventually(t, func() bool {
+					utxos, err := svc.CosignedUtxos().GetUtxos(ctx, []domain.Outpoint{f.signed})
+					return err == nil && len(utxos) == 1 && utxos[0].Spend.IsConfirmed()
+				}, 5*time.Second, 50*time.Millisecond)
+				utxos, err = svc.CosignedUtxos().GetUtxos(ctx, []domain.Outpoint{f.signed})
+				require.NoError(t, err)
+				require.Equal(t, f.txid, utxos[0].Spend.Txid)
+				require.Equal(t, f.confirmed.ConfirmedAtTime, utxos[0].Spend.ConfirmedAtTime)
+				require.Equal(t, f.confirmed.ConfirmedAtHeight, utxos[0].Spend.ConfirmedAtHeight)
+
+				unconfirmed, err := svc.CosignedUtxos().GetUnconfirmedUtxos(ctx)
+				require.NoError(t, err)
+				require.Empty(t, unconfirmed)
+			})
+		})
+
+		// These cases are all impossible to happen but we still ensure they're harmless.
+		t.Run("invalid", func(t *testing.T) {
+			t.Run("undecodable tx records nothing", func(t *testing.T) {
+				svc := newProjectionTestService(t, t.TempDir())
+				f := newOnchainTxFixture(t)
+				f.broadcasted.Tx = "not a psbt"
+
+				require.NoError(t, svc.Events().Save(
+					ctx, domain.OnchainTxTopic, f.txid, []domain.Event{f.broadcasted},
+				))
+
+				require.Never(t, func() bool {
+					utxos, err := svc.CosignedUtxos().GetUtxos(ctx, []domain.Outpoint{f.signed})
+					txs, txErr := svc.CosignedUtxos().GetOnchainTxs(ctx, []string{f.txid})
+					return err != nil || txErr != nil || len(utxos) > 0 || len(txs) > 0
+				}, 500*time.Millisecond, 50*time.Millisecond)
+			})
+
+			t.Run("confirmation of a tx never broadcasted records nothing", func(t *testing.T) {
+				svc := newProjectionTestService(t, t.TempDir())
+				f := newOnchainTxFixture(t)
+
+				require.NoError(t, svc.Events().Save(
+					ctx, domain.OnchainTxTopic, f.txid, []domain.Event{f.confirmed},
+				))
+
+				require.Never(t, func() bool {
+					utxos, err := svc.CosignedUtxos().GetUtxos(ctx, []domain.Outpoint{f.signed})
+					txs, txErr := svc.CosignedUtxos().GetOnchainTxs(ctx, []string{f.txid})
+					return err != nil || txErr != nil || len(utxos) > 0 || len(txs) > 0
+				}, 500*time.Millisecond, 50*time.Millisecond)
+			})
+
+			t.Run("duplicated broadcast leaves the record untouched", func(t *testing.T) {
+				svc := newProjectionTestService(t, t.TempDir())
+				f := newOnchainTxFixture(t)
+
+				require.NoError(t, svc.Events().Save(
+					ctx, domain.OnchainTxTopic, f.txid, []domain.Event{f.broadcasted},
+				))
+				require.Eventually(t, func() bool {
+					utxos, err := svc.CosignedUtxos().GetUtxos(ctx, []domain.Outpoint{f.signed})
+					return err == nil && len(utxos) == 1
+				}, 5*time.Second, 50*time.Millisecond)
+
+				// Replaying the same broadcast is a no-op for the domain, and the utxo can't be
+				// inserted twice anyway.
+				require.NoError(t, svc.Events().Save(
+					ctx, domain.OnchainTxTopic, f.txid, []domain.Event{f.broadcasted},
+				))
+				require.Never(t, func() bool {
+					utxos, err := svc.CosignedUtxos().GetUtxos(ctx, []domain.Outpoint{f.signed})
+					return err != nil || len(utxos) != 1 || utxos[0].Spend.IsConfirmed()
+				}, 500*time.Millisecond, 50*time.Millisecond)
+			})
+		})
+	})
+}
+
 // newProjectionTestService opens a service over dir the way the application
 // does, NewService then Reconcile, so a test can close it and reopen the same stores
 // to exercise what Reconcile does at startup.
@@ -179,6 +382,7 @@ func finalizedSubDustEvents(t *testing.T) (domain.Outpoint, []domain.Event) {
 		3, 0, []uint32{wire.MaxTxInSequenceNum},
 	)
 	require.NoError(t, err)
+	addPrevouts(t, ptx)
 	arkTx, err := ptx.B64Encode()
 	require.NoError(t, err)
 	arkTxid := ptx.UnsignedTx.TxID()
@@ -224,6 +428,137 @@ type failingBulkSweepMarkerStore struct {
 	err error
 }
 
+// boardingRoundFixture is a finalized round with one intent claiming a vtxo, an unrolled
+// vtxo and a boarding utxo, and a decoder that answers the intent proof with those inputs.
+// The round has no vtxo tree nor forfeit txs, so the proof is the only tx decoded.
+type boardingRoundFixture struct {
+	events         []domain.Event
+	decoder        *mockTxDecoder
+	commitmentTxid string
+	vtxo           domain.Vtxo
+	unrolledVtxo   domain.Vtxo
+	boarding       ports.TxIn
+}
+
+func newRoundWithBoardingInputs(t *testing.T, svc ports.RepoManager) *boardingRoundFixture {
+	t.Helper()
+	ctx := t.Context()
+
+	newVtxo := func() domain.Vtxo {
+		commitmentTxid := randomString(t, 32)
+		return domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: randomString(t, 32), VOut: 0},
+			PubKey:             randomString(t, 32),
+			Amount:             1000,
+			RootCommitmentTxid: commitmentTxid,
+			CommitmentTxids:    []string{commitmentTxid},
+			ExpiresAt:          time.Now().Add(time.Hour).Unix(),
+			CreatedAt:          time.Now().Unix(),
+		}
+	}
+	vtxo, unrolledVtxo := newVtxo(), newVtxo()
+	require.NoError(t, svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{vtxo, unrolledVtxo}))
+	require.NoError(t, svc.Vtxos().UnrollVtxos(ctx, []domain.Outpoint{unrolledVtxo.Outpoint}))
+	unrolledVtxo.Unrolled = true
+
+	taprootScript := append([]byte{0x51, 0x20}, make([]byte, 32)...)
+	// nolint
+	rand.Read(taprootScript[2:])
+	boarding := ports.TxIn{
+		Outpoint: domain.Outpoint{Txid: randomString(t, 32), VOut: 1},
+		Prevout:  &ports.TxOut{Amount: 5000, PkScript: taprootScript},
+	}
+	txIn := func(v domain.Vtxo) ports.TxIn {
+		pkScript, err := hex.DecodeString("5120" + v.PubKey)
+		require.NoError(t, err)
+		return ports.TxIn{
+			Outpoint: v.Outpoint,
+			Prevout:  &ports.TxOut{Amount: v.Amount, PkScript: pkScript},
+		}
+	}
+
+	// Input 0 of a proof is the BIP322 message input, it carries a zero-valued prevout.
+	proof := "proof-" + randomString(t, 8)
+	decoder := &mockTxDecoder{txs: map[string]decodedTx{
+		proof: {
+			txid: randomString(t, 32),
+			ins: []ports.TxIn{
+				{
+					Outpoint: domain.Outpoint{Txid: randomString(t, 32), VOut: 0},
+					Prevout:  &ports.TxOut{Amount: 0, PkScript: taprootScript},
+				},
+				txIn(vtxo), txIn(unrolledVtxo), boarding,
+			},
+		},
+	}}
+
+	roundId := randomString(t, 16)
+	commitmentTxid := randomString(t, 32)
+	now := time.Now().Unix()
+	events := []domain.Event{
+		domain.RoundStarted{
+			RoundEvent: domain.RoundEvent{Id: roundId, Type: domain.EventTypeRoundStarted},
+			Timestamp:  now,
+		},
+		domain.IntentsRegistered{
+			RoundEvent: domain.RoundEvent{Id: roundId, Type: domain.EventTypeIntentsRegistered},
+			Intents: []domain.Intent{{
+				Id:        randomString(t, 16),
+				Proof:     proof,
+				Message:   "message",
+				Txid:      randomString(t, 32),
+				Inputs:    []domain.Vtxo{vtxo, unrolledVtxo},
+				Receivers: []domain.Receiver{{PubKey: randomString(t, 32), Amount: 7000}},
+			}},
+		},
+		domain.RoundFinalizationStarted{
+			RoundEvent: domain.RoundEvent{
+				Id: roundId, Type: domain.EventTypeRoundFinalizationStarted,
+			},
+			CommitmentTxid: commitmentTxid,
+			CommitmentTx:   randomTx(t),
+		},
+		domain.RoundFinalized{
+			RoundEvent:        domain.RoundEvent{Id: roundId, Type: domain.EventTypeRoundFinalized},
+			FinalCommitmentTx: randomTx(t),
+			Timestamp:         now + 1,
+		},
+	}
+
+	return &boardingRoundFixture{
+		events:         events,
+		decoder:        decoder,
+		commitmentTxid: commitmentTxid,
+		vtxo:           vtxo,
+		unrolledVtxo:   unrolledVtxo,
+		boarding:       boarding,
+	}
+}
+
+type decodedTx struct {
+	txid string
+	ins  []ports.TxIn
+	outs []ports.TxOut
+}
+
+// mockTxDecoder answers the txs it knows and fails on any other, or on all of them if err
+// is set.
+type mockTxDecoder struct {
+	txs map[string]decodedTx
+	err error
+}
+
+func (m *mockTxDecoder) DecodeTx(tx string) (string, []ports.TxIn, []ports.TxOut, error) {
+	if m.err != nil {
+		return "", nil, nil, m.err
+	}
+	decoded, ok := m.txs[tx]
+	if !ok {
+		return "", nil, nil, errors.New("unknown tx")
+	}
+	return decoded.txid, decoded.ins, decoded.outs, nil
+}
+
 func (f *failingBulkSweepMarkerStore) BulkSweepMarkers(
 	_ context.Context, _ []string, _ int64,
 ) error {
@@ -262,10 +597,102 @@ func randomTx(t *testing.T) string {
 			wire.MaxTxInSequenceNum,
 		},
 	)
+	addPrevouts(t, ptx)
 
 	b64, err := ptx.B64Encode()
 	require.NoError(t, err)
 	return b64
+}
+
+// addPrevouts gives every input a taproot witness utxo, as every tx decoded by the
+// projections carries one in production and the decoder requires it.
+// onchainTxFixture is a cosigned onchain tx spending one signed input, ours to record, and one
+// foreign input, along with its lifecycle events.
+type onchainTxFixture struct {
+	txid        string
+	signed      domain.Outpoint
+	foreign     domain.Outpoint
+	amount      uint64
+	pkScript    []byte
+	broadcasted domain.OnchainTxBroadcasted
+	confirmed   domain.OnchainTxConfirmed
+}
+
+func newOnchainTxFixture(t *testing.T) *onchainTxFixture {
+	t.Helper()
+
+	signedHash, err := chainhash.NewHashFromStr(randomString(t, 32))
+	require.NoError(t, err)
+	foreignHash, err := chainhash.NewHashFromStr(randomString(t, 32))
+	require.NoError(t, err)
+	ptx, err := psbt.New(
+		[]*wire.OutPoint{{Hash: *signedHash, Index: 1}, {Hash: *foreignHash, Index: 0}},
+		[]*wire.TxOut{{Value: 140_000, PkScript: randomTaprootScript(t)}},
+		2, 0, []uint32{wire.MaxTxInSequenceNum, wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+
+	amount := uint64(100_000)
+	pkScript := randomTaprootScript(t)
+	updater, err := psbt.NewUpdater(ptx)
+	require.NoError(t, err)
+	require.NoError(t, updater.AddInWitnessUtxo(
+		&wire.TxOut{Value: int64(amount), PkScript: pkScript}, 0,
+	))
+	require.NoError(t, updater.AddInWitnessUtxo(
+		&wire.TxOut{Value: 50_000, PkScript: randomTaprootScript(t)}, 1,
+	))
+	tx, err := ptx.B64Encode()
+	require.NoError(t, err)
+	txid := ptx.UnsignedTx.TxID()
+
+	signed := domain.Outpoint{Txid: signedHash.String(), VOut: 1}
+	foreign := domain.Outpoint{Txid: foreignHash.String(), VOut: 0}
+	now := time.Now().Unix()
+
+	return &onchainTxFixture{
+		txid:     txid,
+		signed:   signed,
+		foreign:  foreign,
+		amount:   amount,
+		pkScript: pkScript,
+		broadcasted: domain.OnchainTxBroadcasted{
+			OnchainTxEvent: domain.OnchainTxEvent{
+				Id: txid, Type: domain.EventTypeOnchainTxBroadcasted,
+			},
+			Tx:           tx,
+			SignedInputs: map[string]struct{}{signed.String(): {}},
+			Timestamp:    now,
+		},
+		confirmed: domain.OnchainTxConfirmed{
+			OnchainTxEvent: domain.OnchainTxEvent{
+				Id: txid, Type: domain.EventTypeOnchainTxConfirmed,
+			},
+			ConfirmedAtTime:   now + 600,
+			ConfirmedAtHeight: 101,
+		},
+	}
+}
+
+func randomTaprootScript(t *testing.T) []byte {
+	t.Helper()
+	pkScript := append([]byte{0x51, 0x20}, make([]byte, 32)...)
+	// nolint
+	rand.Read(pkScript[2:])
+	return pkScript
+}
+
+func addPrevouts(t *testing.T, ptx *psbt.Packet) {
+	t.Helper()
+
+	updater, err := psbt.NewUpdater(ptx)
+	require.NoError(t, err)
+	for i := range ptx.Inputs {
+		pkScript := append([]byte{0x51, 0x20}, make([]byte, 32)...)
+		// nolint
+		rand.Read(pkScript[2:])
+		require.NoError(t, updater.AddInWitnessUtxo(&wire.TxOut{Value: 1000, PkScript: pkScript}, i))
+	}
 }
 
 func validSettings(t *testing.T) domain.Settings {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"math"
 	"runtime"
 	"slices"
@@ -73,6 +74,10 @@ type service struct {
 	ctx          context.Context
 	wg           *sync.WaitGroup
 	offchainTxMu *sync.Mutex
+	// Serializes the registration of intents with boarding inputs and the cosigning of onchain
+	// txs, so that a utxo can't be both registered and cosigned. Each path checks the other's
+	// store before writing its own, and the lock is what makes that check-then-write atomic.
+	cosignMu *sync.Mutex
 	// global mtx for the fraud.go coinselection
 	feeBumpMtx sync.Mutex
 }
@@ -165,6 +170,7 @@ func NewService(
 		ctx:                      ctx,
 		wg:                       &sync.WaitGroup{},
 		offchainTxMu:             &sync.Mutex{},
+		cosignMu:                 &sync.Mutex{},
 		alerts:                   alerts,
 		feeManager:               feeManager,
 	}
@@ -225,6 +231,9 @@ func (s *service) Start() error {
 	log.Debug("starting restore watching vtxos...")
 	if err := s.restoreWatchingVtxos(); err != nil {
 		return fmt.Errorf("failed to restore watching vtxos: %s", err)
+	}
+	if err := s.restoreWatchingCosignedUtxos(); err != nil {
+		return fmt.Errorf("failed to restore watching cosigned utxos: %s", err)
 	}
 
 	go s.listenToScannerNotifications()
@@ -296,6 +305,8 @@ func (s *service) registerEventHandlers() {
 					log.WithError(err).Warn("failed to start watching vtxos")
 				}
 			}()
+
+			go s.watchBatchBoardingUtxos(round.CommitmentTxid)
 
 			if lastEvent := events[len(events)-1]; lastEvent.GetType() != domain.EventTypeBatchSwept {
 				go s.scheduleSweepBatchOutput(round)
@@ -415,6 +426,8 @@ func (s *service) registerEventHandlers() {
 			}()
 		},
 	)
+
+	s.repoManager.RegisterOnchainTxUpdateHandler(s.unlockUtxos)
 
 	s.repoManager.RegisterSettingsUpdateHandler(
 		func(updates domain.Settings, changelog []string) {
@@ -2357,6 +2370,44 @@ func (s *service) RegisterIntent(
 		boardingInputs, err = s.processBoardingInputs(ctx, intent.Id, boardingUtxos, *settings)
 		if err != nil {
 			return "", err
+		}
+
+		// Hold the lock until the intent is pushed, so a cosign request can't land between the
+		// checks below and the push.
+		s.cosignMu.Lock()
+		defer s.cosignMu.Unlock()
+
+		boardingOutpoints := make([]domain.Outpoint, 0, len(boardingInputs))
+		for _, in := range boardingInputs {
+			boardingOutpoints = append(boardingOutpoints, in.Outpoint)
+		}
+
+		// Ensure boarding inputs are not being cosigned with CosignOnchainTx at the same time.
+		cosigningUtxos, cErr := s.cache.CosignedUtxos().IncludesAny(ctx, boardingOutpoints)
+		if cErr != nil {
+			log.WithError(cErr).Error(
+				"failed to check boarding inputs against cosigned utxos cache",
+			)
+			return "", errors.INTERNAL_ERROR.New("something went wrong")
+		}
+		if len(cosigningUtxos) > 0 {
+			return "", errors.INVALID_PSBT_INPUT.New(
+				"boarding input(s) being cosigned onchain: %s",
+				strings.Join(outpointsToString(cosigningUtxos), ", "),
+			).WithMetadata(errors.InputMetadata{Txid: proofTxid})
+		}
+
+		// Ensure boarding inputs are not already spent via CosignOnchainTx.
+		cosignedUtxos, cErr := s.repoManager.CosignedUtxos().GetUtxos(ctx, boardingOutpoints)
+		if cErr != nil {
+			log.WithError(cErr).Error("failed to check boarding inputs against cosigned utxos db")
+			return "", errors.INTERNAL_ERROR.New("something went wrong")
+		}
+		if len(cosignedUtxos) > 0 {
+			return "", errors.INVALID_PSBT_INPUT.New(
+				"boarding input(s) already cosigned onchain: %s",
+				strings.Join(utxosToString(cosignedUtxos), ", "),
+			).WithMetadata(errors.InputMetadata{Txid: proofTxid})
 		}
 	}
 
@@ -4510,6 +4561,49 @@ func (s *service) stopWatchingVtxos(tapkeys []string) {
 		log.Debugf("stopped watching %d scripts (vtxo + checkpoint)", len(scripts))
 		break
 	}
+}
+
+// restoreWatchingCosignedUtxos gets all cosigned utxos that have the spending tx still unconfirmed
+// and starts a goroutine to wait for the confirmation and subsequent update of the db records.
+func (s *service) restoreWatchingCosignedUtxos() error {
+	utxos, err := s.repoManager.CosignedUtxos().GetUnconfirmedUtxos(s.ctx)
+	if err != nil {
+		return err
+	}
+
+	txs := make(map[string]*domain.OnchainTx, 0)
+	for _, utxo := range utxos {
+		if _, ok := txs[utxo.Spend.Txid]; !ok {
+			txs[utxo.Spend.Txid] = &domain.OnchainTx{
+				Stage:         domain.Stage{Code: int(domain.OnchainTxBroadcastedStage)},
+				BroadcastedAt: utxo.CreatedAt,
+				Txid:          utxo.Spend.Txid,
+				SignedInputs: map[string]struct{}{
+					utxo.String(): {},
+				},
+			}
+			continue
+		}
+
+		txs[utxo.Spend.Txid].SignedInputs[utxo.String()] = struct{}{}
+	}
+	// Boarding utxos spent by a batch were written by the round projection, so no onchain tx
+	// events exist for their commitment tx and they have to be confirmed directly.
+	commitmentTxids, err := s.repoManager.Rounds().GetRoundsWithCommitmentTxids(
+		s.ctx, slices.Collect(maps.Keys(txs)),
+	)
+	if err != nil {
+		return err
+	}
+
+	for txid, tx := range txs {
+		if _, ok := commitmentTxids[txid]; ok {
+			go s.watchBatchBoardingUtxos(txid)
+			continue
+		}
+		go s.waitForSpendConfirmationAndUpdateUtxos(tx)
+	}
+	return nil
 }
 
 // extractVtxosScriptsForScanner extracts the scripts for the vtxos to be watched by the scanner

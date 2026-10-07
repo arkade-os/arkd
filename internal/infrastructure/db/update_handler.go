@@ -6,12 +6,12 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 )
 
-type updateHandler[T domain.Round | domain.OffchainTx] struct {
+type updateHandler[T domain.Round | domain.OffchainTx | domain.OnchainTx] struct {
 	lock    *sync.RWMutex
 	handler func(data T)
 }
 
-func newUpdateHandler[T domain.Round | domain.OffchainTx]() *updateHandler[T] {
+func newUpdateHandler[T domain.Round | domain.OffchainTx | domain.OnchainTx]() *updateHandler[T] {
 	return &updateHandler[T]{lock: &sync.RWMutex{}}
 }
 

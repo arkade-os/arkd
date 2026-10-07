@@ -141,7 +141,7 @@ func (v *offchainTxRepository) GetOffchainTxsByTxids(
 	ctx context.Context, txids []string,
 ) ([]*domain.OffchainTx, error) {
 	if len(txids) == 0 {
-		return []*domain.OffchainTx{}, nil
+		return nil, nil
 	}
 
 	rows, err := v.querier.SelectOffchainTxsByTxids(ctx, txids)
@@ -160,6 +160,12 @@ func (v *offchainTxRepository) GetOffchainTxsByTxids(
 	}
 
 	return txs, nil
+}
+
+func (v *offchainTxRepository) GetCheckpointTxs(
+	ctx context.Context, txids []string,
+) ([]string, error) {
+	return v.querier.SelectCheckpointTxsByTxids(ctx, txids)
 }
 
 func (v *offchainTxRepository) Close() {

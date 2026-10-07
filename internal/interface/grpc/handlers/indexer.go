@@ -598,6 +598,71 @@ func (h *indexerService) UpdateSubscription(
 	return &arkv1.UpdateSubscriptionResponse{}, nil
 }
 
+func (h *indexerService) GetUtxos(
+	ctx context.Context, req *arkv1.GetUtxosRequest,
+) (*arkv1.GetUtxosResponse, error) {
+	page, err := parsePage(req.GetPage())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	if len(req.GetScripts()) > maxScriptsPerRequest {
+		return nil, filterLimitErr("scripts", len(req.GetScripts()), maxScriptsPerRequest)
+	}
+	if len(req.GetOutpoints()) > maxOutpointsPerRequest {
+		return nil, filterLimitErr("outpoints", len(req.GetOutpoints()), maxOutpointsPerRequest)
+	}
+
+	pubkeys := make([]string, 0, len(req.GetScripts()))
+	for _, script := range req.GetScripts() {
+		if err := parseScript(script); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		pubkeys = append(pubkeys, script[4:]) // drop 2 opcodes bytes
+	}
+
+	outpoints, err := parseOutpoints(req.GetOutpoints())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	if len(outpoints) == 0 && len(pubkeys) == 0 {
+		return nil, status.Error(
+			codes.InvalidArgument, "missing filter: provide either outpoints or scripts",
+		)
+	}
+	if len(outpoints) > 0 && len(pubkeys) > 0 {
+		return nil, status.Error(
+			codes.InvalidArgument, "outpoints and scripts filters are mutually exclusive",
+		)
+	}
+
+	var resp *application.GetUtxosResp
+
+	if len(pubkeys) > 0 {
+		resp, err = h.indexerSvc.GetUtxos(ctx, pubkeys, page)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+	if len(outpoints) > 0 {
+		resp, err = h.indexerSvc.GetUtxosByOutpoint(ctx, outpoints, page)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+
+	utxos := make([]*arkv1.IndexerUtxo, 0, len(resp.Utxos))
+	for _, utxo := range resp.Utxos {
+		utxos = append(utxos, newIndexerUtxo(utxo))
+	}
+
+	return &arkv1.GetUtxosResponse{
+		Utxos: utxos,
+		Page:  protoPage(resp.Page),
+	}, nil
+}
+
 // applyFilter applies the expressions and script mutations carried by a
 // SubscriptionFilter. Expressions are always overwritten as a whole
 // (including with an empty list, which clears them). Scripts are mutated
@@ -1047,4 +1112,21 @@ func parseIndexerIntent(i *arkv1.IndexerIntent) (*application.Intent, error) {
 		return nil, err
 	}
 	return &application.Intent{Proof: proof, Message: message}, nil
+}
+
+func newIndexerUtxo(utxo domain.Utxo) *arkv1.IndexerUtxo {
+	return &arkv1.IndexerUtxo{
+		Outpoint: &arkv1.IndexerOutpoint{
+			Txid: utxo.Txid,
+			Vout: utxo.VOut,
+		},
+		BroadcastedAt: utxo.CreatedAt,
+		Amount:        utxo.Amount,
+		Script:        toP2TR(utxo.PubKey),
+		Spend: &arkv1.IndexerUtxoSpend{
+			Txid:              utxo.Spend.Txid,
+			ConfirmedAtTime:   utxo.Spend.ConfirmedAtTime,
+			ConfirmedAtHeight: utxo.Spend.ConfirmedAtHeight,
+		},
+	}
 }

@@ -1541,6 +1541,16 @@ func (m *mockOffchainTxRepoForIndexer) AddOrUpdateOffchainTx(
 	return nil
 }
 
+func (m *mockOffchainTxRepoForIndexer) GetCheckpointTxs(
+	ctx context.Context, txids []string,
+) ([]string, error) {
+	args := m.Called(ctx, txids)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
 func (m *mockOffchainTxRepoForIndexer) Close() {}
 
 type mockRepoManagerForIndexer struct {
@@ -1573,11 +1583,15 @@ func (m *mockRepoManagerForIndexer) Assets() domain.AssetRepository {
 func (m *mockRepoManagerForIndexer) Settings() domain.SettingsRepository {
 	return nil
 }
+func (m *mockRepoManagerForIndexer) CosignedUtxos() domain.UtxoRepository {
+	return nil
+}
 func (m *mockRepoManagerForIndexer) Reconcile() error {
 	return nil
 }
 func (m *mockRepoManagerForIndexer) RegisterBatchUpdateHandler(func(data domain.Round))            {}
 func (m *mockRepoManagerForIndexer) RegisterOffchainTxUpdateHandler(func(domain.OffchainTx))       {}
+func (m *mockRepoManagerForIndexer) RegisterOnchainTxUpdateHandler(func(domain.OnchainTx))         {}
 func (m *mockRepoManagerForIndexer) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {}
 func (m *mockRepoManagerForIndexer) Close()                                                        {}
 

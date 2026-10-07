@@ -194,6 +194,7 @@ func TestService(t *testing.T) {
 			testOffchainTxRepository(t, svc)
 			testAssetRepository(t, svc)
 			testVtxoRepository(t, svc)
+			testUtxoRepository(t, svc)
 			testGetVtxosBatch(t, svc)
 			testVtxosWithPubKeysPage(t, svc)
 			// After testVtxoRepository: the sweeps aggregate joins leaf vtxos, so
@@ -624,6 +625,12 @@ func testRoundRepository(t *testing.T, svc ports.RepoManager) {
 		require.NoError(t, err)
 		require.NotNil(t, roundByTxid)
 		roundsMatch(t, *finalizedRound, *roundByTxid)
+
+		commitmentTxids, err := svc.Rounds().GetRoundsWithCommitmentTxids(
+			ctx, []string{commitmentTxid, txida, "nonexistent"},
+		)
+		require.NoError(t, err)
+		require.Equal(t, map[string]any{commitmentTxid: nil}, commitmentTxids)
 
 		txs, err := svc.Rounds().GetTxsWithTxids(ctx, []string{
 			txida,                  // forfeit tx
@@ -1681,6 +1688,429 @@ func testVtxoRepository(t *testing.T, svc ports.RepoManager) {
 		require.Equal(t, uint32(1), vtxoByOutpoint[chainedVtxo1.Outpoint.String()].Depth)
 		require.Equal(t, uint32(2), vtxoByOutpoint[chainedVtxo2.Outpoint.String()].Depth)
 		require.Equal(t, uint32(100), vtxoByOutpoint[deepVtxo.Outpoint.String()].Depth)
+	})
+}
+
+func testUtxoRepository(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_utxo_repository", func(t *testing.T) {
+		ctx := t.Context()
+		repo := svc.CosignedUtxos()
+
+		newUtxo := func(txid string, vout uint32, amount uint64) domain.Utxo {
+			return domain.Utxo{
+				Outpoint:  domain.Outpoint{Txid: txid, VOut: vout},
+				Amount:    amount,
+				PubKey:    pubkey,
+				Spend:     domain.UtxoSpend{Txid: randomString(32)},
+				CreatedAt: time.Now().Unix(),
+			}
+		}
+		utxoOutpoints := func(utxos []domain.Utxo) []domain.Outpoint {
+			outpoints := make([]domain.Outpoint, 0, len(utxos))
+			for _, u := range utxos {
+				outpoints = append(outpoints, u.Outpoint)
+			}
+			return outpoints
+		}
+		findUtxo := func(utxos []domain.Utxo, outpoint domain.Outpoint) *domain.Utxo {
+			for i := range utxos {
+				if utxos[i].Outpoint == outpoint {
+					return &utxos[i]
+				}
+			}
+			return nil
+		}
+		requireSameUtxo := func(t *testing.T, want, got domain.Utxo) {
+			require.Equal(t, want.Outpoint, got.Outpoint)
+			require.Equal(t, want.Amount, got.Amount)
+			require.Equal(t, want.PubKey, got.PubKey)
+			require.Equal(t, want.CreatedAt, got.CreatedAt)
+			require.Equal(t, want.Spend.Txid, got.Spend.Txid)
+		}
+
+		// Two outputs of the same tx, so that backends matching on txid only
+		// (sqlite) are checked to drop the sibling vout.
+		fundingTxid := randomString(32)
+		utxos := []domain.Utxo{
+			newUtxo(fundingTxid, 0, 1000),
+			newUtxo(fundingTxid, 1, 2000),
+		}
+		outpoints := []domain.Outpoint{utxos[0].Outpoint, utxos[1].Outpoint}
+
+		t.Run("add and get utxos", func(t *testing.T) {
+			got, err := repo.GetUtxos(ctx, outpoints)
+			require.NoError(t, err)
+			require.Empty(t, got)
+
+			err = repo.AddUtxos(ctx, utxos, "")
+			require.NoError(t, err)
+
+			got, err = repo.GetUtxos(ctx, outpoints)
+			require.NoError(t, err)
+			require.Len(t, got, 2)
+			for _, want := range utxos {
+				found := findUtxo(got, want.Outpoint)
+				require.NotNil(t, found)
+				requireSameUtxo(t, want, *found)
+				require.False(t, found.Spend.IsConfirmed())
+			}
+
+			// A batch with a duplicate is rejected as a whole.
+			fresh := newUtxo(randomString(32), 0, 3000)
+			err = repo.AddUtxos(ctx, []domain.Utxo{fresh, utxos[1]}, "")
+			require.Error(t, err)
+			got, err = repo.GetUtxos(ctx, []domain.Outpoint{fresh.Outpoint})
+			require.NoError(t, err)
+			require.Empty(t, got)
+		})
+
+		t.Run("add get and confirm unrolled vtxos", func(t *testing.T) {
+			// A utxo that points to a vtxo carries no pubkey and amount, they are
+			// resolved from the vtxo record.
+			newPointer := func(outpoint domain.Outpoint) domain.Utxo {
+				return domain.Utxo{
+					Outpoint:  outpoint,
+					Spend:     domain.UtxoSpend{Txid: randomString(32)},
+					CreatedAt: time.Now().Unix(),
+				}
+			}
+
+			commitmentTxid := randomString(32)
+			vtxo := domain.Vtxo{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+				PubKey:             pubkey,
+				Amount:             6000,
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				ExpiresAt:          time.Now().Add(time.Hour).Unix(),
+				CreatedAt:          time.Now().Unix(),
+			}
+			err := svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{vtxo})
+			require.NoError(t, err)
+
+			// A pointer to a vtxo that is not unrolled is rejected.
+			pointer := newPointer(vtxo.Outpoint)
+			err = repo.AddUtxos(ctx, []domain.Utxo{pointer}, "")
+			require.Error(t, err)
+
+			// A pointer to an outpoint that is not a vtxo at all is rejected.
+			err = repo.AddUtxos(ctx, []domain.Utxo{
+				newPointer(domain.Outpoint{Txid: randomString(32), VOut: 0}),
+			}, "")
+			require.Error(t, err)
+
+			// A utxo with its own pubkey and amount must not duplicate a vtxo.
+			duplicate := newUtxo(vtxo.Txid, vtxo.VOut, vtxo.Amount)
+			err = repo.AddUtxos(ctx, []domain.Utxo{duplicate}, "")
+			require.Error(t, err)
+
+			got, err := repo.GetUtxos(ctx, []domain.Outpoint{vtxo.Outpoint})
+			require.NoError(t, err)
+			require.Empty(t, got)
+
+			err = svc.Vtxos().UnrollVtxos(ctx, []domain.Outpoint{vtxo.Outpoint})
+			require.NoError(t, err)
+
+			// Still not allowed to duplicate the vtxo once unrolled.
+			err = repo.AddUtxos(ctx, []domain.Utxo{duplicate}, "")
+			require.Error(t, err)
+
+			// A pointer to the unrolled vtxo is accepted and resolved from the vtxo.
+			err = repo.AddUtxos(ctx, []domain.Utxo{pointer}, "")
+			require.NoError(t, err)
+
+			got, err = repo.GetUtxos(ctx, []domain.Outpoint{vtxo.Outpoint})
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			require.Equal(t, vtxo.Outpoint, got[0].Outpoint)
+			require.Equal(t, vtxo.PubKey, got[0].PubKey)
+			require.Equal(t, vtxo.Amount, got[0].Amount)
+			require.Equal(t, pointer.CreatedAt, got[0].CreatedAt)
+			require.Equal(t, pointer.Spend.Txid, got[0].Spend.Txid)
+			require.False(t, got[0].Spend.IsConfirmed())
+
+			unconfirmed, err := repo.GetUnconfirmedUtxos(ctx)
+			require.NoError(t, err)
+			found := findUtxo(unconfirmed, vtxo.Outpoint)
+			require.NotNil(t, found)
+			require.Equal(t, vtxo.PubKey, found.PubKey)
+			require.Equal(t, vtxo.Amount, found.Amount)
+
+			// Adding twice the same pointer is rejected.
+			err = repo.AddUtxos(ctx, []domain.Utxo{pointer}, "")
+			require.Error(t, err)
+
+			// Confirming a pointer works as for any other utxo.
+			pointer.Spend.ConfirmedAtTime = time.Now().Unix()
+			pointer.Spend.ConfirmedAtHeight = 200
+			err = repo.UpdateUtxos(ctx, []domain.Utxo{pointer})
+			require.NoError(t, err)
+
+			got, err = repo.GetUtxos(ctx, []domain.Outpoint{vtxo.Outpoint})
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			require.True(t, got[0].Spend.IsConfirmed())
+			require.Equal(t, pointer.Spend.ConfirmedAtTime, got[0].Spend.ConfirmedAtTime)
+			require.Equal(t, pointer.Spend.ConfirmedAtHeight, got[0].Spend.ConfirmedAtHeight)
+			require.Equal(t, vtxo.PubKey, got[0].PubKey)
+			require.Equal(t, vtxo.Amount, got[0].Amount)
+
+			unconfirmed, err = repo.GetUnconfirmedUtxos(ctx)
+			require.NoError(t, err)
+			require.Nil(t, findUtxo(unconfirmed, vtxo.Outpoint))
+
+			// The vtxo record is untouched by the utxo lifecycle.
+			vtxos, err := svc.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxo.Outpoint})
+			require.NoError(t, err)
+			require.Len(t, vtxos, 1)
+			require.True(t, vtxos[0].Unrolled)
+			require.False(t, vtxos[0].Spent)
+			require.Equal(t, vtxo.Amount, vtxos[0].Amount)
+		})
+
+		// The utxos of a cosigned tx are recorded along with the tx, once per tx: a second
+		// batch spent by the same tx is rejected as a whole. Boarding utxos come with no tx,
+		// since the round already keeps the commitment tx, and are not subject to it.
+		t.Run("add utxos with spending tx", func(t *testing.T) {
+			spendTxid := randomString(32)
+			cosigned := []domain.Utxo{
+				newUtxo(randomString(32), 0, 1000), newUtxo(randomString(32), 0, 2000),
+			}
+			for i := range cosigned {
+				cosigned[i].Spend.Txid = spendTxid
+			}
+
+			// Nothing before it's added.
+			txs, err := repo.GetOnchainTxs(ctx, []string{spendTxid})
+			require.NoError(t, err)
+			require.Empty(t, txs)
+
+			err = repo.AddUtxos(ctx, cosigned, "spending tx")
+			require.NoError(t, err)
+
+			got, err := repo.GetUtxos(ctx, utxoOutpoints(cosigned))
+			require.NoError(t, err)
+			require.Len(t, got, 2)
+
+			// The tx is recorded as given and read back by the spending txid; unknown txids
+			// are ignored.
+			txs, err = repo.GetOnchainTxs(ctx, []string{spendTxid})
+			require.NoError(t, err)
+			require.Equal(t, []string{"spending tx"}, txs)
+			txs, err = repo.GetOnchainTxs(ctx, []string{randomString(32), spendTxid})
+			require.NoError(t, err)
+			require.Equal(t, []string{"spending tx"}, txs)
+			txs, err = repo.GetOnchainTxs(ctx, nil)
+			require.NoError(t, err)
+			require.Empty(t, txs)
+
+			more := newUtxo(randomString(32), 0, 3000)
+			more.Spend.Txid = spendTxid
+			err = repo.AddUtxos(ctx, []domain.Utxo{more}, "spending tx")
+			require.Error(t, err)
+			got, err = repo.GetUtxos(ctx, []domain.Outpoint{more.Outpoint})
+			require.NoError(t, err)
+			require.Empty(t, got)
+
+			// Without a tx, more utxos spent by the same tx can be added.
+			boarding := []domain.Utxo{
+				newUtxo(randomString(32), 0, 4000), newUtxo(randomString(32), 0, 5000),
+			}
+			commitmentTxid := randomString(32)
+			for i := range boarding {
+				boarding[i].Spend.Txid = commitmentTxid
+			}
+			require.NoError(t, repo.AddUtxos(ctx, boarding[:1], ""))
+			require.NoError(t, repo.AddUtxos(ctx, boarding[1:], ""))
+			txs, err = repo.GetOnchainTxs(ctx, []string{commitmentTxid})
+			require.NoError(t, err)
+			require.Empty(t, txs)
+
+			// Several cosigned txs are read back together.
+			otherTxid := randomString(32)
+			other := newUtxo(randomString(32), 0, 6000)
+			other.Spend.Txid = otherTxid
+			require.NoError(t, repo.AddUtxos(ctx, []domain.Utxo{other}, "other spending tx"))
+			txs, err = repo.GetOnchainTxs(ctx, []string{spendTxid, otherTxid})
+			require.NoError(t, err)
+			require.ElementsMatch(t, []string{"spending tx", "other spending tx"}, txs)
+
+			// Nothing to add is a no-op.
+			require.NoError(t, repo.AddUtxos(ctx, nil, "spending tx"))
+		})
+
+		t.Run("get unconfirmed utxos and update", func(t *testing.T) {
+			utxo := newUtxo(randomString(32), 0, 4000)
+
+			err := repo.AddUtxos(ctx, []domain.Utxo{utxo}, "")
+			require.NoError(t, err)
+
+			// A utxo is always added unconfirmed.
+			unconfirmed, err := repo.GetUnconfirmedUtxos(ctx)
+			require.NoError(t, err)
+			found := findUtxo(unconfirmed, utxo.Outpoint)
+			require.NotNil(t, found)
+			require.False(t, found.Spend.IsConfirmed())
+
+			// Missing confirmation info is rejected.
+			err = repo.UpdateUtxos(ctx, []domain.Utxo{utxo})
+			require.Error(t, err)
+
+			// Updating an unknown utxo is rejected.
+			unknown := newUtxo(randomString(32), 0, 5000)
+			unknown.Spend.ConfirmedAtTime = time.Now().Unix()
+			unknown.Spend.ConfirmedAtHeight = 100
+			err = repo.UpdateUtxos(ctx, []domain.Utxo{unknown})
+			require.Error(t, err)
+
+			confirmedAtTime := time.Now().Unix()
+			confirmedAtHeight := uint64(100)
+			utxo.Spend.ConfirmedAtTime = confirmedAtTime
+			utxo.Spend.ConfirmedAtHeight = confirmedAtHeight
+			err = repo.UpdateUtxos(ctx, []domain.Utxo{utxo})
+			require.NoError(t, err)
+
+			got, err := repo.GetUtxos(ctx, []domain.Outpoint{utxo.Outpoint})
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			requireSameUtxo(t, utxo, got[0])
+			require.True(t, got[0].Spend.IsConfirmed())
+			require.Equal(t, confirmedAtTime, got[0].Spend.ConfirmedAtTime)
+			require.Equal(t, confirmedAtHeight, got[0].Spend.ConfirmedAtHeight)
+
+			// Once confirmed, the utxo is not returned as unconfirmed anymore.
+			unconfirmed, err = repo.GetUnconfirmedUtxos(ctx)
+			require.NoError(t, err)
+			require.Nil(t, findUtxo(unconfirmed, utxo.Outpoint))
+
+			// Updating twice the same utxo is rejected and the record is unchanged.
+			utxo.Spend.ConfirmedAtTime = confirmedAtTime + 600
+			utxo.Spend.ConfirmedAtHeight = confirmedAtHeight + 1
+			err = repo.UpdateUtxos(ctx, []domain.Utxo{utxo})
+			require.Error(t, err)
+
+			got, err = repo.GetUtxos(ctx, []domain.Outpoint{utxo.Outpoint})
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			require.Equal(t, confirmedAtTime, got[0].Spend.ConfirmedAtTime)
+			require.Equal(t, confirmedAtHeight, got[0].Spend.ConfirmedAtHeight)
+		})
+
+		t.Run("get utxos with pubkeys page", func(t *testing.T) {
+			// Three utxos of one pubkey with distinct creation times, one of another, and a
+			// pointer to an unrolled vtxo of a third: its pubkey is resolved from the vtxo.
+			pk1, pk2 := randomString(32), randomString(32)
+			now := time.Now().Unix()
+			owned := []domain.Utxo{
+				newUtxo(randomString(32), 0, 1000), newUtxo(randomString(32), 0, 2000),
+				newUtxo(randomString(32), 0, 3000),
+			}
+			for i := range owned {
+				owned[i].PubKey = pk1
+				owned[i].CreatedAt = now - int64(i)*60
+			}
+			other := newUtxo(randomString(32), 0, 4000)
+			other.PubKey = pk2
+
+			commitmentTxid := randomString(32)
+			vtxo := domain.Vtxo{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+				PubKey:             randomString(32),
+				Amount:             5000,
+				RootCommitmentTxid: commitmentTxid,
+				CommitmentTxids:    []string{commitmentTxid},
+				ExpiresAt:          now + 3600,
+				CreatedAt:          now,
+			}
+			require.NoError(t, svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{vtxo}))
+			require.NoError(t, svc.Vtxos().UnrollVtxos(ctx, []domain.Outpoint{vtxo.Outpoint}))
+			pointer := domain.Utxo{
+				Outpoint:  vtxo.Outpoint,
+				Spend:     domain.UtxoSpend{Txid: randomString(32)},
+				CreatedAt: now,
+			}
+
+			err := repo.AddUtxos(ctx, append(append(owned, other), pointer), "")
+			require.NoError(t, err)
+
+			t.Run("unknown pubkey", func(t *testing.T) {
+				got, total, err := repo.GetUtxosWithPubKeys(
+					ctx, []string{randomString(32)}, domain.Page{Limit: 10},
+				)
+				require.NoError(t, err)
+				require.Empty(t, got)
+				require.Zero(t, total)
+			})
+
+			t.Run("one pubkey", func(t *testing.T) {
+				got, total, err := repo.GetUtxosWithPubKeys(
+					ctx, []string{pk1}, domain.Page{Limit: 10},
+				)
+				require.NoError(t, err)
+				require.Equal(t, int32(len(owned)), total)
+				require.ElementsMatch(t, utxoOutpoints(owned), utxoOutpoints(got))
+				// Most recent first.
+				for i := 1; i < len(got); i++ {
+					require.GreaterOrEqual(t, got[i-1].CreatedAt, got[i].CreatedAt)
+				}
+				for _, u := range got {
+					require.Equal(t, pk1, u.PubKey)
+					require.False(t, u.Spend.IsConfirmed())
+				}
+			})
+
+			t.Run("many pubkeys", func(t *testing.T) {
+				got, total, err := repo.GetUtxosWithPubKeys(
+					ctx, []string{pk1, pk2, vtxo.PubKey}, domain.Page{Limit: 10},
+				)
+				require.NoError(t, err)
+				require.Equal(t, int32(len(owned)+2), total)
+				require.ElementsMatch(
+					t, utxoOutpoints(append(append(owned, other), pointer)), utxoOutpoints(got),
+				)
+			})
+
+			t.Run("pointer to unrolled vtxo is found by the vtxo pubkey", func(t *testing.T) {
+				got, total, err := repo.GetUtxosWithPubKeys(
+					ctx, []string{vtxo.PubKey}, domain.Page{Limit: 10},
+				)
+				require.NoError(t, err)
+				require.Equal(t, int32(1), total)
+				require.Len(t, got, 1)
+				require.Equal(t, vtxo.Outpoint, got[0].Outpoint)
+				require.Equal(t, vtxo.PubKey, got[0].PubKey)
+				require.Equal(t, vtxo.Amount, got[0].Amount)
+				require.Equal(t, pointer.Spend.Txid, got[0].Spend.Txid)
+			})
+
+			t.Run("paging", func(t *testing.T) {
+				// A zero limit reads the whole set, in the same order, with the same total.
+				all, total, err := repo.GetUtxosWithPubKeys(ctx, []string{pk1}, domain.Page{})
+				require.NoError(t, err)
+				require.Equal(t, int32(len(owned)), total)
+				require.Len(t, all, len(owned))
+
+				walked := make([]domain.Outpoint, 0, total)
+				for offset := int32(0); offset < total; offset++ {
+					page, pageTotal, err := repo.GetUtxosWithPubKeys(
+						ctx, []string{pk1}, domain.Page{Limit: 1, Offset: offset},
+					)
+					require.NoError(t, err)
+					require.Equal(t, total, pageTotal)
+					require.Len(t, page, 1)
+					walked = append(walked, page[0].Outpoint)
+				}
+				require.Equal(t, utxoOutpoints(all), walked)
+
+				// An out of range page still reports the total.
+				page, pastTotal, err := repo.GetUtxosWithPubKeys(
+					ctx, []string{pk1}, domain.Page{Limit: 10, Offset: total},
+				)
+				require.NoError(t, err)
+				require.Empty(t, page)
+				require.Equal(t, total, pastTotal)
+			})
+		})
 	})
 }
 

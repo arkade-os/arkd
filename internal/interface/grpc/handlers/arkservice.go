@@ -427,6 +427,21 @@ func (h *handler) GetPendingTx(
 	return &arkv1.GetPendingTxResponse{PendingTxs: pendingTxsProto}, nil
 }
 
+func (h *handler) CosignOnchainTx(
+	ctx context.Context, req *arkv1.CosignOnchainTxRequest,
+) (*arkv1.CosignOnchainTxResponse, error) {
+	if len(req.GetTx()) <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "missing tx")
+	}
+
+	txid, err := h.svc.CosignOnchainTx(ctx, req.GetTx())
+	if err != nil {
+		return nil, err
+	}
+
+	return &arkv1.CosignOnchainTxResponse{Txid: txid}, nil
+}
+
 func (h *handler) GetTransactionsStream(
 	_ *arkv1.GetTransactionsStreamRequest,
 	stream arkv1.ArkService_GetTransactionsStreamServer,

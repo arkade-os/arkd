@@ -312,6 +312,24 @@ func (u Utxo) ParseClosure() ([]byte, *arklib.TaprootMerkleProof, error) {
 	return pkScript, leafProof, nil
 }
 
+type UtxoSpend struct {
+	Txid              string
+	ConfirmedAtTime   time.Time
+	ConfirmedAtHeight uint64
+}
+
+type CosignedUtxo struct {
+	Outpoint
+	Amount        uint64
+	Script        string
+	BroadcastedAt time.Time
+	Spend         UtxoSpend
+}
+
+func (u CosignedUtxo) IsConfirmed() bool {
+	return u.Spend.ConfirmedAtHeight > 0 || !u.Spend.ConfirmedAtTime.IsZero()
+}
+
 type Receiver struct {
 	To     string
 	Amount uint64

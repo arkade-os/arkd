@@ -41,6 +41,7 @@ type Service interface {
 	GetPendingOffchainTxs(
 		ctx context.Context, proof intent.Proof, message intent.GetPendingTxMessage,
 	) ([]AcceptedOffchainTx, errors.Error)
+	CosignOnchainTx(ctx context.Context, tx string) (string, errors.Error)
 	// Tree signing methods
 	RegisterCosignerNonces(
 		ctx context.Context, roundId, pubkey string, nonces tree.TreeNonces,
@@ -188,6 +189,11 @@ type ForfeitTxsResp struct {
 
 type GetVtxosResp struct {
 	Vtxos []domain.Vtxo
+	Page  PageResp
+}
+
+type GetUtxosResp struct {
+	Utxos []domain.Utxo
 	Page  PageResp
 }
 

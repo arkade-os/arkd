@@ -349,6 +349,18 @@ func faucetOnchainAndWait(t *testing.T, addr string, amount float64) {
 	waitForOnchainUtxos(t, addr, len(before)+1)
 }
 
+// sendOnchainAndWait faucets addr without mining a block and waits until the explorer has
+// indexed the new utxo, so that a wallet reading the explorer can actually see it.
+func sendOnchainAndWait(t *testing.T, addr string, amount float64) {
+	t.Helper()
+
+	before, err := testExplorer.GetUtxos([]string{addr})
+	require.NoError(t, err)
+
+	sendOnchain(t, addr, amount)
+	waitForOnchainUtxos(t, addr, len(before)+1)
+}
+
 // waitForOffchainBalance blocks until the wallet reports at least min sats
 // offchain.
 func waitForOffchainBalance(t *testing.T, client wallet.Wallet, min uint64) {
@@ -935,6 +947,11 @@ func generateNote(t *testing.T, amount uint64) string {
 	return noteResp.Notes[0]
 }
 
+func sendOnchain(t *testing.T, address string, amount float64) {
+	_, err := runCommand("nigiri", "rpc", "sendtoaddress", address, fmt.Sprintf("%.8f", amount))
+	require.NoError(t, err)
+}
+
 func faucetOnchain(t *testing.T, address string, amount float64) {
 	_, err := runCommand("nigiri", "faucet", address, fmt.Sprintf("%.8f", amount))
 	require.NoError(t, err)
@@ -1392,7 +1409,7 @@ func recreateArkdWallet(signerKey, deprecated string) error {
 	}
 	args := []string{
 		"compose", "-f", "../../../docker-compose.regtest.yml",
-		"up", "-d", "--force-recreate", "--no-deps", "arkd-wallet",
+		"up", "-d", "--force-recreate", "--no-build", "--no-deps", "arkd-wallet",
 	}
 	if _, err := runCommandWithEnv(env, "docker", args...); err != nil {
 		return fmt.Errorf("failed to recreate arkd-wallet: %w", err)

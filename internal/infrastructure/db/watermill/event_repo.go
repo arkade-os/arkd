@@ -260,6 +260,16 @@ func deserializeEvent(buf []byte) (domain.Event, error) {
 		if err := json.Unmarshal(buf, &event); err == nil {
 			return event, nil
 		}
+	case domain.EventTypeOnchainTxBroadcasted:
+		var event = domain.OnchainTxBroadcasted{}
+		if err := json.Unmarshal(buf, &event); err == nil {
+			return event, nil
+		}
+	case domain.EventTypeOnchainTxConfirmed:
+		var event = domain.OnchainTxConfirmed{}
+		if err := json.Unmarshal(buf, &event); err == nil {
+			return event, nil
+		}
 	}
 
 	return nil, fmt.Errorf("unknown event")

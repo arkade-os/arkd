@@ -146,6 +146,11 @@ type OffchainTxVw struct {
 	OffchainTxid         sql.NullString
 }
 
+type OnchainTx struct {
+	Txid string
+	Tx   string
+}
+
 type Receiver struct {
 	IntentID       string
 	Pubkey         string
@@ -281,6 +286,29 @@ type Tx struct {
 	Type     string
 	Position int32
 	Children pqtype.NullRawMessage
+}
+
+type Utxo struct {
+	Txid                   string
+	Vout                   int32
+	Pubkey                 sql.NullString
+	Amount                 sql.NullInt64
+	SpentBy                string
+	CreatedAt              int64
+	SpendConfirmedAtTime   sql.NullInt64
+	SpendConfirmedAtHeight sql.NullInt64
+}
+
+type UtxoVw struct {
+	Txid                   string
+	Vout                   int32
+	Pubkey                 string
+	Amount                 int64
+	SpentBy                string
+	CreatedAt              int64
+	SpendConfirmedAtTime   sql.NullInt64
+	SpendConfirmedAtHeight sql.NullInt64
+	IsVtxo                 interface{}
 }
 
 type Vtxo struct {

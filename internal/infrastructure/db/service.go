@@ -23,6 +23,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/golang-migrate/migrate/v4"
 	migratepg "github.com/golang-migrate/migrate/v4/database/postgres"
 	sqlitemigrate "github.com/golang-migrate/migrate/v4/database/sqlite"
@@ -53,6 +54,11 @@ var (
 		"badger":   badgerdb.NewVtxoRepository,
 		"sqlite":   sqlitedb.NewVtxoRepository,
 		"postgres": pgdb.NewVtxoRepository,
+	}
+	utxoStoreTypes = map[string]func(...interface{}) (domain.UtxoRepository, error){
+		"badger":   badgerdb.NewUtxoRepository,
+		"sqlite":   sqlitedb.NewUtxoRepository,
+		"postgres": pgdb.NewUtxoRepository,
 	}
 	offchainTxStoreTypes = map[string]func(...interface{}) (domain.OffchainTxRepository, error){
 		"badger":   newBadgerOffchainTxRepository,
@@ -106,6 +112,7 @@ type service struct {
 	eventStore             domain.EventRepository
 	roundStore             domain.RoundRepository
 	vtxoStore              domain.VtxoRepository
+	utxoStore              domain.UtxoRepository
 	markerStore            domain.MarkerRepository
 	offchainTxStore        domain.OffchainTxRepository
 	convictionStore        domain.ConvictionRepository
@@ -114,6 +121,7 @@ type service struct {
 	txDecoder              ports.TxDecoder
 	batchEventHandler      *updateHandler[domain.Round]
 	offchainTxEventHandler *updateHandler[domain.OffchainTx]
+	onchainTxEventHandler  *updateHandler[domain.OnchainTx]
 
 	// projections counts the updates in flight, the subscriber dispatches they
 	// spawn and Reconcile, so Close can wait for them instead of closing a store one
@@ -134,6 +142,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	vtxoStoreFactory, ok := vtxoStoreTypes[config.DataStoreType]
 	if !ok {
 		return nil, fmt.Errorf("vtxo store type not supported")
+	}
+	utxoStoreFactory, ok := utxoStoreTypes[config.DataStoreType]
+	if !ok {
+		return nil, fmt.Errorf("utxo store type not supported")
 	}
 	offchainTxStoreFactory, ok := offchainTxStoreTypes[config.DataStoreType]
 	if !ok {
@@ -158,6 +170,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 	var eventStore domain.EventRepository
 	var roundStore domain.RoundRepository
 	var vtxoStore domain.VtxoRepository
+	var utxoStore domain.UtxoRepository
 	var markerStore domain.MarkerRepository
 	var offchainTxStore domain.OffchainTxRepository
 	var convictionStore domain.ConvictionRepository
@@ -218,6 +231,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		vtxoStore, err = vtxoStoreFactory(vtxoStoreConfig...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
+		}
+		utxoStore, err = utxoStoreFactory(vtxoStoreConfig...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open utxo store: %s", err)
 		}
 		offchainTxStore, err = offchainTxStoreFactory(config.DataStoreConfig...)
 		if err != nil {
@@ -350,6 +367,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
 		}
+		utxoStore, err = utxoStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open utxo store: %s", err)
+		}
 
 		offchainTxStore, err = offchainTxStoreFactory(db)
 		if err != nil {
@@ -435,6 +456,10 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		if err != nil {
 			return nil, fmt.Errorf("failed to open vtxo store: %s", err)
 		}
+		utxoStore, err = utxoStoreFactory(db)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open utxo store: %s", err)
+		}
 		offchainTxStore, err = offchainTxStoreFactory(db)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create offchain tx store: %w", err)
@@ -461,6 +486,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		eventStore:             eventStore,
 		roundStore:             roundStore,
 		vtxoStore:              vtxoStore,
+		utxoStore:              utxoStore,
 		markerStore:            markerStore,
 		offchainTxStore:        offchainTxStore,
 		txDecoder:              txDecoder,
@@ -469,6 +495,7 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		settingsStore:          settingsStore,
 		batchEventHandler:      newUpdateHandler[domain.Round](),
 		offchainTxEventHandler: newUpdateHandler[domain.OffchainTx](),
+		onchainTxEventHandler:  newUpdateHandler[domain.OnchainTx](),
 	}
 
 	// Register handlers that take care of keeping the projection store up-to-date.
@@ -476,6 +503,9 @@ func NewService(config ServiceConfig, txDecoder ports.TxDecoder) (ports.RepoMana
 		eventStore.RegisterEventsHandler(domain.RoundTopic, svc.updateProjectionsAfterRoundEvents)
 		eventStore.RegisterEventsHandler(
 			domain.OffchainTxTopic, svc.updateProjectionsAfterOffchainTxEvents,
+		)
+		eventStore.RegisterEventsHandler(
+			domain.OnchainTxTopic, svc.updateProjectionsAfterOnchainTxEvents,
 		)
 	}
 
@@ -496,6 +526,10 @@ func (s *service) Assets() domain.AssetRepository {
 
 func (s *service) Vtxos() domain.VtxoRepository {
 	return s.vtxoStore
+}
+
+func (s *service) CosignedUtxos() domain.UtxoRepository {
+	return s.utxoStore
 }
 
 func (s *service) Markers() domain.MarkerRepository {
@@ -520,6 +554,10 @@ func (s *service) RegisterBatchUpdateHandler(handler func(data domain.Round)) {
 
 func (s *service) RegisterOffchainTxUpdateHandler(handler func(data domain.OffchainTx)) {
 	s.offchainTxEventHandler.set(handler)
+}
+
+func (s *service) RegisterOnchainTxUpdateHandler(handler func(data domain.OnchainTx)) {
+	s.onchainTxEventHandler.set(handler)
 }
 
 func (s *service) RegisterSettingsUpdateHandler(handler func(domain.Settings, []string)) {
@@ -719,6 +757,26 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 			}
 			log.Debugf("created root markers for %d vtxos", len(newVtxos))
 		}
+
+		// We keep track of boarding utxos as cosigned utxos.
+		boardingUtxos, err := getBoardingUtxosFromRound(*round, s.txDecoder)
+		if err != nil {
+			log.WithError(err).Warn(
+				"failed to extract boarding utxos, aborting round projection " +
+					"(update not dispatched, not retried)",
+			)
+			return false
+		}
+		if len(boardingUtxos) > 0 {
+			if err := s.utxoStore.AddUtxos(ctx, boardingUtxos, ""); err != nil {
+				log.WithError(err).Warn(
+					"failed to add boarding utxos, aborting round projection " +
+						"(update not dispatched, not retried)",
+				)
+				return false
+			}
+			log.Debugf("added %d boarding utxos", len(boardingUtxos))
+		}
 		return true
 	}
 
@@ -754,7 +812,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 					continue
 				}
 				for _, in := range ins {
-					spentVtxos[in] = txid
+					spentVtxos[in.Outpoint] = txid
 				}
 			}
 
@@ -963,6 +1021,66 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 	}
 }
 
+// updateProjectionsAfterOnchainTxEvents updates the projections as soon as onchain tx events are
+// recorded to the event db. It makes use of a background context and Close waits for it to
+// complete before closing the stores.
+func (s *service) updateProjectionsAfterOnchainTxEvents(events []domain.Event) {
+	s.projections.Add(1)
+	defer s.projections.Done()
+
+	ctx := context.Background()
+	onchainTx := domain.NewOnchainTxFromEvents(events)
+	updateFn := func() bool {
+		switch {
+		case onchainTx.IsBroadcasted():
+			utxos, err := getUtxosFromOnchainTx(*onchainTx, s.txDecoder)
+			if err != nil {
+				log.WithError(err).Warnf(
+					"failed to get cosigned utxos from onchain tx %s", onchainTx.Txid,
+				)
+				return false
+			}
+			if err := s.utxoStore.AddUtxos(ctx, utxos, onchainTx.Tx); err != nil {
+				log.WithError(err).Warn("failed to add cosigned utxos")
+				return false
+			}
+			log.Debugf("added %d cosigned utxos from onchain tx %s", len(utxos), onchainTx.Txid)
+		case onchainTx.IsConfirmed():
+			utxos, err := getUtxosFromOnchainTx(*onchainTx, s.txDecoder)
+			if err != nil {
+				log.WithError(err).Warnf(
+					"failed to get cosigned utxos from onchain tx %s", onchainTx.Txid,
+				)
+				return false
+			}
+
+			for i := range utxos {
+				utxos[i].Spend = domain.UtxoSpend{
+					Txid:              onchainTx.Txid,
+					ConfirmedAtTime:   onchainTx.ConfirmedAtTime,
+					ConfirmedAtHeight: onchainTx.ConfirmedAtHeight,
+				}
+			}
+			if err := s.utxoStore.UpdateUtxos(ctx, utxos); err != nil {
+				log.WithError(err).Warnf(
+					"failed to confirm spend of cosigned utxos from onchain tx %s", onchainTx.Txid,
+				)
+				return false
+			}
+			log.Debugf(
+				"confirmed spend of %d cosigned utxos from onchain tx %s",
+				len(utxos), onchainTx.Txid,
+			)
+		}
+		return true
+	}
+
+	dispatch := updateFn()
+	if dispatch {
+		s.goTracked(func() { s.onchainTxEventHandler.dispatch(*onchainTx) })
+	}
+}
+
 func getSpentVtxoKeysFromRound(
 	round domain.Round, txDecoder ports.TxDecoder,
 ) map[domain.Outpoint]string {
@@ -977,7 +1095,7 @@ func getSpentVtxoKeysFromRound(
 			continue
 		}
 		for _, in := range ins {
-			forfeitInputs[in] = forfeitTx.Txid
+			forfeitInputs[in.Outpoint] = forfeitTx.Txid
 		}
 	}
 
@@ -992,6 +1110,60 @@ func getSpentVtxoKeysFromRound(
 		}
 	}
 	return spentVtxos
+}
+
+// getBoardingUtxosFromRound returns the boarding utxos consumed by the round, to be recorded
+// as cosigned utxos spent by the commitment tx.
+//
+// Every intent proves ownership of its inputs with a BIP322 proof: inputs [1:] of the proof
+// are the claimed outpoints, each with its prevout, while intent.Inputs are the ones that were
+// registered as vtxos, unrolled included. Whatever is claimed by the proof and is not a vtxo
+// is a boarding utxo, the same rule used at registration time.
+func getBoardingUtxosFromRound(
+	round domain.Round, txDecoder ports.TxDecoder,
+) ([]domain.Utxo, error) {
+	utxos := make([]domain.Utxo, 0)
+	for _, intent := range round.Intents {
+		vtxos := make(map[domain.Outpoint]struct{}, len(intent.Inputs))
+		for _, vtxo := range intent.Inputs {
+			vtxos[vtxo.Outpoint] = struct{}{}
+		}
+
+		_, ins, _, err := txDecoder.DecodeTx(intent.Proof)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode intent %s: %w", intent.Id, err)
+		}
+		// An intent proof must have at least two inputs as per BIP322.
+		if len(ins) < 2 {
+			return nil, fmt.Errorf("malformed proof of intent %s: missing inputs", intent.Id)
+		}
+
+		// Skip input 0, the BIP322 message input.
+		for _, in := range ins[1:] {
+			if _, isVtxo := vtxos[in.Outpoint]; isVtxo {
+				continue
+			}
+			if in.Prevout == nil {
+				return nil, fmt.Errorf(
+					"boarding input %s of intent %s misses prevout", in.Outpoint, intent.Id,
+				)
+			}
+			if !txscript.IsPayToTaproot(in.Prevout.PkScript) {
+				return nil, fmt.Errorf(
+					"boarding input %s of intent %s is not a taproot output",
+					in.Outpoint, intent.Id,
+				)
+			}
+			utxos = append(utxos, domain.Utxo{
+				Outpoint:  in.Outpoint,
+				Amount:    in.Prevout.Amount,
+				PubKey:    hex.EncodeToString(in.Prevout.PkScript[2:]), // drop 2 opcodes bytes
+				Spend:     domain.UtxoSpend{Txid: round.CommitmentTxid},
+				CreatedAt: round.EndingTimestamp,
+			})
+		}
+	}
+	return utxos, nil
 }
 
 func getNewVtxosFromRound(round domain.Round, txDecoder ports.TxDecoder) []domain.Vtxo {
@@ -1242,4 +1414,33 @@ func handleSettingsSeed(
 	default:
 		return fmt.Errorf("unsupported db type for settings seed: %s", dbType)
 	}
+}
+
+func getUtxosFromOnchainTx(
+	onchainTx domain.OnchainTx, txDecoder ports.TxDecoder,
+) ([]domain.Utxo, error) {
+	_, ins, _, err := txDecoder.DecodeTx(onchainTx.Tx)
+	if err != nil {
+		return nil, err
+	}
+
+	utxos := make([]domain.Utxo, 0, len(onchainTx.SignedInputs))
+	for _, in := range ins {
+		if _, ok := onchainTx.SignedInputs[in.String()]; !ok {
+			continue
+		}
+		if in.Prevout == nil {
+			return nil, fmt.Errorf(
+				"signed input %s of onchain tx %s misses prevout", in.Outpoint, onchainTx.Txid,
+			)
+		}
+		utxos = append(utxos, domain.Utxo{
+			Outpoint:  in.Outpoint,
+			Amount:    in.Prevout.Amount,
+			PubKey:    hex.EncodeToString(in.Prevout.PkScript[2:]), // drop 2 opcodes bytes
+			CreatedAt: onchainTx.BroadcastedAt,
+			Spend:     domain.UtxoSpend{Txid: onchainTx.Txid},
+		})
+	}
+	return utxos, nil
 }

@@ -156,7 +156,7 @@ func (v *offchainTxRepository) GetOffchainTxsByTxids(
 	ctx context.Context, txids []string,
 ) ([]*domain.OffchainTx, error) {
 	if len(txids) == 0 {
-		return []*domain.OffchainTx{}, nil
+		return nil, nil
 	}
 
 	grouped := make(map[string][]queries.OffchainTxVw)
@@ -183,6 +183,30 @@ func (v *offchainTxRepository) GetOffchainTxsByTxids(
 		txs = append(txs, rowsToOffchainTx(vws))
 	}
 
+	return txs, nil
+}
+
+func (v *offchainTxRepository) GetCheckpointTxs(
+	ctx context.Context, txids []string,
+) ([]string, error) {
+	if len(txids) == 0 {
+		return nil, nil
+	}
+
+	var txs []string
+	for start := 0; start < len(txids); start += sqliteMaxBulkTxids {
+		end := min(start+sqliteMaxBulkTxids, len(txids))
+		if err := withReadQuerier(ctx, v.db, func(q *queries.Queries) error {
+			rows, err := q.SelectCheckpointTxsByTxids(ctx, txids[start:end])
+			if err != nil {
+				return err
+			}
+			txs = append(txs, rows...)
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
 	return txs, nil
 }
 

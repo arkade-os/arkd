@@ -16,5 +16,8 @@ type OffchainTxRepository interface {
 	GetOffchainTxsInRange(
 		ctx context.Context, after, before int64, onlyFailed, onlyCompleted bool, limit int64,
 	) ([]*OffchainTx, error)
+	// GetCheckpointTxs returns the checkpoint txs for the given list of txids, if any is found in
+	// the db, or a nil slice otherwise.
+	GetCheckpointTxs(ctx context.Context, txids []string) ([]string, error)
 	Close()
 }

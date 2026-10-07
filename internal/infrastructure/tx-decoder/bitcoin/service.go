@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	"github.com/btcsuite/btcd/psbt/v2"
 )
@@ -22,11 +23,22 @@ func (s *service) DecodeTx(tx string) (string, []ports.TxIn, []ports.TxOut, erro
 
 	txid := ptx.UnsignedTx.TxID()
 	ins := make([]ports.TxIn, 0, len(ptx.UnsignedTx.TxIn))
-	for _, input := range ptx.UnsignedTx.TxIn {
-		ins = append(ins, ports.TxIn{
-			Txid: input.PreviousOutPoint.Hash.String(),
-			VOut: input.PreviousOutPoint.Index,
-		})
+	for i, input := range ptx.UnsignedTx.TxIn {
+		in := ports.TxIn{
+			Outpoint: domain.Outpoint{
+				Txid: input.PreviousOutPoint.Hash.String(),
+				VOut: input.PreviousOutPoint.Index,
+			},
+		}
+		// Not every tx carries its prevouts, vtxo tree txs don't: callers needing them must
+		// check for nil.
+		if i < len(ptx.Inputs) && ptx.Inputs[i].WitnessUtxo != nil {
+			in.Prevout = &ports.TxOut{
+				Amount:   uint64(ptx.Inputs[i].WitnessUtxo.Value),
+				PkScript: ptx.Inputs[i].WitnessUtxo.PkScript,
+			}
+		}
+		ins = append(ins, in)
 	}
 	outs := make([]ports.TxOut, 0, len(ptx.UnsignedTx.TxOut))
 	for _, output := range ptx.UnsignedTx.TxOut {
