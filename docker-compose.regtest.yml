@@ -20,7 +20,7 @@ services:
     container_name: nbxplorer
     ports:
       - 32838:32838
-    image: nicolasdorier/nbxplorer:2.6.7
+    image: nicolasdorier/nbxplorer:2.6.19
     environment:
       - NBXPLORER_NETWORK=regtest
       - NBXPLORER_CHAINS=btc
@@ -38,6 +38,11 @@ services:
     volumes:
       - type: tmpfs
         target: /datadir
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -X POST -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"1.0\",\"method\":\"getblockchaininfo\",\"params\":[]}' http://127.0.0.1:32838/v1/cryptos/BTC/rpc | grep -q '\"result\"'"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
     depends_on:
       pg:
         condition: service_healthy
@@ -49,7 +54,8 @@ services:
       dockerfile: arkdwallet.Dockerfile
     container_name: arkd-wallet
     depends_on:
-      - nbxplorer
+      nbxplorer:
+        condition: service_healthy
     ports:
       - "6060:6060"
     environment:
