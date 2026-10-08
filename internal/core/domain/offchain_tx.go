@@ -160,7 +160,7 @@ func (s *OffchainTx) Finalize(finalCheckpointTxs map[string]string) (Event, erro
 		}
 	}
 
-	if !s.IsAccepted() {
+	if s.Stage.Code != int(OffchainTxAcceptedStage) {
 		return nil, fmt.Errorf("not in a valid stage to finalize offchain tx")
 	}
 

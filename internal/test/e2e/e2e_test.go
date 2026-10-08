@@ -1773,6 +1773,112 @@ func TestOffchainTx(t *testing.T) {
 		})
 	})
 
+	// In this test, Alice submits an offchain tx and waits for it to be projected and evicted from
+	// the cache. Mallory, who knows nothing but the ark txid, then calls FinalizeTx with a dummy
+	// checkpoint. Her request must be rejected and Alice must still be able to finalize her tx.
+	t.Run("finalize after rejected third party finalization", func(t *testing.T) {
+		redisClient := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+		defer redisClient.Close()
+
+		ctx := t.Context()
+		alice := setupClientWallet(t)
+		mallory := setupClientWallet(t)
+
+		faucetOffchain(t, alice, 0.00021)
+		vtxos, _, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, vtxos, 1)
+		vtxo := vtxos[0]
+		_, aliceAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+
+		serverParams, err := alice.GetConfigData(ctx)
+		require.NoError(t, err)
+
+		tx, err := offchaintx.BuildAndSignTx(ctx, offchaintx.BuildAndSignTxArgs{
+			BaseArgs: offchaintx.BaseArgs{
+				ServerParams: *serverParams,
+				SignTx:       alice.SignTransaction,
+				Vtxos:        []clientlib.Vtxo{vtxo},
+				ChangeAddr:   aliceAddr.Address,
+			},
+			Receivers: []clientlib.Receiver{{To: aliceAddr.Address, Amount: 1000}},
+		})
+		require.NoError(t, err)
+
+		txid, _, signedCheckpoints, err := alice.Client().SubmitTx(
+			ctx, tx.SignedArkTx, tx.CheckpointTxs,
+		)
+		require.NoError(t, err)
+		require.Equal(t, tx.Txid, txid)
+
+		waitUntil(t, indexerWait, "the submitted tx input to be projected as spent", func(ctx context.Context) error {
+			_, spentVtxos, err := alice.ListVtxos(ctx)
+			if err != nil {
+				return err
+			}
+			for _, spentVtxo := range spentVtxos {
+				if spentVtxo.Outpoint == vtxo.Outpoint {
+					return nil
+				}
+			}
+			return fmt.Errorf("input %s not projected as spent", vtxo.Outpoint)
+		})
+
+		waitUntil(t, serverWait, "the projected tx cache entry to be removed", func(ctx context.Context) error {
+			exists, err := redisClient.HExists(ctx, "offChainTxStore:txs", txid).Result()
+			if err != nil {
+				return err
+			}
+			if exists {
+				return fmt.Errorf("offchain tx %s still exists in cache", txid)
+			}
+			return nil
+		})
+
+		// Mallory crafts a well-formed but meaningless checkpoint: a single random input and a
+		// single output, with no signature at all.
+		var prevoutHash chainhash.Hash
+		_, err = rand.Read(prevoutHash[:])
+		require.NoError(t, err)
+		dummyTx := wire.NewMsgTx(wire.TxVersion)
+		dummyTx.AddTxIn(wire.NewTxIn(wire.NewOutPoint(&prevoutHash, 0), nil, nil))
+		dummyTx.AddTxOut(wire.NewTxOut(1000, txutils.ANCHOR_PKSCRIPT))
+		dummyPtx, err := psbt.NewFromUnsignedTx(dummyTx)
+		require.NoError(t, err)
+		dummyCheckpoint, err := dummyPtx.B64Encode()
+		require.NoError(t, err)
+
+		err = mallory.Client().FinalizeTx(ctx, txid, []string{dummyCheckpoint})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "invalid signature")
+
+		finalCheckpoints := make([]string, 0, len(signedCheckpoints))
+		for _, checkpoint := range signedCheckpoints {
+			finalCheckpoint, err := alice.SignTransaction(ctx, checkpoint)
+			require.NoError(t, err)
+			finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
+		}
+
+		err = alice.Client().FinalizeTx(ctx, txid, finalCheckpoints)
+		require.NoError(
+			t, err, "a finalization rejected to a third party must not prevent the owner's one",
+		)
+
+		waitUntil(t, indexerWait, "the finalized tx output to be projected", func(ctx context.Context) error {
+			spendableVtxos, _, err := alice.ListVtxos(ctx)
+			if err != nil {
+				return err
+			}
+			for _, spendableVtxo := range spendableVtxos {
+				if spendableVtxo.Txid == txid {
+					return nil
+				}
+			}
+			return fmt.Errorf("no spendable output for finalized tx %s", txid)
+		})
+	})
+
 	// In these tests, Alice submits an offchain tx and waits for the inputs to be swept before
 	// finalizing it.
 	// Covers both cases, the one where the inputs are swept by the server, and the other one,

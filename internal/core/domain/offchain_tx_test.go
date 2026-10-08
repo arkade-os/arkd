@@ -296,6 +296,37 @@ func testFinalizeOffchainTx(t *testing.T) {
 			require.Equal(t, event, events[2])
 		})
 
+		// A failed finalization attempt must not prevent the owner from finalizing the tx with
+		// properly signed checkpoints.
+		t.Run("valid after failed finalization", func(t *testing.T) {
+			offchainTx := domain.NewOffchainTx()
+			_, err := offchainTx.Request(txid, arkTx, unsignedCheckpointTxs)
+			require.NoError(t, err)
+			_, err = offchainTx.Accept(
+				finalArkTx, signedCheckpointTxs,
+				commitmentTxsByCheckpointTxid, rootCommitmentTxid, expiryTimestamp,
+				0, nil,
+			)
+			require.NoError(t, err)
+			failEvent := offchainTx.Fail(fmt.Errorf("invalid signature"))
+			require.NotNil(t, failEvent)
+			require.True(t, offchainTx.IsFailed())
+			require.False(t, offchainTx.IsAccepted())
+
+			event, err := offchainTx.Finalize(finalCheckpointTxs)
+			require.NoError(t, err)
+			require.NotNil(t, event)
+			require.Equal(t, domain.EventTypeOffchainTxFinalized, event.GetType())
+			require.True(t, offchainTx.IsFinalized())
+			require.False(t, offchainTx.IsFailed())
+			require.Empty(t, offchainTx.FailReason)
+			require.Equal(t, finalCheckpointTxs, offchainTx.CheckpointTxs)
+
+			events := offchainTx.Events()
+			require.Len(t, events, 4)
+			require.Equal(t, event, events[3])
+		})
+
 		t.Run("invalid", func(t *testing.T) {
 			fixtures := []struct {
 				offchainTx         *domain.OffchainTx
@@ -309,17 +340,6 @@ func testFinalizeOffchainTx(t *testing.T) {
 						},
 					},
 					expectedErr: "missing final checkpoint txs",
-				},
-				{
-					offchainTx: &domain.OffchainTx{
-						Stage: domain.Stage{
-							Code:   int(domain.OffchainTxAcceptedStage),
-							Failed: true,
-						},
-						CheckpointTxs: finalCheckpointTxs,
-					},
-					finalCheckpointTxs: finalCheckpointTxs,
-					expectedErr:        "not in a valid stage to finalize offchain tx",
 				},
 				{
 					offchainTx: &domain.OffchainTx{
