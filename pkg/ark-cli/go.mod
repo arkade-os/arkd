@@ -1,6 +1,6 @@
 module github.com/arkade-os/pkg/ark-cli
 
-go 1.26.6
+go 1.26.9
 
 replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 

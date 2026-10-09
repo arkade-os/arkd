@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd
 
-go 1.26.6
+go 1.26.9
 
 replace github.com/arkade-os/arkd/api-spec => ./api-spec
 

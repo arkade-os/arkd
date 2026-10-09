@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd/pkg/macaroons
 
-go 1.26.6
+go 1.26.9
 
 replace github.com/arkade-os/arkd/pkg/kvdb => ../kvdb
 
