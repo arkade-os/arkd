@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -14,9 +15,12 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/domain/batchtrigger"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	txbuilder "github.com/arkade-os/arkd/internal/infrastructure/tx-builder/covenantless"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/extension"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
+	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
@@ -26,6 +30,7 @@ import (
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	"github.com/btcsuite/btcwallet/waddrmgr"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -927,6 +932,123 @@ func TestSubmitOffchainTx(t *testing.T) {
 		require.Equal(t, spend.arkTxid, appErr.Metadata()["txid"])
 		require.Contains(t, appErr.Metadata()["vtxos"], spend.vtxo.Outpoint.Txid)
 	})
+
+	// A tx submitted with the checkpoints already signed by the owner is finalized in the same
+	// call, so no second step is needed.
+	t.Run("one shot", func(t *testing.T) {
+		expectedEvents := []domain.EventType{
+			domain.EventTypeOffchainTxRequested,
+			domain.EventTypeOffchainTxAccepted,
+			domain.EventTypeOffchainTxFinalized,
+		}
+		savedEvents := func(t *testing.T, events *mockedEventRepo) []domain.EventType {
+			t.Helper()
+			events.AssertNumberOfCalls(t, "Save", 1)
+			saved := events.Calls[0].Arguments.Get(3).([]domain.Event)
+			types := make([]domain.EventType, 0, len(saved))
+			for _, event := range saved {
+				types = append(types, event.GetType())
+			}
+			return types
+		}
+		requireFinalized := func(t *testing.T, tx testOneShotTx, resp *AcceptedOffchainTx) {
+			t.Helper()
+			require.Equal(t, tx.arkTxid, resp.TxId)
+			require.Len(t, resp.SignedCheckpointTxs, len(tx.checkpointTxs))
+			// The checkpoints are returned fully signed: owner and server.
+			for _, checkpoint := range resp.SignedCheckpointTxs {
+				valid, _, err := tx.svc.builder.VerifyVtxoTapscriptSigs(checkpoint, true)
+				require.NoError(t, err)
+				require.True(t, valid)
+			}
+			require.Equal(t, expectedEvents, savedEvents(t, tx.events))
+			require.Equal(t, []string{tx.arkTxid}, tx.offchainTxs.added)
+		}
+
+		t.Run("valid", func(t *testing.T) {
+			tests := []struct {
+				name      string
+				numInputs int
+			}{
+				{
+					name:      "single input",
+					numInputs: 1,
+				},
+				{
+					name:      "multiple inputs",
+					numInputs: 3,
+				},
+			}
+
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					tx := newTestOneShotTx(t, tt.numInputs)
+
+					resp, appErr := tx.svc.SubmitOffchainTx(
+						t.Context(), tx.signedCheckpoints, tx.arkTx,
+					)
+					require.NoError(t, appErr)
+					requireFinalized(t, tx, resp)
+				})
+			}
+		})
+
+		t.Run("invalid", func(t *testing.T) {
+			tests := []struct {
+				name      string
+				numInputs int
+				// invalidate tampers with the signed checkpoints, given the unsigned ones too.
+				invalidate func(t *testing.T, signed, unsigned []string)
+			}{
+				{
+					name:      "invalid checkpoint signature",
+					numInputs: 1,
+					invalidate: func(t *testing.T, signed, _ []string) {
+						ptx, err := psbt.NewFromRawBytes(strings.NewReader(signed[0]), true)
+						require.NoError(t, err)
+						ptx.Inputs[0].TaprootScriptSpendSig[0].Signature[0] ^= 1
+						signed[0], err = ptx.B64Encode()
+						require.NoError(t, err)
+					},
+				},
+				{
+					name:      "partially signed checkpoints",
+					numInputs: 3,
+					invalidate: func(_ *testing.T, signed, unsigned []string) {
+						// Only the first checkpoint retains its signature.
+						copy(signed[1:], unsigned[1:])
+					},
+				},
+			}
+
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					tx := newTestOneShotTx(t, tt.numInputs)
+					invalidCheckpoints := append([]string(nil), tx.signedCheckpoints...)
+					tt.invalidate(t, invalidCheckpoints, tx.checkpointTxs)
+
+					resp, appErr := tx.svc.SubmitOffchainTx(
+						t.Context(), invalidCheckpoints, tx.arkTx,
+					)
+					require.Error(t, appErr)
+					require.Equal(t, errors.INVALID_SIGNATURE.Code, appErr.Code())
+					require.Contains(t, appErr.Error(), "invalid signature in checkpoint tx")
+					require.Nil(t, resp)
+					// The rejection leaves no trace, so the tx can be submitted again.
+					tx.events.AssertNotCalled(
+						t, "Save", mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+					)
+					require.Empty(t, tx.offchainTxs.added)
+
+					resp, appErr = tx.svc.SubmitOffchainTx(
+						t.Context(), tx.signedCheckpoints, tx.arkTx,
+					)
+					require.NoError(t, appErr)
+					requireFinalized(t, tx, resp)
+				})
+			}
+		})
+	})
 }
 
 func TestMarkSweptBatches(t *testing.T) {
@@ -1247,6 +1369,250 @@ func testSubmitOffchainTxService(
 	}
 }
 
+// testOneShotTx is an offchain tx spending stored vtxos through their forfeit closure, with
+// the ark tx and the checkpoints signed by the owner, and the service to submit it to.
+type testOneShotTx struct {
+	svc         *service
+	events      *mockedEventRepo
+	offchainTxs *testOneShotOffchainTxStore
+	arkTxid     string
+	// arkTx is signed by the owner.
+	arkTx string
+	// checkpointTxs are unsigned, as submitted in two steps.
+	checkpointTxs []string
+	// signedCheckpoints are signed by the owner, as submitted in one shot.
+	signedCheckpoints []string
+}
+
+// newTestOneShotTx builds a tx spending numInputs vtxos of 10,000 sats each to a single
+// output, through a service whose signer and tx builder are real enough to verify and
+// finalize it: the signer signs with an in-memory key and the builder is the covenantless one.
+func newTestOneShotTx(t *testing.T, numInputs int) testOneShotTx {
+	t.Helper()
+
+	serverPrv, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	ownerPrv, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	exitDelay, _ := arklib.ParseRelativeLocktime(512)
+	checkpointExitDelay, _ := arklib.ParseRelativeLocktime(1024)
+
+	vtxoScript := &script.TapscriptsVtxoScript{Closures: []script.Closure{
+		&script.MultisigClosure{
+			PubKeys: []*btcec.PublicKey{ownerPrv.PubKey(), serverPrv.PubKey()},
+		},
+		&script.CSVMultisigClosure{
+			Locktime:        exitDelay,
+			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{ownerPrv.PubKey()}},
+		},
+	}}
+	tapKey, tapTree, err := vtxoScript.TapTree()
+	require.NoError(t, err)
+	tapscripts, err := vtxoScript.Encode()
+	require.NoError(t, err)
+	forfeitScript, err := vtxoScript.Closures[0].Script()
+	require.NoError(t, err)
+	forfeitProof, err := tapTree.GetTaprootMerkleProof(
+		txscript.NewBaseTapLeaf(forfeitScript).TapHash(),
+	)
+	require.NoError(t, err)
+	ctrlBlock, err := txscript.ParseControlBlock(forfeitProof.ControlBlock)
+	require.NoError(t, err)
+
+	const amount = int64(10_000)
+	now := time.Now()
+	vtxos := make([]domain.Vtxo, 0, numInputs)
+	ins := make([]offchain.VtxoInput, 0, numInputs)
+	for range numInputs {
+		outpoint := &wire.OutPoint{}
+		_, err := rand.Read(outpoint.Hash[:])
+		require.NoError(t, err)
+		vtxos = append(vtxos, domain.Vtxo{
+			Outpoint:           domain.Outpoint{Txid: outpoint.Hash.String(), VOut: 0},
+			Amount:             uint64(amount),
+			PubKey:             hex.EncodeToString(schnorr.SerializePubKey(tapKey)),
+			CommitmentTxids:    []string{"commitment"},
+			RootCommitmentTxid: "commitment",
+			ExpiresAt:          now.Add(time.Hour).Unix(),
+			CreatedAt:          now.Unix(),
+		})
+		ins = append(ins, offchain.VtxoInput{
+			Outpoint: outpoint,
+			Amount:   amount,
+			Tapscript: &waddrmgr.Tapscript{
+				ControlBlock:   ctrlBlock,
+				RevealedScript: forfeitProof.Script,
+			},
+			RevealedTapscripts: tapscripts,
+		})
+	}
+
+	checkpointTapscript, err := (&script.CSVMultisigClosure{
+		Locktime:        checkpointExitDelay,
+		MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{serverPrv.PubKey()}},
+	}).Script()
+	require.NoError(t, err)
+	arkPtx, checkpointPtxs, err := offchain.BuildTxs(
+		ins, []*wire.TxOut{{Value: amount * int64(numInputs), PkScript: testP2TRScript(t)}},
+		checkpointTapscript,
+	)
+	require.NoError(t, err)
+	unsignedArkTx, err := arkPtx.B64Encode()
+	require.NoError(t, err)
+	checkpointTxs := make([]string, 0, numInputs)
+	signedCheckpoints := make([]string, 0, numInputs)
+	for _, checkpointPtx := range checkpointPtxs {
+		checkpointTx, err := checkpointPtx.B64Encode()
+		require.NoError(t, err)
+		checkpointTxs = append(checkpointTxs, checkpointTx)
+		signedCheckpoints = append(signedCheckpoints, signTapscriptInputs(t, checkpointTx, ownerPrv))
+	}
+
+	events := &mockedEventRepo{}
+	events.On("Save", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	vtxoRepo := &mockedVtxoRepo{}
+	vtxoRepo.On("GetVtxos", mock.Anything, mock.Anything).Return(vtxos, nil)
+	offchainTxRepo := &mockedOffchainTxRepo{}
+	offchainTxRepo.On("GetOffchainTx", mock.Anything, mock.Anything).Return(nil, nil)
+	repos := &mockedRepoManager{RepoManager: testOneShotRepos{events: events}}
+	repos.On("Vtxos").Return(vtxoRepo)
+	repos.On("OffchainTxs").Return(offchainTxRepo)
+	repos.On("Convictions").Return(convictionRepoStub{})
+	wallet := &mockedWallet{}
+	wallet.On("GetDustAmount", mock.Anything).Return(testDust, nil)
+	signer := &testTapscriptSigner{t: t, prv: serverPrv}
+	offchainTxs := &testOneShotOffchainTxStore{}
+	settings := &ports.Settings{
+		Settings: domain.Settings{
+			BanThreshold:          1,
+			UnilateralExitDelay:   exitDelay,
+			CheckpointExitDelay:   checkpointExitDelay,
+			VtxoTreeExpiry:        exitDelay,
+			VtxoMinAmount:         1,
+			VtxoMaxAmount:         -1,
+			MaxTxWeight:           400_000,
+			MaxOpReturnOutputs:    3,
+			AssetTxMaxWeightRatio: 0.5,
+		},
+		DustAmount:          testDust,
+		SignerPubkey:        serverPrv.PubKey(),
+		ForfeitPubkey:       serverPrv.PubKey(),
+		CheckpointTapscript: checkpointTapscript,
+	}
+
+	return testOneShotTx{
+		svc: &service{
+			repoManager: repos,
+			wallet:      wallet,
+			signer:      signer,
+			builder:     txbuilder.NewTxBuilder(wallet, signer, arklib.Bitcoin),
+			cache: testLiveStore{
+				settings:    testSettingsStore{settings: settings},
+				offchainTxs: offchainTxs,
+				intents:     testIntentStore{},
+			},
+			offchainTxMu: &sync.Mutex{},
+		},
+		events:            events,
+		offchainTxs:       offchainTxs,
+		arkTxid:           arkPtx.UnsignedTx.TxID(),
+		arkTx:             signTapscriptInputs(t, unsignedArkTx, ownerPrv),
+		checkpointTxs:     checkpointTxs,
+		signedCheckpoints: signedCheckpoints,
+	}
+}
+
+// signTapscriptInputs signs with prv every input of the psbt carrying a tapscript leaf, the
+// way a client or the signer does, and returns the signed psbt.
+func signTapscriptInputs(t *testing.T, tx string, prv *btcec.PrivateKey) string {
+	t.Helper()
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+	require.NoError(t, err)
+	prevouts, err := txutils.GetPrevOutputFetcher(ptx)
+	require.NoError(t, err)
+	sigHashes := txscript.NewTxSigHashes(ptx.UnsignedTx, prevouts)
+
+	for i, in := range ptx.Inputs {
+		if len(in.TaprootLeafScript) == 0 {
+			continue
+		}
+		leaf := txscript.NewBaseTapLeaf(in.TaprootLeafScript[0].Script)
+		sig, err := txscript.RawTxInTapscriptSignature(
+			ptx.UnsignedTx, sigHashes, i, in.WitnessUtxo.Value, in.WitnessUtxo.PkScript,
+			leaf, txscript.SigHashDefault, prv,
+		)
+		require.NoError(t, err)
+		leafHash := leaf.TapHash()
+		ptx.Inputs[i].TaprootScriptSpendSig = append(
+			ptx.Inputs[i].TaprootScriptSpendSig, &psbt.TaprootScriptSpendSig{
+				Signature:   sig[:64],
+				XOnlyPubKey: schnorr.SerializePubKey(prv.PubKey()),
+				LeafHash:    leafHash[:],
+				SigHash:     txscript.SigHashDefault,
+			},
+		)
+	}
+	signed, err := ptx.B64Encode()
+	require.NoError(t, err)
+	return signed
+}
+
+// testTapscriptSigner is a ports.SignerService signing with an in-memory key, so the tx builder
+// can verify and finalize what it signs.
+type testTapscriptSigner struct {
+	ports.SignerService
+	t   *testing.T
+	prv *btcec.PrivateKey
+}
+
+func (s *testTapscriptSigner) GetPubkey(context.Context) (*btcec.PublicKey, error) {
+	return s.prv.PubKey(), nil
+}
+
+func (s *testTapscriptSigner) GetDeprecatedPubkeys(
+	context.Context,
+) ([]ports.DeprecatedSignerPubkey, error) {
+	return nil, nil
+}
+
+func (s *testTapscriptSigner) SignTransactionTapscript(
+	_ context.Context, tx string, _ []int,
+) (string, error) {
+	return signTapscriptInputs(s.t, tx, s.prv), nil
+}
+
+// testOneShotRepos backs the repos mockedRepoManager has no expectations for: the event store
+// the tx is saved to, and the asset repo, which is never consulted since the tx carries no
+// asset packet.
+type testOneShotRepos struct {
+	ports.RepoManager
+	events domain.EventRepository
+}
+
+func (r testOneShotRepos) Events() domain.EventRepository { return r.events }
+
+func (r testOneShotRepos) Assets() domain.AssetRepository { return nil }
+
+// testOneShotOffchainTxStore is an offchain tx cache holding nothing and recording what is
+// added to it.
+type testOneShotOffchainTxStore struct {
+	ports.OffChainTxStore
+	added []string
+}
+
+func (s *testOneShotOffchainTxStore) Add(_ context.Context, tx domain.OffchainTx) error {
+	s.added = append(s.added, tx.ArkTxid)
+	return nil
+}
+
+func (s *testOneShotOffchainTxStore) Remove(context.Context, string) error { return nil }
+
+func (s *testOneShotOffchainTxStore) IncludesAny(
+	context.Context, []domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	return nil, nil
+}
+
 // testNoteIntentProof builds an intent proof whose only ownership input is a
 // note closure, ie. a hash-lock requiring the preimage instead of a signature.
 func testNoteIntentProof(t *testing.T, message string, out *wire.TxOut) *intent.Proof {
@@ -1377,6 +1743,12 @@ func (s testIntentStore) ViewAll(
 	context.Context, []string,
 ) ([]ports.TimedIntent, error) {
 	return s.intents, s.err
+}
+
+func (s testIntentStore) IncludesAny(
+	context.Context, []domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	return nil, nil
 }
 
 // testSweptBatchFixture describes what the round repo and the wallet return for

@@ -43,6 +43,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -1773,110 +1774,200 @@ func TestOffchainTx(t *testing.T) {
 		})
 	})
 
-	// In this test, Alice submits an offchain tx and waits for it to be projected and evicted from
-	// the cache. Mallory, who knows nothing but the ark txid, then calls FinalizeTx with a dummy
-	// checkpoint. Her request must be rejected and Alice must still be able to finalize her tx.
-	t.Run("finalize after rejected third party finalization", func(t *testing.T) {
-		redisClient := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
-		defer redisClient.Close()
+	t.Run("retry offchain tx finalization", func(t *testing.T) {
+		// In this test, Alice submits an offchain tx, then submits an invalid checkpoint at
+		// finalization that is rejected. She then submits the right finalization request that must
+		// always succeed.
+		t.Run("retry after rejection because of invalid checkpoint tx", func(t *testing.T) {
 
-		ctx := t.Context()
-		alice := setupClientWallet(t)
-		mallory := setupClientWallet(t)
+			for _, tc := range []struct {
+				name       string
+				checkpoint func(*testing.T, string) string
+				err        string
+			}{
+				{
+					name: "malformed checkpoint",
+					checkpoint: func(*testing.T, string) string {
+						return "not-a-psbt"
+					},
+					err: "malformed checkpoint psbt",
+				},
+				{
+					name: "checkpoint with negative output",
+					checkpoint: func(t *testing.T, checkpoint string) string {
+						ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpoint), true)
+						require.NoError(t, err)
+						ptx.UnsignedTx.TxOut[0].Value = -1
+						encoded, err := ptx.B64Encode()
+						require.NoError(t, err)
+						return encoded
+					},
+					err: "negative value",
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					ctx := t.Context()
+					alice := setupClientWallet(t)
+					bob := setupClientWallet(t)
+					faucetOffchain(t, alice, 0.00021)
+					vtxos, _, err := alice.ListVtxos(ctx)
+					require.NoError(t, err)
+					require.Len(t, vtxos, 1)
 
-		faucetOffchain(t, alice, 0.00021)
-		vtxos, _, err := alice.ListVtxos(ctx)
-		require.NoError(t, err)
-		require.Len(t, vtxos, 1)
-		vtxo := vtxos[0]
-		_, aliceAddr, _, err := alice.Receive(ctx)
-		require.NoError(t, err)
+					_, aliceAddr, _, err := alice.Receive(ctx)
+					require.NoError(t, err)
+					_, bobAddr, _, err := bob.Receive(ctx)
+					require.NoError(t, err)
+					serverParams, err := alice.GetConfigData(ctx)
+					require.NoError(t, err)
+					tx, err := offchaintx.BuildAndSignTx(ctx, offchaintx.BuildAndSignTxArgs{
+						BaseArgs: offchaintx.BaseArgs{
+							ServerParams: *serverParams,
+							SignTx:       alice.SignTransaction,
+							Vtxos:        vtxos,
+							ChangeAddr:   aliceAddr.Address,
+						},
+						Receivers: []clientlib.Receiver{{To: bobAddr.Address, Amount: 1000}},
+					})
+					require.NoError(t, err)
 
-		serverParams, err := alice.GetConfigData(ctx)
-		require.NoError(t, err)
+					// Leave checkpoint signing until finalization to use the two-step flow.
+					txid, _, checkpoints, err := alice.Client().SubmitTx(ctx, tx.SignedArkTx, tx.CheckpointTxs)
+					require.NoError(t, err)
+					require.Equal(t, tx.Txid, txid)
+					require.Len(t, checkpoints, 1)
 
-		tx, err := offchaintx.BuildAndSignTx(ctx, offchaintx.BuildAndSignTxArgs{
-			BaseArgs: offchaintx.BaseArgs{
-				ServerParams: *serverParams,
-				SignTx:       alice.SignTransaction,
-				Vtxos:        []clientlib.Vtxo{vtxo},
-				ChangeAddr:   aliceAddr.Address,
-			},
-			Receivers: []clientlib.Receiver{{To: aliceAddr.Address, Amount: 1000}},
-		})
-		require.NoError(t, err)
+					spent := waitForAnySpentVtxo(t, alice)
+					require.Len(t, spent, 1)
+					require.Equal(t, vtxos[0].Outpoint, spent[0].Outpoint)
 
-		txid, _, signedCheckpoints, err := alice.Client().SubmitTx(
-			ctx, tx.SignedArkTx, tx.CheckpointTxs,
-		)
-		require.NoError(t, err)
-		require.Equal(t, tx.Txid, txid)
+					err = alice.Client().FinalizeTx(ctx, txid, []string{tc.checkpoint(t, checkpoints[0])})
+					require.ErrorContains(t, err, tc.err)
+					require.Equal(t, codes.InvalidArgument, status.Code(err))
 
-		waitUntil(t, indexerWait, "the submitted tx input to be projected as spent", func(ctx context.Context) error {
-			_, spentVtxos, err := alice.ListVtxos(ctx)
-			if err != nil {
-				return err
+					signed, err := alice.SignTransaction(ctx, checkpoints[0])
+					require.NoError(t, err)
+					err = alice.Client().FinalizeTx(ctx, txid, []string{signed})
+					require.NoError(t, err, "a rejected finalization request must allow a valid retry")
+
+					bobVtxos := waitForSpendableVtxos(t, bob, 1)
+					require.Equal(t, txid, bobVtxos[0].Txid)
+					require.EqualValues(t, 1000, bobVtxos[0].Amount)
+					_, err = sendOffChainBounded(ctx, bob, []clientlib.Receiver{{To: aliceAddr.Address, Amount: 1000}})
+					require.NoError(t, err, "the recipient must be able to spend the retried transfer")
+					waitForEmptyOffchainBalance(t, bob)
+				})
 			}
-			for _, spentVtxo := range spentVtxos {
-				if spentVtxo.Outpoint == vtxo.Outpoint {
+		})
+
+		// In this test, Alice submits an offchain tx and waits for it to be projected and evicted
+		// from the cache. Mallory, who knows nothing but the ark txid, then calls FinalizeTx with
+		// a dummy checkpoint. Her request must be rejected and Alice must still be able to
+		// finalize her tx.
+		t.Run(
+			"retry after checkpoint rejection because of invalid checkpoint tx sigs",
+			func(t *testing.T) {
+				redisClient := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+				defer redisClient.Close()
+
+				ctx := t.Context()
+				alice := setupClientWallet(t)
+				mallory := setupClientWallet(t)
+
+				faucetOffchain(t, alice, 0.00021)
+				vtxos, _, err := alice.ListVtxos(ctx)
+				require.NoError(t, err)
+				require.Len(t, vtxos, 1)
+				vtxo := vtxos[0]
+				_, aliceAddr, _, err := alice.Receive(ctx)
+				require.NoError(t, err)
+
+				serverParams, err := alice.GetConfigData(ctx)
+				require.NoError(t, err)
+
+				tx, err := offchaintx.BuildAndSignTx(ctx, offchaintx.BuildAndSignTxArgs{
+					BaseArgs: offchaintx.BaseArgs{
+						ServerParams: *serverParams,
+						SignTx:       alice.SignTransaction,
+						Vtxos:        []clientlib.Vtxo{vtxo},
+						ChangeAddr:   aliceAddr.Address,
+					},
+					Receivers: []clientlib.Receiver{{To: aliceAddr.Address, Amount: 1000}},
+				})
+				require.NoError(t, err)
+
+				txid, _, signedCheckpoints, err := alice.Client().SubmitTx(
+					ctx, tx.SignedArkTx, tx.CheckpointTxs,
+				)
+				require.NoError(t, err)
+				require.Equal(t, tx.Txid, txid)
+
+				waitUntil(t, indexerWait, "the submitted tx input to be projected as spent", func(ctx context.Context) error {
+					_, spentVtxos, err := alice.ListVtxos(ctx)
+					if err != nil {
+						return err
+					}
+					for _, spentVtxo := range spentVtxos {
+						if spentVtxo.Outpoint == vtxo.Outpoint {
+							return nil
+						}
+					}
+					return fmt.Errorf("input %s not projected as spent", vtxo.Outpoint)
+				})
+
+				waitUntil(t, serverWait, "the projected tx cache entry to be removed", func(ctx context.Context) error {
+					exists, err := redisClient.HExists(ctx, "offChainTxStore:txs", txid).Result()
+					if err != nil {
+						return err
+					}
+					if exists {
+						return fmt.Errorf("offchain tx %s still exists in cache", txid)
+					}
 					return nil
+				})
+
+				// Mallory crafts a well-formed but meaningless checkpoint: a single random input and a
+				// single output, with no signature at all.
+				var prevoutHash chainhash.Hash
+				_, err = rand.Read(prevoutHash[:])
+				require.NoError(t, err)
+				dummyTx := wire.NewMsgTx(wire.TxVersion)
+				dummyTx.AddTxIn(wire.NewTxIn(wire.NewOutPoint(&prevoutHash, 0), nil, nil))
+				dummyTx.AddTxOut(wire.NewTxOut(1000, txutils.ANCHOR_PKSCRIPT))
+				dummyPtx, err := psbt.NewFromUnsignedTx(dummyTx)
+				require.NoError(t, err)
+				dummyCheckpoint, err := dummyPtx.B64Encode()
+				require.NoError(t, err)
+
+				err = mallory.Client().FinalizeTx(ctx, txid, []string{dummyCheckpoint})
+				require.Error(t, err)
+				require.ErrorContains(t, err, "invalid signature")
+
+				finalCheckpoints := make([]string, 0, len(signedCheckpoints))
+				for _, checkpoint := range signedCheckpoints {
+					finalCheckpoint, err := alice.SignTransaction(ctx, checkpoint)
+					require.NoError(t, err)
+					finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
 				}
-			}
-			return fmt.Errorf("input %s not projected as spent", vtxo.Outpoint)
-		})
 
-		waitUntil(t, serverWait, "the projected tx cache entry to be removed", func(ctx context.Context) error {
-			exists, err := redisClient.HExists(ctx, "offChainTxStore:txs", txid).Result()
-			if err != nil {
-				return err
-			}
-			if exists {
-				return fmt.Errorf("offchain tx %s still exists in cache", txid)
-			}
-			return nil
-		})
+				err = alice.Client().FinalizeTx(ctx, txid, finalCheckpoints)
+				require.NoError(
+					t, err, "a finalization rejected to a third party must not prevent the owner's one",
+				)
 
-		// Mallory crafts a well-formed but meaningless checkpoint: a single random input and a
-		// single output, with no signature at all.
-		var prevoutHash chainhash.Hash
-		_, err = rand.Read(prevoutHash[:])
-		require.NoError(t, err)
-		dummyTx := wire.NewMsgTx(wire.TxVersion)
-		dummyTx.AddTxIn(wire.NewTxIn(wire.NewOutPoint(&prevoutHash, 0), nil, nil))
-		dummyTx.AddTxOut(wire.NewTxOut(1000, txutils.ANCHOR_PKSCRIPT))
-		dummyPtx, err := psbt.NewFromUnsignedTx(dummyTx)
-		require.NoError(t, err)
-		dummyCheckpoint, err := dummyPtx.B64Encode()
-		require.NoError(t, err)
-
-		err = mallory.Client().FinalizeTx(ctx, txid, []string{dummyCheckpoint})
-		require.Error(t, err)
-		require.ErrorContains(t, err, "invalid signature")
-
-		finalCheckpoints := make([]string, 0, len(signedCheckpoints))
-		for _, checkpoint := range signedCheckpoints {
-			finalCheckpoint, err := alice.SignTransaction(ctx, checkpoint)
-			require.NoError(t, err)
-			finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
-		}
-
-		err = alice.Client().FinalizeTx(ctx, txid, finalCheckpoints)
-		require.NoError(
-			t, err, "a finalization rejected to a third party must not prevent the owner's one",
-		)
-
-		waitUntil(t, indexerWait, "the finalized tx output to be projected", func(ctx context.Context) error {
-			spendableVtxos, _, err := alice.ListVtxos(ctx)
-			if err != nil {
-				return err
-			}
-			for _, spendableVtxo := range spendableVtxos {
-				if spendableVtxo.Txid == txid {
-					return nil
-				}
-			}
-			return fmt.Errorf("no spendable output for finalized tx %s", txid)
-		})
+				waitUntil(t, indexerWait, "the finalized tx output to be projected", func(ctx context.Context) error {
+					spendableVtxos, _, err := alice.ListVtxos(ctx)
+					if err != nil {
+						return err
+					}
+					for _, spendableVtxo := range spendableVtxos {
+						if spendableVtxo.Txid == txid {
+							return nil
+						}
+					}
+					return fmt.Errorf("no spendable output for finalized tx %s", txid)
+				})
+			})
 	})
 
 	// In these tests, Alice submits an offchain tx and waits for the inputs to be swept before
@@ -2531,7 +2622,9 @@ func TestOffchainTx(t *testing.T) {
 		require.Empty(t, signedCheckpoints)
 	})
 
-	t.Run("tampered input metadata", func(t *testing.T) {
+	// In this test, we ensure that if the signed arkade tx contains any tampered input metadata,
+	// the server rejects the request.
+	t.Run("reject request with tampered arkade tx input metadata", func(t *testing.T) {
 		ctx := t.Context()
 		alice := setupClientWallet(t)
 
@@ -2630,6 +2723,111 @@ func TestOffchainTx(t *testing.T) {
 				require.ErrorContains(t, err, "tapscript leaf version mismatch")
 			}
 		})
+	})
+
+	// In this test, we ensure that for both the 2-step and 1 shot cases, the server finalizes the
+	// offchain tx if checkpoints are correctly signed but contain tampered metadata that should
+	// just be ignored.
+	t.Run("finalize offchain tx with tampered checkpoint tx", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			oneShot    bool
+			keyPathSig bool
+			sighash    txscript.SigHashType
+		}{
+			{name: "two step with tampered key path signature", keyPathSig: true},
+			{name: "one shot with tampered key path signature", oneShot: true, keyPathSig: true},
+			{name: "two step with tampered sighash", sighash: txscript.SigHashAll},
+			{name: "one shot with tampered sighash", oneShot: true, sighash: txscript.SigHashAll},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				ctx := t.Context()
+				alice := setupClientWallet(t)
+				bob := setupClientWallet(t)
+				faucetOffchain(t, alice, 0.00021)
+				vtxos, _, err := alice.ListVtxos(ctx)
+				require.NoError(t, err)
+				require.Len(t, vtxos, 1)
+
+				_, aliceAddr, _, err := alice.Receive(ctx)
+				require.NoError(t, err)
+				_, bobAddr, _, err := bob.Receive(ctx)
+				require.NoError(t, err)
+				serverParams, err := alice.GetConfigData(ctx)
+				require.NoError(t, err)
+				tx, err := offchaintx.BuildAndSignTx(ctx, offchaintx.BuildAndSignTxArgs{
+					BaseArgs: offchaintx.BaseArgs{
+						ServerParams: *serverParams,
+						SignTx:       alice.SignTransaction,
+						Vtxos:        vtxos,
+						ChangeAddr:   aliceAddr.Address,
+					},
+					Receivers: []clientlib.Receiver{{To: bobAddr.Address, Amount: 1000}},
+				})
+				require.NoError(t, err)
+				require.Len(t, tx.CheckpointTxs, 1)
+
+				checkpoint := tx.CheckpointTxs[0]
+				if tc.oneShot {
+					checkpoint, err = alice.SignTransaction(ctx, checkpoint)
+					require.NoError(t, err)
+				}
+				ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpoint), true)
+				require.NoError(t, err)
+				// Mutate metadata after any client signing, preserving its DEFAULT
+				// signature and the txid. Keep the key-path and ALL cases separate so
+				// each metadata regression has only one cause.
+				ptx.Inputs[0].SighashType = tc.sighash
+				if tc.keyPathSig {
+					ptx.Inputs[0].TaprootKeySpendSig = make([]byte, 64)
+				}
+				checkpoint, err = ptx.B64Encode()
+				require.NoError(t, err)
+
+				txid, _, checkpoints, err := alice.Client().SubmitTx(
+					ctx, tx.SignedArkTx, []string{checkpoint},
+				)
+				require.NoError(t, err)
+				require.Equal(t, tx.Txid, txid)
+				require.Len(t, checkpoints, 1)
+				returned, err := psbt.NewFromRawBytes(strings.NewReader(checkpoints[0]), true)
+				require.NoError(t, err)
+				require.Equal(t, ptx.UnsignedTx.TxID(), returned.UnsignedTx.TxID())
+				input := returned.Inputs[0]
+				assert.Equal(
+					t, txscript.SigHashDefault, input.SighashType,
+					"checkpoint signing must use the rebuilt input's sighash type",
+				)
+				assert.Empty(
+					t, input.TaprootKeySpendSig,
+					"unrelated client metadata must not survive checkpoint rebuilding",
+				)
+
+				signerIndex := slices.IndexFunc(
+					input.TaprootScriptSpendSig, func(sig *psbt.TaprootScriptSpendSig,
+					) bool {
+						return bytes.Equal(
+							sig.XOnlyPubKey, schnorr.SerializePubKey(serverParams.SignerPubKey),
+						)
+					})
+				require.NotEqual(
+					t, -1, signerIndex, "checkpoint must contain the server's signature",
+				)
+				assert.Equal(
+					t, txscript.SigHashDefault, input.TaprootScriptSpendSig[signerIndex].SigHash,
+					"the server must sign with DEFAULT, not merely reset PSBT metadata afterwards",
+				)
+
+				if !tc.oneShot {
+					signed, err := alice.SignTransaction(ctx, checkpoints[0])
+					require.NoError(t, err)
+					require.NoError(t, alice.Client().FinalizeTx(ctx, txid, []string{signed}))
+				}
+				bobVtxos := waitForSpendableVtxos(t, bob, 1)
+				require.Equal(t, txid, bobVtxos[0].Txid)
+				require.EqualValues(t, 1000, bobVtxos[0].Amount)
+			})
+		}
 	})
 
 	// In this test Alice sends to Bob offchain leaving a fee and Bob tries to unroll
@@ -2814,6 +3012,97 @@ func TestOffchainTx(t *testing.T) {
 			waitForBalance(t, alice, indexerWait, "alice's offchain balance to be 800",
 				func(b *types.Balance) bool { return b.OffchainBalance.Total == 800 })
 		})
+	})
+
+	// In this test, Alice spends her funds by calling only SubmitTx, passing the checkpoint txs
+	// already signed so the server can cosign and finalize all in one shot.
+	t.Run("one shot", func(t *testing.T) {
+		for _, tc := range []struct {
+			name      string
+			numInputs int
+			amount    uint64
+		}{
+			{
+				name:      "tx with single input",
+				numInputs: 1,
+				amount:    1_000,
+			},
+			{
+				name:      "tx with three inputs",
+				numInputs: 3,
+				amount:    50_000,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				ctx := t.Context()
+				alice := setupClientWallet(t)
+				bob := setupClientWallet(t)
+
+				// 50,000 sats requires all three 21,000-sat inputs in the multi-input cases.
+				for range tc.numInputs {
+					faucetOffchain(t, alice, 0.00021)
+				}
+				vtxos := waitForSpendableVtxos(t, alice, tc.numInputs)
+
+				_, aliceAddr, _, err := alice.Receive(ctx)
+				require.NoError(t, err)
+				_, bobAddr, _, err := bob.Receive(ctx)
+				require.NoError(t, err)
+				serverParams, err := alice.GetConfigData(ctx)
+				require.NoError(t, err)
+
+				tx, err := offchaintx.BuildAndSignTx(ctx, offchaintx.BuildAndSignTxArgs{
+					BaseArgs: offchaintx.BaseArgs{
+						ServerParams: *serverParams,
+						SignTx:       alice.SignTransaction,
+						Vtxos:        vtxos,
+						ChangeAddr:   aliceAddr.Address,
+					},
+					Receivers: []clientlib.Receiver{{To: bobAddr.Address, Amount: tc.amount}},
+				})
+				require.NoError(t, err)
+				require.Len(t, tx.SelectedCoins, tc.numInputs)
+				require.Len(t, tx.CheckpointTxs, tc.numInputs)
+
+				signedCheckpoints := make([]string, 0, len(tx.CheckpointTxs))
+				for _, checkpoint := range tx.CheckpointTxs {
+					signed, err := alice.SignTransaction(ctx, checkpoint)
+					require.NoError(t, err)
+					signedCheckpoints = append(signedCheckpoints, signed)
+				}
+
+				txid, _, finalCheckpoints, err := alice.Client().SubmitTx(
+					ctx, tx.SignedArkTx, signedCheckpoints,
+				)
+				require.NoError(t, err)
+				require.Equal(t, tx.Txid, txid)
+				require.Len(t, finalCheckpoints, tc.numInputs)
+
+				bobVtxos := waitForSpendableVtxos(t, bob, 1)
+				require.Equal(t, txid, bobVtxos[0].Txid)
+				require.EqualValues(t, tc.amount, bobVtxos[0].Amount)
+
+				outpoints := make([]clientlib.Outpoint, 0, len(vtxos))
+				for _, vtxo := range vtxos {
+					outpoints = append(outpoints, vtxo.Outpoint)
+				}
+				require.EventuallyWithT(t, func(t *assert.CollectT) {
+					resp, err := alice.Indexer().GetVtxos(ctx,
+						clientlib.WithOutpoints(outpoints),
+					)
+					require.NoError(t, err)
+					require.NotNil(t, resp)
+					require.Len(t, resp.Vtxos, tc.numInputs)
+					for _, vtxo := range resp.Vtxos {
+						assert.True(t, vtxo.Spent, "input %v should be spent", vtxo.Outpoint)
+						assert.Equal(
+							t, txid, vtxo.ArkTxid,
+							"input %v spent by wrong transaction", vtxo.Outpoint,
+						)
+					}
+				}, 30*time.Second, 100*time.Millisecond)
+			})
+		}
 	})
 }
 
@@ -3340,6 +3629,16 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 // TestSendToConditionMultisigClosure shows how to send an ark address that includes a closure
 // including a custom condition like the revealing of a preimage
 func TestSendToConditionMultisigClosure(t *testing.T) {
+	t.Run("two step", func(t *testing.T) {
+		testSendToConditionMultisigClosure(t, false)
+	})
+	t.Run("one shot", func(t *testing.T) {
+		testSendToConditionMultisigClosure(t, true)
+	})
+}
+
+func testSendToConditionMultisigClosure(t *testing.T, oneShot bool) {
+	t.Helper()
 	ctx := t.Context()
 
 	alice := setupClientWallet(t)
@@ -3528,14 +3827,29 @@ func TestSendToConditionMultisigClosure(t *testing.T) {
 
 	checkpoints := make([]string, 0, len(checkpointsPtx))
 	for _, ptx := range checkpointsPtx {
+		if oneShot {
+			err = txutils.SetArkPsbtField(ptx, 0, txutils.ConditionWitnessField, wire.TxWitness{preimage[:]})
+			require.NoError(t, err)
+		}
 		encoded, err := ptx.B64Encode()
 		require.NoError(t, err)
+		if oneShot {
+			encoded, err = bob.SignTransaction(ctx, encoded)
+			require.NoError(t, err)
+		}
 		checkpoints = append(checkpoints, encoded)
 	}
 
 	// Submit the transaction to the server and finalize
 	bobTxid, _, signedCheckpoints, err := aliceClient.SubmitTx(ctx, signedTx, checkpoints)
 	require.NoError(t, err)
+	if oneShot {
+		vtxos := waitForSpendableVtxos(t, alice, 2)
+		require.True(t, slices.ContainsFunc(vtxos, func(v clientlib.Vtxo) bool {
+			return v.Txid == bobTxid && v.Amount == sendAmount
+		}))
+		return
+	}
 
 	finalCheckpoints := make([]string, 0, len(signedCheckpoints))
 	for _, checkpoint := range signedCheckpoints {

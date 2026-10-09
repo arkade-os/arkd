@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,6 +28,28 @@ import (
 
 func TestUpdateProjectionsAfterOffchainTxEvents(t *testing.T) {
 	ctx := t.Context()
+	t.Run("batched finalization spends its input", func(t *testing.T) {
+		svc := newProjectionTestService(t, newProjectionTestDBs(t))
+		_, events := finalizedSubDustEvents(t)
+		accepted := events[1].(domain.OffchainTxAccepted)
+		var checkpoint string
+		for _, checkpoint = range accepted.SignedCheckpointTxs {
+			break
+		}
+		ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpoint), true)
+		require.NoError(t, err)
+		prevout := ptx.UnsignedTx.TxIn[0].PreviousOutPoint
+		input := domain.Outpoint{Txid: prevout.Hash.String(), VOut: prevout.Index}
+		require.NoError(t, svc.Vtxos().AddVtxos(
+			ctx, []domain.Vtxo{{Outpoint: input, Amount: 1000}},
+		))
+
+		svc.(*service).updateProjectionsAfterOffchainTxEvents(events)
+		vtxos, err := svc.Vtxos().GetVtxos(ctx, []domain.Outpoint{input})
+		require.NoError(t, err)
+		require.Len(t, vtxos, 1)
+		require.True(t, vtxos[0].Spent)
+	})
 
 	// Covers the finalized-offchain-tx projection's swept/dust persistence. The swept state is
 	// derived from swept_vtxo (non-dust outputs of a swept/expired tx) or from a dust marker

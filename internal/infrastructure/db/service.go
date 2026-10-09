@@ -602,7 +602,7 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 		log.Debugf("added or updated offchain tx %s", offchainTx.ArkTxid)
 
 		switch {
-		case offchainTx.IsAccepted():
+		case offchainTx.IsAccepted(), offchainTx.IsFinalized():
 			spentVtxos := make(map[domain.Outpoint]string)
 			for _, tx := range offchainTx.CheckpointTxs {
 				txid, ins, _, err := s.txDecoder.DecodeTx(tx)
@@ -622,7 +622,10 @@ func (s *service) updateProjectionsAfterOffchainTxEvents(events []domain.Event) 
 				return false
 			}
 			log.Debugf("spent %d vtxos", len(spentVtxos))
-		case offchainTx.IsFinalized():
+			if offchainTx.IsAccepted() {
+				return true
+			}
+
 			txid, _, outs, err := s.txDecoder.DecodeTx(offchainTx.ArkTx)
 			if err != nil {
 				log.WithError(err).Warn("failed to decode ark tx")

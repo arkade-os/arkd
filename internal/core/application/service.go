@@ -316,9 +316,8 @@ func (s *service) registerEventHandlers() {
 
 	s.repoManager.RegisterOffchainTxUpdateHandler(
 		func(offchainTx domain.OffchainTx) {
-			// After an accepted offchain tx is projected, the DB prevents double-spends
-			// Evict the redundent cache entry
-			if offchainTx.IsAccepted() {
+			// After an accepted or finalized offchain tx is projected, the DB prevents double-spends.
+			if offchainTx.IsAccepted() || offchainTx.IsFinalized() {
 				if err := s.cache.OffchainTxs().Remove(
 					context.Background(), offchainTx.ArkTxid,
 				); err != nil {
@@ -548,6 +547,7 @@ func (s *service) SubmitOffchainTx(
 	checkpointPsbts := make(map[string]*psbt.Packet) // txid -> psbt
 	spentVtxoKeys := make([]domain.Outpoint, 0)
 	checkpointTxsByVtxoKey := make(map[domain.Outpoint]string)
+	oneShot := false
 	for _, tx := range unsignedCheckpointTxs {
 		checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 		if err != nil {
@@ -574,6 +574,9 @@ func (s *service) SubmitOffchainTx(
 		}
 		checkpointTxs[txid] = tx
 		checkpointPsbts[txid] = checkpointPtx
+		for _, input := range checkpointPtx.Inputs {
+			oneShot = oneShot || len(input.TaprootScriptSpendSig) > 0
+		}
 		if _, seen := checkpointTxsByVtxoKey[vtxoKey]; seen {
 			return nil, errors.INVALID_PSBT_INPUT.New(
 				"duplicated vtxo input %s", vtxoKey.String(),
@@ -690,6 +693,9 @@ func (s *service) SubmitOffchainTx(
 	changes = []domain.Event{event}
 
 	defer func() {
+		if len(changes) == 0 || (oneShot && structErr != nil) {
+			return
+		}
 		if structErr != nil {
 			change := offchainTx.Fail(structErr)
 			changes = append(changes, change)
@@ -1175,7 +1181,24 @@ func (s *service) SubmitOffchainTx(
 	signedCheckpointTxsMap := make(map[string]string)
 	// sign the checkpoint txs
 	for _, rebuiltCheckpointTx := range rebuiltCheckpointTxs {
-		unsignedCheckpointTx, err := rebuiltCheckpointTx.B64Encode()
+		checkpointTxid := rebuiltCheckpointTx.UnsignedTx.TxID()
+		if oneShot {
+			submitted := checkpointPsbts[checkpointTxid]
+			rebuiltCheckpointTx.Inputs[0].TaprootScriptSpendSig = submitted.Inputs[0].TaprootScriptSpendSig
+			witness, err := txutils.GetArkPsbtConditionWitness(submitted, 0)
+			if err != nil {
+				return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
+					WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: 0})
+			}
+			if witness != nil {
+				if err := txutils.SetArkPsbtField(
+					rebuiltCheckpointTx, 0, txutils.ConditionWitnessField, witness,
+				); err != nil {
+					return nil, errors.INTERNAL_ERROR.Wrap(err)
+				}
+			}
+		}
+		checkpointTx, err := rebuiltCheckpointTx.B64Encode()
 		if err != nil {
 			return nil, errors.INTERNAL_ERROR.New(
 				"failed to encode checkpoint tx: %w", err,
@@ -1183,8 +1206,15 @@ func (s *service) SubmitOffchainTx(
 				"checkpoint_tx": rebuiltCheckpointTx,
 			})
 		}
+		if oneShot {
+			valid, _, err := s.builder.VerifyVtxoTapscriptSigs(checkpointTx, false)
+			if err != nil || !valid {
+				return nil, errors.INVALID_SIGNATURE.New("invalid signature in checkpoint tx %s", checkpointTxid).
+					WithMetadata(errors.InvalidSignatureMetadata{Tx: checkpointTx})
+			}
+		}
 		signedCheckpointTx, err := s.signer.SignTransactionTapscript(
-			ctx, unsignedCheckpointTx, nil,
+			ctx, checkpointTx, nil,
 		)
 		if err != nil {
 			return nil, errors.INTERNAL_ERROR.New("failed to sign checkpoint tx: %w", err).
@@ -1318,17 +1348,40 @@ func (s *service) SubmitOffchainTx(
 		}
 	}
 
+	signedCheckpointTxs := make([]string, 0, len(signedCheckpointTxsMap))
+	for _, tx := range signedCheckpointTxsMap {
+		signedCheckpointTxs = append(signedCheckpointTxs, tx)
+	}
+	if oneShot {
+		finalized, err := s.finalizeOffchainTx(ctx, offchainTx, signedCheckpointTxs)
+		if err != nil {
+			return nil, err
+		}
+		changes = append(changes, change, finalized)
+	}
+
 	if err := s.cache.OffchainTxs().Add(ctx, *offchainTx); err != nil {
 		return nil, errors.INTERNAL_ERROR.New("something went wrong").
 			WithMetadata(map[string]any{"ark_txid": offchainTx.ArkTxid})
 	}
 
-	// apply Accepted event only after verifying the spent vtxos
-	changes = append(changes, change)
-
-	signedCheckpointTxs := make([]string, 0, len(signedCheckpointTxsMap))
-	for _, tx := range signedCheckpointTxsMap {
-		signedCheckpointTxs = append(signedCheckpointTxs, tx)
+	if oneShot {
+		toSave := changes
+		changes = nil
+		if err := s.repoManager.Events().Save(
+			ctx, domain.OffchainTxTopic, txid, toSave,
+		); err != nil {
+			if removeErr := s.cache.OffchainTxs().Remove(
+				context.Background(), txid,
+			); removeErr != nil {
+				log.WithError(removeErr).Errorf(
+					"failed to remove offchain tx %s after event save failed", txid,
+				)
+			}
+			return nil, errors.INTERNAL_ERROR.New("failed to save offchain tx events: %w", err)
+		}
+	} else {
+		changes = append(changes, change)
 	}
 
 	return &AcceptedOffchainTx{
@@ -1346,7 +1399,6 @@ func (s *service) FinalizeOffchainTx(
 		if err != nil {
 			return errors.INVALID_CHECKPOINT_PSBT.New("malformed checkpoint psbt")
 		}
-
 		if err := blockchain.CheckTransactionSanity(
 			btcutil.NewTx(checkpointPtx.UnsignedTx),
 		); err != nil {
@@ -1385,20 +1437,32 @@ func (s *service) FinalizeOffchainTx(
 		}
 	}()
 
+	change, structErr := s.finalizeOffchainTx(ctx, offchainTx, finalCheckpointTxs)
+	if structErr != nil {
+		return structErr
+	}
+	changes = []domain.Event{change}
+	return nil
+}
+
+func (s *service) finalizeOffchainTx(
+	ctx context.Context, offchainTx *domain.OffchainTx, finalCheckpointTxs []string,
+) (domain.Event, errors.Error) {
+	txid := offchainTx.ArkTxid
 	decodedCheckpointTxs := make(map[string]*psbt.Packet)
 	spentVtxoKeys := make([]domain.Outpoint, 0, len(finalCheckpointTxs))
 	for _, checkpoint := range finalCheckpointTxs {
 		// verify the tapscript signatures
 		valid, ptx, err := s.builder.VerifyVtxoTapscriptSigs(checkpoint, true)
 		if err != nil || !valid {
-			return errors.INVALID_SIGNATURE.New(
+			return nil, errors.INVALID_SIGNATURE.New(
 				"invalid signature in checkpoint tx %s", checkpoint,
 			).WithMetadata(errors.InvalidSignatureMetadata{Tx: checkpoint})
 		}
 
 		checkpointTxid := ptx.UnsignedTx.TxID()
 		if len(ptx.UnsignedTx.TxIn) < 1 {
-			return errors.INVALID_PSBT_MISSING_INPUT.New(
+			return nil, errors.INVALID_PSBT_MISSING_INPUT.New(
 				"invalid checkpoint tx %s", checkpointTxid,
 			).WithMetadata(errors.PsbtInputMetadata{Txid: checkpointTxid})
 		}
@@ -1414,7 +1478,7 @@ func (s *service) FinalizeOffchainTx(
 	// re-check spent vtxos, reject if any input is unrolled
 	spentVtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, spentVtxoKeys)
 	if err != nil {
-		return errors.INTERNAL_ERROR.New("failed to fetch vtxos: %w", err).
+		return nil, errors.INTERNAL_ERROR.New("failed to fetch vtxos: %w", err).
 			WithMetadata(map[string]any{"vtxos": spentVtxoKeys})
 	}
 
@@ -1426,7 +1490,7 @@ func (s *service) FinalizeOffchainTx(
 		unrolledOutpoints = append(unrolledOutpoints, vtxo.Outpoint.String())
 	}
 	if len(unrolledOutpoints) > 0 {
-		return errors.VTXO_ALREADY_UNROLLED.New("vtxo(s) already unrolled").
+		return nil, errors.VTXO_ALREADY_UNROLLED.New("vtxo(s) already unrolled").
 			WithMetadata(errors.VtxoMetadata{VtxoOutpoints: unrolledOutpoints})
 	}
 
@@ -1434,7 +1498,7 @@ func (s *service) FinalizeOffchainTx(
 
 	arkTx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
 	if err != nil {
-		return errors.INVALID_ARK_PSBT.New("failed to parse ark tx: %w", err).
+		return nil, errors.INVALID_ARK_PSBT.New("failed to parse ark tx: %w", err).
 			WithMetadata(errors.PsbtMetadata{Tx: offchainTx.ArkTx})
 	}
 
@@ -1442,7 +1506,7 @@ func (s *service) FinalizeOffchainTx(
 		checkpointTxid := arkTx.UnsignedTx.TxIn[inIndex].PreviousOutPoint.Hash.String()
 		checkpointTx, ok := decodedCheckpointTxs[checkpointTxid]
 		if !ok {
-			return errors.INVALID_PSBT_INPUT.New("tx %s not found", checkpointTxid).
+			return nil, errors.INVALID_PSBT_INPUT.New("tx %s not found", checkpointTxid).
 				WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: inIndex})
 		}
 
@@ -1450,11 +1514,11 @@ func (s *service) FinalizeOffchainTx(
 			arkTx, inIndex, txutils.VtxoTaprootTreeField,
 		)
 		if err != nil {
-			return errors.INVALID_PSBT_INPUT.New("missing taptree on input %d", inIndex).
+			return nil, errors.INVALID_PSBT_INPUT.New("missing taptree on input %d", inIndex).
 				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 		if len(taprootTreeField) <= 0 {
-			return errors.INVALID_PSBT_INPUT.New("missing taproot tree").
+			return nil, errors.INVALID_PSBT_INPUT.New("missing taproot tree").
 				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 		taprootTree := taprootTreeField[0]
@@ -1462,29 +1526,29 @@ func (s *service) FinalizeOffchainTx(
 		// verify taproot tree of ark tx = script pubkey of checkpoint tx
 		vtxoScript, err := script.ParseVtxoScript(taprootTree)
 		if err != nil {
-			return errors.INVALID_PSBT_INPUT.New("invalid ark taproot tree: %w", err).
+			return nil, errors.INVALID_PSBT_INPUT.New("invalid ark taproot tree: %w", err).
 				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 
 		tapKey, _, err := vtxoScript.TapTree()
 		if err != nil {
-			return errors.INVALID_PSBT_INPUT.New("failed to compute taproot tree: %w", err).
+			return nil, errors.INVALID_PSBT_INPUT.New("failed to compute taproot tree: %w", err).
 				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 
 		expectedOutputScript, err := script.P2TRScript(tapKey)
 		if err != nil {
-			return errors.INVALID_PSBT_INPUT.New("failed to compute P2TR script: %w", err).
+			return nil, errors.INVALID_PSBT_INPUT.New("failed to compute P2TR script: %w", err).
 				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 
 		if len(checkpointTx.UnsignedTx.TxOut) == 0 {
-			return errors.INVALID_PSBT_INPUT.New("checkpoint tx has no outputs").
+			return nil, errors.INVALID_PSBT_INPUT.New("checkpoint tx has no outputs").
 				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 		checkpointOutputScript := checkpointTx.UnsignedTx.TxOut[0].PkScript
 		if !bytes.Equal(checkpointOutputScript, expectedOutputScript) {
-			return errors.INVALID_PSBT_INPUT.New(
+			return nil, errors.INVALID_PSBT_INPUT.New(
 				"invalid output script: got %x expected %x",
 				checkpointOutputScript, expectedOutputScript,
 			).WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
@@ -1492,7 +1556,7 @@ func (s *service) FinalizeOffchainTx(
 
 		encodedTapTree, err := taprootTree.Encode()
 		if err != nil {
-			return errors.INVALID_PSBT_INPUT.New("failed to encode taptree: %w", err).
+			return nil, errors.INVALID_PSBT_INPUT.New("failed to encode taptree: %w", err).
 				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 
@@ -1503,7 +1567,7 @@ func (s *service) FinalizeOffchainTx(
 		var b64checkpointTx string
 		b64checkpointTx, err = checkpointTx.B64Encode()
 		if err != nil {
-			return errors.INTERNAL_ERROR.New("failed to encode checkpoint tx: %w", err).
+			return nil, errors.INTERNAL_ERROR.New("failed to encode checkpoint tx: %w", err).
 				WithMetadata(map[string]any{
 					"checkpoint_tx": checkpointTx,
 				})
@@ -1515,14 +1579,12 @@ func (s *service) FinalizeOffchainTx(
 	var event domain.Event
 	event, err = offchainTx.Finalize(finalCheckpointTxsMap)
 	if err != nil {
-		return errors.INTERNAL_ERROR.New("failed to finalize offchain tx: %w", err).
+		return nil, errors.INTERNAL_ERROR.New("failed to finalize offchain tx: %w", err).
 			WithMetadata(map[string]any{
 				"final_checkpoint_txs": finalCheckpointTxsMap,
 			})
 	}
-	changes = []domain.Event{event}
-
-	return nil
+	return event, nil
 }
 
 func (s *service) GetPendingOffchainTxs(

@@ -222,6 +222,17 @@ func (m *mockedRepoManager) Close() {
 func (m *mockedRepoManager) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {
 }
 
+type mockedEventRepo struct {
+	mock.Mock
+	domain.EventRepository // unimplemented methods panic on call
+}
+
+func (m *mockedEventRepo) Save(
+	ctx context.Context, topic, id string, events []domain.Event,
+) error {
+	return m.Called(ctx, topic, id, events).Error(0)
+}
+
 type mockedOffchainTxRepo struct {
 	mock.Mock
 	domain.OffchainTxRepository // unimplemented methods panic on call

@@ -365,7 +365,6 @@ func (h *handler) SubmitTx(
 	if err != nil {
 		return nil, err
 	}
-
 	return &arkv1.SubmitTxResponse{
 		ArkTxid:             tx.TxId,
 		FinalArkTx:          tx.FinalArkTx,
