@@ -2307,10 +2307,24 @@ func (s *service) RegisterIntent(
 			})
 		}
 
-		// check if the operator pubkey has been set as cosigner
-		operatorPubkeyHex := hex.EncodeToString(s.operatorPubkey.SerializeCompressed())
+		// check if the operator pubkey has been set as cosigner. Keys are compared by x-only
+		// form because the tree dedups cosigners that way, merging any other encoding of the
+		// operator key with the operator's own.
+		operatorXOnly := schnorr.SerializePubKey(s.operatorPubkey)
 		for _, pubkey := range message.CosignersPublicKeys {
-			if pubkey == operatorPubkeyHex {
+			buf, err := hex.DecodeString(pubkey)
+			var cosigner *btcec.PublicKey
+			if err == nil {
+				cosigner, err = btcec.ParsePubKey(buf)
+			}
+			if err != nil {
+				return "", errors.INVALID_INTENT_MESSAGE.New(
+					"invalid cosigner pubkey %s: %s", pubkey, err,
+				).WithMetadata(errors.InvalidIntentMessageMetadata{
+					Message: message.BaseMessage,
+				})
+			}
+			if bytes.Equal(schnorr.SerializePubKey(cosigner), operatorXOnly) {
 				return "", errors.INVALID_INTENT_MESSAGE.New(
 					"invalid cosigner pubkeys: %x is used by us", pubkey,
 				).WithMetadata(errors.InvalidIntentMessageMetadata{
@@ -3537,8 +3551,12 @@ func (s *service) startFinalization(
 	for _, intent := range registeredIntents {
 		intents = append(intents, intent.Intent)
 		boardingInputs = append(boardingInputs, intent.BoardingInputs...)
-		for _, pubkey := range intent.CosignersPublicKeys {
-			uniqueSignerPubkeys[pubkey] = struct{}{}
+		// Intents with no vtxo get no leaf, and clients skip tree signing for them even when
+		// they registered cosigner keys.
+		if intent.HasOffchainReceiver() {
+			for _, pubkey := range intent.CosignersPublicKeys {
+				uniqueSignerPubkeys[pubkey] = struct{}{}
+			}
 		}
 
 		cosignersPublicKeys = append(

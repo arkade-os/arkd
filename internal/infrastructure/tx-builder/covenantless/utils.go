@@ -53,6 +53,12 @@ func getOutputVtxosLeaves(
 
 	leaves := make([]tree.Leaf, 0)
 	for i, intent := range intents {
+		// A leaf with no vtxo would put a 0-sat output next to the anchor in its parent tx, and
+		// two dust outputs make that tx non-standard, blocking the unroll of its siblings.
+		if !intent.HasOffchainReceiver() {
+			continue
+		}
+
 		leafOutputs := make([]tree.LeafOutput, 0)
 
 		for _, receiver := range intent.Receivers {

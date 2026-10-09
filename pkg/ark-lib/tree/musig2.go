@@ -11,6 +11,7 @@ import (
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
+	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
@@ -495,13 +496,30 @@ func NewTreeCoordinatorSession(
 		return nil, err
 	}
 
+	txs := treeToIndexedTxs(vtxoTree, make(map[string]*psbt.Packet))
+
+	// AggregateKeys falls back to a plain taproot key for a single cosigner, while musig2
+	// signing always applies the key aggregation coefficient, so the combined signature would
+	// not verify against that key.
+	for txid, tx := range txs {
+		cosigners, err := txutils.ParseCosignerKeysFromArkPsbt(tx, 0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract cosigners from tx %s: %s", txid, err)
+		}
+		if len(cosigners) < 2 {
+			return nil, arkerrors.NOT_ENOUGH_TREE_TX_COSIGNERS.New(
+				"tx %s has %d cosigner(s), musig2 signing needs at least 2", txid, len(cosigners),
+			)
+		}
+	}
+
 	return &treeCoordinatorSession{
 		scriptRoot:            batchOutSweepClosure,
 		nonces:                make(map[string]TreeNonces),
 		sigs:                  make(map[string]TreePartialSigs),
 		prevoutFetcherFactory: prevoutFetcherFactory,
 		vtxoTree:              vtxoTree,
-		txs:                   treeToIndexedTxs(vtxoTree, make(map[string]*psbt.Packet)),
+		txs:                   txs,
 	}, nil
 }
 

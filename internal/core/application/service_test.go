@@ -900,6 +900,59 @@ func TestRegisterIntent(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("reject invalid cosigner keys and the operator key in any encoding", func(t *testing.T) {
+		operatorPubkey := testPubkey(t)
+		flippedParity := operatorPubkey.SerializeCompressed()
+		flippedParity[0] ^= 1
+
+		tests := []struct {
+			description string
+			cosigner    string
+			expectedErr string
+		}{
+			{
+				"compressed",
+				hex.EncodeToString(operatorPubkey.SerializeCompressed()), "is used by us",
+			},
+			{"compressed with flipped parity", hex.EncodeToString(flippedParity), "is used by us"},
+			{
+				"uncompressed",
+				hex.EncodeToString(operatorPubkey.SerializeUncompressed()), "is used by us",
+			},
+			{"not a pubkey", "zzzz", "invalid cosigner pubkey"},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.description, func(t *testing.T) {
+				message := intent.RegisterMessage{
+					BaseMessage:         intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
+					CosignersPublicKeys: []string{tt.cosigner},
+				}
+				encodedMessage, err := message.Encode()
+				require.NoError(t, err)
+
+				receiverScript, err := script.P2TRScript(testPubkey(t))
+				require.NoError(t, err)
+				proof := testNoteIntentProof(t, encodedMessage, &wire.TxOut{
+					Value: int64(testDust) * 2, PkScript: receiverScript,
+				})
+
+				vtxos := &mockedVtxoRepo{}
+				vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return(nil, nil)
+				repos := &mockedRepoManager{}
+				repos.On("Vtxos").Return(vtxos)
+
+				svc := newRegisterIntentTestService(t, repos)
+				svc.operatorPubkey = operatorPubkey
+
+				_, appErr := svc.RegisterIntent(t.Context(), *proof, message)
+				require.Error(t, appErr)
+				require.Equal(t, errors.INVALID_INTENT_MESSAGE.Code, appErr.Code())
+				require.ErrorContains(t, appErr, tt.expectedErr)
+			})
+		}
+	})
 }
 
 func TestSubmitOffchainTx(t *testing.T) {

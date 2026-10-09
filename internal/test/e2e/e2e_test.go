@@ -1145,6 +1145,83 @@ func TestCollaborativeExit(t *testing.T) {
 			require.NotNil(t, bobBalance)
 			require.Zero(t, int(bobBalance.OffchainBalance.Total))
 		})
+
+		// In this test Alice sends all to Bob's onchain address in the same batch where Charlie
+		// settles. Alice's intent creates no vtxo, so she has no leaf in the vtxo tree and the
+		// tree must be cosigned by Charlie and the operator only. Alice's client registers a
+		// cosigner key but skips tree signing because she has no offchain output.
+		t.Run("without change alongside a settle", func(t *testing.T) {
+			alice := setupClientWallet(t)
+			bob := setupClientWallet(t)
+			charlie := setupClientWallet(t)
+
+			faucetOffchain(t, alice, 0.00021100) // 21000 + 100 satoshis (amount + fee)
+			faucetOffchain(t, charlie, 0.001)
+
+			bobOnchainAddr, _, _, err := bob.Receive(t.Context())
+			require.NoError(t, err)
+			require.NotEmpty(t, bobOnchainAddr)
+
+			aliceSigner, err := tree.NewVtxoTreeSigner()
+			require.NoError(t, err)
+			charlieSigner, err := tree.NewVtxoTreeSigner()
+			require.NoError(t, err)
+
+			wg := &sync.WaitGroup{}
+			wg.Add(2)
+
+			var aliceRes, charlieRes *batchsession.BatchTxRes
+			var aliceErr, charlieErr error
+			go func() {
+				aliceRes, aliceErr = collaborativeExitBounded(
+					t.Context(), alice, bobOnchainAddr, 21000,
+					batchsession.WithoutTreeSigner(), batchsession.WithExtraSigner(aliceSigner),
+				)
+				wg.Done()
+			}()
+			go func() {
+				charlieRes, charlieErr = settleBounded(
+					t.Context(), charlie,
+					batchsession.WithoutTreeSigner(), batchsession.WithExtraSigner(charlieSigner),
+				)
+				wg.Done()
+			}()
+
+			wg.Wait()
+
+			require.NoError(t, aliceErr)
+			require.NoError(t, charlieErr)
+			require.NotNil(t, aliceRes)
+			require.NotNil(t, charlieRes)
+			require.Equal(t, aliceRes.CommitmentTxid, charlieRes.CommitmentTxid)
+
+			nodes, err := charlie.Indexer().GetFullVtxoTree(
+				t.Context(), clientlib.Outpoint{Txid: charlieRes.CommitmentTxid},
+			)
+			require.NoError(t, err)
+			vtxoTree, err := tree.NewTxTree(nodes)
+			require.NoError(t, err)
+			require.Len(t, vtxoTree.Leaves(), 1)
+
+			err = vtxoTree.Apply(func(g *tree.TxTree) (bool, error) {
+				cosigners, err := txutils.ParseCosignerKeysFromArkPsbt(g.Root, 0)
+				require.NoError(t, err)
+
+				keys := make([]string, 0, len(cosigners))
+				for _, key := range cosigners {
+					keys = append(keys, hex.EncodeToString(key.SerializeCompressed()))
+				}
+				// Charlie and the operator's tree key
+				require.Len(t, keys, 2)
+				require.Contains(t, keys, charlieSigner.GetPublicKey())
+				require.NotContains(t, keys, aliceSigner.GetPublicKey())
+				return true, nil
+			})
+			require.NoError(t, err)
+
+			bobBalance := waitForOnchainSpendable(t, bob, 21000)
+			require.NotNil(t, bobBalance)
+		})
 	})
 
 	t.Run("invalid", func(t *testing.T) {

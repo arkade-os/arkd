@@ -9,6 +9,7 @@ import (
 	common "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	arkerrors "github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
@@ -71,42 +72,68 @@ func TestBuildAndSignVtxoTree(t *testing.T) {
 	}
 }
 
-func TestAddSignaturesRejectsInvalidSig(t *testing.T) {
-	testCase, err := generateMockedReceivers(2)
-	require.NoError(t, err)
+func TestTreeCoordinatorSession(t *testing.T) {
+	t.Run("rejects an invalid partial signature", func(t *testing.T) {
+		testCase, err := generateMockedReceivers(2)
+		require.NoError(t, err)
 
-	_, batchOutAmount, err := tree.BuildBatchOutput(testCase.receivers, batchOutSweepClosure[:])
-	require.NoError(t, err)
+		_, batchOutAmount, err := tree.BuildBatchOutput(testCase.receivers, batchOutSweepClosure[:])
+		require.NoError(t, err)
 
-	vtxoTree, err := tree.BuildVtxoTree(
-		rootInput, testCase.receivers, batchOutSweepClosure[:], vtxoTreeExpiry,
-	)
-	require.NoError(t, err)
+		vtxoTree, err := tree.BuildVtxoTree(
+			rootInput, testCase.receivers, batchOutSweepClosure[:], vtxoTreeExpiry,
+		)
+		require.NoError(t, err)
 
-	coordinator, err := tree.NewTreeCoordinatorSession(
-		batchOutSweepClosure[:], batchOutAmount, vtxoTree,
-	)
-	require.NoError(t, err)
+		coordinator, err := tree.NewTreeCoordinatorSession(
+			batchOutSweepClosure[:], batchOutAmount, vtxoTree,
+		)
+		require.NoError(t, err)
 
-	signers := makeCosigners(t, testCase.privKeys, batchOutAmount, vtxoTree)
-	makeAggregatedNonces(t, signers, coordinator, func(tree.TreeNonces) {})
+		signers := makeCosigners(t, testCase.privKeys, batchOutAmount, vtxoTree)
+		makeAggregatedNonces(t, signers, coordinator, func(tree.TreeNonces) {})
 
-	pkStr := keyToStr(testCase.privKeys[0])
-	sigs, err := signers[pkStr].Sign()
-	require.NoError(t, err)
+		pkStr := keyToStr(testCase.privKeys[0])
+		sigs, err := signers[pkStr].Sign()
+		require.NoError(t, err)
 
-	buf, err := hex.DecodeString(pkStr)
-	require.NoError(t, err)
-	pubkey, err := btcec.ParsePubKey(buf)
-	require.NoError(t, err)
+		buf, err := hex.DecodeString(pkStr)
+		require.NoError(t, err)
+		pubkey, err := btcec.ParsePubKey(buf)
+		require.NoError(t, err)
 
-	for _, sig := range sigs {
-		sig.S.SetInt(1)
-	}
+		for _, sig := range sigs {
+			sig.S.SetInt(1)
+		}
 
-	shouldBan, err := coordinator.AddSignatures(pubkey, sigs)
-	require.Error(t, err)
-	require.True(t, shouldBan)
+		shouldBan, err := coordinator.AddSignatures(pubkey, sigs)
+		require.Error(t, err)
+		require.True(t, shouldBan)
+	})
+
+	t.Run("rejects a tx with a single cosigner", func(t *testing.T) {
+		testCase, err := generateMockedReceivers(2)
+		require.NoError(t, err)
+
+		receivers := append(testCase.receivers, tree.Leaf{
+			Outputs: []tree.LeafOutput{{
+				Amount: 1000,
+				Script: "0000000000000000000000000000000000000000000000000000000000000002",
+			}},
+			CosignersPublicKeys: []string{keyToStr(signerPrvkey)},
+		})
+
+		_, batchOutAmount, err := tree.BuildBatchOutput(receivers, batchOutSweepClosure[:])
+		require.NoError(t, err)
+
+		vtxoTree, err := tree.BuildVtxoTree(
+			rootInput, receivers, batchOutSweepClosure[:], vtxoTreeExpiry,
+		)
+		require.NoError(t, err)
+
+		_, err = tree.NewTreeCoordinatorSession(batchOutSweepClosure[:], batchOutAmount, vtxoTree)
+		requireArkError(t, err, arkerrors.NOT_ENOUGH_TREE_TX_COSIGNERS)
+	})
 }
 
 func checkNoncesRoundtrip(t *testing.T) func(nonces tree.TreeNonces) {

@@ -198,6 +198,31 @@ func TestBuildCommitmentTx(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("onchain only intent gets no leaf", func(t *testing.T) {
+		f := fixtures.Valid[0]
+		intents := append(domain.Intents{}, f.Intents...)
+		intents = append(intents, domain.Intent{
+			Id: "onchain-only",
+			Inputs: []domain.Vtxo{{
+				Outpoint: domain.Outpoint{Txid: randomHex(32), VOut: 0},
+				Amount:   21100,
+			}},
+			Receivers: []domain.Receiver{{
+				OnchainAddress: "bc1p54849jyr65wv5k64mn0qcjh5tmkpa6rpnatnqdvpg2cn4p9xcwgqflzdxh",
+				Amount:         21000,
+			}},
+		})
+
+		w, _ := newCoinSelectingWallet(selectionChange, estimatedFee)
+		builder := txbuilder.NewTxBuilder(w, nil, arklib.Bitcoin)
+
+		_, vtxoTree, _, _, err := builder.BuildCommitmentTx(
+			pubkey, intents, nil, newCosignerKeys(t, len(intents)), vtxoTreeExpiry,
+		)
+		require.NoError(t, err)
+		require.Len(t, vtxoTree.Leaves(), f.ExpectedNumOfLeaves)
+	})
 }
 
 // TestBuildCommitmentTxUsesVtxoTreeExpiryArg pins that the vtxoTreeExpiry argument is what gets

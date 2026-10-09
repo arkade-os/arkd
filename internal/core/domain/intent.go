@@ -66,6 +66,15 @@ func (i Intent) TotalOutputAmount() uint64 {
 	return tot
 }
 
+func (i Intent) HasOffchainReceiver() bool {
+	for _, r := range i.Receivers {
+		if !r.IsOnchain() {
+			return true
+		}
+	}
+	return false
+}
+
 func (i Intent) validate(ignoreOuts bool) error {
 	if len(i.Id) <= 0 {
 		return fmt.Errorf("missing id")
@@ -125,10 +134,8 @@ func (t Intents) CountSpentVtxos() int {
 
 func (t Intents) HaveOnlyOnchainOutput() bool {
 	for _, intent := range t {
-		for _, r := range intent.Receivers {
-			if !r.IsOnchain() {
-				return false
-			}
+		if intent.HasOffchainReceiver() {
+			return false
 		}
 	}
 	return true
