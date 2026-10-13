@@ -251,12 +251,12 @@ func (m *mockedWallet) UnwatchScripts(
 
 func (m *mockedWallet) GetNotificationChannel(
 	ctx context.Context,
-) <-chan map[string][]ports.VtxoWithValue {
+) <-chan ports.TxNotification {
 	args := m.Called(ctx)
 
-	var res <-chan map[string][]ports.VtxoWithValue
+	var res <-chan ports.TxNotification
 	if a := args.Get(0); a != nil {
-		res = a.(<-chan map[string][]ports.VtxoWithValue)
+		res = a.(<-chan ports.TxNotification)
 	}
 	return res
 }

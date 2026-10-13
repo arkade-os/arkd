@@ -1693,11 +1693,33 @@
         "title": "NotificationStreamResponse",
         "type": "object",
         "properties": {
-          "entries": {
+          "confirmedAtHeight": {
+            "type": "integer",
+            "description": "The block in which the tx got confirmed.",
+            "format": "uint64"
+          },
+          "confirmedAtTime": {
+            "type": "integer",
+            "description": "The time when the tx got confirmed.",
+            "format": "int64"
+          },
+          "inputs": {
             "type": "array",
+            "description": "Watched utxos used as inputs of the tx.",
             "items": {
-              "$ref": "#/components/schemas/VtoxsPerScript"
+              "$ref": "#/components/schemas/Utxo"
             }
+          },
+          "outputs": {
+            "type": "array",
+            "description": "Watched utxos used as outputs of the tx.",
+            "items": {
+              "$ref": "#/components/schemas/Utxo"
+            }
+          },
+          "txid": {
+            "type": "string",
+            "description": "The id of the tx that has utxos with watched scripts either as inputs or outputs."
           }
         }
       },
@@ -1931,6 +1953,26 @@
         "title": "UnwatchScriptsResponse",
         "type": "object"
       },
+      "Utxo": {
+        "title": "Utxo",
+        "type": "object",
+        "properties": {
+          "script": {
+            "type": "string"
+          },
+          "txid": {
+            "type": "string"
+          },
+          "value": {
+            "type": "integer",
+            "format": "uint64"
+          },
+          "vout": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
       "VerifyMessageSignatureRequest": {
         "title": "VerifyMessageSignatureRequest",
         "type": "object",
@@ -1951,39 +1993,6 @@
         "properties": {
           "valid": {
             "type": "boolean"
-          }
-        }
-      },
-      "VtoxsPerScript": {
-        "title": "VtoxsPerScript",
-        "type": "object",
-        "properties": {
-          "script": {
-            "type": "string",
-            "description": "hex-encoded script"
-          },
-          "vtxos": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/VtxoWithKey"
-            }
-          }
-        }
-      },
-      "VtxoWithKey": {
-        "title": "VtxoWithKey",
-        "type": "object",
-        "properties": {
-          "txid": {
-            "type": "string"
-          },
-          "value": {
-            "type": "integer",
-            "format": "uint64"
-          },
-          "vout": {
-            "type": "integer",
-            "format": "uint32"
           }
         }
       },

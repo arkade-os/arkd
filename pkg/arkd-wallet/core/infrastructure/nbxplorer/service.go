@@ -684,10 +684,13 @@ func (n *nbxplorer) UnwatchAddresses(ctx context.Context, addresses ...string) e
 	return nil
 }
 
-// GetAddressNotifications returns the channel where to listen for notifications about incoming 
-// UTXOs for the watched addresses.
+// GetAddressNotifications returns the channel where to listen for notifications about
+// transactions that spend or create UTXOs of the watched addresses. A transaction is notified
+// once when it enters the mempool and again when it confirms.
 // If no underlying group is set, an empty one will be created.
-func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports.Utxo, error) {
+func (n *nbxplorer) GetAddressNotifications(
+	ctx context.Context,
+) (<-chan ports.TxNotification, error) {
 	if len(n.groupID) == 0 {
 		if err := n.createEmptyGroup(ctx); err != nil {
 			return nil, fmt.Errorf("failed to create empty group: %w", err)
@@ -698,11 +701,19 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 		return nil, fmt.Errorf("failed to connect to WebSocket: %w", err)
 	}
 
+	// The websocket carries events for every tracked source, wallet derivation schemes included.
+	groupSource := "GROUP:" + n.groupID
+
 	// buffered channel to prevent blocking
-	notificationsChan := make(chan []ports.Utxo, 64)
+	notificationsChan := make(chan ports.TxNotification, 64)
 
 	go func() {
 		defer close(notificationsChan)
+
+		// The txs notified while unconfirmed, so that their mined event carries only the
+		// confirmation. The set lives with the connection: after a reconnection every tx is
+		// notified in full again, confirmed or not.
+		unconfirmedTxs := make(map[string]struct{})
 
 		for {
 			select {
@@ -715,29 +726,20 @@ func (n *nbxplorer) GetAddressNotifications(ctx context.Context) (<-chan []ports
 					return
 				}
 
-				var event event
-				if err := json.Unmarshal(message, &event); err != nil {
+				notification, err := parseTxNotification(message, groupSource)
+				if err != nil {
+					log.WithError(err).Warn("failed to parse nbxplorer transaction event")
 					continue
 				}
+				if notification == nil {
+					continue
+				}
+				stripNotifiedTx(unconfirmedTxs, notification)
 
-				if event.Type == "newtransaction" {
-					var newTxEvent newTransactionEvent
-					if eventDataBytes, err := json.Marshal(event.Data); err == nil {
-						if err := json.Unmarshal(eventDataBytes, &newTxEvent); err == nil {
-							newUtxos, err := n.searchNewUTXOs(ctx, newTxEvent.TransactionData.TransactionHash)
-							if err != nil {
-								continue
-							}
-
-							if len(newUtxos) > 0 {
-								select {
-								case notificationsChan <- newUtxos:
-								case <-ctx.Done():
-									return
-								}
-							}
-						}
-					}
+				select {
+				case notificationsChan <- *notification:
+				case <-ctx.Done():
+					return
 				}
 			}
 		}
@@ -845,55 +847,72 @@ func (n *nbxplorer) connectWebSocket(ctx context.Context) error {
 	return nil
 }
 
-// searchNewUTXOs rescans UTXOs for a specific group and returns only UTXOs from the specified transaction hash
-func (n *nbxplorer) searchNewUTXOs(ctx context.Context, txHash string) ([]ports.Utxo, error) {
-	if txHash == "" {
-		return nil, fmt.Errorf("transaction hash is required")
+// maxUnconfirmedTxs bounds the txs remembered as notified while unconfirmed. A tx replaced or
+// evicted from the mempool is never mined and would stay forever, so once the bound is hit the
+// set is reset: the pending txs are then notified in full again once mined, which is harmless.
+const maxUnconfirmedTxs = 10_000
+
+// stripNotifiedTx records a tx notified while unconfirmed and, when that same tx is notified
+// as mined, strips its inputs and outputs so only its confirmation is reported. A tx whose
+// first notification is the mined one, as it happens on regtest or at startup, is reported in
+// full.
+func stripNotifiedTx(unconfirmedTxs map[string]struct{}, notification *ports.TxNotification) {
+	if notification.ConfirmedAtHeight == 0 {
+		if len(unconfirmedTxs) >= maxUnconfirmedTxs {
+			clear(unconfirmedTxs)
+		}
+		unconfirmedTxs[notification.Txid] = struct{}{}
+		return
+	}
+	if _, notified := unconfirmedTxs[notification.Txid]; !notified {
+		return
+	}
+	delete(unconfirmedTxs, notification.Txid)
+	notification.Inputs, notification.Outputs = nil, nil
+}
+
+// parseTxNotification returns nil for a message that is not a transaction event of the given
+// tracked source.
+func parseTxNotification(message []byte, trackedSource string) (*ports.TxNotification, error) {
+	var e event
+	if err := json.Unmarshal(message, &e); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal event: %w", err)
+	}
+	if e.Type != "newtransaction" {
+		return nil, nil
 	}
 
-	cryptoCode := btcCryptoCode
-	endpoint := fmt.Sprintf("/v1/cryptos/%s/groups/%s/utxos", cryptoCode, url.PathEscape(n.groupID))
+	var txEvent newTransactionEvent
+	if err := json.Unmarshal(e.Data, &txEvent); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal transaction event: %w", err)
+	}
+	if txEvent.TrackedSource != trackedSource {
+		return nil, nil
+	}
 
-	data, err := n.makeRequest(ctx, "GET", endpoint, nil)
+	txid := txEvent.TransactionData.TransactionHash
+	txHash, err := chainhash.NewHashFromStr(txid)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get group UTXOs: %w", err)
+		return nil, fmt.Errorf("invalid txid %s: %w", txid, err)
 	}
 
-	var resp utxosResponse
-	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal UTXO changes: %w", err)
+	notification := &ports.TxNotification{Txid: txid}
+	if height := txEvent.TransactionData.Height; height != nil {
+		notification.ConfirmedAtHeight = *height
+		// NBXplorer's first-seen time, the same value GetTransaction returns as Timestamp.
+		notification.ConfirmedAtTime = txEvent.TransactionData.Timestamp
 	}
-
-	utxos := make([]ports.Utxo, 0)
-
-	for _, u := range resp.Confirmed.UtxOs {
-		if u.TransactionHash != txHash {
-			continue
-		}
-
-		utxo, err := castUtxo(u)
+	for _, in := range txEvent.Inputs {
+		prevTxHash, err := chainhash.NewHashFromStr(in.TransactionID)
 		if err != nil {
-			log.Errorf("failed to cast UTXO: %s", err)
-			continue
+			return nil, fmt.Errorf("invalid txid %s of input: %w", in.TransactionID, err)
 		}
-
-		utxos = append(utxos, utxo)
+		notification.Inputs = append(notification.Inputs, in.toUtxo(*prevTxHash))
 	}
-
-	for _, u := range resp.Unconfirmed.UtxOs {
-		if u.TransactionHash != txHash {
-			continue
-		}
-
-		utxo, err := castUtxo(u)
-		if err != nil {
-			continue
-		}
-
-		utxos = append(utxos, utxo)
+	for _, out := range txEvent.Outputs {
+		notification.Outputs = append(notification.Outputs, out.toUtxo(*txHash))
 	}
-
-	return utxos, nil
+	return notification, nil
 }
 
 func (n *nbxplorer) rescanUTXOs(ctx context.Context, outpoints []wire.OutPoint) error {
@@ -940,4 +959,13 @@ func castUtxo(u utxoResponse) (ports.Utxo, error) {
 		Address:       u.Address,
 		Confirmations: u.Confirmations,
 	}, nil
+}
+
+func (o matchedOutput) toUtxo(txid chainhash.Hash) ports.Utxo {
+	return ports.Utxo{
+		OutPoint: wire.OutPoint{Hash: txid, Index: o.Index},
+		Value:    o.Value,
+		Script:   o.ScriptPubKey,
+		Address:  o.Address,
+	}
 }

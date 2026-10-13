@@ -342,7 +342,7 @@ func (m *mockedScanner) Unwatched() []string {
 
 func (m *mockedScanner) GetNotificationChannel(
 	_ context.Context,
-) <-chan map[string][]ports.VtxoWithValue {
+) <-chan ports.TxNotification {
 	return nil
 }
 

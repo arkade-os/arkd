@@ -2201,11 +2201,58 @@ func (q *Queries) SelectTxs(ctx context.Context, dollar_1 []string) ([]SelectTxs
 }
 
 const selectUnconfirmedSpentUtxos = `-- name: SelectUnconfirmedSpentUtxos :many
-SELECT txid, vout, pubkey, amount, spent_by, created_at, spend_confirmed_at_time, spend_confirmed_at_height, is_vtxo FROM utxo_vw WHERE spend_confirmed_at_time IS NULL AND spend_confirmed_at_height IS NULL
+SELECT u.txid, u.vout, u.pubkey, u.amount, u.spent_by, u.created_at, u.spend_confirmed_at_time, u.spend_confirmed_at_height, u.is_vtxo,
+    EXISTS (SELECT 1 FROM onchain_tx o WHERE o.txid = u.spent_by) AS is_cosigned
+FROM utxo_vw u
+WHERE u.spend_confirmed_at_time IS NULL AND u.spend_confirmed_at_height IS NULL
 `
 
-func (q *Queries) SelectUnconfirmedSpentUtxos(ctx context.Context) ([]UtxoVw, error) {
+type SelectUnconfirmedSpentUtxosRow struct {
+	UtxoVw     UtxoVw
+	IsCosigned bool
+}
+
+func (q *Queries) SelectUnconfirmedSpentUtxos(ctx context.Context) ([]SelectUnconfirmedSpentUtxosRow, error) {
 	rows, err := q.db.QueryContext(ctx, selectUnconfirmedSpentUtxos)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectUnconfirmedSpentUtxosRow
+	for rows.Next() {
+		var i SelectUnconfirmedSpentUtxosRow
+		if err := rows.Scan(
+			&i.UtxoVw.Txid,
+			&i.UtxoVw.Vout,
+			&i.UtxoVw.Pubkey,
+			&i.UtxoVw.Amount,
+			&i.UtxoVw.SpentBy,
+			&i.UtxoVw.CreatedAt,
+			&i.UtxoVw.SpendConfirmedAtTime,
+			&i.UtxoVw.SpendConfirmedAtHeight,
+			&i.UtxoVw.IsVtxo,
+			&i.IsCosigned,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectUnconfirmedUtxosWithSpendingTxid = `-- name: SelectUnconfirmedUtxosWithSpendingTxid :many
+SELECT txid, vout, pubkey, amount, spent_by, created_at, spend_confirmed_at_time, spend_confirmed_at_height, is_vtxo FROM utxo_vw
+WHERE spend_confirmed_at_time IS NULL AND spend_confirmed_at_height IS NULL AND spent_by = $1
+`
+
+func (q *Queries) SelectUnconfirmedUtxosWithSpendingTxid(ctx context.Context, txid string) ([]UtxoVw, error) {
+	rows, err := q.db.QueryContext(ctx, selectUnconfirmedUtxosWithSpendingTxid, txid)
 	if err != nil {
 		return nil, err
 	}
@@ -3085,18 +3132,59 @@ func (q *Queries) UpdateVtxoSpent(ctx context.Context, arg UpdateVtxoSpentParams
 	return err
 }
 
-const updateVtxoUnrolled = `-- name: UpdateVtxoUnrolled :exec
-UPDATE vtxo SET unrolled = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT WHERE txid = $1 AND vout = $2
+const updateVtxosUnrolled = `-- name: UpdateVtxosUnrolled :many
+  UPDATE vtxo SET unrolled = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+  WHERE (txid, vout) IN (
+      SELECT unnest($1::text[]), unnest($2::integer[])
+  )
+  AND unrolled = false
+  RETURNING txid, vout, pubkey, amount, expires_at, created_at, commitment_txid, spent_by, spent, unrolled, preconfirmed, settled_by, ark_txid, intent_id, updated_at, depth, markers
 `
 
-type UpdateVtxoUnrolledParams struct {
-	Txid string
-	Vout int32
+type UpdateVtxosUnrolledParams struct {
+	Txids []string
+	Vouts []int32
 }
 
-func (q *Queries) UpdateVtxoUnrolled(ctx context.Context, arg UpdateVtxoUnrolledParams) error {
-	_, err := q.db.ExecContext(ctx, updateVtxoUnrolled, arg.Txid, arg.Vout)
-	return err
+func (q *Queries) UpdateVtxosUnrolled(ctx context.Context, arg UpdateVtxosUnrolledParams) ([]Vtxo, error) {
+	rows, err := q.db.QueryContext(ctx, updateVtxosUnrolled, pq.Array(arg.Txids), pq.Array(arg.Vouts))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Vtxo
+	for rows.Next() {
+		var i Vtxo
+		if err := rows.Scan(
+			&i.Txid,
+			&i.Vout,
+			&i.Pubkey,
+			&i.Amount,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.CommitmentTxid,
+			&i.SpentBy,
+			&i.Spent,
+			&i.Unrolled,
+			&i.Preconfirmed,
+			&i.SettledBy,
+			&i.ArkTxid,
+			&i.IntentID,
+			&i.UpdatedAt,
+			&i.Depth,
+			&i.Markers,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const upsertCheckpointTx = `-- name: UpsertCheckpointTx :exec

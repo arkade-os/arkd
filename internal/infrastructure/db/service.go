@@ -841,6 +841,26 @@ func (s *service) updateProjectionsAfterOnchainTxEvents(events []domain.Event) {
 				)
 				return false
 			}
+			// An unrolled vtxo is stored as a pointer to its vtxo record, with no pubkey and
+			// amount, the utxo table refuses a row duplicating a vtxo.
+			outpoints := make([]domain.Outpoint, 0, len(utxos))
+			for _, utxo := range utxos {
+				outpoints = append(outpoints, utxo.Outpoint)
+			}
+			vtxos, err := s.vtxoStore.GetVtxos(ctx, outpoints)
+			if err != nil {
+				log.WithError(err).Warnf(
+					"failed to get vtxos spent by onchain tx %s", onchainTx.Txid,
+				)
+				return false
+			}
+			for _, vtxo := range vtxos {
+				for i := range utxos {
+					if utxos[i].Outpoint == vtxo.Outpoint {
+						utxos[i].PubKey, utxos[i].Amount = "", 0
+					}
+				}
+			}
 			if err := s.utxoStore.AddUtxos(ctx, utxos, onchainTx.Tx); err != nil {
 				log.WithError(err).Warn("failed to add cosigned utxos")
 				return false

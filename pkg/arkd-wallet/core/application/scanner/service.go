@@ -27,7 +27,7 @@ type scanner struct {
 	chainParams *chaincfg.Params
 
 	lock                  sync.RWMutex
-	notificationListeners []chan map[string][]application.Utxo
+	notificationListeners []chan application.TxNotification
 	initialBackoff        time.Duration
 	maxBackoff            time.Duration
 }
@@ -41,7 +41,7 @@ func New(nbxplorer ports.Nbxplorer, network string) (application.BlockchainScann
 		cancel:                cancel,
 		nbxplorer:             nbxplorer,
 		lock:                  sync.RWMutex{},
-		notificationListeners: make([]chan map[string][]application.Utxo, 0),
+		notificationListeners: make([]chan application.TxNotification, 0),
 		chainParams:           application.NetworkToChainParams(network),
 		initialBackoff:        defaultInitialBackoff,
 		maxBackoff:            defaultMaxBackoff,
@@ -69,7 +69,7 @@ func (s *scanner) start(ctx context.Context) error {
 			select {
 			case <-ctx.Done():
 				return
-			case utxos, ok := <-notificationCh:
+			case notification, ok := <-notificationCh:
 				if !ok {
 					if connected {
 						log.Warn("nbxplorer disconnected")
@@ -101,23 +101,21 @@ func (s *scanner) start(ctx context.Context) error {
 					continue
 				}
 
-				notificationsMap := make(map[string][]application.Utxo)
-				for _, utxo := range utxos {
-					notificationsMap[utxo.Script] = append(notificationsMap[utxo.Script], application.Utxo{
-						Txid:   utxo.OutPoint.Hash.String(),
-						Index:  utxo.OutPoint.Index,
-						Script: utxo.Script,
-						Value:  utxo.Value,
-					})
+				txNotification := application.TxNotification{
+					Txid:              notification.Txid,
+					Inputs:            toApplicationUtxos(notification.Inputs),
+					Outputs:           toApplicationUtxos(notification.Outputs),
+					ConfirmedAtTime:   notification.ConfirmedAtTime,
+					ConfirmedAtHeight: uint64(notification.ConfirmedAtHeight),
 				}
 
 				s.lock.RLock()
 				for _, listener := range s.notificationListeners {
-					go func(listener chan map[string][]application.Utxo) {
+					go func(listener chan application.TxNotification) {
 						select {
 						case <-ctx.Done():
 							return
-						case listener <- notificationsMap:
+						case listener <- txNotification:
 						}
 					}(listener)
 				}
@@ -151,8 +149,8 @@ func (s *scanner) RescanUtxos(ctx context.Context, outpoints []wire.OutPoint) er
 	return s.nbxplorer.RescanUtxos(ctx, outpoints)
 }
 
-func (s *scanner) GetNotificationChannel(ctx context.Context) <-chan map[string][]application.Utxo {
-	ch := make(chan map[string][]application.Utxo, 128)
+func (s *scanner) GetNotificationChannel(ctx context.Context) <-chan application.TxNotification {
+	ch := make(chan application.TxNotification, 128)
 	s.lock.Lock()
 	s.notificationListeners = append(s.notificationListeners, ch)
 	s.lock.Unlock()
@@ -201,7 +199,7 @@ func (s *scanner) Close() {
 	for _, listener := range s.notificationListeners {
 		close(listener)
 	}
-	s.notificationListeners = make([]chan map[string][]application.Utxo, 0)
+	s.notificationListeners = make([]chan application.TxNotification, 0)
 	s.lock.Unlock()
 }
 
@@ -233,4 +231,17 @@ func scriptToAddress(script string, chainParams *chaincfg.Params) (string, error
 	}
 
 	return addrs[0].EncodeAddress(), nil
+}
+
+func toApplicationUtxos(utxos []ports.Utxo) []application.Utxo {
+	res := make([]application.Utxo, 0, len(utxos))
+	for _, utxo := range utxos {
+		res = append(res, application.Utxo{
+			Txid:   utxo.Hash.String(),
+			Index:  utxo.Index,
+			Script: utxo.Script,
+			Value:  utxo.Value,
+		})
+	}
+	return res
 }

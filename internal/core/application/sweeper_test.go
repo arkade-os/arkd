@@ -361,7 +361,7 @@ func (m *mockWalletService) UnwatchScripts(ctx context.Context, scripts []string
 
 func (m *mockWalletService) GetNotificationChannel(
 	ctx context.Context,
-) <-chan map[string][]ports.VtxoWithValue {
+) <-chan ports.TxNotification {
 	return nil
 }
 

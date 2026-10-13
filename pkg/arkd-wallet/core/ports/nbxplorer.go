@@ -30,6 +30,16 @@ type Utxo struct {
 	Confirmations uint32
 }
 
+// TxNotification is a transaction that spends (Inputs) or creates (Outputs) utxos of watched
+// addresses. ConfirmedAtTime and ConfirmedAtHeight are 0 while the transaction is unconfirmed.
+type TxNotification struct {
+	Txid              string
+	Inputs            []Utxo
+	Outputs           []Utxo
+	ConfirmedAtTime   int64
+	ConfirmedAtHeight uint32
+}
+
 type ScriptPubKeyDetails struct {
 	KeyPath string
 }
@@ -55,7 +65,7 @@ type Nbxplorer interface {
 	IsSpent(ctx context.Context, outpoint wire.OutPoint) (spent bool, err error)
 	WatchAddresses(ctx context.Context, addresses ...string) error
 	UnwatchAddresses(ctx context.Context, addresses ...string) error
-	GetAddressNotifications(ctx context.Context) (<-chan []Utxo, error)
+	GetAddressNotifications(ctx context.Context) (<-chan TxNotification, error)
 
 	Close() error
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	clientlib "github.com/arkade-os/arkd/pkg/client-lib"
+	batchsession "github.com/arkade-os/arkd/pkg/client-lib/batch-session"
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
@@ -66,27 +67,8 @@ func TestCosignOnchainTx(t *testing.T) {
 		signedTx, err := alice.SignTransaction(ctx, unsignedTx)
 		require.NoError(t, err)
 
-		// Ask arkd to cosign and broadcast the tx, we expect it to reject the request because the
-		// input is unconfirmed.
-		resp, err := cosignOnchainTx(ctx, signedTx)
-		require.Nil(t, resp)
-		require.Error(t, err)
-		require.ErrorContains(t, err, "all inputs to cosign must have at least a confirmation")
-
-		// Mine a block
-		err = generateBlocks(1)
-		require.NoError(t, err)
-
-		// Wait until the utxo is fetched confirmed.
-		require.Eventually(t, func() bool {
-			found, err := testExplorer.GetUtxos([]string{aliceBoardingAddr.Address})
-			require.NoError(t, err)
-			return len(found) > 0 && found[0].Status.Confirmed
-		}, 10*time.Second, 100*time.Millisecond)
-
-		// Submit another request providing the unsigned tx even if the funds are confirmed to
-		// ensure it's rejected.
-		resp, err = cosignOnchainTx(ctx, unsignedTx)
+		// Submit a request providing the unsigned tx to ensure it's rejected.
+		resp, err := cosignOnchainTx(ctx, unsignedTx)
 		require.Nil(t, resp)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "missing signatures for input")
@@ -102,7 +84,8 @@ func TestCosignOnchainTx(t *testing.T) {
 		require.NotNil(t, utxoResp)
 		require.Empty(t, utxoResp.Utxos)
 
-		// Finally, submit the signed transaction and verify it's broadcasted.
+		// Finally, submit the signed transaction, spending the still unconfirmed utxo, and verify
+		// it's broadcasted.
 		resp, err = cosignOnchainTx(ctx, signedTx)
 		require.NoError(t, err)
 		require.NotNil(t, resp)
@@ -139,6 +122,7 @@ func TestCosignOnchainTx(t *testing.T) {
 		require.Zero(t, gotUtxo.Spend.ConfirmedAtHeight)
 		require.True(t, gotUtxo.Spend.ConfirmedAtTime.IsZero())
 
+		// Mine the funding tx and the cosigned one together.
 		err = generateBlocks(1)
 		require.NoError(t, err)
 
@@ -153,6 +137,102 @@ func TestCosignOnchainTx(t *testing.T) {
 			require.NoError(t, err)
 			return len(resp.Utxos) > 0 && resp.Utxos[0].Spend.ConfirmedAtHeight > 0
 		}, 10*time.Second, 100*time.Millisecond)
+	})
+
+	// An unrolled vtxo that is still unspent is cosigned like a boarding utxo. The spend is
+	// recorded on the vtxo outpoint, so the vtxo can no longer rejoin a batch.
+	t.Run("cosign unrolled vtxo", func(t *testing.T) {
+		ctx := t.Context()
+		alice := setupClientWallet(t)
+		bob := setupClientWallet(t)
+		indexer := alice.Indexer()
+
+		vtxo := faucetOffchain(t, alice, 0.00021)
+		aliceOnchainAddr, aliceOffchainAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+		// Onchain funds to cover the unroll fees.
+		faucetOnchainAndWait(t, aliceOnchainAddr, 0.00001)
+
+		_, _, bobBoardingAddr, err := bob.Receive(ctx)
+		require.NoError(t, err)
+		rawScript, err := bobBoardingAddr.RawScript()
+		require.NoError(t, err)
+		tapkey, _, err := rawScript.TapTree()
+		require.NoError(t, err)
+		destScript, err := script.P2TRScript(tapkey)
+		require.NoError(t, err)
+
+		txids, err := alice.Unroll(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, txids)
+		require.NoError(t, generateBlocks(1))
+		waitForUnrolledOnchainFunds(t, alice)
+
+		waitUntil(t, indexerWait, "the vtxo to be reported unrolled",
+			func(ctx context.Context) error {
+				resp, err := indexer.GetVtxos(
+					ctx, clientlib.WithOutpoints([]clientlib.Outpoint{vtxo.Outpoint}),
+				)
+				if err != nil {
+					return err
+				}
+				if len(resp.Vtxos) != 1 || !resp.Vtxos[0].Unrolled {
+					return fmt.Errorf("vtxo %s not reported unrolled yet", vtxo.Outpoint)
+				}
+				return nil
+			},
+		)
+
+		utxo := clientlib.ExplorerUtxo{
+			Txid: vtxo.Txid, Vout: vtxo.VOut, Amount: vtxo.Amount, Script: vtxo.Script,
+		}
+		ptx := onchainSpendPacket(
+			t, utxo, aliceOffchainAddr.Tapscripts, destScript, int64(vtxo.Amount)-500,
+		)
+		unsignedTx, err := ptx.B64Encode()
+		require.NoError(t, err)
+		signedTx, err := alice.SignTransaction(ctx, unsignedTx)
+		require.NoError(t, err)
+
+		resp, err := cosignOnchainTx(ctx, signedTx)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		cosignTxid := resp.GetTxid()
+		require.NotEmpty(t, cosignTxid)
+
+		require.Eventually(t, func() bool {
+			found, err := testExplorer.GetUtxos([]string{bobBoardingAddr.Address})
+			require.NoError(t, err)
+			return len(found) > 0
+		}, 10*time.Second, 100*time.Millisecond)
+
+		// The vtxo outpoint is recorded as a cosigned utxo with the vtxo's script and amount.
+		utxoResp, err := indexer.GetUtxos(
+			ctx, clientlib.WithOutpoints([]clientlib.Outpoint{vtxo.Outpoint}),
+		)
+		require.NoError(t, err)
+		require.Len(t, utxoResp.Utxos, 1)
+		require.Equal(t, vtxo.Script, utxoResp.Utxos[0].Script)
+		require.Equal(t, vtxo.Amount, utxoResp.Utxos[0].Amount)
+		require.Equal(t, cosignTxid, utxoResp.Utxos[0].Spend.Txid)
+
+		cfgData, err := alice.GetConfigData(ctx)
+		require.NoError(t, err)
+		signingClosure, err := aliceOffchainAddr.CollaborativeClosure()
+		require.NoError(t, err)
+		_, err = batchSettleBounded(ctx, batchsession.SettleArgs{
+			Client:       alice.Client(),
+			ServerParams: *cfgData,
+			SignTx:       alice.SignTransaction,
+			BoardingUtxos: []clientlib.Utxo{{
+				Outpoint:       vtxo.Outpoint,
+				Amount:         vtxo.Amount,
+				Tapscripts:     aliceOffchainAddr.Tapscripts,
+				SigningClosure: signingClosure,
+			}},
+			ReceiverAddr: aliceOffchainAddr.Address,
+		})
+		require.ErrorContains(t, err, "already cosigned onchain")
 	})
 
 	// The case on-chain cosigning exists for. Funds sit at a boarding address whose

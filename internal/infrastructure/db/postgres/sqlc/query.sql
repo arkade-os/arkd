@@ -100,8 +100,13 @@ UPDATE vtxo SET intent_id = @intent_id WHERE txid = @txid AND vout = @vout;
 -- name: UpdateVtxoExpiration :exec
 UPDATE vtxo SET expires_at = @expires_at WHERE txid = @txid AND vout = @vout;
 
--- name: UpdateVtxoUnrolled :exec
-UPDATE vtxo SET unrolled = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT WHERE txid = @txid AND vout = @vout;
+-- name: UpdateVtxosUnrolled :many
+  UPDATE vtxo SET unrolled = true, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+  WHERE (txid, vout) IN (
+      SELECT unnest(@txids::text[]), unnest(@vouts::integer[])
+  )
+  AND unrolled = false
+  RETURNING *;
 
 -- name: UpdateVtxoSettled :exec
 UPDATE vtxo SET spent = true, spent_by = @spent_by, settled_by = @settled_by, updated_at = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
@@ -793,8 +798,15 @@ WHERE (txid, vout) IN (
 )
 ORDER BY txid, vout;
 
+-- name: SelectUnconfirmedUtxosWithSpendingTxid :many
+SELECT * FROM utxo_vw
+WHERE spend_confirmed_at_time IS NULL AND spend_confirmed_at_height IS NULL AND spent_by = @txid;
+
 -- name: SelectUnconfirmedSpentUtxos :many
-SELECT * FROM utxo_vw WHERE spend_confirmed_at_time IS NULL AND spend_confirmed_at_height IS NULL;
+SELECT sqlc.embed(u),
+    EXISTS (SELECT 1 FROM onchain_tx o WHERE o.txid = u.spent_by) AS is_cosigned
+FROM utxo_vw u
+WHERE u.spend_confirmed_at_time IS NULL AND u.spend_confirmed_at_height IS NULL;
 
 -- Paged, filtered utxo query by pubkeys.
 -- name: SelectUtxosWithPubkeysPage :many

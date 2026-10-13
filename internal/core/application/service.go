@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"maps"
 	"math"
 	"runtime"
 	"slices"
@@ -306,7 +305,7 @@ func (s *service) registerEventHandlers() {
 				}
 			}()
 
-			go s.watchBatchBoardingUtxos(round.CommitmentTxid)
+			go s.watchSpentCosignedUtxos(round.CommitmentTxid)
 
 			if lastEvent := events[len(events)-1]; lastEvent.GetType() != domain.EventTypeBatchSwept {
 				go s.scheduleSweepBatchOutput(round)
@@ -4135,81 +4134,169 @@ func (s *service) listenToScannerNotifications() {
 	streamCtx, cancelStream := context.WithCancel(s.ctx)
 	ch := s.scanner.GetNotificationChannel(streamCtx)
 	for {
-		for vtxoKeys := range ch {
+		for tx := range ch {
 			backoff = time.Second
-			go func(vtxoKeys map[string][]ports.VtxoWithValue) {
-				for _, keys := range vtxoKeys {
-					for _, v := range keys {
-						outs := []domain.Outpoint{v.Outpoint}
-						vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, outs)
+
+			// A watched vtxo appears either as output or as input of the notified tx, never
+			// both, so the two are handled in sequence by a single goroutine.
+			go func(tx ports.TxNotification) {
+				// If the tx contains any watched vtxo as output, mark vtxos as unrolled and trigger
+				// the fraud detector eventually.
+				if len(tx.Outputs) > 0 {
+					func(utxos []domain.Utxo) {
+						outpoints := make([]domain.Outpoint, 0, len(utxos))
+						for _, u := range utxos {
+							outpoints = append(outpoints, u.Outpoint)
+						}
+						vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, outpoints)
 						if err != nil {
-							log.WithError(err).Warn("failed to retrieve vtxos, skipping...")
-							continue
+							log.WithError(err).Warnf(
+								"failed to retrieve vtxos for onchain tx %s", tx.Txid,
+							)
+							return
 						}
+						// Nothing to do, skip checkpoint outputs, we watch them as well.
 						if len(vtxos) <= 0 {
-							log.Warnf("vtxo %s not found, skipping...", v.String())
+							return
+						}
+
+						vtxosToUnroll := make([]domain.Outpoint, 0, len(vtxos))
+						for i := range vtxos {
+							vtxo := vtxos[i]
+							// Unschedule the checkpoint sweep task for a preconfirmed vtxo that got
+							// unrolled.
+							if vtxo.Preconfirmed {
+								go func() {
+									txs, err := s.repoManager.Rounds().GetTxsWithTxids(
+										ctx, []string{vtxo.Txid},
+									)
+									if err != nil {
+										log.WithError(err).Warn(
+											"failed to retrieve txs, skipping...",
+										)
+										return
+									}
+
+									if len(txs) <= 0 {
+										log.Warnf("tx %s not found", vtxo.Txid)
+										return
+									}
+
+									ptx, err := psbt.NewFromRawBytes(
+										strings.NewReader(txs[0]), true,
+									)
+									if err != nil {
+										log.WithError(err).Warn("failed to parse tx, skipping...")
+										return
+									}
+
+									// remove sweeper task for the associated checkpoint outputs
+									for _, in := range ptx.UnsignedTx.TxIn {
+										taskId := in.PreviousOutPoint.Hash.String()
+										s.sweeper.removeTask(taskId)
+										log.Debugf("sweeper: unscheduled task for tx %s", taskId)
+									}
+								}()
+							}
+
+							// Trigger the fraud detector to ensure the checkpoint/forfeit tx is
+							// broadcasted as soon as possible.
+							if vtxo.Spent {
+								go func() {
+									txType := "forfeit"
+									if vtxo.Preconfirmed {
+										txType = "checkpoint"
+									}
+									log.Infof(
+										"fraud detected on vtxo %s, waiting for tx confirmation "+
+											"to broadcast the %s tx...", vtxo.Outpoint, txType,
+									)
+									if err := s.reactToFraud(ctx, vtxo, locks); err != nil {
+										log.WithError(err).Warnf(
+											"failed to react to fraud for vtxo %s",
+											vtxo.Outpoint.String(),
+										)
+									}
+								}()
+							}
+
+							if !vtxo.Unrolled {
+								vtxosToUnroll = append(vtxosToUnroll, vtxo.Outpoint)
+							}
+						}
+
+						if len(vtxosToUnroll) > 0 {
+							if err := s.repoManager.Vtxos().UnrollVtxos(
+								ctx, vtxosToUnroll,
+							); err != nil {
+								log.WithError(err).WithField("vtxos", vtxosToUnroll).Warn(
+									"failed to mark vtxo(s) as unrolled",
+								)
+								return
+							}
+							log.WithField("vtxos", vtxosToUnroll).Debugf(
+								"unrolled %d vtxo(s)", len(vtxosToUnroll),
+							)
+						}
+					}(tx.Outputs)
+				}
+
+				// Track the spend of unrolled vtxos not cosigned with us.
+				if len(tx.Inputs) > 0 {
+					outpoints := make([]domain.Outpoint, 0, len(tx.Inputs))
+					for _, u := range tx.Inputs {
+						outpoints = append(outpoints, u.Outpoint)
+					}
+
+					// Check if the spent unrolled vtxo is already tracked in db. If not, this is
+					// the user spenidng the funds after the exit path's locktime expired.
+					cosignedUtxos, err := s.repoManager.CosignedUtxos().GetUtxos(ctx, outpoints)
+					if err != nil {
+						log.WithError(err).Warnf("failed to retrieve utxos for tx %s", tx.Txid)
+						return
+					}
+					tracked := make(map[domain.Outpoint]struct{}, len(cosignedUtxos))
+					for _, u := range cosignedUtxos {
+						tracked[u.Outpoint] = struct{}{}
+					}
+
+					// Watched scripts include the checkpoint outputs, spent by us when sweeping
+					// them: only the inputs that are unrolled vtxos are tracked.
+					vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, outpoints)
+					if err != nil {
+						log.WithError(err).Warnf("failed to retrieve vtxos for tx %s", tx.Txid)
+						return
+					}
+
+					// The utxos point to the unrolled vtxos: no pubkey and amount, they are
+					// resolved from the vtxo records.
+					now := time.Now().Unix()
+					utxos := make([]domain.Utxo, 0, len(vtxos))
+					for _, vtxo := range vtxos {
+						if _, ok := tracked[vtxo.Outpoint]; ok || !vtxo.Unrolled {
 							continue
 						}
-
-						vtxo := vtxos[0]
-
-						if vtxo.Preconfirmed {
-							go func() {
-								txs, err := s.repoManager.Rounds().GetTxsWithTxids(
-									ctx, []string{vtxo.Txid},
-								)
-								if err != nil {
-									log.WithError(err).Warn("failed to retrieve txs, skipping...")
-									return
-								}
-
-								if len(txs) <= 0 {
-									log.Warnf("tx %s not found", vtxo.Txid)
-									return
-								}
-
-								ptx, err := psbt.NewFromRawBytes(strings.NewReader(txs[0]), true)
-								if err != nil {
-									log.WithError(err).Warn("failed to parse tx, skipping...")
-									return
-								}
-
-								// remove sweeper task for the associated checkpoint outputs
-								for _, in := range ptx.UnsignedTx.TxIn {
-									taskId := in.PreviousOutPoint.Hash.String()
-									s.sweeper.removeTask(taskId)
-									log.Debugf("sweeper: unscheduled task for tx %s", taskId)
-								}
-							}()
-						}
-
-						if !vtxo.Unrolled {
-							go func() {
-								if err := s.repoManager.Vtxos().UnrollVtxos(
-									ctx, []domain.Outpoint{vtxo.Outpoint},
-								); err != nil {
-									log.WithError(err).Warnf(
-										"failed to mark vtxo %s as unrolled", vtxo.Outpoint.String(),
-									)
-								}
-
-								log.Debugf("vtxo %s unrolled", vtxo.Outpoint.String())
-							}()
-						}
-
-						if vtxo.Spent {
-							log.Infof("fraud detected on vtxo %s", vtxo.Outpoint.String())
-							go func() {
-								if err := s.reactToFraud(ctx, vtxo, locks); err != nil {
-									log.WithError(err).Warnf(
-										"failed to react to fraud for vtxo %s", vtxo.Outpoint.String(),
-									)
-								}
-							}()
-						}
+						utxos = append(utxos, domain.Utxo{
+							Outpoint:  vtxo.Outpoint,
+							Spend:     domain.UtxoSpend{Txid: tx.Txid},
+							CreatedAt: now,
+						})
 					}
+					if len(utxos) <= 0 {
+						return
+					}
+					if err := s.repoManager.CosignedUtxos().AddUtxos(ctx, utxos, ""); err != nil {
+						log.WithError(err).Warnf(
+							"failed to track unrolled vtxos spent by tx %s", tx.Txid,
+						)
+						return
+					}
+					log.Debugf("tracking %d unrolled vtxo(s) spent by tx %s", len(utxos), tx.Txid)
+
+					// Confirmed directly, like boarding utxos, as there is no onchain tx event.
+					s.watchSpentCosignedUtxos(tx.Txid)
 				}
-			}(vtxoKeys)
+			}(tx)
 		}
 		cancelStream()
 
@@ -4693,13 +4780,14 @@ func (s *service) stopWatchingVtxos(tapkeys []string) {
 // restoreWatchingCosignedUtxos gets all cosigned utxos that have the spending tx still unconfirmed
 // and starts a goroutine to wait for the confirmation and subsequent update of the db records.
 func (s *service) restoreWatchingCosignedUtxos() error {
-	utxos, err := s.repoManager.CosignedUtxos().GetUnconfirmedUtxos(s.ctx)
+	repo := s.repoManager.CosignedUtxos()
+	cosignedUtxos, boardingUtxos, unrolledVtxos, err := repo.GetUnconfirmedUtxos(s.ctx)
 	if err != nil {
 		return err
 	}
 
 	txs := make(map[string]*domain.OnchainTx, 0)
-	for _, utxo := range utxos {
+	for _, utxo := range cosignedUtxos {
 		if _, ok := txs[utxo.Spend.Txid]; !ok {
 			txs[utxo.Spend.Txid] = &domain.OnchainTx{
 				Stage:         domain.Stage{Code: int(domain.OnchainTxBroadcastedStage)},
@@ -4714,21 +4802,20 @@ func (s *service) restoreWatchingCosignedUtxos() error {
 
 		txs[utxo.Spend.Txid].SignedInputs[utxo.String()] = struct{}{}
 	}
-	// Boarding utxos spent by a batch were written by the round projection, so no onchain tx
-	// events exist for their commitment tx and they have to be confirmed directly.
-	commitmentTxids, err := s.repoManager.Rounds().GetRoundsWithCommitmentTxids(
-		s.ctx, slices.Collect(maps.Keys(txs)),
-	)
-	if err != nil {
-		return err
+
+	for _, tx := range txs {
+		go s.waitForSpendConfirmationAndUpdateUtxos(tx)
 	}
 
-	for txid, tx := range txs {
-		if _, ok := commitmentTxids[txid]; ok {
-			go s.watchBatchBoardingUtxos(txid)
+	utxos := append([]domain.Utxo{}, boardingUtxos...)
+	utxos = append(utxos, unrolledVtxos...)
+	seen := make(map[string]struct{})
+	for _, utxo := range utxos {
+		if _, ok := seen[utxo.Spend.Txid]; ok {
 			continue
 		}
-		go s.waitForSpendConfirmationAndUpdateUtxos(tx)
+		seen[utxo.Spend.Txid] = struct{}{}
+		go s.watchSpentCosignedUtxos(utxo.Spend.Txid)
 	}
 	return nil
 }

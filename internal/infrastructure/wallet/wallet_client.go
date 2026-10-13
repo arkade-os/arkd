@@ -191,8 +191,8 @@ func (w *walletDaemonClient) SignMessage(ctx context.Context, message []byte) ([
 
 func (w *walletDaemonClient) GetNotificationChannel(
 	ctx context.Context,
-) <-chan map[string][]ports.VtxoWithValue {
-	ch := make(chan map[string][]ports.VtxoWithValue)
+) <-chan ports.TxNotification {
+	ch := make(chan ports.TxNotification)
 	stream, err := w.client.NotificationStream(ctx, &arkwalletv1.NotificationStreamRequest{})
 	if err != nil {
 		close(ch)
@@ -213,21 +213,13 @@ func (w *walletDaemonClient) GetNotificationChannel(
 				log.WithError(err).Warnf("failed to receive notification")
 				return
 			}
-			m := make(map[string][]ports.VtxoWithValue)
-			for _, entry := range resp.Entries {
-				vtxos := make([]ports.VtxoWithValue, 0, len(entry.Vtxos))
-				for _, v := range entry.Vtxos {
-					vtxos = append(vtxos, ports.VtxoWithValue{
-						Outpoint: domain.Outpoint{
-							Txid: v.Txid,
-							VOut: v.Vout,
-						},
-						Value: v.Value,
-					})
-				}
-				m[entry.Script] = vtxos
+			ch <- ports.TxNotification{
+				Txid:              resp.GetTxid(),
+				Inputs:            parseUtxos(resp.GetInputs()),
+				Outputs:           parseUtxos(resp.GetOutputs()),
+				ConfirmedAtTime:   resp.GetConfirmedAtTime(),
+				ConfirmedAtHeight: resp.GetConfirmedAtHeight(),
 			}
-			ch <- m
 		}
 	}()
 	return ch
@@ -568,4 +560,28 @@ func (w *walletDaemonClient) RescanUtxos(ctx context.Context, outs []wire.OutPoi
 	}
 	_, err := w.client.RescanUtxos(ctx, &arkwalletv1.RescanUtxosRequest{Outpoints: outsStr})
 	return err
+}
+
+func parseUtxos(list []*arkwalletv1.Utxo) []domain.Utxo {
+	if len(list) <= 0 {
+		return nil
+	}
+
+	utxos := make([]domain.Utxo, 0, len(list))
+	for _, l := range list {
+		pubkey := l.GetScript()
+		// If the script is a tapkey, drop the first 2 bytes
+		if len(pubkey) == 4+64 {
+			pubkey = pubkey[4:]
+		}
+		utxos = append(utxos, domain.Utxo{
+			Outpoint: domain.Outpoint{
+				Txid: l.GetTxid(),
+				VOut: l.GetVout(),
+			},
+			Amount: l.GetValue(),
+			PubKey: pubkey,
+		})
+	}
+	return utxos
 }

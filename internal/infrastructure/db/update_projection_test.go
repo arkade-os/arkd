@@ -305,9 +305,48 @@ func TestUpdateProjectionsAfterOnchainTxEvents(t *testing.T) {
 				require.Equal(t, f.confirmed.ConfirmedAtTime, utxos[0].Spend.ConfirmedAtTime)
 				require.Equal(t, f.confirmed.ConfirmedAtHeight, utxos[0].Spend.ConfirmedAtHeight)
 
-				unconfirmed, err := svc.CosignedUtxos().GetUnconfirmedUtxos(ctx)
+				cosigned, boarding, unrolled, err := svc.CosignedUtxos().GetUnconfirmedUtxos(ctx)
 				require.NoError(t, err)
-				require.Empty(t, unconfirmed)
+				require.Empty(t, cosigned)
+				require.Empty(t, boarding)
+				require.Empty(t, unrolled)
+			})
+
+			// The signed input is an unrolled vtxo: it is recorded as a pointer to the vtxo,
+			// the utxo table refuses a row duplicating it, and read back with the vtxo's
+			// pubkey and amount. The spending tx is stored, so the utxo counts as cosigned.
+			t.Run("broadcast records an unrolled vtxo as a pointer", func(t *testing.T) {
+				svc := newProjectionTestService(t, newProjectionTestDBs(t))
+				f := newOnchainTxFixture(t)
+				require.NoError(t, svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{{
+					Outpoint:  f.signed,
+					PubKey:    hex.EncodeToString(f.pkScript[2:]),
+					Amount:    f.amount,
+					ExpiresAt: time.Now().Add(time.Hour).Unix(),
+				}}))
+				require.NoError(t, svc.Vtxos().UnrollVtxos(ctx, []domain.Outpoint{f.signed}))
+
+				require.NoError(t, svc.Events().Save(
+					ctx, domain.OnchainTxTopic, f.txid, []domain.Event{f.broadcasted},
+				))
+
+				require.Eventually(t, func() bool {
+					utxos, err := svc.CosignedUtxos().GetUtxos(ctx, []domain.Outpoint{f.signed})
+					return err == nil && len(utxos) == 1
+				}, 5*time.Second, 50*time.Millisecond)
+				utxos, err := svc.CosignedUtxos().GetUtxos(ctx, []domain.Outpoint{f.signed})
+				require.NoError(t, err)
+				require.Len(t, utxos, 1)
+				require.Equal(t, f.amount, utxos[0].Amount)
+				require.Equal(t, hex.EncodeToString(f.pkScript[2:]), utxos[0].PubKey)
+				require.Equal(t, f.txid, utxos[0].Spend.Txid)
+
+				cosigned, boarding, unrolled, err := svc.CosignedUtxos().GetUnconfirmedUtxos(ctx)
+				require.NoError(t, err)
+				require.Len(t, cosigned, 1)
+				require.Equal(t, f.signed, cosigned[0].Outpoint)
+				require.Empty(t, boarding)
+				require.Empty(t, unrolled)
 			})
 		})
 

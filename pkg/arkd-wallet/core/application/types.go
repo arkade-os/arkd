@@ -56,7 +56,7 @@ type WalletService interface {
 type BlockchainScanner interface {
 	WatchScripts(ctx context.Context, scripts []string) error
 	UnwatchScripts(ctx context.Context, scripts []string) error
-	GetNotificationChannel(ctx context.Context) <-chan map[string][]Utxo
+	GetNotificationChannel(ctx context.Context) <-chan TxNotification
 	IsTransactionConfirmed(
 		ctx context.Context, txid string,
 	) (isConfirmed bool, blockHeight, blockTime int64, err error)
@@ -76,6 +76,16 @@ type Utxo struct {
 	Index  uint32
 	Script string
 	Value  uint64
+}
+
+// TxNotification is a transaction that spends (Inputs) or creates (Outputs) utxos of watched
+// scripts. ConfirmedAtTime and ConfirmedAtHeight are 0 while the transaction is unconfirmed.
+type TxNotification struct {
+	Txid              string
+	Inputs            []Utxo
+	Outputs           []Utxo
+	ConfirmedAtTime   int64
+	ConfirmedAtHeight uint64
 }
 
 // MainAccountUtxo describes a single UTXO of the main account, including its

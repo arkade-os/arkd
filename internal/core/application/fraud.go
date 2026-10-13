@@ -73,9 +73,12 @@ func (k *keyedMutex) lock(key string) func() {
 // was spent offchain. Otherwise, the forfeit tx created and signed during the batch execution is
 // broadcasted.
 func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, locks *keyedMutex) error {
+	if _, err := waitForConfirmation(ctx, vtxo.Txid, s.wallet); err != nil {
+		return fmt.Errorf("failed to wait for confirmation of vtxo %s: %s", vtxo.Outpoint, err)
+	}
+
 	// If the vtxo wasn't settled we must broadcast a checkpoint tx.
 	if !vtxo.IsSettled() {
-
 		// lock by outpoint to defend against duplicate notification
 		unlock := locks.lock(vtxo.Outpoint.String())
 		defer unlock()
@@ -101,6 +104,26 @@ func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, locks *key
 					log.WithError(err).Errorf("failed to get current block time: %s", err)
 					return
 				}
+			} else {
+				// Track the unrolled vtxo as spent and confirmed.
+				if err := s.repoManager.CosignedUtxos().UpdateUtxos(ctx, []domain.Utxo{{
+					Outpoint: vtxo.Outpoint,
+					Spend: domain.UtxoSpend{
+						Txid:              vtxo.SpentBy,
+						ConfirmedAtTime:   blockTimestamp.Time,
+						ConfirmedAtHeight: uint64(blockTimestamp.Height),
+					},
+				}}); err != nil {
+					log.WithError(err).Warnf(
+						"failed to confirm spend of unrolled vtxo %s by checkpoint tx %s",
+						vtxo.Outpoint, vtxo.SpentBy,
+					)
+				} else {
+					log.Debugf(
+						"confirmed spend of unrolled vtxo %s by checkpoint tx %s in block %d",
+						vtxo.Outpoint, vtxo.SpentBy, blockTimestamp.Height,
+					)
+				}
 			}
 			if err := s.sweeper.scheduleCheckpointSweep(
 				vtxo.Outpoint, ptx, blockTimestamp,
@@ -122,6 +145,35 @@ func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, locks *key
 		return fmt.Errorf("failed to broadcast forfeit tx: %s", err)
 	}
 
+	// Watch the confirmation of the forfeit tx to update the utxo record accordingly.
+	go func(ctx context.Context) {
+		blockTimestamp, err := waitForConfirmation(ctx, vtxo.SpentBy, s.wallet)
+		if err != nil {
+			log.WithError(err).Warnf(
+				"failed to wait for confirmation of forfeit tx %s", vtxo.SpentBy,
+			)
+			return
+		}
+		if err := s.repoManager.CosignedUtxos().UpdateUtxos(ctx, []domain.Utxo{{
+			Outpoint: vtxo.Outpoint,
+			Spend: domain.UtxoSpend{
+				Txid:              vtxo.SpentBy,
+				ConfirmedAtTime:   blockTimestamp.Time,
+				ConfirmedAtHeight: uint64(blockTimestamp.Height),
+			},
+		}}); err != nil {
+			log.WithError(err).Warnf(
+				"failed to confirm spend of unrolled vtxo %s by forfeit tx %s",
+				vtxo.Outpoint, vtxo.SpentBy,
+			)
+			return
+		}
+		log.Debugf(
+			"confirmed spend of unrolled vtxo %s by forfeit tx %s in block %d",
+			vtxo.Outpoint, vtxo.SpentBy, blockTimestamp.Height,
+		)
+	}(context.WithoutCancel(ctx))
+
 	return nil
 }
 
@@ -132,8 +184,7 @@ func (s *service) reactToFraud(ctx context.Context, vtxo domain.Vtxo, locks *key
 // To react to this attack, the relative offchain tx is fetched from db, then the fully signed
 // checkpoint tx is finalized and broadcasted as soon as the vtxo hit the blockchain.
 func (s *service) broadcastCheckpointTx(
-	ctx context.Context,
-	vtxo domain.Vtxo,
+	ctx context.Context, vtxo domain.Vtxo,
 ) (*psbt.Packet, error) {
 	txs, err := s.repoManager.Rounds().GetTxsWithTxids(ctx, []string{vtxo.SpentBy})
 	if err != nil {
@@ -163,7 +214,7 @@ func (s *service) broadcastCheckpointTx(
 		return nil, fmt.Errorf("failed to broadcast checkpoint package: %s", err)
 	}
 
-	log.Debugf("broadcasted checkpoint tx %s", checkpointTx.TxHash().String())
+	log.Infof("broadcasted checkpoint tx %s", checkpointTx.TxHash().String())
 
 	return psbt.NewFromRawBytes(strings.NewReader(checkpointB64), true)
 }
@@ -266,7 +317,7 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 		}
 	}
 
-	log.Debugf("broadcasted forfeit tx %s", forfeit.TxHash().String())
+	log.Infof("broadcasted forfeit tx %s", forfeit.TxHash().String())
 	return nil
 }
 

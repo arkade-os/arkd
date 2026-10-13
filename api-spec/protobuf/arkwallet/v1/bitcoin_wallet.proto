@@ -225,18 +225,23 @@ message GetOutpointStatusResponse {
 message NotificationStreamRequest {
 }
 message NotificationStreamResponse {
-  repeated VtoxsPerScript entries = 1;
+  // The id of the tx that has utxos with watched scripts either as inputs or outputs.
+  string txid = 1;
+  // Watched utxos used as inputs of the tx. 
+  repeated Utxo inputs = 2;
+  // Watched utxos used as outputs of the tx.
+  repeated Utxo outputs = 3;
+  // The time when the tx got confirmed.
+  int64 confirmed_at_time = 4;
+  // The block in which the tx got confirmed.
+  uint64 confirmed_at_height = 5;
 }
 
-message VtoxsPerScript {
-  string script = 1; // hex-encoded script
-  repeated VtxoWithKey vtxos = 2;
-}
-
-message VtxoWithKey {
+message Utxo {
   string txid = 1;
   uint32 vout = 2;
   uint64 value = 3;
+  string script = 4;
 }
 
 message GenSeedRequest {}

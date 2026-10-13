@@ -1,5 +1,7 @@
 package nbxplorer
 
+import "encoding/json"
+
 type bitcoinStatusResponse struct {
 	BitcoinStatus struct {
 		Blocks               uint32  `json:"blocks"`
@@ -118,9 +120,9 @@ type submitPackageResult struct {
 }
 
 type event struct {
-	EventID int         `json:"eventId"`
-	Type    string      `json:"type"`
-	Data    interface{} `json:"data"`
+	EventID int             `json:"eventId"`
+	Type    string          `json:"type"`
+	Data    json.RawMessage `json:"data"`
 }
 
 type newTransactionEvent struct {
@@ -129,11 +131,27 @@ type newTransactionEvent struct {
 	DerivationStrategy string `json:"derivationStrategy"`
 	CryptoCode         string `json:"cryptoCode"`
 	TransactionData    struct {
-		TransactionHash string `json:"transactionHash"`
-		Confirmations   int    `json:"confirmations"`
-		Height          *int   `json:"height,omitempty"`
-		Timestamp       int64  `json:"timestamp"`
+		TransactionHash string  `json:"transactionHash"`
+		Confirmations   int     `json:"confirmations"`
+		Height          *uint32 `json:"height,omitempty"`
+		Timestamp       int64   `json:"timestamp"`
 	} `json:"transactionData"`
+	// Only the inputs and outputs that belong to the tracked source.
+	Inputs  []matchedInput  `json:"inputs"`
+	Outputs []matchedOutput `json:"outputs"`
+}
+
+type matchedOutput struct {
+	Index        uint32 `json:"index"`
+	ScriptPubKey string `json:"scriptPubKey"`
+	Address      string `json:"address"`
+	Value        uint64 `json:"value"`
+}
+
+// matchedInput is the spent outpoint, TransactionID:Index, and its prevout.
+type matchedInput struct {
+	TransactionID string `json:"transactionId"`
+	matchedOutput
 }
 
 type utxoResponse struct {

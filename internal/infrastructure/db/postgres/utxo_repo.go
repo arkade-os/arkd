@@ -155,12 +155,40 @@ func (r *utxoRepository) GetUtxosWithPubKeys(
 	return readUtxos(rows), total, nil
 }
 
-func (r *utxoRepository) GetUnconfirmedUtxos(ctx context.Context) ([]domain.Utxo, error) {
-	rows, err := r.querier.SelectUnconfirmedSpentUtxos(ctx)
+func (r *utxoRepository) GetUnconfirmedUtxosWithSpendingTxid(
+	ctx context.Context, txid string,
+) ([]domain.Utxo, error) {
+	rows, err := r.querier.SelectUnconfirmedUtxosWithSpendingTxid(ctx, txid)
 	if err != nil {
 		return nil, err
 	}
 	return readUtxos(rows), nil
+}
+
+// GetUnconfirmedUtxos returns the utxos whose spend is not confirmed yet, split by the kind of
+// spending tx: a tx cosigned by us, recorded along with the utxos, a commitment tx spending a
+// boarding utxo, or a checkpoint, forfeit or exit path tx spending an unrolled vtxo. An
+// unrolled vtxo spent by a cosigned tx counts as cosigned.
+func (r *utxoRepository) GetUnconfirmedUtxos(
+	ctx context.Context,
+) (cosignedUtxos, boardingUtxos, unrolledVtxos []domain.Utxo, err error) {
+	rows, err := r.querier.SelectUnconfirmedSpentUtxos(ctx)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	for _, row := range rows {
+		utxo := rowToUtxo(row.UtxoVw)
+		isVtxo, _ := row.UtxoVw.IsVtxo.(bool)
+		switch {
+		case row.IsCosigned:
+			cosignedUtxos = append(cosignedUtxos, utxo)
+		case isVtxo:
+			unrolledVtxos = append(unrolledVtxos, utxo)
+		default:
+			boardingUtxos = append(boardingUtxos, utxo)
+		}
+	}
+	return cosignedUtxos, boardingUtxos, unrolledVtxos, nil
 }
 
 func (r *utxoRepository) GetOnchainTxs(ctx context.Context, txids []string) ([]string, error) {

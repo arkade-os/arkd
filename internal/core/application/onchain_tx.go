@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	terrors "errors"
-	"slices"
 	"strings"
 	"time"
 
@@ -191,26 +190,50 @@ func (s *service) lockUtxos(
 		).WithMetadata(errors.PsbtMetadata{Tx: tx})
 	}
 
-	// Reject signing inputs for which we have an offchain track.
+	// SubmitOffchainTx reads its vtxos and adds its tx to the offchain cache while holding this
+	// lock: either its tx is found in the cache below, or it reads the vtxo as unrolled and
+	// rejects the spend.
+	s.offchainTxMu.Lock()
+	defer s.offchainTxMu.Unlock()
+
+	// The cache goes first: an offchain tx leaves it only once its spent vtxos are marked spent
+	// in the db, so a spend is always visible in one of the two.
+	spentOffchain, err := s.cache.OffchainTxs().IncludesAny(ctx, inputsToCosign)
+	if err != nil {
+		log.WithError(err).Error("failed to check if inputs are spent by offchain txs")
+		return errors.INTERNAL_ERROR.New("something went wrong, please retry")
+	}
+	if len(spentOffchain) > 0 {
+		return errors.INVALID_ARK_PSBT.New(
+			"inputs already spent offchain: %s",
+			strings.Join(outpointsToString(spentOffchain), ", "),
+		).WithMetadata(errors.PsbtMetadata{Tx: tx})
+	}
+
+	// Reject signing inputs tracked as vtxos, unless unrolled and still unspent: a vtxo spent
+	// offchain is in the middle of a chain being unrolled and gets claimed by its checkpoint or
+	// forfeit tx, an expired one gets swept by us.
 	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, inputsToCosign)
 	if err != nil {
 		log.WithError(err).Error("failed to check if inputs are already spent in db")
 		return errors.INTERNAL_ERROR.New("something went wrong, please retry")
 	}
-	if len(vtxos) > 0 {
-		vtxoOutpoints := make([]domain.Outpoint, 0, len(vtxos))
-		for _, v := range vtxos {
-			vtxoOutpoints = append(vtxoOutpoints, v.Outpoint)
+	for _, v := range vtxos {
+		if !v.Unrolled {
+			return errors.INVALID_ARK_PSBT.New(
+				"input %s is tracked offchain", v.Outpoint,
+			).WithMetadata(errors.PsbtMetadata{Tx: tx})
 		}
-		return errors.INVALID_ARK_PSBT.New(
-			"one or more inputs already tracked offchain: %s",
-			strings.Join(outpointsToString(vtxoOutpoints), ", "),
-		).WithMetadata(errors.PsbtMetadata{Tx: tx})
-		// TODO: uncomment when we want to support cosigning unrolled vtxos at the end of the
-		// chain. For now we reject anything that we know be exiting also offchain.
-		// The check above narrows the rejection to only unrolled vtxos that are already spent
-		// offchain, ie. they are in the middle of a chain of txs that is being unrolled, only
-		// edges will be allowed to be cosigned instead.
+		if v.Spent {
+			return errors.INVALID_ARK_PSBT.New(
+				"input %s is an unrolled vtxo already spent offchain", v.Outpoint,
+			).WithMetadata(errors.PsbtMetadata{Tx: tx})
+		}
+		if v.Swept || v.IsExpired() {
+			return errors.INVALID_ARK_PSBT.New(
+				"input %s is an unrolled vtxo already expired", v.Outpoint,
+			).WithMetadata(errors.PsbtMetadata{Tx: tx})
+		}
 	}
 
 	// Reject signing inputs that are checkpoint outputs.
@@ -286,6 +309,26 @@ func (s *service) validateOnchainTx(
 	signers := make(map[string]struct{}, len(signerPubkeys))
 	for _, signer := range signerPubkeys {
 		signers[hex.EncodeToString(schnorr.SerializePubKey(signer))] = struct{}{}
+	}
+
+	// An unrolled vtxo is locked by a vtxo script, whose exit delay is validated against the
+	// unilateral one rather than the boarding one.
+	outpoints := make([]domain.Outpoint, 0, len(ptx.UnsignedTx.TxIn))
+	for _, in := range ptx.UnsignedTx.TxIn {
+		outpoints = append(outpoints, domain.Outpoint{
+			Txid: in.PreviousOutPoint.Hash.String(), VOut: in.PreviousOutPoint.Index,
+		})
+	}
+	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, outpoints)
+	if err != nil {
+		log.WithError(err).Error("failed to get vtxos of inputs")
+		return nil, nil, errors.INTERNAL_ERROR.New("something went wrong, please retry")
+	}
+	unrolledVtxos := make(map[domain.Outpoint]struct{}, len(vtxos))
+	for _, v := range vtxos {
+		if v.Unrolled {
+			unrolledVtxos[v.Outpoint] = struct{}{}
+		}
 	}
 
 	sumOfInputs := int64(0)
@@ -469,10 +512,14 @@ func (s *service) validateOnchainTx(
 
 		// Reject inputs with a vtxo script that is not valid for any of our signer pubkeys, ie.
 		// missing from any collaborative closure, exit delay too short or of the wrong type.
+		minExitDelay := settings.BoardingExitDelay
+		if _, ok := unrolledVtxos[outpoints[i]]; ok {
+			minExitDelay = settings.UnilateralExitDelay
+		}
 		validScript := false
 		for _, signer := range signerPubkeys {
 			if err := vtxoScript.Validate(
-				signer, settings.BoardingExitDelay, settings.AllowCSVBlockType(),
+				signer, minExitDelay, settings.AllowCSVBlockType(),
 			); err == nil {
 				validScript = true
 				break
@@ -595,7 +642,7 @@ func (s *service) validateOnchainTx(
 		}
 	}
 
-	// Reject if any input is still unconfirmed or if they have mature exit closures.
+	// Unconfirmed inputs are accepted: their exit closures can't be mature yet.
 	confirmations := make(map[string]ports.BlockTimestamp)
 	for txid := range txsToCheckConfirmed {
 		isConfirmed, conf, err := s.scanner.IsTransactionConfirmed(ctx, txid)
@@ -603,17 +650,18 @@ func (s *service) validateOnchainTx(
 			log.WithError(err).Errorf("failed to check confirmation status of tx %s", txid)
 			return nil, nil, errors.INTERNAL_ERROR.New("something went wrong, please retry")
 		}
-		if !isConfirmed {
-			return nil, nil, errors.INVALID_ARK_PSBT.New(
-				"all inputs to cosign must have at least a confirmation",
-			).WithMetadata(errors.PsbtMetadata{Tx: tx})
+		if isConfirmed {
+			confirmations[txid] = *conf
 		}
-		confirmations[txid] = *conf
 	}
 
 	var tip *ports.BlockTimestamp
-	// Reject if any input has a mature exit closure.
+	// Reject if any confirmed input has a mature exit closure.
 	for inIndex, input := range exitDelaysToCheckExpired {
+		conf, ok := confirmations[input.txid]
+		if !ok {
+			continue
+		}
 		// The tip is required only for delays in blocks (regtest only), they can't be
 		// compared against a clock.
 		if input.delay.Type == arklib.LocktimeTypeBlock && tip == nil {
@@ -624,7 +672,6 @@ func (s *service) validateOnchainTx(
 				)
 			}
 		}
-		conf := confirmations[input.txid]
 		// Use a margin to make sure the exit path doesn't become available right after cosigning.
 		expired, err := isExitDelayExpired(
 			&conf, tip, input.delay, settings.UnrolledVtxoMinExpiryMargin, now,
@@ -677,29 +724,23 @@ func (s *service) waitForSpendConfirmationAndUpdateUtxos(onchainTx *domain.Oncha
 	)
 }
 
-// watchBatchBoardingUtxos records the confirmation of a commitment tx on the boarding utxos it
-// spends. The round projection writes them with no onchain tx broadcasted event, and a
-// confirmed event with none before it is ignored, so they are updated directly.
-func (s *service) watchBatchBoardingUtxos(commitmentTxid string) {
-	unconfirmed, err := s.repoManager.CosignedUtxos().GetUnconfirmedUtxos(s.ctx)
+// watchSpentCosignedUtxos records the confirmation of a boarding or unrolled vtxo cosigned with us
+// in the given tx that is now in mempool.
+func (s *service) watchSpentCosignedUtxos(txid string) {
+	repo := s.repoManager.CosignedUtxos()
+
+	utxos, err := repo.GetUnconfirmedUtxosWithSpendingTxid(s.ctx, txid)
 	if err != nil {
-		log.WithError(err).Errorf(
-			"failed to get boarding utxos spent by commitment tx %s", commitmentTxid,
-		)
+		log.WithError(err).Errorf("failed to get cosigned utxos spent by tx %s", txid)
 		return
 	}
-	utxos := slices.DeleteFunc(unconfirmed, func(utxo domain.Utxo) bool {
-		return utxo.Spend.Txid != commitmentTxid
-	})
-	if len(utxos) == 0 {
+	if len(utxos) <= 0 {
 		return
 	}
 
-	confirmation, err := waitForConfirmation(s.ctx, commitmentTxid, s.wallet)
+	confirmation, err := waitForConfirmation(s.ctx, txid, s.wallet)
 	if err != nil {
-		log.WithError(err).Errorf(
-			"failed to wait for commitment tx %s to be confirmed", commitmentTxid,
-		)
+		log.WithError(err).Errorf("failed to wait for tx %s to be confirmed", txid)
 		return
 	}
 
@@ -707,16 +748,15 @@ func (s *service) watchBatchBoardingUtxos(commitmentTxid string) {
 		utxos[i].Spend.ConfirmedAtTime = confirmation.Time
 		utxos[i].Spend.ConfirmedAtHeight = uint64(confirmation.Height)
 	}
-	if err := s.repoManager.CosignedUtxos().UpdateUtxos(s.ctx, utxos); err != nil {
-		log.WithError(err).Errorf(
-			"failed to confirm boarding utxos spent by commitment tx %s", commitmentTxid,
-		)
+	if err := repo.UpdateUtxos(s.ctx, utxos); err != nil {
+		log.WithError(err).Errorf("failed to confirm utxos spent by tx %s", txid)
 		return
 	}
 
+	confirmedAt := time.Unix(confirmation.Time, 0).Format(time.RFC3339)
 	log.Debugf(
-		"commitment tx %s spending %d boarding utxos confirmed at %s",
-		commitmentTxid, len(utxos), time.Unix(confirmation.Time, 0).Format(time.RFC3339),
+		"tx %s spending %d cosigned utxos confirmed at %s in block %d",
+		txid, len(utxos), confirmedAt, confirmation.Height,
 	)
 }
 

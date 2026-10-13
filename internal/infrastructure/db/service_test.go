@@ -1812,9 +1812,12 @@ func testUtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Equal(t, pointer.Spend.Txid, got[0].Spend.Txid)
 			require.False(t, got[0].Spend.IsConfirmed())
 
-			unconfirmed, err := repo.GetUnconfirmedUtxos(ctx)
+			// It is returned as an unrolled vtxo while unconfirmed.
+			cosigned, boarding, unrolled, err := repo.GetUnconfirmedUtxos(ctx)
 			require.NoError(t, err)
-			found := findUtxo(unconfirmed, vtxo.Outpoint)
+			require.Nil(t, findUtxo(cosigned, vtxo.Outpoint))
+			require.Nil(t, findUtxo(boarding, vtxo.Outpoint))
+			found := findUtxo(unrolled, vtxo.Outpoint)
 			require.NotNil(t, found)
 			require.Equal(t, vtxo.PubKey, found.PubKey)
 			require.Equal(t, vtxo.Amount, found.Amount)
@@ -1838,9 +1841,9 @@ func testUtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Equal(t, vtxo.PubKey, got[0].PubKey)
 			require.Equal(t, vtxo.Amount, got[0].Amount)
 
-			unconfirmed, err = repo.GetUnconfirmedUtxos(ctx)
+			_, _, unrolled, err = repo.GetUnconfirmedUtxos(ctx)
 			require.NoError(t, err)
-			require.Nil(t, findUtxo(unconfirmed, vtxo.Outpoint))
+			require.Nil(t, findUtxo(unrolled, vtxo.Outpoint))
 
 			// The vtxo record is untouched by the utxo lifecycle.
 			vtxos, err := svc.Vtxos().GetVtxos(ctx, []domain.Outpoint{vtxo.Outpoint})
@@ -1849,6 +1852,92 @@ func testUtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.True(t, vtxos[0].Unrolled)
 			require.False(t, vtxos[0].Spent)
 			require.Equal(t, vtxo.Amount, vtxos[0].Amount)
+		})
+
+		// Unrolling a vtxo already spent offchain or settled records the spend in the utxo
+		// table in the same transaction, so the tx that will spend it onchain is tracked right
+		// away. Nothing is recorded for a vtxo that is not spent, or settled without a forfeit
+		// tx, since no tx of ours will ever spend it.
+		t.Run("unrolling spent vtxos adds pointers", func(t *testing.T) {
+			commitmentTxid := randomString(32)
+			newVtxo := func(amount uint64) domain.Vtxo {
+				return domain.Vtxo{
+					Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+					PubKey:             pubkey,
+					Amount:             amount,
+					RootCommitmentTxid: commitmentTxid,
+					CommitmentTxids:    []string{commitmentTxid},
+					ExpiresAt:          time.Now().Add(time.Hour).Unix(),
+					CreatedAt:          time.Now().Unix(),
+				}
+			}
+			checkpointTxid, forfeitTxid := randomString(32), randomString(32)
+			tests := []struct {
+				name string
+				vtxo domain.Vtxo
+				// spentBy is the tx expected to be tracked as spending the vtxo, none if empty.
+				spentBy string
+			}{
+				{name: "spent offchain", vtxo: newVtxo(1000), spentBy: checkpointTxid},
+				{name: "settled with forfeit", vtxo: newVtxo(2000), spentBy: forfeitTxid},
+				{name: "settled without forfeit", vtxo: newVtxo(3000)},
+				{name: "not spent", vtxo: newVtxo(4000)},
+			}
+			all := make([]domain.Vtxo, 0, len(tests))
+			for _, tt := range tests {
+				all = append(all, tt.vtxo)
+			}
+			require.NoError(t, svc.Vtxos().AddVtxos(ctx, all))
+			require.NoError(t, svc.Vtxos().SpendVtxos(
+				ctx, map[domain.Outpoint]string{tests[0].vtxo.Outpoint: checkpointTxid},
+				randomString(32),
+			))
+			require.NoError(t, svc.Vtxos().SettleVtxos(
+				ctx, map[domain.Outpoint]string{
+					tests[1].vtxo.Outpoint: forfeitTxid, tests[2].vtxo.Outpoint: "",
+				},
+				randomString(32),
+			))
+
+			before := time.Now().Unix()
+			require.NoError(t, svc.Vtxos().UnrollVtxos(ctx, outpointsOf(all)))
+
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					got, err := repo.GetUtxos(ctx, []domain.Outpoint{tt.vtxo.Outpoint})
+					require.NoError(t, err)
+					if tt.spentBy == "" {
+						require.Empty(t, got)
+						return
+					}
+					require.Len(t, got, 1)
+					require.Equal(t, tt.vtxo.PubKey, got[0].PubKey)
+					require.Equal(t, tt.vtxo.Amount, got[0].Amount)
+					require.Equal(t, tt.spentBy, got[0].Spend.Txid)
+					require.False(t, got[0].Spend.IsConfirmed())
+					require.GreaterOrEqual(t, got[0].CreatedAt, before)
+
+					cosigned, boarding, unrolled, err := repo.GetUnconfirmedUtxos(ctx)
+					require.NoError(t, err)
+					require.NotNil(t, findUtxo(unrolled, tt.vtxo.Outpoint))
+					require.Nil(t, findUtxo(cosigned, tt.vtxo.Outpoint))
+					require.Nil(t, findUtxo(boarding, tt.vtxo.Outpoint))
+				})
+			}
+
+			// Unrolling again is a no-op: the pointers are not duplicated.
+			require.NoError(t, svc.Vtxos().UnrollVtxos(ctx, outpointsOf(all)))
+			got, err := repo.GetUtxos(ctx, outpointsOf(all))
+			require.NoError(t, err)
+			require.Len(t, got, 2)
+
+			// Every vtxo is unrolled, whether a pointer was added for it or not.
+			vtxos, err := svc.Vtxos().GetVtxos(ctx, outpointsOf(all))
+			require.NoError(t, err)
+			require.Len(t, vtxos, len(all))
+			for _, v := range vtxos {
+				require.True(t, v.Unrolled)
+			}
 		})
 
 		// The utxos of a cosigned tx are recorded along with the tx, once per tx: a second
@@ -1909,6 +1998,22 @@ func testUtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.NoError(t, err)
 			require.Empty(t, txs)
 
+			// Unconfirmed utxos are split by the kind of their spending tx: the ones recorded
+			// along with it are cosigned, the ones without it that are not vtxos are boarding.
+			cosignedUnconfirmed, boardingUnconfirmed, unrolledUnconfirmed, err :=
+				repo.GetUnconfirmedUtxos(ctx)
+			require.NoError(t, err)
+			for _, utxo := range cosigned {
+				require.NotNil(t, findUtxo(cosignedUnconfirmed, utxo.Outpoint))
+				require.Nil(t, findUtxo(boardingUnconfirmed, utxo.Outpoint))
+				require.Nil(t, findUtxo(unrolledUnconfirmed, utxo.Outpoint))
+			}
+			for _, utxo := range boarding {
+				require.NotNil(t, findUtxo(boardingUnconfirmed, utxo.Outpoint))
+				require.Nil(t, findUtxo(cosignedUnconfirmed, utxo.Outpoint))
+				require.Nil(t, findUtxo(unrolledUnconfirmed, utxo.Outpoint))
+			}
+
 			// Several cosigned txs are read back together.
 			otherTxid := randomString(32)
 			other := newUtxo(randomString(32), 0, 6000)
@@ -1929,11 +2034,20 @@ func testUtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.NoError(t, err)
 
 			// A utxo is always added unconfirmed.
-			unconfirmed, err := repo.GetUnconfirmedUtxos(ctx)
+			_, unconfirmed, _, err := repo.GetUnconfirmedUtxos(ctx)
 			require.NoError(t, err)
 			found := findUtxo(unconfirmed, utxo.Outpoint)
 			require.NotNil(t, found)
 			require.False(t, found.Spend.IsConfirmed())
+
+			// It is also returned among the unconfirmed utxos spent by its tx, and only those.
+			spent, err := repo.GetUnconfirmedUtxosWithSpendingTxid(ctx, utxo.Spend.Txid)
+			require.NoError(t, err)
+			require.Len(t, spent, 1)
+			requireSameUtxo(t, utxo, spent[0])
+			spent, err = repo.GetUnconfirmedUtxosWithSpendingTxid(ctx, randomString(32))
+			require.NoError(t, err)
+			require.Empty(t, spent)
 
 			// Missing confirmation info is rejected.
 			err = repo.UpdateUtxos(ctx, []domain.Utxo{utxo})
@@ -1962,9 +2076,12 @@ func testUtxoRepository(t *testing.T, svc ports.RepoManager) {
 			require.Equal(t, confirmedAtHeight, got[0].Spend.ConfirmedAtHeight)
 
 			// Once confirmed, the utxo is not returned as unconfirmed anymore.
-			unconfirmed, err = repo.GetUnconfirmedUtxos(ctx)
+			_, unconfirmed, _, err = repo.GetUnconfirmedUtxos(ctx)
 			require.NoError(t, err)
 			require.Nil(t, findUtxo(unconfirmed, utxo.Outpoint))
+			spent, err = repo.GetUnconfirmedUtxosWithSpendingTxid(ctx, utxo.Spend.Txid)
+			require.NoError(t, err)
+			require.Empty(t, spent)
 
 			// Updating twice the same utxo is rejected and the record is unchanged.
 			utxo.Spend.ConfirmedAtTime = confirmedAtTime + 600
@@ -4826,6 +4943,10 @@ func seedFilterVtxos(
 		ctx, map[domain.Outpoint]string{toSpend.Outpoint: randomString(32)}, randomString(32),
 	))
 	require.NoError(t, svc.Vtxos().UnrollVtxos(ctx, []domain.Outpoint{toUnroll.Outpoint}))
+	// Not spent offchain, so there is no spend to track yet.
+	utxos, err := svc.CosignedUtxos().GetUtxos(ctx, []domain.Outpoint{toUnroll.Outpoint})
+	require.NoError(t, err)
+	require.Empty(t, utxos)
 
 	markerID := toSweep.Outpoint.String()
 	require.NoError(t, svc.Markers().AddMarker(ctx, domain.Marker{ID: markerID, Depth: 0}))
@@ -5660,6 +5781,15 @@ func testSweepableUnrolledExcludesMarkerSwept(t *testing.T, svc ports.RepoManage
 			{Txid: txid3, VOut: 0},
 		}
 		require.NoError(t, svc.Vtxos().UnrollVtxos(ctx, unrollOutpoints))
+		// The spend recorded before the unroll is tracked for each one.
+		utxos, err := svc.CosignedUtxos().GetUtxos(ctx, unrollOutpoints)
+		require.NoError(t, err)
+		require.Len(t, utxos, len(unrollOutpoints))
+		for _, utxo := range utxos {
+			require.Equal(t, "spentby-"+suffix, utxo.Spend.Txid)
+			require.False(t, utxo.Spend.IsConfirmed())
+			require.Equal(t, pubkey, utxo.PubKey)
+		}
 
 		// Sweep only marker-X
 		sweptAt := time.Now().Unix()

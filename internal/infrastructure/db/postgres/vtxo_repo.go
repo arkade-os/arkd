@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/infrastructure/db/postgres/sqlc/queries"
@@ -261,12 +262,36 @@ func (v *vtxoRepository) GetCheckpointTxsByVtxoPubKeys(
 
 func (v *vtxoRepository) UnrollVtxos(ctx context.Context, vtxos []domain.Outpoint) error {
 	txBody := func(querierWithTx *queries.Queries) error {
+		txids := make([]string, 0, len(vtxos))
+		vouts := make([]int32, 0, len(vtxos))
 		for _, vtxo := range vtxos {
-			if err := querierWithTx.UpdateVtxoUnrolled(
-				ctx, queries.UpdateVtxoUnrolledParams{Txid: vtxo.Txid, Vout: int32(vtxo.VOut)},
+			txids = append(txids, vtxo.Txid)
+			vouts = append(vouts, int32(vtxo.VOut))
+		}
+		records, err := querierWithTx.UpdateVtxosUnrolled(ctx, queries.UpdateVtxosUnrolledParams{
+			Txids: txids,
+			Vouts: vouts,
+		})
+		if err != nil {
+			return err
+		}
+
+		// For any vtxo already spent offchain, add a ref to the utxo table.
+		for _, record := range records {
+			if len(record.SpentBy.String) <= 0 {
+				continue
+			}
+			if err := querierWithTx.InsertUtxo(
+				ctx, queries.InsertUtxoParams{
+					Txid:      record.Txid,
+					Vout:      record.Vout,
+					SpentBy:   record.SpentBy.String,
+					CreatedAt: time.Now().Unix(),
+				},
 			); err != nil {
 				return err
 			}
+
 		}
 
 		return nil

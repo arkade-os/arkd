@@ -432,24 +432,12 @@ func (h *walletHandler) NotificationStream(
 				return nil
 			}
 
-			entries := make([]*arkwalletv1.VtoxsPerScript, 0, len(notification))
-			for script, vtxos := range notification {
-				entry := &arkwalletv1.VtoxsPerScript{
-					Script: script,
-					Vtxos:  make([]*arkwalletv1.VtxoWithKey, 0, len(vtxos)),
-				}
-				for _, v := range vtxos {
-					entry.Vtxos = append(entry.Vtxos, &arkwalletv1.VtxoWithKey{
-						Txid:  v.Txid,
-						Vout:  v.Index,
-						Value: v.Value,
-					})
-				}
-				entries = append(entries, entry)
-			}
-
 			resp := &arkwalletv1.NotificationStreamResponse{
-				Entries: entries,
+				Txid:              notification.Txid,
+				Inputs:            toUtxos(notification.Inputs),
+				Outputs:           toUtxos(notification.Outputs),
+				ConfirmedAtTime:   notification.ConfirmedAtTime,
+				ConfirmedAtHeight: notification.ConfirmedAtHeight,
 			}
 			if err := stream.Send(resp); err != nil {
 				return err
@@ -554,4 +542,20 @@ func toTxInput(u application.Utxo) *arkwalletv1.TxInput {
 		Script: u.Script,
 		Value:  u.Value,
 	}
+}
+
+func toUtxos(utxos []application.Utxo) []*arkwalletv1.Utxo {
+	if len(utxos) <= 0 {
+		return nil
+	}
+	res := make([]*arkwalletv1.Utxo, 0, len(utxos))
+	for _, u := range utxos {
+		res = append(res, &arkwalletv1.Utxo{
+			Txid:   u.Txid,
+			Vout:   u.Index,
+			Value:  u.Value,
+			Script: u.Script,
+		})
+	}
+	return res
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -93,6 +94,46 @@ func TestCosignOnchainTx(t *testing.T) {
 			require.Equal(t, uint64(f.spendConfirmedAt.Height), confirmed.ConfirmedAtHeight)
 			onchainTx := domain.NewOnchainTxFromEvents(events)
 			require.True(t, onchainTx.IsConfirmed())
+		})
+
+		// An unconfirmed funding tx is accepted, its exit closures can't be mature yet.
+		t.Run("funding tx unconfirmed", func(t *testing.T) {
+			f := newCosignFixture(t)
+			delete(f.scanner.confirmed, f.fundingTxid)
+			tx := f.cosignTx(t)
+
+			txid, vErr := f.svc.CosignOnchainTx(t.Context(), tx.b64)
+			require.NoError(t, vErr)
+			require.Equal(t, tx.txid, txid)
+			utxos, err := f.utxos.GetUtxos(t.Context(), []domain.Outpoint{f.utxo})
+			require.NoError(t, err)
+			require.Len(t, utxos, 1)
+			require.Equal(t, tx.txid, utxos[0].Spend.Txid)
+		})
+
+		// An unrolled vtxo still unspent is cosigned like a boarding utxo.
+		t.Run("unrolled vtxo", func(t *testing.T) {
+			f := newCosignFixture(t)
+			f.vtxos.ExpectedCalls = nil
+			f.vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return([]domain.Vtxo{{
+				Outpoint: f.utxo, Unrolled: true, ExpiresAt: time.Now().Add(time.Hour).Unix(),
+			}}, nil)
+			tx := f.cosignTx(t)
+
+			txid, vErr := f.svc.CosignOnchainTx(t.Context(), tx.b64)
+			require.NoError(t, vErr)
+			require.Equal(t, tx.txid, txid)
+			require.Equal(t, 1, f.signer.calls)
+			f.wallet.AssertNumberOfCalls(t, "BroadcastTransaction", 1)
+			utxos, err := f.utxos.GetUtxos(t.Context(), []domain.Outpoint{f.utxo})
+			require.NoError(t, err)
+			require.Len(t, utxos, 1)
+			require.Equal(t, tx.txid, utxos[0].Spend.Txid)
+			events := f.events.events(txid)
+			require.NotEmpty(t, events)
+			broadcasted, ok := events[0].(domain.OnchainTxBroadcasted)
+			require.True(t, ok)
+			require.Equal(t, map[string]struct{}{f.utxo.String(): {}}, broadcasted.SignedInputs)
 		})
 
 		t.Run("foreign input signatures are ignored", func(t *testing.T) {
@@ -608,6 +649,29 @@ func TestCosignOnchainTx(t *testing.T) {
 				require.Contains(t, err.Error(), "invalid vtxo script")
 				requireNothingDone(t, f)
 			})
+
+			// An unrolled vtxo is locked by a vtxo script, checked against the unilateral exit
+			// delay rather than the boarding one.
+			t.Run("exit delay of unrolled vtxo shorter than the unilateral one", func(t *testing.T) {
+				f := newCosignFixture(t)
+				settings := f.settings(t.Context())
+				settings.UnilateralExitDelay = arklib.RelativeLocktime{
+					Type: arklib.LocktimeTypeSecond, Value: f.exitDelay.Value * 2,
+				}
+				f.setSettings(t, settings)
+				f.vtxos.ExpectedCalls = nil
+				f.vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return([]domain.Vtxo{{
+					Outpoint: f.utxo, Unrolled: true,
+					ExpiresAt: time.Now().Add(time.Hour).Unix(),
+				}}, nil)
+				tx := f.cosignTx(t)
+
+				_, err := f.svc.CosignOnchainTx(t.Context(), tx.b64)
+				require.Error(t, err)
+				require.Equal(t, errors.INVALID_ARK_PSBT.Code, err.(errors.Error).Code())
+				require.Contains(t, err.Error(), "invalid vtxo script")
+				requireNothingDone(t, f)
+			})
 		})
 
 		t.Run("chain state", func(t *testing.T) {
@@ -620,18 +684,6 @@ func TestCosignOnchainTx(t *testing.T) {
 				require.Error(t, err)
 				require.Equal(t, errors.INVALID_ARK_PSBT.Code, err.(errors.Error).Code())
 				require.Contains(t, err.Error(), "already spent")
-				requireNothingDone(t, f)
-			})
-
-			t.Run("funding tx unconfirmed", func(t *testing.T) {
-				f := newCosignFixture(t)
-				delete(f.scanner.confirmed, f.fundingTxid)
-				tx := f.cosignTx(t)
-
-				_, err := f.svc.CosignOnchainTx(t.Context(), tx.b64)
-				require.Error(t, err)
-				require.Equal(t, errors.INVALID_ARK_PSBT.Code, err.(errors.Error).Code())
-				require.Contains(t, err.Error(), "at least a confirmation")
 				requireNothingDone(t, f)
 			})
 
@@ -690,13 +742,66 @@ func TestCosignOnchainTx(t *testing.T) {
 				f := newCosignFixture(t)
 				f.vtxos.ExpectedCalls = nil
 				f.vtxos.On("GetVtxos", mock.Anything, mock.Anything).
-					Return([]domain.Vtxo{{Outpoint: f.utxo, Unrolled: true}}, nil)
+					Return([]domain.Vtxo{{Outpoint: f.utxo}}, nil)
 				tx := f.cosignTx(t)
 
 				_, err := f.svc.CosignOnchainTx(t.Context(), tx.b64)
 				require.Error(t, err)
 				require.Equal(t, errors.INVALID_ARK_PSBT.Code, err.(errors.Error).Code())
 				require.Contains(t, err.Error(), "tracked offchain")
+				requireNothingDone(t, f)
+			})
+
+			// An unrolled vtxo spent offchain is claimed by its checkpoint or forfeit tx, an
+			// expired one is swept by us.
+			// An offchain tx spending the vtxo is cached but not projected yet, so the vtxo
+			// still reads unspent in the db while it got unrolled meanwhile.
+			t.Run("unrolled vtxo spent by a cached offchain tx", func(t *testing.T) {
+				f := newCosignFixture(t)
+				f.vtxos.ExpectedCalls = nil
+				f.vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return([]domain.Vtxo{{
+					Outpoint: f.utxo, Unrolled: true,
+					ExpiresAt: time.Now().Add(time.Hour).Unix(),
+				}}, nil)
+				f.svc.cache.(*cosignTestLiveStore).spentOffchain = []domain.Outpoint{f.utxo}
+				tx := f.cosignTx(t)
+
+				_, err := f.svc.CosignOnchainTx(t.Context(), tx.b64)
+				require.Error(t, err)
+				require.Equal(t, errors.INVALID_ARK_PSBT.Code, err.(errors.Error).Code())
+				require.Contains(t, err.Error(), "already spent offchain")
+				requireNothingDone(t, f)
+			})
+
+			t.Run("unrolled vtxo spent offchain", func(t *testing.T) {
+				f := newCosignFixture(t)
+				f.vtxos.ExpectedCalls = nil
+				f.vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return([]domain.Vtxo{{
+					Outpoint: f.utxo, Unrolled: true, Spent: true,
+					ExpiresAt: time.Now().Add(time.Hour).Unix(),
+				}}, nil)
+				tx := f.cosignTx(t)
+
+				_, err := f.svc.CosignOnchainTx(t.Context(), tx.b64)
+				require.Error(t, err)
+				require.Equal(t, errors.INVALID_ARK_PSBT.Code, err.(errors.Error).Code())
+				require.Contains(t, err.Error(), "already spent offchain")
+				requireNothingDone(t, f)
+			})
+
+			t.Run("unrolled vtxo expired", func(t *testing.T) {
+				f := newCosignFixture(t)
+				f.vtxos.ExpectedCalls = nil
+				f.vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return([]domain.Vtxo{{
+					Outpoint: f.utxo, Unrolled: true,
+					ExpiresAt: time.Now().Add(-time.Hour).Unix(),
+				}}, nil)
+				tx := f.cosignTx(t)
+
+				_, err := f.svc.CosignOnchainTx(t.Context(), tx.b64)
+				require.Error(t, err)
+				require.Equal(t, errors.INVALID_ARK_PSBT.Code, err.(errors.Error).Code())
+				require.Contains(t, err.Error(), "already expired")
 				requireNothingDone(t, f)
 			})
 
@@ -795,6 +900,14 @@ func TestCosignOnchainTx(t *testing.T) {
 // At startup, the cosigned utxos whose spending tx is still unconfirmed are watched again,
 // so a restart between broadcast and confirmation doesn't leave them unconfirmed forever.
 func TestRestoreWatchingCosignedUtxos(t *testing.T) {
+	// noUnconfirmedUtxos reports whether every utxo of the fixture is confirmed.
+	noUnconfirmedUtxos := func(f *cosignFixture) func() bool {
+		return func() bool {
+			cosigned, boarding, unrolled, err := f.utxos.GetUnconfirmedUtxos(t.Context())
+			return err == nil && len(cosigned)+len(boarding)+len(unrolled) == 0
+		}
+	}
+
 	t.Run("valid", func(t *testing.T) {
 		t.Run("unconfirmed utxos are confirmed once their tx is", func(t *testing.T) {
 			f := newCosignFixture(t)
@@ -802,16 +915,14 @@ func TestRestoreWatchingCosignedUtxos(t *testing.T) {
 			txA, txB, txC := randomTxid(t), randomTxid(t), randomTxid(t)
 			confirmedAt := &ports.BlockTimestamp{Height: 50, Time: time.Now().Add(-time.Hour).Unix()}
 			pending := []domain.Utxo{
-				f.seedUtxo(t, txA, nil), f.seedUtxo(t, txA, nil), f.seedUtxo(t, txB, nil),
+				f.seedCosignedUtxo(t, txA, nil), f.seedCosignedUtxo(t, txA, nil),
+				f.seedCosignedUtxo(t, txB, nil),
 			}
-			done := f.seedUtxo(t, txC, confirmedAt)
+			done := f.seedCosignedUtxo(t, txC, confirmedAt)
 
 			require.NoError(t, f.svc.restoreWatchingCosignedUtxos())
 
-			require.Eventually(t, func() bool {
-				utxos, err := f.utxos.GetUnconfirmedUtxos(t.Context())
-				return err == nil && len(utxos) == 0
-			}, 5*time.Second, 50*time.Millisecond)
+			require.Eventually(t, noUnconfirmedUtxos(f), 5*time.Second, 50*time.Millisecond)
 
 			for _, utxo := range pending {
 				got, err := f.utxos.GetUtxos(t.Context(), []domain.Outpoint{utxo.Outpoint})
@@ -836,28 +947,27 @@ func TestRestoreWatchingCosignedUtxos(t *testing.T) {
 		})
 
 		// The real projection ignores a confirmed event with no broadcasted one before it, which
-		// is the case of a commitment tx, so these must be confirmed without any event.
-		t.Run("boarding utxos spent by a batch are confirmed without events", func(t *testing.T) {
+		// is the case of a commitment tx spending boarding utxos and of a checkpoint, forfeit or
+		// exit path tx spending unrolled vtxos, so these must be confirmed without any event.
+		t.Run("utxos spent by a tx not cosigned are confirmed without events", func(t *testing.T) {
 			f := newCosignFixture(t)
-			commitmentTxid, cosignTxid := randomTxid(t), randomTxid(t)
+			commitmentTxid, exitTxid, cosignTxid := randomTxid(t), randomTxid(t), randomTxid(t)
 			boarding := f.seedUtxo(t, commitmentTxid, nil)
-			f.seedUtxo(t, cosignTxid, nil)
-			f.rounds.ExpectedCalls = nil
-			f.rounds.On("GetRoundsWithCommitmentTxids", mock.Anything, mock.Anything).
-				Return(map[string]any{commitmentTxid: nil}, nil)
+			unrolled := f.seedUnrolledVtxo(t, exitTxid)
+			f.seedCosignedUtxo(t, cosignTxid, nil)
 
 			require.NoError(t, f.svc.restoreWatchingCosignedUtxos())
 
-			require.Eventually(t, func() bool {
-				utxos, err := f.utxos.GetUnconfirmedUtxos(t.Context())
-				return err == nil && len(utxos) == 0
-			}, 5*time.Second, 50*time.Millisecond)
-			got, err := f.utxos.GetUtxos(t.Context(), []domain.Outpoint{boarding.Outpoint})
-			require.NoError(t, err)
-			require.Len(t, got, 1)
-			require.Equal(t, f.spendConfirmedAt.Time, got[0].Spend.ConfirmedAtTime)
-			require.Equal(t, uint64(f.spendConfirmedAt.Height), got[0].Spend.ConfirmedAtHeight)
+			require.Eventually(t, noUnconfirmedUtxos(f), 5*time.Second, 50*time.Millisecond)
+			for _, utxo := range []domain.Utxo{boarding, unrolled} {
+				got, err := f.utxos.GetUtxos(t.Context(), []domain.Outpoint{utxo.Outpoint})
+				require.NoError(t, err)
+				require.Len(t, got, 1)
+				require.Equal(t, f.spendConfirmedAt.Time, got[0].Spend.ConfirmedAtTime)
+				require.Equal(t, uint64(f.spendConfirmedAt.Height), got[0].Spend.ConfirmedAtHeight)
+			}
 			require.Empty(t, f.events.events(commitmentTxid))
+			require.Empty(t, f.events.events(exitTxid))
 			require.NotEmpty(t, f.events.events(cosignTxid))
 		})
 
@@ -883,25 +993,13 @@ func TestRestoreWatchingCosignedUtxos(t *testing.T) {
 			require.ErrorContains(t, err, "db unavailable")
 		})
 
-		t.Run("failed to get commitment txids from db", func(t *testing.T) {
-			f := newCosignFixture(t)
-			f.seedUtxo(t, randomTxid(t), nil)
-			f.rounds.ExpectedCalls = nil
-			f.rounds.On("GetRoundsWithCommitmentTxids", mock.Anything, mock.Anything).
-				Return(nil, fmt.Errorf("db unavailable"))
-
-			err := f.svc.restoreWatchingCosignedUtxos()
-			require.Error(t, err)
-			require.ErrorContains(t, err, "db unavailable")
-		})
-
 		// A failed confirmation lookup gives up on that tx, the utxo stays unconfirmed for the
 		// next restart to pick up, and the other txs are unaffected.
 		t.Run("fail to wait for confirmation", func(t *testing.T) {
 			f := newCosignFixture(t)
 			txA, txB := randomTxid(t), randomTxid(t)
-			broken := f.seedUtxo(t, txA, nil)
-			fine := f.seedUtxo(t, txB, nil)
+			broken := f.seedCosignedUtxo(t, txA, nil)
+			fine := f.seedCosignedUtxo(t, txB, nil)
 			f.wallet.confirmErr[txA] = fmt.Errorf("node unavailable")
 
 			require.NoError(t, f.svc.restoreWatchingCosignedUtxos())
@@ -920,25 +1018,25 @@ func TestRestoreWatchingCosignedUtxos(t *testing.T) {
 	})
 }
 
-func TestWatchBoardingUtxos(t *testing.T) {
-	t.Run("tracks confirmation of batch including boarding utxos", func(t *testing.T) {
+func TestWatchSpentCosignedUtxos(t *testing.T) {
+	t.Run("tracks confirmation of a tx spending boarding utxos and unrolled vtxos", func(t *testing.T) {
 		f := newCosignFixture(t)
-		commitmentTxid, otherTxid := randomTxid(t), randomTxid(t)
-		boarding := []domain.Utxo{
-			f.seedUtxo(t, commitmentTxid, nil), f.seedUtxo(t, commitmentTxid, nil),
+		txid, otherTxid := randomTxid(t), randomTxid(t)
+		spent := []domain.Utxo{
+			f.seedUtxo(t, txid, nil), f.seedUtxo(t, txid, nil), f.seedUnrolledVtxo(t, txid),
 		}
 		other := f.seedUtxo(t, otherTxid, nil)
 
-		f.svc.watchBatchBoardingUtxos(commitmentTxid)
+		f.svc.watchSpentCosignedUtxos(txid)
 
-		for _, utxo := range boarding {
+		for _, utxo := range spent {
 			got, err := f.utxos.GetUtxos(t.Context(), []domain.Outpoint{utxo.Outpoint})
 			require.NoError(t, err)
 			require.Len(t, got, 1)
 			require.Equal(t, f.spendConfirmedAt.Time, got[0].Spend.ConfirmedAtTime)
 			require.Equal(t, uint64(f.spendConfirmedAt.Height), got[0].Spend.ConfirmedAtHeight)
 		}
-		require.Empty(t, f.events.events(commitmentTxid))
+		require.Empty(t, f.events.events(txid))
 
 		// Utxos spent by another tx are left alone.
 		got, err := f.utxos.GetUtxos(t.Context(), []domain.Outpoint{other.Outpoint})
@@ -948,13 +1046,13 @@ func TestWatchBoardingUtxos(t *testing.T) {
 		require.Equal(t, 0, f.wallet.confirmationChecks(otherTxid))
 	})
 
-	t.Run("skip track confirmation of a batch not including boarding utxos", func(t *testing.T) {
+	t.Run("skip track confirmation of a tx spending no utxo", func(t *testing.T) {
 		f := newCosignFixture(t)
-		commitmentTxid := randomTxid(t)
+		txid := randomTxid(t)
 
-		f.svc.watchBatchBoardingUtxos(commitmentTxid)
+		f.svc.watchSpentCosignedUtxos(txid)
 
-		require.Equal(t, 0, f.wallet.confirmationChecks(commitmentTxid))
+		require.Equal(t, 0, f.wallet.confirmationChecks(txid))
 	})
 }
 
@@ -1068,8 +1166,6 @@ func newCosignFixture(t *testing.T, opts ...cosignFixtureOption) *cosignFixture 
 	vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return(nil, nil)
 	offchainTxs := &cosignTestOffchainTxRepo{checkpoints: make(map[string]struct{})}
 	rounds := &mockedRoundRepo{}
-	rounds.On("GetRoundsWithCommitmentTxids", mock.Anything, mock.Anything).
-		Return(map[string]any{}, nil)
 
 	events := newFakeEventRepo(t, utxos)
 
@@ -1145,6 +1241,8 @@ type cosignTestLiveStore struct {
 	utxos    ports.CosignedUtxosStore
 	settings *cosignTestSettingsStore
 	intents  *cosignTestIntentStore
+	// spentOffchain are the outpoints spent by the cached offchain txs.
+	spentOffchain []domain.Outpoint
 }
 
 func newCosignTestLiveStore() *cosignTestLiveStore {
@@ -1161,7 +1259,26 @@ func (s *cosignTestLiveStore) Settings() ports.SettingsStore { return s.settings
 
 func (s *cosignTestLiveStore) Intents() ports.IntentStore { return s.intents }
 
-func (s *cosignTestLiveStore) OffchainTxs() ports.OffChainTxStore { return testOffchainTxStore{} }
+func (s *cosignTestLiveStore) OffchainTxs() ports.OffChainTxStore {
+	return cosignTestOffchainTxStore{spent: s.spentOffchain}
+}
+
+type cosignTestOffchainTxStore struct {
+	ports.OffChainTxStore
+	spent []domain.Outpoint
+}
+
+func (s cosignTestOffchainTxStore) IncludesAny(
+	_ context.Context, outpoints []domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	included := make([]domain.Outpoint, 0)
+	for _, outpoint := range outpoints {
+		if slices.Contains(s.spent, outpoint) {
+			included = append(included, outpoint)
+		}
+	}
+	return included, nil
+}
 
 type cosignTestSettingsStore struct {
 	ports.SettingsStore
@@ -1231,6 +1348,8 @@ func (f *cosignFixture) setSettings(t *testing.T, settings ports.Settings) {
 
 // seedUtxo records a cosigned utxo spent by spendTxid straight into the repo, confirmed at
 // confirmedAt if not nil.
+// seedUtxo records a boarding utxo spent by the given tx: no tx stored along with it, as the
+// round projection does for the commitment tx.
 func (f *cosignFixture) seedUtxo(
 	t *testing.T, spendTxid string, confirmedAt *ports.BlockTimestamp,
 ) domain.Utxo {
@@ -1246,6 +1365,48 @@ func (f *cosignFixture) seedUtxo(
 	if confirmedAt != nil {
 		utxo.Spend.ConfirmedAtTime = confirmedAt.Time
 		utxo.Spend.ConfirmedAtHeight = uint64(confirmedAt.Height)
+	}
+	require.NoError(t, f.utxos.AddUtxos(t.Context(), []domain.Utxo{utxo}, ""))
+	return utxo
+}
+
+// seedCosignedUtxo records a utxo spent by a tx cosigned with us, stored along with it, as
+// the projection of the onchain tx broadcasted event does.
+func (f *cosignFixture) seedCosignedUtxo(
+	t *testing.T, spendTxid string, confirmedAt *ports.BlockTimestamp,
+) domain.Utxo {
+	t.Helper()
+
+	utxo := domain.Utxo{
+		Outpoint:  domain.Outpoint{Txid: randomTxid(t), VOut: 0},
+		Amount:    f.amount,
+		PubKey:    hex.EncodeToString(f.pkScript[2:]),
+		Spend:     domain.UtxoSpend{Txid: spendTxid},
+		CreatedAt: time.Now().Unix(),
+	}
+	if confirmedAt != nil {
+		utxo.Spend.ConfirmedAtTime = confirmedAt.Time
+		utxo.Spend.ConfirmedAtHeight = uint64(confirmedAt.Height)
+	}
+	// The tx is stored once, with the first utxo it spends.
+	tx := ""
+	if txs, _ := f.utxos.GetOnchainTxs(t.Context(), []string{spendTxid}); len(txs) == 0 {
+		tx = "tx-" + spendTxid
+	}
+	require.NoError(t, f.utxos.AddUtxos(t.Context(), []domain.Utxo{utxo}, tx))
+	return utxo
+}
+
+// seedUnrolledVtxo records the spend of an unrolled vtxo by a tx not cosigned with us: a
+// pointer to the vtxo, with no pubkey and amount, as the unroll of a spent vtxo and the
+// scanner notification of an exit path spend do.
+func (f *cosignFixture) seedUnrolledVtxo(t *testing.T, spendTxid string) domain.Utxo {
+	t.Helper()
+
+	utxo := domain.Utxo{
+		Outpoint:  domain.Outpoint{Txid: randomTxid(t), VOut: 0},
+		Spend:     domain.UtxoSpend{Txid: spendTxid},
+		CreatedAt: time.Now().Unix(),
 	}
 	require.NoError(t, f.utxos.AddUtxos(t.Context(), []domain.Utxo{utxo}, ""))
 	return utxo
@@ -1812,7 +1973,7 @@ func (r *fakeEventRepo) Save(
 				return err
 			}
 		case domain.OnchainTxConfirmed:
-			utxos, err := r.utxos.GetUnconfirmedUtxos(ctx)
+			utxos, _, _, err := r.utxos.GetUnconfirmedUtxos(ctx)
 			if err != nil {
 				return err
 			}
@@ -1968,7 +2129,9 @@ func (r *fakeUtxoRepo) GetUtxosWithPubKeys(
 	return matched[offset:end], total, nil
 }
 
-func (r *fakeUtxoRepo) GetUnconfirmedUtxos(context.Context) ([]domain.Utxo, error) {
+func (r *fakeUtxoRepo) GetUnconfirmedUtxosWithSpendingTxid(
+	_ context.Context, txid string,
+) ([]domain.Utxo, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.unconfirmedErr != nil {
@@ -1976,11 +2139,38 @@ func (r *fakeUtxoRepo) GetUnconfirmedUtxos(context.Context) ([]domain.Utxo, erro
 	}
 	utxos := make([]domain.Utxo, 0)
 	for _, utxo := range r.utxos {
-		if !utxo.Spend.IsConfirmed() {
+		if utxo.Spend.Txid == txid && !utxo.Spend.IsConfirmed() {
 			utxos = append(utxos, utxo)
 		}
 	}
 	return utxos, nil
+}
+
+// GetUnconfirmedUtxos splits the unconfirmed utxos the way the sql store does: cosigned if
+// their spending tx was recorded along with them, unrolled vtxos if they carry no pubkey, as
+// pointers to a vtxo do, boarding otherwise.
+func (r *fakeUtxoRepo) GetUnconfirmedUtxos(
+	context.Context,
+) (cosignedUtxos, boardingUtxos, unrolledVtxos []domain.Utxo, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.unconfirmedErr != nil {
+		return nil, nil, nil, r.unconfirmedErr
+	}
+	for _, utxo := range r.utxos {
+		if utxo.Spend.IsConfirmed() {
+			continue
+		}
+		switch {
+		case r.txs[utxo.Spend.Txid] != "":
+			cosignedUtxos = append(cosignedUtxos, utxo)
+		case utxo.PubKey == "":
+			unrolledVtxos = append(unrolledVtxos, utxo)
+		default:
+			boardingUtxos = append(boardingUtxos, utxo)
+		}
+	}
+	return cosignedUtxos, boardingUtxos, unrolledVtxos, nil
 }
 
 func randomTxid(t *testing.T) string {

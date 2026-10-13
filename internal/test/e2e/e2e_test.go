@@ -4091,13 +4091,15 @@ func TestReactToFraud(t *testing.T) {
 			require.Equal(t, root[:], forfeit.Inputs[1].TaprootMerkleRoot)
 			require.NotEmpty(t, forfeit.Inputs[0].TaprootScriptSpendSig)
 
-			// Unroll the forfeited VTXO and confirm it to trigger fraud detection.
+			// Unroll the forfeited VTXO and confirm it to trigger fraud detection: the server
+			// broadcasts the forfeit once the unroll is mined.
 			branch, err := unroll.NewRedeemBranch(ctx, testExplorer, client.Indexer(), vtxo)
 			require.NoError(t, err)
 			leafTx, err := branch.NextRedeemTx()
 			require.NoError(t, err)
 			require.NotEmpty(t, leafTx)
 			bumpAndBroadcastTx(t, leafTx, testExplorer)
+			require.NoError(t, generateBlocks(1))
 
 			// Wait for the server's connector before mining its confirmation.
 			connector := forfeit.UnsignedTx.TxIn[1].PreviousOutPoint
@@ -4292,7 +4294,7 @@ func TestReactToFraud(t *testing.T) {
 				bumpAndBroadcastTx(t, parentTx, explorer)
 			}
 
-			err = generateBlocks(50)
+			err = generateBlocks(51)
 			require.NoError(t, err)
 
 			// Wait for the server to detect and process the fraud
@@ -4546,8 +4548,8 @@ func TestReactToFraud(t *testing.T) {
 				bumpAndBroadcastTx(t, parentTx, explorer)
 			}
 
-			// give time for the server to detect and process the fraud
-			err = generateBlocks(50)
+			// The server broadcasts the checkpoint once the unroll is mined, then it is mined too.
+			err = generateBlocks(51)
 			require.NoError(t, err)
 
 			// make sure the vtxo of bob is not redeemed

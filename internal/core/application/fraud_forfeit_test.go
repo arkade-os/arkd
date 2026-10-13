@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -224,7 +225,8 @@ func newFraudForfeitFixture(t *testing.T, vtxoIndex int) fraudForfeitFixture {
 	wallet.On("GetTransaction", mock.Anything, connector.UnsignedTx.TxID()).Return("confirmed", nil)
 	rounds := &mockedRoundRepo{}
 	rounds.On("GetRoundWithCommitmentTxid", mock.Anything, vtxo.SettledBy).Return(round, nil)
-	repos := &mockedRepoManager{}
+	// The confirmation of the forfeit tx is recorded on the utxo tracking the unrolled vtxo.
+	repos := &mockedRepoManager{utxos: newFakeUtxoRepo()}
 	repos.On("Rounds").Return(rounds)
 	svc := &service{
 		wallet: wallet, signer: signer, repoManager: repos,
@@ -253,6 +255,18 @@ func (w *fraudForfeitWallet) GetForfeitPubkey(context.Context) (*btcec.PublicKey
 
 func (w *fraudForfeitWallet) GetCurrentBlockTime(context.Context) (*ports.BlockTimestamp, error) {
 	return &ports.BlockTimestamp{Height: 100}, nil
+}
+
+// GetNetwork and IsTransactionConfirmed serve the wait for the confirmation of the forfeit tx
+// that follows its broadcast, confirming anything right away.
+func (w *fraudForfeitWallet) GetNetwork(context.Context) (*arklib.Network, error) {
+	return &arklib.BitcoinRegTest, nil
+}
+
+func (w *fraudForfeitWallet) IsTransactionConfirmed(
+	context.Context, string,
+) (bool, *ports.BlockTimestamp, error) {
+	return true, &ports.BlockTimestamp{Height: 101, Time: time.Now().Unix()}, nil
 }
 
 func (w *fraudForfeitWallet) SelectUtxos(context.Context, string, uint64, bool) ([]ports.TxInput, uint64, error) {

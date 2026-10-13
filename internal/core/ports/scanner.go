@@ -7,15 +7,18 @@ import (
 	"github.com/btcsuite/btcd/wire/v2"
 )
 
-type VtxoWithValue struct {
-	domain.Outpoint
-	Value uint64
+type TxNotification struct {
+	Txid              string
+	Inputs            []domain.Utxo
+	Outputs           []domain.Utxo
+	ConfirmedAtTime   int64
+	ConfirmedAtHeight uint64
 }
 
 type BlockchainScanner interface {
 	WatchScripts(ctx context.Context, scripts []string) error
 	UnwatchScripts(ctx context.Context, scripts []string) error
-	GetNotificationChannel(ctx context.Context) <-chan map[string][]VtxoWithValue
+	GetNotificationChannel(ctx context.Context) <-chan TxNotification
 	IsTransactionConfirmed(
 		ctx context.Context, txid string,
 	) (isConfirmed bool, blockTimestamp *BlockTimestamp, err error)
