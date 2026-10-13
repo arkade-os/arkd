@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -563,6 +564,38 @@ func VerifyTreePartialSigs(
 		treeToIndexedTxs(vtxoTree, make(map[string]*psbt.Packet)),
 		pubkey, nonces, aggregatedNonces, sigs,
 	)
+}
+
+// VerifyTreeNonces verifies that nonces holds a valid musig2 public nonce for each tree
+// transaction the cosigner must sign.
+func VerifyTreeNonces(vtxoTree *TxTree, pubkey *btcec.PublicKey, nonces TreeNonces) error {
+	for txid, tx := range treeToIndexedTxs(vtxoTree, make(map[string]*psbt.Packet)) {
+		cosigners, err := txutils.ParseCosignerKeysFromArkPsbt(tx, 0)
+		if err != nil {
+			return fmt.Errorf("failed to get cosigners public keys: %w", err)
+		}
+
+		// match the full key: a cosigner is only sent the txs listing its exact key, and an
+		// x-only match would also ask it for the txs of a key with the other parity
+		if !slices.ContainsFunc(cosigners, pubkey.IsEqual) {
+			continue
+		}
+
+		nonce := nonces[txid]
+		if nonce == nil {
+			return fmt.Errorf("missing musig2 nonce for txid %s", txid)
+		}
+
+		// a public nonce is two 33-byte compressed points, parsed the same way as
+		// musig2.AggregateNonces so an accepted nonce can always be aggregated
+		for _, point := range [][]byte{nonce.PubNonce[:33], nonce.PubNonce[33:]} {
+			if _, err := btcec.ParseJacobian(point); err != nil {
+				return fmt.Errorf("invalid musig2 nonce for txid %s: %w", txid, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 // AggregateNonces aggregates the musig2 nonces for each transaction in the tree

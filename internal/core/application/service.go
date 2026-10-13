@@ -2865,13 +2865,51 @@ func (s *service) DeleteIntentsByProof(
 func (s *service) RegisterCosignerNonces(
 	ctx context.Context, roundId string, pubkey string, nonces tree.TreeNonces,
 ) errors.Error {
+	buf, err := hex.DecodeString(pubkey)
+	if err != nil {
+		return errors.INVALID_TREE_NONCES.New(
+			"invalid cosigner pubkey, must be a hex encoded compressed public key",
+		)
+	}
+	pk, err := btcec.ParsePubKey(buf)
+	if err != nil {
+		return errors.INVALID_TREE_NONCES.New("invalid cosigner pubkey: %s", err)
+	}
+
+	session, err := s.cache.TreeSigingSessions().Get(ctx, roundId)
+	if err != nil {
+		log.WithError(err).Warnf("failed to get signing session for round %s", roundId)
+		return errors.INTERNAL_ERROR.New("something went wrong, please try again")
+	}
+	if session == nil {
+		return errors.INTERNAL_ERROR.New("signing session not found for batch %s", roundId)
+	}
+	if _, ok := session.Cosigners[pubkey]; !ok {
+		return errors.INVALID_TREE_NONCES.New(
+			"pubkey %s is not a cosigner of batch %s", pubkey, roundId,
+		)
+	}
+
+	vtxoTree, err := tree.NewTxTree(session.SigningContext.VtxoTree)
+	if err != nil {
+		return errors.INTERNAL_ERROR.New("failed to deserialize vtxo tree: %s", err)
+	}
+
+	// nonces that can't be aggregated would still count the cosigner as submitted and fail the
+	// whole round, instead of getting them banned at the nonce collection timeout
+	if err := tree.VerifyTreeNonces(vtxoTree, pk, nonces); err != nil {
+		return errors.INVALID_TREE_NONCES.New(
+			"invalid tree nonces for cosigner %s: %s", pubkey, err,
+		)
+	}
+
 	if err := s.cache.TreeSigingSessions().AddNonces(ctx, roundId, pubkey, nonces); err != nil {
-		return errors.INTERNAL_ERROR.New("failed to add nonces: %w", err).
-			WithMetadata(map[string]any{
-				"round_id": roundId,
-				"pubkey":   pubkey,
-				"nonces":   nonces,
-			})
+		log.WithError(err).WithFields(log.Fields{
+			"round_id": roundId,
+			"pubkey":   pubkey,
+			"nonces":   nonces,
+		}).Warn("failed to add nonces")
+		return errors.INTERNAL_ERROR.New("something went wrong, please try again")
 	}
 	return nil
 }
@@ -2880,18 +2918,27 @@ func (s *service) RegisterCosignerSignatures(
 	ctx context.Context, roundId string, pubkey string, sigs tree.TreePartialSigs,
 ) errors.Error {
 	session, err := s.cache.TreeSigingSessions().Get(ctx, roundId)
-	if err != nil || session == nil {
-		return errors.INTERNAL_ERROR.New("signing session not found for round %s", roundId)
+	if err != nil {
+		log.WithError(err).Warnf("failed to get signing session for round %s", roundId)
+		return errors.INTERNAL_ERROR.New("something went wrong, please try again")
+	}
+	if session == nil {
+		return errors.INTERNAL_ERROR.New("signing session not found for batch %s", roundId)
+	}
+	if _, ok := session.Cosigners[pubkey]; !ok {
+		return errors.INVALID_SIGNATURE.New(
+			"pubkey %s is not a cosigner of batch %s", pubkey, roundId,
+		)
 	}
 	if session.SigningContext.AggregatedNonces == nil {
 		return errors.INVALID_SIGNATURE.New(
-			"cannot verify signatures for round %s, nonces not aggregated yet", roundId,
+			"cannot verify signatures for batch %s, nonces not aggregated yet", roundId,
 		)
 	}
 	cosignerNonces, ok := session.Nonces[pubkey]
 	if !ok {
 		return errors.INVALID_SIGNATURE.New(
-			"no nonces submitted by cosigner %s in round %s", pubkey, roundId,
+			"no nonces submitted by cosigner %s in batch %s", pubkey, roundId,
 		)
 	}
 
@@ -2919,12 +2966,12 @@ func (s *service) RegisterCosignerSignatures(
 	}
 
 	if err := s.cache.TreeSigingSessions().AddSignatures(ctx, roundId, pubkey, sigs); err != nil {
-		return errors.INTERNAL_ERROR.New("failed to add signatures: %w", err).
-			WithMetadata(map[string]any{
-				"round_id": roundId,
-				"pubkey":   pubkey,
-				"sigs":     sigs,
-			})
+		log.WithError(err).WithFields(log.Fields{
+			"round_id": roundId,
+			"pubkey":   pubkey,
+			"sigs":     sigs,
+		}).Warn("failed to add signatures")
+		return errors.INTERNAL_ERROR.New("something went wrong, please try again")
 	}
 	return nil
 }

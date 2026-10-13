@@ -2363,7 +2363,10 @@ type roundConviction struct {
 	Reason    string `json:"reason"`
 }
 
-const crimeBadMusig2Sig = "CRIME_TYPE_MUSIG2_INVALID_SIGNATURE"
+const (
+	crimeBadMusig2Sig    = "CRIME_TYPE_MUSIG2_INVALID_SIGNATURE"
+	crimeNonceSubmission = "CRIME_TYPE_MUSIG2_NONCE_SUBMISSION"
+)
 
 // bannedFor reports whether a script was banned for a specific crime.
 func bannedFor(convictions []roundConviction, script, crimeType string) bool {
@@ -2373,4 +2376,54 @@ func bannedFor(convictions []roundConviction, script, crimeType string) bool {
 		}
 	}
 	return false
+}
+
+// registerBatchIntent registers an intent that sends the vtxo back to the wallet with the given
+// cosigner key, and returns what is needed to join the batch with the production handler.
+func registerBatchIntent(
+	t *testing.T, client wallet.Wallet, vtxo clientlib.Vtxo,
+	cosignerKey string, signer tree.SignerSession,
+) (batchsession.JoinBatchArgs, batchsessionhandler.Handler) {
+	t.Helper()
+	ctx := t.Context()
+
+	_, addr, _, err := client.Receive(ctx)
+	require.NoError(t, err)
+	cfgData, err := client.GetConfigData(ctx)
+	require.NoError(t, err)
+
+	receivers := []clientlib.Receiver{{To: addr.Address, Amount: vtxo.Amount}}
+	intentId, err := client.RegisterIntent(
+		ctx, []clientlib.Vtxo{vtxo}, nil, nil, receivers, []string{cosignerKey},
+	)
+	require.NoError(t, err)
+
+	args := batchsession.JoinBatchArgs{
+		BaseArgs: batchsession.BaseArgs{
+			SignTx:  client.SignTransaction,
+			Vtxos:   []clientlib.Vtxo{vtxo},
+			Outputs: receivers,
+		},
+		TreeSigners:  []tree.SignerSession{signer},
+		IntentId:     intentId,
+		Client:       client.Client(),
+		ServerParams: *cfgData,
+	}
+	handler, err := batchsessionhandler.NewDefaultHandler(defaultHandlerArgs(args))
+	require.NoError(t, err)
+	return args, handler
+}
+
+// requireNonceConviction waits for the script to be convicted of not submitting its nonces in
+// the round. The ban runs in a goroutine once the nonce collection times out.
+func requireNonceConviction(t *testing.T, roundId, script string) {
+	t.Helper()
+
+	waitUntil(t, serverWait, "the nonce submission conviction", func(context.Context) error {
+		convictions, raw := convictionsByRound(t, roundId)
+		if !bannedFor(convictions, script, crimeNonceSubmission) {
+			return fmt.Errorf("%s not convicted: %s", script, raw)
+		}
+		return nil
+	})
 }

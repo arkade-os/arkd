@@ -6172,6 +6172,148 @@ func TestBan(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	// Nonces that can't be aggregated would count the cosigner as submitted, so the nonce
+	// aggregation would fail the round for every participant and nobody would be banned. The
+	// submitter must be rejected and then banned like a cosigner who withheld her nonces.
+	t.Run("failed to submit valid tree nonces", func(t *testing.T) {
+		fixtures := []struct {
+			name  string
+			forge func(txids []string, key *btcec.PublicKey) (tree.TreeNonces, error)
+		}{
+			{
+				// the smallest set the gRPC handler lets through
+				name: "nonce for a txid not in the tree",
+				forge: func(_ []string, key *btcec.PublicKey) (tree.TreeNonces, error) {
+					var txid [32]byte
+					if _, err := rand.Read(txid[:]); err != nil {
+						return nil, err
+					}
+					return forgedNonces([]string{hex.EncodeToString(txid[:])}, key)
+				},
+			},
+			{
+				name: "invalid nonces for the cosigned txs",
+				forge: func(txids []string, _ *btcec.PublicKey) (tree.TreeNonces, error) {
+					nonces := make(tree.TreeNonces, len(txids))
+					for _, txid := range txids {
+						// 0x05 is not a valid prefix for a compressed point
+						nonces[txid] = &tree.Musig2Nonce{PubNonce: [66]byte{0x05}}
+					}
+					return nonces, nil
+				},
+			},
+		}
+
+		for _, f := range fixtures {
+			t.Run(f.name, func(t *testing.T) {
+				mallory := setupClientWallet(t)
+				vtxo := faucetOffchain(t, mallory, 0.001)
+
+				key, err := btcec.NewPrivateKey()
+				require.NoError(t, err)
+				signer := tree.NewTreeSignerSession(key)
+				args, base := registerBatchIntent(t, mallory, vtxo, signer.GetPublicKey(), signer)
+
+				var mu sync.Mutex
+				var roundId string
+				handler := &interposingHandler{
+					Handler: base, mu: &mu, roundId: &roundId,
+					beforeNonces: func(
+						ctx context.Context, event clientlib.TreeSigningStartedEvent,
+						vtxoTree *tree.TxTree,
+					) error {
+						txids, err := cosignedTxids(vtxoTree, signer.GetPublicKey())
+						if err != nil {
+							return err
+						}
+						nonces, err := f.forge(txids, key.PubKey())
+						if err != nil {
+							return err
+						}
+						if err := mallory.Client().SubmitTreeNonces(
+							ctx, event.Id, signer.GetPublicKey(), nonces,
+						); err != nil {
+							return err
+						}
+						// stop here, the production handler would submit mallory's real nonces
+						return fmt.Errorf("operator accepted mallory's useless tree nonces")
+					},
+				}
+
+				_, err = joinBatchBounded(t.Context(), args, batchsession.WithHandler(handler))
+				require.ErrorContains(t, err, "INVALID_TREE_NONCES")
+				requireNonceConviction(t, roundId, vtxo.Script)
+
+				// one conviction reaches the regtest ban threshold, so mallory can't reuse her coin
+				_, err = settleBounded(t.Context(), mallory)
+				require.ErrorContains(t, err, "VTXO_BANNED")
+			})
+		}
+	})
+
+	// Mallory registers alice's cosigner key with the other parity, which she learns when alice
+	// retries a failed batch with the same key. Alice is only sent the txs listing her exact key,
+	// so she must not be asked for nonces of mallory's ones.
+	t.Run("cosigner key sharing the x coordinate of another", func(t *testing.T) {
+		alice := setupClientWallet(t)
+		mallory := setupClientWallet(t)
+		aliceVtxo := faucetOffchain(t, alice, 0.001)
+		malloryVtxo := faucetOffchain(t, mallory, 0.001)
+
+		aliceKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		aliceSigner := tree.NewTreeSignerSession(aliceKey)
+		// flip the parity byte to get a valid key with the same x coordinate as alice's, which
+		// musig2 treats as her x-only key while the server treats it as another cosigner
+		twinKey := aliceKey.PubKey().SerializeCompressed()
+		twinKey[0] ^= 1 // 0x02 <-> 0x03
+
+		// mallory holds no key for the twin, so she never sends its nonces
+		dummyKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		mallorySigner := tree.NewTreeSignerSession(dummyKey)
+
+		aliceArgs, aliceBase := registerBatchIntent(
+			t, alice, aliceVtxo, aliceSigner.GetPublicKey(), aliceSigner,
+		)
+		malloryArgs, malloryBase := registerBatchIntent(
+			t, mallory, malloryVtxo, hex.EncodeToString(twinKey), mallorySigner,
+		)
+
+		var mu sync.Mutex
+		var aliceRound, malloryRound string
+		aliceHandler := &interposingHandler{Handler: aliceBase, mu: &mu, roundId: &aliceRound}
+		malloryHandler := &interposingHandler{Handler: malloryBase, mu: &mu, roundId: &malloryRound}
+
+		var aliceErr error
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_, aliceErr = joinBatchBounded(
+				t.Context(), aliceArgs, batchsession.WithHandler(aliceHandler),
+			)
+		}()
+		go func() {
+			defer wg.Done()
+			// nolint:errcheck
+			joinBatchBounded(t.Context(), malloryArgs, batchsession.WithHandler(malloryHandler))
+		}()
+		wg.Wait()
+
+		require.NotEmpty(t, aliceRound)
+		require.Equal(t, aliceRound, malloryRound, "alice and mallory did not share a batch")
+		require.Error(t, aliceErr)
+		require.NotContains(t, aliceErr.Error(), "INVALID_TREE_NONCES")
+
+		requireNonceConviction(t, aliceRound, malloryVtxo.Script)
+		convictions, raw := convictionsByRound(t, aliceRound)
+		require.False(
+			t, bannedFor(convictions, aliceVtxo.Script, crimeNonceSubmission),
+			"alice was banned for mallory's txs: %s", raw,
+		)
+	})
+
 	t.Run("failed to submit tree signatures", func(t *testing.T) {
 		alice := setupClientWallet(t)
 		aliceClient := alice.Client()

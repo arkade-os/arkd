@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"testing"
 
 	common "github.com/arkade-os/arkd/pkg/ark-lib"
@@ -133,6 +135,99 @@ func TestTreeCoordinatorSession(t *testing.T) {
 
 		_, err = tree.NewTreeCoordinatorSession(batchOutSweepClosure[:], batchOutAmount, vtxoTree)
 		requireArkError(t, err, arkerrors.NOT_ENOUGH_TREE_TX_COSIGNERS)
+	})
+}
+
+func TestVerifyTreeNonces(t *testing.T) {
+	testCase, err := generateMockedReceivers(4)
+	require.NoError(t, err)
+
+	_, batchOutAmount, err := tree.BuildBatchOutput(testCase.receivers, batchOutSweepClosure[:])
+	require.NoError(t, err)
+
+	vtxoTree, err := tree.BuildVtxoTree(
+		rootInput, testCase.receivers, batchOutSweepClosure[:], vtxoTreeExpiry,
+	)
+	require.NoError(t, err)
+
+	cosignerKey := testCase.privKeys[0]
+	signers := makeCosigners(t, testCase.privKeys, batchOutAmount, vtxoTree)
+	validNonces, err := signers[keyToStr(cosignerKey)].GetNonces()
+	require.NoError(t, err)
+	require.NotEmpty(t, validNonces)
+
+	txid := slices.Collect(maps.Keys(validNonces))[0]
+
+	t.Run("valid", func(t *testing.T) {
+		fixtures := []struct {
+			name string
+			edit func(nonces tree.TreeNonces)
+		}{
+			{
+				name: "nonce for every tx to sign",
+				edit: func(tree.TreeNonces) {},
+			},
+			{
+				// clients may send nonces for txs they don't sign
+				name: "extra nonce for a txid not in the tree",
+				edit: func(nonces tree.TreeNonces) {
+					nonces[hex.EncodeToString(make([]byte, 32))] = nonces[txid]
+				},
+			},
+		}
+
+		for _, f := range fixtures {
+			t.Run(f.name, func(t *testing.T) {
+				nonces := maps.Clone(validNonces)
+				f.edit(nonces)
+
+				err := tree.VerifyTreeNonces(vtxoTree, cosignerKey.PubKey(), nonces)
+				require.NoError(t, err)
+			})
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		fixtures := []struct {
+			name        string
+			edit        func(nonces tree.TreeNonces)
+			expectedErr string
+		}{
+			{
+				name:        "missing nonce",
+				edit:        func(nonces tree.TreeNonces) { delete(nonces, txid) },
+				expectedErr: "missing musig2 nonce",
+			},
+			{
+				name: "invalid first point",
+				edit: func(nonces tree.TreeNonces) {
+					// 0x05 is not a valid prefix for a compressed point
+					nonce := *nonces[txid]
+					nonce.PubNonce[0] = 0x05
+					nonces[txid] = &nonce
+				},
+				expectedErr: "invalid musig2 nonce",
+			},
+			{
+				name: "invalid second point",
+				edit: func(nonces tree.TreeNonces) {
+					nonce := *nonces[txid]
+					nonce.PubNonce[33] = 0x05
+					nonces[txid] = &nonce
+				},
+				expectedErr: "invalid musig2 nonce",
+			},
+		}
+
+		for _, f := range fixtures {
+			t.Run(f.name, func(t *testing.T) {
+				nonces := maps.Clone(validNonces)
+				f.edit(nonces)
+
+				err := tree.VerifyTreeNonces(vtxoTree, cosignerKey.PubKey(), nonces)
+				require.ErrorContains(t, err, f.expectedErr)
+			})
+		}
 	})
 }
 

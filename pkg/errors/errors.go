@@ -616,7 +616,9 @@ var QUERY_FILTER_LIMIT_EXCEEDED = Code[QueryFilterLimitMetadata]{
 }
 
 var NOT_ENOUGH_TREE_TX_COSIGNERS = Code[map[string]any]{
-	61,
+	59,
 	"NOT_ENOUGH_TREE_TX_COSIGNERS",
 	grpccodes.InvalidArgument,
 }
+
+var INVALID_TREE_NONCES = Code[any]{60, "INVALID_TREE_NONCES", grpccodes.InvalidArgument}

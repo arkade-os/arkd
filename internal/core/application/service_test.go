@@ -1295,6 +1295,215 @@ func TestIsBatchSwept(t *testing.T) {
 	})
 }
 
+func TestRegisterCosignerNonces(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		f := newTestTreeSigningFixture(t)
+		nonces, err := f.signer.GetNonces()
+		require.NoError(t, err)
+
+		appErr := f.svc.RegisterCosignerNonces(t.Context(), f.roundId, f.cosigner, nonces)
+		require.NoError(t, appErr)
+		require.Equal(t, nonces, f.store.nonces[f.cosigner])
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		storeErr := fmt.Errorf("store unavailable")
+		tests := []struct {
+			name string
+			// setup returns the pubkey and nonces to submit, after tampering with the fixture.
+			setup        func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreeNonces)
+			expectedCode uint16
+			expectedErr  string
+		}{
+			{
+				name: "invalid pubkey format",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreeNonces) {
+					return "not-hex", f.nonces(t)
+				},
+				expectedCode: errors.INVALID_TREE_NONCES.Code,
+				expectedErr:  "must be a hex encoded compressed public key",
+			},
+			{
+				name: "invalid pubkey",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreeNonces) {
+					return hex.EncodeToString(make([]byte, 33)), f.nonces(t)
+				},
+				expectedCode: errors.INVALID_TREE_NONCES.Code,
+				expectedErr:  "invalid cosigner pubkey",
+			},
+			{
+				name: "signing session not found",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreeNonces) {
+					f.store.session = nil
+					return f.cosigner, f.nonces(t)
+				},
+				expectedCode: errors.INTERNAL_ERROR.Code,
+				expectedErr:  "signing session not found",
+			},
+			{
+				// AddNonces refuses it too, but only after the tree checks and as an internal
+				// error.
+				name: "not a cosigner of the round",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreeNonces) {
+					return hex.EncodeToString(testPubkey(t).SerializeCompressed()), f.nonces(t)
+				},
+				expectedCode: errors.INVALID_TREE_NONCES.Code,
+				expectedErr:  "is not a cosigner",
+			},
+			{
+				name: "missing nonces",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreeNonces) {
+					return f.cosigner, tree.TreeNonces{}
+				},
+				expectedCode: errors.INVALID_TREE_NONCES.Code,
+				expectedErr:  "missing musig2 nonce",
+			},
+			{
+				name: "invalid nonce",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreeNonces) {
+					nonces := f.nonces(t)
+					for _, nonce := range nonces {
+						// 0x05 is not a valid compressed point prefix. All zeros would be
+						// accepted instead, as musig2 encodes the point at infinity that way.
+						nonce.PubNonce[0] = 0x05
+					}
+					return f.cosigner, nonces
+				},
+				expectedCode: errors.INVALID_TREE_NONCES.Code,
+				expectedErr:  "invalid musig2 nonce",
+			},
+			{
+				name: "fail to store the nonces",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreeNonces) {
+					f.store.err = storeErr
+					return f.cosigner, f.nonces(t)
+				},
+				expectedCode: errors.INTERNAL_ERROR.Code,
+				expectedErr:  "something went wrong",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				f := newTestTreeSigningFixture(t)
+				pubkey, nonces := tt.setup(t, f)
+
+				appErr := f.svc.RegisterCosignerNonces(t.Context(), f.roundId, pubkey, nonces)
+				require.Error(t, appErr)
+				require.Equal(t, tt.expectedCode, appErr.Code())
+				require.Contains(t, appErr.Error(), tt.expectedErr)
+				require.Empty(t, f.store.nonces)
+			})
+		}
+	})
+}
+
+func TestRegisterCosignerSignatures(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		f := newTestTreeSigningFixture(t)
+		f.aggregateNonces(t)
+		sigs, err := f.signer.Sign()
+		require.NoError(t, err)
+
+		appErr := f.svc.RegisterCosignerSignatures(t.Context(), f.roundId, f.cosigner, sigs)
+		require.NoError(t, appErr)
+		require.Equal(t, sigs, f.store.sigs[f.cosigner])
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		storeErr := fmt.Errorf("store unavailable")
+		tests := []struct {
+			name string
+			// setup returns the pubkey and signatures to submit, after tampering with the
+			// fixture.
+			setup        func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreePartialSigs)
+			expectedCode uint16
+			expectedErr  string
+		}{
+			{
+				name: "signing session not found",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreePartialSigs) {
+					f.store.session = nil
+					return f.cosigner, f.sigs(t)
+				},
+				expectedCode: errors.INTERNAL_ERROR.Code,
+				expectedErr:  "signing session not found",
+			},
+			{
+				name: "not a cosigner of the round",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreePartialSigs) {
+					return hex.EncodeToString(testPubkey(t).SerializeCompressed()), f.sigs(t)
+				},
+				expectedCode: errors.INVALID_SIGNATURE.Code,
+				expectedErr:  "is not a cosigner",
+			},
+			{
+				name: "submit signatures before nonces aggregation",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreePartialSigs) {
+					return f.cosigner, tree.TreePartialSigs{}
+				},
+				expectedCode: errors.INVALID_SIGNATURE.Code,
+				expectedErr:  "nonces not aggregated yet",
+			},
+			{
+				name: "missing nonces",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreePartialSigs) {
+					sigs := f.sigs(t)
+					delete(f.session.Nonces, f.cosigner)
+					return f.cosigner, sigs
+				},
+				expectedCode: errors.INVALID_SIGNATURE.Code,
+				expectedErr:  "no nonces submitted",
+			},
+			{
+				name: "tampered partial signature",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreePartialSigs) {
+					sigs := f.sigs(t)
+					for _, sig := range sigs {
+						sig.S.SetInt(1)
+					}
+					return f.cosigner, sigs
+				},
+				expectedCode: errors.INVALID_SIGNATURE.Code,
+				expectedErr:  "invalid tree signatures",
+			},
+			{
+				name: "signatures of another cosigner",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreePartialSigs) {
+					f.aggregateNonces(t)
+					sigs, err := f.opSigner.Sign()
+					require.NoError(t, err)
+					return f.cosigner, sigs
+				},
+				expectedCode: errors.INVALID_SIGNATURE.Code,
+				expectedErr:  "invalid tree signatures",
+			},
+			{
+				name: "fail to store the signatures",
+				setup: func(t *testing.T, f *testTreeSigningFixture) (string, tree.TreePartialSigs) {
+					f.store.err = storeErr
+					return f.cosigner, f.sigs(t)
+				},
+				expectedCode: errors.INTERNAL_ERROR.Code,
+				expectedErr:  "something went wrong",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				f := newTestTreeSigningFixture(t)
+				pubkey, sigs := tt.setup(t, f)
+
+				appErr := f.svc.RegisterCosignerSignatures(t.Context(), f.roundId, pubkey, sigs)
+				require.Error(t, appErr)
+				require.Equal(t, tt.expectedCode, appErr.Code())
+				require.Contains(t, appErr.Error(), tt.expectedErr)
+				require.Empty(t, f.store.sigs)
+			})
+		}
+	})
+}
+
 func parseTime(t *testing.T, value string) time.Time {
 	tm, err := time.ParseInLocation(time.DateTime, value, time.UTC)
 	require.NoError(t, err)
@@ -1757,6 +1966,7 @@ type testLiveStore struct {
 	intents     ports.IntentStore
 	settings    ports.SettingsStore
 	offchainTxs ports.OffChainTxStore
+	treeSigning ports.TreeSigningSessionsStore
 }
 
 func (s testLiveStore) Intents() ports.IntentStore { return s.intents }
@@ -1764,6 +1974,177 @@ func (s testLiveStore) Intents() ports.IntentStore { return s.intents }
 func (s testLiveStore) Settings() ports.SettingsStore { return s.settings }
 
 func (s testLiveStore) OffchainTxs() ports.OffChainTxStore { return s.offchainTxs }
+
+func (s testLiveStore) TreeSigingSessions() ports.TreeSigningSessionsStore {
+	return s.treeSigning
+}
+
+// testTreeSigningStore serves session as the signing session of any round and records the
+// nonces and signatures added to it, or refuses them with err.
+type testTreeSigningStore struct {
+	ports.TreeSigningSessionsStore
+	session *ports.MusigSigningSession
+	err     error
+	nonces  map[string]tree.TreeNonces
+	sigs    map[string]tree.TreePartialSigs
+}
+
+func (s *testTreeSigningStore) Get(context.Context, string) (*ports.MusigSigningSession, error) {
+	return s.session, nil
+}
+
+func (s *testTreeSigningStore) AddNonces(
+	_ context.Context, _ string, pubkey string, nonces tree.TreeNonces,
+) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.nonces[pubkey] = nonces
+	return nil
+}
+
+func (s *testTreeSigningStore) AddSignatures(
+	_ context.Context, _ string, pubkey string, sigs tree.TreePartialSigs,
+) error {
+	if s.err != nil {
+		return s.err
+	}
+	s.sigs[pubkey] = sigs
+	return nil
+}
+
+// testTreeSigningFixture builds a real one-leaf vtxo tree cosigned by a client key and the
+// operator key, so nonces and signatures can be produced and verified for real, and a service
+// serving its signing session from a recording store.
+type testTreeSigningFixture struct {
+	svc         *service
+	store       *testTreeSigningStore
+	session     *ports.MusigSigningSession
+	roundId     string
+	cosigner    string // client cosigner, hex encoded compressed key
+	operator    string
+	signer      tree.SignerSession // client signer session
+	opSigner    tree.SignerSession
+	coordinator tree.CoordinatorSession
+}
+
+func newTestTreeSigningFixture(t *testing.T) *testTreeSigningFixture {
+	t.Helper()
+
+	clientPrvkey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	operatorPrvkey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	cosigner := hex.EncodeToString(clientPrvkey.PubKey().SerializeCompressed())
+	operator := hex.EncodeToString(operatorPrvkey.PubKey().SerializeCompressed())
+
+	expiry := arklib.RelativeLocktime{Type: arklib.LocktimeTypeBlock, Value: 144}
+	sweepScript, err := (&script.CSVMultisigClosure{
+		MultisigClosure: script.MultisigClosure{
+			PubKeys: []*btcec.PublicKey{operatorPrvkey.PubKey()},
+		},
+		Locktime: expiry,
+	}).Script()
+	require.NoError(t, err)
+	scriptRoot := txscript.NewBaseTapLeaf(sweepScript).TapHash()
+
+	receiverScript, err := script.P2TRScript(testPubkey(t))
+	require.NoError(t, err)
+	leaves := []tree.Leaf{{
+		Outputs: []tree.LeafOutput{{
+			Amount: 1000, Script: hex.EncodeToString(receiverScript),
+		}},
+		CosignersPublicKeys: []string{cosigner, operator},
+	}}
+	_, batchOutAmount, err := tree.BuildBatchOutput(leaves, scriptRoot[:])
+	require.NoError(t, err)
+
+	var rootInput wire.OutPoint
+	_, err = rand.Read(rootInput.Hash[:])
+	require.NoError(t, err)
+	vtxoTree, err := tree.BuildVtxoTree(&rootInput, leaves, scriptRoot[:], expiry)
+	require.NoError(t, err)
+	flatTree, err := vtxoTree.Serialize()
+	require.NoError(t, err)
+
+	coordinator, err := tree.NewTreeCoordinatorSession(scriptRoot[:], batchOutAmount, vtxoTree)
+	require.NoError(t, err)
+	signer := tree.NewTreeSignerSession(clientPrvkey)
+	require.NoError(t, signer.Init(scriptRoot[:], batchOutAmount, vtxoTree))
+	opSigner := tree.NewTreeSignerSession(operatorPrvkey)
+	require.NoError(t, opSigner.Init(scriptRoot[:], batchOutAmount, vtxoTree))
+
+	session := &ports.MusigSigningSession{
+		NbCosigners: 2,
+		Cosigners:   map[string]struct{}{cosigner: {}, operator: {}},
+		Nonces:      make(map[string]tree.TreeNonces),
+		Signatures:  make(map[string]tree.TreePartialSigs),
+		SigningContext: ports.SigningContext{
+			ScriptRoot:     scriptRoot[:],
+			BatchOutAmount: batchOutAmount,
+			VtxoTree:       flatTree,
+		},
+	}
+	store := &testTreeSigningStore{
+		session: session,
+		nonces:  make(map[string]tree.TreeNonces),
+		sigs:    make(map[string]tree.TreePartialSigs),
+	}
+
+	return &testTreeSigningFixture{
+		svc:         &service{cache: testLiveStore{treeSigning: store}},
+		store:       store,
+		session:     session,
+		roundId:     "round-id",
+		cosigner:    cosigner,
+		operator:    operator,
+		signer:      signer,
+		opSigner:    opSigner,
+		coordinator: coordinator,
+	}
+}
+
+// aggregateNonces runs the nonce round for both cosigners and records its outcome in the
+// session the way the batch does, so partial signatures can then be produced and verified.
+func (f *testTreeSigningFixture) aggregateNonces(t *testing.T) {
+	t.Helper()
+
+	signers := map[string]tree.SignerSession{f.cosigner: f.signer, f.operator: f.opSigner}
+	for pubkey, signer := range signers {
+		nonces, err := signer.GetNonces()
+		require.NoError(t, err)
+		buf, err := hex.DecodeString(pubkey)
+		require.NoError(t, err)
+		pk, err := btcec.ParsePubKey(buf)
+		require.NoError(t, err)
+		f.coordinator.AddNonce(pk, nonces)
+		f.session.Nonces[pubkey] = nonces
+	}
+
+	aggregated, err := f.coordinator.AggregateNonces()
+	require.NoError(t, err)
+	f.session.SigningContext.AggregatedNonces = aggregated
+	for _, signer := range signers {
+		signer.SetAggregatedNonces(aggregated)
+	}
+}
+
+// nonces returns fresh nonces of the client cosigner for the tree.
+func (f *testTreeSigningFixture) nonces(t *testing.T) tree.TreeNonces {
+	t.Helper()
+	nonces, err := f.signer.GetNonces()
+	require.NoError(t, err)
+	return nonces
+}
+
+// sigs runs the nonce round and returns the partial signatures of the client cosigner.
+func (f *testTreeSigningFixture) sigs(t *testing.T) tree.TreePartialSigs {
+	t.Helper()
+	f.aggregateNonces(t)
+	sigs, err := f.signer.Sign()
+	require.NoError(t, err)
+	return sigs
+}
 
 type testSettingsStore struct {
 	ports.SettingsStore
