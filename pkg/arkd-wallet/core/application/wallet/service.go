@@ -477,10 +477,44 @@ func (w *wallet) selectCoins(
 		return nil, 0, err
 	}
 
+	// txCache caches txid -> is TRUC (v3) tx, to spare calls to nbxplorer for utxos of the
+	// same unconfirmed tx.
+	txCache := make(map[string]bool)
 	availableUtxos := make([]coinset.Coin, 0, len(mainAccountUtxos))
 	for _, utxo := range mainAccountUtxos {
 		if confirmedOnly && utxo.Confirmations < 1 {
 			continue
+		}
+		if utxo.Confirmations == 0 {
+			txid := utxo.Hash.String()
+			if _, ok := txCache[txid]; !ok {
+				details, err := w.Nbxplorer.GetTransaction(ctx, txid)
+				if err != nil {
+					log.WithError(err).Warnf(
+						"failed to get unconfirmed tx, excluding utxo %s:%d from coin selection",
+						txid, utxo.Index,
+					)
+					continue
+				}
+				tx := &wire.MsgTx{}
+				if err := tx.Deserialize(
+					hex.NewDecoder(strings.NewReader(details.Hex)),
+				); err != nil {
+					log.WithError(err).Warnf(
+						"failed to parse unconfirmed tx, excluding utxo %s:%d from coin selection",
+						txid, utxo.Index,
+					)
+					continue
+				}
+				txCache[txid] = tx.Version == 3
+			}
+			// Exclude unconfirmed utxos of TRUC (v3) txs, like the parent and the child of a CPFP
+			// package: a TRUC parent can have only one unconfirmed child, the anchor bump, and a
+			// TRUC child can have no unconfirmed descendants. Such coins can be spent only once
+			// confirmed.
+			if isTruc := txCache[txid]; isTruc {
+				continue
+			}
 		}
 		if _, isLocked := lockedOutpoints[utxo.OutPoint]; isLocked {
 			continue

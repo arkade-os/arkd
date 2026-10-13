@@ -4202,6 +4202,122 @@ func TestReactToFraud(t *testing.T) {
 			require.True(t, spentStatus[vtxo.VOut].Spent)
 			require.NotEmpty(t, spentStatus[vtxo.VOut].SpentBy)
 		})
+
+		// In this test, Alice unrolls an already forfeited coin and the server responds by
+		// broadcasting the forfeit. While the forfeit is unconfirmed onchain, the next batch must
+		// exclude the coins from selection as they are unusable because they require a
+		// confirmation (the forfeit is TRUC tx).
+		t.Run(
+			"batch after fraud detection excludes unconfirmed funds from coin selection",
+			func(t *testing.T) {
+				ctx := t.Context()
+				t.Cleanup(func() {
+					require.NoError(t, generateBlocks(1))
+				})
+
+				// Then very first part of the test is dedicated to Send a utxo with big amount to
+				// the LP to ensure it and its descendant will be used for the next batches and
+				// to bump the forfeit tx that will be broadcasted later on.
+				adminClient := &http.Client{Timeout: 15 * time.Second}
+				type serverUtxo struct {
+					Value         uint64 `json:"value,string"`
+					Confirmations uint32 `json:"confirmations"`
+				}
+				largestServerUtxos := func() (serverUtxo, serverUtxo, error) {
+					resp, err := get[struct {
+						Utxos []serverUtxo `json:"utxos"`
+					}](adminClient, fmt.Sprintf("%s/v1/admin/wallet/utxos", adminUrl), "utxos")
+					if err != nil {
+						return serverUtxo{}, serverUtxo{}, err
+					}
+					var first, second serverUtxo
+					for _, u := range resp.Utxos {
+						if u.Value > first.Value {
+							first, second = u, first
+						} else if u.Value > second.Value {
+							second = u
+						}
+					}
+					return first, second, nil
+				}
+
+				largest, _, err := largestServerUtxos()
+				require.NoError(t, err)
+				serverAddr, err := get[addressResp](
+					adminClient, fmt.Sprintf("%s/v1/admin/wallet/address", adminUrl), "address",
+				)
+				require.NoError(t, err)
+				faucetOnchain(t, serverAddr.Address, float64(largest.Value)/1e8+1)
+
+				// Send some funds to Alice's boarding address
+				alice := setupClientWallet(t)
+
+				_, _, boardingAddress, err := alice.Receive(ctx)
+				require.NoError(t, err)
+				faucetOnchainAndWait(t, boardingAddress.Address, 0.00021)
+
+				// Settle the boarding funds and take note of the vtxo, this will be the one
+				// unrolled trying to scam the server.
+				boarding, err := settleBounded(ctx, alice)
+				require.NoError(t, err)
+				waitForOutspendsIndexed(t, testExplorer, boarding.CommitmentTxid, 0)
+				vtxo := waitForSpendableVtxos(t, alice, 1)[0]
+				require.False(t, vtxo.Preconfirmed)
+
+				// Renew the coins again so the vtxo above gets spent offchain by a forfeit tx.
+				refresh, err := settleBounded(ctx, alice)
+				require.NoError(t, err)
+				require.NotEmpty(t, refresh.CommitmentTxid)
+				waitForAnySpentVtxo(t, alice)
+
+				// Unroll the forfeited vtxo.
+				branch, err := unroll.NewRedeemBranch(ctx, testExplorer, alice.Indexer(), vtxo)
+				require.NoError(t, err)
+				leafTx, err := branch.NextRedeemTx()
+				require.NoError(t, err)
+				var leaf wire.MsgTx
+				require.NoError(t, leaf.Deserialize(hex.NewDecoder(strings.NewReader(leafTx))))
+				_, err = testExplorer.Broadcast(leafTx, bumpAnchorTx(t, &leaf, testExplorer))
+				require.NoError(t, err)
+
+				// Mine a block to get the unrolled vtxo confirmed.
+				require.NoError(t, generateBlocks(1))
+				// Give time to the server to detect the confirmation and broadcast the connector
+				// branch (TRUC tx as well).
+				time.Sleep(5 * time.Second)
+				// Mine another block to make the server broadcast the forfeit tx.
+				require.NoError(t, generateBlocks(1))
+
+				// Wait until the big-value utxo appear as unconfirmed onchain
+				waitForOutspend(t, testExplorer, vtxo.Txid, vtxo.VOut)
+				waitUntil(
+					t, chainWait, "the unconfirmed fee-bump change to be the largest server coin",
+					func(context.Context) error {
+						first, second, err := largestServerUtxos()
+						if err != nil {
+							return err
+						}
+						if first.Confirmations > 0 || first.Value == second.Value {
+							return fmt.Errorf(
+								"largest server coin has %d sats and %d confirmations, "+
+									"next has %d sats",
+								first.Value, first.Confirmations, second.Value,
+							)
+						}
+						return nil
+					},
+				)
+
+				// Make bob join a batch redeeming a note to ensure the unconfirmed utxo is
+				// excluded from coin selection: since arkd-wallet selects the biggest value utxo
+				// that fits the target amonut, the unconfirmed utxo would be selected causing
+				// the batch to fail as the commitmeent tx would be rejected by the network.
+				faucetOffchain(t, setupClientWallet(t), 0.001)
+
+				// Finally, confirm everything in a block.
+				require.NoError(t, generateBlocks(1))
+			},
+		)
 	})
 
 	// In these tests Alice spends a VTXO and then tries to unroll it onchain.
@@ -7898,6 +8014,12 @@ func TestAsset(t *testing.T) {
 }
 
 func TestGetAssetQueryChurn(t *testing.T) {
+	// The batches below chain commitment txs on each other's unconfirmed change: mine them so
+	// the next tests don't hit the mempool limit on unconfirmed ancestors.
+	t.Cleanup(func() {
+		require.NoError(t, generateBlocks(1))
+	})
+
 	ctx := t.Context()
 
 	const supply = 200
