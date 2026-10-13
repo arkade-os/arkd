@@ -645,6 +645,7 @@ func TestBatchSessionManager(t *testing.T) {
 	// holds the release back from its first read until its push is done.
 	t.Run("the next batch releases no claim until a registration has pushed", func(t *testing.T) {
 		reg := newPushingRegistration(t)
+		reg.repos.utxos = newFakeUtxoRepo()
 		reg.vtxos.On("GetVtxos", mock.Anything, mock.Anything).
 			Return([]domain.Vtxo{reg.vtxo}, nil)
 		intents := pausingIntentStore{
@@ -661,10 +662,13 @@ func TestBatchSessionManager(t *testing.T) {
 		svc.wg.Add(1)
 		svc.wallet = &mockedWallet{}
 		svc.cache = registrationRoundTestStore{
-			startRoundTestStore: startRoundTestStore{round: endedRound(t)},
-			settings:            registerIntentTestSettings(t),
-			offchainTxs:         testOffchainTxStore{},
-			intents:             intents,
+			startRoundTestStore: startRoundTestStore{
+				LiveStore: newCosignTestLiveStore(),
+				round:     endedRound(t),
+			},
+			settings:    registerIntentTestSettings(t),
+			offchainTxs: testOffchainTxStore{},
+			intents:     intents,
 		}
 		// Only a batch this process finished and saw projected has its claims
 		// released, so this case tracks it to reach the release it is about.

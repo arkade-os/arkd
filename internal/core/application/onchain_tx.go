@@ -210,6 +210,22 @@ func (s *service) lockUtxos(
 		).WithMetadata(errors.PsbtMetadata{Tx: tx})
 	}
 
+	// Ensure no inputs are already registered in intents queue - they might be boarding utxos.
+	// Check cached claims before the DB: settlement marks VTXOs spent before releasing their claims.
+	intents, err := s.cache.Intents().IncludesAny(ctx, inputsToCosign)
+	if err != nil {
+		log.WithError(err).Error(
+			"failed to check if inputs are already registered in intents queue",
+		)
+		return errors.INTERNAL_ERROR.New("something went wrong, please retry")
+	}
+	if len(intents) > 0 {
+		return errors.INVALID_ARK_PSBT.New(
+			"inputs already registered in intents queue: %s",
+			strings.Join(outpointsToString(intents), ", "),
+		).WithMetadata(errors.PsbtMetadata{Tx: tx})
+	}
+
 	// Reject signing inputs tracked as vtxos, unless unrolled and still unspent: a vtxo spent
 	// offchain is in the middle of a chain being unrolled and gets claimed by its checkpoint or
 	// forfeit tx, an expired one gets swept by us.
@@ -247,21 +263,6 @@ func (s *service) lockUtxos(
 		return errors.INVALID_ARK_PSBT.New(
 			"one or more inputs are checkpoint outputs: %s",
 			strings.Join(outpointsToString(inputsToCosign), ", "),
-		).WithMetadata(errors.PsbtMetadata{Tx: tx})
-	}
-
-	// Ensure no inputs are already registered in intents queue - they might be boarding utxos.
-	intents, err := s.cache.Intents().IncludesAny(ctx, inputsToCosign)
-	if err != nil {
-		log.WithError(err).Error(
-			"failed to check if inputs are already registered in intents queue",
-		)
-		return errors.INTERNAL_ERROR.New("something went wrong, please retry")
-	}
-	if len(intents) > 0 {
-		return errors.INVALID_ARK_PSBT.New(
-			"inputs already registered in intents queue: %s",
-			strings.Join(outpointsToString(intents), ", "),
 		).WithMetadata(errors.PsbtMetadata{Tx: tx})
 	}
 

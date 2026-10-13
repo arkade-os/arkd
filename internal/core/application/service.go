@@ -2511,6 +2511,38 @@ func (s *service) RegisterIntent(
 		).WithMetadata(errors.VtxoMetadata{VtxoOutpoints: spendingOutpoints})
 	}
 
+	pendingCosignedUtxos, err := s.cache.CosignedUtxos().IncludesAny(ctx, pushedOutpoints)
+	if err != nil {
+		log.WithError(err).
+			Errorf("failed to check spent status of input against cosigned utxo cache")
+		return "", errors.INTERNAL_ERROR.New("something went wrong")
+	}
+	if len(pendingCosignedUtxos) > 0 {
+		cosignedOutpoints := make([]string, 0, len(pendingCosignedUtxos))
+		for _, outpoint := range pendingCosignedUtxos {
+			cosignedOutpoints = append(cosignedOutpoints, outpoint.String())
+		}
+		return "", errors.VTXO_ALREADY_SPENT.New(
+			"registering intent with pending cosigned utxo(s) is not allowed",
+		).WithMetadata(errors.VtxoMetadata{VtxoOutpoints: cosignedOutpoints})
+	}
+
+	cosignedUtxos, err := s.repoManager.CosignedUtxos().GetUtxos(ctx, pushedOutpoints)
+	if err != nil {
+		log.WithError(err).
+			Errorf("failed to check spent status of input against cosigned utxo repo")
+		return "", errors.INTERNAL_ERROR.New("something went wrong")
+	}
+	if len(cosignedUtxos) > 0 {
+		cosignedOutpoints := make([]string, 0, len(cosignedUtxos))
+		for _, outpoint := range cosignedUtxos {
+			cosignedOutpoints = append(cosignedOutpoints, outpoint.String())
+		}
+		return "", errors.VTXO_ALREADY_SPENT.New(
+			"registering intent with cosigned utxo(s) is not allowed",
+		).WithMetadata(errors.VtxoMetadata{VtxoOutpoints: cosignedOutpoints})
+	}
+
 	if err := s.cache.Intents().Push(
 		ctx, *intent, boardingInputs, message.CosignersPublicKeys,
 	); err != nil {

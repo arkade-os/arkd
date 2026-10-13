@@ -295,6 +295,45 @@ func TestCosignOnchainTx(t *testing.T) {
 				require.Contains(t, err.Error(), "registered in intents queue")
 				require.Equal(t, 0, f.signer.calls)
 			})
+
+			t.Run("pending registration wins against cosign via the intent cache", func(t *testing.T) {
+				f := newCosignFixture(t)
+				reg := f.registration(t)
+
+				// This intent has a boarding input, so RegisterIntent holds cosignMu at this check.
+				// Pause here: lockUtxos must wait, then reject the input once the intent is queued.
+				read, proceed := make(chan struct{}), make(chan struct{})
+				resume := sync.OnceFunc(func() { close(proceed) })
+				f.svc.repoManager.(*mockedRepoManager).utxos = &pausingCosignedUtxoRepo{
+					UtxoRepository: f.utxos, read: read, proceed: proceed,
+				}
+				var requests sync.WaitGroup
+				t.Cleanup(func() { resume(); requests.Wait() })
+				registered, cosigned := make(chan errors.Error, 1), make(chan errors.Error, 1)
+				requests.Go(func() {
+					_, err := f.svc.RegisterIntent(t.Context(), *reg.proof, reg.message)
+					registered <- err
+				})
+				<-read
+
+				requests.Go(func() {
+					cosigned <- f.svc.lockUtxos(t.Context(), "", []domain.Outpoint{f.utxo})
+				})
+				// lockUtxos must wait for registration to release cosignMu.
+				select {
+				case err := <-cosigned:
+					t.Fatalf("cosign completed before registration could push: %v", err)
+				case <-time.After(100 * time.Millisecond):
+				}
+
+				resume()
+				require.NoError(t, <-registered)
+				appErr := <-cosigned
+				require.Error(t, appErr)
+				require.Equal(t, errors.INVALID_ARK_PSBT.Code, appErr.Code())
+				require.Contains(t, appErr.Error(), "registered in intents queue")
+				f.requireReleasedAndUnrecorded(t)
+			})
 		})
 
 		// If the request is canceled while signing, the utxos reserved for it are removed
@@ -356,6 +395,52 @@ func TestCosignOnchainTx(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, utxos)
 		}
+
+		t.Run("settlement hands the intent claim to the spent record", func(t *testing.T) {
+			f := newCosignFixture(t)
+			vtxo := f.vtxo()
+			vtxo.Unrolled = true
+			intents := f.svc.cache.Intents().(*cosignTestIntentStore)
+			require.NoError(t, intents.Push(
+				t.Context(), domain.Intent{Inputs: []domain.Vtxo{vtxo}}, nil, nil,
+			))
+			settlementTxid := randomTxid(t)
+			settle := func() {
+				// Projection is visible before the batch releases its claim.
+				vtxo.Spent = true
+				vtxo.SettledBy = settlementTxid
+				intents.mu.Lock()
+				delete(intents.claimed, f.utxo)
+				intents.mu.Unlock()
+			}
+			f.vtxos.ExpectedCalls = nil
+			read := f.vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{f.utxo})
+			read.Run(func(mock.Arguments) {
+				snapshot := vtxo
+				reserved, err := f.svc.cache.CosignedUtxos().IncludesAny(
+					t.Context(), []domain.Outpoint{f.utxo},
+				)
+				require.NoError(t, err)
+				// Intercept the read under the reservation, after request
+				// validation. Later reads see the spent state, not this snapshot.
+				if len(reserved) > 0 && !vtxo.Spent {
+					settle()
+				}
+				read.Return([]domain.Vtxo{snapshot}, nil)
+			})
+			tx := f.cosignTx(t)
+
+			txid, appErr := f.svc.CosignOnchainTx(t.Context(), tx.b64)
+			require.Error(t, appErr)
+			require.Empty(t, txid)
+			require.Equal(t, errors.INVALID_ARK_PSBT.Code, appErr.Code())
+			require.Contains(t, appErr.Error(), "already registered in intents queue")
+			require.Contains(t, appErr.Error(), f.utxo.String())
+			requireNothingDone(t, f)
+			require.Empty(t, f.events.events(tx.txid))
+			// Checking the claim first rejects before the settlement hook runs.
+			f.vtxos.AssertExpectations(t)
+		})
 
 		t.Run("malformed tx", func(t *testing.T) {
 			tests := []struct {
@@ -1233,6 +1318,20 @@ func newCosignFixture(t *testing.T, opts ...cosignFixtureOption) *cosignFixture 
 	return f
 }
 
+// vtxo gives the fixture's funded output the metadata of a live offchain VTXO.
+// Its script and registration proof remain valid after it unrolls.
+func (f *cosignFixture) vtxo() domain.Vtxo {
+	return domain.Vtxo{
+		Outpoint:           f.utxo,
+		Amount:             f.amount,
+		PubKey:             hex.EncodeToString(f.pkScript[2:]),
+		CommitmentTxids:    []string{f.fundingTxid},
+		RootCommitmentTxid: f.fundingTxid,
+		ExpiresAt:          time.Now().Add(time.Hour).Unix(),
+		CreatedAt:          time.Now().Add(-time.Hour).Unix(),
+	}
+}
+
 // cosignTestLiveStore is the live store the cosign flow and RegisterIntent touch: the
 // in-memory utxo reservations, stateful settings, an intent queue that claims the inputs
 // pushed to it, and an offchain tx cache spending nothing.
@@ -2004,6 +2103,32 @@ func (r *fakeEventRepo) events(txid string) []domain.Event {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]domain.Event(nil), r.saved[domain.OnchainTxTopic+":"+txid]...)
+}
+
+// pausingCosignedUtxoRepo pauses only its first read, after taking the snapshot.
+// Later reads remain free to proceed, so the barrier cannot hide a missing app lock.
+type pausingCosignedUtxoRepo struct {
+	domain.UtxoRepository
+	once    sync.Once
+	read    chan<- struct{}
+	proceed <-chan struct{}
+}
+
+func (r *pausingCosignedUtxoRepo) GetUtxos(
+	ctx context.Context, outpoints []domain.Outpoint,
+) ([]domain.Utxo, error) {
+	utxos, err := r.UtxoRepository.GetUtxos(ctx, outpoints)
+	pause := false
+	r.once.Do(func() { pause = true })
+	if pause {
+		close(r.read)
+		select {
+		case <-r.proceed:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return utxos, err
 }
 
 // fakeUtxoRepo is an in-memory domain.UtxoRepository with the same constraints as the sql

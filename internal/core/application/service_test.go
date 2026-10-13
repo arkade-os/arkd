@@ -857,6 +857,68 @@ func TestCollectTriggerContext(t *testing.T) {
 }
 
 func TestRegisterIntent(t *testing.T) {
+	t.Run("registration of a vtxo that unrolls", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			unrolled bool
+			conflict string
+		}{
+			{name: "offchain input without a conflicting spend"},
+			{name: "unrolled input without a conflicting spend", unrolled: true},
+			{name: "cosign pending during validation", conflict: "pending"},
+			{name: "cosign recorded during validation", conflict: "recorded"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				f := newCosignFixture(t)
+				reg := f.registration(t)
+				tx := f.cosignTx(t)
+				vtxo := f.vtxo()
+				vtxo.Unrolled = tc.unrolled
+				transitioned := false
+				outpoints := []domain.Outpoint{f.utxo}
+				f.vtxos.ExpectedCalls = nil
+				read := f.vtxos.On("GetVtxos", mock.Anything, outpoints)
+				read.Run(func(mock.Arguments) {
+					// Return the eligibility snapshot, but expose the unroll and
+					// competing cosign to any subsequent checks.
+					snapshot := vtxo
+					if tc.conflict != "" && !transitioned {
+						transitioned = true
+						vtxo.Unrolled = true
+						if tc.conflict == "pending" {
+							require.NoError(t, f.svc.cache.CosignedUtxos().AddUtxos(t.Context(), outpoints))
+						} else {
+							require.NoError(t, f.utxos.AddUtxos(t.Context(), []domain.Utxo{{
+								Outpoint: f.utxo, Amount: f.amount, PubKey: vtxo.PubKey,
+								Spend: domain.UtxoSpend{Txid: tx.txid},
+							}}, tx.b64))
+						}
+					}
+					read.Return([]domain.Vtxo{snapshot}, nil)
+				})
+
+				id, appErr := f.svc.RegisterIntent(t.Context(), *reg.proof, reg.message)
+				claimed, err := f.svc.cache.Intents().IncludesAny(t.Context(), outpoints)
+				require.NoError(t, err)
+				f.vtxos.AssertExpectations(t)
+				if tc.conflict == "" {
+					require.NoError(t, appErr)
+					require.NotEmpty(t, id)
+					require.Equal(t, outpoints, claimed)
+					return
+				}
+
+				require.True(t, transitioned, "the conflicting spend must have landed")
+				require.Empty(t, claimed, "an intent from a stale read must not be pushed")
+				require.Empty(t, id)
+				require.Error(t, appErr)
+				require.Equal(t, errors.VTXO_ALREADY_SPENT.Code, appErr.Code())
+				require.Contains(t, appErr.Error(), "cosigned")
+				require.Contains(t, appErr.Metadata()["vtxo_outpoints"], f.utxo.String())
+			})
+		}
+	})
+
 	// the receiver pubkey of an offchain output is read by slicing the pkscript
 	// at [2:], non-taproot scripts must be rejected before that.
 	t.Run("reject non-taproot offchain output", func(t *testing.T) {
