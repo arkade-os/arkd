@@ -153,6 +153,26 @@ func TestVerifyTapscriptSigs(t *testing.T) {
 			require.Error(t, err)
 		})
 
+		t.Run("tampered internal key in control block", func(t *testing.T) {
+			setup, privKey2 := newTwoKeySetup(t)
+			packet, prevoutFetcher := buildTx(t, setup)
+
+			sig1 := makeSignature(t, setup.privKey, packet, 0, setup.leaf, prevoutFetcher)
+			sig2 := makeSignature(t, privKey2, packet, 0, setup.leaf, prevoutFetcher)
+			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig1, sig2}
+
+			otherKey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+
+			corrupted := make([]byte, len(setup.controlBlockBytes))
+			copy(corrupted, setup.controlBlockBytes)
+			copy(corrupted[1:33], schnorr.SerializePubKey(otherKey.PubKey()))
+			packet.Inputs[0].TaprootLeafScript[0].ControlBlock = corrupted
+
+			_, err = script.VerifyTapscriptSigs(packet, prevoutFetcher)
+			require.ErrorContains(t, err, "internal key")
+		})
+
 		t.Run("invalid signature bytes", func(t *testing.T) {
 			setup := newSingleKeySetup(t)
 			packet, prevoutFetcher := buildTx(t, setup)

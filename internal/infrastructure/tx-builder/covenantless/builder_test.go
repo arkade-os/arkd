@@ -17,6 +17,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/mock"
@@ -368,6 +369,26 @@ func TestVerifyVtxoTapscriptSigs(t *testing.T) {
 			corrupted := append(append([]byte{}, setup.cbBytes...), fakeNode...)
 			_, _, err = builder.VerifyVtxoTapscriptSigs(encodeTx(t, buildTx(t, setup, corrupted)), false)
 			require.Error(t, err)
+		})
+
+		t.Run("tampered internal key in control block", func(t *testing.T) {
+			// The merkle path and both signatures still check out: only consensus would
+			// notice the output key it rebuilds from this control block is another one.
+			otherKey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+
+			setup := newTwoKeyVtxoSetup(t, signerKey)
+			corrupted := make([]byte, len(setup.cbBytes))
+			copy(corrupted, setup.cbBytes)
+			copy(corrupted[1:33], schnorr.SerializePubKey(otherKey.PubKey()))
+
+			packet := buildTx(t, setup, corrupted)
+			sig1 := makeVtxoSig(t, setup.closureKey, packet, setup.leaf)
+			sig2 := makeVtxoSig(t, setup.signerKey, packet, setup.leaf)
+			packet.Inputs[0].TaprootScriptSpendSig = []*psbt.TaprootScriptSpendSig{sig1, sig2}
+
+			_, _, err = builder.VerifyVtxoTapscriptSigs(encodeTx(t, packet), true)
+			require.ErrorContains(t, err, "internal key")
 		})
 
 		t.Run("invalid signature", func(t *testing.T) {

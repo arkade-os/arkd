@@ -151,6 +151,22 @@ func TestVerifyIntent(t *testing.T) {
 				require.ErrorContains(t, err, "invalid control block")
 			})
 
+			t.Run("tampered internal key in control block", func(t *testing.T) {
+				s := newNoteClosureSetup(t)
+				otherKey, err := btcec.NewPrivateKey()
+				require.NoError(t, err)
+
+				corrupted := make([]byte, len(s.cbBytes))
+				copy(corrupted, s.cbBytes)
+				copy(corrupted[1:33], schnorr.SerializePubKey(otherKey.PubKey()))
+
+				p := buildNoteProof(t, s, corrupted)
+				setNotePreimage(t, p, 1, s.preimage)
+
+				err = intent.Verify(serializeProof(t, p), noteProofMessage, nil)
+				require.ErrorContains(t, err, "internal key")
+			})
+
 			t.Run("missing preimage", func(t *testing.T) {
 				s := newNoteClosureSetup(t)
 				p := buildNoteProof(t, s, s.cbBytes)

@@ -173,6 +173,10 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 			return false, nil, err
 		}
 
+		if err := script.VerifyControlBlockInternalKey(controlBlock); err != nil {
+			return false, nil, fmt.Errorf("invalid control block for input %d: %w", index, err)
+		}
+
 		rootHash := controlBlock.RootHash(tapLeaf.Script)
 		tapKeyFromControlBlock := txscript.ComputeTaprootOutputKey(
 			script.UnspendableKey(), rootHash[:],

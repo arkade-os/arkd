@@ -978,6 +978,16 @@ func (s *service) SubmitOffchainTx(
 				InputIndex: inputIndex,
 			})
 		}
+		// The control block ends up in the checkpoint we sign: reject it now if consensus would
+		// reject its witness, rather than at finalization once the vtxo is already spent.
+		if err := script.VerifyControlBlockInternalKey(ctrlBlock); err != nil {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"invalid control block on input %d: %s", inputIndex, err,
+			).WithMetadata(errors.InputMetadata{
+				Txid:       checkpointTxid,
+				InputIndex: inputIndex,
+			})
+		}
 
 		tapscript := &waddrmgr.Tapscript{
 			ControlBlock:   ctrlBlock,

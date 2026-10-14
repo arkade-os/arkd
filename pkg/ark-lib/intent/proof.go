@@ -451,6 +451,10 @@ func verifyNoteInput(
 		)
 	}
 
+	if err := script.VerifyControlBlockInternalKey(controlBlock); err != nil {
+		return fmt.Errorf("invalid control block for note input %d: %w", inputIndex, err)
+	}
+
 	rootHash := controlBlock.RootHash(tapscriptLeaf.Script)
 	unspendableKey := script.UnspendableKey()
 	taprootKey := txscript.ComputeTaprootOutputKey(unspendableKey, rootHash[:])

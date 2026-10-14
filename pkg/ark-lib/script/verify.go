@@ -159,6 +159,10 @@ func VerifyTapscriptSigs(
 			return nil, fmt.Errorf("failed to parse control block for input %d: %s", inputIndex, err)
 		}
 
+		if err = VerifyControlBlockInternalKey(controlBlock); err != nil {
+			return nil, fmt.Errorf("invalid control block for input %d: %w", inputIndex, err)
+		}
+
 		rootHash := controlBlock.RootHash(tapscriptLeaf.Script)
 		taprootKey := txscript.ComputeTaprootOutputKey(unspendableKey, rootHash[:])
 		serializedTaprootKey := schnorr.SerializePubKey(taprootKey)
@@ -268,6 +272,23 @@ func VerifyTapscriptSigs(
 	}
 
 	return
+}
+
+// VerifyControlBlockInternalKey checks the control block commits to the unspendable key every
+// ark taptree is built from. The merkle root does not cover the internal key, so a control
+// block naming another one still proves its leaf while consensus rebuilds a different output
+// key from it and rejects the spend.
+func VerifyControlBlockInternalKey(controlBlock *txscript.ControlBlock) error {
+	expected := schnorr.SerializePubKey(UnspendableKey())
+	if controlBlock.InternalKey == nil {
+		return fmt.Errorf("missing internal key, expected %x", expected)
+	}
+
+	if got := schnorr.SerializePubKey(controlBlock.InternalKey); !bytes.Equal(got, expected) {
+		return fmt.Errorf("invalid internal key: expected %x, got %x", expected, got)
+	}
+
+	return nil
 }
 
 // IsNoteClosureScript returns true if the script is a note closure: OP_SHA256 <32 bytes> OP_EQUAL.

@@ -1018,6 +1018,33 @@ func TestRegisterIntent(t *testing.T) {
 }
 
 func TestSubmitOffchainTx(t *testing.T) {
+	// The control block of a checkpoint input ends up in the checkpoint we sign. The merkle root
+	// doesn't commit to its internal key, so a foreign one would pass every other check while
+	// consensus rejects the witness: it's refused before anything is signed or recorded.
+	t.Run("checkpoint control block with foreign internal key", func(t *testing.T) {
+		tx := newTestOneShotTx(t, 1)
+		ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx.checkpointTxs[0]), true)
+		require.NoError(t, err)
+		foreignKey := schnorr.SerializePubKey(testPubkey(t))
+		copy(ptx.Inputs[0].TaprootLeafScript[0].ControlBlock[1:33], foreignKey)
+		checkpoint, err := ptx.B64Encode()
+		require.NoError(t, err)
+
+		resp, appErr := tx.svc.SubmitOffchainTx(t.Context(), []string{checkpoint}, tx.arkTx)
+		require.Error(t, appErr)
+		require.Nil(t, resp)
+		require.Equal(t, errors.INVALID_PSBT_INPUT.Code, appErr.Code())
+		require.Contains(t, appErr.Error(), "invalid control block")
+		// The request is recorded as failed, like any rejected two-step submission, but never
+		// accepted: nothing is signed for it nor cached.
+		for _, call := range tx.events.Calls {
+			for _, event := range call.Arguments.Get(3).([]domain.Event) {
+				require.NotEqual(t, domain.EventTypeOffchainTxAccepted, event.GetType())
+			}
+		}
+		require.Empty(t, tx.offchainTxs.added)
+	})
+
 	t.Run("an input is checked for bans by its stored script", func(t *testing.T) {
 		spend := testOffchainTxSpendingVtxo(t)
 		svc := testSubmitOffchainTxService(t, spend.vtxo, convictionRepoStub{
