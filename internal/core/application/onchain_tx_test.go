@@ -15,7 +15,6 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
-	inmemorylivestore "github.com/arkade-os/arkd/internal/infrastructure/live-store/inmemory"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
@@ -1346,13 +1345,61 @@ type cosignTestLiveStore struct {
 
 func newCosignTestLiveStore() *cosignTestLiveStore {
 	return &cosignTestLiveStore{
-		utxos:    inmemorylivestore.NewUtxoStore(),
+		utxos:    newTestCosignedUtxosStore(),
 		settings: &cosignTestSettingsStore{},
 		intents:  &cosignTestIntentStore{claimed: make(map[domain.Outpoint]struct{})},
 	}
 }
 
 func (s *cosignTestLiveStore) CosignedUtxos() ports.CosignedUtxosStore { return s.utxos }
+
+// testCosignedUtxosStore reserves outpoints in memory the way the redis store does: a batch is
+// reserved as a whole, or not at all if any of its outpoints is reserved already.
+type testCosignedUtxosStore struct {
+	mu        sync.Mutex
+	outpoints map[domain.Outpoint]struct{}
+}
+
+func newTestCosignedUtxosStore() *testCosignedUtxosStore {
+	return &testCosignedUtxosStore{outpoints: make(map[domain.Outpoint]struct{})}
+}
+
+func (s *testCosignedUtxosStore) AddUtxos(_ context.Context, outpoints []domain.Outpoint) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, outpoint := range outpoints {
+		if _, ok := s.outpoints[outpoint]; ok {
+			return ports.ErrUtxosAlreadyExist
+		}
+	}
+	for _, outpoint := range outpoints {
+		s.outpoints[outpoint] = struct{}{}
+	}
+	return nil
+}
+
+func (s *testCosignedUtxosStore) RemoveUtxos(_ context.Context, outpoints []domain.Outpoint) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, outpoint := range outpoints {
+		delete(s.outpoints, outpoint)
+	}
+	return nil
+}
+
+func (s *testCosignedUtxosStore) IncludesAny(
+	_ context.Context, outpoints []domain.Outpoint,
+) ([]domain.Outpoint, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var included []domain.Outpoint
+	for _, outpoint := range outpoints {
+		if _, ok := s.outpoints[outpoint]; ok {
+			included = append(included, outpoint)
+		}
+	}
+	return included, nil
+}
 
 func (s *cosignTestLiveStore) Settings() ports.SettingsStore { return s.settings }
 

@@ -2058,6 +2058,11 @@ type testLiveStore struct {
 	treeSigning ports.TreeSigningSessionsStore
 }
 
+// CosignedUtxos serves an empty store: no utxo is reserved by a cosign request in flight.
+func (s testLiveStore) CosignedUtxos() ports.CosignedUtxosStore {
+	return newTestCosignedUtxosStore()
+}
+
 func (s testLiveStore) Intents() ports.IntentStore { return s.intents }
 
 func (s testLiveStore) Settings() ports.SettingsStore { return s.settings }

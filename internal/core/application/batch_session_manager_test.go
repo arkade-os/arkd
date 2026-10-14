@@ -743,6 +743,72 @@ func TestBatchSessionManager(t *testing.T) {
 		reg.vtxos.AssertExpectations(t)
 	})
 
+	// An accepted offchain tx leaves the cache once its spent marks are in the
+	// db, so the cache check sees nothing: the inputs are read again instead.
+	t.Run("an input spent and projected during validation is refused", func(t *testing.T) {
+		reg := newPushingRegistration(t)
+		intents := &registrationTestIntents{}
+		reg.svc.cache = testLiveStore{
+			settings:    registerIntentTestSettings(t),
+			offchainTxs: testOffchainTxStore{},
+			intents:     intents,
+		}
+
+		spent := reg.vtxo
+		spent.Spent = true
+		reg.vtxos.On("GetVtxos", mock.Anything, mock.Anything).
+			Return([]domain.Vtxo{reg.vtxo}, nil).Once()
+		reg.vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{reg.vtxo.Outpoint}).
+			Return([]domain.Vtxo{spent}, nil)
+
+		id, appErr := reg.svc.RegisterIntent(t.Context(), *reg.proof, reg.message)
+		require.False(t, intents.pushed, "the refused intent must not be pushed")
+		require.Empty(t, id)
+		require.Error(t, appErr)
+		require.Equal(t, errors.VTXO_ALREADY_SPENT.Code, appErr.Code())
+		reg.vtxos.AssertExpectations(t)
+	})
+
+	t.Run("an input gone from the second read is refused", func(t *testing.T) {
+		reg := newPushingRegistration(t)
+		intents := &registrationTestIntents{}
+		reg.svc.cache = testLiveStore{
+			settings:    registerIntentTestSettings(t),
+			offchainTxs: testOffchainTxStore{},
+			intents:     intents,
+		}
+
+		reg.vtxos.On("GetVtxos", mock.Anything, mock.Anything).
+			Return([]domain.Vtxo{reg.vtxo}, nil).Once()
+		reg.vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{reg.vtxo.Outpoint}).
+			Return([]domain.Vtxo{}, nil)
+
+		id, appErr := reg.svc.RegisterIntent(t.Context(), *reg.proof, reg.message)
+		require.False(t, intents.pushed, "the refused intent must not be pushed")
+		require.Empty(t, id)
+		require.Error(t, appErr)
+		require.Equal(t, errors.VTXO_NOT_FOUND.Code, appErr.Code())
+		reg.vtxos.AssertExpectations(t)
+	})
+
+	t.Run("an input unspent in both reads is pushed", func(t *testing.T) {
+		reg := newPushingRegistration(t)
+		intents := &registrationTestIntents{}
+		reg.svc.cache = testLiveStore{
+			settings:    registerIntentTestSettings(t),
+			offchainTxs: testOffchainTxStore{},
+			intents:     intents,
+		}
+
+		reg.vtxos.On("GetVtxos", mock.Anything, mock.Anything).
+			Return([]domain.Vtxo{reg.vtxo}, nil)
+
+		id, appErr := reg.svc.RegisterIntent(t.Context(), *reg.proof, reg.message)
+		require.Nil(t, appErr)
+		require.NotEmpty(t, id)
+		require.True(t, intents.pushed, "the accepted intent must be pushed")
+	})
+
 	// The point of the wait: startRound must not release the finished batch's
 	// intent claims until its spent marks are readable. Releasing first leaves
 	// a window in which neither guard holds and a settled vtxo can be
@@ -1144,7 +1210,8 @@ func newPushingRegistration(t *testing.T) pushingRegistration {
 	utxo := proof.Inputs[1].WitnessUtxo
 
 	vtxos := &mockedVtxoRepo{}
-	repos := &mockedRepoManager{RepoManager: &mockRepoManagerForIndexer{}}
+	// The inputs are checked against the cosigned utxos before the intent is pushed.
+	repos := &mockedRepoManager{RepoManager: &mockRepoManagerForIndexer{}, utxos: newFakeUtxoRepo()}
 	repos.On("Vtxos").Return(vtxos)
 	svc := newRegisterIntentTestService(t, repos)
 	svc.operatorPubkey = testPubkey(t)

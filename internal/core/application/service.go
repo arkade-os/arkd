@@ -2521,6 +2521,32 @@ func (s *service) RegisterIntent(
 		).WithMetadata(errors.VtxoMetadata{VtxoOutpoints: spendingOutpoints})
 	}
 
+	// An accepted offchain tx leaves the cache once its spent marks are in the db,
+	// so the check above alone can miss it: read the inputs again.
+	refreshedVtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, pushedOutpoints)
+	if err != nil {
+		log.WithError(err).Error("failed to read again the inputs of the intent to push")
+		return "", errors.INTERNAL_ERROR.New("something went wrong")
+	}
+	if len(refreshedVtxos) != len(pushedOutpoints) {
+		gotVtxos := make([]string, 0, len(refreshedVtxos))
+		for _, vtxo := range refreshedVtxos {
+			gotVtxos = append(gotVtxos, vtxo.Outpoint.String())
+		}
+		return "", errors.VTXO_NOT_FOUND.New("some vtxos not found").
+			WithMetadata(errors.VtxoNotFoundMetadata{
+				VtxoOutpoints: outpointsToString(pushedOutpoints),
+				GotVtxos:      gotVtxos,
+			})
+	}
+	for _, vtxo := range refreshedVtxos {
+		if vtxo.Spent {
+			return "", errors.VTXO_ALREADY_SPENT.New(
+				"input %s already spent", vtxo.Outpoint.String(),
+			).WithMetadata(errors.VtxoMetadata{VtxoOutpoints: []string{vtxo.Outpoint.String()}})
+		}
+	}
+
 	pendingCosignedUtxos, err := s.cache.CosignedUtxos().IncludesAny(ctx, pushedOutpoints)
 	if err != nil {
 		log.WithError(err).
