@@ -5202,20 +5202,25 @@ func TestSweep(t *testing.T) {
 		require.True(t, spent[0].Spent)
 	})
 
-	//  create a batch with 4 VTXOs:
-	//  root
-	//   .
-	//   ├── .
-	//   |   ├── alice
-	//   |   └── bob
-	//   └── .
-	//       ├── charlie
-	//       └── mike
-	// then alice unroll its branch
-	// it creates several batch outputs with different expiration times
-	// test that first the sweeper is sweeping half of the liquidity first
-	// then sweep the remaining liquidity
-	t.Run("unrolled batch", func(t *testing.T) {
+	// In this test, Alice, Bob, Charlie and Mike join the same batch whose vtxo tree is:
+	//    root
+	//    ├── .
+	//    │   ├── Alice
+	//    │   └── Bob
+	//    └── .
+	//        ├── Charlie
+	//        └── Mike
+	// Then, Alice immediately starts the unroll of her branch up to the parent of her and Bob's
+	// leaves with 10 blocks between the first and the second tree txs.
+	// Each confirmation resets the expiry of the underlying subtrees, so the batch ends up split
+	// into 2 subtrees expiring at different times.
+	// With a tree expiry of 40 blocks and the commitment tx confirmed at t:
+	//   - the root tree tx confirms at t+1: Charlie's and Mike's branch expires at t+41;
+	//   - Alice's tree tx confirms at t+12: Alice's and Bob's leaves expire at t+52.
+	// The sweeper must sweep each subtree only once it expires: first Charlie's and Mike's branch,
+	// while Alice's and Bob's vtxos are not swept, then the rest, including Alice's vtxo, since
+	// she never completed her unroll.
+	t.Run("subtrees of a partially unrolled batch", func(t *testing.T) {
 		ctx := t.Context()
 
 		alice := setupClientWallet(t)
@@ -5365,6 +5370,153 @@ func TestSweep(t *testing.T) {
 			vtxos := waitForSweptVtxos(t, client)
 			require.Len(t, vtxos, 1)
 		}
+	})
+
+	// In this test, Alice and Bob join the same batch and then Alice starts the unroll when the
+	// batch expires. In this situation, the sweeper must sweep only Bob's branch and, at the end
+	// of the process, Alice's vtxo must be reported as unrolled, while Bob's must be reported as
+	// swept.
+	t.Run("batch expiring while an unroll is in mempool", func(t *testing.T) {
+		ctx := t.Context()
+
+		alice := setupClientWallet(t)
+		bob := setupClientWallet(t)
+
+		_, aliceOffchainAddr, aliceBoardingAddr, err := alice.Receive(ctx)
+		require.NoError(t, err)
+		_, bobOffchainAddr, bobBoardingAddr, err := bob.Receive(ctx)
+		require.NoError(t, err)
+
+		faucetOnchainAndWait(t, aliceBoardingAddr.Address, 0.00021)
+		faucetOnchainAndWait(t, bobBoardingAddr.Address, 0.00021)
+
+		// Alice and Bob join the same batch.
+		wg := &sync.WaitGroup{}
+		wg.Add(4)
+		var aliceVtxos, bobVtxos []clientlib.Vtxo
+		var aliceIncomingErr, bobIncomingErr, aliceSettleErr, bobSettleErr error
+		go func() {
+			defer wg.Done()
+			aliceVtxos, aliceIncomingErr = notifyIncomingFunds(
+				ctx, alice, aliceOffchainAddr.Address,
+			)
+		}()
+		go func() {
+			defer wg.Done()
+			bobVtxos, bobIncomingErr = notifyIncomingFunds(ctx, bob, bobOffchainAddr.Address)
+		}()
+		go func() {
+			defer wg.Done()
+			_, aliceSettleErr = settleBounded(ctx, alice)
+		}()
+		go func() {
+			defer wg.Done()
+			_, bobSettleErr = settleBounded(ctx, bob)
+		}()
+		wg.Wait()
+		require.NoError(t, aliceIncomingErr)
+		require.NoError(t, bobIncomingErr)
+		require.NoError(t, aliceSettleErr)
+		require.NoError(t, bobSettleErr)
+		require.Len(t, aliceVtxos, 1)
+		require.Len(t, bobVtxos, 1)
+		aliceVtxo, bobVtxo := aliceVtxos[0], bobVtxos[0]
+		commitmentTxid := aliceVtxo.CommitmentTxids[0]
+
+		// Confirm the commitment tx: the batch expires a fixed number of blocks after it.
+		require.NoError(t, generateBlocks(1))
+		waitForTxConfirmed(t, commitmentTxid)
+
+		// To mock the unroll at batch expiry, Alice unrolls immediately and the tx is left in
+		// mempool by  mining empty blocks 'till the expiration is reached.
+
+		// Alice broadcasts the root of the vtxo tree tx.
+		branch, err := unroll.NewRedeemBranch(ctx, testExplorer, alice.Indexer(), aliceVtxo)
+		require.NoError(t, err)
+		rootTx, err := branch.NextRedeemTx()
+		require.NoError(t, err)
+		var root wire.MsgTx
+		require.NoError(t, root.Deserialize(hex.NewDecoder(strings.NewReader(rootTx))))
+		_, err = testExplorer.Broadcast(rootTx, bumpAnchorTx(t, &root, testExplorer))
+		require.NoError(t, err)
+		// Whatever the outcome, don't leave the root tree tx and its child in the mempool.
+		t.Cleanup(func() {
+			require.NoError(t, generateBlocks(1))
+		})
+
+		// Mine empty blocks and make the batch expire while the root tree tx stays in mempool.
+		require.NoError(t, generateEmptyBlocks(45))
+		outpoints := []clientlib.Outpoint{aliceVtxo.Outpoint, bobVtxo.Outpoint}
+		// Give time to the sweeper to catch up and ensure no vtxos are marked as swept while no
+		// txs are confirmed.
+		require.Never(
+			t, func() bool {
+				resp, err := alice.Indexer().GetVtxos(ctx, clientlib.WithOutpoints(outpoints))
+				if err != nil || resp == nil {
+					return false
+				}
+				for _, vtxo := range resp.Vtxos {
+					if vtxo.Swept {
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, time.Second,
+			"vtxos marked as swept while the batch output is spent by the unroll in the mempool",
+		)
+
+		// Confirm the root tree tx, then Alice completes her unroll with her leaf tx.
+		require.NoError(t, generateBlocks(1))
+		waitForTxConfirmed(t, root.TxHash().String())
+
+		// Alice completes the unroll by broadcasting her leaf tx.
+		aliceLeafTx, err := branch.NextRedeemTx()
+		require.NoError(t, err)
+		bumpAndBroadcastTx(t, aliceLeafTx, testExplorer)
+
+		// Wait until Alice's vtxo is marked as unrolled.
+		waitUntil(
+			t, indexerWait, "alice's vtxo to be reported unrolled",
+			func(ctx context.Context) error {
+				resp, err := alice.Indexer().GetVtxos(
+					ctx, clientlib.WithOutpoints([]clientlib.Outpoint{aliceVtxo.Outpoint}),
+				)
+				if err != nil {
+					return err
+				}
+				if len(resp.Vtxos) != 1 || !resp.Vtxos[0].Unrolled {
+					return fmt.Errorf("vtxo %s not reported unrolled yet", aliceVtxo.Outpoint)
+				}
+				return nil
+			},
+		)
+
+		// Mine other blocks to make Bob's branch sweepable.
+		require.NoError(t, generateBlocks(45))
+		// Wait until Bob's vtxo is marked as swept, means the sweep tx is in mempool.
+		waitUntil(t, serverWait, "bob's vtxo to be swept", func(ctx context.Context) error {
+			resp, err := bob.Indexer().GetVtxos(
+				ctx, clientlib.WithOutpoints([]clientlib.Outpoint{bobVtxo.Outpoint}),
+			)
+			if err != nil {
+				return err
+			}
+			if len(resp.Vtxos) != 1 || !resp.Vtxos[0].Swept {
+				return fmt.Errorf("vtxo %s not swept yet", bobVtxo.Outpoint)
+			}
+			return nil
+		})
+		// Mine a block to confirm the sweep tx.
+		require.NoError(t, generateBlocks(1))
+
+		// Ensure Alice's unrolled vtxo is not marked as swept.
+		resp, err := alice.Indexer().GetVtxos(
+			ctx, clientlib.WithOutpoints([]clientlib.Outpoint{aliceVtxo.Outpoint}),
+		)
+		require.NoError(t, err)
+		require.Len(t, resp.Vtxos, 1)
+		require.True(t, resp.Vtxos[0].Unrolled)
+		require.False(t, resp.Vtxos[0].Swept, "alice's unrolled vtxo must not be swept")
 	})
 
 	// This test creates an "uneconomical batch", ie. one with an amount too small that makes

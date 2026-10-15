@@ -11,6 +11,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/mock"
@@ -245,6 +246,238 @@ func TestCreateCheckpointSweepTask(t *testing.T) {
 	})
 }
 
+func TestCreateBatchSweepTask(t *testing.T) {
+	const commitmentTxid = "1111111111111111111111111111111111111111111111111111111111111111"
+
+	// a two-leaf tree whose confirmed root exposes two expired batch outputs, one per leaf
+	splitTree := func(t *testing.T, f *batchSweepFixture) (
+		string, string, string, ports.TxInput, ports.TxInput,
+	) {
+		t.Helper()
+		rootTxid, rootTx := sweepTestTx(t, commitmentTxid, 0, 2)
+		aTxid, aTx := sweepTestTx(t, rootTxid, 0, 1)
+		bTxid, bTx := sweepTestTx(t, rootTxid, 1, 1)
+		flatTree := tree.FlatTxTree{
+			{Txid: rootTxid, Tx: rootTx, Children: map[uint32]string{0: aTxid, 1: bTxid}},
+			{Txid: aTxid, Tx: aTx},
+			{Txid: bTxid, Tx: bTx},
+		}
+		outA := ports.TxInput{Txid: rootTxid, Index: 0, Value: 10000}
+		outB := ports.TxInput{Txid: rootTxid, Index: 1, Value: 20000}
+
+		f.rounds.On("GetRoundVtxoTree", mock.Anything, commitmentTxid).Return(flatTree, nil)
+		f.rounds.On("GetRoundWithCommitmentTxid", mock.Anything, commitmentTxid).
+			Return(sweepableRound(commitmentTxid, flatTree), nil).Maybe()
+		f.wallet.On("IsTransactionConfirmed", mock.Anything, rootTxid).
+			Return(true, &ports.BlockTimestamp{Height: 100, Time: 1700000000}, nil)
+
+		for _, leaf := range []struct {
+			batch ports.TxInput
+			txid  string
+		}{{outA, aTxid}, {outB, bTxid}} {
+			batch := leaf.batch
+			f.wallet.On("IsTransactionConfirmed", mock.Anything, leaf.txid).
+				Return(false, nil, nil)
+			f.builder.On("GetSweepableBatchOutputs", matchSubTree(leaf.txid)).
+				Return(&arklib.RelativeLocktime{Value: 512}, &batch, nil)
+			f.vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{
+				{Txid: batch.Txid, VOut: batch.Index},
+			}).Return([]domain.Vtxo{}, nil)
+			f.vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{{Txid: leaf.txid}}).
+				Return([]domain.Vtxo{{Outpoint: domain.Outpoint{Txid: leaf.txid}}}, nil)
+			f.vtxos.On("GetAllChildrenVtxos", mock.Anything, domain.Outpoint{Txid: leaf.txid}).
+				Return([]domain.Outpoint{}, nil).Maybe()
+		}
+
+		return rootTxid, aTxid, bTxid, outA, outB
+	}
+
+	// a one-leaf tree whose expired batch output is the commitment output itself. The caller
+	// registers IsTransactionConfirmed for the tree tx, so it can control its cardinality.
+	singleTree := func(t *testing.T, f *batchSweepFixture) (string, string) {
+		t.Helper()
+		rootTxid, rootTx := sweepTestTx(t, commitmentTxid, 0, 1)
+		leafTxid, leafTx := sweepTestTx(t, rootTxid, 0, 1)
+		flatTree := tree.FlatTxTree{
+			{Txid: rootTxid, Tx: rootTx, Children: map[uint32]string{0: leafTxid}},
+			{Txid: leafTxid, Tx: leafTx},
+		}
+		batchOutput := ports.TxInput{Txid: commitmentTxid, Index: 0, Value: 10000}
+
+		f.rounds.On("GetRoundVtxoTree", mock.Anything, commitmentTxid).Return(flatTree, nil)
+		f.rounds.On("GetRoundWithCommitmentTxid", mock.Anything, commitmentTxid).
+			Return(sweepableRound(commitmentTxid, flatTree), nil).Maybe()
+		f.wallet.On("IsTransactionConfirmed", mock.Anything, commitmentTxid).
+			Return(true, &ports.BlockTimestamp{Height: 100, Time: 1700000000}, nil)
+		f.builder.On("GetSweepableBatchOutputs", matchSubTree(rootTxid)).
+			Return(&arklib.RelativeLocktime{Value: 512}, &batchOutput, nil)
+		f.vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{{Txid: commitmentTxid}}).
+			Return([]domain.Vtxo{}, nil)
+		f.vtxos.On("GetVtxos", mock.Anything, []domain.Outpoint{{Txid: leafTxid}}).
+			Return([]domain.Vtxo{{Outpoint: domain.Outpoint{Txid: leafTxid}}}, nil)
+		f.wallet.On("GetOutpointStatus", mock.Anything, domain.Outpoint{Txid: commitmentTxid}).
+			Return(true, nil)
+
+		return rootTxid, leafTxid
+	}
+
+	// the batch output is spent by a tree tx sitting in the mempool: that is its owner
+	// unrolling, not a sweep, so no vtxo may be recorded as swept
+	t.Run("batch output spent by a tree tx", func(t *testing.T) {
+		f := newBatchSweepFixture(t)
+		rootTxid, _ := singleTree(t, f)
+
+		f.wallet.On("IsTransactionConfirmed", mock.Anything, rootTxid).Return(false, nil, nil)
+		// unconfirmed, but the wallet knows it: the tree tx is in the mempool
+		f.wallet.On("GetTransaction", mock.Anything, rootTxid).Return("treetxhex", nil)
+		// only reached if the task records a sweep it never made
+		f.builder.On("BuildSweepTx", mock.Anything).
+			Return("sweeptxid", "sweeptxhex", nil).Maybe()
+
+		require.NoError(t, f.sweeper.createBatchSweepTask(commitmentTxid, rootTxid)())
+		require.Empty(t, batchSweptEvents(t, f))
+	})
+
+	// nothing explains the spend, so it counts as a sweep an earlier run failed to record
+	t.Run("tree tx unknown to the wallet", func(t *testing.T) {
+		f := newBatchSweepFixture(t)
+		rootTxid, leafTxid := singleTree(t, f)
+
+		f.wallet.On("IsTransactionConfirmed", mock.Anything, rootTxid).Return(false, nil, nil)
+		f.wallet.On("GetTransaction", mock.Anything, rootTxid).
+			Return("", fmt.Errorf("transaction not found"))
+		f.builder.On("BuildSweepTx", []ports.TxInput{
+			{Txid: commitmentTxid, Index: 0, Value: 10000},
+		}).Return("sweeptxid", "sweeptxhex", nil)
+
+		require.NoError(t, f.sweeper.createBatchSweepTask(commitmentTxid, rootTxid)())
+
+		events := batchSweptEvents(t, f)
+		require.Len(t, events, 1)
+		require.Equal(t, []domain.Outpoint{{Txid: leafTxid}}, events[0].LeafVtxos)
+		f.wallet.AssertNotCalled(t, "BroadcastTransaction", mock.Anything, mock.Anything)
+	})
+
+	// a tree tx lookup that fails for another reason than the tx being unknown tells nothing
+	// about who spent the output: the task must fail and be retried instead of recording a sweep
+	t.Run("tree tx lookup error fails the task", func(t *testing.T) {
+		f := newBatchSweepFixture(t)
+		rootTxid, _ := singleTree(t, f)
+
+		f.wallet.On("IsTransactionConfirmed", mock.Anything, rootTxid).Return(false, nil, nil)
+		f.wallet.On("GetTransaction", mock.Anything, rootTxid).
+			Return("", fmt.Errorf("context deadline exceeded"))
+		f.builder.On("BuildSweepTx", mock.Anything).
+			Return("sweeptxid", "sweeptxhex", nil).Maybe()
+
+		err := f.sweeper.createBatchSweepTask(commitmentTxid, rootTxid)()
+		require.ErrorContains(t, err, "context deadline exceeded")
+		require.Empty(t, batchSweptEvents(t, f))
+	})
+
+	// a failed status query leaves the task unable to tell what it swept: it must fail and be
+	// retried instead of recording the outputs it did check
+	t.Run("outpoint status error fails the task", func(t *testing.T) {
+		f := newBatchSweepFixture(t)
+		rootTxid, _, _, outA, outB := splitTree(t, f)
+
+		f.wallet.On("GetOutpointStatus", mock.Anything, domain.Outpoint{
+			Txid: outA.Txid, VOut: outA.Index,
+		}).Return(false, fmt.Errorf("indexer unreachable"))
+		f.wallet.On("GetOutpointStatus", mock.Anything, domain.Outpoint{
+			Txid: outB.Txid, VOut: outB.Index,
+		}).Return(false, nil).Maybe()
+		f.builder.On("BuildSweepTx", mock.Anything).
+			Return("sweeptxid", "sweeptxhex", nil).Maybe()
+		f.wallet.On("GetTransaction", mock.Anything, mock.Anything).Return("", nil).Maybe()
+		f.wallet.On("BroadcastTransaction", mock.Anything, mock.Anything).
+			Return("sweeptxid", nil).Maybe()
+
+		err := f.sweeper.createBatchSweepTask(commitmentTxid, rootTxid)()
+		require.ErrorContains(t, err, "indexer unreachable")
+		require.Empty(t, batchSweptEvents(t, f))
+	})
+
+	t.Run("sweeps every unspent output", func(t *testing.T) {
+		f := newBatchSweepFixture(t)
+		rootTxid, aTxid, bTxid, _, _ := splitTree(t, f)
+
+		f.wallet.On("GetOutpointStatus", mock.Anything, mock.Anything).Return(false, nil)
+		f.builder.On("BuildSweepTx", mock.MatchedBy(func(ins []ports.TxInput) bool {
+			return len(ins) == 2
+		})).Return("sweeptxid", "sweeptxhex", nil)
+		f.wallet.On("GetTransaction", mock.Anything, "sweeptxid").Return("", nil)
+		f.wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptxhex"}).
+			Return("sweeptxid", nil)
+
+		require.NoError(t, f.sweeper.createBatchSweepTask(commitmentTxid, rootTxid)())
+
+		events := batchSweptEvents(t, f)
+		require.Len(t, events, 1)
+		require.Equal(t, "sweeptxid", events[0].Txid)
+		require.ElementsMatch(
+			t, []domain.Outpoint{{Txid: aTxid}, {Txid: bTxid}}, events[0].LeafVtxos,
+		)
+	})
+
+	// the sweep tx covers the unspent output only, so the event covers its leaves only
+	t.Run("leaves of a spent output are left alone", func(t *testing.T) {
+		f := newBatchSweepFixture(t)
+		rootTxid, aTxid, bTxid, outA, outB := splitTree(t, f)
+
+		f.wallet.On("GetOutpointStatus", mock.Anything, domain.Outpoint{
+			Txid: outA.Txid, VOut: outA.Index,
+		}).Return(true, nil)
+		f.wallet.On("GetOutpointStatus", mock.Anything, domain.Outpoint{
+			Txid: outB.Txid, VOut: outB.Index,
+		}).Return(false, nil)
+		f.wallet.On("GetTransaction", mock.Anything, aTxid).Return("treetxhex", nil)
+		f.builder.On("BuildSweepTx", []ports.TxInput{outB}).
+			Return("sweeptxid", "sweeptxhex", nil)
+		f.wallet.On("GetTransaction", mock.Anything, "sweeptxid").Return("", nil)
+		f.wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptxhex"}).
+			Return("sweeptxid", nil)
+
+		require.NoError(t, f.sweeper.createBatchSweepTask(commitmentTxid, rootTxid)())
+
+		events := batchSweptEvents(t, f)
+		require.Len(t, events, 1)
+		require.Equal(t, []domain.Outpoint{{Txid: bTxid}}, events[0].LeafVtxos)
+		f.vtxos.AssertNotCalled(
+			t, "GetAllChildrenVtxos", mock.Anything, domain.Outpoint{Txid: aTxid},
+		)
+	})
+
+	// the sweep tx covers the unspent output, the event covers both
+	t.Run("sweeps one output and records an unrecorded sweep of the other", func(t *testing.T) {
+		f := newBatchSweepFixture(t)
+		rootTxid, aTxid, bTxid, outA, outB := splitTree(t, f)
+
+		f.wallet.On("IsTransactionConfirmed", mock.Anything, aTxid).Return(false, nil, nil)
+		f.wallet.On("GetOutpointStatus", mock.Anything, domain.Outpoint{
+			Txid: outA.Txid, VOut: outA.Index,
+		}).Return(true, nil)
+		f.wallet.On("GetOutpointStatus", mock.Anything, domain.Outpoint{
+			Txid: outB.Txid, VOut: outB.Index,
+		}).Return(false, nil)
+		f.wallet.On("GetTransaction", mock.Anything, aTxid).
+			Return("", fmt.Errorf("transaction not found"))
+		f.builder.On("BuildSweepTx", []ports.TxInput{outB}).
+			Return("sweeptxid", "sweeptxhex", nil)
+		f.wallet.On("GetTransaction", mock.Anything, "sweeptxid").Return("", nil)
+		f.wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptxhex"}).
+			Return("sweeptxid", nil)
+
+		require.NoError(t, f.sweeper.createBatchSweepTask(commitmentTxid, rootTxid)())
+
+		events := batchSweptEvents(t, f)
+		require.Len(t, events, 1)
+		require.ElementsMatch(
+			t, []domain.Outpoint{{Txid: aTxid}, {Txid: bTxid}}, events[0].LeafVtxos,
+		)
+	})
+}
+
 // Mock implementations for sweeper tests
 
 type mockWalletService struct {
@@ -336,7 +569,8 @@ func (m *mockWalletService) GetDustAmount(ctx context.Context) (uint64, error) {
 func (m *mockWalletService) GetOutpointStatus(
 	ctx context.Context, outpoint domain.Outpoint,
 ) (bool, error) {
-	return false, nil
+	args := m.Called(ctx, outpoint)
+	return args.Bool(0), args.Error(1)
 }
 
 func (m *mockWalletService) GetCurrentBlockTime(
@@ -368,7 +602,11 @@ func (m *mockWalletService) GetNotificationChannel(
 func (m *mockWalletService) IsTransactionConfirmed(
 	ctx context.Context, txid string,
 ) (bool, *ports.BlockTimestamp, error) {
-	return false, nil, nil
+	args := m.Called(ctx, txid)
+	if v := args.Get(1); v != nil {
+		return args.Bool(0), v.(*ports.BlockTimestamp), args.Error(2)
+	}
+	return args.Bool(0), nil, args.Error(2)
 }
 func (m *mockWalletService) RescanUtxos(ctx context.Context, outpoints []wire.OutPoint) error {
 	return nil
@@ -606,7 +844,11 @@ func (m *mockTxBuilder) VerifyAndRebuildForfeitTxs(
 func (m *mockTxBuilder) GetSweepableBatchOutputs(
 	vtxoTree *tree.TxTree,
 ) (*arklib.RelativeLocktime, *ports.TxInput, error) {
-	return nil, nil, nil
+	args := m.Called(vtxoTree)
+	if args.Get(0) == nil {
+		return nil, nil, args.Error(2)
+	}
+	return args.Get(0).(*arklib.RelativeLocktime), args.Get(1).(*ports.TxInput), args.Error(2)
 }
 func (m *mockTxBuilder) FinalizeAndExtract(tx string) (string, error) { return "", nil }
 
@@ -625,13 +867,15 @@ func (m *mockTxBuilder) VerifyBoardingTapscriptSigs(
 type mockRepoManager struct {
 	vtxos   *mockVtxoRepository
 	markers *mockMarkerRepository
+	rounds  domain.RoundRepository
+	events  domain.EventRepository
 }
 
 func (m *mockRepoManager) Events() domain.EventRepository {
-	return nil
+	return m.events
 }
 func (m *mockRepoManager) Rounds() domain.RoundRepository {
-	return nil
+	return m.rounds
 }
 func (m *mockRepoManager) Vtxos() domain.VtxoRepository {
 	return m.vtxos
@@ -688,4 +932,73 @@ func newTestSweeper(t *testing.T) (
 	scheduler := &mockScheduler{}
 	s := newSweeper(wallet, repoManager, builder, scheduler)
 	return wallet, vtxoRepo, markerRepo, builder, s
+}
+
+type batchSweepFixture struct {
+	wallet  *mockWalletService
+	vtxos   *mockVtxoRepository
+	rounds  *mockedRoundRepo
+	events  *fakeEventRepo
+	builder *mockTxBuilder
+	sweeper *sweeper
+}
+
+func newBatchSweepFixture(t *testing.T) *batchSweepFixture {
+	t.Helper()
+	wallet := &mockWalletService{}
+	vtxos := &mockVtxoRepository{}
+	rounds := &mockedRoundRepo{}
+	events := newFakeEventRepo(t, nil)
+	builder := &mockTxBuilder{}
+	s := newSweeper(wallet, &mockRepoManager{
+		vtxos: vtxos, markers: &mockMarkerRepository{}, rounds: rounds, events: events,
+	}, builder, &mockScheduler{})
+	s.ctx = t.Context()
+	return &batchSweepFixture{wallet, vtxos, rounds, events, builder, s}
+}
+
+// sweepTestTx builds a tx spending the given outpoint, with as many non-anchor outputs as
+// asked for, and returns its txid and base64 PSBT.
+func sweepTestTx(t *testing.T, prevTxid string, prevIndex uint32, outputs int) (string, string) {
+	t.Helper()
+	hash, err := chainhash.NewHashFromStr(prevTxid)
+	require.NoError(t, err)
+
+	scripts := make([][]byte, 0, outputs)
+	for i := 0; i < outputs; i++ {
+		pkScript := make([]byte, 34)
+		pkScript[0], pkScript[1] = 0x51, 0x20
+		pkScript[2], pkScript[3] = byte(prevIndex+1), byte(i+1)
+		scripts = append(scripts, pkScript)
+	}
+
+	tx := newTestTx([]wire.OutPoint{{Hash: *hash, Index: prevIndex}}, scripts)
+	return tx.TxID(), mustEncodePSBTB64(t, tx)
+}
+
+func sweepableRound(commitmentTxid string, vtxoTree tree.FlatTxTree) *domain.Round {
+	return &domain.Round{
+		Id:             "round-id",
+		CommitmentTxid: commitmentTxid,
+		Stage:          domain.Stage{Code: int(domain.RoundFinalizationStage), Ended: true},
+		VtxoTree:       vtxoTree,
+	}
+}
+
+// matchSubTree matches the sub tree rooted at the given txid.
+func matchSubTree(txid string) any {
+	return mock.MatchedBy(func(subTree *tree.TxTree) bool {
+		return subTree.Root.UnsignedTx.TxID() == txid
+	})
+}
+
+func batchSweptEvents(t *testing.T, f *batchSweepFixture) []domain.BatchSwept {
+	t.Helper()
+	swept := make([]domain.BatchSwept, 0)
+	for _, event := range f.events.saved[domain.RoundTopic+":round-id"] {
+		if e, ok := event.(domain.BatchSwept); ok {
+			swept = append(swept, e)
+		}
+	}
+	return swept
 }

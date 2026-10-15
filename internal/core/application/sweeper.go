@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -446,7 +447,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 
 		// outputs sweepable now
 		outputsToSweep := make([]ports.TxInput, 0)
-		leafVtxoKeys := make([]domain.Outpoint, 0) // vtxos associated to the sweep inputs
+		leafVtxosByOutput := make(map[domain.Outpoint][]domain.Outpoint)
 
 		// inspect the vtxo tree to find onchain batch outputs
 		batchOutputs, err := findSweepableOutputs(
@@ -461,7 +462,9 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			return nil
 		}
 
-		scheduleForSubTree := func(txid string, tree *tree.TxTree) {
+		treeInputTxid := vtxoTree.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
+
+		scheduleForSubTree := func(txid string, tree *tree.TxTree, waitFor string) {
 			vtxoTreeExpiry, err := s.getVtxoTreeExpiry(vtxoTree)
 			if err != nil {
 				log.WithError(err).
@@ -469,13 +472,12 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 				return
 			}
 
-			// schedule AFTER the root input is confirmed
-			rootInput := vtxoTree.Root.UnsignedTx.TxIn[0].PreviousOutPoint.Hash.String()
-			blockTimestamp, err := waitForConfirmation(context.Background(), rootInput, s.wallet)
+			// schedule AFTER the funding tx is confirmed
+			blockTimestamp, err := waitForConfirmation(context.Background(), waitFor, s.wallet)
 			if err != nil {
 				log.WithError(err).Warnf(
 					"failed to wait for confirmation of batch input tx %s, schedule task time "+
-						"may be inaccurate", rootInput,
+						"may be inaccurate", waitFor,
 				)
 				blockTimestamp = &ports.BlockTimestamp{Time: time.Now().Unix()}
 			}
@@ -510,7 +512,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 				}
 
 				for _, subTree := range subtrees {
-					go scheduleForSubTree(commitmentTxid, subTree)
+					go scheduleForSubTree(commitmentTxid, subTree, treeInputTxid)
 				}
 
 				continue
@@ -588,7 +590,8 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 				}
 
 				if len(sweepableVtxos) > 0 {
-					leafVtxoKeys = append(leafVtxoKeys, sweepableVtxos...)
+					out := domain.Outpoint{Txid: input.Txid, VOut: input.Index}
+					leafVtxosByOutput[out] = append(leafVtxosByOutput[out], sweepableVtxos...)
 					outputsToSweep = append(outputsToSweep, input)
 				}
 			}
@@ -602,6 +605,7 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 		// keep only the unspent outputs in order to avoid including already spent outputs in the
 		// sweep transaction
 		unspentOutputsToSweep := make([]ports.TxInput, 0)
+		spentOutputs := make([]ports.TxInput, 0)
 		sweptAmount := int64(0)
 		for _, out := range outputsToSweep {
 			txid := out.Txid
@@ -613,19 +617,53 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			}
 			spent, err := s.wallet.GetOutpointStatus(ctx, outpoint)
 			if err != nil {
-				log.WithError(err).Errorf(
-					"failed to get outpoint status %s for batch %s", outpoint, commitmentTxid,
+				// an unknown status must not be recorded as swept, retry the whole task later
+				return fmt.Errorf(
+					"failed to get outpoint status %s for batch %s: %w",
+					outpoint, commitmentTxid, err,
 				)
-				continue
 			}
 			if !spent {
 				unspentOutputsToSweep = append(unspentOutputsToSweep, out)
 				sweptAmount += amount
+				continue
 			}
+			spentOutputs = append(spentOutputs, out)
+		}
+
+		// an output spent by its own tree tx is being unrolled, not swept: leave its leaves alone
+		alreadySweptOutputs := make([]ports.TxInput, 0, len(spentOutputs))
+		for _, out := range spentOutputs {
+			subTree := vtxoTree.FindInput(out.Txid, out.Index)
+			if subTree == nil {
+				alreadySweptOutputs = append(alreadySweptOutputs, out)
+				continue
+			}
+
+			// The wallet knows the tree tx if it's onchain or in mempool: the output is being
+			// unrolled. If it doesn't, the output was spent by a sweep of ours.
+			treeTxid := subTree.Root.UnsignedTx.TxID()
+			if _, err := s.wallet.GetTransaction(ctx, treeTxid); err != nil {
+				if !strings.Contains(err.Error(), "not found") {
+					return fmt.Errorf(
+						"failed to get tree tx %s of batch %s: %w",
+						treeTxid, commitmentTxid, err,
+					)
+				}
+				alreadySweptOutputs = append(alreadySweptOutputs, out)
+				continue
+			}
+
+			log.Debugf(
+				"sweeper: batch output %s:%d of %s spent by tree tx %s, rescheduling its sweep",
+				out.Txid, out.Index, commitmentTxid, treeTxid,
+			)
+			go scheduleForSubTree(commitmentTxid, subTree, treeTxid)
 		}
 
 		sweepTxId := ""
 		sweepTx := ""
+		sweptOutputs := slices.Concat(unspentOutputsToSweep, alreadySweptOutputs)
 
 		// if there are unspent outputs to sweep, build and broadcast a sweep transaction
 		if len(unspentOutputsToSweep) > 0 {
@@ -669,10 +707,10 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 				return err
 			}
 			log.Debugf("sweeper: batch %s swept by: %s", commitmentTxid, txid)
-		} else {
-			// if all outputs are spent, it means we missed to mark the batch as swept,
+		} else if len(alreadySweptOutputs) > 0 {
+			// if all outputs are spent with no tree tx accounting for them, we missed the sweep,
 			// build a sweep transaction without broadcasting it. we'll use it rebuild sweepEvent.
-			sweepTxId, sweepTx, err = s.builder.BuildSweepTx(outputsToSweep)
+			sweepTxId, sweepTx, err = s.builder.BuildSweepTx(alreadySweptOutputs)
 			if err != nil {
 				return err
 			}
@@ -691,11 +729,14 @@ func (s *sweeper) createBatchSweepTask(commitmentTxid, vtxoTreeRootTxid string) 
 			preconfirmedVtxos := make([]domain.Outpoint, 0)
 			var sweepErr error
 
+			leafVtxoKeys := make([]domain.Outpoint, 0)
 			commitmentRootSwept := false
-			for _, output := range outputsToSweep {
+			// every swept output contributes its leaves, so the loop cannot stop at the root
+			for _, output := range sweptOutputs {
+				outpoint := domain.Outpoint{Txid: output.Txid, VOut: output.Index}
+				leafVtxoKeys = append(leafVtxoKeys, leafVtxosByOutput[outpoint]...)
 				if output.Txid == commitmentTxid {
 					commitmentRootSwept = true
-					break
 				}
 			}
 

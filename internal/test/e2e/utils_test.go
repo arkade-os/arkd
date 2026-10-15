@@ -611,10 +611,41 @@ func waitForOutspend(t *testing.T, explorer clientlib.Explorer, txid string, vou
 	})
 }
 
+// waitForTxConfirmed waits until the explorer reports the tx confirmed.
+func waitForTxConfirmed(t *testing.T, txid string) {
+	t.Helper()
+	waitUntil(t, chainWait, fmt.Sprintf("tx %s to confirm", txid), func(context.Context) error {
+		confirmed, _, err := testExplorer.GetTxBlockTime(txid)
+		if err != nil {
+			return err
+		}
+		if !confirmed {
+			return fmt.Errorf("tx %s still unconfirmed", txid)
+		}
+		return nil
+	})
+}
+
 func generateBlocks(n int) error {
 	_, err := runCommand("nigiri", "rpc", "--generate", fmt.Sprintf("%d", n))
 	return err
 }
+
+// generateEmptyBlocks mines n blocks with no transactions, leaving the mempool untouched.
+func generateEmptyBlocks(n int) error {
+	addr, err := runCommand("nigiri", "rpc", "getnewaddress")
+	if err != nil {
+		return err
+	}
+	addr = strings.TrimSpace(addr)
+	for range n {
+		if _, err := runCommand("nigiri", "rpc", "generateblock", addr, "[]"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func getBlockHeight() (uint32, error) {
 	out, err := runCommand("nigiri", "rpc", "getblockcount")
 	if err != nil {
