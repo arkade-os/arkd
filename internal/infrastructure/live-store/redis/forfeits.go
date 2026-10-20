@@ -3,7 +3,9 @@ package redislivestore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
@@ -24,6 +26,8 @@ const (
 	forfeitTxsStoreConnsKey   = "forfeitTxsStore:connectors"
 	forfeitTxsStoreVtxosKey   = "forfeitTxsStore:vtxos"
 	forfeitTxsStoreConnIdxKey = "forfeitTxsStore:connidx"
+	forfeitTxsStoreIntentsKey = "forfeitTxsStore:intents"
+	forfeitTxsStoreBatchKey   = "forfeitTxsStore:batch"
 )
 
 func NewForfeitTxsStore(
@@ -38,7 +42,7 @@ func NewForfeitTxsStore(
 }
 
 func (s *forfeitTxsStore) Init(
-	ctx context.Context, connectors tree.FlatTxTree, intents []domain.Intent,
+	ctx context.Context, roundId string, connectors tree.FlatTxTree, intents []domain.Intent,
 ) error {
 	connBytes, err := json.Marshal(connectors)
 	if err != nil {
@@ -46,12 +50,14 @@ func (s *forfeitTxsStore) Init(
 	}
 
 	vtxosToSign := make([]domain.Vtxo, 0)
+	vtxoIntents := make(map[string]string)
 	for _, intent := range intents {
 		for _, vtxo := range intent.Inputs {
 			if !vtxo.RequiresForfeit() {
 				continue
 			}
 			vtxosToSign = append(vtxosToSign, vtxo)
+			vtxoIntents[vtxo.Outpoint.String()] = intent.Id
 		}
 	}
 	vtxosBytes, err := json.Marshal(vtxosToSign)
@@ -90,20 +96,27 @@ func (s *forfeitTxsStore) Init(
 	if err != nil {
 		return fmt.Errorf("failed to marshal connector index: %v", err)
 	}
-
+	intentBytes, err := json.Marshal(vtxoIntents)
+	if err != nil {
+		return fmt.Errorf("failed to marshal vtxo intents: %v", err)
+	}
 	keys := []string{
 		forfeitTxsStoreTxsKey, forfeitTxsStoreConnsKey,
 		forfeitTxsStoreVtxosKey, forfeitTxsStoreConnIdxKey,
+		forfeitTxsStoreIntentsKey, forfeitTxsStoreBatchKey,
 	}
 	for range s.numOfRetries {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
 			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Del(ctx, forfeitTxsStoreTxsKey)
 				for vtxoKey, forfeit := range forfeitTxs {
 					pipe.HSet(ctx, forfeitTxsStoreTxsKey, vtxoKey, forfeit)
 				}
 				pipe.Set(ctx, forfeitTxsStoreConnsKey, connBytes, 0)
 				pipe.Set(ctx, forfeitTxsStoreVtxosKey, vtxosBytes, 0)
 				pipe.Set(ctx, forfeitTxsStoreConnIdxKey, idxBytes, 0)
+				pipe.Set(ctx, forfeitTxsStoreIntentsKey, intentBytes, 0)
+				pipe.Set(ctx, forfeitTxsStoreBatchKey, roundId, 0)
 				return nil
 			})
 			return err
@@ -123,6 +136,12 @@ func (s *forfeitTxsStore) Sign(ctx context.Context, txs []string) error {
 		return fmt.Errorf("missing builder for tx verification")
 	}
 
+	// Bind verification to this round, even if the next round reuses the same
+	// VTXOs and connectors while verification is running.
+	roundId, err := s.rdb.Get(ctx, forfeitTxsStoreBatchKey).Result()
+	if err != nil {
+		return fmt.Errorf("failed to get forfeit signing batch: %v", err)
+	}
 	vtxosBytes, err := s.rdb.Get(ctx, forfeitTxsStoreVtxosKey).Bytes()
 	if err != nil {
 		return fmt.Errorf("failed to get vtxos to sign: %v", err)
@@ -141,40 +160,118 @@ func (s *forfeitTxsStore) Sign(ctx context.Context, txs []string) error {
 	if err := json.Unmarshal(connBytes, &connectors); err != nil {
 		return fmt.Errorf("malformed connectors in storage (out=%s): %v", string(connBytes), err)
 	}
+	// These assignments are fixed for the round. The batch check inside WATCH
+	// prevents committing them after a reset or a new round.
 	idxBytes, err := s.rdb.Get(ctx, forfeitTxsStoreConnIdxKey).Bytes()
 	if err != nil {
 		return fmt.Errorf("failed to get connector indexes: %v", err)
 	}
-	connIndex := make(map[string]domain.Outpoint)
+	var connIndex map[string]domain.Outpoint
 	if err := json.Unmarshal(idxBytes, &connIndex); err != nil {
-		return fmt.Errorf(
-			"malformed connector indexes in storage (out=%s): %v", string(idxBytes), err,
-		)
+		return fmt.Errorf("malformed connector indexes in storage: %v", err)
+	}
+	intentBytes, err := s.rdb.Get(ctx, forfeitTxsStoreIntentsKey).Bytes()
+	if err != nil {
+		return fmt.Errorf("failed to get vtxo intents: %v", err)
+	}
+	var vtxoIntents map[string]string
+	if err := json.Unmarshal(intentBytes, &vtxoIntents); err != nil {
+		return fmt.Errorf("malformed vtxo intents in storage: %v", err)
 	}
 	validTxs, err := s.builder.VerifyAndRebuildForfeitTxs(vtxos, connectors, txs)
 	if err != nil {
 		return err
 	}
 
+	forfeits := make(map[string]string, len(validTxs))
+	submittedConnectors := make(map[domain.Outpoint]struct{}, len(validTxs))
+	for vtxo, validTx := range validTxs {
+		assignedVtxo, ok := connIndex[validTx.Connector.String()]
+		if !ok {
+			return fmt.Errorf("unknown connector %s for vtxo %s", validTx.Connector, vtxo)
+		}
+		intent, assignedIntent := vtxoIntents[vtxo.String()], vtxoIntents[assignedVtxo.String()]
+		if intent == "" || assignedIntent == "" {
+			return fmt.Errorf(
+				"missing intent ownership for vtxo %s or connector %s",
+				vtxo,
+				validTx.Connector,
+			)
+		}
+		if intent != assignedIntent {
+			return fmt.Errorf(
+				"connector %s belongs to a different intent than vtxo %s",
+				validTx.Connector,
+				vtxo,
+			)
+		}
+		if _, used := submittedConnectors[validTx.Connector]; used {
+			return fmt.Errorf(
+				"connector %s for vtxo %s is used more than once",
+				validTx.Connector,
+				vtxo,
+			)
+		}
+		submittedConnectors[validTx.Connector] = struct{}{}
+		txBytes, err := json.Marshal(validTx)
+		if err != nil {
+			return err
+		}
+		forfeits[vtxo.String()] = string(txBytes)
+	}
+
 	keys := []string{
 		forfeitTxsStoreTxsKey, forfeitTxsStoreConnsKey,
 		forfeitTxsStoreVtxosKey, forfeitTxsStoreConnIdxKey,
+		forfeitTxsStoreIntentsKey, forfeitTxsStoreBatchKey,
 	}
 	for range s.numOfRetries {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				for vtxoKey, validTx := range validTxs {
-					txBytes, err := json.Marshal(validTx)
-					if err != nil {
-						return err
-					}
-					pipe.HSet(ctx, forfeitTxsStoreTxsKey, vtxoKey.String(), string(txBytes))
+			currentRoundId, err := tx.Get(ctx, forfeitTxsStoreBatchKey).Result()
+			if errors.Is(err, redis.Nil) || (err == nil && currentRoundId != roundId) {
+				return fmt.Errorf("forfeit signing batch changed during verification")
+			}
+			if err != nil {
+				return err
+			}
+			hash, err := tx.HGetAll(ctx, forfeitTxsStoreTxsKey).Result()
+			if err != nil {
+				return err
+			}
+			usedConnectors := maps.Clone(submittedConnectors)
+			for vtxo, forfeitJSON := range hash {
+				if len(forfeitJSON) == 0 {
+					continue
+				}
+				// Replacements free their old connectors in this transaction.
+				if _, replaced := forfeits[vtxo]; replaced {
+					continue
+				}
+				var validTx ports.ValidForfeitTx
+				if err := json.Unmarshal([]byte(forfeitJSON), &validTx); err != nil {
+					return fmt.Errorf("failed to unmarshal forfeit tx for vtxo %s: %v", vtxo, err)
+				}
+				if _, used := usedConnectors[validTx.Connector]; used {
+					return fmt.Errorf(
+						"connector %s for vtxo %s is used more than once",
+						validTx.Connector,
+						vtxo,
+					)
+				}
+				usedConnectors[validTx.Connector] = struct{}{}
+			}
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				for vtxo, forfeitJSON := range forfeits {
+					pipe.HSet(ctx, forfeitTxsStoreTxsKey, vtxo, forfeitJSON)
 				}
 				return nil
 			})
 			return err
 		}, keys...); err == nil {
 			return nil
+		}
+		if !errors.Is(err, redis.TxFailedErr) {
+			return err
 		}
 		time.Sleep(s.retryDelay)
 	}
@@ -186,14 +283,12 @@ func (s *forfeitTxsStore) Reset(ctx context.Context) error {
 	keys := []string{
 		forfeitTxsStoreTxsKey, forfeitTxsStoreConnsKey,
 		forfeitTxsStoreVtxosKey, forfeitTxsStoreConnIdxKey,
+		forfeitTxsStoreIntentsKey, forfeitTxsStoreBatchKey,
 	}
 	for range s.numOfRetries {
 		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
 			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				pipe.Del(
-					ctx, forfeitTxsStoreTxsKey, forfeitTxsStoreConnsKey,
-					forfeitTxsStoreVtxosKey, forfeitTxsStoreConnIdxKey,
-				)
+				pipe.Del(ctx, keys...)
 				return nil
 			})
 			return err

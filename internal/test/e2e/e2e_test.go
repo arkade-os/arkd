@@ -361,6 +361,38 @@ func TestBatchSession(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorContains(t, err, "expires too soon")
 	})
+
+	t.Run("forfeit txs spending the same connector are rejected at submission", func(t *testing.T) {
+		ctx := t.Context()
+		bob := setupClientWallet(t)
+		_, addr, _, err := bob.Receive(ctx)
+		require.NoError(t, err)
+
+		faucetOffchain(t, bob, 0.00021)
+		faucetOffchain(t, bob, 0.00021)
+		vtxos, _, err := bob.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, vtxos, 2)
+		cfg, err := bob.GetConfigData(ctx)
+		require.NoError(t, err)
+
+		client := &forfeitConnectorCollisionClient{
+			Client: bob.Client(),
+			signTx: bob.SignTransaction,
+		}
+		_, batchErr := batchSettleBounded(ctx, batchsession.SettleArgs{
+			Client:       client,
+			ServerParams: *cfg,
+			SignTx:       bob.SignTransaction,
+			Vtxos:        vtxos,
+			ReceiverAddr: addr.Address,
+		})
+		require.True(t, client.submitted, "forfeits were never submitted: %v", batchErr)
+
+		require.ErrorContains(t, client.submitErr, "used more than once",
+			"connector reuse must be rejected at submission; batch error: %v", batchErr)
+		require.Equal(t, codes.InvalidArgument, status.Code(client.submitErr))
+	})
 }
 
 func TestUnilateralExit(t *testing.T) {

@@ -16,7 +16,6 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/google/uuid"
@@ -26,12 +25,10 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
-
-	"github.com/stretchr/testify/mock"
 )
 
 var (
-	connectorsJSON = `[{"Tx":"cHNidP8BAOwDAAAAAcXuArkhSrxO59ox0sKDFr0zZzeJuIImgzIGH5oiKx63AQAAAAD/////BU0BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhFNAQAAAAAAACJRIIuBxfGXLJBxAcCzUNERqM25pggGv/bwyR8wuLMXmQ4RTQEAAAAAAAAiUSCLgcXxlyyQcQHAs1DREajNuaYIBr/28MkfMLizF5kOEU0BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhEAAAAAAAAAAARRAk5zAAAAAAAMY29zaWduZXIAAAAAIQKLgcXxlyyQcQHAs1DREajNuaYIBr/28MkfMLizF5kOEQAAAAAAAA==","Children":{"0":"5e1eae3436fa3175eb238b3cc22cfccd17ec32c8f6cfd911e03f58f83b05fd7b","1":"8c8c00c0b0966880a8e9dacd8e266f3ddf938e817c7bd40295bddc5e45d900ea","2":"584408db5ed86cd5c51e2f6f027fa40a6584c3c91b8103d45ae36bc55d8a7329","3":"cbeecbaa2cd83534762c7720b29ad8e4fd9bca7e6d1a26a41a2fe0f48ef7bd6f"}},{"Tx":"cHNidP8BAGsDAAAAASE8O6xJeYeQ6L6Z4CHN1ndN3as+fOX/CPvGJ4tcn/e0AAAAAAD/////Ak0BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhEAAAAAAAAAAARRAk5zAAAAAAAMY29zaWduZXIAAAAAIQKLgcXxlyyQcQHAs1DREajNuaYIBr/28MkfMLizF5kOEQAAAA==","Children":{}},{"Tx":"cHNidP8BAGsDAAAAASE8O6xJeYeQ6L6Z4CHN1ndN3as+fOX/CPvGJ4tcn/e0AQAAAAD/////Ak0BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhEAAAAAAAAAAARRAk5zAAAAAAAMY29zaWduZXIAAAAAIQKLgcXxlyyQcQHAs1DREajNuaYIBr/28MkfMLizF5kOEQAAAA==","Children":{}},{"Tx":"cHNidP8BAGsDAAAAASE8O6xJeYeQ6L6Z4CHN1ndN3as+fOX/CPvGJ4tcn/e0AgAAAAD/////Ak0BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhEAAAAAAAAAAARRAk5zAAAAAAAMY29zaWduZXIAAAAAIQKLgcXxlyyQcQHAs1DREajNuaYIBr/28MkfMLizF5kOEQAAAA==","Children":{}},{"Tx":"cHNidP8BAGsDAAAAASE8O6xJeYeQ6L6Z4CHN1ndN3as+fOX/CPvGJ4tcn/e0AwAAAAD/////Ak0BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhEAAAAAAAAAAARRAk5zAAAAAAAMY29zaWduZXIAAAAAIQKLgcXxlyyQcQHAs1DREajNuaYIBr/28MkfMLizF5kOEQAAAA==","Children":{}}]`
+	connectorsJSON = `[{"Tx":"cHNidP8BAOwDAAAAAcXuArkhSrxO59ox0sKDFr0zZzeJuIImgzIGH5oiKx63AQAAAAD/////BU0BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhFNAQAAAAAAACJRIIuBxfGXLJBxAcCzUNERqM25pggGv/bwyR8wuLMXmQ4RTQEAAAAAAAAiUSCLgcXxlyyQcQHAs1DREajNuaYIBr/28MkfMLizF5kOEU0BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhEAAAAAAAAAAARRAk5zAAAAAAAMY29zaWduZXIAAAAAIQKLgcXxlyyQcQHAs1DREajNuaYIBr/28MkfMLizF5kOEQAAAAAAAA==","Children":{"0":"5e1eae3436fa3175eb238b3cc22cfccd17ec32c8f6cfd911e03f58f83b05fd7b","1":"8c8c00c0b0966880a8e9dacd8e266f3ddf938e817c7bd40295bddc5e45d900ea","2":"584408db5ed86cd5c51e2f6f027fa40a6584c3c91b8103d45ae36bc55d8a7329","3":"cbeecbaa2cd83534762c7720b29ad8e4fd9bca7e6d1a26a41a2fe0f48ef7bd6f"},"Txid":"b4f79f5c8b27c6fb08ffe57c3eabdd4d77d6cd21e099bee890877949ac3b3c21"},{"Tx":"cHNidP8BAGsDAAAAASE8O6xJeYeQ6L6Z4CHN1ndN3as+fOX/CPvGJ4tcn/e0AAAAAAD/////Ak0BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhEAAAAAAAAAAARRAk5zAAAAAAAMY29zaWduZXIAAAAAIQKLgcXxlyyQcQHAs1DREajNuaYIBr/28MkfMLizF5kOEQAAAA==","Children":{},"Txid":"5e1eae3436fa3175eb238b3cc22cfccd17ec32c8f6cfd911e03f58f83b05fd7b"},{"Tx":"cHNidP8BAGsDAAAAASE8O6xJeYeQ6L6Z4CHN1ndN3as+fOX/CPvGJ4tcn/e0AQAAAAD/////Ak0BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhEAAAAAAAAAAARRAk5zAAAAAAAMY29zaWduZXIAAAAAIQKLgcXxlyyQcQHAs1DREajNuaYIBr/28MkfMLizF5kOEQAAAA==","Children":{},"Txid":"8c8c00c0b0966880a8e9dacd8e266f3ddf938e817c7bd40295bddc5e45d900ea"},{"Tx":"cHNidP8BAGsDAAAAASE8O6xJeYeQ6L6Z4CHN1ndN3as+fOX/CPvGJ4tcn/e0AgAAAAD/////Ak0BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhEAAAAAAAAAAARRAk5zAAAAAAAMY29zaWduZXIAAAAAIQKLgcXxlyyQcQHAs1DREajNuaYIBr/28MkfMLizF5kOEQAAAA==","Children":{},"Txid":"584408db5ed86cd5c51e2f6f027fa40a6584c3c91b8103d45ae36bc55d8a7329"},{"Tx":"cHNidP8BAGsDAAAAASE8O6xJeYeQ6L6Z4CHN1ndN3as+fOX/CPvGJ4tcn/e0AwAAAAD/////Ak0BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhEAAAAAAAAAAARRAk5zAAAAAAAMY29zaWduZXIAAAAAIQKLgcXxlyyQcQHAs1DREajNuaYIBr/28MkfMLizF5kOEQAAAA==","Children":{},"Txid":"cbeecbaa2cd83534762c7720b29ad8e4fd9bca7e6d1a26a41a2fe0f48ef7bd6f"}]`
 	intentsJSON    = `[{"Id":"d4d1735d-05d1-493c-ac3a-b0bb634a50fe","Inputs":[{"Txid":"79e74bf97b34450d69780778522087504e5340dd71c7454b017c01e3d3bfb8ab","VOut":0,"Amount":5000,"PubKey":"7086d72a8ddacc9e6e0451d92133ef583d6748a4726b632a94f26df8c802ac24","RootCommitmentTxid":"2c6bffc1ce2da7e40f37043b7940b548b9b93f474e17c7fd84c8090c054afc96","CommitmentTxids":["2c6bffc1ce2da7e40f37043b7940b548b9b93f474e17c7fd84c8090c054afc96"],"SpentBy":"","Spent":false,"Unrolled":false,"Swept":false,"ExpiresAt":253402300799,"Preconfirmed": true,"CreatedAt":1749818677},{"Txid":"c4ae17ae1d95ec2a6adf07166e8daddee3b0f345fb1981f4af5a866517e2d198","VOut":1,"Amount":99997000,"PubKey":"7086d72a8ddacc9e6e0451d92133ef583d6748a4726b632a94f26df8c802ac24","RootCommitmentTxid":"2c6bffc1ce2da7e40f37043b7940b548b9b93f474e17c7fd84c8090c054afc96","CommitmentTxids":["2c6bffc1ce2da7e40f37043b7940b548b9b93f474e17c7fd84c8090c054afc96"],"SpentBy":"","Spent":false,"Unrolled":false,"Swept":false,"ExpiresAt":253402300799,"Preconfirmed":true,"CreatedAt":1749818677}],"Receivers":[{"Amount":100002000,"OnchainAddress":"","PubKey":"7086d72a8ddacc9e6e0451d92133ef583d6748a4726b632a94f26df8c802ac24"}]},{"Id":"6eef6c69-179c-4fe8-b183-e79637838255","Inputs":[{"Txid":"79e74bf97b34450d69780778522087504e5340dd71c7454b017c01e3d3bfb8ab","VOut":1,"Amount":99995000,"PubKey":"7594c9acd996ccf667431769bb4b238b29a9ed32b73f39185c121cf770aa0a63","RootCommitmentTxid":"2c6bffc1ce2da7e40f37043b7940b548b9b93f474e17c7fd84c8090c054afc96","CommitmentTxids":["2c6bffc1ce2da7e40f37043b7940b548b9b93f474e17c7fd84c8090c054afc96"],"SpentBy":"","Spent":false,"Unrolled":false,"Swept":false,"ExpiresAt":253402300799,"Preconfirmed":true,"CreatedAt":1749818677},{"Txid":"c4ae17ae1d95ec2a6adf07166e8daddee3b0f345fb1981f4af5a866517e2d198","VOut":0,"Amount":3000,"PubKey":"7594c9acd996ccf667431769bb4b238b29a9ed32b73f39185c121cf770aa0a63","RootCommitmentTxid":"2c6bffc1ce2da7e40f37043b7940b548b9b93f474e17c7fd84c8090c054afc96","CommitmentTxids":["2c6bffc1ce2da7e40f37043b7940b548b9b93f474e17c7fd84c8090c054afc96"],"SpentBy":"","Spent":false,"Unrolled":false,"Swept":false,"ExpiresAt":253402300799,"Preconfirmed":true,"CreatedAt":1749818677}],"Receivers":[{"Amount":99998000,"OnchainAddress":"","PubKey":"7594c9acd996ccf667431769bb4b238b29a9ed32b73f39185c121cf770aa0a63"}]}]`
 	tx1            = "cHNidP8BAIgDAAAAAnv9BTv4WD/gEdnP9sgy7BfN/CzCPIsj63Ux+jY0rh5eAAAAAAD/////q7i/0+MBfAFLRcdx3UBTTlCHIFJ4B3hpDUU0e/lL53kAAAAAAP////8C1RQAAAAAAAAWABQrwBxZxFNQ+DSDSqacn20LIQKLrQAAAAAAAAAABFECTnMAAAAAAAEBK00BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhEAAQEriBMAAAAAAAAiUSBwhtcqjdrMnm4EUdkhM+9YPWdIpHJrYyqU8m34yAKsJEEULyriza1giT7HPFxEqbI6St3+hZuq8XVP4ZPaJ/Mep1SL45HbEaCf+ZMY3cfCc6bLe13jWNIJgi8nTS2+Lw+zIUAMWsyNnOkGuXqv1tZryHrR2opcv1IE8y8vd0plIWjcBzC75lIIeMaV3QLOicJkpx854Hpb4hdGylSRnw9wTDBjQhXBUJKbdMGgSVS3i0tgNel6XgeKWg8o7JbVR7/ums6AOsDAx+14WC2NF93SA39AJr+zuMBDbBkzxBXNHpuv/6Dnb0UgLyriza1giT7HPFxEqbI6St3+hZuq8XVP4ZPaJ/Mep1StIDaW50nxJTR9gvLAoXOmCm76EX2uxlTKpPeMF5TI/Q8jrMAAAAA="
 	tx2            = "cHNidP8BAIgDAAAAAm+994704C8apCYabX7Km/3k2JqyIHcsdjQ12Cyqy+7LAAAAAAD/////mNHiF2WGWq/0gRn7RfOw496tjW4WB99qKuyVHa4XrsQBAAAAAP////8Cldb1BQAAAAAWABQrwBxZxFNQ+DSDSqacn20LIQKLrQAAAAAAAAAABFECTnMAAAAAAAEBK00BAAAAAAAAIlEgi4HF8ZcskHEBwLNQ0RGozbmmCAa/9vDJHzC4sxeZDhEAAQErSNX1BQAAAAAiUSBwhtcqjdrMnm4EUdkhM+9YPWdIpHJrYyqU8m34yAKsJEEULyriza1giT7HPFxEqbI6St3+hZuq8XVP4ZPaJ/Mep1SL45HbEaCf+ZMY3cfCc6bLe13jWNIJgi8nTS2+Lw+zIUASzdEkMZS1M3JBzp2N/ky+nki8GRJ5WpQY/7UZLI8AuFe0+26NmFuwbCdABpfu0vbRcwgKOS+9B3Fot0jlBLP5QhXBUJKbdMGgSVS3i0tgNel6XgeKWg8o7JbVR7/ums6AOsDAx+14WC2NF93SA39AJr+zuMBDbBkzxBXNHpuv/6Dnb0UgLyriza1giT7HPFxEqbI6St3+hZuq8XVP4ZPaJ/Mep1StIDaW50nxJTR9gvLAoXOmCm76EX2uxlTKpPeMF5TI/Q8jrMAAAAA="
@@ -64,25 +61,6 @@ var (
 	s1 = `{"021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096":"74df3c018f86c004e9ecc6bbfe58a958753579f5a5feb3a8ed8dc5c9d4dba5c2","039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67":"2cf641ff3a26702fc0a01bc9fb500b6ca9e79bfd88a31f0569c4767203a75707"}`
 	s2 = `{"021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096":"c1d480aff75d86460a6f8864782222d05d39b83e4c413c76280e52a09922fe15","039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67":"89c6cbcab945d54f345513338278734c66f94d38016dc1c9842c8a7a2e32d829"}`
 	s3 = `{"021f5b9ff8f25ff7b8984f444abb75621267251cbba76f32d12bf6b4da3b3a7096":"c1d480aff75d86460a6f8864782222d05d39b83e4c413c76280e52a09922fe15","039f2214798b94cd517ccd561e739ebb73cecacdc41b387beb460dda097c2b7c67":"89c6cbcab945d54f345513338278734c66f94d38016dc1c9842c8a7a2e32d829"}`
-
-	validTx = map[domain.Outpoint]ports.ValidForfeitTx{
-		{Txid: "79e74bf97b34450d69780778522087504e5340dd71c7454b017c01e3d3bfb8ab", VOut: 0}: {
-			Tx:        "tx1",
-			Connector: domain.Outpoint{Txid: "conn1", VOut: 0},
-		},
-		{Txid: "c4ae17ae1d95ec2a6adf07166e8daddee3b0f345fb1981f4af5a866517e2d198", VOut: 1}: {
-			Tx:        "tx2",
-			Connector: domain.Outpoint{Txid: "conn2", VOut: 0},
-		},
-		{Txid: "79e74bf97b34450d69780778522087504e5340dd71c7454b017c01e3d3bfb8ab", VOut: 1}: {
-			Tx:        "tx3",
-			Connector: domain.Outpoint{Txid: "conn2", VOut: 1},
-		},
-		{Txid: "c4ae17ae1d95ec2a6adf07166e8daddee3b0f345fb1981f4af5a866517e2d198", VOut: 0}: {
-			Tx:        "tx4",
-			Connector: domain.Outpoint{Txid: "conn3", VOut: 0},
-		},
-	}
 )
 
 // testRoundId names the batch a test Pops for, so DeleteVtxos releases the
@@ -96,15 +74,33 @@ func TestLiveStoreImplementations(t *testing.T) {
 	t.Cleanup(func() { _ = rdb.Close() })
 	require.NoError(t, rdb.FlushDB(t.Context()).Err())
 
-	txBuilder := new(mockedTxBuilder)
-	txBuilder.On("VerifyAndRebuildForfeitTxs", mock.Anything, mock.Anything, mock.Anything).
-		Return(validTx, nil)
+	connectors, intents, err := parseForfeitTxsFixture(connectorsJSON, intentsJSON)
+	require.NoError(t, err)
+	leaves := connectors.Leaves()
+	submissions := map[string]struct{ vtxo, connector domain.Outpoint }{
+		tx1: {intents[0].Inputs[0].Outpoint, domain.Outpoint{Txid: leaves[0].Txid}},
+		tx2: {intents[0].Inputs[1].Outpoint, domain.Outpoint{Txid: leaves[1].Txid}},
+		tx3: {intents[1].Inputs[0].Outpoint, domain.Outpoint{Txid: leaves[2].Txid}},
+		tx4: {intents[1].Inputs[1].Outpoint, domain.Outpoint{Txid: leaves[3].Txid}},
+	}
+	txBuilder := &mockedTxBuilder{verify: func(txs []string) (map[domain.Outpoint]ports.ValidForfeitTx, error) {
+		valid := make(map[domain.Outpoint]ports.ValidForfeitTx)
+		for _, tx := range txs {
+			submission, ok := submissions[tx]
+			if !ok {
+				return nil, fmt.Errorf("unknown forfeit fixture")
+			}
+			valid[submission.vtxo] = ports.ValidForfeitTx{Tx: tx, Connector: submission.connector}
+		}
+		return valid, nil
+	}}
+	store := redislivestore.NewLiveStore(rdb, txBuilder, 5)
 
 	stores := []struct {
 		name  string
 		store ports.LiveStore
 	}{
-		{"redis", redislivestore.NewLiveStore(rdb, txBuilder, 5)},
+		{"redis", store},
 	}
 
 	for _, tt := range stores {
@@ -786,7 +782,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.NoError(t, err)
 
 		// Init
-		err = store.ForfeitTxs().Init(ctx, connectors, intents)
+		err = store.ForfeitTxs().Init(ctx, testRoundId, connectors, intents)
 		require.NoError(t, err)
 
 		allSigned, err := store.ForfeitTxs().AllSigned(ctx)
@@ -836,7 +832,7 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 		require.Zero(t, forfeitsLen)
 
 		// redo the signing process but with delete in the middle
-		err = store.ForfeitTxs().Init(ctx, connectors, intents)
+		err = store.ForfeitTxs().Init(ctx, testRoundId+"-next", connectors, intents)
 		require.NoError(t, err)
 
 		// all txs except the first
@@ -850,6 +846,10 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 			}(tx)
 		}
 		wg2.Wait()
+
+		unsigned, err = store.ForfeitTxs().GetUnsignedInputs(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []domain.Outpoint{intents[0].Inputs[0].Outpoint}, unsigned)
 
 		err = store.ForfeitTxs().Reset(ctx)
 		require.NoError(t, err)
@@ -1752,77 +1752,14 @@ func parseOffchainTxFixture(txJSON string) (domain.OffchainTx, error) {
 }
 
 type mockedTxBuilder struct {
-	mock.Mock
+	ports.TxBuilder
+	verify func([]string) (map[domain.Outpoint]ports.ValidForfeitTx, error)
 }
 
 func (m *mockedTxBuilder) VerifyAndRebuildForfeitTxs(
-	vtxos []domain.Vtxo, connectors tree.FlatTxTree, txs []string,
-) (valid map[domain.Outpoint]ports.ValidForfeitTx, err error) {
-	args := m.Called(vtxos, connectors, txs)
-	res0 := args.Get(0).(map[domain.Outpoint]ports.ValidForfeitTx)
-	return res0, args.Error(1)
-}
-
-func (m *mockedTxBuilder) BuildCommitmentTx(
-	signerPubkey *btcec.PublicKey, intents domain.Intents, boardingInputs []ports.BoardingInput,
-	cosignerPubkeys [][]string, vtxoTreeExpiry arklib.RelativeLocktime,
-) (
-	commitmentTx string, vtxoTree *tree.TxTree,
-	connectorAddress string, connectors *tree.TxTree, err error,
-) {
-	args := m.Called(signerPubkey, intents, boardingInputs, cosignerPubkeys, vtxoTreeExpiry)
-	res0 := args.Get(0).(string)
-	res1 := args.Get(1).(*tree.TxTree)
-	res2 := args.Get(2).(string)
-	res3 := args.Get(3).(*tree.TxTree)
-	return res0, res1, res2, res3, args.Error(4)
-}
-
-func (m *mockedTxBuilder) BuildSweepTx(
-	inputs []ports.TxInput,
-) (txid string, signedSweepTx string, err error) {
-	args := m.Called(inputs)
-	res0 := args.Get(0).(string)
-	res1 := args.Get(1).(string)
-	return res0, res1, args.Error(2)
-}
-
-func (m *mockedTxBuilder) GetSweepableBatchOutputs(
-	vtxoTree *tree.TxTree,
-) (vtxoTreeExpiry *arklib.RelativeLocktime, sweepInput *ports.TxInput, err error) {
-	args := m.Called(vtxoTree)
-	res0 := args.Get(0).(*arklib.RelativeLocktime)
-	res1 := args.Get(1).(*ports.TxInput)
-	return res0, res1, args.Error(2)
-}
-
-func (m *mockedTxBuilder) FinalizeAndExtract(tx string) (txhex string, err error) {
-	args := m.Called(tx)
-	res0 := args.Get(0).(string)
-	return res0, args.Error(1)
-}
-
-func (m *mockedTxBuilder) VerifyVtxoTapscriptSigs(
-	tx string, mustIncludeSignerSig bool,
-) (valid bool, ptx *psbt.Packet, err error) {
-	args := m.Called(tx, mustIncludeSignerSig)
-	res0 := args.Get(0).(bool)
-	res1 := args.Get(1).(*psbt.Packet)
-	return res0, res1, args.Error(2)
-}
-
-func (m *mockedTxBuilder) VerifyBoardingTapscriptSigs(
-	txToVerify, commitmentTx string,
-) (map[uint32]ports.SignedBoardingInput, error) {
-	args := m.Called(txToVerify, commitmentTx)
-	res0 := args.Get(0).(map[uint32]ports.SignedBoardingInput)
-	return res0, args.Error(1)
-}
-
-func (m *mockedTxBuilder) GetTxid(tx string) (string, error) {
-	args := m.Called(tx)
-	res0 := args.Get(0).(string)
-	return res0, args.Error(1)
+	_ []domain.Vtxo, _ tree.FlatTxTree, txs []string,
+) (map[domain.Outpoint]ports.ValidForfeitTx, error) {
+	return m.verify(txs)
 }
 
 func intentsEqual(t *testing.T, a, b []ports.TimedIntent) {

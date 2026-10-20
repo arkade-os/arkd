@@ -51,7 +51,12 @@ type IntentStore interface {
 }
 
 type ForfeitTxsStore interface {
-	Init(ctx context.Context, connectors tree.FlatTxTree, intents []domain.Intent) error
+	Init(
+		ctx context.Context,
+		roundId string,
+		connectors tree.FlatTxTree,
+		intents []domain.Intent,
+	) error
 	Sign(ctx context.Context, txs []string) error
 	Reset(ctx context.Context) error
 	Pop(ctx context.Context) ([]string, error)

@@ -2458,3 +2458,45 @@ func requireNonceConviction(t *testing.T, roundId, script string) {
 		return nil
 	})
 }
+
+// Faulty client used to make a client wallet submit forfeit txs spending connectors reserved for
+// outpoints of a different intent.
+type forfeitConnectorCollisionClient struct {
+	clientlib.Client
+	signTx    clientlib.SignFn
+	submitted bool
+	submitErr error
+}
+
+func (c *forfeitConnectorCollisionClient) SubmitSignedForfeitTxs(
+	ctx context.Context, txs []string, signedCommitmentTx string,
+) error {
+	if len(txs) != 2 {
+		return fmt.Errorf("expected 2 forfeits, got %d", len(txs))
+	}
+	first, err := psbt.NewFromRawBytes(strings.NewReader(txs[0]), true)
+	if err != nil {
+		return err
+	}
+	second, err := psbt.NewFromRawBytes(strings.NewReader(txs[1]), true)
+	if err != nil {
+		return err
+	}
+
+	second.UnsignedTx.TxIn[1].PreviousOutPoint = first.UnsignedTx.TxIn[1].PreviousOutPoint
+	second.Inputs[1] = first.Inputs[1]
+	// Changing the connector invalidates the VTXO signature; sign it again.
+	second.Inputs[0].TaprootScriptSpendSig = nil
+	unsigned, err := second.B64Encode()
+	if err != nil {
+		return err
+	}
+	txs[1], err = c.signTx(ctx, unsigned)
+	if err != nil {
+		return err
+	}
+
+	c.submitted = true
+	c.submitErr = c.Client.SubmitSignedForfeitTxs(ctx, txs, signedCommitmentTx)
+	return c.submitErr
+}

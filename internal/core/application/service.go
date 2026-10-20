@@ -3709,7 +3709,7 @@ func (s *service) startFinalization(
 		return
 	}
 
-	if err := s.cache.ForfeitTxs().Init(ctx, flatConnectors, intents); err != nil {
+	if err := s.cache.ForfeitTxs().Init(ctx, round.Id, flatConnectors, intents); err != nil {
 		round.Fail(errors.INTERNAL_ERROR.New("failed to initialize forfeit txs: %s", err))
 		return
 	}
