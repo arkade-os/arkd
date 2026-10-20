@@ -1,9 +1,11 @@
 package errors
 
 import (
+	"fmt"
 	"regexp"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	grpccodes "google.golang.org/grpc/codes"
 )
 
@@ -13,7 +15,7 @@ import (
 // working.
 var legacyNotFoundRe = regexp.MustCompile(`(?i)subscription\s+\S+\s+not\s+found`)
 
-func TestSubscriptionNotFoundContract(t *testing.T) {
+func TestSubscriptionNotFoundError(t *testing.T) {
 	err := SUBSCRIPTION_NOT_FOUND.
 		New("subscription %s not found", "stale-id").
 		WithMetadata(SubscriptionMetadata{SubscriptionId: "stale-id"})
@@ -39,7 +41,7 @@ func TestSubscriptionNotFoundContract(t *testing.T) {
 // the structured code existed.
 var legacyFiltersLimitRe = regexp.MustCompile(`tx filters per subscription limit \(\d+\) exceeded`)
 
-func TestTxFiltersLimitExceededContract(t *testing.T) {
+func TestTxFiltersLimitExceededError(t *testing.T) {
 	err := TX_FILTERS_LIMIT_EXCEEDED.
 		New("tx filters per subscription limit (%d) exceeded", 64).
 		WithMetadata(TxFiltersLimitMetadata{
@@ -73,7 +75,7 @@ func TestTxFiltersLimitExceededContract(t *testing.T) {
 	}
 }
 
-func TestInvalidTxFilterContract(t *testing.T) {
+func TestInvalidTxFilterError(t *testing.T) {
 	err := INVALID_TX_FILTER.
 		New("invalid tx filter %q: %s", "&&&", "compile failed").
 		WithMetadata(TxFilterMetadata{Expression: "&&&"})
@@ -92,7 +94,7 @@ func TestInvalidTxFilterContract(t *testing.T) {
 	}
 }
 
-func TestQueryFilterLimitExceededContract(t *testing.T) {
+func TestQueryFilterLimitExceededError(t *testing.T) {
 	err := QUERY_FILTER_LIMIT_EXCEEDED.
 		New("too many %s in filter: %d, max %d", "outpoints", 101, 100).
 		WithMetadata(QueryFilterLimitMetadata{
@@ -121,7 +123,7 @@ func TestQueryFilterLimitExceededContract(t *testing.T) {
 	}
 }
 
-func TestVtxoMetadataContract(t *testing.T) {
+func TestErrorMetadata(t *testing.T) {
 	err := VTXO_ALREADY_SPENT.
 		New("vtxo(s) already spent").
 		WithMetadata(VtxoMetadata{VtxoOutpoints: []string{"aa:0", "bb:1"}})
@@ -132,4 +134,31 @@ func TestVtxoMetadataContract(t *testing.T) {
 	if got := err.Metadata()["vtxo_outpoints"]; got != "[aa:0 bb:1]" {
 		t.Fatalf("Metadata()[vtxo_outpoints] = %q, want [aa:0 bb:1]", got)
 	}
+}
+
+// The internal cause of an error is meant for the server only: it must never show up in what is
+// returned to clients, Error() and Metadata(), while InternalCause() and Log() expose it.
+func TestInternalCause(t *testing.T) {
+	t.Run("without internal cause", func(t *testing.T) {
+		err := INTERNAL_ERROR.New("something went wrong")
+
+		require.Equal(t, err, err.InternalCause())
+		require.NotContains(t, err.Log().Data, "cause")
+	})
+
+	t.Run("with internal cause", func(t *testing.T) {
+		internal := fmt.Errorf("reason")
+		err := INTERNAL_ERROR.New("something went wrong").
+			WithMetadata(map[string]any{"arg": "val"}).
+			WithInternalCause(internal)
+
+		require.Equal(t, "INTERNAL_ERROR (0): something went wrong", err.Error())
+		require.NotContains(t, err.Error(), "reason")
+		for _, v := range err.Metadata() {
+			require.NotContains(t, v, "reason")
+		}
+		require.Equal(t, "val", err.Metadata()["arg"])
+		require.Equal(t, internal, err.InternalCause())
+		require.Equal(t, internal.Error(), err.Log().Data["cause"])
+	})
 }

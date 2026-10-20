@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	terrors "errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -59,6 +60,8 @@ func (s *service) CosignOnchainTx(
 			return
 		}
 
+		log.WithError(vErr.InternalCause()).Warn("failed to cosign onchain tx")
+
 		if err := cache.RemoveUtxos(s.ctx, outpointsToCosign); err != nil {
 			log.WithError(err).WithField("utxos", outpointsToCosign).Error(
 				"failed to remove cosigned utxos from cache, please remove them manually",
@@ -69,41 +72,45 @@ func (s *service) CosignOnchainTx(
 	// Cosign the tx
 	signedTx, err := s.signer.SignTransactionTapscript(ctx, tx, inputIndexes)
 	if err != nil {
-		log.WithError(err).Error("failed to cosign tx")
-		return "", errors.INTERNAL_ERROR.New("something went wrong, please retry")
+		return "", errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(fmt.Errorf("failed to cosign tx: %w", err))
 	}
+
+	// From here on the tx carries our signature: errors must never include it.
 
 	// Check if broadcastable.
 	rawTx, err := s.builder.FinalizeAndExtract(signedTx)
 	if err != nil {
-		log.WithError(err).Error("failed to finalize and extract tx")
-		return "", errors.INTERNAL_ERROR.New("something went wrong, please retry")
+		return "", errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(fmt.Errorf("failed to finalize and extract tx: %w", err))
 	}
 
 	var msgTx wire.MsgTx
 	if err := msgTx.Deserialize(hex.NewDecoder(strings.NewReader(rawTx))); err != nil {
-		return "", errors.INTERNAL_ERROR.New("failed to deserialize finalized tx: %w", err).
-			WithMetadata(map[string]any{
-				"tx": rawTx,
-			})
+		return "", errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(fmt.Errorf("failed to deserialize finalized tx: %w", err))
 	}
 	txid := msgTx.TxID()
 
 	onchainTx := domain.NewOnchainTx()
 	event, err := onchainTx.Broadcast(txid, signedTx, outpointsToCosign)
 	if err != nil {
-		log.WithError(err).Error("failed to raise onchain tx broadcasted domain event")
-		return "", errors.INTERNAL_ERROR.New("something went wrong, please retry")
+		return "", errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(fmt.Errorf(
+				"failed to raise broadcasted event for onchain tx %s: %w", txid, err,
+			))
 	}
 
 	if _, err := s.wallet.BroadcastTransaction(ctx, rawTx); err != nil {
-		log.WithError(err).Error("failed to broadcast tx")
-		return "", errors.INTERNAL_ERROR.New("something went wrong, please retry")
+		return "", errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(fmt.Errorf("failed to broadcast onchain tx %s: %w", txid, err))
 	}
 
 	if err := db.Save(s.ctx, domain.OnchainTxTopic, txid, []domain.Event{event}); err != nil {
-		log.WithError(err).Errorf("failed to save onchain tx event: %+v", *onchainTx)
-		return "", errors.INTERNAL_ERROR.New("something went wrong, please retry")
+		return "", errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(fmt.Errorf(
+				"failed to save broadcasted event for onchain tx %s: %w", txid, err,
+			))
 	}
 
 	log.Debugf("cosigned %d utxos and broadcasted tx %s", len(outpointsToCosign), txid)
@@ -163,8 +170,8 @@ func (s *service) lockUtxos(
 				strings.Join(outpointsToString(inputsToCosign), ", "),
 			)
 		}
-		log.WithError(err).Error("failed to add cosigned utxos to cache")
-		return errors.INTERNAL_ERROR.New("something went wrong, please retry")
+		return errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(fmt.Errorf("failed to add cosigned utxos to cache: %w", err))
 	}
 	// Release the utxos if any of the checks below fails.
 	defer func() {
@@ -181,8 +188,10 @@ func (s *service) lockUtxos(
 	// Check against db to prevent signing twice already signed utxos.
 	alreadySigned, err := db.GetUtxos(ctx, inputsToCosign)
 	if err != nil {
-		log.WithError(err).Error("failed to check if inputs are already signed in db")
-		return errors.INTERNAL_ERROR.New("something went wrong, please retry")
+		return errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(
+				fmt.Errorf("failed to check if inputs are already signed in db: %w", err),
+			)
 	}
 	if len(alreadySigned) > 0 {
 		return errors.INVALID_ARK_PSBT.New(
@@ -200,8 +209,10 @@ func (s *service) lockUtxos(
 	// in the db, so a spend is always visible in one of the two.
 	spentOffchain, err := s.cache.OffchainTxs().IncludesAny(ctx, inputsToCosign)
 	if err != nil {
-		log.WithError(err).Error("failed to check if inputs are spent by offchain txs")
-		return errors.INTERNAL_ERROR.New("something went wrong, please retry")
+		return errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(
+				fmt.Errorf("failed to check if inputs are spent by offchain txs: %w", err),
+			)
 	}
 	if len(spentOffchain) > 0 {
 		return errors.INVALID_ARK_PSBT.New(
@@ -214,10 +225,10 @@ func (s *service) lockUtxos(
 	// Check cached claims before the DB: settlement marks VTXOs spent before releasing their claims.
 	intents, err := s.cache.Intents().IncludesAny(ctx, inputsToCosign)
 	if err != nil {
-		log.WithError(err).Error(
-			"failed to check if inputs are already registered in intents queue",
-		)
-		return errors.INTERNAL_ERROR.New("something went wrong, please retry")
+		return errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(fmt.Errorf(
+				"failed to check if inputs are already registered in intents queue: %w", err,
+			))
 	}
 	if len(intents) > 0 {
 		return errors.INVALID_ARK_PSBT.New(
@@ -231,8 +242,10 @@ func (s *service) lockUtxos(
 	// forfeit tx, an expired one gets swept by us.
 	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, inputsToCosign)
 	if err != nil {
-		log.WithError(err).Error("failed to check if inputs are already spent in db")
-		return errors.INTERNAL_ERROR.New("something went wrong, please retry")
+		return errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(
+				fmt.Errorf("failed to check if inputs are already spent in db: %w", err),
+			)
 	}
 	for _, v := range vtxos {
 		if !v.Unrolled {
@@ -256,8 +269,10 @@ func (s *service) lockUtxos(
 	txids := getTxidsFromOutpoints(inputsToCosign)
 	checkpointTxs, err := s.repoManager.OffchainTxs().GetCheckpointTxs(ctx, txids)
 	if err != nil {
-		log.WithError(err).Error("failed to check if inputs are checkpoint outputs")
-		return errors.INTERNAL_ERROR.New("something went wrong, please retry")
+		return errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(
+				fmt.Errorf("failed to check if inputs are checkpoint outputs: %w", err),
+			)
 	}
 	if len(checkpointTxs) > 0 {
 		return errors.INVALID_ARK_PSBT.New(
@@ -280,8 +295,8 @@ func (s *service) validateOnchainTx(
 
 	settings, err := s.cache.Settings().Get(ctx)
 	if err != nil {
-		log.WithError(err).Error("failed to get settings")
-		return nil, nil, errors.INTERNAL_ERROR.New("something went wrong, please retry")
+		return nil, nil, errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(fmt.Errorf("failed to get settings: %w", err))
 	}
 
 	if err := blockchain.CheckTransactionSanity(btcutil.NewTx(ptx.UnsignedTx)); err != nil {
@@ -322,8 +337,8 @@ func (s *service) validateOnchainTx(
 	}
 	vtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, outpoints)
 	if err != nil {
-		log.WithError(err).Error("failed to get vtxos of inputs")
-		return nil, nil, errors.INTERNAL_ERROR.New("something went wrong, please retry")
+		return nil, nil, errors.INTERNAL_ERROR.New("something went wrong, please retry").
+			WithInternalCause(fmt.Errorf("failed to get vtxos of inputs: %w", err))
 	}
 	unrolledVtxos := make(map[domain.Outpoint]struct{}, len(vtxos))
 	for _, v := range vtxos {
@@ -633,8 +648,10 @@ func (s *service) validateOnchainTx(
 	for _, in := range inputsToCosign {
 		spent, err := s.wallet.GetOutpointStatus(ctx, in.Outpoint)
 		if err != nil {
-			log.WithError(err).Errorf("failed to check spent status of utxo %s", in.Outpoint)
-			return nil, nil, errors.INTERNAL_ERROR.New("something went wrong, please retry")
+			return nil, nil, errors.INTERNAL_ERROR.New("something went wrong, please retry").
+				WithInternalCause(
+					fmt.Errorf("failed to check spent status of utxo %s: %w", in.Outpoint, err),
+				)
 		}
 		if spent {
 			return nil, nil, errors.INVALID_ARK_PSBT.New(
@@ -648,8 +665,10 @@ func (s *service) validateOnchainTx(
 	for txid := range txsToCheckConfirmed {
 		isConfirmed, conf, err := s.scanner.IsTransactionConfirmed(ctx, txid)
 		if err != nil {
-			log.WithError(err).Errorf("failed to check confirmation status of tx %s", txid)
-			return nil, nil, errors.INTERNAL_ERROR.New("something went wrong, please retry")
+			return nil, nil, errors.INTERNAL_ERROR.New("something went wrong, please retry").
+				WithInternalCause(
+					fmt.Errorf("failed to check confirmation status of tx %s: %w", txid, err),
+				)
 		}
 		if isConfirmed {
 			confirmations[txid] = *conf
@@ -667,10 +686,8 @@ func (s *service) validateOnchainTx(
 		// compared against a clock.
 		if input.delay.Type == arklib.LocktimeTypeBlock && tip == nil {
 			if tip, err = s.wallet.GetCurrentBlockTime(ctx); err != nil {
-				log.WithError(err).Error("failed to get chain tip")
-				return nil, nil, errors.INTERNAL_ERROR.New(
-					"something went wrong, please retry",
-				)
+				return nil, nil, errors.INTERNAL_ERROR.New("something went wrong, please retry").
+					WithInternalCause(fmt.Errorf("failed to get chain tip: %w", err))
 			}
 		}
 		// Use a margin to make sure the exit path doesn't become available right after cosigning.
@@ -678,8 +695,8 @@ func (s *service) validateOnchainTx(
 			&conf, tip, input.delay, settings.UnrolledVtxoMinExpiryMargin, now,
 		)
 		if err != nil {
-			log.WithError(err).Error("failed to check if exit delay is expired")
-			return nil, nil, errors.INTERNAL_ERROR.New("something went wrong, please retry")
+			return nil, nil, errors.INTERNAL_ERROR.New("something went wrong, please retry").
+				WithInternalCause(fmt.Errorf("failed to check if exit delay is expired: %w", err))
 		}
 		if expired {
 			return nil, nil, errors.INVALID_ARK_PSBT.New(

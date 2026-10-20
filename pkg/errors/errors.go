@@ -43,24 +43,47 @@ type Error interface {
 	CodeName() string
 	GrpcCode() grpccodes.Code
 	Metadata() map[string]string
+	// InternalCause returns the internal cause of the error if set, the error itself otherwise. It's
+	// meant for what is recorded or logged server side, never for what is returned to clients.
+	InternalCause() error
 }
 
 type TypedError[MT any] interface {
 	Error
 	WithMetadata(MT) TypedError[MT]
+	// WithInternalCause sets a cause that never reaches the client: Error() and the metadata
+	// don't include it, while InternalCause() and Log() do.
+	WithInternalCause(error) TypedError[MT]
 }
 
 // ErrorImpl is the default concrete implementation of TypedError.
 type ErrorImpl[MT any] struct {
-	code     Code[MT]
-	cause    error
-	metadata MT
+	code          Code[MT]
+	cause         error
+	internalCause error
+	metadata      MT
 }
 
 func (e *ErrorImpl[MT]) Log() *log.Entry {
-	return log.WithField("name", e.code.Name).
+	entry := log.WithField("name", e.code.Name).
 		WithField("code", e.code.Code).
 		WithField("metadata", e.metadata)
+	if e.internalCause != nil {
+		entry = entry.WithField("cause", e.internalCause.Error())
+	}
+	return entry
+}
+
+func (e *ErrorImpl[MT]) InternalCause() error {
+	if e.internalCause == nil {
+		return e
+	}
+	return e.internalCause
+}
+
+func (e *ErrorImpl[MT]) WithInternalCause(cause error) TypedError[MT] {
+	e.internalCause = cause
+	return e
 }
 
 func (e *ErrorImpl[MT]) Metadata() map[string]string {

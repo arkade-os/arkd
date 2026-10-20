@@ -634,8 +634,8 @@ func (s *service) SubmitOffchainTx(
 	}
 	bans, err := s.checkIfBanned(ctx, banThreshold, bannedCandidates)
 	if err != nil {
-		log.WithError(err).Error("failed to check for banned vtxos")
 		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf("failed to check for banned vtxos: %w", err)).
 			WithMetadata(map[string]any{
 				"txid":  txid,
 				"vtxos": spentVtxoKeys,
@@ -648,8 +648,10 @@ func (s *service) SubmitOffchainTx(
 	// check if already spent by another offchain tx
 	alreadySpentVtxos, err := s.cache.OffchainTxs().IncludesAny(ctx, spentVtxoKeys)
 	if err != nil {
-		log.WithError(err).Error("failed to check spent status of tx inputs in cache")
 		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(
+				fmt.Errorf("failed to check spent status of tx inputs in cache: %w", err),
+			).
 			WithMetadata(map[string]any{
 				"txid":  txid,
 				"vtxos": spentVtxoKeys,
@@ -666,10 +668,10 @@ func (s *service) SubmitOffchainTx(
 
 	alreadyRegisteredVtxos, err := s.cache.Intents().IncludesAny(ctx, spentVtxoKeys)
 	if err != nil {
-		log.WithError(err).Errorf(
-			"failed to check registered status of inputs against intents in cache",
-		)
 		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf(
+				"failed to check registered status of inputs against intents in cache: %w", err,
+			)).
 			WithMetadata(map[string]any{
 				"txid":  txid,
 				"vtxos": spentVtxoKeys,
@@ -696,7 +698,10 @@ func (s *service) SubmitOffchainTx(
 			return
 		}
 		if structErr != nil {
-			change := offchainTx.Fail(structErr)
+			// The cause is recorded, it may be more detailed than the error returned to the client.
+			cause := structErr.InternalCause()
+			log.WithError(cause).Warnf("offchain tx %s failed", txid)
+			change := offchainTx.Fail(cause)
 			changes = append(changes, change)
 		}
 
@@ -1164,19 +1169,17 @@ func (s *service) SubmitOffchainTx(
 			})
 	}
 
+	// From here on the txs carry our signature: errors must never include them, or the client
+	// would get a signed spend of vtxos this request didn't reserve.
 	txHex, err := s.builder.FinalizeAndExtract(fullySignedArkTx)
 	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to finalize ark tx: %w", err).
-			WithMetadata(map[string]any{
-				"ark_tx": fullySignedArkTx,
-			})
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf("failed to finalize and extract: %w", err))
 	}
 	var arkTx wire.MsgTx
 	if err := arkTx.Deserialize(hex.NewDecoder(strings.NewReader(txHex))); err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to deserialize ark tx: %w", err).
-			WithMetadata(map[string]any{
-				"ark_tx": txHex,
-			})
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf("failed to deserialize finalized ark tx: %w", err))
 	}
 	weight := computeWeight(&arkTx)
 	if weight > maxTxWeight {
@@ -1263,14 +1266,8 @@ func (s *service) SubmitOffchainTx(
 		newDepth, parentMarkerIDs,
 	)
 	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to accept offchain tx: %w", err).
-			WithMetadata(map[string]any{
-				"ark_tx":                fullySignedArkTx,
-				"signed_checkpoint_txs": signedCheckpointTxsMap,
-				"commitment_txids":      commitmentTxsByCheckpointTxid,
-				"root_commitment_txid":  rootCommitmentTxid,
-				"expiration":            expiration,
-			})
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf("failed to accept offchain tx: %w", err))
 	}
 
 	s.offchainTxMu.Lock()
@@ -1280,13 +1277,14 @@ func (s *service) SubmitOffchainTx(
 	// we redo this check after locking the mutex to avoid race conditions between concurrent offchain tx submissions
 	alreadySpentVtxos, err = s.cache.OffchainTxs().IncludesAny(ctx, spentVtxoKeys)
 	if err != nil {
-		log.WithError(err).Errorf(
-			"failed to check again spent status of inputs against tx in cache",
-		)
-		return nil, errors.INTERNAL_ERROR.New("something went wrong").WithMetadata(map[string]any{
-			"txid":  txid,
-			"vtxos": spentVtxoKeys,
-		})
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf(
+				"failed to check again spent status of inputs against tx in cache: %w", err,
+			)).
+			WithMetadata(map[string]any{
+				"txid":  txid,
+				"vtxos": spentVtxoKeys,
+			})
 	}
 	if len(alreadySpentVtxos) > 0 {
 		outpoints := make([]string, 0, len(alreadySpentVtxos))
@@ -1299,15 +1297,15 @@ func (s *service) SubmitOffchainTx(
 
 	alreadyRegisteredVtxos, err = s.cache.Intents().IncludesAny(ctx, spentVtxoKeys)
 	if err != nil {
-		log.WithError(err).Errorf(
-			"failed to check again registered status of inputs against intents in cache",
-		)
-		return nil, errors.INTERNAL_ERROR.New(
-			"something went wrong",
-		).WithMetadata(map[string]any{
-			"txid":  txid,
-			"vtxos": spentVtxoKeys,
-		})
+		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf(
+				"failed to check again registered status of inputs against intents in cache: %w",
+				err,
+			)).
+			WithMetadata(map[string]any{
+				"txid":  txid,
+				"vtxos": spentVtxoKeys,
+			})
 	}
 	if len(alreadyRegisteredVtxos) > 0 {
 		outpoints := make([]string, 0, len(alreadyRegisteredVtxos))
@@ -1371,6 +1369,7 @@ func (s *service) SubmitOffchainTx(
 
 	if err := s.cache.OffchainTxs().Add(ctx, *offchainTx); err != nil {
 		return nil, errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf("failed to add offchain tx to cache: %w", err)).
 			WithMetadata(map[string]any{"ark_txid": offchainTx.ArkTxid})
 	}
 
@@ -1387,7 +1386,8 @@ func (s *service) SubmitOffchainTx(
 					"failed to remove offchain tx %s after event save failed", txid,
 				)
 			}
-			return nil, errors.INTERNAL_ERROR.New("failed to save offchain tx events: %w", err)
+			return nil, errors.INTERNAL_ERROR.New("something went wrong").
+				WithInternalCause(fmt.Errorf("failed to save offchain tx events: %w", err))
 		}
 	} else {
 		changes = append(changes, change)
@@ -1419,8 +1419,8 @@ func (s *service) FinalizeOffchainTx(
 
 	offchainTx, err := s.cache.OffchainTxs().Get(ctx, txid)
 	if err != nil {
-		log.WithError(err).Error("failed to get offchain tx from storage")
 		return errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf("failed to get offchain tx from cache: %w", err)).
 			WithMetadata(map[string]any{"txid": txid})
 	}
 	// Cache entries are removed after DB projection completes for an accepted offchain tx.
@@ -1435,7 +1435,10 @@ func (s *service) FinalizeOffchainTx(
 
 	defer func() {
 		if structErr != nil {
-			change := offchainTx.Fail(structErr)
+			// The cause is recorded, it may be more detailed than the error returned to the client.
+			cause := structErr.InternalCause()
+			log.WithError(cause).Warnf("finalization of offchain tx %s failed", txid)
+			change := offchainTx.Fail(cause)
 			changes = append(changes, change)
 		}
 
@@ -1460,13 +1463,17 @@ func (s *service) finalizeOffchainTx(
 	txid := offchainTx.ArkTxid
 	decodedCheckpointTxs := make(map[string]*psbt.Packet)
 	spentVtxoKeys := make([]domain.Outpoint, 0, len(finalCheckpointTxs))
+	// In one-shot mode the checkpoints carry our signature before the client ever got it:
+	// errors must not include them.
 	for _, checkpoint := range finalCheckpointTxs {
 		// verify the tapscript signatures
 		valid, ptx, err := s.builder.VerifyVtxoTapscriptSigs(checkpoint, true)
-		if err != nil || !valid {
-			return nil, errors.INVALID_SIGNATURE.New(
-				"invalid signature in checkpoint tx %s", checkpoint,
-			).WithMetadata(errors.InvalidSignatureMetadata{Tx: checkpoint})
+		if err != nil {
+			return nil, errors.INVALID_SIGNATURE.New("invalid signature in checkpoint tx").
+				WithInternalCause(fmt.Errorf("failed to verify checkpoint tx signatures: %w", err))
+		}
+		if !valid {
+			return nil, errors.INVALID_SIGNATURE.New("invalid signature in checkpoint tx")
 		}
 
 		checkpointTxid := ptx.UnsignedTx.TxID()
@@ -1507,8 +1514,7 @@ func (s *service) finalizeOffchainTx(
 
 	arkTx, err := psbt.NewFromRawBytes(strings.NewReader(offchainTx.ArkTx), true)
 	if err != nil {
-		return nil, errors.INVALID_ARK_PSBT.New("failed to parse ark tx: %w", err).
-			WithMetadata(errors.PsbtMetadata{Tx: offchainTx.ArkTx})
+		return nil, errors.INVALID_ARK_PSBT.New("failed to parse ark tx: %w", err)
 	}
 
 	for inIndex := range arkTx.Inputs {
@@ -1576,10 +1582,9 @@ func (s *service) finalizeOffchainTx(
 		var b64checkpointTx string
 		b64checkpointTx, err = checkpointTx.B64Encode()
 		if err != nil {
-			return nil, errors.INTERNAL_ERROR.New("failed to encode checkpoint tx: %w", err).
-				WithMetadata(map[string]any{
-					"checkpoint_tx": checkpointTx,
-				})
+			return nil, errors.INTERNAL_ERROR.New("something went wrong").WithInternalCause(
+				fmt.Errorf("failed to encode checkpoint tx %s: %w", checkpointTxid, err),
+			)
 		}
 
 		finalCheckpointTxsMap[checkpointTxid] = b64checkpointTx
@@ -1588,10 +1593,7 @@ func (s *service) finalizeOffchainTx(
 	var event domain.Event
 	event, err = offchainTx.Finalize(finalCheckpointTxsMap)
 	if err != nil {
-		return nil, errors.INTERNAL_ERROR.New("failed to finalize offchain tx: %w", err).
-			WithMetadata(map[string]any{
-				"final_checkpoint_txs": finalCheckpointTxsMap,
-			})
+		return nil, errors.INTERNAL_ERROR.New("failed to finalize offchain tx %s: %w", txid, err)
 	}
 	return event, nil
 }
@@ -1871,8 +1873,10 @@ func (s *service) RegisterIntent(
 
 	alreadySpentVtxos, err := s.cache.OffchainTxs().IncludesAny(ctx, inputOutpoints)
 	if err != nil {
-		log.WithError(err).Errorf("failed to check spent status of inputs against tx in cache")
 		return "", errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(
+				fmt.Errorf("failed to check spent status of inputs against tx in cache: %w", err),
+			).
 			WithMetadata(map[string]any{
 				"vtxos": inputOutpoints,
 			})
@@ -1889,8 +1893,10 @@ func (s *service) RegisterIntent(
 	indexedVtxos := make(map[domain.Outpoint]domain.Vtxo)
 	found, err := s.repoManager.Vtxos().GetVtxos(ctx, inputOutpoints)
 	if err != nil {
-		log.WithError(err).Error("failed to get vtxo from db for requested intent")
 		return "", errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(
+				fmt.Errorf("failed to get vtxo from db for requested intent: %w", err),
+			).
 			WithMetadata(map[string]any{
 				"vtxos": inputOutpoints,
 			})
@@ -1940,8 +1946,8 @@ func (s *service) RegisterIntent(
 
 	bans, err := s.checkIfBanned(ctx, banThreshold, bannedCandidates)
 	if err != nil {
-		log.WithError(err).Error("failed to check for banned vtxos")
 		return "", errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf("failed to check for banned vtxos: %w", err)).
 			WithMetadata(map[string]any{"vtxos": inputOutpoints})
 	}
 	if len(bans) > 0 {
@@ -2470,10 +2476,10 @@ func (s *service) RegisterIntent(
 		// Ensure boarding inputs are not being cosigned with CosignOnchainTx at the same time.
 		cosigningUtxos, cErr := s.cache.CosignedUtxos().IncludesAny(ctx, boardingOutpoints)
 		if cErr != nil {
-			log.WithError(cErr).Error(
-				"failed to check boarding inputs against cosigned utxos cache",
-			)
-			return "", errors.INTERNAL_ERROR.New("something went wrong")
+			return "", errors.INTERNAL_ERROR.New("something went wrong").
+				WithInternalCause(fmt.Errorf(
+					"failed to check boarding inputs against cosigned utxos cache: %w", cErr,
+				))
 		}
 		if len(cosigningUtxos) > 0 {
 			return "", errors.INVALID_PSBT_INPUT.New(
@@ -2485,8 +2491,10 @@ func (s *service) RegisterIntent(
 		// Ensure boarding inputs are not already spent via CosignOnchainTx.
 		cosignedUtxos, cErr := s.repoManager.CosignedUtxos().GetUtxos(ctx, boardingOutpoints)
 		if cErr != nil {
-			log.WithError(cErr).Error("failed to check boarding inputs against cosigned utxos db")
-			return "", errors.INTERNAL_ERROR.New("something went wrong")
+			return "", errors.INTERNAL_ERROR.New("something went wrong").
+				WithInternalCause(fmt.Errorf(
+					"failed to check boarding inputs against cosigned utxos db: %w", cErr,
+				))
 		}
 		if len(cosignedUtxos) > 0 {
 			return "", errors.INVALID_PSBT_INPUT.New(
@@ -2507,9 +2515,10 @@ func (s *service) RegisterIntent(
 	}
 	alreadySpentVtxos, err = s.cache.OffchainTxs().IncludesAny(ctx, pushedOutpoints)
 	if err != nil {
-		log.WithError(err).
-			Errorf("failed to check again spent status of input against tx in cache")
-		return "", errors.INTERNAL_ERROR.New("something went wrong")
+		return "", errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf(
+				"failed to check again spent status of input against tx in cache: %w", err,
+			))
 	}
 	if len(alreadySpentVtxos) > 0 {
 		spendingOutpoints := make([]string, 0, len(alreadySpentVtxos))
@@ -2525,8 +2534,10 @@ func (s *service) RegisterIntent(
 	// so the check above alone can miss it: read the inputs again.
 	refreshedVtxos, err := s.repoManager.Vtxos().GetVtxos(ctx, pushedOutpoints)
 	if err != nil {
-		log.WithError(err).Error("failed to read again the inputs of the intent to push")
-		return "", errors.INTERNAL_ERROR.New("something went wrong")
+		return "", errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(
+				fmt.Errorf("failed to read again the inputs of the intent to push: %w", err),
+			)
 	}
 	if len(refreshedVtxos) != len(pushedOutpoints) {
 		gotVtxos := make([]string, 0, len(refreshedVtxos))
@@ -2549,9 +2560,10 @@ func (s *service) RegisterIntent(
 
 	pendingCosignedUtxos, err := s.cache.CosignedUtxos().IncludesAny(ctx, pushedOutpoints)
 	if err != nil {
-		log.WithError(err).
-			Errorf("failed to check spent status of input against cosigned utxo cache")
-		return "", errors.INTERNAL_ERROR.New("something went wrong")
+		return "", errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf(
+				"failed to check spent status of input against cosigned utxo cache: %w", err,
+			))
 	}
 	if len(pendingCosignedUtxos) > 0 {
 		cosignedOutpoints := make([]string, 0, len(pendingCosignedUtxos))
@@ -2565,9 +2577,10 @@ func (s *service) RegisterIntent(
 
 	cosignedUtxos, err := s.repoManager.CosignedUtxos().GetUtxos(ctx, pushedOutpoints)
 	if err != nil {
-		log.WithError(err).
-			Errorf("failed to check spent status of input against cosigned utxo repo")
-		return "", errors.INTERNAL_ERROR.New("something went wrong")
+		return "", errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf(
+				"failed to check spent status of input against cosigned utxo repo: %w", err,
+			))
 	}
 	if len(cosignedUtxos) > 0 {
 		cosignedOutpoints := make([]string, 0, len(cosignedUtxos))
@@ -2668,8 +2681,8 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 
 	operatorKeys, keysErr := s.operatorXOnlyKeys(ctx)
 	if keysErr != nil {
-		log.WithError(keysErr).Error("failed to get operator signer keys")
-		return errors.INTERNAL_ERROR.New("something went wrong")
+		return errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf("failed to get operator signer keys: %w", keysErr))
 	}
 
 	verifyForfeit := func(b64 string) errors.Error {
@@ -2752,8 +2765,8 @@ func (s *service) SubmitForfeitTxs(ctx context.Context, forfeitTxs []string) err
 
 	round, err := s.cache.CurrentRound().Get(ctx)
 	if err != nil {
-		log.WithError(err).Error("failed to get current round from cache")
-		return errors.INTERNAL_ERROR.New("something went wrong")
+		return errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf("failed to get current round from cache: %w", err))
 	}
 
 	// TODO move forfeit validation outside of ports.LiveStore
@@ -2772,8 +2785,8 @@ func (s *service) SignCommitmentTx(ctx context.Context, signedCommitmentTx strin
 	// thus it is safe to read it without the lock because we rely ony on WitnessUtxo fields
 	round, err := s.cache.CurrentRound().Get(ctx)
 	if err != nil {
-		log.WithError(err).Error("failed to get current round from cache")
-		return errors.INTERNAL_ERROR.New("something went wrong")
+		return errors.INTERNAL_ERROR.New("something went wrong").
+			WithInternalCause(fmt.Errorf("failed to get current round from cache: %w", err))
 	}
 
 	signedInputs, err := s.builder.VerifyBoardingTapscriptSigs(
@@ -2945,8 +2958,10 @@ func (s *service) RegisterCosignerNonces(
 
 	session, err := s.cache.TreeSigingSessions().Get(ctx, roundId)
 	if err != nil {
-		log.WithError(err).Warnf("failed to get signing session for round %s", roundId)
-		return errors.INTERNAL_ERROR.New("something went wrong, please try again")
+		return errors.INTERNAL_ERROR.New("something went wrong, please try again").
+			WithInternalCause(
+				fmt.Errorf("failed to get signing session for round %s: %w", roundId, err),
+			)
 	}
 	if session == nil {
 		return errors.INTERNAL_ERROR.New("signing session not found for batch %s", roundId)
@@ -2971,12 +2986,10 @@ func (s *service) RegisterCosignerNonces(
 	}
 
 	if err := s.cache.TreeSigingSessions().AddNonces(ctx, roundId, pubkey, nonces); err != nil {
-		log.WithError(err).WithFields(log.Fields{
-			"round_id": roundId,
-			"pubkey":   pubkey,
-			"nonces":   nonces,
-		}).Warn("failed to add nonces")
-		return errors.INTERNAL_ERROR.New("something went wrong, please try again")
+		return errors.INTERNAL_ERROR.New("something went wrong, please try again").
+			WithInternalCause(fmt.Errorf(
+				"failed to add nonces of cosigner %s for round %s: %w", pubkey, roundId, err,
+			))
 	}
 	return nil
 }
@@ -2986,8 +2999,10 @@ func (s *service) RegisterCosignerSignatures(
 ) errors.Error {
 	session, err := s.cache.TreeSigingSessions().Get(ctx, roundId)
 	if err != nil {
-		log.WithError(err).Warnf("failed to get signing session for round %s", roundId)
-		return errors.INTERNAL_ERROR.New("something went wrong, please try again")
+		return errors.INTERNAL_ERROR.New("something went wrong, please try again").
+			WithInternalCause(
+				fmt.Errorf("failed to get signing session for round %s: %w", roundId, err),
+			)
 	}
 	if session == nil {
 		return errors.INTERNAL_ERROR.New("signing session not found for batch %s", roundId)
@@ -3033,12 +3048,10 @@ func (s *service) RegisterCosignerSignatures(
 	}
 
 	if err := s.cache.TreeSigingSessions().AddSignatures(ctx, roundId, pubkey, sigs); err != nil {
-		log.WithError(err).WithFields(log.Fields{
-			"round_id": roundId,
-			"pubkey":   pubkey,
-			"sigs":     sigs,
-		}).Warn("failed to add signatures")
-		return errors.INTERNAL_ERROR.New("something went wrong, please try again")
+		return errors.INTERNAL_ERROR.New("something went wrong, please try again").
+			WithInternalCause(fmt.Errorf(
+				"failed to add signatures of cosigner %s for round %s: %w", pubkey, roundId, err,
+			))
 	}
 	return nil
 }
