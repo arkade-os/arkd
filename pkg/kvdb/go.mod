@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd/pkg/kvdb
 
-go 1.26.9
+go 1.27.3
 
 require (
 	github.com/btcsuite/btcwallet/walletdb v1.6.0
@@ -39,7 +39,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.7 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.17.9 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/lightningnetwork/lnd/ticker v1.1.1 // indirect
 	github.com/lightningnetwork/lnd/tor v1.1.3 // indirect
 	github.com/miekg/dns v1.1.61 // indirect

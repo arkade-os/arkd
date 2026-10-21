@@ -13,7 +13,7 @@ define setup_env
 endef
 
 GOLANGCI_LINT ?= $(shell \
-	echo "docker run --rm -v $$(pwd):/app -w /app golangci/golangci-lint:v2.9.0 golangci-lint"; \
+	echo "docker run --rm -v $$(pwd):/app -w /app golangci/golangci-lint:v2.15.0 golangci-lint"; \
 )
 
 ## buf: create local dockerized buf

@@ -295,7 +295,7 @@ To compile the `arkd` binary from source, you can use the following Make command
 
 ### Local Development Setup
 
-1. Install Go (version 1.26 or later)
+1. Install Go (version 1.27 or later)
 2. Install [Nigiri](https://nigiri.vulpem.com/) for local Bitcoin networks
 3. Start Nigiri to setup a regtest Bitcoin environment:
 

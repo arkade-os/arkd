@@ -154,15 +154,7 @@ func (a *adminHandler) GetRounds(
 		return nil, status.Errorf(codes.Internal, "%s", err.Error())
 	}
 
-	// rounds is deprecated but still populated: dropping it would silently break
-	// clients reading the pre-summaries response.
-	roundIds := make([]string, 0, len(summaries))
-	for _, summary := range summaries {
-		roundIds = append(roundIds, summary.RoundId)
-	}
-
 	return &arkv1.GetRoundsResponse{
-		Rounds:    roundIds,
 		Summaries: roundSummaries(summaries).toProto(),
 	}, nil
 }

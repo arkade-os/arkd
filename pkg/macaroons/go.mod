@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd/pkg/macaroons
 
-go 1.26.9
+go 1.27.3
 
 replace github.com/arkade-os/arkd/pkg/kvdb => ../kvdb
 
@@ -45,7 +45,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.7 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.17.9 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.2 // indirect
 	github.com/lightningnetwork/lnd/fn v1.2.1 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.5 // indirect

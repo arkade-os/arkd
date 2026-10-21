@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd/api-spec
 
-go 1.26.9
+go 1.27.3
 
 require (
 	github.com/meshapi/grpc-api-gateway v0.1.0

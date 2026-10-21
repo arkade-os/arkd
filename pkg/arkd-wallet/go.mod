@@ -1,6 +1,6 @@
 module github.com/arkade-os/arkd/pkg/arkd-wallet
 
-go 1.26.9
+go 1.27.3
 
 replace github.com/arkade-os/arkd/pkg/ark-lib => ../ark-lib
 
@@ -90,7 +90,7 @@ require (
 	github.com/jrick/logrotate v1.1.2 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/kkdai/bstream v1.0.0 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/neutrino v0.18.0 // indirect

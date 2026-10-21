@@ -1,7 +1,6 @@
 package grpcservice
 
 import (
-	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -138,7 +137,6 @@ func (c Config) tlsConfig() (*tls.Config, error) {
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 		},
 	}
-	config.Rand = rand.Reader
 
 	return config, nil
 }
