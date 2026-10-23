@@ -433,7 +433,7 @@ func applyJitter(d time.Duration, jitter float64) time.Duration {
 		jitter = 0.999
 	}
 
-	randomFactor := 2.0*rand.Float64() - 1.0 // [-1, +1] factor
+	randomFactor := 2.0*rand.Float64() - 1.0 // #nosec G404 -- backoff jitter, not security-sensitive
 	jitterFactor := 1.0 + jitter*randomFactor
 	return time.Duration(float64(d) * jitterFactor)
 }

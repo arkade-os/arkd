@@ -118,7 +118,7 @@ func InitOtelSDK(
 
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
-	go collectGoRuntimeMetrics(context.Background())
+	go collectGoRuntimeMetrics(ctx)
 
 	shutdown := func(ctx context.Context) error {
 		err3 := lp.Shutdown(ctx)
