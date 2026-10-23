@@ -1403,6 +1403,7 @@ func (s *service) SubmitOffchainTx(
 func (s *service) FinalizeOffchainTx(
 	ctx context.Context, txid string, finalCheckpointTxs []string,
 ) (structErr errors.Error) {
+	finalCheckpointTxids := make(map[string]struct{}, len(finalCheckpointTxs))
 	for _, b64 := range finalCheckpointTxs {
 		checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
 		if err != nil {
@@ -1413,6 +1414,7 @@ func (s *service) FinalizeOffchainTx(
 		); err != nil {
 			return errors.INVALID_CHECKPOINT_PSBT.Wrap(err)
 		}
+		finalCheckpointTxids[checkpointPtx.UnsignedTx.TxID()] = struct{}{}
 	}
 
 	var changes []domain.Event
@@ -1431,6 +1433,11 @@ func (s *service) FinalizeOffchainTx(
 			return errors.TX_NOT_FOUND.New("offchain tx %s not found", txid).
 				WithMetadata(errors.TxNotFoundMetadata{Txid: txid})
 		}
+	}
+
+	// If the offchain tx is already finalized, there is nothing to do.
+	if offchainTx.IsFinalized() {
+		return nil
 	}
 
 	defer func() {

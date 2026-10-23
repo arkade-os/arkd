@@ -1190,6 +1190,32 @@ func TestSubmitOffchainTx(t *testing.T) {
 				})
 			}
 		})
+
+		// A one shot client still calls finalize, be the tx served by the cache or by the db.
+		t.Run("finalize again", func(t *testing.T) {
+			for _, servedBy := range []string{"cache", "db"} {
+				t.Run(servedBy, func(t *testing.T) {
+					tx := newTestOneShotTx(t, 2)
+
+					resp, err := tx.svc.SubmitOffchainTx(
+						t.Context(), tx.signedCheckpoints, tx.arkTx,
+					)
+					require.NoError(t, err)
+					requireFinalized(t, tx, resp)
+
+					if servedBy == "db" {
+						tx.offchainTxRepo.tx = tx.offchainTxs.cached
+						require.NoError(t, tx.offchainTxs.Remove(t.Context(), tx.arkTxid))
+					}
+
+					// The tx is finalized, a valid request is "ignored" and no error is returned.
+					err = tx.svc.FinalizeOffchainTx(
+						t.Context(), tx.arkTxid, resp.SignedCheckpointTxs,
+					)
+					require.NoError(t, err)
+				})
+			}
+		})
 	})
 }
 
@@ -1723,10 +1749,11 @@ func testSubmitOffchainTxService(
 // testOneShotTx is an offchain tx spending stored vtxos through their forfeit closure, with
 // the ark tx and the checkpoints signed by the owner, and the service to submit it to.
 type testOneShotTx struct {
-	svc         *service
-	events      *mockedEventRepo
-	offchainTxs *testOneShotOffchainTxStore
-	arkTxid     string
+	svc            *service
+	events         *mockedEventRepo
+	offchainTxs    *testOneShotOffchainTxStore
+	offchainTxRepo *testOneShotOffchainTxRepo
+	arkTxid        string
 	// arkTx is signed by the owner.
 	arkTx string
 	// checkpointTxs are unsigned, as submitted in two steps.
@@ -1823,8 +1850,7 @@ func newTestOneShotTx(t *testing.T, numInputs int) testOneShotTx {
 	events.On("Save", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	vtxoRepo := &mockedVtxoRepo{}
 	vtxoRepo.On("GetVtxos", mock.Anything, mock.Anything).Return(vtxos, nil)
-	offchainTxRepo := &mockedOffchainTxRepo{}
-	offchainTxRepo.On("GetOffchainTx", mock.Anything, mock.Anything).Return(nil, nil)
+	offchainTxRepo := &testOneShotOffchainTxRepo{}
 	repos := &mockedRepoManager{RepoManager: testOneShotRepos{events: events}}
 	repos.On("Vtxos").Return(vtxoRepo)
 	repos.On("OffchainTxs").Return(offchainTxRepo)
@@ -1866,6 +1892,7 @@ func newTestOneShotTx(t *testing.T, numInputs int) testOneShotTx {
 		},
 		events:            events,
 		offchainTxs:       offchainTxs,
+		offchainTxRepo:    offchainTxRepo,
 		arkTxid:           arkPtx.UnsignedTx.TxID(),
 		arkTx:             signTapscriptInputs(t, unsignedArkTx, ownerPrv),
 		checkpointTxs:     checkpointTxs,
@@ -1944,24 +1971,51 @@ func (r testOneShotRepos) Events() domain.EventRepository { return r.events }
 
 func (r testOneShotRepos) Assets() domain.AssetRepository { return nil }
 
-// testOneShotOffchainTxStore is an offchain tx cache holding nothing and recording what is
-// added to it.
+// testOneShotOffchainTxStore is an offchain tx cache holding what is added to it and recording
+// it. Like the real one it hands out copies, so what a caller does with one is not cached.
 type testOneShotOffchainTxStore struct {
 	ports.OffChainTxStore
-	added []string
+	added  []string
+	cached *domain.OffchainTx
 }
 
 func (s *testOneShotOffchainTxStore) Add(_ context.Context, tx domain.OffchainTx) error {
 	s.added = append(s.added, tx.ArkTxid)
+	s.cached = &tx
 	return nil
 }
 
-func (s *testOneShotOffchainTxStore) Remove(context.Context, string) error { return nil }
+func (s *testOneShotOffchainTxStore) Get(
+	_ context.Context, arkTxid string,
+) (*domain.OffchainTx, error) {
+	if s.cached == nil || s.cached.ArkTxid != arkTxid {
+		return nil, nil
+	}
+	cached := *s.cached
+	return &cached, nil
+}
+
+func (s *testOneShotOffchainTxStore) Remove(context.Context, string) error {
+	s.cached = nil
+	return nil
+}
 
 func (s *testOneShotOffchainTxStore) IncludesAny(
 	context.Context, []domain.Outpoint,
 ) ([]domain.Outpoint, error) {
 	return nil, nil
+}
+
+// testOneShotOffchainTxRepo is the offchain tx db, empty until a test stores the tx in it.
+type testOneShotOffchainTxRepo struct {
+	domain.OffchainTxRepository
+	tx *domain.OffchainTx
+}
+
+func (r *testOneShotOffchainTxRepo) GetOffchainTx(
+	_ context.Context, _ string,
+) (*domain.OffchainTx, error) {
+	return r.tx, nil
 }
 
 // testNoteIntentProof builds an intent proof whose only ownership input is a
