@@ -1213,6 +1213,7 @@ func TestSubmitOffchainTx(t *testing.T) {
 						t.Context(), tx.arkTxid, resp.SignedCheckpointTxs,
 					)
 					require.NoError(t, err)
+					require.Equal(t, expectedEvents, savedEvents(t, tx.events))
 				})
 			}
 		})

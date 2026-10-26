@@ -1403,7 +1403,6 @@ func (s *service) SubmitOffchainTx(
 func (s *service) FinalizeOffchainTx(
 	ctx context.Context, txid string, finalCheckpointTxs []string,
 ) (structErr errors.Error) {
-	finalCheckpointTxids := make(map[string]struct{}, len(finalCheckpointTxs))
 	for _, b64 := range finalCheckpointTxs {
 		checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
 		if err != nil {
@@ -1414,10 +1413,7 @@ func (s *service) FinalizeOffchainTx(
 		); err != nil {
 			return errors.INVALID_CHECKPOINT_PSBT.Wrap(err)
 		}
-		finalCheckpointTxids[checkpointPtx.UnsignedTx.TxID()] = struct{}{}
 	}
-
-	var changes []domain.Event
 
 	offchainTx, err := s.cache.OffchainTxs().Get(ctx, txid)
 	if err != nil {
@@ -1440,28 +1436,28 @@ func (s *service) FinalizeOffchainTx(
 		return nil
 	}
 
-	defer func() {
-		if structErr != nil {
-			// The cause is recorded, it may be more detailed than the error returned to the client.
-			cause := structErr.InternalCause()
-			log.WithError(cause).Warnf("finalization of offchain tx %s failed", txid)
-			change := offchainTx.Fail(cause)
-			changes = append(changes, change)
-		}
-
-		if err := s.repoManager.Events().Save(
-			ctx, domain.OffchainTxTopic, txid, changes,
-		); err != nil {
-			log.WithError(err).Errorf("failed to save finalization event for offchain tx %s", txid)
-		}
-	}()
-
+	var changes []domain.Event
 	change, structErr := s.finalizeOffchainTx(ctx, offchainTx, finalCheckpointTxs)
 	if structErr != nil {
-		return structErr
+		cause := structErr.InternalCause()
+		log.WithError(cause).Warnf("finalization of offchain tx %s failed", txid)
+		failure := offchainTx.Fail(cause)
+		changes = append(changes, failure)
 	}
-	changes = []domain.Event{change}
-	return nil
+	if change != nil {
+		changes = append(changes, change)
+	}
+
+	if err := s.repoManager.Events().Save(ctx, domain.OffchainTxTopic, txid, changes); err != nil {
+		if structErr != nil {
+			log.WithError(err).Errorf("failed to save finalization event for offchain tx %s", txid)
+			return structErr
+		}
+		return errors.INTERNAL_ERROR.New("something went wrong").WithInternalCause(fmt.Errorf(
+			"failed to save finalization event for offchain tx %s: %w", txid, err,
+		))
+	}
+	return structErr
 }
 
 func (s *service) finalizeOffchainTx(
