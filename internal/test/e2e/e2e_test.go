@@ -1970,9 +1970,8 @@ func TestOffchainTx(t *testing.T) {
 		})
 
 		// In this test, Alice submits an offchain tx and waits for it to be projected and evicted
-		// from the cache. Mallory, who knows nothing but the ark txid, then calls FinalizeTx with
-		// a dummy checkpoint. Her request must be rejected and Alice must still be able to
-		// finalize her tx.
+		// from the cache. Mallory then calls FinalizeTx with the actual checkpoint and a corrupted
+		// signature. Her request must be rejected and Alice must still be able to finalize her tx.
 		t.Run(
 			"retry after checkpoint rejection because of invalid checkpoint tx sigs",
 			func(t *testing.T) {
@@ -2035,29 +2034,24 @@ func TestOffchainTx(t *testing.T) {
 					return nil
 				})
 
-				// Mallory crafts a well-formed but meaningless checkpoint: a single random input and a
-				// single output, with no signature at all.
-				var prevoutHash chainhash.Hash
-				_, err = rand.Read(prevoutHash[:])
-				require.NoError(t, err)
-				dummyTx := wire.NewMsgTx(wire.TxVersion)
-				dummyTx.AddTxIn(wire.NewTxIn(wire.NewOutPoint(&prevoutHash, 0), nil, nil))
-				dummyTx.AddTxOut(wire.NewTxOut(1000, txutils.ANCHOR_PKSCRIPT))
-				dummyPtx, err := psbt.NewFromUnsignedTx(dummyTx)
-				require.NoError(t, err)
-				dummyCheckpoint, err := dummyPtx.B64Encode()
-				require.NoError(t, err)
-
-				err = mallory.Client().FinalizeTx(ctx, txid, []string{dummyCheckpoint})
-				require.Error(t, err)
-				require.ErrorContains(t, err, "invalid signature")
-
 				finalCheckpoints := make([]string, 0, len(signedCheckpoints))
 				for _, checkpoint := range signedCheckpoints {
 					finalCheckpoint, err := alice.SignTransaction(ctx, checkpoint)
 					require.NoError(t, err)
 					finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
 				}
+
+				// Corrupt a signature while preserving the checkpoint's transaction ID.
+				require.Len(t, finalCheckpoints, 1)
+				checkpoint, err := psbt.NewFromRawBytes(strings.NewReader(finalCheckpoints[0]), true)
+				require.NoError(t, err)
+				require.Len(t, checkpoint.Inputs[0].TaprootScriptSpendSig, 2)
+				checkpoint.Inputs[0].TaprootScriptSpendSig[0].Signature[0] ^= 1
+				invalidCheckpoint, err := checkpoint.B64Encode()
+				require.NoError(t, err)
+
+				err = mallory.Client().FinalizeTx(ctx, txid, []string{invalidCheckpoint})
+				require.ErrorContains(t, err, "invalid signature")
 
 				err = alice.Client().FinalizeTx(ctx, txid, finalCheckpoints)
 				require.NoError(
@@ -2729,6 +2723,131 @@ func TestOffchainTx(t *testing.T) {
 		require.Empty(t, txid)
 		require.Empty(t, finalArkTx)
 		require.Empty(t, signedCheckpoints)
+	})
+
+	t.Run("invalid condition witnesses", func(t *testing.T) {
+		ctx := t.Context()
+		alice := setupClientWallet(t)
+		params, err := alice.GetConfigData(ctx)
+		require.NoError(t, err)
+		_, offchainAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+		key, err := alice.Identity().GetKey(ctx, "")
+		require.NoError(t, err)
+		addr, err := arklib.DecodeAddressV0(offchainAddr.Address)
+		require.NoError(t, err)
+
+		vtxoScript := script.NewDefaultVtxoScript(
+			key.PubKey, addr.Signer, params.UnilateralExitDelay,
+		)
+		vtxoScript.Closures[1] = &script.ConditionMultisigClosure{
+			// Ignore the padding item, then require the remaining item to equal 1.
+			Condition: []byte{txscript.OP_DROP, txscript.OP_1, txscript.OP_EQUAL},
+			MultisigClosure: script.MultisigClosure{
+				PubKeys: []*btcec.PublicKey{key.PubKey, addr.Signer},
+			},
+		}
+		addr.VtxoTapKey, _, err = vtxoScript.TapTree()
+		require.NoError(t, err)
+		receiverAddr, err := addr.EncodeV0()
+		require.NoError(t, err)
+		vtxo := faucetOffchainWithAddress(t, receiverAddr, 0.00021)
+		vtxo.Tapscripts, err = vtxoScript.Encode()
+		require.NoError(t, err)
+
+		tx, err := offchaintx.BuildAndSignTx(ctx, offchaintx.BuildAndSignTxArgs{
+			BaseArgs: offchaintx.BaseArgs{
+				ServerParams: *params,
+				SignTx:       alice.SignTransaction,
+				Vtxos:        []clientlib.Vtxo{vtxo},
+				ChangeAddr:   offchainAddr.Address,
+			},
+			Receivers: []clientlib.Receiver{{To: offchainAddr.Address, Amount: 1000}},
+		})
+		require.NoError(t, err)
+		require.Len(t, tx.CheckpointTxs, 1)
+
+		valid, err := txutils.ConditionWitnessField.Encode(wire.TxWitness{{1}, {0}})
+		require.NoError(t, err)
+		different, err := txutils.ConditionWitnessField.Encode(wire.TxWitness{{1}, {1}})
+		require.NoError(t, err)
+		oversized, err := txutils.ConditionWitnessField.Encode(
+			wire.TxWitness{{1}, make([]byte, txscript.MaxScriptElementSize+1)},
+		)
+		require.NoError(t, err)
+		unmet, err := txutils.ConditionWitnessField.Encode(wire.TxWitness{{0}, {0}})
+		require.NoError(t, err)
+		malformed := &psbt.Unknown{Key: valid.Key, Value: []byte{0xff}}
+
+		withWitness := func(t *testing.T, encoded string, field *psbt.Unknown) string {
+			t.Helper()
+			ptx, err := psbt.NewFromRawBytes(strings.NewReader(encoded), true)
+			require.NoError(t, err)
+			ptx.Inputs[0].Unknowns = append(ptx.Inputs[0].Unknowns, field)
+			encoded, err = ptx.B64Encode()
+			require.NoError(t, err)
+			return encoded
+		}
+
+		for _, tc := range []struct {
+			name              string
+			arkWitness        *psbt.Unknown
+			checkpointWitness *psbt.Unknown
+			wantErr           string
+		}{
+			{
+				name:              "malformed ark witness",
+				arkWitness:        malformed,
+				checkpointWitness: valid,
+				wantErr:           "EOF",
+			},
+			{
+				name:              "malformed checkpoint witness",
+				arkWitness:        valid,
+				checkpointWitness: malformed,
+				wantErr:           "EOF",
+			},
+			{
+				// Both witnesses satisfy the condition and have the same size.
+				name:              "unequal witnesses",
+				arkWitness:        valid,
+				checkpointWitness: different,
+				wantErr:           "checkpoint condition witness does not match ark tx input",
+			},
+			{
+				// Equal witnesses must still respect the element size limit.
+				name:              "oversized witness element",
+				arkWitness:        oversized,
+				checkpointWitness: oversized,
+				wantErr:           "exceeds max script element size",
+			},
+			{
+				name:              "unmet condition",
+				arkWitness:        unmet,
+				checkpointWitness: unmet,
+				wantErr:           "condition not met for input 0",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				_, _, _, err := alice.Client().SubmitTx(ctx,
+					withWitness(t, tx.SignedArkTx, tc.arkWitness),
+					[]string{withWitness(t, tx.CheckpointTxs[0], tc.checkpointWitness)},
+				)
+				require.ErrorContains(t, err, tc.wantErr)
+				require.Equal(t, codes.InvalidArgument, status.Code(err))
+			})
+		}
+
+		// The same transaction succeeds when both witnesses satisfy the condition.
+		txid, _, checkpoints, err := alice.Client().SubmitTx(ctx,
+			withWitness(t, tx.SignedArkTx, valid),
+			[]string{withWitness(t, tx.CheckpointTxs[0], valid)},
+		)
+		require.NoError(t, err)
+		require.Len(t, checkpoints, 1)
+		signed, err := alice.SignTransaction(ctx, checkpoints[0])
+		require.NoError(t, err)
+		require.NoError(t, alice.Client().FinalizeTx(ctx, txid, []string{signed}))
 	})
 
 	// In this test, we ensure that if the signed arkade tx contains any tampered input metadata,
@@ -3936,10 +4055,8 @@ func testSendToConditionMultisigClosure(t *testing.T, oneShot bool) {
 
 	checkpoints := make([]string, 0, len(checkpointsPtx))
 	for _, ptx := range checkpointsPtx {
-		if oneShot {
-			err = txutils.SetArkPsbtField(ptx, 0, txutils.ConditionWitnessField, wire.TxWitness{preimage[:]})
-			require.NoError(t, err)
-		}
+		err = txutils.SetArkPsbtField(ptx, 0, txutils.ConditionWitnessField, wire.TxWitness{preimage[:]})
+		require.NoError(t, err)
 		encoded, err := ptx.B64Encode()
 		require.NoError(t, err)
 		if oneShot {
@@ -3962,21 +4079,7 @@ func testSendToConditionMultisigClosure(t *testing.T, oneShot bool) {
 
 	finalCheckpoints := make([]string, 0, len(signedCheckpoints))
 	for _, checkpoint := range signedCheckpoints {
-		ptx, err := psbt.NewFromRawBytes(strings.NewReader(checkpoint), true)
-		require.NoError(t, err)
-
-		err = txutils.SetArkPsbtField(
-			ptx,
-			0,
-			txutils.ConditionWitnessField,
-			wire.TxWitness{preimage[:]},
-		)
-		require.NoError(t, err)
-
-		encoded, err := ptx.B64Encode()
-		require.NoError(t, err)
-
-		finalCheckpoint, err := bob.SignTransaction(ctx, encoded)
+		finalCheckpoint, err := bob.SignTransaction(ctx, checkpoint)
 		require.NoError(t, err)
 		finalCheckpoints = append(finalCheckpoints, finalCheckpoint)
 	}
@@ -4353,7 +4456,7 @@ func TestReactToFraud(t *testing.T) {
 	})
 
 	// In these tests Alice spends a VTXO and then tries to unroll it onchain.
-	// The server should react by broadcasting the checkpoint amd ark tx preventing Alice to claim
+	// The server should react by broadcasting the checkpoint and ark tx preventing Alice to claim
 	// the unrolled VTXO before her timelock expires
 	t.Run("react to unroll of already spent vtxos", func(t *testing.T) {
 		t.Run("default vtxo script", func(t *testing.T) {
@@ -4451,6 +4554,144 @@ func TestReactToFraud(t *testing.T) {
 					return len(b.OnchainBalance.LockedAmount) == 0
 				})
 		})
+
+		oversizedWitness, err := txutils.ConditionWitnessField.Encode(
+			wire.TxWitness{make([]byte, txscript.MaxScriptElementSize+1)},
+		)
+		require.NoError(t, err)
+
+		for _, tc := range []struct {
+			name       string
+			rawWitness []byte
+		}{
+			{
+				name:       "malformed checkpoint condition witness at finalization",
+				rawWitness: []byte{0xff}, // Truncated witness-count varint.
+			},
+			{
+				name:       "oversized checkpoint condition witness at finalization",
+				rawWitness: oversizedWitness.Value,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				ctx := t.Context()
+				alice := setupClientWallet(t)
+				params, err := alice.GetConfigData(ctx)
+				require.NoError(t, err)
+				onchainAddr, offchainAddr, _, err := alice.Receive(ctx)
+				require.NoError(t, err)
+				key, err := alice.Identity().GetKey(ctx, "")
+				require.NoError(t, err)
+				addr, err := arklib.DecodeAddressV0(offchainAddr.Address)
+				require.NoError(t, err)
+
+				vtxoScript := script.NewDefaultVtxoScript(
+					key.PubKey, addr.Signer, params.UnilateralExitDelay,
+				)
+				vtxoScript.Closures[1] = &script.ConditionMultisigClosure{
+					Condition: []byte{txscript.OP_DROP, txscript.OP_TRUE},
+					MultisigClosure: script.MultisigClosure{
+						PubKeys: []*btcec.PublicKey{key.PubKey, addr.Signer},
+					},
+				}
+				addr.VtxoTapKey, _, err = vtxoScript.TapTree()
+				require.NoError(t, err)
+				receiverAddr, err := addr.EncodeV0()
+				require.NoError(t, err)
+
+				// Fund directly in a batch so one unroll puts the checkpoint input onchain.
+				batchCtx, cancel := context.WithTimeout(ctx, batchWait)
+				defer cancel()
+				_, err = batchsession.RedeemNotes(batchCtx, batchsession.RedeemNotesArgs{
+					Client:       alice.Client(),
+					SignTx:       alice.SignTransaction,
+					ServerParams: *params,
+					Notes:        []string{generateNote(t, 21000)},
+					ReceiverAddr: receiverAddr,
+				})
+				require.NoError(t, err)
+				pkScript, err := script.P2TRScript(addr.VtxoTapKey)
+				require.NoError(t, err)
+				var vtxo clientlib.Vtxo
+				waitUntil(t, indexerWait, "the vtxo to appear", func(ctx context.Context) error {
+					resp, err := alice.Indexer().GetVtxos(ctx,
+						clientlib.WithScripts([]string{hex.EncodeToString(pkScript)}),
+					)
+					if err != nil {
+						return err
+					}
+					if len(resp.Vtxos) != 1 {
+						return fmt.Errorf("expected one vtxo, got %d", len(resp.Vtxos))
+					}
+					vtxo = resp.Vtxos[0]
+					return nil
+				})
+				vtxo.Tapscripts, err = vtxoScript.Encode()
+				require.NoError(t, err)
+				faucetOnchainAndWait(t, onchainAddr, 0.00001)
+
+				tx, err := offchaintx.BuildAndSignTx(ctx, offchaintx.BuildAndSignTxArgs{
+					BaseArgs: offchaintx.BaseArgs{
+						ServerParams: *params,
+						SignTx:       alice.SignTransaction,
+						Vtxos:        []clientlib.Vtxo{vtxo},
+						ChangeAddr:   offchainAddr.Address,
+					},
+					Receivers: []clientlib.Receiver{{To: offchainAddr.Address, Amount: 1000}},
+				})
+				require.NoError(t, err)
+				witness := wire.TxWitness{{1}}
+				arkPtx, err := psbt.NewFromRawBytes(strings.NewReader(tx.SignedArkTx), true)
+				require.NoError(t, err)
+				err = txutils.SetArkPsbtField(arkPtx, 0, txutils.ConditionWitnessField, witness)
+				require.NoError(t, err)
+				tx.SignedArkTx, err = arkPtx.B64Encode()
+				require.NoError(t, err)
+				require.Len(t, tx.CheckpointTxs, 1)
+				ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx.CheckpointTxs[0]), true)
+				require.NoError(t, err)
+				checkpointTxid := ptx.UnsignedTx.TxID()
+
+				field, err := txutils.ConditionWitnessField.Encode(witness)
+				require.NoError(t, err)
+				ptx.Inputs[0].Unknowns = append(ptx.Inputs[0].Unknowns, field)
+				validCheckpoint, err := ptx.B64Encode()
+				require.NoError(t, err)
+
+				txid, _, checkpoints, err := alice.Client().SubmitTx(
+					ctx, tx.SignedArkTx, []string{validCheckpoint},
+				)
+				require.NoError(t, err)
+				require.Len(t, checkpoints, 1)
+				signed, err := alice.SignTransaction(ctx, checkpoints[0])
+				require.NoError(t, err)
+				signedPtx, err := psbt.NewFromRawBytes(strings.NewReader(signed), true)
+				require.NoError(t, err)
+
+				// FinalizeTx must use the stored witness and only take the new signatures.
+				ptx.Inputs[0].TaprootScriptSpendSig = signedPtx.Inputs[0].TaprootScriptSpendSig
+				field.Value = tc.rawWitness
+				tamperedCheckpoint, err := ptx.B64Encode()
+				require.NoError(t, err)
+				err = alice.Client().FinalizeTx(
+					ctx, txid, []string{tamperedCheckpoint},
+				)
+				require.NoError(t, err)
+
+				res, err := alice.Unroll(ctx, wallet.WithVtxos([]clientlib.Vtxo{vtxo}))
+				require.NoError(t, err)
+				require.NotEmpty(t, res)
+				require.NoError(t, generateBlocks(1))
+
+				waitForOutspend(t, testExplorer, vtxo.Txid, vtxo.VOut)
+				spent, err := testExplorer.GetTxOutspends(vtxo.Txid)
+				require.NoError(t, err)
+				require.Greater(t, len(spent), int(vtxo.VOut))
+				require.Equal(t, checkpointTxid, spent[vtxo.VOut].SpentBy,
+					"the server must broadcast the checkpoint")
+				require.NoError(t, generateBlocks(1))
+			})
+		}
 
 		t.Run("cltv vtxo script", func(t *testing.T) {
 			ctx := t.Context()

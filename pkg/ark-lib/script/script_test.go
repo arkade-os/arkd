@@ -1256,6 +1256,30 @@ func executeBoolScriptFixtures(tb testing.TB) []executeBoolScriptFixture {
 			expectErr:   false,
 		},
 		{
+			name:        "maximum size witness element",
+			script:      []byte{txscript.OP_DROP, txscript.OP_TRUE},
+			witness:     wire.TxWitness{make([]byte, txscript.MaxScriptElementSize)},
+			returnValue: true,
+		},
+		{
+			name:      "oversized dropped witness element",
+			script:    []byte{txscript.OP_DROP, txscript.OP_TRUE},
+			witness:   wire.TxWitness{make([]byte, txscript.MaxScriptElementSize+1)},
+			expectErr: true,
+		},
+		{
+			name:      "oversized witness element below stack top",
+			script:    []byte{txscript.OP_2DROP, txscript.OP_TRUE},
+			witness:   wire.TxWitness{make([]byte, txscript.MaxScriptElementSize+1), {1}},
+			expectErr: true,
+		},
+		{
+			name:      "oversized witness element at stack top",
+			script:    []byte{txscript.OP_2DROP, txscript.OP_TRUE},
+			witness:   wire.TxWitness{{1}, make([]byte, txscript.MaxScriptElementSize+1)},
+			expectErr: true,
+		},
+		{
 			name:        "invalid CHECKSIG",
 			script:      []byte{txscript.OP_CHECKSIG},
 			witness:     wire.TxWitness{},

@@ -994,6 +994,25 @@ func (s *service) SubmitOffchainTx(
 			})
 		}
 
+		witness, err := txutils.GetArkPsbtConditionWitness(checkpointPsbt, 0)
+		if err != nil {
+			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
+				WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: 0})
+		}
+
+		// The rebuilt Ark input uses the same spending script, so matching condition
+		// witnesses lets the Ark input's condition validation cover the checkpoint too.
+		arkWitness, err := txutils.GetArkPsbtConditionWitness(arkPtx, inputIndex)
+		if err != nil {
+			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
+				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inputIndex})
+		}
+		if !slices.EqualFunc(witness, arkWitness, bytes.Equal) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"checkpoint condition witness does not match ark tx input %d", inputIndex,
+			).WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: 0})
+		}
+
 		tapscript := &waddrmgr.Tapscript{
 			ControlBlock:   ctrlBlock,
 			RevealedScript: spendingTapscript.Script,
@@ -1154,8 +1173,10 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// verify the tapscript signatures
-	if valid, _, err := s.builder.VerifyVtxoTapscriptSigs(signedArkTx, false); err != nil ||
-		!valid {
+	if valid, _, err := s.builder.VerifyVtxoTapscriptSigs(signedArkTx, false); err != nil {
+		return nil, errors.INVALID_SIGNATURE.Wrap(err).
+			WithMetadata(errors.InvalidSignatureMetadata{Tx: signedArkTx})
+	} else if !valid {
 		return nil, errors.INVALID_SIGNATURE.New("invalid signature in ark tx %s", txid).
 			WithMetadata(errors.InvalidSignatureMetadata{Tx: signedArkTx})
 	}
@@ -1181,6 +1202,8 @@ func (s *service) SubmitOffchainTx(
 		return nil, errors.INTERNAL_ERROR.New("something went wrong").
 			WithInternalCause(fmt.Errorf("failed to deserialize finalized ark tx: %w", err))
 	}
+	// Enforce MaxTxWeight only on the Ark tx; a valid checkpoint can be up to 723 WU heavier than an anchor-only Ark tx:
+	// 258 for its control block (400 leaves, depth 9), 293 sighash bytes (294 keys, server uses DEFAULT), and 172 for its P2TR output.
 	weight := computeWeight(&arkTx)
 	if weight > maxTxWeight {
 		return nil, errors.TX_TOO_LARGE.New("ark tx weight is too high: %d", weight).
@@ -1194,20 +1217,18 @@ func (s *service) SubmitOffchainTx(
 	// sign the checkpoint txs
 	for _, rebuiltCheckpointTx := range rebuiltCheckpointTxs {
 		checkpointTxid := rebuiltCheckpointTx.UnsignedTx.TxID()
-		if oneShot {
-			submitted := checkpointPsbts[checkpointTxid]
-			rebuiltCheckpointTx.Inputs[0].TaprootScriptSpendSig = submitted.Inputs[0].TaprootScriptSpendSig
-			witness, err := txutils.GetArkPsbtConditionWitness(submitted, 0)
-			if err != nil {
-				return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
-					WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: 0})
-			}
-			if witness != nil {
-				if err := txutils.SetArkPsbtField(
-					rebuiltCheckpointTx, 0, txutils.ConditionWitnessField, witness,
-				); err != nil {
-					return nil, errors.INTERNAL_ERROR.Wrap(err)
-				}
+		submitted := checkpointPsbts[checkpointTxid]
+		rebuiltCheckpointTx.Inputs[0].TaprootScriptSpendSig = submitted.Inputs[0].TaprootScriptSpendSig
+		witness, err := txutils.GetArkPsbtConditionWitness(submitted, 0)
+		if err != nil {
+			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
+				WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: 0})
+		}
+		if witness != nil {
+			if err := txutils.SetArkPsbtField(
+				rebuiltCheckpointTx, 0, txutils.ConditionWitnessField, witness,
+			); err != nil {
+				return nil, errors.INTERNAL_ERROR.Wrap(err)
 			}
 		}
 		checkpointTx, err := rebuiltCheckpointTx.B64Encode()
@@ -1403,6 +1424,7 @@ func (s *service) SubmitOffchainTx(
 func (s *service) FinalizeOffchainTx(
 	ctx context.Context, txid string, finalCheckpointTxs []string,
 ) (structErr errors.Error) {
+	submittedCheckpoints := make(map[string]*psbt.Packet, len(finalCheckpointTxs))
 	for _, b64 := range finalCheckpointTxs {
 		checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(b64), true)
 		if err != nil {
@@ -1413,6 +1435,11 @@ func (s *service) FinalizeOffchainTx(
 		); err != nil {
 			return errors.INVALID_CHECKPOINT_PSBT.Wrap(err)
 		}
+		checkpointTxid := checkpointPtx.UnsignedTx.TxID()
+		if _, ok := submittedCheckpoints[checkpointTxid]; ok {
+			return errors.INVALID_CHECKPOINT_PSBT.New("duplicate checkpoint tx %s", checkpointTxid)
+		}
+		submittedCheckpoints[checkpointTxid] = checkpointPtx
 	}
 
 	offchainTx, err := s.cache.OffchainTxs().Get(ctx, txid)
@@ -1436,8 +1463,35 @@ func (s *service) FinalizeOffchainTx(
 		return nil
 	}
 
+	if len(submittedCheckpoints) != len(offchainTx.CheckpointTxs) {
+		return errors.INVALID_CHECKPOINT_PSBT.New(
+			"invalid number of checkpoint txs, expected %d, got %d",
+			len(offchainTx.CheckpointTxs), len(submittedCheckpoints),
+		)
+	}
+
+	// only take the user signature from the submitted checkpoints, discard the rest
+	checkpoints := make([]string, 0, len(submittedCheckpoints))
+	for checkpointTxid, submitted := range submittedCheckpoints {
+		stored, ok := offchainTx.CheckpointTxs[checkpointTxid]
+		if !ok {
+			return errors.INVALID_CHECKPOINT_PSBT.New("unexpected checkpoint tx %s", checkpointTxid)
+		}
+		checkpoint, err := psbt.NewFromRawBytes(strings.NewReader(stored), true)
+		if err != nil {
+			return errors.INTERNAL_ERROR.New("failed to parse stored checkpoint tx: %w", err)
+		}
+
+		checkpoint.Inputs[0].TaprootScriptSpendSig = submitted.Inputs[0].TaprootScriptSpendSig
+		encoded, err := checkpoint.B64Encode()
+		if err != nil {
+			return errors.INTERNAL_ERROR.New("failed to encode checkpoint tx: %w", err)
+		}
+		checkpoints = append(checkpoints, encoded)
+	}
+
 	var changes []domain.Event
-	change, structErr := s.finalizeOffchainTx(ctx, offchainTx, finalCheckpointTxs)
+	change, structErr := s.finalizeOffchainTx(ctx, offchainTx, checkpoints)
 	if structErr != nil {
 		cause := structErr.InternalCause()
 		log.WithError(cause).Warnf("finalization of offchain tx %s failed", txid)

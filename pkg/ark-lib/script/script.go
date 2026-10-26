@@ -44,6 +44,16 @@ func EvaluateScriptToBool(script []byte, witness wire.TxWitness) (bool, error) {
 		return false, err
 	}
 
+	// SetStack bypasses the script engine's witness element size check.
+	for idx, element := range witness {
+		if len(element) > txscript.MaxScriptElementSize {
+			return false, fmt.Errorf(
+				"condition witness element %d exceeds max script element size: %d",
+				idx, len(element),
+			)
+		}
+	}
+
 	// Create a fake transaction with minimal required fields
 	// this is needed to instantiate the script engine without a tx
 	// as we don't validate any tx data, we just need to have a valid tx structure
