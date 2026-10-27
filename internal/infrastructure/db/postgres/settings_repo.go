@@ -74,6 +74,7 @@ func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) 
 	vtxoTreeExpiry, _ := arklib.ParseRelativeLocktime(uint32(row.VtxoTreeExpiry))
 
 	return &domain.Settings{
+		FinalizationLockTTL:           time.Duration(row.FinalizationLockTtl) * time.Second,
 		SessionDuration:               time.Duration(row.SessionDuration) * time.Second,
 		UnrolledVtxoMinExpiryMargin:   time.Duration(row.UnrolledVtxoMinExpiryMargin) * time.Second,
 		BanThreshold:                  uint64(row.BanThreshold),
@@ -116,46 +117,7 @@ func (r *settingsRepository) Get(ctx context.Context) (*domain.Settings, error) 
 func (r *settingsRepository) Upsert(
 	ctx context.Context, settings domain.Settings, changelog []string,
 ) error {
-	params := queries.UpsertSettingsParams{
-		SessionDuration:               int64(settings.SessionDuration.Seconds()),
-		UnrolledVtxoMinExpiryMargin:   int64(settings.UnrolledVtxoMinExpiryMargin.Seconds()),
-		BanThreshold:                  int64(settings.BanThreshold),
-		BanDuration:                   int64(settings.BanDuration.Seconds()),
-		UnilateralExitDelay:           int64(settings.UnilateralExitDelay.Value),
-		PublicUnilateralExitDelay:     int64(settings.PublicUnilateralExitDelay.Value),
-		CheckpointExitDelay:           int64(settings.CheckpointExitDelay.Value),
-		BoardingExitDelay:             int64(settings.BoardingExitDelay.Value),
-		VtxoTreeExpiry:                int64(settings.VtxoTreeExpiry.Value),
-		RoundMinParticipantsCount:     int64(settings.RoundMinParticipantsCount),
-		RoundMaxParticipantsCount:     int64(settings.RoundMaxParticipantsCount),
-		VtxoMinAmount:                 settings.VtxoMinAmount,
-		VtxoMaxAmount:                 settings.VtxoMaxAmount,
-		UtxoMinAmount:                 settings.UtxoMinAmount,
-		UtxoMaxAmount:                 settings.UtxoMaxAmount,
-		SettlementMinExpiryGap:        int64(settings.SettlementMinExpiryGap.Seconds()),
-		VtxoNoCsvValidationCutoffDate: timeToUnix(settings.VtxoNoCsvValidationCutoffDate),
-		MaxTxWeight:                   int64(settings.MaxTxWeight),
-		MaxOpReturnOutputs:            int64(settings.MaxOpReturnOutputs),
-		AssetTxMaxWeightRatio:         settings.AssetTxMaxWeightRatio,
-		NoteUriPrefix:                 settings.NoteUriPrefix,
-		BuildVersionHeader:            settings.BuildVersionHeader,
-		BuildVersionHeaderRequired:    settings.BuildVersionHeaderRequired,
-		DigestHeaderRequired:          settings.DigestHeaderRequired,
-		BatchTrigger:                  settings.BatchTrigger,
-		BatchOnchainInputFee:          settings.BatchFees.OnchainInputFee,
-		BatchOffchainInputFee:         settings.BatchFees.OffchainInputFee,
-		BatchOnchainOutputFee:         settings.BatchFees.OnchainOutputFee,
-		BatchOffchainOutputFee:        settings.BatchFees.OffchainOutputFee,
-		UpdatedAt:                     timeToUnix(settings.UpdatedAt),
-	}
-	if ss := settings.ScheduledSession; ss != nil && !ss.IsEmpty() {
-		params.ScheduledSessionStartTime = timeToUnix(ss.StartTime)
-		params.ScheduledSessionEndTime = timeToUnix(ss.EndTime)
-		params.ScheduledSessionPeriod = int64(ss.Period.Seconds())
-		params.ScheduledSessionDuration = int64(ss.Duration.Seconds())
-		params.ScheduledSessionRoundMinParticipantsCount = ss.RoundMinParticipantsCount
-		params.ScheduledSessionRoundMaxParticipantsCount = ss.RoundMaxParticipantsCount
-	}
+	params := settingsParams(settings)
 
 	txBody := func(q *queries.Queries) error {
 		if err := q.UpsertSettings(ctx, params); err != nil {

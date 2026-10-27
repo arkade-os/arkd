@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -51,6 +52,7 @@ func TestConfigGetSettings(t *testing.T) {
 
 			// Config values are mapped into the domain settings (durations are seconds).
 			require.Equal(t, 30*time.Second, settings.SessionDuration)
+			require.Equal(t, 5*time.Minute, settings.FinalizationLockTTL)
 			require.Equal(t, int64(1), settings.RoundMinParticipantsCount)
 			require.Equal(t, int64(10), settings.RoundMaxParticipantsCount)
 			require.Equal(t, delay(512), settings.UnilateralExitDelay)
@@ -188,6 +190,21 @@ func TestConfigValidateEarlyChecks(t *testing.T) {
 				"zero max concurrent streams",
 				func(c *Config) { c.MaxConcurrentStreams = 0 },
 				"max concurrent streams must be greater than 0",
+			},
+			{
+				"zero finalization lock TTL",
+				func(c *Config) { c.FinalizationLockTTL = 0 },
+				"finalization lock TTL must be positive",
+			},
+			{
+				"negative finalization lock TTL",
+				func(c *Config) { c.FinalizationLockTTL = -1 },
+				"finalization lock TTL must be positive",
+			},
+			{
+				"overflowing finalization lock TTL",
+				func(c *Config) { c.FinalizationLockTTL = math.MaxInt64 },
+				"finalization lock TTL is too large",
 			},
 		}
 
@@ -333,6 +350,7 @@ func testConfig() Config {
 		TxBuilderType:                 "covenantless",
 		IndexerExposure:               "public",
 		MaxConcurrentStreams:          1,
+		FinalizationLockTTL:           300,
 		SessionDuration:               30,
 		UnrolledVtxoMinExpiryMargin:   30,
 		BanThreshold:                  0,

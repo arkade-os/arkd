@@ -2530,6 +2530,14 @@
               "null"
             ]
           },
+          "finalizationLockTtl": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Offchain finalization lock TTL in seconds; must be positive.",
+            "format": "int64"
+          },
           "maxOpReturnOutputs": {
             "type": [
               "integer",

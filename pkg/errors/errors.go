@@ -644,4 +644,9 @@ var NOT_ENOUGH_TREE_TX_COSIGNERS = Code[map[string]any]{
 	grpccodes.InvalidArgument,
 }
 
+var OFFCHAIN_TX_ALREADY_FINALIZED = Code[OffchainTxValidationMetadata]{
+	62,
+	"OFFCHAIN_TX_ALREADY_FINALIZED",
+	grpccodes.FailedPrecondition,
+}
 var INVALID_TREE_NONCES = Code[any]{60, "INVALID_TREE_NONCES", grpccodes.InvalidArgument}

@@ -336,6 +336,13 @@ func (s *service) registerEventHandlers() {
 				return
 			}
 
+			err = s.cache.OffchainTxs().UnlockFinalization(context.Background(), txid)
+			if err != nil {
+				log.WithError(err).Warnf(
+					"failed to remove finalization lock for offchain tx %s", txid,
+				)
+			}
+
 			spentVtxos, err := s.repoManager.Vtxos().GetVtxos(
 				context.Background(), spentVtxoKeys,
 			)
@@ -1442,6 +1449,29 @@ func (s *service) FinalizeOffchainTx(
 		submittedCheckpoints[checkpointTxid] = checkpointPtx
 	}
 
+	settings, err := s.cache.Settings().Get(ctx)
+	if err != nil {
+		return errors.INTERNAL_ERROR.New("failed to get settings: %w", err)
+	}
+	if err := s.cache.OffchainTxs().LockFinalization(
+		ctx, txid, settings.FinalizationLockTTL,
+	); err != nil {
+		return errors.INTERNAL_ERROR.Wrap(err)
+	}
+
+	defer func() {
+		if structErr != nil {
+			// Release the lock even if the request was canceled or its deadline expired.
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			if err := s.cache.OffchainTxs().UnlockFinalization(cleanupCtx, txid); err != nil {
+				log.WithError(err).Warnf(
+					"failed to remove finalization lock for offchain tx %s", txid,
+				)
+			}
+		}
+	}()
+
 	offchainTx, err := s.cache.OffchainTxs().Get(ctx, txid)
 	if err != nil {
 		return errors.INTERNAL_ERROR.New("something went wrong").
@@ -1458,8 +1488,12 @@ func (s *service) FinalizeOffchainTx(
 		}
 	}
 
-	// If the offchain tx is already finalized, there is nothing to do.
 	if offchainTx.IsFinalized() {
+		if err := s.cache.OffchainTxs().UnlockFinalization(ctx, txid); err != nil {
+			log.WithError(err).Warnf(
+				"failed to remove finalization lock for offchain tx %s", txid,
+			)
+		}
 		return nil
 	}
 

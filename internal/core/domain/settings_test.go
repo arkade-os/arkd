@@ -18,6 +18,7 @@ var (
 	vtxoTreeExpiry         = arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 4096}
 
 	validSettings = domain.Settings{
+		FinalizationLockTTL:         5 * time.Minute,
 		SessionDuration:             60 * time.Second,
 		UnrolledVtxoMinExpiryMargin: 120 * time.Second,
 		BanThreshold:                3,
@@ -55,6 +56,32 @@ func TestSettings(t *testing.T) {
 	testSettingsBatchFees(t)
 
 	testSettingsBatchTrigger(t)
+}
+
+func TestSettingsFinalizationLockTTL(t *testing.T) {
+	for _, ttl := range []time.Duration{
+		0, -time.Second, time.Millisecond, time.Second + time.Nanosecond,
+	} {
+		t.Run(ttl.String(), func(t *testing.T) {
+			settings := validSettings
+			changelog, err := settings.Update(domain.SettingsUpdate{FinalizationLockTTL: &ttl})
+			require.ErrorContains(t, err, "finalization lock TTL")
+			require.Empty(t, changelog)
+			require.Equal(t, validSettings, settings)
+		})
+	}
+
+	settings := validSettings
+	ttl := 7 * time.Minute
+	changelog, err := settings.Update(domain.SettingsUpdate{FinalizationLockTTL: &ttl})
+	require.NoError(t, err)
+	require.Equal(t, []string{"finalization_lock_ttl"}, changelog)
+	require.Equal(t, ttl, settings.FinalizationLockTTL)
+
+	changelog, err = settings.Update(domain.SettingsUpdate{})
+	require.NoError(t, err)
+	require.Empty(t, changelog)
+	require.Equal(t, ttl, settings.FinalizationLockTTL)
 }
 
 func testValidateSettings(t *testing.T) {
@@ -370,7 +397,7 @@ func testNewSettings(t *testing.T) {
 
 		t.Run("valid", func(t *testing.T) {
 			settings, err := domain.NewSettings(
-				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration, 300,
 				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
 				batchMinParticipants, batchMaxParticipants,
 				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
@@ -383,6 +410,7 @@ func testNewSettings(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, settings)
 			require.Equal(t, 60*time.Second, settings.SessionDuration)
+			require.Equal(t, 5*time.Minute, settings.FinalizationLockTTL)
 			require.Equal(t, uint64(3), settings.BanThreshold)
 			require.Equal(t, vtxoTreeExpiry, settings.VtxoTreeExpiry)
 			require.Equal(t, buildVersionHeader, settings.BuildVersionHeader)
@@ -394,7 +422,7 @@ func testNewSettings(t *testing.T) {
 
 		t.Run("invalid", func(t *testing.T) {
 			settings, err := domain.NewSettings(
-				1, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				1, unrolledVtxoMinExpiryMargin, banThreshold, banDuration, 300,
 				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
 				batchMinParticipants, batchMaxParticipants,
 				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
@@ -410,7 +438,7 @@ func testNewSettings(t *testing.T) {
 
 		t.Run("negative ban threshold", func(t *testing.T) {
 			settings, err := domain.NewSettings(
-				sessionDuration, unrolledVtxoMinExpiryMargin, -1, banDuration,
+				sessionDuration, unrolledVtxoMinExpiryMargin, -1, banDuration, 300,
 				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
 				batchMinParticipants, batchMaxParticipants,
 				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
@@ -426,7 +454,7 @@ func testNewSettings(t *testing.T) {
 
 		t.Run("required version without header", func(t *testing.T) {
 			settings, err := domain.NewSettings(
-				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration, 300,
 				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
 				batchMinParticipants, batchMaxParticipants,
 				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,
@@ -442,7 +470,7 @@ func testNewSettings(t *testing.T) {
 
 		t.Run("invalid batch trigger", func(t *testing.T) {
 			settings, err := domain.NewSettings(
-				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+				sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration, 300,
 				settlementMinExpiryGap, vtxoNoCSVCutoffDate,
 				batchMinParticipants, batchMaxParticipants,
 				vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount,

@@ -76,6 +76,7 @@ const (
 	buildVersionHeaderFlagName            = "build-version-header"
 	buildVersionHeaderRequiredFlagName    = "build-version-header-required"
 	digestHeaderRequiredFlagName          = "digest-header-required"
+	finalizationLockTTLFlagName           = "finalization-lock-ttl"
 	batchTriggerFlagName                  = "batch-trigger"
 
 	dateFormat         = time.DateOnly
@@ -83,6 +84,10 @@ const (
 )
 
 var (
+	finalizationLockTTLFlag = &cli.IntFlag{
+		Name:  finalizationLockTTLFlagName,
+		Usage: "the offchain finalization lock TTL in seconds (must be positive)",
+	}
 	urlFlag = &cli.StringFlag{
 		Name:  urlFlagName,
 		Usage: "the url where to reach ark server",

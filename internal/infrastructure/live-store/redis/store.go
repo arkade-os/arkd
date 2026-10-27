@@ -17,7 +17,9 @@ type redisLiveStore struct {
 	settingsStore             ports.SettingsStore
 }
 
-func NewLiveStore(rdb *redis.Client, builder ports.TxBuilder, numOfRetries int) ports.LiveStore {
+func NewLiveStore(
+	rdb *redis.Client, builder ports.TxBuilder, numOfRetries int,
+) ports.LiveStore {
 	return &redisLiveStore{
 		intentStore:               NewIntentStore(rdb, numOfRetries),
 		forfeitTxsStore:           NewForfeitTxsStore(rdb, builder, numOfRetries),

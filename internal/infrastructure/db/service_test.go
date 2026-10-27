@@ -4651,6 +4651,7 @@ func validSettings() domain.Settings {
 		return lt
 	}
 	return domain.Settings{
+		FinalizationLockTTL:           5 * time.Minute,
 		SessionDuration:               30 * time.Second,
 		UnrolledVtxoMinExpiryMargin:   30 * time.Second,
 		BanThreshold:                  3,
@@ -4745,7 +4746,8 @@ func testSettingsRepository(t *testing.T, svc ports.RepoManager) {
 
 		// A further update notifies the handler again with its own changelog.
 		expected.BanThreshold = 9
-		nextChangelog := []string{"ban_threshold"}
+		expected.FinalizationLockTTL = 7 * time.Minute
+		nextChangelog := []string{"ban_threshold", "finalization_lock_ttl"}
 		err = repo.Upsert(ctx, expected, nextChangelog)
 		require.NoError(t, err)
 
@@ -4761,6 +4763,9 @@ func testSettingsRepository(t *testing.T, svc ports.RepoManager) {
 
 func assertSettingsEqual(t *testing.T, expected, actual domain.Settings) {
 	t.Helper()
+	assert.Equal(
+		t, expected.FinalizationLockTTL, actual.FinalizationLockTTL, "FinalizationLockTTL not equal",
+	)
 	assert.Equal(t, expected.SessionDuration, actual.SessionDuration, "SessionDuration not equal")
 	assert.Equal(t, expected.UnrolledVtxoMinExpiryMargin, actual.UnrolledVtxoMinExpiryMargin, "UnrolledVtxoMinExpiryMargin not equal")
 	assert.Equal(t, expected.BanThreshold, actual.BanThreshold, "BanThreshold not equal")

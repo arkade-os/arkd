@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
@@ -231,6 +232,29 @@ func (m *mockedEventRepo) Save(
 	ctx context.Context, topic, id string, events []domain.Event,
 ) error {
 	return m.Called(ctx, topic, id, events).Error(0)
+}
+
+type mockedOffchainTxStore struct {
+	mock.Mock
+	ports.OffChainTxStore // unimplemented methods panic on call
+}
+
+func (m *mockedOffchainTxStore) Get(ctx context.Context, txid string) (*domain.OffchainTx, error) {
+	args := m.Called(ctx, txid)
+	if v := args.Get(0); v != nil {
+		return v.(*domain.OffchainTx), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
+func (m *mockedOffchainTxStore) LockFinalization(
+	ctx context.Context, txid string, ttl time.Duration,
+) error {
+	return m.Called(ctx, txid, ttl).Error(0)
+}
+
+func (m *mockedOffchainTxStore) UnlockFinalization(ctx context.Context, txid string) error {
+	return m.Called(ctx, txid).Error(0)
 }
 
 type mockedOffchainTxRepo struct {

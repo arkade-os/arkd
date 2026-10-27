@@ -259,6 +259,7 @@ type Setting struct {
 	DigestHeaderRequired                      bool
 	UpdatedAt                                 int64
 	BatchTrigger                              string
+	FinalizationLockTtl                       int64
 }
 
 type SettingsHistory struct {

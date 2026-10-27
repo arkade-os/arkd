@@ -73,6 +73,11 @@ type OffChainTxStore interface {
 	// IncludesAny returns the given outpoints that another cached offchain tx
 	// already spends, in the order they were given, and nil otherwise.
 	IncludesAny(ctx context.Context, outpoints []domain.Outpoint) ([]domain.Outpoint, error)
+	// LockFinalization waits until it acquires the txid's lock or the context is canceled.
+	// The lock expires after ttl, which must be positive, to allow recovery after a crash.
+	LockFinalization(ctx context.Context, arkTxid string, ttl time.Duration) error
+	// UnlockFinalization releases a successfully acquired lock.
+	UnlockFinalization(ctx context.Context, arkTxid string) error
 }
 
 type CurrentRoundStore interface {

@@ -2073,6 +2073,80 @@ func TestOffchainTx(t *testing.T) {
 			})
 	})
 
+	// In this test, Alice submits an offchain tx and then tries to finalize it with many
+	// concurrent finalization requests. Only one must return the successful response while the
+	// others fail because the tx is already finalized.
+	t.Run("concurrent finalization", func(t *testing.T) {
+		ctx := t.Context()
+		alice := setupClientWallet(t)
+		bob := setupClientWallet(t)
+		faucetOffchain(t, alice, 0.00021)
+		vtxos, _, err := alice.ListVtxos(ctx)
+		require.NoError(t, err)
+		require.Len(t, vtxos, 1)
+
+		_, aliceAddr, _, err := alice.Receive(ctx)
+		require.NoError(t, err)
+		_, bobAddr, _, err := bob.Receive(ctx)
+		require.NoError(t, err)
+		serverParams, err := alice.GetConfigData(ctx)
+		require.NoError(t, err)
+		tx, err := offchaintx.BuildAndSignTx(ctx, offchaintx.BuildAndSignTxArgs{
+			BaseArgs: offchaintx.BaseArgs{
+				ServerParams: *serverParams,
+				SignTx:       alice.SignTransaction,
+				Vtxos:        vtxos,
+				ChangeAddr:   aliceAddr.Address,
+			},
+			Receivers: []clientlib.Receiver{{To: bobAddr.Address, Amount: 1000}},
+		})
+		require.NoError(t, err)
+
+		// Submit without client-signed checkpoints to keep finalization pending.
+		aliceClient := alice.Client()
+		txid, _, checkpoints, err := aliceClient.SubmitTx(ctx, tx.SignedArkTx, tx.CheckpointTxs)
+		require.NoError(t, err)
+		require.Equal(t, tx.Txid, txid)
+		require.Len(t, checkpoints, 1)
+		finalCheckpoints := make([]string, len(checkpoints))
+		for i, checkpoint := range checkpoints {
+			finalCheckpoints[i], err = alice.SignTransaction(ctx, checkpoint)
+			require.NoError(t, err)
+		}
+
+		const requests = 100
+		finalizeCtx, cancel := context.WithTimeout(ctx, offchainWait)
+		defer cancel()
+		start := make(chan struct{})
+		results := make([]error, requests)
+		var wg sync.WaitGroup
+		for i := range requests {
+			wg.Go(func() {
+				<-start
+				results[i] = aliceClient.FinalizeTx(finalizeCtx, txid, finalCheckpoints)
+			})
+		}
+		close(start)
+		wg.Wait()
+
+		successes := 0
+		for _, err := range results {
+			if err == nil {
+				successes++
+			}
+		}
+		require.Equal(t, requests, successes, "exactly one finalization must succeed")
+		for i, err := range results {
+			if err != nil {
+				assert.ErrorContains(t, err, "already finalized", "request %d", i)
+			}
+		}
+
+		bobVtxos := waitForSpendableVtxos(t, bob, 1)
+		require.Equal(t, txid, bobVtxos[0].Txid)
+		require.EqualValues(t, 1000, bobVtxos[0].Amount)
+	})
+
 	// In these tests, Alice submits an offchain tx and waits for the inputs to be swept before
 	// finalizing it.
 	// Covers both cases, the one where the inputs are swept by the server, and the other one,

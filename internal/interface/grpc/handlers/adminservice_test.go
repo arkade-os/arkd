@@ -3,12 +3,34 @@ package handlers
 import (
 	"math"
 	"testing"
+	"time"
 
 	arkv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/ark/v1"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestParseSettingsFinalizationLockTTL(t *testing.T) {
+	for _, seconds := range []int64{-1, 0, math.MaxInt64/int64(time.Second) + 1, math.MaxInt64} {
+		handler := &adminHandler{}
+		_, err := handler.UpdateSettings(t.Context(), &arkv1.UpdateSettingsRequest{
+			Settings: &arkv1.Settings{FinalizationLockTtl: &seconds},
+		})
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+		require.ErrorContains(t, err, "finalization lock TTL")
+	}
+
+	for _, seconds := range []int64{1, 420, math.MaxInt64 / int64(time.Second)} {
+		update, err := parseSettings(&arkv1.Settings{FinalizationLockTtl: &seconds})
+		require.NoError(t, err)
+		require.NotNil(t, update.FinalizationLockTTL)
+		require.Equal(t, time.Duration(seconds)*time.Second, *update.FinalizationLockTTL)
+	}
+	update, err := parseSettings(&arkv1.Settings{})
+	require.NoError(t, err)
+	require.Nil(t, update.FinalizationLockTTL)
+}
 
 func TestUpdateSettingsRejectsNegativeUnsignedFields(t *testing.T) {
 	handler := &adminHandler{}

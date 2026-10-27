@@ -38,6 +38,7 @@ var (
 )
 
 type Settings struct {
+	FinalizationLockTTL           time.Duration
 	SessionDuration               time.Duration
 	UnrolledVtxoMinExpiryMargin   time.Duration
 	BanThreshold                  uint64
@@ -69,7 +70,7 @@ type Settings struct {
 }
 
 func NewSettings(
-	sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration,
+	sessionDuration, unrolledVtxoMinExpiryMargin, banThreshold, banDuration, finalizationLockTTL,
 	settlementMinExpiryGap, vtxoNoCsvValidationCutoffDate,
 	roundMinParticipantsCount, roundMaxParticipantsCount,
 	vtxoMinAmount, vtxoMaxAmount, utxoMinAmount, utxoMaxAmount int64,
@@ -80,7 +81,14 @@ func NewSettings(
 	minVersionRequired, digestHeaderRequired bool,
 	batchTrigger string,
 ) (*Settings, error) {
+	if finalizationLockTTL <= 0 {
+		return nil, fmt.Errorf("finalization lock TTL must be positive")
+	}
+	if finalizationLockTTL > math.MaxInt64/int64(time.Second) {
+		return nil, fmt.Errorf("finalization lock TTL is too large")
+	}
 	settings := &Settings{
+		FinalizationLockTTL:           time.Duration(finalizationLockTTL) * time.Second,
 		SessionDuration:               time.Duration(sessionDuration) * time.Second,
 		UnrolledVtxoMinExpiryMargin:   time.Duration(unrolledVtxoMinExpiryMargin) * time.Second,
 		BanThreshold:                  uint64(banThreshold),
@@ -115,6 +123,12 @@ func NewSettings(
 }
 
 func (s Settings) Validate() error {
+	if s.FinalizationLockTTL <= 0 {
+		return fmt.Errorf("finalization lock TTL must be positive")
+	}
+	if s.FinalizationLockTTL%time.Second != 0 {
+		return fmt.Errorf("finalization lock TTL must be a whole number of seconds")
+	}
 	if s.SessionDuration < minSessionDuration {
 		return fmt.Errorf(
 			"invalid session duration (%s), must be at least %s",
@@ -259,6 +273,7 @@ func (s Settings) Validate() error {
 // SettingsUpdate is a copy of the Settings repo struct, but with optional fields to easily handle
 // changes.
 type SettingsUpdate struct {
+	FinalizationLockTTL           *time.Duration
 	SessionDuration               *time.Duration
 	UnrolledVtxoMinExpiryMargin   *time.Duration
 	BanThreshold                  *uint64
@@ -293,6 +308,10 @@ func (s *Settings) Update(u SettingsUpdate) ([]string, error) {
 	// left untouched. Settings holds only value types, so this is a full clone.
 	updated := *s
 	changelog := make([]string, 0)
+	if u.FinalizationLockTTL != nil {
+		updated.FinalizationLockTTL = *u.FinalizationLockTTL
+		changelog = append(changelog, "finalization_lock_ttl")
+	}
 	if u.SessionDuration != nil {
 		updated.SessionDuration = *u.SessionDuration
 		changelog = append(changelog, "session_duration")

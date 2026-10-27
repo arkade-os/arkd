@@ -810,6 +810,7 @@ func validSettings(t *testing.T) domain.Settings {
 		return lt
 	}
 	return domain.Settings{
+		FinalizationLockTTL:           5 * time.Minute,
 		SessionDuration:               30 * time.Second,
 		UnrolledVtxoMinExpiryMargin:   30 * time.Second,
 		BanThreshold:                  3,

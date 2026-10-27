@@ -1191,7 +1191,7 @@ func TestSubmitOffchainTx(t *testing.T) {
 			}
 		})
 
-		// A one shot client still calls finalize, be the tx served by the cache or by the db.
+		// Finalizing a one-shot tx again reports that it is already finalized, from cache or DB.
 		t.Run("finalize again", func(t *testing.T) {
 			for _, servedBy := range []string{"cache", "db"} {
 				t.Run(servedBy, func(t *testing.T) {
@@ -1216,6 +1216,68 @@ func TestSubmitOffchainTx(t *testing.T) {
 					require.Equal(t, expectedEvents, savedEvents(t, tx.events))
 				})
 			}
+		})
+	})
+}
+
+func TestFinalizeOffchainTx(t *testing.T) {
+	t.Run("finalization lock", func(t *testing.T) {
+		t.Run("uses current TTL", func(t *testing.T) {
+			settings := &ports.Settings{Settings: domain.Settings{FinalizationLockTTL: 5 * time.Minute}}
+			store := &mockedOffchainTxStore{}
+			svc := &service{cache: testLiveStore{
+				settings:    testSettingsStore{settings: settings},
+				offchainTxs: store,
+			}}
+			// The mock checks the TTL, then stops finalization before transaction setup is needed.
+			errStopAfterTTLCheck := fmt.Errorf("test: stop after checking lock TTL")
+			for _, ttl := range []time.Duration{5 * time.Minute, 7 * time.Minute} {
+				settings.FinalizationLockTTL = ttl
+				store.On("LockFinalization", t.Context(), "txid", ttl).
+					Return(errStopAfterTTLCheck).Once()
+				require.ErrorContains(
+					t, svc.FinalizeOffchainTx(t.Context(), "txid", nil), errStopAfterTTLCheck.Error(),
+				)
+			}
+			store.AssertExpectations(t)
+		})
+
+		t.Run("cleanup unlock cannot be cancelled", func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+				defer cancel()
+				var cleanupCtx context.Context
+				store := &mockedOffchainTxStore{}
+				mock.InOrder(
+					store.On("LockFinalization", ctx, "txid", 5*time.Minute).Return(nil).Once(),
+					store.On("Get", ctx, "txid").Return(nil, context.Canceled).Once().
+						Run(func(mock.Arguments) { cancel() }),
+					store.On("UnlockFinalization", mock.Anything, "txid").Return(nil).Once().
+						Run(func(args mock.Arguments) {
+							cleanupCtx = args.Get(0).(context.Context)
+							require.NoError(t, cleanupCtx.Err(), "cleanup must outlive the request")
+							deadline, ok := cleanupCtx.Deadline()
+							require.True(t, ok, "cleanup must have a deadline")
+							require.Equal(t, 5*time.Second, time.Until(deadline),
+								"cleanup must get its own deadline")
+						}),
+				)
+				svc := &service{cache: testLiveStore{
+					offchainTxs: store,
+					settings: testSettingsStore{settings: &ports.Settings{
+						Settings: domain.Settings{FinalizationLockTTL: 5 * time.Minute},
+					}},
+				}}
+
+				appErr := svc.FinalizeOffchainTx(ctx, "txid", nil)
+
+				require.Error(t, appErr)
+				require.Equal(t, errors.INTERNAL_ERROR.Code, appErr.Code())
+				require.ErrorIs(t, ctx.Err(), context.Canceled)
+				store.AssertExpectations(t)
+				require.NotNil(t, cleanupCtx)
+				require.ErrorIs(t, cleanupCtx.Err(), context.Canceled)
+			})
 		})
 	})
 }
@@ -1871,6 +1933,7 @@ func newTestOneShotTx(t *testing.T, numInputs int) testOneShotTx {
 			MaxTxWeight:           400_000,
 			MaxOpReturnOutputs:    3,
 			AssetTxMaxWeightRatio: 0.5,
+			FinalizationLockTTL:   5 * time.Minute,
 		},
 		DustAmount:          testDust,
 		SignerPubkey:        serverPrv.PubKey(),
@@ -1975,7 +2038,6 @@ func (r testOneShotRepos) Assets() domain.AssetRepository { return nil }
 // testOneShotOffchainTxStore is an offchain tx cache holding what is added to it and recording
 // it. Like the real one it hands out copies, so what a caller does with one is not cached.
 type testOneShotOffchainTxStore struct {
-	ports.OffChainTxStore
 	added  []string
 	cached *domain.OffchainTx
 }
@@ -2005,6 +2067,15 @@ func (s *testOneShotOffchainTxStore) IncludesAny(
 	context.Context, []domain.Outpoint,
 ) ([]domain.Outpoint, error) {
 	return nil, nil
+}
+
+// One-shot fixtures run sequentially, so finalization locks need no coordination.
+func (s *testOneShotOffchainTxStore) LockFinalization(context.Context, string, time.Duration) error {
+	return nil
+}
+
+func (s *testOneShotOffchainTxStore) UnlockFinalization(context.Context, string) error {
+	return nil
 }
 
 // testOneShotOffchainTxRepo is the offchain tx db, empty until a test stores the tx in it.
@@ -2309,6 +2380,8 @@ type testOffchainTxStore struct {
 }
 
 func (s testOffchainTxStore) Remove(context.Context, string) error { return nil }
+
+func (s testOffchainTxStore) UnlockFinalization(context.Context, string) error { return nil }
 
 func (s testOffchainTxStore) IncludesAny(
 	_ context.Context, outpoints []domain.Outpoint,

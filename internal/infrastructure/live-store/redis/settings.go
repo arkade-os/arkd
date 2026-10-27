@@ -175,6 +175,7 @@ type deprecatedSignerDTO struct {
 }
 
 type settingsDTO struct {
+	FinalizationLockTTL           int64
 	SessionDuration               int64
 	UnrolledVtxoMinExpiryMargin   int64
 	BanThreshold                  uint64
@@ -248,6 +249,7 @@ func newSettingsDTO(settings ports.Settings) settingsDTO {
 	}
 
 	return settingsDTO{
+		FinalizationLockTTL:           int64(settings.FinalizationLockTTL / time.Second),
 		SessionDuration:               int64(settings.SessionDuration.Seconds()),
 		UnrolledVtxoMinExpiryMargin:   int64(settings.UnrolledVtxoMinExpiryMargin.Seconds()),
 		BanThreshold:                  settings.BanThreshold,
@@ -337,6 +339,7 @@ func (s settingsDTO) parse() (*ports.Settings, error) {
 	}
 	return &ports.Settings{
 		Settings: domain.Settings{
+			FinalizationLockTTL:           time.Duration(s.FinalizationLockTTL) * time.Second,
 			SessionDuration:               time.Duration(s.SessionDuration) * time.Second,
 			UnrolledVtxoMinExpiryMargin:   unrolledVtxoMinExpiryMargin,
 			BanThreshold:                  s.BanThreshold,

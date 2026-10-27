@@ -640,7 +640,7 @@ ON CONFLICT(txid, vout) DO NOTHING;
 INSERT INTO settings (
     id,
     session_duration, unrolled_vtxo_min_expiry_margin,
-    ban_threshold, ban_duration,
+    ban_threshold, ban_duration, finalization_lock_ttl,
     unilateral_exit_delay, public_unilateral_exit_delay,
     checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry,
     round_min_participants_count, round_max_participants_count,
@@ -660,7 +660,7 @@ INSERT INTO settings (
 ) VALUES (
     1,
     @session_duration, @unrolled_vtxo_min_expiry_margin,
-    @ban_threshold, @ban_duration,
+    @ban_threshold, @ban_duration, @finalization_lock_ttl,
     @unilateral_exit_delay, @public_unilateral_exit_delay,
     @checkpoint_exit_delay, @boarding_exit_delay, @vtxo_tree_expiry,
     @round_min_participants_count, @round_max_participants_count,
@@ -683,6 +683,7 @@ ON CONFLICT(id) DO UPDATE SET
     unrolled_vtxo_min_expiry_margin = EXCLUDED.unrolled_vtxo_min_expiry_margin,
     ban_threshold = EXCLUDED.ban_threshold,
     ban_duration = EXCLUDED.ban_duration,
+    finalization_lock_ttl = EXCLUDED.finalization_lock_ttl,
     unilateral_exit_delay = EXCLUDED.unilateral_exit_delay,
     public_unilateral_exit_delay = EXCLUDED.public_unilateral_exit_delay,
     checkpoint_exit_delay = EXCLUDED.checkpoint_exit_delay,

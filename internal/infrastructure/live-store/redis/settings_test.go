@@ -23,6 +23,7 @@ func TestSettingsDTORoundTrip(t *testing.T) {
 
 	in := ports.Settings{
 		Settings: domain.Settings{
+			FinalizationLockTTL:        7 * time.Minute,
 			SessionDuration:            30 * time.Second,
 			UnilateralExitDelay:        exit,
 			PublicUnilateralExitDelay:  exit,
@@ -67,6 +68,7 @@ func TestSettingsDTORoundTrip(t *testing.T) {
 	require.True(t, out.DigestHeaderRequired)
 
 	// Spot-check a few other fields to ensure the round-trip is otherwise intact.
+	require.Equal(t, in.FinalizationLockTTL, out.FinalizationLockTTL)
 	require.Equal(t, in.SessionDuration, out.SessionDuration)
 	require.Equal(t, in.NoteUriPrefix, out.NoteUriPrefix)
 	require.Equal(t, in.VtxoMaxAmount, out.VtxoMaxAmount)

@@ -833,6 +833,7 @@ func (a *adminHandler) GetSettings(
 	var protoSettings *arkv1.Settings
 	if settings != nil {
 		protoSettings = &arkv1.Settings{
+			FinalizationLockTtl:           formatDuration(settings.FinalizationLockTTL),
 			SessionDuration:               formatDuration(settings.SessionDuration),
 			UnrolledVtxoMinExpiryMargin:   formatDuration(settings.UnrolledVtxoMinExpiryMargin),
 			BanThreshold:                  formatUint64(settings.BanThreshold),
@@ -1092,7 +1093,17 @@ func parseSettings(settings *arkv1.Settings) (*domain.SettingsUpdate, error) {
 		return nil, err
 	}
 
+	if ttl := settings.FinalizationLockTtl; ttl != nil {
+		if *ttl <= 0 {
+			return nil, fmt.Errorf("finalization lock TTL must be positive")
+		}
+		if *ttl > math.MaxInt64/int64(time.Second) {
+			return nil, fmt.Errorf("finalization lock TTL is too large")
+		}
+	}
+
 	return &domain.SettingsUpdate{
+		FinalizationLockTTL:           parseDuration(settings.FinalizationLockTtl),
 		SessionDuration:               parseDuration(settings.SessionDuration),
 		UnrolledVtxoMinExpiryMargin:   parseDuration(settings.UnrolledVtxoMinExpiryMargin),
 		BanThreshold:                  banThreshold,

@@ -97,7 +97,7 @@ func SeedSettings(ctx context.Context, db *sql.DB, defaults domain.Settings) (er
 		return fmt.Errorf("invalid seeded settings: %w", err)
 	}
 
-	if err = queries.New(tx).UpsertSettings(ctx, seedParams(merged)); err != nil {
+	if err = queries.New(tx).UpsertSettings(ctx, settingsParams(merged)); err != nil {
 		return fmt.Errorf("upsert seeded settings: %w", err)
 	}
 
@@ -115,11 +115,11 @@ func SeedSettings(ctx context.Context, db *sql.DB, defaults domain.Settings) (er
 	return nil
 }
 
-// seedParams maps a domain.Settings to UpsertSettingsParams. It mirrors the
-// settings repository's Upsert mapping; kept here so the seed does not depend on
-// the repo's internals. AssetTxMaxWeightRatio is float32 in the postgres codegen.
-func seedParams(settings domain.Settings) queries.UpsertSettingsParams {
+// settingsParams maps a domain.Settings to UpsertSettingsParams for both first-boot
+// seeding and runtime updates. AssetTxMaxWeightRatio is float32 in the postgres codegen.
+func settingsParams(settings domain.Settings) queries.UpsertSettingsParams {
 	params := queries.UpsertSettingsParams{
+		FinalizationLockTtl:           int64(settings.FinalizationLockTTL / time.Second),
 		SessionDuration:               int64(settings.SessionDuration.Seconds()),
 		UnrolledVtxoMinExpiryMargin:   int64(settings.UnrolledVtxoMinExpiryMargin.Seconds()),
 		BanThreshold:                  int64(settings.BanThreshold),

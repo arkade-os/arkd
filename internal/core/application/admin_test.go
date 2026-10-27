@@ -23,6 +23,7 @@ func validSettings() domain.Settings {
 		return lt
 	}
 	return domain.Settings{
+		FinalizationLockTTL:         5 * time.Minute,
 		SessionDuration:             30 * time.Second,
 		UnrolledVtxoMinExpiryMargin: 30 * time.Second,
 		BanThreshold:                3,
@@ -82,7 +83,9 @@ func TestAdminService_Settings(t *testing.T) {
 			vtxoMin := int64(2000)
 			buildVersion := "v2.0.0"
 			buildVersionRequired := true
+			finalizationLockTTL := 7 * time.Minute
 			changelog, err := svc.UpdateSettings(ctx, domain.SettingsUpdate{
+				FinalizationLockTTL:        &finalizationLockTTL,
 				BanThreshold:               &banThreshold,
 				VtxoMinAmount:              &vtxoMin,
 				BuildVersionHeader:         &buildVersion,
@@ -90,7 +93,7 @@ func TestAdminService_Settings(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.ElementsMatch(t, []string{
-				"ban_threshold", "vtxo_min_amount",
+				"finalization_lock_ttl", "ban_threshold", "vtxo_min_amount",
 				"build_version_header", "build_version_header_required",
 			}, changelog)
 
@@ -101,6 +104,7 @@ func TestAdminService_Settings(t *testing.T) {
 			require.Equal(t, int64(2000), got.VtxoMinAmount)
 			require.Equal(t, "v2.0.0", got.BuildVersionHeader)
 			require.True(t, got.BuildVersionHeaderRequired)
+			require.Equal(t, finalizationLockTTL, got.FinalizationLockTTL)
 			// Fields not in the update keep their seeded values.
 			require.Equal(t, seed.RoundMaxParticipantsCount, got.RoundMaxParticipantsCount)
 			require.Equal(t, seed.VtxoTreeExpiry, got.VtxoTreeExpiry)

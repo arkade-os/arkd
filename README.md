@@ -79,6 +79,7 @@ The `arkd` server can be configured using environment variables and the admin se
 | `ARKD_LIVE_STORE_TYPE`              | Cache service type (redis)                                                      | `redis`                        |
 | `ARKD_REDIS_URL`                    | Redis db connection url if `ARKD_LIVE_STORE_TYPE` is set to `redis`             | -                              |
 | `ARKD_REDIS_NUM_OF_RETRIES`         | Maximum number of retries for Redis write operations in case of conflicts       | -                              |
+| `ARKD_FINALIZATION_LOCK_TTL`        | Initial offchain finalization lock TTL in seconds (positive; [first boot only](docs/settings.md)) | `300`               |
 | `ARKD_ESPLORA_URL`                  | Esplora API URL                                                                 | `https://blockstream.info/api` |
 | `ARKD_ARKADE_EXPLORER_URL`          | Arkade explorer URL                                                             | `https://arkade.space`         |
 | `ARKD_ALERT_MANAGER_URL`            | AlertManager URL for pushing alerts                                             | -                              |

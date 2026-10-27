@@ -3,6 +3,7 @@ package pgdb_test
 import (
 	"context"
 	"database/sql"
+	"os"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ func seedDefaults(t *testing.T) domain.Settings {
 	boarding, rounded := arklib.ParseRelativeLocktime(1536)
 	require.False(t, rounded)
 	return domain.Settings{
+		FinalizationLockTTL:         5 * time.Minute,
 		SessionDuration:             30 * time.Second,
 		UnrolledVtxoMinExpiryMargin: 30 * time.Second,
 		UnilateralExitDelay:         exit,
@@ -61,6 +63,7 @@ CREATE TABLE settings (
     unrolled_vtxo_min_expiry_margin BIGINT NOT NULL DEFAULT 0,
     ban_threshold BIGINT NOT NULL DEFAULT 0,
     ban_duration BIGINT NOT NULL DEFAULT 0,
+    finalization_lock_ttl BIGINT NOT NULL DEFAULT 300,
     unilateral_exit_delay BIGINT NOT NULL DEFAULT 0,
     public_unilateral_exit_delay BIGINT NOT NULL DEFAULT 0,
     checkpoint_exit_delay BIGINT NOT NULL DEFAULT 0,
@@ -192,8 +195,17 @@ func TestPgSeedSettings_Idempotent(t *testing.T) {
 
 	setupSeedTables(t, db)
 
-	require.NoError(t, pgdb.SeedSettings(ctx, db, seedDefaults(t)))
-	_, err = db.Exec(`UPDATE settings SET session_duration = 999 WHERE id = 1`)
+	defaults := seedDefaults(t)
+	defaults.FinalizationLockTTL = 7 * time.Minute
+	require.NoError(t, pgdb.SeedSettings(ctx, db, defaults))
+	var ttl int64
+	require.NoError(t, db.QueryRow(
+		`SELECT finalization_lock_ttl FROM settings WHERE id = 1`,
+	).Scan(&ttl))
+	require.Equal(t, int64(420), ttl)
+
+	_, err = db.Exec(`
+		UPDATE settings SET session_duration = 999, finalization_lock_ttl = 600 WHERE id = 1`)
 	require.NoError(t, err)
 
 	require.NoError(t, pgdb.SeedSettings(ctx, db, seedDefaults(t)))
@@ -202,4 +214,41 @@ func TestPgSeedSettings_Idempotent(t *testing.T) {
 	require.NoError(t, db.QueryRow(
 		`SELECT session_duration FROM settings WHERE id = 1`).Scan(&sessionDuration))
 	require.Equal(t, int64(999), sessionDuration)
+	require.NoError(t, db.QueryRow(
+		`SELECT finalization_lock_ttl FROM settings WHERE id = 1`,
+	).Scan(&ttl))
+	require.Equal(t, int64(600), ttl)
+}
+
+func TestPgFinalizationLockTTLMigration(t *testing.T) {
+	db, err := sql.Open("postgres", pgEventConnect)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		dropSeedTables(t, db)
+		_ = db.Close()
+	})
+	setupSeedTables(t, db)
+	// Recreate a pre-upgrade row, then apply the actual migration.
+	_, err = db.Exec(`ALTER TABLE settings DROP COLUMN finalization_lock_ttl;
+		INSERT INTO settings (session_duration, updated_at) VALUES (30, 1)`)
+	require.NoError(t, err)
+	up, err := os.ReadFile("migration/20261020120000_add_finalization_lock_ttl.up.sql")
+	require.NoError(t, err)
+	_, err = db.Exec(string(up))
+	require.NoError(t, err)
+	var ttl, sessionDuration int64
+	require.NoError(t, db.QueryRow(
+		`SELECT finalization_lock_ttl, session_duration FROM settings WHERE id = 1`,
+	).Scan(&ttl, &sessionDuration))
+	require.Equal(t, int64(300), ttl)
+	require.Equal(t, int64(30), sessionDuration)
+
+	down, err := os.ReadFile("migration/20261020120000_add_finalization_lock_ttl.down.sql")
+	require.NoError(t, err)
+	_, err = db.Exec(string(down))
+	require.NoError(t, err)
+	require.NoError(t, db.QueryRow(
+		`SELECT session_duration FROM settings WHERE id = 1`,
+	).Scan(&sessionDuration))
+	require.Equal(t, int64(30), sessionDuration)
 }

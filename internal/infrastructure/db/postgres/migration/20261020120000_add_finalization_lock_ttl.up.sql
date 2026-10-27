@@ -1,0 +1,1 @@
+ALTER TABLE settings ADD COLUMN finalization_lock_ttl BIGINT NOT NULL DEFAULT 300;

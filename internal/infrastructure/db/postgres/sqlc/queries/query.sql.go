@@ -1862,7 +1862,7 @@ func (q *Queries) SelectScheduledSweeps(ctx context.Context, maxResults int64) (
 }
 
 const selectSettings = `-- name: SelectSettings :one
-SELECT id, session_duration, unrolled_vtxo_min_expiry_margin, ban_threshold, ban_duration, unilateral_exit_delay, public_unilateral_exit_delay, checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry, round_min_participants_count, round_max_participants_count, vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount, settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date, max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio, note_uri_prefix, scheduled_session_start_time, scheduled_session_end_time, scheduled_session_period, scheduled_session_duration, scheduled_session_round_min_participants_count, scheduled_session_round_max_participants_count, batch_onchain_input_fee, batch_offchain_input_fee, batch_onchain_output_fee, batch_offchain_output_fee, build_version_header, build_version_header_required, digest_header_required, updated_at, batch_trigger FROM settings WHERE id = 1
+SELECT id, session_duration, unrolled_vtxo_min_expiry_margin, ban_threshold, ban_duration, unilateral_exit_delay, public_unilateral_exit_delay, checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry, round_min_participants_count, round_max_participants_count, vtxo_min_amount, vtxo_max_amount, utxo_min_amount, utxo_max_amount, settlement_min_expiry_gap, vtxo_no_csv_validation_cutoff_date, max_tx_weight, max_op_return_outputs, asset_tx_max_weight_ratio, note_uri_prefix, scheduled_session_start_time, scheduled_session_end_time, scheduled_session_period, scheduled_session_duration, scheduled_session_round_min_participants_count, scheduled_session_round_max_participants_count, batch_onchain_input_fee, batch_offchain_input_fee, batch_onchain_output_fee, batch_offchain_output_fee, build_version_header, build_version_header_required, digest_header_required, updated_at, batch_trigger, finalization_lock_ttl FROM settings WHERE id = 1
 `
 
 func (q *Queries) SelectSettings(ctx context.Context) (Setting, error) {
@@ -1906,6 +1906,7 @@ func (q *Queries) SelectSettings(ctx context.Context) (Setting, error) {
 		&i.DigestHeaderRequired,
 		&i.UpdatedAt,
 		&i.BatchTrigger,
+		&i.FinalizationLockTtl,
 	)
 	return i, err
 }
@@ -3422,7 +3423,7 @@ const upsertSettings = `-- name: UpsertSettings :exec
 INSERT INTO settings (
     id,
     session_duration, unrolled_vtxo_min_expiry_margin,
-    ban_threshold, ban_duration,
+    ban_threshold, ban_duration, finalization_lock_ttl,
     unilateral_exit_delay, public_unilateral_exit_delay,
     checkpoint_exit_delay, boarding_exit_delay, vtxo_tree_expiry,
     round_min_participants_count, round_max_participants_count,
@@ -3442,29 +3443,30 @@ INSERT INTO settings (
 ) VALUES (
     1,
     $1, $2,
-    $3, $4,
-    $5, $6,
-    $7, $8, $9,
-    $10, $11,
-    $12, $13, $14, $15,
-    $16, $17,
-    $18, $19, $20,
-    $21,
-    $22, $23,
-    $24, $25,
-    $26,
+    $3, $4, $5,
+    $6, $7,
+    $8, $9, $10,
+    $11, $12,
+    $13, $14, $15, $16,
+    $17, $18,
+    $19, $20, $21,
+    $22,
+    $23, $24,
+    $25, $26,
     $27,
-    $28, $29,
-    $30, $31,
-    $32, $33, $34,
-    $35,
-    $36
+    $28,
+    $29, $30,
+    $31, $32,
+    $33, $34, $35,
+    $36,
+    $37
 )
 ON CONFLICT(id) DO UPDATE SET
     session_duration = EXCLUDED.session_duration,
     unrolled_vtxo_min_expiry_margin = EXCLUDED.unrolled_vtxo_min_expiry_margin,
     ban_threshold = EXCLUDED.ban_threshold,
     ban_duration = EXCLUDED.ban_duration,
+    finalization_lock_ttl = EXCLUDED.finalization_lock_ttl,
     unilateral_exit_delay = EXCLUDED.unilateral_exit_delay,
     public_unilateral_exit_delay = EXCLUDED.public_unilateral_exit_delay,
     checkpoint_exit_delay = EXCLUDED.checkpoint_exit_delay,
@@ -3506,6 +3508,7 @@ type UpsertSettingsParams struct {
 	UnrolledVtxoMinExpiryMargin               int64
 	BanThreshold                              int64
 	BanDuration                               int64
+	FinalizationLockTtl                       int64
 	UnilateralExitDelay                       int64
 	PublicUnilateralExitDelay                 int64
 	CheckpointExitDelay                       int64
@@ -3546,6 +3549,7 @@ func (q *Queries) UpsertSettings(ctx context.Context, arg UpsertSettingsParams) 
 		arg.UnrolledVtxoMinExpiryMargin,
 		arg.BanThreshold,
 		arg.BanDuration,
+		arg.FinalizationLockTtl,
 		arg.UnilateralExitDelay,
 		arg.PublicUnilateralExitDelay,
 		arg.CheckpointExitDelay,

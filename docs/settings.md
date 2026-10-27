@@ -53,6 +53,7 @@ is unset on first boot.
 | `ARKD_UNROLLED_VTXO_MIN_EXPIRY_MARGIN`   | `unrolled_vtxo_min_expiry_margin`| seconds                                                             | `300`       |
 | `ARKD_BAN_THRESHOLD`                     | `ban_threshold`                  | number of crimes to trigger a ban (`0` disables banning)            | `3`         |
 | `ARKD_BAN_DURATION`                      | `ban_duration`                   | seconds                                                             | `300`       |
+| `ARKD_FINALIZATION_LOCK_TTL`              | `finalization_lock_ttl`          | positive whole seconds                                              | `300`       |
 | `ARKD_VTXO_TREE_EXPIRY`                  | `vtxo_tree_expiry`               | relative locktime (≥ 512 = seconds, < 512 = blocks)                 | `604672`    |
 | `ARKD_UNILATERAL_EXIT_DELAY`             | `unilateral_exit_delay`          | relative locktime (≥ 512 = seconds, < 512 = blocks)                 | `86400`     |
 | `ARKD_PUBLIC_UNILATERAL_EXIT_DELAY`      | `public_unilateral_exit_delay`   | relative locktime (≥ 512 = seconds, < 512 = blocks)                 | `86400`     |
@@ -107,6 +108,22 @@ check, so a client can always (re)learn the current digest.
 All three can be changed at runtime via the admin API like any other setting; the matching `arkd`
 CLI flags are `--build-version-header`, `--build-version-header-required` and 
 `--digest-header-required`.
+
+### Offchain finalization lock TTL
+
+`finalization_lock_ttl` controls how long an offchain finalization lock lasts before Redis
+expires it, allowing recovery from an abandoned request. Change it at runtime with:
+
+```sh
+arkd settings update --finalization-lock-ttl 300
+```
+
+Each finalization request reads the current setting before acquiring its lock. Updates apply
+to subsequent requests; existing locks retain their expiration.
+
+When upgrading from a build where this value came directly from the environment, existing
+settings rows receive a TTL of **300 seconds**. Reapply any custom value through the admin API
+or CLI after upgrading. Fresh databases seed the value from `ARKD_FINALIZATION_LOCK_TTL`.
 
 ## Changing settings after first boot
 

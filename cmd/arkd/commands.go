@@ -310,6 +310,7 @@ var (
 		Usage: "Update settings",
 		Flags: []cli.Flag{
 			sessionDurationFlag, unrolledVtxoMinExpiryMarginFlag, banThresholdFlag,
+			finalizationLockTTLFlag,
 			banDurationFlag, unilateralExitDelayFlag, publicUnilateralExitDelayFlag,
 			checkpointExitDelayFlag, boardingExitDelayFlag, vtxoTreeExpiryFlag,
 			roundMinParticipantsFlag, roundMaxParticipantsFlag, vtxoMinAmountFlag,
@@ -1521,6 +1522,7 @@ func updateSettingsAction(ctx *cli.Context) error {
 		key  string
 	}{
 		{sessionDurationFlagName, "sessionDuration"},
+		{finalizationLockTTLFlagName, "finalizationLockTtl"},
 		{unrolledVtxoMinExpiryMarginFlagName, "unrolledVtxoMinExpiryMargin"},
 		{banThresholdFlagName, "banThreshold"},
 		{banDurationFlagName, "banDuration"},

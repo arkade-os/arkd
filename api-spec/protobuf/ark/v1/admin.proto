@@ -556,6 +556,8 @@ message Settings {
   optional string updated_at = 24;
   optional bool digest_header_required = 25;
   optional string batch_trigger = 26;
+  // Offchain finalization lock TTL in seconds; must be positive.
+  optional int64 finalization_lock_ttl = 27;
 }
 
 message GetSettingsRequest {}

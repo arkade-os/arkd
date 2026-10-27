@@ -91,6 +91,7 @@ type Config struct {
 	LiveStoreType              string
 	RedisUrl                   string
 	RedisTxNumOfRetries        int
+	FinalizationLockTTL        int64
 	WalletAddr                 string
 	SignerAddr                 string
 	VtxoTreeExpiry             arklib.RelativeLocktime
@@ -246,6 +247,7 @@ var (
 	LiveStoreType             = "LIVE_STORE_TYPE"
 	RedisUrl                  = "REDIS_URL"
 	RedisTxNumOfRetries       = "REDIS_NUM_OF_RETRIES"
+	FinalizationLockTTL       = "FINALIZATION_LOCK_TTL"
 	LogLevel                  = "LOG_LEVEL"
 	VtxoTreeExpiry            = "VTXO_TREE_EXPIRY"
 	UnilateralExitDelay       = "UNILATERAL_EXIT_DELAY"
@@ -317,6 +319,7 @@ var (
 	defaultTxBuilderType       = "covenantless"
 	defaultLiveStoreType       = "redis"
 	defaultRedisTxNumOfRetries = 10
+	defaultFinalizationLockTTL = 300 // seconds
 	defaultEsploraURL          = "https://blockstream.info/api"
 	defaultArkadeExplorerURL   = "https://arkade.space"
 	defaultLogLevel            = 4
@@ -387,6 +390,7 @@ func LoadConfig() (*Config, error) {
 	viper.SetDefault(VtxoMinAmount, defaultVtxoMinAmount)
 	viper.SetDefault(LiveStoreType, defaultLiveStoreType)
 	viper.SetDefault(RedisTxNumOfRetries, defaultRedisTxNumOfRetries)
+	viper.SetDefault(FinalizationLockTTL, defaultFinalizationLockTTL)
 	viper.SetDefault(OtelPushInterval, defaultOtelPushInterval)
 	viper.SetDefault(HeartbeatInterval, defaultHeartbeatInterval)
 	viper.SetDefault(SettlementMinExpiryGap, defaultSettlementMinExpiryGap)
@@ -502,6 +506,7 @@ func LoadConfig() (*Config, error) {
 		LiveStoreType:             viper.GetString(LiveStoreType),
 		RedisUrl:                  redisUrl,
 		RedisTxNumOfRetries:       viper.GetInt(RedisTxNumOfRetries),
+		FinalizationLockTTL:       viper.GetInt64(FinalizationLockTTL),
 		NoTLS:                     viper.GetBool(NoTLS),
 		DbUrl:                     dbUrl,
 		EventDbUrl:                eventDbUrl,
@@ -896,7 +901,11 @@ func (c *Config) liveStoreService() error {
 			return fmt.Errorf("invalid REDIS_URL: %w", err)
 		}
 		rdb := redis.NewClient(redisOpts)
-		liveStoreSvc = redislivestore.NewLiveStore(rdb, c.txBuilder, c.RedisTxNumOfRetries)
+		liveStoreSvc = redislivestore.NewLiveStore(
+			rdb,
+			c.txBuilder,
+			c.RedisTxNumOfRetries,
+		)
 	default:
 		err = fmt.Errorf("unknown liveStore type")
 	}
@@ -1002,6 +1011,7 @@ func (c *Config) getSettings() (*domain.Settings, error) {
 
 	settings, err := domain.NewSettings(
 		c.SessionDuration, c.UnrolledVtxoMinExpiryMargin, c.BanThreshold, c.BanDuration,
+		c.FinalizationLockTTL,
 		c.SettlementMinExpiryGap, c.VtxoNoCsvValidationCutoffDate,
 		int64(c.RoundMinParticipantsCount), int64(c.RoundMaxParticipantsCount),
 		c.VtxoMinAmount, c.VtxoMaxAmount, c.UtxoMinAmount, c.UtxoMaxAmount,

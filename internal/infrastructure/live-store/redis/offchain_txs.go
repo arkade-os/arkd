@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	offChainTxsHashKey   = "offChainTxStore:txs"
-	offChainInputsSetKey = "offChainTxStore:inputs"
+	offChainTxsHashKey          = "offChainTxStore:txs"
+	offChainInputsSetKey        = "offChainTxStore:inputs"
+	offChainFinalizationLockKey = "offChainTxStore:finalization:"
 )
 
 type offChainTxStore struct {
@@ -25,7 +26,9 @@ type offChainTxStore struct {
 	retryDelay   time.Duration
 }
 
-func NewOffChainTxStore(rdb *redis.Client, numOfRetries int) ports.OffChainTxStore {
+func NewOffChainTxStore(
+	rdb *redis.Client, numOfRetries int,
+) ports.OffChainTxStore {
 	return &offChainTxStore{
 		rdb:          rdb,
 		numOfRetries: numOfRetries,
@@ -160,4 +163,38 @@ func (s *offChainTxStore) IncludesAny(
 		return nil, nil
 	}
 	return included, nil
+}
+
+func (s *offChainTxStore) LockFinalization(
+	ctx context.Context, arkTxid string, ttl time.Duration,
+) error {
+	if ttl <= 0 {
+		return fmt.Errorf("finalization lock TTL must be positive")
+	}
+	key := offChainFinalizationLockKey + arkTxid
+	for {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("failed to lock finalization for offchain tx %s: %w", arkTxid, err)
+		}
+		// Expire abandoned locks so a crash cannot block finalization indefinitely.
+		locked, err := s.rdb.SetNX(ctx, key, true, ttl).Result()
+		if err != nil {
+			return fmt.Errorf("failed to lock finalization for offchain tx %s: %w", arkTxid, err)
+		}
+		if locked {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			continue
+		case <-time.After(s.retryDelay):
+		}
+	}
+}
+
+func (s *offChainTxStore) UnlockFinalization(ctx context.Context, arkTxid string) error {
+	if err := s.rdb.Del(ctx, offChainFinalizationLockKey+arkTxid).Err(); err != nil {
+		return fmt.Errorf("failed to unlock finalization for offchain tx %s: %w", arkTxid, err)
+	}
+	return nil
 }
