@@ -3552,17 +3552,9 @@ func (s *service) startConfirmation(
 		}
 	}
 
+	// NOTE: if roundMinParticipants is > 1, this can cause a valid intent to be deleted from the
+	// queue without having the client aware of that.
 	if len(intents) < int(roundMinParticipants) {
-		// repush valid intents back to the queue
-		for _, intent := range intents {
-			if err := s.cache.Intents().Push(
-				ctx, intent.Intent, intent.BoardingInputs, intent.CosignersPublicKeys,
-			); err != nil {
-				log.WithError(err).Warn("failed to re-push intents to the queue")
-				continue
-			}
-		}
-
 		roundAborted = true
 		err := fmt.Errorf(
 			"not enough intents registered %d/%d", len(intents), roundMinParticipants,
@@ -3585,7 +3577,6 @@ func (s *service) startConfirmation(
 	s.propagateBatchStartedEvent(ctx, roundId, intents, settings.VtxoTreeExpiry)
 
 	confirmedIntents := make([]ports.TimedIntent, 0)
-	notConfirmedIntents := make([]ports.TimedIntent, 0)
 
 	select {
 	case <-time.After(roundTiming.confirmationDuration()):
@@ -3600,9 +3591,7 @@ func (s *service) startConfirmation(
 		for _, intent := range intents {
 			if session.IntentsHashes[intent.HashID()] {
 				confirmedIntents = append(confirmedIntents, intent)
-				continue
 			}
-			notConfirmedIntents = append(notConfirmedIntents, intent)
 		}
 	case _, ok := <-s.cache.ConfirmationSessions().SessionCompleted():
 		if ok {
@@ -3610,10 +3599,13 @@ func (s *service) startConfirmation(
 		}
 	}
 
-	repushToQueue := notConfirmedIntents
+	// make the round fail if we didn't receive enough confirmations
 	if int64(len(confirmedIntents)) < roundMinParticipants {
-		repushToQueue = append(repushToQueue, confirmedIntents...)
-		confirmedIntents = make([]ports.TimedIntent, 0)
+		round.Fail(errors.INTERNAL_ERROR.New(
+			"not enough intent confirmations received %d/%d",
+			len(confirmedIntents), roundMinParticipants,
+		))
+		return
 	}
 
 	// register confirmed intents if we have enough participants
@@ -3644,23 +3636,6 @@ func (s *service) startConfirmation(
 		}
 
 		registeredIntents = confirmedIntents
-	}
-
-	if len(repushToQueue) > 0 {
-		for _, intent := range repushToQueue {
-			if err := s.cache.Intents().Push(
-				ctx, intent.Intent, intent.BoardingInputs, intent.CosignersPublicKeys,
-			); err != nil {
-				log.WithError(err).Warn("failed to re-push intents to the queue")
-				continue
-			}
-		}
-
-		// make the round fail if we didn't receive enoush confirmations
-		if len(confirmedIntents) == 0 {
-			round.Fail(errors.INTERNAL_ERROR.New("not enough intent confirmations received"))
-			return
-		}
 	}
 }
 
