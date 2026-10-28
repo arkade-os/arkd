@@ -47,19 +47,20 @@ type sweeper struct {
 }
 
 func newSweeper(
-	wallet ports.WalletService, repoManager ports.RepoManager, builder ports.TxBuilder,
-	scheduler ports.SchedulerService,
+	ctx context.Context, wallet ports.WalletService, repoManager ports.RepoManager,
+	builder ports.TxBuilder, scheduler ports.SchedulerService,
 ) *sweeper {
 	return &sweeper{
-		wallet, repoManager, builder, scheduler, &sync.Mutex{}, make(map[string]struct{}), nil, nil,
+		wallet, repoManager, builder, scheduler, &sync.Mutex{}, make(map[string]struct{}),
+		ctx, nil,
 	}
 }
 
-func (s *sweeper) start(ctx context.Context) error {
+func (s *sweeper) start() error {
 	s.scheduledTasks = make(map[string]struct{})
 	s.scheduler.Start()
 
-	s.ctx = ctx
+	ctx := s.ctx
 
 	sweepableBatches, err := s.repoManager.Rounds().GetSweepableRounds(ctx)
 	if err != nil {
@@ -269,12 +270,14 @@ func (s *sweeper) scheduleCheckpointSweep(
 		return fmt.Errorf("exit path is not a csv multisig closure")
 	}
 
-	sweepAt := int64(0)
-	if s.scheduler.Unit() == ports.BlockHeight {
-		sweepAt = int64(blockTimestamp.Height) + int64(sweepClosure.Locktime.Value)
-	} else {
-		sweepAt = blockTimestamp.Time + sweepClosure.Locktime.Seconds()
+	sweepAtFrom := func(confirmedAt *ports.BlockTimestamp) int64 {
+		if s.scheduler.Unit() == ports.BlockHeight {
+			return int64(confirmedAt.Height) + int64(sweepClosure.Locktime.Value)
+		}
+		return confirmedAt.Time + sweepClosure.Locktime.Seconds()
 	}
+
+	sweepAt := sweepAtFrom(blockTimestamp)
 
 	_, tapTree, err := checkpointVtxoScript.TapTree()
 	if err != nil {
@@ -306,7 +309,7 @@ func (s *sweeper) scheduleCheckpointSweep(
 		return err
 	}
 
-	execute := s.createCheckpointSweepTask(
+	sweep := s.createCheckpointSweepTask(
 		ports.TxInput{
 			Txid:   checkpointTxid.String(),
 			Index:  checkpointVOut,
@@ -320,6 +323,47 @@ func (s *sweeper) scheduleCheckpointSweep(
 		},
 		vtxo,
 	)
+
+	// sweepAt is derived from a confirmation a reorg can move, and the scheduler compares it
+	// against the system clock: a non-final spend re-reads the confirmation and re-arms the
+	// task at the new maturity rather than consuming it.
+	var execute func() error
+	execute = func() error {
+		for {
+			err := sweep()
+			if !errors.Is(err, ports.ErrNonFinalBIP68) {
+				return err
+			}
+
+			confirmed, confirmedAt, confErr := s.wallet.IsTransactionConfirmed(
+				s.ctx, checkpointTxid.String(),
+			)
+			if confErr != nil {
+				return confErr
+			}
+
+			if confirmed {
+				if at := sweepAtFrom(confirmedAt); s.scheduler.AfterNow(at) {
+					return s.scheduleTask(sweeperTask{
+						id:      checkpointTxid.String(),
+						at:      at,
+						execute: execute,
+					})
+				}
+			}
+
+			log.Debugf(
+				"sweeper: checkpoint %s sweep tx not BIP68 final, retrying in 5 seconds",
+				checkpointTxid,
+			)
+
+			select {
+			case <-s.ctx.Done():
+				return nil
+			case <-time.After(5 * time.Second):
+			}
+		}
+	}
 
 	// if the sweep checkpoint tapscript is available, execute the task immediately
 	if !s.scheduler.AfterNow(sweepAt) {

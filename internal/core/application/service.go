@@ -157,7 +157,7 @@ func NewService(
 		builder:                  builder,
 		cache:                    cache,
 		scanner:                  scanner,
-		sweeper:                  newSweeper(wallet, repoManager, builder, scheduler),
+		sweeper:                  newSweeper(ctx, wallet, repoManager, builder, scheduler),
 		operatorPrvkey:           operatorSigningKey,
 		operatorPubkey:           operatorSigningKey.PubKey(),
 		forfeitsBoardingSigsChan: make(chan struct{}, 1),
@@ -240,7 +240,7 @@ func (s *service) Start() error {
 	log.Debug("starting sweeper service...")
 	s.sweeperCancel = s.stop
 	go func() {
-		if err := s.sweeper.start(s.ctx); err != nil {
+		if err := s.sweeper.start(); err != nil {
 			log.WithError(err).Warn("failed to start sweeper")
 			return
 		}

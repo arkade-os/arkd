@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
+	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
@@ -478,10 +481,185 @@ func TestCreateBatchSweepTask(t *testing.T) {
 	})
 }
 
-// Mock implementations for sweeper tests
+func TestScheduleCheckpointSweep(t *testing.T) {
+	// the maturity deadline is computed from a confirmation a reorg can move, and the
+	// scheduler compares it against the system clock: a sweep running before the checkpoint
+	// is final must not consume its task.
+	// the wait between attempts runs on synctest's clock, so the retry costs no wall time
+	t.Run("non-final broadcast is retried", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			wallet, vtxoRepo, _, builder, s := newTestSweeper(t)
+			wallet.On("GetOutpointStatus", mock.Anything, mock.Anything).Return(false, nil)
 
+			// still confirmed at the timestamp the sweep was scheduled from, so maturity has
+			// not moved and the task stays in hand for another attempt
+			s.wallet = &confirmationWallet{
+				mockWalletService: wallet,
+				confirmedAt:       &ports.BlockTimestamp{Height: 100, Time: 1000},
+			}
+
+			checkpointTx := checkpointPacket(t)
+			vtxoOutpoint := domain.Outpoint{Txid: "vtxo_non_final", VOut: 0}
+
+			builder.On("BuildSweepTx", mock.Anything).Return("sweeptxid_nf", "sweeptx_hex", nil)
+			wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
+				Return("", ports.ErrNonFinalBIP68).Once()
+			wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
+				Return("sweeptxid_nf", nil).Once()
+			vtxoRepo.On("GetAllChildrenVtxos", mock.Anything, vtxoOutpoint).
+				Return([]domain.Outpoint{}, nil)
+
+			err := s.scheduleCheckpointSweep(
+				vtxoOutpoint, checkpointTx, &ports.BlockTimestamp{Height: 100, Time: 1000},
+			)
+
+			require.NoError(t, err)
+			wallet.AssertNumberOfCalls(t, "BroadcastTransaction", 2)
+		})
+	})
+
+	// a reorg reconfirming the checkpoint later moves maturity back into the future: the task
+	// belongs to the scheduler again at the new deadline instead of being dropped.
+	t.Run("non-final broadcast re-arms at the new maturity", func(t *testing.T) {
+		wallet, _, _, builder, s := newTestSweeper(t)
+		wallet.On("GetOutpointStatus", mock.Anything, mock.Anything).Return(false, nil)
+
+		scheduler := s.scheduler.(*mockScheduler)
+		scheduler.notBefore = 2000
+		s.wallet = &confirmationWallet{
+			mockWalletService: wallet,
+			confirmedAt:       &ports.BlockTimestamp{Height: 110, Time: 1600},
+		}
+
+		checkpointTx := checkpointPacket(t)
+		checkpointTxid := checkpointTx.UnsignedTx.TxHash().String()
+		vtxoOutpoint := domain.Outpoint{Txid: "vtxo_reorg", VOut: 0}
+
+		builder.On("BuildSweepTx", mock.Anything).Return("sweeptxid_reorg", "sweeptx_hex", nil)
+		wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
+			Return("", ports.ErrNonFinalBIP68).Once()
+
+		err := s.scheduleCheckpointSweep(
+			vtxoOutpoint, checkpointTx, &ports.BlockTimestamp{Height: 100, Time: 1000},
+		)
+
+		require.NoError(t, err)
+		wallet.AssertNumberOfCalls(t, "BroadcastTransaction", 1)
+		require.Equal(t, []int64{2112}, scheduler.scheduledAt)
+		require.Contains(t, s.scheduledTasks, checkpointTxid)
+	})
+
+	t.Run("confirmation lookup error ends the retry loop", func(t *testing.T) {
+		wallet, _, _, builder, s := newTestSweeper(t)
+		wallet.On("GetOutpointStatus", mock.Anything, mock.Anything).Return(false, nil)
+
+		s.wallet = &confirmationWallet{
+			mockWalletService: wallet,
+			err:               fmt.Errorf("chain source unreachable"),
+		}
+
+		checkpointTx := checkpointPacket(t)
+		vtxoOutpoint := domain.Outpoint{Txid: "vtxo_confirm_err", VOut: 0}
+
+		builder.On("BuildSweepTx", mock.Anything).Return("sweeptxid_ce", "sweeptx_hex", nil)
+		wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
+			Return("", ports.ErrNonFinalBIP68)
+
+		err := s.scheduleCheckpointSweep(
+			vtxoOutpoint, checkpointTx, &ports.BlockTimestamp{Height: 100, Time: 1000},
+		)
+
+		require.ErrorContains(t, err, "chain source unreachable")
+		wallet.AssertNumberOfCalls(t, "BroadcastTransaction", 1)
+		require.Empty(t, s.scheduledTasks)
+	})
+
+	t.Run("cancelled context ends the retry loop", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		// Pass a cancelled context to the sweeper factory
+		wallet, _, _, builder, s := newTestSweeper(t, ctx)
+		wallet.On("GetOutpointStatus", mock.Anything, mock.Anything).Return(false, nil)
+		// the checkpoint is not confirmed yet: the retry loop would wait for the next attempt
+		wallet.On("IsTransactionConfirmed", mock.Anything, mock.Anything).Return(false, nil, nil)
+
+		checkpointTx := checkpointPacket(t)
+		vtxoOutpoint := domain.Outpoint{Txid: "vtxo_cancelled", VOut: 0}
+
+		builder.On("BuildSweepTx", mock.Anything).Return("sweeptxid_cx", "sweeptx_hex", nil)
+		wallet.On("BroadcastTransaction", mock.Anything, []string{"sweeptx_hex"}).
+			Return("", ports.ErrNonFinalBIP68)
+
+		err := s.scheduleCheckpointSweep(
+			vtxoOutpoint, checkpointTx, &ports.BlockTimestamp{Height: 100, Time: 1000},
+		)
+
+		require.NoError(t, err)
+		wallet.AssertNumberOfCalls(t, "BroadcastTransaction", 1)
+		require.Empty(t, s.scheduledTasks)
+	})
+}
+
+// checkpointPacket builds a checkpoint tx whose output carries the CSV exit taptree the
+// sweeper parses to craft its sweep.
+func checkpointPacket(t *testing.T) *psbt.Packet {
+	t.Helper()
+
+	owner, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	signer, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+
+	vtxoScript := &script.TapscriptsVtxoScript{Closures: []script.Closure{
+		&script.CSVMultisigClosure{
+			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{owner.PubKey()}},
+			Locktime:        arklib.RelativeLocktime{Type: arklib.LocktimeTypeSecond, Value: 512},
+		},
+		&script.MultisigClosure{
+			PubKeys: []*btcec.PublicKey{owner.PubKey(), signer.PubKey()},
+		},
+	}}
+
+	tapscripts, err := vtxoScript.Encode()
+	require.NoError(t, err)
+	encodedTapTree, err := txutils.TapTree(tapscripts).Encode()
+	require.NoError(t, err)
+	tapKey, _, err := vtxoScript.TapTree()
+	require.NoError(t, err)
+	pkScript, err := script.P2TRScript(tapKey)
+	require.NoError(t, err)
+
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(wire.NewTxIn(&wire.OutPoint{}, nil, nil))
+	tx.AddTxOut(wire.NewTxOut(10000, pkScript))
+
+	ptx, err := psbt.NewFromUnsignedTx(tx)
+	require.NoError(t, err)
+	ptx.Outputs[0].TaprootTapTree = encodedTapTree
+
+	return ptx
+}
+
+// Mock implementations for sweeper tests
 type mockWalletService struct {
 	mock.Mock
+}
+
+// confirmationWallet answers the confirmation lookup the sweep retry makes, either with the
+// block the checkpoint sits in or with a failure.
+type confirmationWallet struct {
+	*mockWalletService
+	confirmedAt *ports.BlockTimestamp
+	err         error
+}
+
+func (w *confirmationWallet) IsTransactionConfirmed(
+	ctx context.Context, txid string,
+) (bool, *ports.BlockTimestamp, error) {
+	if w.err != nil {
+		return false, nil, w.err
+	}
+	return true, w.confirmedAt, nil
 }
 
 func (m *mockWalletService) BroadcastTransaction(
@@ -907,16 +1085,28 @@ func (m *mockRepoManager) RegisterOnchainTxUpdateHandler(func(domain.OnchainTx))
 func (m *mockRepoManager) RegisterSettingsUpdateHandler(func(domain.Settings, []string)) {}
 func (m *mockRepoManager) Close()                                                        {}
 
-type mockScheduler struct{}
+type mockScheduler struct {
+	// notBefore left at 0 keeps every deadline in the past, so tasks execute immediately
+	notBefore   int64
+	scheduledAt []int64
+}
 
-func (m *mockScheduler) Start()                                       {}
-func (m *mockScheduler) Stop()                                        {}
-func (m *mockScheduler) Unit() ports.TimeUnit                         { return ports.UnixTime }
-func (m *mockScheduler) AfterNow(expiry int64) bool                   { return false }
-func (m *mockScheduler) ScheduleTaskOnce(at int64, task func()) error { return nil }
+func (m *mockScheduler) Start()               {}
+func (m *mockScheduler) Stop()                {}
+func (m *mockScheduler) Unit() ports.TimeUnit { return ports.UnixTime }
+
+func (m *mockScheduler) AfterNow(expiry int64) bool {
+	return m.notBefore > 0 && expiry > m.notBefore
+}
+
+func (m *mockScheduler) ScheduleTaskOnce(at int64, task func()) error {
+	m.scheduledAt = append(m.scheduledAt, at)
+	return nil
+}
 
 // newTestSweeper creates a fresh set of mocks and a sweeper instance for testing.
-func newTestSweeper(t *testing.T) (
+// Takes an optional context, used to start the sweeper with an invalid or cancelled context.
+func newTestSweeper(t *testing.T, args ...context.Context) (
 	*mockWalletService,
 	*mockVtxoRepository,
 	*mockMarkerRepository,
@@ -930,7 +1120,11 @@ func newTestSweeper(t *testing.T) (
 	repoManager := &mockRepoManager{vtxos: vtxoRepo, markers: markerRepo}
 	builder := &mockTxBuilder{}
 	scheduler := &mockScheduler{}
-	s := newSweeper(wallet, repoManager, builder, scheduler)
+	ctx := t.Context()
+	if len(args) > 0 {
+		ctx = args[0]
+	}
+	s := newSweeper(ctx, wallet, repoManager, builder, scheduler)
 	return wallet, vtxoRepo, markerRepo, builder, s
 }
 
@@ -950,10 +1144,9 @@ func newBatchSweepFixture(t *testing.T) *batchSweepFixture {
 	rounds := &mockedRoundRepo{}
 	events := newFakeEventRepo(t, nil)
 	builder := &mockTxBuilder{}
-	s := newSweeper(wallet, &mockRepoManager{
+	s := newSweeper(t.Context(), wallet, &mockRepoManager{
 		vtxos: vtxos, markers: &mockMarkerRepository{}, rounds: rounds, events: events,
 	}, builder, &mockScheduler{})
-	s.ctx = t.Context()
 	return &batchSweepFixture{wallet, vtxos, rounds, events, builder, s}
 }
 
