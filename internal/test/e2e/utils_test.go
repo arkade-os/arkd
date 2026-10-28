@@ -1430,52 +1430,22 @@ func postWithRetry(
 	return fmt.Errorf("timed out after %s retrying %s: %w", timeout, name, lastErr)
 }
 
-// recreate the arkd-wallet container with overridden signer keys, reusing the
-// named data volume so the seed persists, then unlock it and restart arkd so it
+// recreateArkdSigner restarts arkd-signer with the given keys, then arkd so it
 // re-fetches the signer pubkey.
-func recreateArkdWallet(signerKey, deprecated string) error {
+func recreateArkdSigner(secretKey, deprecated string) error {
 	env := []string{
-		"ARKD_WALLET_SIGNER_KEY=" + signerKey,
-		"ARKD_WALLET_DEPRECATED_SIGNER_KEYS=" + deprecated,
+		"ARKD_SIGNER_SECRET_KEY=" + secretKey,
+		"ARKD_SIGNER_DEPRECATED_KEYS=" + deprecated,
 	}
 	args := []string{
 		"compose", "-f", "../../../docker-compose.regtest.yml",
-		"up", "-d", "--force-recreate", "--no-build", "--no-deps", "arkd-wallet",
+		"up", "-d", "--force-recreate", "--no-build", "--no-deps", "arkd-signer",
 	}
 	if _, err := runCommandWithEnv(env, "docker", args...); err != nil {
-		return fmt.Errorf("failed to recreate arkd-wallet: %w", err)
-	}
-
-	// Only wait for the recreated wallet to answer, don't unlock it: restartArkd
-	// unlocks it after the restart anyway, and unlocking here races the wallet's
-	// deferred ready notification with the shutdown lock of the old arkd.
-	if err := waitForArkdWallet(); err != nil {
-		return err
+		return fmt.Errorf("failed to recreate arkd-signer: %w", err)
 	}
 
 	return restartArkd()
-}
-
-// waitForArkdWallet polls the admin wallet status through the running arkd until the
-// wallet accepts requests again.
-func waitForArkdWallet() error {
-	adminHttpClient := &http.Client{Timeout: 15 * time.Second}
-	url := fmt.Sprintf("%s/v1/admin/wallet/status", adminUrl)
-	deadline := time.Now().Add(time.Minute)
-	lastErr := fmt.Errorf("wallet not initialized")
-	for time.Now().Before(deadline) {
-		// While the wallet is unreachable the gateway answers with an error body that
-		// decodes to a zeroed status, so a nil error alone doesn't mean it's back.
-		status, err := get[statusResp](adminHttpClient, url, "status")
-		if err == nil && status.Initialized {
-			return nil
-		}
-		if err != nil {
-			lastErr = err
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	return fmt.Errorf("timed out waiting for arkd-wallet to be ready: %w", lastErr)
 }
 
 func setupArkd() error {

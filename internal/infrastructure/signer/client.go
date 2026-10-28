@@ -48,14 +48,6 @@ func New(addr, otelCollectorEndpoint string) (ports.SignerService, error) {
 	return &signerClient{client: client, conn: conn}, nil
 }
 
-func (c *signerClient) IsReady(ctx context.Context) (bool, error) {
-	resp, err := c.client.GetStatus(ctx, &signerv1.GetStatusRequest{})
-	if err != nil {
-		return false, err
-	}
-	return resp.GetReady(), nil
-}
-
 func (c *signerClient) GetPubkey(ctx context.Context) (*btcec.PublicKey, error) {
 	resp, err := c.client.GetPubkey(ctx, &signerv1.GetPubkeyRequest{})
 	if err != nil {
@@ -102,26 +94,13 @@ func (c *signerClient) GetDeprecatedPubkeys(
 }
 
 func (c *signerClient) SignTransaction(
-	ctx context.Context, partialTx string, extractRawTx bool,
-) (string, error) {
-	resp, err := c.client.SignTransaction(ctx, &signerv1.SignTransactionRequest{
-		PartialTx:    partialTx,
-		ExtractRawTx: extractRawTx,
-	})
-	if err != nil {
-		return "", err
-	}
-	return resp.GetSignedTx(), nil
-}
-
-func (c *signerClient) SignTransactionTapscript(
 	ctx context.Context, partialTx string, inputIndexes []int,
 ) (string, error) {
 	inIndexes := make([]int32, 0, len(inputIndexes))
 	for _, v := range inputIndexes {
 		inIndexes = append(inIndexes, int32(v))
 	}
-	resp, err := c.client.SignTransactionTapscript(ctx, &signerv1.SignTransactionTapscriptRequest{
+	resp, err := c.client.SignTransaction(ctx, &signerv1.SignTransactionRequest{
 		PartialTx: partialTx, InputIndexes: inIndexes,
 	})
 	if err != nil {

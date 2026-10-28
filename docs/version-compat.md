@@ -11,7 +11,7 @@ ignored. For example, if the server is built as `v2.3.1`, a client at `2.0.0`,
 ## How it works
 
 1. At build time the server version is set via `-ldflags` (see
-   `scripts/build-arkd`).
+   `scripts/build`).
 2. On startup the server parses the major version from its build version string.
 3. On every request the server reads the client's SDK version header, extracts
    the major version, and compares it against its own. If the client's major

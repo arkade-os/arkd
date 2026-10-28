@@ -181,14 +181,6 @@ func (w *walletDaemonClient) UnwatchScripts(ctx context.Context, scripts []strin
 	return nil
 }
 
-func (w *walletDaemonClient) SignMessage(ctx context.Context, message []byte) ([]byte, error) {
-	resp, err := w.client.SignMessage(ctx, &arkwalletv1.SignMessageRequest{Message: message})
-	if err != nil {
-		return nil, err
-	}
-	return resp.GetSignature(), nil
-}
-
 func (w *walletDaemonClient) GetNotificationChannel(
 	ctx context.Context,
 ) <-chan ports.TxNotification {
@@ -494,19 +486,6 @@ func (w *walletDaemonClient) GetDustAmount(ctx context.Context) (uint64, error) 
 	return resp.GetDustAmount(), nil
 }
 
-func (w *walletDaemonClient) VerifyMessageSignature(
-	ctx context.Context, message, signature []byte,
-) (bool, error) {
-	resp, err := w.client.VerifyMessageSignature(
-		ctx,
-		&arkwalletv1.VerifyMessageSignatureRequest{Message: message, Signature: signature},
-	)
-	if err != nil {
-		return false, err
-	}
-	return resp.GetValid(), nil
-}
-
 func (w *walletDaemonClient) GetCurrentBlockTime(
 	ctx context.Context,
 ) (*ports.BlockTimestamp, error) {
@@ -546,11 +525,6 @@ func (w *walletDaemonClient) GetOutpointStatus(
 		return false, err
 	}
 	return resp.GetSpent(), nil
-}
-
-func (w *walletDaemonClient) LoadSignerKey(ctx context.Context, prvkey string) error {
-	_, err := w.client.LoadSignerKey(ctx, &arkwalletv1.LoadSignerKeyRequest{PrivateKey: prvkey})
-	return err
 }
 
 func (w *walletDaemonClient) RescanUtxos(ctx context.Context, outs []wire.OutPoint) error {

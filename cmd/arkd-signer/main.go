@@ -1,0 +1,48 @@
+package main
+
+import (
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/arkade-os/arkd/pkg/arkd-signer/config"
+	grpcservice "github.com/arkade-os/arkd/pkg/arkd-signer/interface/grpc"
+	"github.com/arkade-os/arkd/pkg/arkd-signer/telemetry"
+	log "github.com/sirupsen/logrus"
+)
+
+func main() {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("invalid arkd-signer config: %s", err)
+	}
+
+	log.SetLevel(log.Level(cfg.LogLevel))
+	if cfg.OtelCollectorEndpoint != "" {
+		log.AddHook(telemetry.NewOTelHook())
+	}
+
+	svc, err := grpcservice.NewService(cfg)
+	if err != nil {
+		log.Fatalf("failed to create arkd-signer service: %s", err)
+	}
+
+	log.Infof("arkd-signer config: %s", cfg)
+
+	log.Info("starting arkd-signer service...")
+	if err := svc.Start(); err != nil {
+		log.Fatalf("failed to start arkd-signer service: %s", err)
+	}
+	log.Infof("arkd-signer listens on: %v", cfg.Port)
+
+	log.RegisterExitHandler(svc.Stop)
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(
+		sigChan, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP, os.Interrupt,
+	)
+	<-sigChan
+
+	log.Info("shutting down arkd-signer service...")
+	log.Exit(0)
+}

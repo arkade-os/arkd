@@ -9548,7 +9548,7 @@ func TestDeprecatedSignerKey(t *testing.T) {
 
 	// Restore the old signer key without deprecated keys for other integration tests
 	t.Cleanup(func() {
-		require.NoError(t, recreateArkdWallet(oldSignerKey, ""))
+		require.NoError(t, recreateArkdSigner(oldSignerKey, ""))
 	})
 
 	alice := setupClientWallet(t)
@@ -9583,7 +9583,7 @@ func TestDeprecatedSignerKey(t *testing.T) {
 	require.NotZero(t, int(balBefore.OffchainBalance.Total))
 
 	// rotate: new key current, old key deprecated with a cutoff date
-	require.NoError(t, recreateArkdWallet(
+	require.NoError(t, recreateArkdSigner(
 		newSignerKey, fmt.Sprintf("%s:%d", oldSignerKey, cutoffDate),
 	))
 
@@ -9659,7 +9659,7 @@ func TestDeprecatedSignerKey(t *testing.T) {
 		// rotate again, this time with a cutoff date in the past: the old key
 		// must no longer be accepted by the server.
 		expiredCutoff := time.Now().Add(-time.Hour).Unix()
-		require.NoError(t, recreateArkdWallet(
+		require.NoError(t, recreateArkdSigner(
 			newSignerKey, fmt.Sprintf("%s:%d", oldSignerKey, expiredCutoff),
 		))
 
@@ -9713,12 +9713,7 @@ func TestDeprecatedSignerKey(t *testing.T) {
 // What it covers is the end-to-end outcome, that fraud is punished after a hard
 // rotation. That no live signing happens on the way is pinned by
 // domain.TestForfeitTxReadyToBroadcast, and was confirmed on regtest by observing
-// the signer record no SignTransactionTapscript call in the fraud window.
-//
-// Stopping the signer to prove that here would need SIGNER_ADDR and WALLET_ADDR
-// pointing at different services. The regtest stack runs both on arkd-wallet:6060
-// and reacting to fraud needs the wallet half for LockConnectorUtxos, the anchor
-// bump and the broadcast.
+// the signer record no SignTransaction call in the fraud window.
 func TestEagerForfeitSurvivesWalletRotation(t *testing.T) {
 	const (
 		oldSignerKey = "afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0"
@@ -9728,7 +9723,7 @@ func TestEagerForfeitSurvivesWalletRotation(t *testing.T) {
 
 	// restore the old signer key (no deprecated keys) for other integration tests
 	t.Cleanup(func() {
-		require.NoError(t, recreateArkdWallet(oldSignerKey, ""))
+		require.NoError(t, recreateArkdSigner(oldSignerKey, ""))
 	})
 
 	client := setupClientWallet(t)
@@ -9787,7 +9782,7 @@ func TestEagerForfeitSurvivesWalletRotation(t *testing.T) {
 
 	// hard rotation: new signer key, NO deprecated key. The forfeit was already
 	// signed with the old key at collection time, so it must remain broadcastable.
-	require.NoError(t, recreateArkdWallet(newSignerKey, ""))
+	require.NoError(t, recreateArkdSigner(newSignerKey, ""))
 
 	// confirm the rotation is a clean switch: no deprecated keys remain
 	info, err := client.Client().GetInfo(ctx)

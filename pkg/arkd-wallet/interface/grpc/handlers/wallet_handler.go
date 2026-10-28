@@ -2,12 +2,10 @@ package handlers
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 
 	arkwalletv1 "github.com/arkade-os/arkd/api-spec/protobuf/gen/arkwallet/v1"
 	application "github.com/arkade-os/arkd/pkg/arkd-wallet/core/application"
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/google/uuid"
@@ -311,18 +309,6 @@ func (h *walletHandler) GetTransaction(
 	return &arkwalletv1.GetTransactionResponse{TxHex: tx}, nil
 }
 
-func (h *walletHandler) SignMessage(
-	ctx context.Context, req *arkwalletv1.SignMessageRequest,
-) (*arkwalletv1.SignMessageResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SignMessage not implemented")
-}
-
-func (h *walletHandler) VerifyMessageSignature(
-	ctx context.Context, req *arkwalletv1.VerifyMessageSignatureRequest,
-) (*arkwalletv1.VerifyMessageSignatureResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method VerifyMessageSignature not implemented")
-}
-
 func (h *walletHandler) GetCurrentBlockTime(
 	ctx context.Context, _ *arkwalletv1.GetCurrentBlockTimeRequest,
 ) (*arkwalletv1.GetCurrentBlockTimeResponse, error) {
@@ -474,23 +460,6 @@ func (h *walletHandler) Withdraw(
 	return &arkwalletv1.WithdrawResponse{Txid: txid}, nil
 }
 
-func (h *walletHandler) LoadSignerKey(
-	ctx context.Context, req *arkwalletv1.LoadSignerKeyRequest,
-) (*arkwalletv1.LoadSignerKeyResponse, error) {
-	key := req.GetPrivateKey()
-	if len(key) <= 0 {
-		return nil, status.Errorf(codes.InvalidArgument, "missing private key")
-	}
-	buf, err := hex.DecodeString(key)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid private key format, must be hex")
-	}
-	prvkey, _ := btcec.PrivKeyFromBytes(buf)
-	if err := h.wallet.LoadSignerKey(ctx, prvkey); err != nil {
-		return nil, err
-	}
-	return &arkwalletv1.LoadSignerKeyResponse{}, nil
-}
 func (h *walletHandler) RescanUtxos(
 	ctx context.Context, req *arkwalletv1.RescanUtxosRequest,
 ) (*arkwalletv1.RescanUtxosResponse, error) {

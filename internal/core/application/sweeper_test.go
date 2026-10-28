@@ -762,8 +762,7 @@ func (m *mockWalletService) Withdraw(
 ) (string, error) {
 	return "", nil
 }
-func (m *mockWalletService) LoadSignerKey(ctx context.Context, prvkey string) error { return nil }
-func (m *mockWalletService) Close()                                                 {}
+func (m *mockWalletService) Close() {}
 func (m *mockWalletService) WatchScripts(ctx context.Context, scripts []string) error {
 	return nil
 }
@@ -1019,6 +1018,8 @@ func (m *mockTxBuilder) VerifyAndRebuildForfeitTxs(
 	return nil, nil
 }
 
+func (m *mockTxBuilder) FinalizeAndExtract(tx string) (string, error) { return "", nil }
+
 func (m *mockTxBuilder) GetSweepableBatchOutputs(
 	vtxoTree *tree.TxTree,
 ) (*arklib.RelativeLocktime, *ports.TxInput, error) {
@@ -1028,7 +1029,6 @@ func (m *mockTxBuilder) GetSweepableBatchOutputs(
 	}
 	return args.Get(0).(*arklib.RelativeLocktime), args.Get(1).(*ports.TxInput), args.Error(2)
 }
-func (m *mockTxBuilder) FinalizeAndExtract(tx string) (string, error) { return "", nil }
 
 func (m *mockTxBuilder) VerifyVtxoTapscriptSigs(
 	tx string, mustIncludeSignerSig bool,

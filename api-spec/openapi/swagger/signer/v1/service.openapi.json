@@ -75,46 +75,6 @@
         }
       }
     },
-    "/v1/sign-transaction-tapscript": {
-      "post": {
-        "tags": [
-          "SignerService"
-        ],
-        "operationId": "SignerService_SignTransactionTapscript",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SignTransactionTapscriptRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "a successful response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SignTransactionTapscriptResponse"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "An unexpected error response.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Status"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/status": {
       "get": {
         "tags": [
@@ -208,27 +168,6 @@
         "title": "SignTransactionRequest",
         "type": "object",
         "properties": {
-          "extractRawTx": {
-            "type": "boolean"
-          },
-          "partialTx": {
-            "type": "string"
-          }
-        }
-      },
-      "SignTransactionResponse": {
-        "title": "SignTransactionResponse",
-        "type": "object",
-        "properties": {
-          "signedTx": {
-            "type": "string"
-          }
-        }
-      },
-      "SignTransactionTapscriptRequest": {
-        "title": "SignTransactionTapscriptRequest",
-        "type": "object",
-        "properties": {
           "inputIndexes": {
             "type": "array",
             "items": {
@@ -241,8 +180,8 @@
           }
         }
       },
-      "SignTransactionTapscriptResponse": {
-        "title": "SignTransactionTapscriptResponse",
+      "SignTransactionResponse": {
+        "title": "SignTransactionResponse",
         "type": "object",
         "properties": {
           "signedTx": {

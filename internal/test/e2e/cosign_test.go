@@ -249,7 +249,7 @@ func TestCosignOnchainTx(t *testing.T) {
 
 		// Restore the old signer key without deprecated keys for other integration tests.
 		t.Cleanup(func() {
-			require.NoError(t, recreateArkdWallet(oldSignerKey, ""))
+			require.NoError(t, recreateArkdSigner(oldSignerKey, ""))
 		})
 
 		alice := setupClientWallet(t)
@@ -277,7 +277,7 @@ func TestCosignOnchainTx(t *testing.T) {
 
 		// Rotate: new key current, old key deprecated with a cutoff date in the past.
 		expiredCutoff := time.Now().Add(-time.Hour).Unix()
-		require.NoError(t, recreateArkdWallet(
+		require.NoError(t, recreateArkdSigner(
 			newSignerKey, fmt.Sprintf("%s:%d", oldSignerKey, expiredCutoff),
 		))
 

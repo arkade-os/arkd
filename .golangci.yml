@@ -3,6 +3,15 @@ version: "2"
 run:
   timeout: 5m
 
+linters:
+  exclusions:
+    rules:
+      # h2c.NewHandler is deprecated but still needed for unencrypted HTTP/2.
+      - path: interface/grpc/service\.go
+        linters:
+          - staticcheck
+        text: SA1019
+
 formatters:
   enable:
     - gofmt

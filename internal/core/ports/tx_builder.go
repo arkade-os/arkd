@@ -61,10 +61,10 @@ type TxBuilder interface {
 		vtxos []domain.Vtxo, connectors tree.FlatTxTree, txs []string,
 	) (valid map[domain.Outpoint]ValidForfeitTx, err error)
 	BuildSweepTx(inputs []TxInput) (txid string, signedSweepTx string, err error)
+	FinalizeAndExtract(tx string) (txhex string, err error)
 	GetSweepableBatchOutputs(vtxoTree *tree.TxTree) (
 		vtxoTreeExpiry *arklib.RelativeLocktime, batchOutputs *TxInput, err error,
 	)
-	FinalizeAndExtract(tx string) (txhex string, err error)
 	VerifyVtxoTapscriptSigs(
 		tx string, mustIncludeSignerSig bool,
 	) (valid bool, ptx *psbt.Packet, err error)

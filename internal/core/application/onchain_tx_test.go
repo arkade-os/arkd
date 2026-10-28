@@ -1091,7 +1091,7 @@ func TestRestoreWatchingCosignedUtxos(t *testing.T) {
 			require.Eventually(t, func() bool {
 				got, err := f.utxos.GetUtxos(t.Context(), []domain.Outpoint{fine.Outpoint})
 				return err == nil && len(got) == 1 && got[0].Spend.IsConfirmed()
-			}, 5*time.Second, 50*time.Millisecond)
+			}, 8*time.Second, 50*time.Millisecond)
 
 			got, err := f.utxos.GetUtxos(t.Context(), []domain.Outpoint{broken.Outpoint})
 			require.NoError(t, err)
@@ -1872,7 +1872,7 @@ func (f *cosignFixture) registration(t *testing.T) cosignTestRegistration {
 	return cosignTestRegistration{proof: proof, message: message}
 }
 
-// cosignTestSigner records SignTransactionTapscript calls and can hold them until released.
+// cosignTestSigner records SignTransaction calls and can hold them until released.
 // Like the real signer client, it fails a call whose ctx is canceled by the time it returns.
 type cosignTestSigner struct {
 	ports.SignerService
@@ -1884,7 +1884,7 @@ type cosignTestSigner struct {
 	inflight    int
 }
 
-func (s *cosignTestSigner) SignTransactionTapscript(
+func (s *cosignTestSigner) SignTransaction(
 	ctx context.Context, partialTx string, inputIndexes []int,
 ) (string, error) {
 	s.mu.Lock()

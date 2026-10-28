@@ -23,7 +23,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: arkd-binaries
-        path: ./build
+        path: |
+          ./build/arkd-darwin-*
+          ./build/arkd-linux-*
         if-no-files-found: error
         retention-days: 5
         compression-level: 6
@@ -33,17 +35,17 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: arkd-wallet-binaries
-        path: ./pkg/arkd-wallet/build
+        path: ./build/arkd-wallet-*
         if-no-files-found: error
         retention-days: 5
         compression-level: 6
         overwrite: true
-    
-    - name: Upload ark lib binaries
+
+    - name: Upload arkd signer binaries
       uses: actions/upload-artifact@v4
       with:
-        name: ark-lib-binaries
-        path: ./pkg/ark-lib/build
+        name: arkd-signer-binaries
+        path: ./build/arkd-signer-*
         if-no-files-found: error
         retention-days: 5
         compression-level: 6

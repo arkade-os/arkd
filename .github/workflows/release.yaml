@@ -126,6 +126,47 @@ jobs:
           asset_name: arkd-wallet-darwin-arm64
           asset_content_type: application/octet-stream
       
+      # arkd signer binary uploads
+      - name: Upload arkd signer binary (Linux, AMD64)
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./build/arkd-signer-linux-amd64
+          asset_name: arkd-signer-linux-amd64
+          asset_content_type: application/octet-stream
+
+      - name: Upload arkd signer binary (Linux, ARM)
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./build/arkd-signer-linux-arm64
+          asset_name: arkd-signer-linux-arm64
+          asset_content_type: application/octet-stream
+
+      - name: Upload arkd signer binary (Darwin, AMD64)
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./build/arkd-signer-darwin-amd64
+          asset_name: arkd-signer-darwin-amd64
+          asset_content_type: application/octet-stream
+
+      - name: Upload arkd signer binary (Darwin, ARM)
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./build/arkd-signer-darwin-arm64
+          asset_name: arkd-signer-darwin-arm64
+          asset_content_type: application/octet-stream
+      
       # CLI binary uploads
       - name: Upload client binary (Linux, AMD64)
         uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1
@@ -192,6 +233,19 @@ jobs:
           tags: |
             ghcr.io/arkade-os/arkd-wallet:${{ github.event.release.tag_name }}
             ghcr.io/arkade-os/arkd-wallet:latest
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ github.event.release.tag_name }}
+
+      - name: Build and push arkd signer Docker image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ./arkdsigner.Dockerfile
+          push: true
+          tags: |
+            ghcr.io/arkade-os/arkd-signer:${{ github.event.release.tag_name }}
+            ghcr.io/arkade-os/arkd-signer:latest
           platforms: linux/amd64,linux/arm64
           build-args: |
             VERSION=${{ github.event.release.tag_name }}

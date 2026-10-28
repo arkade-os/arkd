@@ -63,8 +63,6 @@ services:
       - ARKD_WALLET_NBXPLORER_URL=http://nbxplorer:32838
       - ARKD_WALLET_DATADIR=./data/regtest
       - ARKD_WALLET_NETWORK=regtest
-      - ARKD_WALLET_SIGNER_KEY=${ARKD_WALLET_SIGNER_KEY:-afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0}
-      - ARKD_WALLET_DEPRECATED_SIGNER_KEYS=${ARKD_WALLET_DEPRECATED_SIGNER_KEYS:-}
     volumes:
       - arkd-wallet-volume:/app/data
     healthcheck:
@@ -72,6 +70,20 @@ services:
       interval: 2s
       timeout: 2s
       retries: 60
+  arkd-signer:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: arkdsigner.Dockerfile
+    container_name: arkd-signer
+    # not published: the signer has no auth.
+    expose:
+      - "6061"
+    environment:
+      - ARKD_SIGNER_LOG_LEVEL=5
+      - ARKD_SIGNER_PORT=6061
+      - ARKD_SIGNER_SECRET_KEY=${ARKD_SIGNER_SECRET_KEY:-afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0}
+      - ARKD_SIGNER_DEPRECATED_KEYS=${ARKD_SIGNER_DEPRECATED_KEYS:-}
   redis:
     restart: unless-stopped
     image: redis:7-alpine
@@ -91,6 +103,8 @@ services:
     restart: unless-stopped
     depends_on:
       arkd-wallet:
+        condition: service_healthy
+      arkd-signer:
         condition: service_healthy
       pg:
         condition: service_healthy
@@ -118,6 +132,7 @@ services:
       - ARKD_BAN_THRESHOLD=1
       - ARKD_DATADIR=./data/regtest
       - ARKD_WALLET_ADDR=arkd-wallet:6060
+      - ARKD_SIGNER_ADDR=arkd-signer:6061
       - ARKD_ESPLORA_URL=http://chopsticks:3000
       - ARKD_DB_TYPE=postgres
       - ARKD_PG_DB_URL=${ARKD_PG_DB_URL:-postgresql://postgres@pg:5432/projection?sslmode=disable}

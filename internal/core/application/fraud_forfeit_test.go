@@ -14,6 +14,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txsigner"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -282,9 +283,15 @@ func (w *fraudForfeitWallet) DeriveAddresses(context.Context, int) ([]string, er
 	return []string{addr.String()}, nil
 }
 
-func (w *fraudForfeitWallet) SignTransaction(_ context.Context, tx string, _ bool) (string, error) {
+func (w *fraudForfeitWallet) SignTransaction(
+	_ context.Context, tx string, extractRawTx bool,
+) (string, error) {
 	p, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
 	require.NoError(w.t, err)
+	// The forfeit tx reaches the wallet with its connector input already signed.
+	if extractRawTx {
+		return txsigner.ExtractFinalizedTx(p)
+	}
 	p.Inputs[1].WitnessUtxo = wire.NewTxOut(100_000, w.script)
 	prevouts, err := txutils.GetPrevOutputFetcher(p)
 	require.NoError(w.t, err)

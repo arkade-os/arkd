@@ -12,6 +12,7 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txsigner"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/blockchain"
@@ -246,45 +247,19 @@ func (b *txBuilder) verifyTapscriptPartialSigs(
 	return true, ptx, nil
 }
 
-func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
-	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
-	if err != nil {
-		return "", err
-	}
-
-	for i, in := range ptx.Inputs {
-		isTaproot := txscript.IsPayToTaproot(in.WitnessUtxo.PkScript)
-		if isTaproot && len(in.TaprootLeafScript) > 0 {
-			if err := script.FinalizeVtxoScript(ptx, i); err != nil {
-				return "", err
-			}
-			continue
-		}
-
-		if err := psbt.Finalize(ptx, i); err != nil {
-			return "", fmt.Errorf("failed to finalize input %d: %w", i, err)
-		}
-	}
-
-	signed, err := psbt.Extract(ptx)
-	if err != nil {
-		return "", err
-	}
-
-	var serialized bytes.Buffer
-
-	if err := signed.Serialize(&serialized); err != nil {
-		return "", err
-	}
-
-	return hex.EncodeToString(serialized.Bytes()), nil
-}
-
 func (b *txBuilder) BuildSweepTx(inputs []ports.TxInput) (
 	txid, signedSweepTx string, err error,
 ) {
 	ctx := context.Background()
 	return sweepTransaction(ctx, b.wallet, inputs)
+}
+
+func (b *txBuilder) FinalizeAndExtract(tx string) (string, error) {
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+	if err != nil {
+		return "", err
+	}
+	return txsigner.ExtractFinalizedTx(ptx)
 }
 
 func (b *txBuilder) VerifyAndRebuildForfeitTxs(

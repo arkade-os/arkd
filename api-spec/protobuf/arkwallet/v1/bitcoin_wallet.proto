@@ -147,18 +147,6 @@ service WalletService {
       get: "/v1/wallet/tx"
     };
   }
-  rpc SignMessage(SignMessageRequest) returns (SignMessageResponse) {
-    option (meshapi.gateway.http) = {
-      post: "/v1/wallet/sign-message"
-      body: "*"
-    };
-  }
-  rpc VerifyMessageSignature(VerifyMessageSignatureRequest) returns (VerifyMessageSignatureResponse) {
-    option (meshapi.gateway.http) = {
-      post: "/v1/wallet/verify-message-signature"
-      body: "*"
-    };
-  }
   rpc GetCurrentBlockTime(GetCurrentBlockTimeRequest) returns (GetCurrentBlockTimeResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/wallet/block-time"
@@ -185,12 +173,6 @@ service WalletService {
   rpc NotificationStream(NotificationStreamRequest) returns (stream NotificationStreamResponse) {
     option (meshapi.gateway.http) = {
       get: "/v1/wallet/notifications"
-    };
-  }
-  rpc LoadSignerKey(LoadSignerKeyRequest) returns (LoadSignerKeyResponse) {
-    option (meshapi.gateway.http) = {
-      post: "/v1/wallet/signer-key"
-      body: "*"
     };
   }
   rpc RescanUtxos(RescanUtxosRequest) returns (RescanUtxosResponse) {
@@ -400,21 +382,6 @@ message GetTransactionResponse {
   string tx_hex = 1;
 }
 
-message SignMessageRequest {
-  bytes message = 1;
-}
-message SignMessageResponse {
-  bytes signature = 1;
-}
-
-message VerifyMessageSignatureRequest {
-  bytes message = 1;
-  bytes signature = 2;
-}
-message VerifyMessageSignatureResponse {
-  bool valid = 1;
-}
-
 message GetCurrentBlockTimeRequest {}
 message GetCurrentBlockTimeResponse {
   BlockTimestamp timestamp = 1;
@@ -435,11 +402,6 @@ message WithdrawRequest {
 message WithdrawResponse {
   string txid = 1;
 }
-
-message LoadSignerKeyRequest {
-  string private_key = 1;
-}
-message LoadSignerKeyResponse {}
 
 message TxInput {
   string txid = 1;

@@ -70,7 +70,7 @@ func (s *service) CosignOnchainTx(
 	}()
 
 	// Cosign the tx
-	signedTx, err := s.signer.SignTransactionTapscript(ctx, tx, inputIndexes)
+	signedTx, err := s.signer.SignTransaction(ctx, tx, inputIndexes)
 	if err != nil {
 		return "", errors.INTERNAL_ERROR.New("something went wrong, please retry").
 			WithInternalCause(fmt.Errorf("failed to cosign tx: %w", err))

@@ -21,7 +21,7 @@ echo ""
 # Function to handle errors
 handle_error() {
     echo "Error occurred in build for $1 $2"
-    echo "Build command: VERSION=$VERSION GOOS=$1 GOARCH=$2 ./scripts/build"
+    echo "Build command: VERSION=$VERSION GOOS=$1 GOARCH=$2 ./scripts/build <binary>"
     echo "Exit code: $3"
     echo "You may want to run this build manually to see more detailed error messages."
 }
@@ -32,19 +32,14 @@ echo ""
 # Loop through OS and ARCH combinations
 for os in "${OS[@]}"; do
     for arch in "${ARCH[@]}"; do
-        if VERSION=$VERSION GOOS=$os GOARCH=$arch ./scripts/build-arkd; then
-            echo "Built arkd successfully for $os $arch"
-            echo ""
-        else
-            handle_error $os $arch $?
-        fi
-
-        if VERSION=$VERSION GOOS=$os GOARCH=$arch ./scripts/build-arkd-wallet; then
-            echo "Built arkd-wallet successfully for $os $arch"
-            echo ""
-        else
-            handle_error $os $arch $?
-        fi
+        for bin in arkd arkd-wallet arkd-signer; do
+            if VERSION=$VERSION GOOS=$os GOARCH=$arch ./scripts/build $bin; then
+                echo "Built $bin successfully for $os $arch"
+                echo ""
+            else
+                handle_error $os $arch $?
+            fi
+        done
 
         if VERSION=$VERSION GOOS=$os GOARCH=$arch ./pkg/ark-cli/scripts/build; then
             echo "Built ark-cli successfully for $os $arch"

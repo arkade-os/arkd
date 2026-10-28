@@ -24,6 +24,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/ark-lib/offchain"
 	"github.com/arkade-os/arkd/pkg/ark-lib/script"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txsigner"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/address/v2"
@@ -1189,7 +1190,7 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	// sign the ark tx
-	fullySignedArkTx, err := s.signer.SignTransactionTapscript(ctx, signedArkTx, nil)
+	fullySignedArkTx, err := s.signer.SignTransaction(ctx, signedArkTx, nil)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("failed to sign ark tx: %w", err).
 			WithMetadata(map[string]any{
@@ -1197,9 +1198,15 @@ func (s *service) SubmitOffchainTx(
 			})
 	}
 
-	// From here on the txs carry our signature: errors must never include them, or the client
-	// would get a signed spend of vtxos this request didn't reserve.
-	txHex, err := s.builder.FinalizeAndExtract(fullySignedArkTx)
+	fullySignedArkPtx, err := psbt.NewFromRawBytes(strings.NewReader(fullySignedArkTx), true)
+	if err != nil {
+		return nil, errors.INTERNAL_ERROR.New("failed to parse ark tx: %w", err).
+			WithMetadata(map[string]any{
+				"ark_tx": fullySignedArkTx,
+			})
+	}
+
+	txHex, err := txsigner.ExtractFinalizedTx(fullySignedArkPtx)
 	if err != nil {
 		return nil, errors.INTERNAL_ERROR.New("something went wrong").
 			WithInternalCause(fmt.Errorf("failed to finalize and extract: %w", err))
@@ -1253,7 +1260,7 @@ func (s *service) SubmitOffchainTx(
 					WithMetadata(errors.InvalidSignatureMetadata{Tx: checkpointTx})
 			}
 		}
-		signedCheckpointTx, err := s.signer.SignTransactionTapscript(
+		signedCheckpointTx, err := s.signer.SignTransaction(
 			ctx, checkpointTx, nil,
 		)
 		if err != nil {
@@ -2716,7 +2723,8 @@ func (s *service) signForfeitTxs(
 ) ([]domain.ForfeitTx, error) {
 	signed := make([]domain.ForfeitTx, 0, len(forfeitTxs))
 	for _, tx := range forfeitTxs {
-		signedTx, err := s.signer.SignTransactionTapscript(ctx, tx, nil)
+		// signer : sign vtxo input
+		signedTx, err := s.signer.SignTransaction(ctx, tx, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to sign forfeit tx: %w", err)
 		}
@@ -2724,9 +2732,35 @@ func (s *service) signForfeitTxs(
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse signed forfeit tx: %w", err)
 		}
+
+		// wallet : sign connector input
+		connectorIndexes := make([]int, 0, 1)
+		for i, in := range ptx.Inputs {
+			if len(in.TaprootLeafScript) > 0 {
+				continue
+			}
+			if in.WitnessUtxo != nil &&
+				bytes.Equal(in.WitnessUtxo.PkScript, txutils.ANCHOR_PKSCRIPT) {
+				continue
+			}
+			connectorIndexes = append(connectorIndexes, i)
+		}
+		if len(connectorIndexes) > 0 {
+			signedTx, err = s.wallet.SignTransactionTapscript(ctx, signedTx, connectorIndexes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to sign forfeit connector input: %w", err)
+			}
+		}
+
+		ptx, err = psbt.NewFromRawBytes(strings.NewReader(signedTx), true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse signed forfeit tx: %w", err)
+		}
+
 		if !domain.ForfeitTxReadyToBroadcast(ptx) {
 			return nil, fmt.Errorf("signed forfeit tx is not ready to broadcast")
 		}
+
 		signed = append(signed, domain.ForfeitTx{
 			Txid: ptx.UnsignedTx.TxID(),
 			Tx:   signedTx,
@@ -4209,7 +4243,7 @@ func (s *service) finalizeRound(roundId string, roundTiming roundTiming, setting
 		if len(boardingInputsIndexes) > 0 {
 			log.Debugf("signing boarding inputs of commitment tx for round %s\n", roundId)
 
-			txToSign, err = s.signer.SignTransactionTapscript(
+			txToSign, err = s.signer.SignTransaction(
 				ctx, round.CommitmentTx, boardingInputsIndexes,
 			)
 			if err != nil {

@@ -300,28 +300,6 @@ func (m *mockedWallet) GetTransaction(ctx context.Context, txid string) (string,
 	return res, args.Error(1)
 }
 
-func (m *mockedWallet) SignMessage(ctx context.Context, message []byte) ([]byte, error) {
-	args := m.Called(ctx, message)
-
-	var res []byte
-	if a := args.Get(0); a != nil {
-		res = a.([]byte)
-	}
-	return res, args.Error(1)
-}
-
-func (m *mockedWallet) VerifyMessageSignature(
-	ctx context.Context, message, signature []byte,
-) (bool, error) {
-	args := m.Called(ctx, message, signature)
-
-	var res bool
-	if a := args.Get(0); a != nil {
-		res = a.(bool)
-	}
-	return res, args.Error(1)
-}
-
 func (m *mockedWallet) ConnectorsAccountBalance(ctx context.Context) (uint64, uint64, error) {
 	args := m.Called(ctx)
 
@@ -382,11 +360,6 @@ func (m *mockedWallet) GetOutpointStatus(
 	return res, args.Error(1)
 }
 
-func (m *mockedWallet) LoadSignerKey(ctx context.Context, privateKey string) error {
-	args := m.Called(ctx, privateKey)
-	return args.Error(0)
-}
-
 func (m *mockedWallet) RescanUtxos(ctx context.Context, outs []wire.OutPoint) error {
 	args := m.Called(ctx, outs)
 	return args.Error(0)
@@ -397,7 +370,6 @@ type staticSigner struct {
 	pubkey *btcec.PublicKey
 }
 
-func (s *staticSigner) IsReady(_ context.Context) (bool, error) { return true, nil }
 func (s *staticSigner) GetPubkey(_ context.Context) (*btcec.PublicKey, error) {
 	return s.pubkey, nil
 }
@@ -406,9 +378,6 @@ func (s *staticSigner) GetDeprecatedPubkeys(
 ) ([]ports.DeprecatedSignerPubkey, error) {
 	return nil, nil
 }
-func (s *staticSigner) SignTransaction(_ context.Context, _ string, _ bool) (string, error) {
-	return "", nil
-}
-func (s *staticSigner) SignTransactionTapscript(_ context.Context, _ string, _ []int) (string, error) {
+func (s *staticSigner) SignTransaction(_ context.Context, _ string, _ []int) (string, error) {
 	return "", nil
 }

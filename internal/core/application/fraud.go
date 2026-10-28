@@ -12,6 +12,7 @@ import (
 	"github.com/arkade-os/arkd/internal/core/domain"
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/arkade-os/arkd/pkg/ark-lib/txsigner"
 	"github.com/arkade-os/arkd/pkg/ark-lib/txutils"
 	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/btcsuite/btcd/chainhash/v2"
@@ -195,7 +196,12 @@ func (s *service) broadcastCheckpointTx(
 	}
 
 	checkpointB64 := txs[0]
-	txHex, err := s.builder.FinalizeAndExtract(checkpointB64)
+	checkpointPtx, err := psbt.NewFromRawBytes(strings.NewReader(checkpointB64), true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse checkpoint tx: %s", err)
+	}
+
+	txHex, err := txsigner.ExtractFinalizedTx(checkpointPtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to finalize checkpoint tx: %s", err)
 	}
@@ -271,15 +277,17 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 	// without the operator's half.
 	signedForfeitTx := forfeitTxB64
 	if !domain.ForfeitTxReadyToBroadcast(forfeitTx) {
-		signedForfeitTx, err = s.signer.SignTransactionTapscript(ctx, forfeitTxB64, nil)
+		signedForfeitTx, err = s.signer.SignTransaction(ctx, forfeitTxB64, nil)
 		if err != nil {
 			return fmt.Errorf("failed to sign forfeit tx: %s", err)
 		}
 	}
 
-	forfeitTxHex, err := s.builder.FinalizeAndExtract(signedForfeitTx)
+	// The wallet also signs the vtxo input with its forfeit key. The finalizer
+	// ignores it as long as that key is not in the forfeit closure.
+	forfeitTxHex, err := s.wallet.SignTransaction(ctx, signedForfeitTx, true)
 	if err != nil {
-		return fmt.Errorf("failed to finalize forfeit tx: %s", err)
+		return fmt.Errorf("failed to sign forfeit connector input: %s", err)
 	}
 
 	var forfeit wire.MsgTx
@@ -303,13 +311,13 @@ func (s *service) broadcastForfeitTx(ctx context.Context, vtxo domain.Vtxo) erro
 		if err != nil {
 			return fmt.Errorf("failed to rebuild forfeit tx: %w", err)
 		}
-		signed, err := s.signer.SignTransactionTapscript(ctx, rebuilt, nil)
+		signed, err := s.signer.SignTransaction(ctx, rebuilt, nil)
 		if err != nil {
 			return fmt.Errorf("failed to sign rebuilt forfeit tx: %w", err)
 		}
-		forfeitTxHex, err = s.builder.FinalizeAndExtract(signed)
+		forfeitTxHex, err = s.wallet.SignTransaction(ctx, signed, true)
 		if err != nil {
-			return fmt.Errorf("failed to finalize rebuilt forfeit tx: %w", err)
+			return fmt.Errorf("failed to sign rebuilt forfeit connector input: %w", err)
 		}
 		// The rebuild preserves the txid, so the child still spends the same anchor.
 		if _, err := s.wallet.BroadcastTransaction(ctx, forfeitTxHex, childForfeit); err != nil {

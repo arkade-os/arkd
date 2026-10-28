@@ -42,7 +42,7 @@ jobs:
         run: |
           echo "=== Compose services ==="
           docker compose -f docker-compose.regtest.yml ps --all || true
-          for c in arkd arkd-wallet nbxplorer pg redis; do
+          for c in arkd arkd-wallet arkd-signer nbxplorer pg redis; do
             echo "=== $c ==="
             docker logs --tail 300 "$c" 2>&1 || echo "(container not present)"
           done

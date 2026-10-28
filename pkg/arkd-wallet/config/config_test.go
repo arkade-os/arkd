@@ -6,11 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	testSignerKey     = "1b2c3d4e5f60718293a4b5c6d7e8f900112233445566778899aabbccddeeff00"
-	testDeprecatedKey = "deadbeefcafebabe0011223344556677889900aabbccddeeff00112233445566"
-)
-
 func TestConfigString(t *testing.T) {
 	t.Run("redacted", func(t *testing.T) {
 		tests := []struct {
@@ -19,18 +14,6 @@ func TestConfigString(t *testing.T) {
 			secrets []string
 			kept    []string
 		}{
-			{
-				name:    "signer key",
-				mutate:  func(c *Config) { c.SignerKey = testSignerKey },
-				secrets: []string{testSignerKey},
-				kept:    []string{`"SignerKey": "` + redactedValue + `"`},
-			},
-			{
-				name:    "deprecated signer keys",
-				mutate:  func(c *Config) { c.DeprecatedSignerKeys = testDeprecatedKey },
-				secrets: []string{testDeprecatedKey},
-				kept:    []string{`"DeprecatedSignerKeys": "` + redactedValue + `"`},
-			},
 			{
 				name:    "url credentials",
 				mutate:  func(c *Config) { c.NbxplorerURL = "http://nbxuser:nbxp4ss@nbxplorer:24444" },
@@ -91,11 +74,6 @@ func TestConfigString(t *testing.T) {
 				name:   "credentialless url",
 				mutate: func(c *Config) { c.NbxplorerURL = "http://nbxplorer:24444" },
 				kept:   []string{"http://nbxplorer:24444"},
-			},
-			{
-				name:   "unset secrets stay empty",
-				mutate: func(*Config) {},
-				kept:   []string{`"SignerKey": ""`, `"DeprecatedSignerKeys": ""`},
 			},
 			{
 				name:   "services are omitted",

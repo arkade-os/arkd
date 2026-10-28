@@ -2017,7 +2017,7 @@ func (s *testTapscriptSigner) GetDeprecatedPubkeys(
 	return nil, nil
 }
 
-func (s *testTapscriptSigner) SignTransactionTapscript(
+func (s *testTapscriptSigner) SignTransaction(
 	_ context.Context, tx string, _ []int,
 ) (string, error) {
 	return signTapscriptInputs(s.t, tx, s.prv), nil

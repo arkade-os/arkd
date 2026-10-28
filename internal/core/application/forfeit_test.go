@@ -32,7 +32,7 @@ func TestForfeitTxs(t *testing.T) {
 
 		t.Run("signs each forfeit tx via the operator signer", func(t *testing.T) {
 			signer := &fakeForfeitSigner{returnTx: operatorSigned}
-			s := &service{signer: signer}
+			s := &service{signer: signer, wallet: &fakeForfeitWallet{}}
 
 			got, err := s.signForfeitTxs(ctx, []string{userSigned})
 
@@ -46,7 +46,7 @@ func TestForfeitTxs(t *testing.T) {
 
 		t.Run("signs every forfeit tx in the batch", func(t *testing.T) {
 			signer := &fakeForfeitSigner{returnTx: operatorSigned}
-			s := &service{signer: signer}
+			s := &service{signer: signer, wallet: &fakeForfeitWallet{}}
 
 			got, err := s.signForfeitTxs(ctx, []string{userSigned, userSigned, userSigned})
 
@@ -57,7 +57,45 @@ func TestForfeitTxs(t *testing.T) {
 
 		t.Run("returns error when the signer fails", func(t *testing.T) {
 			signer := &fakeForfeitSigner{err: errors.New("signer unavailable")}
-			s := &service{signer: signer}
+			s := &service{signer: signer, wallet: &fakeForfeitWallet{}}
+
+			_, err := s.signForfeitTxs(ctx, []string{userSigned})
+
+			require.Error(t, err)
+		})
+
+		t.Run("signs the connector via the wallet, scoped to it", func(t *testing.T) {
+			internalKey, err := btcec.NewPrivateKey()
+			require.NoError(t, err)
+			vtxoSigned := forfeitPsbt(t, func(p *psbt.Packet) {
+				p.Inputs[0].TaprootLeafScript = []*psbt.TaprootTapLeafScript{
+					{
+						Script:      []byte{txscriptOpTrue},
+						LeafVersion: txscript.BaseLeafVersion,
+						ControlBlock: append(
+							[]byte{byte(txscript.BaseLeafVersion)},
+							schnorr.SerializePubKey(internalKey.PubKey())...,
+						),
+					},
+				}
+			})
+			signer := &fakeForfeitSigner{returnTx: vtxoSigned}
+			wallet := &fakeForfeitWallet{returnTx: operatorSigned}
+			s := &service{signer: signer, wallet: wallet}
+
+			got, err := s.signForfeitTxs(ctx, []string{userSigned})
+
+			require.NoError(t, err)
+			require.Equal(t, 1, wallet.calls)
+			require.Equal(t, vtxoSigned, wallet.lastTx)
+			require.Equal(t, []int{1}, wallet.lastIndexes, "wallet must sign the connector only")
+			require.Equal(t, operatorSigned, got[0].Tx, "stored tx must carry the connector sig")
+		})
+
+		t.Run("returns error when the wallet fails", func(t *testing.T) {
+			signer := &fakeForfeitSigner{returnTx: operatorSigned}
+			wallet := &fakeForfeitWallet{err: errors.New("wallet locked")}
+			s := &service{signer: signer, wallet: wallet}
 
 			_, err := s.signForfeitTxs(ctx, []string{userSigned})
 
@@ -67,7 +105,10 @@ func TestForfeitTxs(t *testing.T) {
 		t.Run("rejects a poisoned connector signature", func(t *testing.T) {
 			root := txscript.NewBaseTapLeaf([]byte{txscript.OP_TRUE}).TapHash()
 			userSigned, operatorSigned := signedForfeitPsbt(t, root[:])
-			s := &service{signer: &fakeForfeitSigner{returnTx: operatorSigned}}
+			s := &service{
+				signer: &fakeForfeitSigner{returnTx: operatorSigned},
+				wallet: &fakeForfeitWallet{},
+			}
 			got, err := s.signForfeitTxs(ctx, []string{userSigned})
 			require.ErrorContains(t, err, "signed forfeit tx is not ready to broadcast")
 			require.Nil(t, got)
@@ -79,7 +120,10 @@ func TestForfeitTxs(t *testing.T) {
 			p.Inputs[1].TaprootKeySpendSig = nil
 			missingSig, err := p.B64Encode()
 			require.NoError(t, err)
-			s := &service{signer: &fakeForfeitSigner{returnTx: missingSig}}
+			s := &service{
+				signer: &fakeForfeitSigner{returnTx: missingSig},
+				wallet: &fakeForfeitWallet{},
+			}
 			got, err := s.signForfeitTxs(ctx, []string{userSigned})
 			require.ErrorContains(t, err, "signed forfeit tx is not ready to broadcast")
 			require.Nil(t, got)
@@ -197,7 +241,7 @@ func (b *failingForfeitBuilder) VerifyVtxoTapscriptSigs(string, bool) (bool, *ps
 const txscriptOpTrue = 0x51
 
 // fakeForfeitSigner is a minimal ports.SignerService double: it records calls to
-// SignTransactionTapscript and returns a canned signed tx (or error). Other
+// SignTransaction and returns a canned signed tx (or error). Other
 // SignerService methods are inherited from the embedded interface and unused.
 type fakeForfeitSigner struct {
 	ports.SignerService
@@ -207,13 +251,38 @@ type fakeForfeitSigner struct {
 	lastTx   string
 }
 
-func (f *fakeForfeitSigner) SignTransactionTapscript(
+func (f *fakeForfeitSigner) SignTransaction(
 	_ context.Context, partialTx string, _ []int,
 ) (string, error) {
 	f.calls++
 	f.lastTx = partialTx
 	if f.err != nil {
 		return "", f.err
+	}
+	return f.returnTx, nil
+}
+
+// fakeForfeitWallet echoes the input tx when returnTx is empty.
+type fakeForfeitWallet struct {
+	ports.WalletService
+	returnTx    string
+	err         error
+	calls       int
+	lastTx      string
+	lastIndexes []int
+}
+
+func (f *fakeForfeitWallet) SignTransactionTapscript(
+	_ context.Context, partialTx string, inputIndexes []int,
+) (string, error) {
+	f.calls++
+	f.lastTx = partialTx
+	f.lastIndexes = inputIndexes
+	if f.err != nil {
+		return "", f.err
+	}
+	if f.returnTx == "" {
+		return partialTx, nil
 	}
 	return f.returnTx, nil
 }

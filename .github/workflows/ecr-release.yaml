@@ -111,6 +111,22 @@ jobs:
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
 
+      - name: Build and push arkd-signer image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./arkdsigner.Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          tags: |
+            ${{ steps.ecr-staging.outputs.registry }}/arkd-signer-staging:${{ steps.meta.outputs.version }}
+            ${{ steps.ecr-staging.outputs.registry }}/arkd-signer-staging:${{ steps.meta.outputs.sha }}
+            ${{ steps.ecr-prod.outputs.registry }}/arkd-signer-prod:${{ steps.meta.outputs.version }}
+            ${{ steps.ecr-prod.outputs.registry }}/arkd-signer-prod:${{ steps.meta.outputs.sha }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+
       - name: Summary
         run: |
           {
@@ -120,6 +136,8 @@ jobs:
             echo "| --- | --- |"
             echo "| \`arkd-staging\` | \`${{ steps.meta.outputs.version }}\`, \`${{ steps.meta.outputs.sha }}\` |"
             echo "| \`arkd-wallet-staging\` | \`${{ steps.meta.outputs.version }}\`, \`${{ steps.meta.outputs.sha }}\` |"
+            echo "| \`arkd-signer-staging\` | \`${{ steps.meta.outputs.version }}\`, \`${{ steps.meta.outputs.sha }}\` |"
             echo "| \`arkd-prod\` | \`${{ steps.meta.outputs.version }}\`, \`${{ steps.meta.outputs.sha }}\` |"
             echo "| \`arkd-wallet-prod\` | \`${{ steps.meta.outputs.version }}\`, \`${{ steps.meta.outputs.sha }}\` |"
+            echo "| \`arkd-signer-prod\` | \`${{ steps.meta.outputs.version }}\`, \`${{ steps.meta.outputs.sha }}\` |"
           } >> "$GITHUB_STEP_SUMMARY"

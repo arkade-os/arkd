@@ -1,0 +1,28 @@
+#!/bin/bash
+set -e
+
+# Usage: ./scripts/build <arkd|arkd-wallet|arkd-signer>
+NAME=${1:?usage: $0 <arkd|arkd-wallet|arkd-signer>}
+
+PARENT_PATH=$(dirname $(
+  cd $(dirname $0)
+  pwd -P
+))
+
+VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "unknown")
+
+GOOS=${GOOS:-$(go env GOOS)}
+GOARCH=${GOARCH:-$(go env GOARCH)}
+
+echo "Building $NAME for $GOOS $GOARCH"
+echo "Version: $VERSION"
+
+pushd $PARENT_PATH
+
+mkdir -p build
+
+GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'main.Version=$VERSION'" -o build/$NAME-$GOOS-$GOARCH ./cmd/$NAME
+
+echo "Build complete: build/$NAME-$GOOS-$GOARCH"
+
+popd
