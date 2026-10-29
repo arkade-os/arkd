@@ -1,6 +1,7 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -27,6 +28,7 @@ import (
 	"github.com/arkade-os/arkd/pkg/errors"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
@@ -1018,96 +1020,39 @@ func TestRegisterIntent(t *testing.T) {
 }
 
 func TestSubmitOffchainTx(t *testing.T) {
-	// The control block of a checkpoint input ends up in the checkpoint we sign. The merkle root
-	// doesn't commit to its internal key, so a foreign one would pass every other check while
-	// consensus rejects the witness: it's refused before anything is signed or recorded.
-	t.Run("checkpoint control block with foreign internal key", func(t *testing.T) {
-		tx := newTestOneShotTx(t, 1)
-		ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx.checkpointTxs[0]), true)
-		require.NoError(t, err)
-		foreignKey := schnorr.SerializePubKey(testPubkey(t))
-		copy(ptx.Inputs[0].TaprootLeafScript[0].ControlBlock[1:33], foreignKey)
-		checkpoint, err := ptx.B64Encode()
-		require.NoError(t, err)
-
-		resp, appErr := tx.svc.SubmitOffchainTx(t.Context(), []string{checkpoint}, tx.arkTx)
-		require.Error(t, appErr)
-		require.Nil(t, resp)
-		require.Equal(t, errors.INVALID_PSBT_INPUT.Code, appErr.Code())
-		require.Contains(t, appErr.Error(), "invalid control block")
-		// The request is recorded as failed, like any rejected two-step submission, but never
-		// accepted: nothing is signed for it nor cached.
-		for _, call := range tx.events.Calls {
-			for _, event := range call.Arguments.Get(3).([]domain.Event) {
-				require.NotEqual(t, domain.EventTypeOffchainTxAccepted, event.GetType())
-			}
+	expectedEvents := []domain.EventType{
+		domain.EventTypeOffchainTxRequested,
+		domain.EventTypeOffchainTxAccepted,
+		domain.EventTypeOffchainTxFinalized,
+	}
+	savedEvents := func(t *testing.T, events *mockedEventRepo) []domain.EventType {
+		t.Helper()
+		events.AssertNumberOfCalls(t, "Save", 1)
+		saved := events.Calls[0].Arguments.Get(3).([]domain.Event)
+		types := make([]domain.EventType, 0, len(saved))
+		for _, event := range saved {
+			types = append(types, event.GetType())
 		}
-		require.Empty(t, tx.offchainTxs.added)
-	})
-
-	t.Run("an input is checked for bans by its stored script", func(t *testing.T) {
-		spend := testOffchainTxSpendingVtxo(t)
-		svc := testSubmitOffchainTxService(t, spend.vtxo, convictionRepoStub{
-			convictions: map[string][]domain.ScriptConviction{spend.vtxoScript: {{}}},
-		})
-
-		_, appErr := svc.SubmitOffchainTx(
-			t.Context(), []string{spend.checkpointTx}, spend.arkTx,
-		)
-		require.Error(t, appErr)
-		require.Equal(t, errors.VTXO_BANNED.Code, appErr.Code())
-		require.Equal(t, spend.vtxo.Outpoint.String(), appErr.Metadata()["vtxo_outpoint"])
-		require.Equal(t, "["+spend.vtxoScript+"]", appErr.Metadata()["scripts"])
-	})
-
-	t.Run("a failed ban lookup reports the tx and its inputs", func(t *testing.T) {
-		spend := testOffchainTxSpendingVtxo(t)
-		svc := testSubmitOffchainTxService(t, spend.vtxo, convictionRepoStub{
-			err: fmt.Errorf("convictions unavailable"),
-		})
-
-		_, appErr := svc.SubmitOffchainTx(
-			t.Context(), []string{spend.checkpointTx}, spend.arkTx,
-		)
-		require.Error(t, appErr)
-		require.Equal(t, errors.INTERNAL_ERROR.Code, appErr.Code())
-		require.Equal(t, spend.arkTxid, appErr.Metadata()["txid"])
-		require.Contains(t, appErr.Metadata()["vtxos"], spend.vtxo.Outpoint.Txid)
-	})
-
-	// A tx submitted with the checkpoints already signed by the owner is finalized in the same
-	// call, so no second step is needed.
-	t.Run("one shot", func(t *testing.T) {
-		expectedEvents := []domain.EventType{
-			domain.EventTypeOffchainTxRequested,
-			domain.EventTypeOffchainTxAccepted,
-			domain.EventTypeOffchainTxFinalized,
+		return types
+	}
+	requireFinalized := func(t *testing.T, tx testOneShotTx, resp *AcceptedOffchainTx) {
+		t.Helper()
+		require.Equal(t, tx.arkTxid, resp.TxId)
+		require.Len(t, resp.SignedCheckpointTxs, len(tx.checkpointTxs))
+		// The checkpoints are returned fully signed: owner and server.
+		for _, checkpoint := range resp.SignedCheckpointTxs {
+			valid, _, err := tx.svc.builder.VerifyVtxoTapscriptSigs(checkpoint, true)
+			require.NoError(t, err)
+			require.True(t, valid)
 		}
-		savedEvents := func(t *testing.T, events *mockedEventRepo) []domain.EventType {
-			t.Helper()
-			events.AssertNumberOfCalls(t, "Save", 1)
-			saved := events.Calls[0].Arguments.Get(3).([]domain.Event)
-			types := make([]domain.EventType, 0, len(saved))
-			for _, event := range saved {
-				types = append(types, event.GetType())
-			}
-			return types
-		}
-		requireFinalized := func(t *testing.T, tx testOneShotTx, resp *AcceptedOffchainTx) {
-			t.Helper()
-			require.Equal(t, tx.arkTxid, resp.TxId)
-			require.Len(t, resp.SignedCheckpointTxs, len(tx.checkpointTxs))
-			// The checkpoints are returned fully signed: owner and server.
-			for _, checkpoint := range resp.SignedCheckpointTxs {
-				valid, _, err := tx.svc.builder.VerifyVtxoTapscriptSigs(checkpoint, true)
-				require.NoError(t, err)
-				require.True(t, valid)
-			}
-			require.Equal(t, expectedEvents, savedEvents(t, tx.events))
-			require.Equal(t, []string{tx.arkTxid}, tx.offchainTxs.added)
-		}
+		require.Equal(t, expectedEvents, savedEvents(t, tx.events))
+		require.Equal(t, []string{tx.arkTxid}, tx.offchainTxs.added)
+	}
 
-		t.Run("valid", func(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		// A tx submitted with the checkpoints already signed by the owner is finalized in the
+		// same call, so no second step is needed.
+		t.Run("one shot", func(t *testing.T) {
 			tests := []struct {
 				name      string
 				numInputs int
@@ -1135,7 +1080,163 @@ func TestSubmitOffchainTx(t *testing.T) {
 			}
 		})
 
-		t.Run("invalid", func(t *testing.T) {
+		// Finalizing an already finalized tx returns success and ignores the request.
+		t.Run("finalize again", func(t *testing.T) {
+			for _, servedBy := range []string{"cache", "db"} {
+				t.Run(servedBy, func(t *testing.T) {
+					tx := newTestOneShotTx(t, 2)
+
+					resp, err := tx.svc.SubmitOffchainTx(
+						t.Context(), tx.signedCheckpoints, tx.arkTx,
+					)
+					require.NoError(t, err)
+					requireFinalized(t, tx, resp)
+
+					if servedBy == "db" {
+						tx.offchainTxRepo.tx = tx.offchainTxs.cached
+						require.NoError(t, tx.offchainTxs.Remove(t.Context(), tx.arkTxid))
+					}
+
+					// The tx is finalized, a valid request is "ignored" and no error is returned.
+					err = tx.svc.FinalizeOffchainTx(
+						t.Context(), tx.arkTxid, resp.SignedCheckpointTxs,
+					)
+					require.NoError(t, err)
+					require.Equal(t, expectedEvents, savedEvents(t, tx.events))
+				})
+			}
+		})
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		// The control block of a checkpoint input ends up in the checkpoint we sign. The merkle
+		// root doesn't commit to its internal key, so a foreign one would pass every other check
+		// while consensus rejects the witness: it's refused before anything is signed or recorded.
+		t.Run("checkpoint control block with foreign internal key", func(t *testing.T) {
+			tx := newTestOneShotTx(t, 1)
+			ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx.checkpointTxs[0]), true)
+			require.NoError(t, err)
+			foreignKey := schnorr.SerializePubKey(testPubkey(t))
+			copy(ptx.Inputs[0].TaprootLeafScript[0].ControlBlock[1:33], foreignKey)
+			checkpoint, err := ptx.B64Encode()
+			require.NoError(t, err)
+
+			resp, appErr := tx.svc.SubmitOffchainTx(t.Context(), []string{checkpoint}, tx.arkTx)
+			require.Error(t, appErr)
+			require.Nil(t, resp)
+			require.Equal(t, errors.INVALID_PSBT_INPUT.Code, appErr.Code())
+			require.Contains(t, appErr.Error(), "invalid control block")
+			// The request is recorded as failed, like any rejected two-step submission, but never
+			// accepted: nothing is signed for it nor cached.
+			for _, call := range tx.events.Calls {
+				for _, event := range call.Arguments.Get(3).([]domain.Event) {
+					require.NotEqual(t, domain.EventTypeOffchainTxAccepted, event.GetType())
+				}
+			}
+			require.Empty(t, tx.offchainTxs.added)
+		})
+
+		// A leaf absent from the vtxo's taptree, revealed with a control block whose path doesn't
+		// lead to the vtxo key, is still a valid closure with a valid internal key. The server must
+		// not sign a checkpoint spending through it: consensus would reject its witness, so the
+		// checkpoint could never be broadcasted, leading to a loss of funds.
+		t.Run("checkpoint leaf not in the vtxo taptree", func(t *testing.T) {
+			tx := newTestOneShotTx(t, 1)
+			vtxo := tx.vtxos[0]
+
+			// The forfeit closure with its keys swapped: same signers, another script.
+			foreignLeaf, err := (&script.MultisigClosure{
+				PubKeys: []*btcec.PublicKey{tx.serverPrv.PubKey(), tx.ownerPrv.PubKey()},
+			}).Script()
+			require.NoError(t, err)
+			require.NotContains(t, tx.tapscripts, hex.EncodeToString(foreignLeaf))
+			ctrlBlock := &txscript.ControlBlock{
+				InternalKey:    script.UnspendableKey(),
+				LeafVersion:    txscript.BaseLeafVersion,
+				InclusionProof: bytes.Repeat([]byte{7}, 32),
+			}
+			foreignKey := txscript.ComputeTaprootOutputKey(
+				script.UnspendableKey(), ctrlBlock.RootHash(foreignLeaf),
+			)
+			ctrlBlock.OutputKeyYIsOdd = foreignKey.SerializeCompressed()[0] == 0x03
+			require.NotEqual(t, vtxo.PubKey, hex.EncodeToString(schnorr.SerializePubKey(foreignKey)))
+
+			// Build and sign the txs through the foreign leaf, against the prevout the server
+			// rebuilds from it.
+			hash, err := chainhash.NewHashFromStr(vtxo.Outpoint.Txid)
+			require.NoError(t, err)
+			arkPtx, checkpointPtxs, err := offchain.BuildTxs(
+				[]offchain.VtxoInput{{
+					Outpoint:           &wire.OutPoint{Hash: *hash, Index: vtxo.Outpoint.VOut},
+					Amount:             int64(vtxo.Amount),
+					Tapscript:          &waddrmgr.Tapscript{ControlBlock: ctrlBlock, RevealedScript: foreignLeaf},
+					RevealedTapscripts: tx.tapscripts,
+				}},
+				[]*wire.TxOut{{Value: int64(vtxo.Amount), PkScript: testP2TRScript(t)}},
+				tx.checkpointTapscript,
+			)
+			require.NoError(t, err)
+			require.Len(t, checkpointPtxs, 1)
+			unsignedArkTx, err := arkPtx.B64Encode()
+			require.NoError(t, err)
+			arkTx := signTapscriptInputs(t, unsignedArkTx, tx.ownerPrv)
+			unsignedCheckpoint, err := checkpointPtxs[0].B64Encode()
+			require.NoError(t, err)
+			checkpointPtx, err := psbt.NewFromRawBytes(
+				strings.NewReader(signTapscriptInputs(t, unsignedCheckpoint, tx.ownerPrv)), true,
+			)
+			require.NoError(t, err)
+			// The submitted checkpoint claims the real vtxo output, as the server requires.
+			vtxoKeyBytes, err := hex.DecodeString(vtxo.PubKey)
+			require.NoError(t, err)
+			vtxoKey, err := schnorr.ParsePubKey(vtxoKeyBytes)
+			require.NoError(t, err)
+			checkpointPtx.Inputs[0].WitnessUtxo.PkScript, err = script.P2TRScript(vtxoKey)
+			require.NoError(t, err)
+			checkpoint, err := checkpointPtx.B64Encode()
+			require.NoError(t, err)
+
+			resp, appErr := tx.svc.SubmitOffchainTx(t.Context(), []string{checkpoint}, arkTx)
+
+			require.Error(t, appErr)
+			require.Nil(t, resp)
+			require.Equal(t, errors.INVALID_PSBT_INPUT.Code, appErr.Code())
+			require.Empty(t, tx.offchainTxs.added, "nothing must be signed nor cached")
+		})
+
+		t.Run("an input is checked for bans by its stored script", func(t *testing.T) {
+			spend := testOffchainTxSpendingVtxo(t)
+			svc := testSubmitOffchainTxService(t, spend.vtxo, convictionRepoStub{
+				convictions: map[string][]domain.ScriptConviction{spend.vtxoScript: {{}}},
+			})
+
+			_, appErr := svc.SubmitOffchainTx(
+				t.Context(), []string{spend.checkpointTx}, spend.arkTx,
+			)
+			require.Error(t, appErr)
+			require.Equal(t, errors.VTXO_BANNED.Code, appErr.Code())
+			require.Equal(t, spend.vtxo.Outpoint.String(), appErr.Metadata()["vtxo_outpoint"])
+			require.Equal(t, "["+spend.vtxoScript+"]", appErr.Metadata()["scripts"])
+		})
+
+		t.Run("a failed ban lookup reports the tx and its inputs", func(t *testing.T) {
+			spend := testOffchainTxSpendingVtxo(t)
+			svc := testSubmitOffchainTxService(t, spend.vtxo, convictionRepoStub{
+				err: fmt.Errorf("convictions unavailable"),
+			})
+
+			_, appErr := svc.SubmitOffchainTx(
+				t.Context(), []string{spend.checkpointTx}, spend.arkTx,
+			)
+			require.Error(t, appErr)
+			require.Equal(t, errors.INTERNAL_ERROR.Code, appErr.Code())
+			require.Equal(t, spend.arkTxid, appErr.Metadata()["txid"])
+			require.Contains(t, appErr.Metadata()["vtxos"], spend.vtxo.Outpoint.Txid)
+		})
+
+		// One-shot submissions whose owner signatures on the checkpoints are missing or wrong are
+		// rejected, leave no trace, and can be retried with a well-formed submission.
+		t.Run("one shot", func(t *testing.T) {
 			tests := []struct {
 				name      string
 				numInputs int
@@ -1187,33 +1288,6 @@ func TestSubmitOffchainTx(t *testing.T) {
 					)
 					require.NoError(t, appErr)
 					requireFinalized(t, tx, resp)
-				})
-			}
-		})
-
-		// Finalizing a one-shot tx again reports that it is already finalized, from cache or DB.
-		t.Run("finalize again", func(t *testing.T) {
-			for _, servedBy := range []string{"cache", "db"} {
-				t.Run(servedBy, func(t *testing.T) {
-					tx := newTestOneShotTx(t, 2)
-
-					resp, err := tx.svc.SubmitOffchainTx(
-						t.Context(), tx.signedCheckpoints, tx.arkTx,
-					)
-					require.NoError(t, err)
-					requireFinalized(t, tx, resp)
-
-					if servedBy == "db" {
-						tx.offchainTxRepo.tx = tx.offchainTxs.cached
-						require.NoError(t, tx.offchainTxs.Remove(t.Context(), tx.arkTxid))
-					}
-
-					// The tx is finalized, a valid request is "ignored" and no error is returned.
-					err = tx.svc.FinalizeOffchainTx(
-						t.Context(), tx.arkTxid, resp.SignedCheckpointTxs,
-					)
-					require.NoError(t, err)
-					require.Equal(t, expectedEvents, savedEvents(t, tx.events))
 				})
 			}
 		})
@@ -1823,6 +1897,13 @@ type testOneShotTx struct {
 	checkpointTxs []string
 	// signedCheckpoints are signed by the owner, as submitted in one shot.
 	signedCheckpoints []string
+	// serverPrv is the key the service signs with, ownerPrv the one the vtxos are spent with.
+	serverPrv *btcec.PrivateKey
+	ownerPrv  *btcec.PrivateKey
+	// vtxos are the spent vtxos, tapscripts their taptree.
+	vtxos               []domain.Vtxo
+	tapscripts          []string
+	checkpointTapscript []byte
 }
 
 // newTestOneShotTx builds a tx spending numInputs vtxos of 10,000 sats each to a single
@@ -1954,13 +2035,18 @@ func newTestOneShotTx(t *testing.T, numInputs int) testOneShotTx {
 			},
 			offchainTxMu: &sync.Mutex{},
 		},
-		events:            events,
-		offchainTxs:       offchainTxs,
-		offchainTxRepo:    offchainTxRepo,
-		arkTxid:           arkPtx.UnsignedTx.TxID(),
-		arkTx:             signTapscriptInputs(t, unsignedArkTx, ownerPrv),
-		checkpointTxs:     checkpointTxs,
-		signedCheckpoints: signedCheckpoints,
+		events:              events,
+		offchainTxs:         offchainTxs,
+		offchainTxRepo:      offchainTxRepo,
+		arkTxid:             arkPtx.UnsignedTx.TxID(),
+		arkTx:               signTapscriptInputs(t, unsignedArkTx, ownerPrv),
+		checkpointTxs:       checkpointTxs,
+		signedCheckpoints:   signedCheckpoints,
+		serverPrv:           serverPrv,
+		ownerPrv:            ownerPrv,
+		vtxos:               vtxos,
+		tapscripts:          tapscripts,
+		checkpointTapscript: checkpointTapscript,
 	}
 }
 

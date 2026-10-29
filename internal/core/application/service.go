@@ -1002,6 +1002,24 @@ func (s *service) SubmitOffchainTx(
 			})
 		}
 
+		// Recompute the taproot output key from the leaf and the control block's merkle path and
+		// require it to match the vtxo key. Otherwise a valid-looking but foreign leaf would make
+		// us sign a checkpoint whose witness consensus rejects, spending a vtxo we marked spent.
+		leafRoot := ctrlBlock.RootHash(spendingTapscript.Script)
+		if revealedKey := txscript.ComputeTaprootOutputKey(
+			ctrlBlock.InternalKey, leafRoot,
+		); !bytes.Equal(
+			schnorr.SerializePubKey(revealedKey), schnorr.SerializePubKey(vtxoPubkey),
+		) {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"revealed tapscript leaf is not committed by the vtxo taproot key on input %d",
+				inputIndex,
+			).WithMetadata(errors.InputMetadata{
+				Txid:       checkpointTxid,
+				InputIndex: inputIndex,
+			})
+		}
+
 		witness, err := txutils.GetArkPsbtConditionWitness(checkpointPsbt, 0)
 		if err != nil {
 			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
