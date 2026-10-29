@@ -741,7 +741,12 @@ func (s *service) SubmitOffchainTx(
 	// Loop over the inputs of the given ark tx to ensure the order of inputs is preserved when
 	// rebuilding the txs.
 	for inputIndex, in := range arkPtx.UnsignedTx.TxIn {
-		checkpointPsbt := checkpointPsbts[in.PreviousOutPoint.Hash.String()]
+		checkpointPsbt, ok := checkpointPsbts[in.PreviousOutPoint.Hash.String()]
+		if !ok {
+			return nil, errors.INVALID_PSBT_INPUT.New(
+				"ark tx input %d does not spend any submitted checkpoint tx output", inputIndex,
+			).WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inputIndex})
+		}
 		checkpointTxid := checkpointPsbt.UnsignedTx.TxID()
 		input := checkpointPsbt.Inputs[0]
 

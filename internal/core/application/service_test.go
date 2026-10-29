@@ -1204,6 +1204,28 @@ func TestSubmitOffchainTx(t *testing.T) {
 			require.Empty(t, tx.offchainTxs.added, "nothing must be signed nor cached")
 		})
 
+		// A crafted ark tx whose input does not spend any submitted checkpoint must be rejected.
+		t.Run("ark tx input not spending a checkpoint tx output", func(t *testing.T) {
+			tx := newTestOneShotTx(t, 1)
+			ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx.arkTx), true)
+			require.NoError(t, err)
+			// Point the only ark input at an outpoint that is not a checkpoint txid.
+			notACheckpoint := chainhash.HashH([]byte("not a checkpoint tx out"))
+			ptx.UnsignedTx.TxIn[0].PreviousOutPoint.Hash = notACheckpoint
+			arkTx, err := ptx.B64Encode()
+			require.NoError(t, err)
+
+			var resp *AcceptedOffchainTx
+			var appErr errors.Error
+			require.NotPanics(t, func() {
+				resp, appErr = tx.svc.SubmitOffchainTx(t.Context(), tx.signedCheckpoints, arkTx)
+			})
+			require.Error(t, appErr)
+			require.Nil(t, resp)
+			require.Equal(t, errors.INVALID_PSBT_INPUT.Code, appErr.Code())
+			require.Empty(t, tx.offchainTxs.added, "nothing must be signed nor cached")
+		})
+
 		t.Run("an input is checked for bans by its stored script", func(t *testing.T) {
 			spend := testOffchainTxSpendingVtxo(t)
 			svc := testSubmitOffchainTxService(t, spend.vtxo, convictionRepoStub{
