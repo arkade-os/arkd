@@ -41,6 +41,7 @@ func TestVtxoChain(t *testing.T) {
 	if !*runSmoke {
 		t.Skip("skip vtxo chain smoke test")
 	}
+	require.NoError(t, generateBlocks(1))
 
 	ctx := t.Context()
 

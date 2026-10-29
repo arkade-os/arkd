@@ -21,6 +21,8 @@ import (
 )
 
 func TestCosignOnchainTx(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	// The plain path: a confirmed boarding utxo is spent to an arbitrary destination with
 	// arkd's cosignature, arkd broadcasts the tx and the indexer tracks the outpoint through
 	// to spent and confirmed. Along the way, the request is refused while the utxo is

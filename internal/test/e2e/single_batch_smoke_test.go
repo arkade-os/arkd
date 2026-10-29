@@ -43,6 +43,7 @@ func TestBatchSettleMultipleClients(t *testing.T) {
 	if !*runSmoke {
 		t.Skip("skip batch session smoke test")
 	}
+	require.NoError(t, generateBlocks(1))
 
 	// Configuration - adjust these values as needed
 	config := singleBatchConfig{

@@ -76,6 +76,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestBatchSession(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	// In this test Alice and Bob onboard their funds in the same commitment tx and then
 	// refresh their vtxos together in another commitment tx
 	t.Run("refresh vtxos", func(t *testing.T) {
@@ -396,6 +398,8 @@ func TestBatchSession(t *testing.T) {
 }
 
 func TestUnilateralExit(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	// In this test Alice owns a leaf VTXO and unrolls it onchain
 	t.Run("leaf vtxo", func(t *testing.T) {
 		alice := setupClientWallet(t)
@@ -687,6 +691,8 @@ func TestUnilateralExit(t *testing.T) {
 // and accepts it into the batch. After settlement Alice's funds are back
 // offchain.
 func TestUnrolledVtxoRejoinBatch(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	t.Run("valid", func(t *testing.T) {
 		t.Run("without asset", func(t *testing.T) {
 			ctx := t.Context()
@@ -1090,6 +1096,8 @@ func TestUnrolledVtxoRejoinBatch(t *testing.T) {
 }
 
 func TestCollaborativeExit(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	t.Run("valid", func(t *testing.T) {
 		// In this test Alice sends to Bob's onchain address by producing a (VTXO) change
 		t.Run("with change", func(t *testing.T) {
@@ -1282,6 +1290,8 @@ func TestCollaborativeExit(t *testing.T) {
 }
 
 func TestOffchainTx(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	// In this test Alice sends several times to Bob to create a chain of offchain txs
 	t.Run("chain of txs", func(t *testing.T) {
 		ctx := context.Background()
@@ -3414,6 +3424,8 @@ func TestOffchainTx(t *testing.T) {
 // so that Bob can later add the connector to the inputs, sign the tx with SIGHASH_ALL,
 // and complete the refresh by joining a batch.
 func TestDelegateRefresh(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	ctx := t.Context()
 
 	alice := setupClientWallet(t)
@@ -3703,6 +3715,8 @@ func TestDelegateRefresh(t *testing.T) {
 // TestSendToCLTVMultisigClosure shows how to send to an ark address that includes a closure locked
 // by an absolute delay (and therefore spendable offchain) and spend from it
 func TestSendToCLTVMultisigClosure(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	ctx := t.Context()
 
 	alice := setupClientWallet(t)
@@ -3931,6 +3945,8 @@ func TestSendToCLTVMultisigClosure(t *testing.T) {
 // TestSendToConditionMultisigClosure shows how to send an ark address that includes a closure
 // including a custom condition like the revealing of a preimage
 func TestSendToConditionMultisigClosure(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	t.Run("two step", func(t *testing.T) {
 		testSendToConditionMultisigClosure(t, false)
 	})
@@ -4163,6 +4179,8 @@ func testSendToConditionMultisigClosure(t *testing.T, oneShot bool) {
 }
 
 func TestReactToFraud(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	t.Run("react to unroll of forfeited vtxos", func(t *testing.T) {
 		// In this test Alice refreshes a VTXO and tries to unroll the one just forfeited.
 		// The server should react by broadcasting the forfeit tx and claiming the unrolled VTXO before
@@ -5038,6 +5056,8 @@ func TestReactToFraud(t *testing.T) {
 }
 
 func TestSweep(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	// This test ensures the server is capable of sweeping a batch output once
 	// the timelock to claim the liquidity back expires
 	t.Run("batch", func(t *testing.T) {
@@ -5953,6 +5973,8 @@ func TestSweep(t *testing.T) {
 // SubmitTx spending the same vtxo at the same time. The server must reject
 // exactly one of them: accepting both spends the vtxo twice
 func TestRegisterIntentAndSubmitOffchainTxSameVtxo(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	ctx := t.Context()
 	alice := setupClientWallet(t)
 	aliceClient := alice.Client()
@@ -6047,6 +6069,8 @@ func TestRegisterIntentAndSubmitOffchainTxSameVtxo(t *testing.T) {
 // the same vtxo. Y must be rejected by X's retained live reservation; accepting
 // it leaves two fully-signed ark txs competing for the same checkpoint output.
 func TestResubmitOffchainTxAfterFailedFinalize(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	ctx := t.Context()
 	alice := setupClientWallet(t)
 	aliceClient := alice.Client()
@@ -6132,6 +6156,8 @@ func TestResubmitOffchainTxAfterFailedFinalize(t *testing.T) {
 
 // TestIntent tests intent registration and deletion functionality
 func TestIntent(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	t.Run("register and delete", func(t *testing.T) {
 		ctx := t.Context()
 		alice := setupClientWallet(t)
@@ -6706,6 +6732,8 @@ func TestIntent(t *testing.T) {
 
 // TestBan tests all supported ban scenarios
 func TestBan(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	t.Run("failed to submit tree nonces", func(t *testing.T) {
 		alice := setupClientWallet(t)
 		aliceClient := alice.Client()
@@ -7833,6 +7861,8 @@ func TestBan(t *testing.T) {
 // are whitelisted, and the live store only checks the pubkey is registered for the round.
 // Mallory learns alice's pubkey from the CosignersPubkeys list every participant receives.
 func TestUnauthenticatedCosignerSubmission(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	// nonces first: this subtest bans nobody, so it cannot poison the one after it
 	t.Run("nonces", func(t *testing.T) {
 		res := runCosignerOverwrite(t, overwriteNonces)
@@ -7864,6 +7894,8 @@ func TestUnauthenticatedCosignerSubmission(t *testing.T) {
 // TestFee tests the fee calculation for the onboarding and settlement of the funds.
 // It first updates the 4 fee programs for intents.
 func TestFee(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	preserveIntentFees(t)
 
 	fees := intentFees{
@@ -8036,6 +8068,8 @@ func TestFee(t *testing.T) {
 }
 
 func TestCollectedFees(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	// Record timestamp before any rounds so every round in this test falls
 	// inside the query window.
 	startTime := time.Now().Unix()
@@ -8138,6 +8172,8 @@ func TestCollectedFees(t *testing.T) {
 }
 
 func TestAsset(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	// This test ensures that an asset vtxo can be issued, transfered and then refreshed
 	t.Run("transfer and renew", func(t *testing.T) {
 		ctx := t.Context()
@@ -8513,11 +8549,7 @@ func TestAsset(t *testing.T) {
 }
 
 func TestGetAssetQueryChurn(t *testing.T) {
-	// The batches below chain commitment txs on each other's unconfirmed change: mine them so
-	// the next tests don't hit the mempool limit on unconfirmed ancestors.
-	t.Cleanup(func() {
-		require.NoError(t, generateBlocks(1))
-	})
+	require.NoError(t, generateBlocks(1))
 
 	ctx := t.Context()
 
@@ -8882,6 +8914,8 @@ func TestGetAssetQueryChurn(t *testing.T) {
 // The test passes when the sentinel stream observes at least one event and
 // reports no errors, proving the fanout survived the churn.
 func TestTxListenerChurn(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	const (
 		testDuration           = 30 * time.Second
 		churnWorkers           = 8
@@ -9204,6 +9238,8 @@ func TestTxListenerChurn(t *testing.T) {
 // The test passes when at least one batch completes, the sentinel observes
 // events, and no sentinel errors are recorded.
 func TestEventListenerChurn(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	const (
 		testDuration      = 40 * time.Second
 		churnWorkers      = 16
@@ -9537,6 +9573,8 @@ func TestEventListenerChurn(t *testing.T) {
 // to. Once the cutoff date has passed, both vtxo and boarding inputs locked to
 // the old key must be rejected.
 func TestDeprecatedSignerKey(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	const (
 		oldSignerKey = "afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0"
 		newSignerKey = "1111111111111111111111111111111111111111111111111111111111111111"
@@ -9715,6 +9753,8 @@ func TestDeprecatedSignerKey(t *testing.T) {
 // domain.TestForfeitTxReadyToBroadcast, and was confirmed on regtest by observing
 // the signer record no SignTransaction call in the fraud window.
 func TestEagerForfeitSurvivesWalletRotation(t *testing.T) {
+	require.NoError(t, generateBlocks(1))
+
 	const (
 		oldSignerKey = "afcd3fa10f82a05fddc9574fdb13b3991b568e89cc39a72ba4401df8abef35f0"
 		newSignerKey = "2222222222222222222222222222222222222222222222222222222222222222"
