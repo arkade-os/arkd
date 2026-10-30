@@ -49,8 +49,31 @@ func (s *offChainTxStore) Add(ctx context.Context, offchainTx domain.OffchainTx)
 		return fmt.Errorf("failed to marshal offchain tx %s: %v", offchainTx.ArkTxid, err)
 	}
 
+	members := make([]interface{}, len(inputs))
+	for i, in := range inputs {
+		members[i] = in
+	}
+
 	for range s.numOfRetries {
-		if err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+		err = s.rdb.Watch(ctx, func(tx *redis.Tx) error {
+			// Reserve each input for a single in-flight tx: abort if any is already held. The
+			// WATCH on the inputs set makes the check-and-add atomic: a concurrent Add that
+			// reserves a shared input first invalidates this transaction, so the retry re-reads
+			// and sees the input taken.
+			if len(members) > 0 {
+				included, err := tx.SMIsMember(ctx, offChainInputsSetKey, members...).Result()
+				if err != nil {
+					return err
+				}
+				for i, isIncluded := range included {
+					if isIncluded {
+						return fmt.Errorf(
+							"input %s %w", inputs[i], ports.ErrOffchainTxInputAlreadySpent,
+						)
+					}
+				}
+			}
+
 			_, err := tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				pipe.HSet(ctx, offChainTxsHashKey, offchainTx.ArkTxid, val)
 				if len(inputs) > 0 {
@@ -59,8 +82,13 @@ func (s *offChainTxStore) Add(ctx context.Context, offchainTx domain.OffchainTx)
 				return nil
 			})
 			return err
-		}, offChainTxsHashKey, offChainInputsSetKey); err == nil {
+		}, offChainTxsHashKey, offChainInputsSetKey)
+		if err == nil {
 			return nil
+		}
+		// A reserved input is a terminal conflict, not a transient WATCH failure: don't retry.
+		if errors.Is(err, ports.ErrOffchainTxInputAlreadySpent) {
+			return err
 		}
 		time.Sleep(s.retryDelay)
 	}

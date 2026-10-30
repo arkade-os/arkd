@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	builtinerrors "errors"
 	"fmt"
 	"math"
 	"runtime"
@@ -1426,6 +1427,13 @@ func (s *service) SubmitOffchainTx(
 	}
 
 	if err := s.cache.OffchainTxs().Add(ctx, *offchainTx); err != nil {
+		// TODO: drop comment below.
+		// This code is not really reachable today becuase IncludesAny is called after locking the
+		// mutex for offchain txs.
+		// We want to get rid of it though, so this check can't be forgetten when that happens.
+		if builtinerrors.Is(err, ports.ErrOffchainTxInputAlreadySpent) {
+			return nil, errors.VTXO_ALREADY_SPENT.Wrap(err)
+		}
 		return nil, errors.INTERNAL_ERROR.New("something went wrong").
 			WithInternalCause(fmt.Errorf("failed to add offchain tx to cache: %w", err)).
 			WithMetadata(map[string]any{"ark_txid": offchainTx.ArkTxid})

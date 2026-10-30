@@ -17,6 +17,10 @@ import (
 
 var ErrUtxosAlreadyExist = fmt.Errorf("one or more utxos already exist in cache")
 
+// ErrOffchainTxInputAlreadySpent is returned by OffChainTxStore.Add when one of the tx's inputs is
+// already spent by another cached offchain tx.
+var ErrOffchainTxInputAlreadySpent = fmt.Errorf("already spent by another offchain tx")
+
 type LiveStore interface {
 	Intents() IntentStore
 	ForfeitTxs() ForfeitTxsStore

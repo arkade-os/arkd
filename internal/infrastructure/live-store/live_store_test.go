@@ -16,8 +16,10 @@ import (
 	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/note"
 	"github.com/arkade-os/arkd/pkg/ark-lib/tree"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
@@ -873,55 +875,107 @@ func runLiveStoreTests(t *testing.T, store ports.LiveStore) {
 	t.Run("OffChainTxStore", func(t *testing.T) {
 		ctx := t.Context()
 
-		tx, err := parseOffchainTxFixture(offchainTxJSON)
-		require.NoError(t, err)
+		t.Run("lifecycle", func(t *testing.T) {
 
-		// Add
-		err = store.OffchainTxs().Add(ctx, tx)
-		require.NoError(t, err)
+			tx, err := parseOffchainTxFixture(offchainTxJSON)
+			require.NoError(t, err)
 
-		// Get
-		offchainTx, err := store.OffchainTxs().Get(ctx, "nonexistent")
-		require.NoError(t, err)
-		require.Nil(t, offchainTx)
+			// Add
+			err = store.OffchainTxs().Add(ctx, tx)
+			require.NoError(t, err)
 
-		// Get
-		offchainTx, err = store.OffchainTxs().Get(ctx, tx.ArkTxid)
-		require.NoError(t, err)
-		require.NotNil(t, offchainTx)
+			// Get
+			offchainTx, err := store.OffchainTxs().Get(ctx, "nonexistent")
+			require.NoError(t, err)
+			require.Nil(t, offchainTx)
 
-		// IncludesAny
-		outpointJSON := `{"Txid":"fefcc1d90510aa15a77b3bac88a745f7cc58a02a1d4ebe631901bff7f327c51a","VOut":0}`
-		var outpoint domain.Outpoint
-		err = json.Unmarshal([]byte(outpointJSON), &outpoint)
-		require.NoError(t, err)
+			// Get
+			offchainTx, err = store.OffchainTxs().Get(ctx, tx.ArkTxid)
+			require.NoError(t, err)
+			require.NotNil(t, offchainTx)
 
-		absent := domain.Outpoint{Txid: outpoint.Txid, VOut: outpoint.VOut + 1}
-		included, err := store.OffchainTxs().IncludesAny(
-			ctx, []domain.Outpoint{outpoint, absent, outpoint},
-		)
-		require.NoError(t, err)
-		require.Equal(t, []domain.Outpoint{outpoint, outpoint}, included)
+			// IncludesAny
+			outpointJSON := `{"Txid":"fefcc1d90510aa15a77b3bac88a745f7cc58a02a1d4ebe631901bff7f327c51a","VOut":0}`
+			var outpoint domain.Outpoint
+			err = json.Unmarshal([]byte(outpointJSON), &outpoint)
+			require.NoError(t, err)
 
-		included, err = store.OffchainTxs().IncludesAny(ctx, nil)
-		require.NoError(t, err)
-		require.Empty(t, included)
+			absent := domain.Outpoint{Txid: outpoint.Txid, VOut: outpoint.VOut + 1}
+			included, err := store.OffchainTxs().IncludesAny(
+				ctx, []domain.Outpoint{outpoint, absent, outpoint},
+			)
+			require.NoError(t, err)
+			require.Equal(t, []domain.Outpoint{outpoint, outpoint}, included)
 
-		included, err = store.OffchainTxs().IncludesAny(ctx, []domain.Outpoint{absent})
-		require.NoError(t, err)
-		require.Empty(t, included)
+			included, err = store.OffchainTxs().IncludesAny(ctx, nil)
+			require.NoError(t, err)
+			require.Empty(t, included)
 
-		// Remove
-		err = store.OffchainTxs().Remove(ctx, tx.ArkTxid)
-		require.NoError(t, err)
+			included, err = store.OffchainTxs().IncludesAny(ctx, []domain.Outpoint{absent})
+			require.NoError(t, err)
+			require.Empty(t, included)
 
-		err = store.OffchainTxs().Remove(ctx, "nonexistent")
-		require.NoError(t, err)
+			// Remove
+			err = store.OffchainTxs().Remove(ctx, tx.ArkTxid)
+			require.NoError(t, err)
 
-		// Get
-		offchainTx, err = store.OffchainTxs().Get(ctx, tx.ArkTxid)
-		require.NoError(t, err)
-		require.Nil(t, offchainTx)
+			err = store.OffchainTxs().Remove(ctx, "nonexistent")
+			require.NoError(t, err)
+
+			// Get
+			offchainTx, err = store.OffchainTxs().Get(ctx, tx.ArkTxid)
+			require.NoError(t, err)
+			require.Nil(t, offchainTx)
+		})
+
+		// Ensure concurrent calls to Add don't conflict.
+		t.Run("concurrent add", func(t *testing.T) {
+			offchainStore := store.OffchainTxs()
+
+			// a single vtxo that many distinct txs try to spend at once
+			var hash chainhash.Hash
+			_, err := rand.Read(hash[:])
+			require.NoError(t, err)
+			prevout := wire.OutPoint{Hash: hash, Index: 0}
+
+			const n = 16
+			txs := make([]domain.OffchainTx, n)
+			for i := range txs {
+				txs[i] = offchainTxSpending(t, prevout)
+			}
+
+			start := make(chan struct{})
+			var wg sync.WaitGroup
+			errs := make([]error, n)
+			for i := range txs {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					<-start
+					errs[i] = offchainStore.Add(ctx, txs[i])
+				}(i)
+			}
+			close(start)
+			wg.Wait()
+
+			// Exactly one tx reserves the input; every other is rejected for that specific
+			// reason, not a transient failure.
+			winners := 0
+			for i, err := range errs {
+				if err == nil {
+					winners++
+					continue
+				}
+				require.ErrorIs(
+					t, err, ports.ErrOffchainTxInputAlreadySpent,
+					"tx %d rejected for the wrong reason: %v", i, err,
+				)
+			}
+			require.Equal(
+				t, 1, winners,
+				"only one concurrent offchain tx may reserve the shared vtxo, got %d", winners,
+			)
+		})
 	})
 
 	// The cosigned utxos store is a reservation set: AddUtxos claims all the given
@@ -1615,6 +1669,23 @@ type intentPushFixture struct {
 }
 
 const intentPubkey = "7594c9acd996ccf667431769bb4b238b29a9ed32b73f39185c121cf770aa0a63"
+
+// offchainTxSpending builds an offchain tx whose single checkpoint spends the given prevout.
+func offchainTxSpending(t *testing.T, prevout wire.OutPoint) domain.OffchainTx {
+	t.Helper()
+	ptx, err := psbt.New(
+		[]*wire.OutPoint{&prevout},
+		[]*wire.TxOut{{Value: 1000, PkScript: append([]byte{0x51, 0x20}, make([]byte, 32)...)}},
+		2, 0, []uint32{wire.MaxTxInSequenceNum},
+	)
+	require.NoError(t, err)
+	b64, err := ptx.B64Encode()
+	require.NoError(t, err)
+	return domain.OffchainTx{
+		ArkTxid:       uuid.NewString(),
+		CheckpointTxs: map[string]string{ptx.UnsignedTx.TxID(): b64},
+	}
+}
 
 func randomOutpoints(n int) []domain.Outpoint {
 	outpoints := make([]domain.Outpoint, 0, n)
