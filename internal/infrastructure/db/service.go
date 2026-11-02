@@ -498,23 +498,72 @@ func (s *service) updateProjectionsAfterRoundEvents(events []domain.Event) {
 
 		lastEvent := events[len(events)-1]
 		if lastEvent.GetType() == domain.EventTypeBatchSwept {
-			event := lastEvent.(domain.BatchSwept)
-			allSweptVtxos := append(event.LeafVtxos, event.PreconfirmedVtxos...)
+			// Make sure to replay all events and do not miss any other sweep event. This can
+			// happen if a batch was partially unrolled and different batched outputs get swept
+			// nearly at the same time. In that case, this logic will be triggered twice, the first
+			// doing all the work, the second must be no-op.
+			allSweptVtxos := make([]domain.Outpoint, 0)
+			seen := make(map[domain.Outpoint]struct{})
+			fullySwept := false
+			addVtxos := func(vtxos []domain.Outpoint) {
+				for _, vtxo := range vtxos {
+					if _, dup := seen[vtxo]; dup {
+						continue
+					}
+					seen[vtxo] = struct{}{}
+					allSweptVtxos = append(allSweptVtxos, vtxo)
+				}
+			}
+			for _, e := range events {
+				swept, ok := e.(domain.BatchSwept)
+				if !ok {
+					continue
+				}
+				fullySwept = swept.FullySwept
+				addVtxos(swept.LeafVtxos)
+				addVtxos(swept.PreconfirmedVtxos)
+			}
+
+			// Make the logic idempotent and just do nothing if all vtxos are already swept.
+			existing, err := repo.GetVtxos(ctx, allSweptVtxos)
+			if err != nil {
+				log.WithError(err).Warn(
+					"failed to read vtxos for sweep projection, aborting round projection " +
+						"(update not dispatched, not retried)",
+				)
+				return false
+			}
+			alreadySwept := make(map[domain.Outpoint]struct{}, len(existing))
+			for _, vtxo := range existing {
+				if vtxo.Swept {
+					alreadySwept[vtxo.Outpoint] = struct{}{}
+				}
+			}
+			toSweep := make([]domain.Outpoint, 0, len(allSweptVtxos))
+			for _, outpoint := range allSweptVtxos {
+				if _, done := alreadySwept[outpoint]; !done {
+					toSweep = append(toSweep, outpoint)
+				}
+			}
+			if len(toSweep) == 0 {
+				return true
+			}
+
 			// Per-outpoint sweeping avoids marker over-reach: markers can be shared
 			// across independent subtrees when offchain txs consolidate inputs from
 			// different lineages. Sweeping by marker would incorrectly mark unrelated
 			// VTXOs as swept (same reason the checkpoint path uses SweepVtxoOutpoints).
 			sweptAt := time.Now().Unix()
-			if err := s.markerStore.SweepVtxoOutpoints(ctx, allSweptVtxos, sweptAt); err != nil {
+			if err := s.markerStore.SweepVtxoOutpoints(ctx, toSweep, sweptAt); err != nil {
 				log.WithError(err).Warn(
 					"failed to sweep vtxo outpoints for batch, aborting round projection " +
 						"(update not dispatched, not retried)",
 				)
 				return false
 			}
-			log.Debugf("swept %d vtxo outpoints for batch", len(allSweptVtxos))
+			log.Debugf("swept %d vtxo outpoints for batch", len(toSweep))
 
-			if event.FullySwept {
+			if fullySwept {
 				log.WithField("commitment_txid", round.CommitmentTxid).Debugf(
 					"round %s fully swept", round.Id,
 				)

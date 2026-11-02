@@ -5893,6 +5893,14 @@ func TestSweep(t *testing.T) {
 	t.Run("force by admin", func(t *testing.T) {
 		ctx := t.Context()
 
+		// Bob here is just "helping" so that once Alice's batch expires and fails to be swept
+		// automatically, there' another batch that expired as well with connectors that can be
+		// included in the manual sweep.
+		bob := setupClientWallet(t)
+		faucetOffchain(t, bob, 0.00021)
+		_, err := settleBounded(ctx, bob)
+		require.NoError(t, err)
+
 		alice := setupClientWallet(t)
 
 		_, offchainAddr, boardingAddr, err := alice.Receive(ctx)
@@ -5920,9 +5928,15 @@ func TestSweep(t *testing.T) {
 		require.Len(t, incomingFunds, 1)
 		vtxo := incomingFunds[0]
 
-		// Generate 50 blocks to expire the batch output
+		// Generate 50 blocks to expire the batch output (both alice's dust batch and
+		// the helper round's batch above).
 		err = generateBlocks(50)
 		require.NoError(t, err)
+
+		// Wait until the helper (non-dust) batch is swept automatically. This
+		// marks that round swept while leaving its connector unspent, so the admin
+		// sweep below has a connector to spend for the fee.
+		waitForSweptVtxos(t, bob)
 
 		// Give the server time to attempt the sweep and fail on the dust amount.
 		// This wait stays fixed: the assertion below is that nothing happened,

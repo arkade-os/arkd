@@ -171,6 +171,66 @@ func TestUpdateProjectionsAfterOffchainTxEvents(t *testing.T) {
 func TestUpdateProjectionsAfterRoundEvents(t *testing.T) {
 	ctx := t.Context()
 
+	t.Run("partial unroll batch sweeps", func(t *testing.T) {
+		// A partial unroll can spend a shared branch output and create two outputs,
+		// each funding one leaf. They share a confirmation height and relative timelock,
+		// so they expire together. The sweeper schedules each subtree separately,
+		// letting both tasks save BatchSwept events for the same round concurrently.
+		// Sweeps A and B below model those two tasks.
+		vtxoA := domain.Outpoint{Txid: randomString(t, 32)}
+		vtxoB := domain.Outpoint{Txid: randomString(t, 32)}
+		historyA := sweptRoundEvents(t, randomString(t, 32), []domain.Outpoint{vtxoA})
+
+		sweepA := historyA[len(historyA)-1].(domain.BatchSwept)
+		sweepA.FullySwept = false
+		historyA[len(historyA)-1] = sweepA
+
+		sweepB := sweepA
+		sweepB.Txid = randomString(t, 32)
+		sweepB.LeafVtxos = []domain.Outpoint{vtxoB}
+		historyAB := append(historyA, sweepB)
+
+		// Both cases persist A then B. Each Save reloads the full history for
+		// dispatch, which may already include a later sweep. Pass those histories
+		// directly to reproduce the timing without concurrent saves or sleeps.
+		for _, tt := range []struct {
+			name           string
+			firstDispatch  []domain.Event
+			secondDispatch []domain.Event
+		}{
+			{
+				// save A -> dispatch [A] -> save B -> dispatch [A, B]
+				name:           "dispatch A reloads before B is saved",
+				firstDispatch:  historyA,
+				secondDispatch: historyAB,
+			},
+			{
+				// save A -> save B -> dispatch [A, B] -> dispatch [A, B]
+				name:           "dispatch A reloads after B is saved",
+				firstDispatch:  historyAB,
+				secondDispatch: historyAB,
+			},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				markers := &recordingSweepMarkers{outpoints: make(map[domain.Outpoint]bool)}
+				svc := &service{
+					roundStore:        &sweepProjectionRoundStore{},
+					markerStore:       markers,
+					vtxoStore:         &sweepProjectionVtxoStore{swept: markers.outpoints},
+					batchEventHandler: newUpdateHandler[domain.Round](),
+				}
+				t.Cleanup(svc.projections.Wait)
+
+				svc.updateProjectionsAfterRoundEvents(tt.firstDispatch)
+				svc.updateProjectionsAfterRoundEvents(tt.secondDispatch)
+
+				require.Contains(t, markers.outpoints, vtxoB, "sweep B must mark VTXO B")
+				require.Contains(t, markers.outpoints, vtxoA,
+					"sweep A must mark VTXO A even when its dispatch also sees sweep B")
+			})
+		}
+	})
+
 	// When projection a finalized batch that includes boarding inputs, they must be retrievable
 	// with the utxo repository.
 	t.Run("finalized round with boarding inputs", func(t *testing.T) {
@@ -407,6 +467,43 @@ func TestUpdateProjectionsAfterOnchainTxEvents(t *testing.T) {
 			})
 		})
 	})
+}
+
+type sweepProjectionRoundStore struct{ domain.RoundRepository }
+
+func (*sweepProjectionRoundStore) AddOrUpdateRound(context.Context, domain.Round) error {
+	return nil
+}
+
+// sweepProjectionVtxoStore reports the swept state recorded by the marker fake it shares the
+// map with, so a re-dispatch sees the vtxos a prior one already swept.
+type sweepProjectionVtxoStore struct {
+	domain.VtxoRepository
+	swept map[domain.Outpoint]bool
+}
+
+func (s *sweepProjectionVtxoStore) GetVtxos(
+	_ context.Context, outpoints []domain.Outpoint,
+) ([]domain.Vtxo, error) {
+	vtxos := make([]domain.Vtxo, 0, len(outpoints))
+	for _, outpoint := range outpoints {
+		vtxos = append(vtxos, domain.Vtxo{Outpoint: outpoint, Swept: s.swept[outpoint]})
+	}
+	return vtxos, nil
+}
+
+type recordingSweepMarkers struct {
+	domain.MarkerRepository
+	outpoints map[domain.Outpoint]bool
+}
+
+func (m *recordingSweepMarkers) SweepVtxoOutpoints(
+	_ context.Context, outpoints []domain.Outpoint, _ int64,
+) error {
+	for _, outpoint := range outpoints {
+		m.outpoints[outpoint] = true
+	}
+	return nil
 }
 
 type projectionTestDBs struct {
