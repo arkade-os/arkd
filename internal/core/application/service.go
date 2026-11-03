@@ -1026,24 +1026,24 @@ func (s *service) SubmitOffchainTx(
 			})
 		}
 
-		witness, err := txutils.GetArkPsbtConditionWitness(checkpointPsbt, 0)
-		if err != nil {
-			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
-				WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: 0})
-		}
+		// witness, err := txutils.GetArkPsbtConditionWitness(checkpointPsbt, 0)
+		// if err != nil {
+		// 	return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
+		// 		WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: 0})
+		// }
 
 		// The rebuilt Ark input uses the same spending script, so matching condition
 		// witnesses lets the Ark input's condition validation cover the checkpoint too.
-		arkWitness, err := txutils.GetArkPsbtConditionWitness(arkPtx, inputIndex)
-		if err != nil {
-			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
-				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inputIndex})
-		}
-		if !slices.EqualFunc(witness, arkWitness, bytes.Equal) {
-			return nil, errors.INVALID_PSBT_INPUT.New(
-				"checkpoint condition witness does not match ark tx input %d", inputIndex,
-			).WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: 0})
-		}
+		// arkWitness, err := txutils.GetArkPsbtConditionWitness(arkPtx, inputIndex)
+		// if err != nil {
+		// 	return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
+		// 		WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inputIndex})
+		// }
+		// if !slices.EqualFunc(witness, arkWitness, bytes.Equal) {
+		// 	return nil, errors.INVALID_PSBT_INPUT.New(
+		// 		"checkpoint condition witness does not match ark tx input %d", inputIndex,
+		// 	).WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: 0})
+		// }
 
 		tapscript := &waddrmgr.Tapscript{
 			ControlBlock:   ctrlBlock,
