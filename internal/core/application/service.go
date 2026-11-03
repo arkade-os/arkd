@@ -1555,6 +1555,20 @@ func (s *service) FinalizeOffchainTx(
 		}
 
 		checkpoint.Inputs[0].TaprootScriptSpendSig = submitted.Inputs[0].TaprootScriptSpendSig
+		conditionWitness, err := txutils.GetArkPsbtConditionWitness(submitted, 0)
+		if err != nil {
+			return errors.INVALID_CHECKPOINT_PSBT.New(
+				"checkpoint tx has malformed condition witness",
+			).WithInternalCause(err)
+		}
+		if err := txutils.SetArkPsbtField(
+			checkpoint, 0, txutils.ConditionWitnessField, conditionWitness,
+		); err != nil {
+			return errors.INTERNAL_ERROR.New("something went wrong").WithInternalCause(fmt.Errorf(
+				"failed to set condition witness for checkpoint %s: %w", checkpointTxid, err,
+			))
+		}
+
 		encoded, err := checkpoint.B64Encode()
 		if err != nil {
 			return errors.INTERNAL_ERROR.New("failed to encode checkpoint tx: %w", err)
