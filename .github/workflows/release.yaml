@@ -2,7 +2,7 @@ name: Release Binaries and Docker Build
 
 on:
   release:
-    types: [released]
+    types: [released, prereleased]
 
 permissions:
   contents: write
