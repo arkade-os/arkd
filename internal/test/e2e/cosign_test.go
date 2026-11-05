@@ -56,7 +56,7 @@ func TestCosignOnchainTx(t *testing.T) {
 		// Fund the boarding address with unconfirmed funds.
 		sendOnchainAndWait(t, aliceBoardingAddr.Address, 0.00021)
 
-		utxos := waitForOnchainUtxos(t, aliceBoardingAddr.Address, 1)
+		utxos := waitForOnchainUtxos(t, aliceBoardingAddr.Address, 1, false)
 		require.Len(t, utxos, 1)
 		utxo := utxos[0]
 
@@ -286,7 +286,7 @@ func TestCosignOnchainTx(t *testing.T) {
 		// Fund the boarding address only now, so the exit delay doesn't run while the
 		// services restart, and confirm it.
 		faucetOnchainAndWait(t, aliceBoardingAddr.Address, 0.00021)
-		utxos := waitForOnchainUtxos(t, aliceBoardingAddr.Address, 1)
+		utxos := waitForOnchainUtxos(t, aliceBoardingAddr.Address, 1, false)
 		require.Len(t, utxos, 1)
 		utxo := utxos[0]
 
@@ -355,7 +355,7 @@ func TestCosignOnchainTx(t *testing.T) {
 		_, _, boardingAddr, err := alice.Receive(ctx)
 		require.NoError(t, err)
 		faucetOnchainAndWait(t, boardingAddr.Address, 0.00021)
-		utxos := waitForOnchainUtxos(t, boardingAddr.Address, 1)
+		utxos := waitForOnchainUtxos(t, boardingAddr.Address, 1, false)
 		outpoints := []clientlib.Outpoint{{Txid: utxos[0].Txid, VOut: utxos[0].Vout}}
 
 		res, err := settleBounded(ctx, alice)

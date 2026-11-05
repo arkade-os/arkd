@@ -318,27 +318,44 @@ func sendOffChainBounded(
 }
 
 // waitForOnchainUtxos blocks until the explorer reports at least n utxos for
-// addr and returns them.
-func waitForOnchainUtxos(t *testing.T, addr string, n int) []clientlib.ExplorerUtxo {
+// addr, counting only confirmed ones if confirmed is set, and returns all of
+// them.
+func waitForOnchainUtxos(
+	t *testing.T, addr string, n int, confirmed bool,
+) []clientlib.ExplorerUtxo {
 	t.Helper()
 
+	what := "utxo(s)"
+	if confirmed {
+		what = "confirmed utxo(s)"
+	}
+
 	var utxos []clientlib.ExplorerUtxo
-	waitUntil(t, chainWait, fmt.Sprintf("%d utxo(s) at %s", n, addr), func(ctx context.Context) error {
+	waitUntil(t, chainWait, fmt.Sprintf("%d %s at %s", n, what, addr), func(ctx context.Context) error {
 		found, err := testExplorer.GetUtxos([]string{addr})
 		if err != nil {
 			return err
 		}
 		utxos = found
-		if len(found) < n {
-			return fmt.Errorf("only %d utxo(s) indexed", len(found))
+		count := len(found)
+		if confirmed {
+			count = 0
+			for _, u := range found {
+				if u.Status.Confirmed {
+					count++
+				}
+			}
+		}
+		if count < n {
+			return fmt.Errorf("only %d %s indexed", count, what)
 		}
 		return nil
 	})
 	return utxos
 }
 
-// faucetOnchainAndWait faucets addr and blocks until the explorer has indexed
-// the new utxo, so that a wallet reading the explorer can actually see it.
+// faucetOnchainAndWait faucets addr and blocks until the explorer reports the
+// new utxo as confirmed, so that a wallet reading the explorer can spend it.
 func faucetOnchainAndWait(t *testing.T, addr string, amount float64) {
 	t.Helper()
 
@@ -346,7 +363,7 @@ func faucetOnchainAndWait(t *testing.T, addr string, amount float64) {
 	require.NoError(t, err)
 
 	faucetOnchain(t, addr, amount)
-	waitForOnchainUtxos(t, addr, len(before)+1)
+	waitForOnchainUtxos(t, addr, len(before)+1, true)
 }
 
 // sendOnchainAndWait faucets addr without mining a block and waits until the explorer has
@@ -358,7 +375,7 @@ func sendOnchainAndWait(t *testing.T, addr string, amount float64) {
 	require.NoError(t, err)
 
 	sendOnchain(t, addr, amount)
-	waitForOnchainUtxos(t, addr, len(before)+1)
+	waitForOnchainUtxos(t, addr, len(before)+1, false)
 }
 
 // waitForOffchainBalance blocks until the wallet reports at least min sats

@@ -6091,7 +6091,7 @@ func TestIntent(t *testing.T) {
 
 		faucetOnchainAndWait(t, boardingAddr.Address, 0.00021)
 		faucetOnchainAndWait(t, boardingAddr.Address, 0.00021)
-		raw := waitForOnchainUtxos(t, boardingAddr.Address, 2)
+		raw := waitForOnchainUtxos(t, boardingAddr.Address, 2, false)
 		a := clientlib.Utxo{Outpoint: clientlib.Outpoint{Txid: raw[0].Txid, VOut: raw[0].Vout}, Amount: raw[0].Amount}
 		b := clientlib.Utxo{Outpoint: clientlib.Outpoint{Txid: raw[1].Txid, VOut: raw[1].Vout}, Amount: raw[1].Amount}
 
