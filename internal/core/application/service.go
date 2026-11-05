@@ -1026,23 +1026,10 @@ func (s *service) SubmitOffchainTx(
 			})
 		}
 
-		witness, err := txutils.GetArkPsbtConditionWitness(checkpointPsbt, 0)
-		if err != nil {
-			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
-				WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: 0})
-		}
-
-		// The rebuilt Ark input uses the same spending script, so matching condition
-		// witnesses lets the Ark input's condition validation cover the checkpoint too.
-		arkWitness, err := txutils.GetArkPsbtConditionWitness(arkPtx, inputIndex)
+		conditionWitness, err := txutils.GetArkPsbtConditionWitness(arkPtx, inputIndex)
 		if err != nil {
 			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
 				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inputIndex})
-		}
-		if !slices.EqualFunc(witness, arkWitness, bytes.Equal) {
-			return nil, errors.INVALID_PSBT_INPUT.New(
-				"checkpoint condition witness does not match ark tx input %d", inputIndex,
-			).WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: 0})
 		}
 
 		tapscript := &waddrmgr.Tapscript{
@@ -1064,6 +1051,7 @@ func (s *service) SubmitOffchainTx(
 			Tapscript:          tapscript,
 			RevealedTapscripts: taptree,
 			Amount:             int64(vtxo.Amount),
+			ConditionWitness:   conditionWitness,
 		})
 	}
 
@@ -1257,18 +1245,6 @@ func (s *service) SubmitOffchainTx(
 		checkpointTxid := rebuiltCheckpointTx.UnsignedTx.TxID()
 		submitted := checkpointPsbts[checkpointTxid]
 		rebuiltCheckpointTx.Inputs[0].TaprootScriptSpendSig = submitted.Inputs[0].TaprootScriptSpendSig
-		witness, err := txutils.GetArkPsbtConditionWitness(submitted, 0)
-		if err != nil {
-			return nil, errors.INVALID_PSBT_INPUT.Wrap(err).
-				WithMetadata(errors.InputMetadata{Txid: checkpointTxid, InputIndex: 0})
-		}
-		if witness != nil {
-			if err := txutils.SetArkPsbtField(
-				rebuiltCheckpointTx, 0, txutils.ConditionWitnessField, witness,
-			); err != nil {
-				return nil, errors.INTERNAL_ERROR.Wrap(err)
-			}
-		}
 		checkpointTx, err := rebuiltCheckpointTx.B64Encode()
 		if err != nil {
 			return nil, errors.INTERNAL_ERROR.New(
@@ -1280,18 +1256,15 @@ func (s *service) SubmitOffchainTx(
 		if oneShot {
 			valid, _, err := s.builder.VerifyVtxoTapscriptSigs(checkpointTx, false)
 			if err != nil || !valid {
-				return nil, errors.INVALID_SIGNATURE.New("invalid signature in checkpoint tx %s", checkpointTxid).
-					WithMetadata(errors.InvalidSignatureMetadata{Tx: checkpointTx})
+				return nil, errors.INVALID_SIGNATURE.New(
+					"invalid signature in checkpoint tx %s", checkpointTxid,
+				).WithMetadata(errors.InvalidSignatureMetadata{Tx: checkpointTx})
 			}
 		}
-		signedCheckpointTx, err := s.signer.SignTransaction(
-			ctx, checkpointTx, nil,
-		)
+		signedCheckpointTx, err := s.signer.SignTransaction(ctx, checkpointTx, nil)
 		if err != nil {
 			return nil, errors.INTERNAL_ERROR.New("failed to sign checkpoint tx: %w", err).
-				WithMetadata(map[string]any{
-					"checkpoint_tx": rebuiltCheckpointTx,
-				})
+				WithMetadata(map[string]any{"checkpoint_tx": rebuiltCheckpointTx})
 		}
 		signedCheckpointTxsMap[rebuiltCheckpointTx.UnsignedTx.TxID()] = signedCheckpointTx
 	}
@@ -1554,7 +1527,11 @@ func (s *service) FinalizeOffchainTx(
 			return errors.INTERNAL_ERROR.New("failed to parse stored checkpoint tx: %w", err)
 		}
 
+		// Keep only the user's signature. The condition witness, if any, is derived from the ark
+		// tx and already on the stored checkpoint, so, as in the one-shot flow, whatever witness
+		// the client attaches here to the provided checkpoint is ignored rather than validated.
 		checkpoint.Inputs[0].TaprootScriptSpendSig = submitted.Inputs[0].TaprootScriptSpendSig
+
 		encoded, err := checkpoint.B64Encode()
 		if err != nil {
 			return errors.INTERNAL_ERROR.New("failed to encode checkpoint tx: %w", err)
@@ -1698,14 +1675,13 @@ func (s *service) finalizeOffchainTx(
 			).WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
 
+		// Save the encoded taproot tree in the checkpoint tx output.
+		// It will be used to compute the sweep leaf in the sweeper
 		encodedTapTree, err := taprootTree.Encode()
 		if err != nil {
 			return nil, errors.INVALID_PSBT_INPUT.New("failed to encode taptree: %w", err).
 				WithMetadata(errors.InputMetadata{Txid: txid, InputIndex: inIndex})
 		}
-
-		// save the encoded taproot tree in the checkpoint tx output
-		// it will be used to compute the sweep leaf in the sweeper
 		checkpointTx.Outputs[0].TaprootTapTree = encodedTapTree
 
 		var b64checkpointTx string

@@ -25,6 +25,8 @@ type VtxoInput struct {
 	// RevealedTapscripts is the whole taproot tree of the vtxo
 	// it must be revealed to the ark operator in order to verify the spent paths are valid
 	RevealedTapscripts []string
+	// Optional condition witness if the input has one
+	ConditionWitness wire.TxWitness
 }
 
 // BuildTxs builds the ark and checkpoint txs for the given inputs and outputs.
@@ -176,8 +178,18 @@ func buildArkTx(vtxos []VtxoInput, outputs []*wire.TxOut) (*psbt.Packet, error) 
 		arkTx.Inputs[i].WitnessUtxo = witnessUtxos[i]
 		arkTx.Inputs[i].TaprootLeafScript = []*psbt.TaprootTapLeafScript{signingTapLeaves[i]}
 
-		if err := txutils.SetArkPsbtField(arkTx, i, txutils.VtxoTaprootTreeField, tapscripts[i]); err != nil {
+		if err := txutils.SetArkPsbtField(
+			arkTx, i, txutils.VtxoTaprootTreeField, tapscripts[i],
+		); err != nil {
 			return nil, err
+		}
+
+		if len(vtxos[i].ConditionWitness) > 0 {
+			if err := txutils.SetArkPsbtField(
+				arkTx, i, txutils.ConditionWitnessField, vtxos[i].ConditionWitness,
+			); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -247,6 +259,7 @@ func buildCheckpointTx(
 			RevealedScript: collaborativeLeafProof.Script,
 		},
 		RevealedTapscripts: revealedTapscripts,
+		ConditionWitness:   vtxo.ConditionWitness,
 	}
 
 	return checkpointPtx, checkpointInput, nil

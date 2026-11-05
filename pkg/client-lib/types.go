@@ -172,6 +172,10 @@ type Vtxo struct {
 	Assets          []Asset
 	Tapscripts      []string
 	SigningClosure  script.Closure
+	// ConditionWitness holds the extra witness elements that satisfy a condition
+	// closure's script. It is set only when spending through such a closure and is
+	// carried onto both the ark input and its checkpoint by the tx builder.
+	ConditionWitness wire.TxWitness
 }
 
 type Asset struct {

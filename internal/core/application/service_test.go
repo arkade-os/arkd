@@ -39,6 +39,11 @@ import (
 
 const testDust uint64 = 546
 
+// testConditionScript drops the padding witness item and requires the next to equal 1.
+// A witness of {1, 0} meets it, {0, 0} does not, and {1, <large>} meets it with an element above
+// the script size limit.
+var testConditionScript = []byte{txscript.OP_DROP, txscript.OP_1, txscript.OP_EQUAL}
+
 func TestStopWithPendingEventPropagation(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rounds := &mockedRoundRepo{}
@@ -1020,42 +1025,15 @@ func TestRegisterIntent(t *testing.T) {
 }
 
 func TestSubmitOffchainTx(t *testing.T) {
-	expectedEvents := []domain.EventType{
-		domain.EventTypeOffchainTxRequested,
-		domain.EventTypeOffchainTxAccepted,
-		domain.EventTypeOffchainTxFinalized,
-	}
-	savedEvents := func(t *testing.T, events *mockedEventRepo) []domain.EventType {
-		t.Helper()
-		events.AssertNumberOfCalls(t, "Save", 1)
-		saved := events.Calls[0].Arguments.Get(3).([]domain.Event)
-		types := make([]domain.EventType, 0, len(saved))
-		for _, event := range saved {
-			types = append(types, event.GetType())
-		}
-		return types
-	}
-	requireFinalized := func(t *testing.T, tx testOneShotTx, resp *AcceptedOffchainTx) {
-		t.Helper()
-		require.Equal(t, tx.arkTxid, resp.TxId)
-		require.Len(t, resp.SignedCheckpointTxs, len(tx.checkpointTxs))
-		// The checkpoints are returned fully signed: owner and server.
-		for _, checkpoint := range resp.SignedCheckpointTxs {
-			valid, _, err := tx.svc.builder.VerifyVtxoTapscriptSigs(checkpoint, true)
-			require.NoError(t, err)
-			require.True(t, valid)
-		}
-		require.Equal(t, expectedEvents, savedEvents(t, tx.events))
-		require.Equal(t, []string{tx.arkTxid}, tx.offchainTxs.added)
-	}
 
 	t.Run("valid", func(t *testing.T) {
 		// A tx submitted with the checkpoints already signed by the owner is finalized in the
 		// same call, so no second step is needed.
-		t.Run("one shot", func(t *testing.T) {
+		t.Run("one shot offchain tx", func(t *testing.T) {
 			tests := []struct {
 				name      string
 				numInputs int
+				opts      []oneShotOption
 			}{
 				{
 					name:      "single input",
@@ -1065,44 +1043,26 @@ func TestSubmitOffchainTx(t *testing.T) {
 					name:      "multiple inputs",
 					numInputs: 3,
 				},
+				{
+					// Spending through a condition closure: the witness that satisfies it
+					// rides on the ark input and is carried onto the checkpoint.
+					name:      "with condition witness",
+					numInputs: 1,
+					opts: []oneShotOption{
+						withCondition(testConditionScript, wire.TxWitness{{0x01}, {0x00}}),
+					},
+				},
 			}
 
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
-					tx := newTestOneShotTx(t, tt.numInputs)
+					tx := newTestOneShotTx(t, tt.numInputs, tt.opts...)
 
 					resp, appErr := tx.svc.SubmitOffchainTx(
 						t.Context(), tx.signedCheckpoints, tx.arkTx,
 					)
 					require.NoError(t, appErr)
-					requireFinalized(t, tx, resp)
-				})
-			}
-		})
-
-		// Finalizing an already finalized tx returns success and ignores the request.
-		t.Run("finalize again", func(t *testing.T) {
-			for _, servedBy := range []string{"cache", "db"} {
-				t.Run(servedBy, func(t *testing.T) {
-					tx := newTestOneShotTx(t, 2)
-
-					resp, err := tx.svc.SubmitOffchainTx(
-						t.Context(), tx.signedCheckpoints, tx.arkTx,
-					)
-					require.NoError(t, err)
-					requireFinalized(t, tx, resp)
-
-					if servedBy == "db" {
-						tx.offchainTxRepo.tx = tx.offchainTxs.cached
-						require.NoError(t, tx.offchainTxs.Remove(t.Context(), tx.arkTxid))
-					}
-
-					// The tx is finalized, a valid request is "ignored" and no error is returned.
-					err = tx.svc.FinalizeOffchainTx(
-						t.Context(), tx.arkTxid, resp.SignedCheckpointTxs,
-					)
-					require.NoError(t, err)
-					require.Equal(t, expectedEvents, savedEvents(t, tx.events))
+					requireOneShotFinalized(t, tx, resp)
 				})
 			}
 		})
@@ -1309,7 +1269,62 @@ func TestSubmitOffchainTx(t *testing.T) {
 						t.Context(), tx.signedCheckpoints, tx.arkTx,
 					)
 					require.NoError(t, appErr)
-					requireFinalized(t, tx, resp)
+					requireOneShotFinalized(t, tx, resp)
+				})
+			}
+		})
+
+		// A one-shot submission whose condition witness fails validation is rejected at
+		// submit: the ark input's condition is checked before anything is signed or
+		// cached, so nothing is left behind.
+		t.Run("condition witness", func(t *testing.T) {
+			tests := []struct {
+				name    string
+				build   func(t *testing.T) testOneShotTx
+				wantErr string
+			}{
+				{
+					name: "unmet condition",
+					build: func(t *testing.T) testOneShotTx {
+						return newTestOneShotTx(
+							t, 1, withCondition(testConditionScript, wire.TxWitness{{0x00}, {0x00}}),
+						)
+					},
+					wantErr: "condition not met",
+				},
+				{
+					name: "oversized witness element",
+					build: func(t *testing.T) testOneShotTx {
+						return newTestOneShotTx(t, 1, withCondition(
+							testConditionScript,
+							wire.TxWitness{{0x01}, make([]byte, txscript.MaxScriptElementSize+1)},
+						))
+					},
+					wantErr: "exceeds max script element size",
+				},
+				{
+					name: "malformed condition witness",
+					build: func(t *testing.T) testOneShotTx {
+						tx := newTestOneShotTx(
+							t, 1, withCondition(testConditionScript, wire.TxWitness{{0x01}, {0x00}}),
+						)
+						tx.arkTx = corruptConditionWitness(t, tx.arkTx)
+						return tx
+					},
+					wantErr: "EOF",
+				},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					tx := tt.build(t)
+
+					resp, appErr := tx.svc.SubmitOffchainTx(
+						t.Context(), tx.signedCheckpoints, tx.arkTx,
+					)
+					require.Error(t, appErr)
+					require.Nil(t, resp)
+					require.Contains(t, appErr.Error(), tt.wantErr)
+					require.Empty(t, tx.offchainTxs.added)
 				})
 			}
 		})
@@ -1317,6 +1332,127 @@ func TestSubmitOffchainTx(t *testing.T) {
 }
 
 func TestFinalizeOffchainTx(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		// A tx submitted with unsigned checkpoints is only accepted on submit; the
+		// owner signs the server-returned checkpoints and finalizes in a second call.
+		t.Run("two step", func(t *testing.T) {
+			tests := []struct {
+				name      string
+				numInputs int
+				opts      []oneShotOption
+			}{
+				{
+					name:      "single input",
+					numInputs: 1,
+				},
+				{
+					name:      "multiple inputs",
+					numInputs: 3,
+				},
+				{
+					// Spending through a condition closure: the witness that satisfies it
+					// rides on the ark input and is carried onto the checkpoint.
+					name:      "with condition witness",
+					numInputs: 1,
+					opts:      []oneShotOption{withCondition(testConditionScript, wire.TxWitness{{0x01}, {0x00}})},
+				},
+			}
+
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					tx := newTestOneShotTx(t, tt.numInputs, tt.opts...)
+
+					// Submit accepts the unsigned checkpoints without finalizing.
+					resp, appErr := tx.svc.SubmitOffchainTx(t.Context(), tx.checkpointTxs, tx.arkTx)
+					require.NoError(t, appErr)
+					require.NotNil(t, resp)
+					require.Len(t, resp.SignedCheckpointTxs, len(tx.checkpointTxs))
+					require.Equal(t, []string{tx.arkTxid}, tx.offchainTxs.added)
+
+					// The owner signs the server-returned checkpoints and finalizes.
+					signed := make([]string, 0, len(resp.SignedCheckpointTxs))
+					for _, checkpoint := range resp.SignedCheckpointTxs {
+						signed = append(signed, signTapscriptInputs(t, checkpoint, tx.ownerPrv))
+					}
+					require.NoError(t, tx.svc.FinalizeOffchainTx(t.Context(), tx.arkTxid, signed))
+					require.Equal(t, expectedOffchainTxEvents, allSavedOffchainTxEvents(tx.events))
+				})
+			}
+		})
+
+		// Finalizing an already finalized tx returns success and ignores the request.
+		t.Run("finalize already finalized one shot tx", func(t *testing.T) {
+			for _, servedBy := range []string{"cache", "db"} {
+				t.Run(servedBy, func(t *testing.T) {
+					tx := newTestOneShotTx(t, 2)
+
+					resp, err := tx.svc.SubmitOffchainTx(
+						t.Context(), tx.signedCheckpoints, tx.arkTx,
+					)
+					require.NoError(t, err)
+					requireOneShotFinalized(t, tx, resp)
+
+					if servedBy == "db" {
+						tx.offchainTxRepo.tx = tx.offchainTxs.cached
+						require.NoError(t, tx.offchainTxs.Remove(t.Context(), tx.arkTxid))
+					}
+
+					// The tx is finalized, a valid request is "ignored" and no error is returned.
+					err = tx.svc.FinalizeOffchainTx(
+						t.Context(), tx.arkTxid, resp.SignedCheckpointTxs,
+					)
+					require.NoError(t, err)
+					require.Equal(t, expectedOffchainTxEvents, savedOffchainTxEvents(t, tx.events))
+				})
+			}
+		})
+
+		// The condition witness of a checkpoint input is derived from the ark tx validated at
+		// submit, so whatever witness the client attaches to the checkpoint at finalize is
+		// ignored: the tx finalizes even when that witness is corrupted because it makes use of
+		// the correct one.
+		t.Run("ignores client checkpoint condition witness", func(t *testing.T) {
+			tx := newTestOneShotTx(
+				t, 1, withCondition(testConditionScript, wire.TxWitness{{0x01}, {0x00}}),
+			)
+
+			resp, appErr := tx.svc.SubmitOffchainTx(t.Context(), tx.checkpointTxs, tx.arkTx)
+			require.NoError(t, appErr)
+
+			signed := make([]string, 0, len(resp.SignedCheckpointTxs))
+			for _, checkpoint := range resp.SignedCheckpointTxs {
+				owned := signTapscriptInputs(t, checkpoint, tx.ownerPrv)
+				signed = append(signed, corruptConditionWitness(t, owned))
+			}
+			require.NoError(t, tx.svc.FinalizeOffchainTx(t.Context(), tx.arkTxid, signed))
+			require.Equal(t, expectedOffchainTxEvents, allSavedOffchainTxEvents(tx.events))
+		})
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		// The checkpoint signature the client provides at finalize is verified; a
+		// tampered one is rejected.
+		t.Run("invalid checkpoint signature", func(t *testing.T) {
+			tx := newTestOneShotTx(t, 1)
+
+			resp, appErr := tx.svc.SubmitOffchainTx(t.Context(), tx.checkpointTxs, tx.arkTx)
+			require.NoError(t, appErr)
+			require.Len(t, resp.SignedCheckpointTxs, 1)
+
+			signed := signTapscriptInputs(t, resp.SignedCheckpointTxs[0], tx.ownerPrv)
+			ptx, err := psbt.NewFromRawBytes(strings.NewReader(signed), true)
+			require.NoError(t, err)
+			sigs := ptx.Inputs[0].TaprootScriptSpendSig
+			sigs[len(sigs)-1].Signature[0] ^= 1
+			signed, err = ptx.B64Encode()
+			require.NoError(t, err)
+
+			appErr = tx.svc.FinalizeOffchainTx(t.Context(), tx.arkTxid, []string{signed})
+			require.Error(t, appErr)
+			require.Contains(t, appErr.Error(), "invalid signature in checkpoint tx")
+		})
+	})
+
 	t.Run("finalization lock", func(t *testing.T) {
 		t.Run("uses current TTL", func(t *testing.T) {
 			settings := &ports.Settings{Settings: domain.Settings{FinalizationLockTTL: 5 * time.Minute}}
@@ -1928,11 +2064,30 @@ type testOneShotTx struct {
 	checkpointTapscript []byte
 }
 
+type conditionConfig struct {
+	condition []byte
+	witness   wire.TxWitness
+}
+
+type oneShotOption func(*conditionConfig)
+
+func withCondition(condition []byte, witness wire.TxWitness) oneShotOption {
+	return func(c *conditionConfig) {
+		c.condition = condition
+		c.witness = witness
+	}
+}
+
 // newTestOneShotTx builds a tx spending numInputs vtxos of 10,000 sats each to a single
 // output, through a service whose signer and tx builder are real enough to verify and
 // finalize it: the signer signs with an in-memory key and the builder is the covenantless one.
-func newTestOneShotTx(t *testing.T, numInputs int) testOneShotTx {
+func newTestOneShotTx(t *testing.T, numInputs int, opts ...oneShotOption) testOneShotTx {
 	t.Helper()
+
+	var cfg conditionConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 
 	serverPrv, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
@@ -1941,10 +2096,19 @@ func newTestOneShotTx(t *testing.T, numInputs int) testOneShotTx {
 	exitDelay, _ := arklib.ParseRelativeLocktime(512)
 	checkpointExitDelay, _ := arklib.ParseRelativeLocktime(1024)
 
+	var forfeitClosure script.Closure = &script.MultisigClosure{
+		PubKeys: []*btcec.PublicKey{ownerPrv.PubKey(), serverPrv.PubKey()},
+	}
+	if cfg.condition != nil {
+		forfeitClosure = &script.ConditionMultisigClosure{
+			Condition: cfg.condition,
+			MultisigClosure: script.MultisigClosure{
+				PubKeys: []*btcec.PublicKey{ownerPrv.PubKey(), serverPrv.PubKey()},
+			},
+		}
+	}
 	vtxoScript := &script.TapscriptsVtxoScript{Closures: []script.Closure{
-		&script.MultisigClosure{
-			PubKeys: []*btcec.PublicKey{ownerPrv.PubKey(), serverPrv.PubKey()},
-		},
+		forfeitClosure,
 		&script.CSVMultisigClosure{
 			Locktime:        exitDelay,
 			MultisigClosure: script.MultisigClosure{PubKeys: []*btcec.PublicKey{ownerPrv.PubKey()}},
@@ -1988,6 +2152,7 @@ func newTestOneShotTx(t *testing.T, numInputs int) testOneShotTx {
 				RevealedScript: forfeitProof.Script,
 			},
 			RevealedTapscripts: tapscripts,
+			ConditionWitness:   cfg.witness,
 		})
 	}
 
@@ -2592,4 +2757,72 @@ func testSweepableRound(t *testing.T) (domain.Round, string) {
 		CommitmentTxid: "commitment",
 		VtxoTree:       tree.FlatTxTree{{Txid: rootTxid, Tx: rootTx}},
 	}, rootTxid
+}
+
+// corruptConditionWitness replaces the condition witness on input 0 of tx with a
+// value the server cannot decode, so reading it fails.
+func corruptConditionWitness(t *testing.T, tx string) string {
+	t.Helper()
+	ptx, err := psbt.NewFromRawBytes(strings.NewReader(tx), true)
+	require.NoError(t, err)
+	for i, u := range ptx.Inputs[0].Unknowns {
+		if w, _ := txutils.ConditionWitnessField.Decode(u); w != nil {
+			ptx.Inputs[0].Unknowns[i].Value = []byte{0xff}
+		}
+	}
+	out, err := ptx.B64Encode()
+	require.NoError(t, err)
+	return out
+}
+
+// expectedOffchainTxEvents is the event sequence a fully finalized offchain tx
+// records, whether in one shot or across submit and finalize.
+var expectedOffchainTxEvents = []domain.EventType{
+	domain.EventTypeOffchainTxRequested,
+	domain.EventTypeOffchainTxAccepted,
+	domain.EventTypeOffchainTxFinalized,
+}
+
+// savedOffchainTxEvents returns the event types saved in a single Save call.
+func savedOffchainTxEvents(t *testing.T, events *mockedEventRepo) []domain.EventType {
+	t.Helper()
+	events.AssertNumberOfCalls(t, "Save", 1)
+	saved := events.Calls[0].Arguments.Get(3).([]domain.Event)
+	types := make([]domain.EventType, 0, len(saved))
+	for _, event := range saved {
+		types = append(types, event.GetType())
+	}
+	return types
+}
+
+// requireOneShotFinalized asserts a one-shot submission finalized: checkpoints
+// returned fully signed, the full event sequence saved in one call, tx cached.
+func requireOneShotFinalized(t *testing.T, tx testOneShotTx, resp *AcceptedOffchainTx) {
+	t.Helper()
+	require.Equal(t, tx.arkTxid, resp.TxId)
+	require.Len(t, resp.SignedCheckpointTxs, len(tx.checkpointTxs))
+	// The checkpoints are returned fully signed: owner and server.
+	for _, checkpoint := range resp.SignedCheckpointTxs {
+		valid, _, err := tx.svc.builder.VerifyVtxoTapscriptSigs(checkpoint, true)
+		require.NoError(t, err)
+		require.True(t, valid)
+	}
+	require.Equal(t, expectedOffchainTxEvents, savedOffchainTxEvents(t, tx.events))
+	require.Equal(t, []string{tx.arkTxid}, tx.offchainTxs.added)
+}
+
+// allSavedOffchainTxEvents returns every event type saved across all Save calls,
+// in order: a two-step flow saves Requested+Accepted on submit and Finalized on
+// finalize.
+func allSavedOffchainTxEvents(events *mockedEventRepo) []domain.EventType {
+	var types []domain.EventType
+	for _, call := range events.Calls {
+		if call.Method != "Save" {
+			continue
+		}
+		for _, event := range call.Arguments.Get(3).([]domain.Event) {
+			types = append(types, event.GetType())
+		}
+	}
+	return types
 }

@@ -80,6 +80,7 @@ func buildOffchainTx(
 			Tapscript:          tapscript,
 			Amount:             int64(vtxo.Amount),
 			RevealedTapscripts: vtxo.Tapscripts,
+			ConditionWitness:   vtxo.ConditionWitness,
 		})
 	}
 
