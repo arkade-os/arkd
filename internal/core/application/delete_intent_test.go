@@ -11,8 +11,11 @@ import (
 
 	"github.com/arkade-os/arkd/internal/core/domain"
 	"github.com/arkade-os/arkd/internal/core/ports"
+	arklib "github.com/arkade-os/arkd/pkg/ark-lib"
 	"github.com/arkade-os/arkd/pkg/ark-lib/intent"
 	"github.com/arkade-os/arkd/pkg/errors"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -156,7 +159,69 @@ func TestDeleteIntentsByProof(t *testing.T) {
 			require.Len(t, remaining, 1)
 			require.Empty(t, f.intents.deleted)
 		})
+
+		t.Run("proof signed with csv delayed leaf", func(t *testing.T) {
+			ctx := t.Context()
+			proof := signedCSVIntentProof(t, newCosignFixture(t), encodedMessage)
+
+			f := newDeleteIntentFixture(t, proof, nil)
+			require.NoError(t, f.intents.Push(
+				ctx, domain.Intent{Id: "csv"}, proofBoardingInputs(t, proof), nil,
+			))
+
+			appErr := f.svc.DeleteIntentsByProof(ctx, *proof, message)
+			require.Error(t, appErr)
+			require.Equal(t, errors.INVALID_PSBT_INPUT.Code, appErr.Code())
+			require.ErrorContains(t, appErr, "CSV")
+
+			remaining, err := f.intents.ViewAll(ctx, nil)
+			require.NoError(t, err)
+			require.Len(t, remaining, 1)
+			require.Empty(t, f.intents.deleted)
+		})
 	})
+}
+
+func TestCSVIntentAdmissionRejectsSelectedLeaf(t *testing.T) {
+	f := newCosignFixture(t)
+	registration := f.registration(t).message
+	encoded, err := registration.Encode()
+	require.NoError(t, err)
+	proof := signedCSVIntentProof(t, f, encoded)
+
+	_, appErr := f.svc.RegisterIntent(t.Context(), *proof, registration)
+	require.Error(t, appErr)
+	require.Equal(t, errors.INVALID_PSBT_INPUT.Code, appErr.Code())
+	require.ErrorContains(t, appErr, "CSV")
+
+	estimate := intent.EstimateIntentFeeMessage(registration)
+	estimate.Type = intent.IntentMessageTypeEstimateFee
+	encoded, err = estimate.Encode()
+	require.NoError(t, err)
+	proof = signedCSVIntentProof(t, f, encoded)
+
+	_, appErr = f.svc.EstimateIntentFee(t.Context(), *proof, estimate)
+	require.Error(t, appErr)
+	require.Equal(t, errors.INVALID_PSBT_INPUT.Code, appErr.Code())
+	require.ErrorContains(t, appErr, "CSV")
+}
+
+func signedCSVIntentProof(t *testing.T, f *cosignFixture, encodedMessage string) *intent.Proof {
+	t.Helper()
+	hash, err := chainhash.NewHashFromStr(f.utxo.Txid)
+	require.NoError(t, err)
+	sequence, err := arklib.BIP68Sequence(f.exitDelay)
+	require.NoError(t, err)
+	proof, err := intent.New(encodedMessage, []intent.Input{{
+		OutPoint: &wire.OutPoint{Hash: *hash, Index: f.utxo.VOut}, Sequence: sequence,
+		WitnessUtxo: &wire.TxOut{Value: int64(f.amount), PkScript: f.pkScript},
+	}}, []*wire.TxOut{{Value: int64(f.amount), PkScript: testP2TRScript(t)}})
+	require.NoError(t, err)
+	for i, leaf := range []*psbt.TaprootTapLeafScript{f.forfeitLeaf, f.exitLeaf} {
+		proof.Inputs[i].TaprootLeafScript = []*psbt.TaprootTapLeafScript{leaf}
+		proof.Inputs[i].TaprootScriptSpendSig = f.ownerSigs(t, &proof.Packet, i, leaf)
+	}
+	return proof
 }
 
 type deleteIntentFixture struct {

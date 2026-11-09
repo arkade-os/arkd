@@ -2069,7 +2069,6 @@ func (s *service) RegisterIntent(
 
 		tapscripts := inputTapscripts[outpoint]
 
-		now := time.Now()
 		locktime, locktimeDisabled := arklib.BIP68DecodeSequence(
 			proof.UnsignedTx.TxIn[i+1].Sequence,
 		)
@@ -2214,8 +2213,7 @@ func (s *service) RegisterIntent(
 					})
 			}
 			if err := s.validateVtxoInput(
-				tapscripts, vtxoTapKey, vtxo.CreatedAt, now,
-				locktime, locktimeDisabled, proofTxid, i+1, *settings,
+				tapscripts, vtxoTapKey, vtxo.CreatedAt, proofTxid, i+1, *settings,
 			); err != nil {
 				return "", err
 			}
@@ -5412,8 +5410,7 @@ func (s *service) verifyClosureNotLocked(ctx context.Context, closure script.Clo
 }
 
 func (s *service) validateVtxoInput(
-	tapscripts txutils.TapTree, expectedTapKey *btcec.PublicKey,
-	vtxoCreatedAt int64, now time.Time, locktime *arklib.RelativeLocktime, disabled bool,
+	tapscripts txutils.TapTree, expectedTapKey *btcec.PublicKey, vtxoCreatedAt int64,
 	txid string, inputIndex int, settings ports.Settings,
 ) errors.Error {
 	vtxoScript, err := script.ParseVtxoScript(tapscripts)
@@ -5447,20 +5444,6 @@ func (s *service) validateVtxoInput(
 	); err != nil {
 		return errors.INVALID_VTXO_SCRIPT.New("invalid vtxo script: %w", err).
 			WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: tapscripts})
-	}
-
-	// If the intent is registered using a exit path that contains CSV delay, we want to verify it
-	// by shifitng the current "now" in the future of the duration of the smallest exit delay.
-	// This way, any exit order guaranteed by the exit path is maintained at intent registration
-	if !disabled {
-		delta := now.Add(time.Duration(smallestExitDelay.Seconds())*time.Second).
-			Unix() -
-			vtxoCreatedAt
-		if diff := locktime.Seconds() - delta; diff > 0 {
-			return errors.INVALID_VTXO_SCRIPT.New(
-				"vtxo script can be used for intent registration in %d seconds", diff,
-			).WithMetadata(errors.InvalidVtxoScriptMetadata{Tapscripts: tapscripts})
-		}
 	}
 
 	tapKey, _, err := vtxoScript.TapTree()
@@ -5789,6 +5772,10 @@ func (s *service) verifyIntentProofAndFindMatches(
 func (s *service) verifyIntentProof(
 	proof intent.Proof, encodedMessage string, settings *ports.Settings,
 ) (encodedProof string, err errors.Error) {
+	if err := rejectCSVTapscript(proof.Packet); err != nil {
+		return "", err
+	}
+
 	encodedProof, encErr := proof.B64Encode()
 	if encErr != nil {
 		return "", errors.INVALID_INTENT_PSBT.New("failed to encode proof: %w", encErr).
@@ -5810,6 +5797,34 @@ func (s *service) verifyIntentProof(
 	}
 
 	return encodedProof, nil
+}
+
+func rejectCSVTapscript(ptx psbt.Packet) errors.Error {
+	for i, input := range ptx.Inputs[1:] {
+		for _, leaf := range input.TaprootLeafScript {
+			if leaf == nil {
+				return errors.INVALID_PSBT_INPUT.New("missing tapscript for intent input %d", i+1)
+			}
+			tokenizer := txscript.MakeScriptTokenizer(0, leaf.Script)
+			for tokenizer.Next() {
+				if tokenizer.Opcode() == txscript.OP_CHECKSEQUENCEVERIFY {
+					return errors.INVALID_PSBT_INPUT.New(
+						"CSV leaf is not allowed in intent input %d", i+1,
+					).WithMetadata(errors.InputMetadata{
+						Txid: ptx.UnsignedTx.TxID(), InputIndex: i + 1,
+					})
+				}
+			}
+			if err := tokenizer.Err(); err != nil {
+				return errors.INVALID_PSBT_INPUT.New(
+					"invalid tapscript for intent input %d: %w", i+1, err,
+				).WithMetadata(errors.InputMetadata{
+					Txid: ptx.UnsignedTx.TxID(), InputIndex: i + 1,
+				})
+			}
+		}
+	}
+	return nil
 }
 
 // allSignerPubkeys returns the current signer pubkey plus every deprecated one regardless of cutoff date.

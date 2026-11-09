@@ -864,32 +864,60 @@ func TestCollectTriggerContext(t *testing.T) {
 }
 
 func TestRegisterIntent(t *testing.T) {
-	t.Run("registration of a vtxo that unrolls", func(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		// Registration of an input that unrolls: an offchain input, or one already
+		// unrolled, with no conflicting spend is accepted and its intent pushed.
 		for _, tc := range []struct {
 			name     string
 			unrolled bool
+		}{
+			{name: "offchain input"},
+			{name: "onchain input", unrolled: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				f := newCosignFixture(t)
+				reg := f.registration(t)
+				vtxo := f.vtxo()
+				vtxo.Unrolled = tc.unrolled
+				outpoints := []domain.Outpoint{f.utxo}
+				f.vtxos.ExpectedCalls = nil
+				f.vtxos.On("GetVtxos", mock.Anything, outpoints).
+					Return([]domain.Vtxo{vtxo}, nil)
+
+				id, appErr := f.svc.RegisterIntent(t.Context(), *reg.proof, reg.message)
+				require.NoError(t, appErr)
+				require.NotEmpty(t, id)
+				claimed, err := f.svc.cache.Intents().IncludesAny(t.Context(), outpoints)
+				require.NoError(t, err)
+				require.Equal(t, outpoints, claimed)
+				f.vtxos.AssertExpectations(t)
+			})
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		// A conflicting spend that lands while the intent is validated must void the
+		// stale eligibility read: GetVtxos returns a clean snapshot, but the unroll and
+		// the competing cosign are exposed to the subsequent checks.
+		for _, tc := range []struct {
+			name     string
 			conflict string
 		}{
-			{name: "offchain input without a conflicting spend"},
-			{name: "unrolled input without a conflicting spend", unrolled: true},
-			{name: "cosign pending during validation", conflict: "pending"},
-			{name: "cosign recorded during validation", conflict: "recorded"},
+			{name: "onchain input with pending spend", conflict: "pending"},
+			{name: "onchain input already spent", conflict: "recorded"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				f := newCosignFixture(t)
 				reg := f.registration(t)
 				tx := f.cosignTx(t)
 				vtxo := f.vtxo()
-				vtxo.Unrolled = tc.unrolled
 				transitioned := false
 				outpoints := []domain.Outpoint{f.utxo}
 				f.vtxos.ExpectedCalls = nil
 				read := f.vtxos.On("GetVtxos", mock.Anything, outpoints)
 				read.Run(func(mock.Arguments) {
-					// Return the eligibility snapshot, but expose the unroll and
-					// competing cosign to any subsequent checks.
 					snapshot := vtxo
-					if tc.conflict != "" && !transitioned {
+					if !transitioned {
 						transitioned = true
 						vtxo.Unrolled = true
 						if tc.conflict == "pending" {
@@ -908,12 +936,6 @@ func TestRegisterIntent(t *testing.T) {
 				claimed, err := f.svc.cache.Intents().IncludesAny(t.Context(), outpoints)
 				require.NoError(t, err)
 				f.vtxos.AssertExpectations(t)
-				if tc.conflict == "" {
-					require.NoError(t, appErr)
-					require.NotEmpty(t, id)
-					require.Equal(t, outpoints, claimed)
-					return
-				}
 
 				require.True(t, transitioned, "the conflicting spend must have landed")
 				require.Empty(t, claimed, "an intent from a stale read must not be pushed")
@@ -924,108 +946,191 @@ func TestRegisterIntent(t *testing.T) {
 				require.Contains(t, appErr.Metadata()["vtxo_outpoints"], f.utxo.String())
 			})
 		}
-	})
 
-	// the receiver pubkey of an offchain output is read by slicing the pkscript
-	// at [2:], non-taproot scripts must be rejected before that.
-	t.Run("reject non-taproot offchain output", func(t *testing.T) {
-		p2wpkhScript, err := txscript.NewScriptBuilder().
-			AddOp(txscript.OP_0).
-			AddData(make([]byte, 20)).
-			Script()
-		require.NoError(t, err)
+		// A known input the repository reports as already spent is refused.
+		t.Run("offchain input already spent", func(t *testing.T) {
+			f := newCosignFixture(t)
+			reg := f.registration(t)
+			vtxo := f.vtxo()
+			vtxo.Spent = true
+			outpoints := []domain.Outpoint{f.utxo}
+			f.vtxos.ExpectedCalls = nil
+			f.vtxos.On("GetVtxos", mock.Anything, outpoints).
+				Return([]domain.Vtxo{vtxo}, nil)
 
-		tests := []struct {
-			description string
-			pkScript    []byte
-		}{
-			{"script shorter than 2 bytes", []byte{txscript.OP_TRUE}},
-			{"p2wpkh script", p2wpkhScript},
-		}
+			id, appErr := f.svc.RegisterIntent(t.Context(), *reg.proof, reg.message)
+			require.Empty(t, id)
+			require.Error(t, appErr)
+			require.Equal(t, errors.VTXO_ALREADY_SPENT.Code, appErr.Code())
+			require.Contains(t, appErr.Error(), "already spent")
+		})
 
-		for _, tt := range tests {
-			t.Run(tt.description, func(t *testing.T) {
-				ctx := t.Context()
-				message := intent.RegisterMessage{
-					BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
-				}
-				encodedMessage, err := message.Encode()
-				require.NoError(t, err)
+		// The proof's witness utxo value must match the amount recorded for the vtxo.
+		t.Run("input with invalid prevout value", func(t *testing.T) {
+			f := newCosignFixture(t)
+			reg := f.registration(t)
+			vtxo := f.vtxo()
+			vtxo.Amount++
+			outpoints := []domain.Outpoint{f.utxo}
+			f.vtxos.ExpectedCalls = nil
+			f.vtxos.On("GetVtxos", mock.Anything, outpoints).
+				Return([]domain.Vtxo{vtxo}, nil)
 
-				proof := testNoteIntentProof(t, encodedMessage, &wire.TxOut{
-					Value: int64(testDust) * 2, PkScript: tt.pkScript,
+			id, appErr := f.svc.RegisterIntent(t.Context(), *reg.proof, reg.message)
+			require.Empty(t, id)
+			require.Error(t, appErr)
+			require.Equal(t, errors.INVALID_PSBT_INPUT.Code, appErr.Code())
+			require.Contains(t, appErr.Error(), "witness utxo value mismatch")
+		})
+
+		// A vtxo that expires sooner than the settlement's minimum gap is refused.
+		t.Run("offchain input too far from expiry", func(t *testing.T) {
+			f := newCosignFixture(t)
+			settings := f.settings(t.Context())
+			settings.SettlementMinExpiryGap = time.Hour
+			f.setSettings(t, settings)
+
+			reg := f.registration(t)
+			vtxo := f.vtxo()
+			vtxo.ExpiresAt = time.Now().Add(2 * time.Hour).Unix()
+			outpoints := []domain.Outpoint{f.utxo}
+			f.vtxos.ExpectedCalls = nil
+			f.vtxos.On("GetVtxos", mock.Anything, outpoints).
+				Return([]domain.Vtxo{vtxo}, nil)
+
+			id, appErr := f.svc.RegisterIntent(t.Context(), *reg.proof, reg.message)
+			require.Empty(t, id)
+			require.Error(t, appErr)
+			require.Equal(t, errors.INVALID_PSBT_INPUT.Code, appErr.Code())
+			require.Contains(t, appErr.Error(), "expires after")
+		})
+
+		// A proof signed through the CSV-delayed exit leaf instead of the forfeit leaf
+		// is refused (mirrors TestCSVIntentAdmissionRejectsSelectedLeaf).
+		t.Run("input signed with csv delayed leaf", func(t *testing.T) {
+			f := newCosignFixture(t)
+			reg := f.registration(t)
+			encoded, err := reg.message.Encode()
+			require.NoError(t, err)
+			proof := signedCSVIntentProof(t, f, encoded)
+
+			id, appErr := f.svc.RegisterIntent(t.Context(), *proof, reg.message)
+			require.Empty(t, id)
+			require.Error(t, appErr)
+			require.Equal(t, errors.INVALID_PSBT_INPUT.Code, appErr.Code())
+			require.ErrorContains(t, appErr, "CSV")
+		})
+
+		// the receiver pubkey of an offchain output is read by slicing the pkscript
+		// at [2:], non-taproot scripts must be rejected before that.
+		t.Run("non-taproot offchain output", func(t *testing.T) {
+			p2wpkhScript, err := txscript.NewScriptBuilder().
+				AddOp(txscript.OP_0).
+				AddData(make([]byte, 20)).
+				Script()
+			require.NoError(t, err)
+
+			tests := []struct {
+				description string
+				pkScript    []byte
+			}{
+				{"script shorter than 2 bytes", []byte{txscript.OP_TRUE}},
+				{"p2wpkh script", p2wpkhScript},
+			}
+
+			for _, tt := range tests {
+				t.Run(tt.description, func(t *testing.T) {
+					ctx := t.Context()
+					message := intent.RegisterMessage{
+						BaseMessage: intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
+					}
+					encodedMessage, err := message.Encode()
+					require.NoError(t, err)
+
+					proof := testNoteIntentProof(t, encodedMessage, &wire.TxOut{
+						Value: int64(testDust) * 2, PkScript: tt.pkScript,
+					})
+
+					vtxos := &mockedVtxoRepo{}
+					vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return(nil, nil)
+					repos := &mockedRepoManager{}
+					repos.On("Vtxos").Return(vtxos)
+
+					svc := newRegisterIntentTestService(t, repos)
+
+					_, appErr := svc.RegisterIntent(ctx, *proof, message)
+					require.Error(t, appErr)
+					require.Equal(t, errors.INVALID_PKSCRIPT.Code, appErr.Code())
 				})
+			}
+		})
 
-				vtxos := &mockedVtxoRepo{}
-				vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return(nil, nil)
-				repos := &mockedRepoManager{}
-				repos.On("Vtxos").Return(vtxos)
+		t.Run("invalid cosigner keys and the operator key in any encoding", func(t *testing.T) {
+			operatorPubkey := testPubkey(t)
+			flippedParity := operatorPubkey.SerializeCompressed()
+			flippedParity[0] ^= 1
 
-				svc := newRegisterIntentTestService(t, repos)
+			tests := []struct {
+				name        string
+				cosigner    string
+				expectedErr string
+			}{
+				{
+					name:        "compressed",
+					cosigner:    hex.EncodeToString(operatorPubkey.SerializeCompressed()),
+					expectedErr: "is used by us",
+				},
+				{
+					name:        "compressed with flipped parity",
+					cosigner:    hex.EncodeToString(flippedParity),
+					expectedErr: "is used by us",
+				},
+				{
+					name:        "uncompressed",
+					cosigner:    hex.EncodeToString(operatorPubkey.SerializeUncompressed()),
+					expectedErr: "is used by us",
+				},
+				{
+					name:        "not a pubkey",
+					cosigner:    "zzzz",
+					expectedErr: "invalid cosigner pubkey",
+				},
+			}
 
-				_, appErr := svc.RegisterIntent(ctx, *proof, message)
-				require.Error(t, appErr)
-				require.Equal(t, errors.INVALID_PKSCRIPT.Code, appErr.Code())
-			})
-		}
-	})
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					message := intent.RegisterMessage{
+						BaseMessage:         intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
+						CosignersPublicKeys: []string{tt.cosigner},
+					}
+					encodedMessage, err := message.Encode()
+					require.NoError(t, err)
 
-	t.Run("reject invalid cosigner keys and the operator key in any encoding", func(t *testing.T) {
-		operatorPubkey := testPubkey(t)
-		flippedParity := operatorPubkey.SerializeCompressed()
-		flippedParity[0] ^= 1
+					receiverScript, err := script.P2TRScript(testPubkey(t))
+					require.NoError(t, err)
+					proof := testNoteIntentProof(t, encodedMessage, &wire.TxOut{
+						Value: int64(testDust) * 2, PkScript: receiverScript,
+					})
 
-		tests := []struct {
-			description string
-			cosigner    string
-			expectedErr string
-		}{
-			{
-				"compressed",
-				hex.EncodeToString(operatorPubkey.SerializeCompressed()), "is used by us",
-			},
-			{"compressed with flipped parity", hex.EncodeToString(flippedParity), "is used by us"},
-			{
-				"uncompressed",
-				hex.EncodeToString(operatorPubkey.SerializeUncompressed()), "is used by us",
-			},
-			{"not a pubkey", "zzzz", "invalid cosigner pubkey"},
-		}
+					vtxos := &mockedVtxoRepo{}
+					vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return(nil, nil)
+					repos := &mockedRepoManager{}
+					repos.On("Vtxos").Return(vtxos)
 
-		for _, tt := range tests {
-			t.Run(tt.description, func(t *testing.T) {
-				message := intent.RegisterMessage{
-					BaseMessage:         intent.BaseMessage{Type: intent.IntentMessageTypeRegister},
-					CosignersPublicKeys: []string{tt.cosigner},
-				}
-				encodedMessage, err := message.Encode()
-				require.NoError(t, err)
+					svc := newRegisterIntentTestService(t, repos)
+					svc.operatorPubkey = operatorPubkey
 
-				receiverScript, err := script.P2TRScript(testPubkey(t))
-				require.NoError(t, err)
-				proof := testNoteIntentProof(t, encodedMessage, &wire.TxOut{
-					Value: int64(testDust) * 2, PkScript: receiverScript,
+					_, appErr := svc.RegisterIntent(t.Context(), *proof, message)
+					require.Error(t, appErr)
+					require.Equal(t, errors.INVALID_INTENT_MESSAGE.Code, appErr.Code())
+					require.ErrorContains(t, appErr, tt.expectedErr)
 				})
-
-				vtxos := &mockedVtxoRepo{}
-				vtxos.On("GetVtxos", mock.Anything, mock.Anything).Return(nil, nil)
-				repos := &mockedRepoManager{}
-				repos.On("Vtxos").Return(vtxos)
-
-				svc := newRegisterIntentTestService(t, repos)
-				svc.operatorPubkey = operatorPubkey
-
-				_, appErr := svc.RegisterIntent(t.Context(), *proof, message)
-				require.Error(t, appErr)
-				require.Equal(t, errors.INVALID_INTENT_MESSAGE.Code, appErr.Code())
-				require.ErrorContains(t, appErr, tt.expectedErr)
-			})
-		}
+			}
+		})
 	})
 }
 
 func TestSubmitOffchainTx(t *testing.T) {
-
 	t.Run("valid", func(t *testing.T) {
 		// A tx submitted with the checkpoints already signed by the owner is finalized in the
 		// same call, so no second step is needed.

@@ -3415,15 +3415,12 @@ func TestDelegateRefresh(t *testing.T) {
 	vtxoHash, err := chainhash.NewHashFromStr(aliceVtxo.Txid)
 	require.NoError(t, err)
 
-	exitScript, err := delegationVtxoScript.ExitClosures()[0].Script()
+	cooperativeScript, err := delegationVtxoScript.ForfeitClosures()[1].Script()
 	require.NoError(t, err)
 
-	exitScriptMerkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
-		txscript.NewBaseTapLeaf(exitScript).TapHash(),
+	cooperativeScriptMerkleProof, err := vtxoTapTree.GetTaprootMerkleProof(
+		txscript.NewBaseTapLeaf(cooperativeScript).TapHash(),
 	)
-	require.NoError(t, err)
-
-	sequence, err := arklib.BIP68Sequence(exitLocktime)
 	require.NoError(t, err)
 
 	delegatePkScript, err := arkAddress.GetPkScript()
@@ -3443,7 +3440,7 @@ func TestDelegateRefresh(t *testing.T) {
 					Hash:  *vtxoHash,
 					Index: aliceVtxo.VOut,
 				},
-				Sequence: sequence,
+				Sequence: wire.MaxTxInSequenceNum - 1,
 				WitnessUtxo: &wire.TxOut{
 					Value:    int64(aliceVtxo.Amount),
 					PkScript: delegatePkScript,
@@ -3460,8 +3457,8 @@ func TestDelegateRefresh(t *testing.T) {
 	require.NoError(t, err)
 
 	tapLeafScript := &psbt.TaprootTapLeafScript{
-		ControlBlock: exitScriptMerkleProof.ControlBlock,
-		Script:       exitScriptMerkleProof.Script,
+		ControlBlock: cooperativeScriptMerkleProof.ControlBlock,
+		Script:       cooperativeScriptMerkleProof.Script,
 		LeafVersion:  txscript.BaseLeafVersion,
 	}
 
