@@ -8094,7 +8094,7 @@ func TestAsset(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, bobAddr)
 
-		_, err = sendOffChainBounded(
+		sendRes, err := sendOffChainBounded(
 			ctx, alice, []clientlib.Receiver{
 				{To: bobAddr.Address, Amount: 400, Assets: []clientlib.Asset{
 					{AssetId: assetId, Amount: transferAmount},
@@ -8106,6 +8106,39 @@ func TestAsset(t *testing.T) {
 		receiverAssetVtxos := waitForAssetVtxos(t, bob, assetId, 1)
 		require.Len(t, receiverAssetVtxos[0].Assets, 1)
 		requireVtxoHasAsset(t, receiverAssetVtxos[0], assetId, uint64(transferAmount))
+
+		// The indexer finds both holders without knowing their scripts. Its projection
+		// updates asynchronously, so wait for the transfer outputs to replace the issuance.
+		waitUntil(t, indexerWait, "the asset vtxos to update", func(ctx context.Context) error {
+			resp, err := alice.Indexer().GetVtxos(
+				ctx, clientlib.WithAssetIDs([]string{assetId}), clientlib.WithRenewableOnly(),
+			)
+			if err != nil {
+				return err
+			}
+			assetVtxos = resp.Vtxos
+			if len(assetVtxos) != 2 {
+				return fmt.Errorf(
+					"invalid number of vtxos fetched: expected 2, got %d", len(assetVtxos),
+				)
+			}
+			for _, vtxo := range assetVtxos {
+				if vtxo.Txid != sendRes.Txid {
+					return fmt.Errorf(
+						"invalid vtxo fetched: expected txid %s, got %s", sendRes.Txid, vtxo.Txid,
+					)
+				}
+			}
+			return nil
+		})
+
+		held := uint64(0)
+		for _, vtxo := range assetVtxos {
+			asset, found := findAssetInVtxo(vtxo, assetId)
+			require.True(t, found)
+			held += asset.Amount
+		}
+		require.Equal(t, uint64(supply), held)
 
 		bobBalance, err := bob.Balance(ctx)
 		require.NoError(t, err)

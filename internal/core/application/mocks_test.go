@@ -128,6 +128,13 @@ func (m *mockedVtxoRepo) GetVtxosWithPubKeys(
 	return matched[page.Offset:end], total, args.Error(1)
 }
 
+func (m *mockedVtxoRepo) GetVtxosWithAssets(
+	ctx context.Context, filter domain.VtxoFilter, page domain.Page,
+) ([]domain.Vtxo, int32, error) {
+	args := m.Called(ctx, filter, page)
+	return args.Get(0).([]domain.Vtxo), args.Get(1).(int32), args.Error(2)
+}
+
 func (m *mockedVtxoRepo) GetVtxoPubKeysByCommitmentTxids(
 	ctx context.Context, commitmentTxids []string, withMinimumAmount uint64,
 ) ([]string, error) {

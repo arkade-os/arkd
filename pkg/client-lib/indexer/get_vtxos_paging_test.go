@@ -60,6 +60,45 @@ func TestGetVtxosPaging(t *testing.T) {
 		require.Equal(t, int32(3), resp.Page.Total)
 		require.Len(t, srv.pages(), 1)
 	})
+
+	t.Run("an asset lookup sends its filters on every page", func(t *testing.T) {
+		assetIDs := []string{"asset-a", "asset-b"}
+		srv := newPagingIndexerServer(250, 100)
+		c := newBufconnClient(t, srv)
+
+		resp, err := c.GetVtxos(ctx, clientlib.WithAssetIDs(assetIDs), clientlib.WithRenewableOnly())
+		require.NoError(t, err)
+		require.Len(t, resp.Vtxos, 250)
+		require.Equal(t, [][]string{assetIDs, assetIDs, assetIDs}, srv.assetIDs)
+		require.Equal(t, []bool{true, true, true}, srv.renewableOnly)
+
+		resp, err = c.GetVtxos(
+			ctx, clientlib.WithAssetIDs(assetIDs), clientlib.WithRenewableOnly(),
+			clientlib.WithVtxosPage(&clientlib.PageRequest{Size: 100, Index: 2}),
+		)
+		require.NoError(t, err)
+		require.Len(t, resp.Vtxos, 100)
+		require.Equal(t, [][]string{assetIDs, assetIDs, assetIDs, assetIDs}, srv.assetIDs)
+		require.Equal(t, []bool{true, true, true, true}, srv.renewableOnly)
+	})
+
+	// The server returns the same vtxos for every chunk, as if each of them held
+	// assets from both chunks.
+	t.Run("an asset lookup is split into chunks without repeating vtxos", func(t *testing.T) {
+		assetIDs := make([]string, 0, maxAssetIdsPerRequest+2)
+		for i := range maxAssetIdsPerRequest + 2 {
+			assetIDs = append(assetIDs, fmt.Sprintf("asset-%02d", i))
+		}
+		srv := newPagingIndexerServer(250, 100)
+		c := newBufconnClient(t, srv)
+
+		resp, err := c.GetVtxos(ctx, clientlib.WithAssetIDs(assetIDs))
+		require.NoError(t, err)
+		require.Len(t, resp.Vtxos, 250)
+
+		first, second := assetIDs[:maxAssetIdsPerRequest], assetIDs[maxAssetIdsPerRequest:]
+		require.Equal(t, [][]string{first, first, first, second, second, second}, srv.assetIDs)
+	})
 }
 
 // pagingIndexerServer serves a fixed vtxo set in pages the way arkd does: a
@@ -70,8 +109,10 @@ type pagingIndexerServer struct {
 	vtxos   []*arkv1.IndexerVtxo
 	maxSize int32
 
-	mu       sync.Mutex
-	requests []*arkv1.IndexerPageRequest
+	mu            sync.Mutex
+	requests      []*arkv1.IndexerPageRequest
+	assetIDs      [][]string
+	renewableOnly []bool
 }
 
 func newPagingIndexerServer(count int, maxSize int32) *pagingIndexerServer {
@@ -91,6 +132,8 @@ func (s *pagingIndexerServer) GetVtxos(
 ) (*arkv1.GetVtxosResponse, error) {
 	s.mu.Lock()
 	s.requests = append(s.requests, req.GetPage())
+	s.assetIDs = append(s.assetIDs, req.GetAssetIds())
+	s.renewableOnly = append(s.renewableOnly, req.GetRenewableOnly())
 	s.mu.Unlock()
 
 	index, size := int32(1), s.maxSize

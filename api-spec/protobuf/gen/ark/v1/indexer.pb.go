@@ -682,11 +682,13 @@ type GetVtxosRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Either specify a list of vtxo scripts.
 	Scripts []string `protobuf:"bytes,1,rep,name=scripts,proto3" json:"scripts,omitempty"`
-	// Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.
+	// Or specify a list of vtxo outpoints. The scripts, outpoints and asset_ids filters are
+	// mutually exclusive.
 	Outpoints []string `protobuf:"bytes,2,rep,name=outpoints,proto3" json:"outpoints,omitempty"`
 	// The spendable_only, spent_only, recoverable_only, pending_only and
 	// renewable_only filters are mutually exclusive, and are applied only when
-	// the scripts filter is used. They are ignored when querying by outpoints.
+	// the scripts or asset_ids filter is used. They are ignored when querying by
+	// outpoints.
 	// Retrieve only spendable vtxos
 	SpendableOnly bool `protobuf:"varint,3,opt,name=spendable_only,json=spendableOnly,proto3" json:"spendable_only,omitempty"`
 	// Retrieve only spent vtxos.
@@ -704,6 +706,9 @@ type GetVtxosRequest struct {
 	Before int64 `protobuf:"varint,9,opt,name=before,proto3" json:"before,omitempty"`
 	// Retrieve the union of the spendable and recoverable vtxos.
 	RenewableOnly bool `protobuf:"varint,10,opt,name=renewable_only,json=renewableOnly,proto3" json:"renewable_only,omitempty"`
+	// Or specify a list of asset ids to retrieve every vtxo that held any of them, spent ones
+	// included. Use renewable_only for the current holders. At most 10 per request.
+	AssetIds      []string `protobuf:"bytes,11,rep,name=asset_ids,json=assetIds,proto3" json:"asset_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -806,6 +811,13 @@ func (x *GetVtxosRequest) GetRenewableOnly() bool {
 		return x.RenewableOnly
 	}
 	return false
+}
+
+func (x *GetVtxosRequest) GetAssetIds() []string {
+	if x != nil {
+		return x.AssetIds
+	}
+	return nil
 }
 
 type GetVtxosResponse struct {
@@ -3311,7 +3323,7 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x04page\x18\x02 \x01(\v2\x1a.ark.v1.IndexerPageRequestR\x04page\"}\n" +
 	"\x19GetVtxoTreeLeavesResponse\x12/\n" +
 	"\x06leaves\x18\x01 \x03(\v2\x17.ark.v1.IndexerOutpointR\x06leaves\x12/\n" +
-	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"\xe2\x02\n" +
+	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"\xff\x02\n" +
 	"\x0fGetVtxosRequest\x12\x18\n" +
 	"\ascripts\x18\x01 \x03(\tR\ascripts\x12\x1c\n" +
 	"\toutpoints\x18\x02 \x03(\tR\toutpoints\x12%\n" +
@@ -3324,7 +3336,8 @@ const file_ark_v1_indexer_proto_rawDesc = "" +
 	"\x05after\x18\b \x01(\x03R\x05after\x12\x16\n" +
 	"\x06before\x18\t \x01(\x03R\x06before\x12%\n" +
 	"\x0erenewable_only\x18\n" +
-	" \x01(\bR\rrenewableOnly\"n\n" +
+	" \x01(\bR\rrenewableOnly\x12\x1b\n" +
+	"\tasset_ids\x18\v \x03(\tR\bassetIds\"n\n" +
 	"\x10GetVtxosResponse\x12)\n" +
 	"\x05vtxos\x18\x01 \x03(\v2\x13.ark.v1.IndexerVtxoR\x05vtxos\x12/\n" +
 	"\x04page\x18\x02 \x01(\v2\x1b.ark.v1.IndexerPageResponseR\x04page\"\xea\x01\n" +

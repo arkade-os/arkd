@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	maxPageSize   = 1000
-	maxReqsPerSec = 10
+	maxPageSize           = 1000
+	maxReqsPerSec         = 10
+	maxAssetIdsPerRequest = 10
 	// The server clamps a page down to its own per-endpoint maximum, the smallest
 	// being 100, so maxPages has to cover maxPageSize/100 times more pages than a
 	// honoured maxPageSize would need to keep the same retrievable item ceiling.
@@ -317,7 +318,7 @@ func (a *grpcClient) GetVtxos(
 		return nil, err
 	}
 
-	if len(o.Scripts) == 0 && len(o.Outpoints) == 0 {
+	if len(o.Scripts) == 0 && len(o.Outpoints) == 0 && len(o.AssetIDs) == 0 {
 		return nil, fmt.Errorf("missing opts")
 	}
 
@@ -331,10 +332,12 @@ func (a *grpcClient) GetVtxos(
 	req := &arkv1.GetVtxosRequest{
 		Scripts:         o.Scripts,
 		Outpoints:       o.FormattedOutpoints(),
+		AssetIds:        o.AssetIDs,
 		SpendableOnly:   o.SpendableOnly,
 		SpentOnly:       o.SpentOnly,
 		RecoverableOnly: o.RecoverableOnly,
 		PendingOnly:     o.PendingOnly,
+		RenewableOnly:   o.RenewableOnly,
 		After:           o.After,
 		Before:          o.Before,
 		Page: &arkv1.IndexerPageRequest{
@@ -741,17 +744,21 @@ func (a *grpcClient) paginatedGetVtxos(
 	o, _ := clientlib.ApplyGetVtxosOptions(opts...)
 	svc := a.svc()
 
-	fetchPages := func(scripts []string, outpoints []clientlib.Outpoint) ([]clientlib.Vtxo, error) {
+	fetchPages := func(
+		scripts []string, outpoints []clientlib.Outpoint, assetIDs []string,
+	) ([]clientlib.Vtxo, error) {
 		return paginatedFetch(ctx, func(
 			ctx context.Context, page *arkv1.IndexerPageRequest,
 		) ([]clientlib.Vtxo, *arkv1.IndexerPageResponse, error) {
 			resp, err := svc.GetVtxos(ctx, &arkv1.GetVtxosRequest{
 				Scripts:         scripts,
 				Outpoints:       formatOutpoints(outpoints),
+				AssetIds:        assetIDs,
 				SpendableOnly:   o.SpendableOnly,
 				SpentOnly:       o.SpentOnly,
 				RecoverableOnly: o.RecoverableOnly,
 				PendingOnly:     o.PendingOnly,
+				RenewableOnly:   o.RenewableOnly,
 				After:           o.After,
 				Before:          o.Before,
 				Page:            page,
@@ -765,7 +772,7 @@ func (a *grpcClient) paginatedGetVtxos(
 
 	var vtxos []clientlib.Vtxo
 	appendPages := func(scripts []string, outpoints []clientlib.Outpoint) error {
-		pageVtxos, err := fetchPages(scripts, outpoints)
+		pageVtxos, err := fetchPages(scripts, outpoints, nil)
 		if err != nil {
 			return err
 		}
@@ -783,6 +790,22 @@ func (a *grpcClient) paginatedGetVtxos(
 		end := min(offset+maxPageSize, len(o.Outpoints))
 		if err := appendPages(nil, o.Outpoints[offset:end]); err != nil {
 			return nil, err
+		}
+	}
+	// A vtxo holding assets from two chunks is returned by both.
+	seen := make(map[clientlib.Outpoint]struct{})
+	for offset := 0; offset < len(o.AssetIDs); offset += maxAssetIdsPerRequest {
+		end := min(offset+maxAssetIdsPerRequest, len(o.AssetIDs))
+		pageVtxos, err := fetchPages(nil, nil, o.AssetIDs[offset:end])
+		if err != nil {
+			return nil, err
+		}
+		for _, vtxo := range pageVtxos {
+			if _, ok := seen[vtxo.Outpoint]; ok {
+				continue
+			}
+			seen[vtxo.Outpoint] = struct{}{}
+			vtxos = append(vtxos, vtxo)
 		}
 	}
 	return &clientlib.VtxosResponse{Vtxos: vtxos}, nil

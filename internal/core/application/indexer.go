@@ -77,6 +77,11 @@ type IndexerService interface {
 	GetVtxosByOutpoint(
 		ctx context.Context, outpoints []Outpoint, page *Page,
 	) (*GetVtxosResp, error)
+	GetVtxosByAssets(
+		ctx context.Context, assetIDs []string,
+		spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly bool,
+		after, before int64, page *Page,
+	) (*GetVtxosResp, error)
 	GetUtxos(ctx context.Context, pubkeys []string, page *Page) (*GetUtxosResp, error)
 	GetUtxosByOutpoint(
 		ctx context.Context, outpoints []Outpoint, page *Page,
@@ -271,32 +276,13 @@ func (i *indexerService) GetVtxos(
 	after, before int64,
 	page *Page,
 ) (*GetVtxosResp, error) {
-	if err := validateTimeRange(after, before); err != nil {
+	filter, err := domain.NewVtxoFilter(
+		spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly, after, before,
+	)
+	if err != nil {
 		return nil, err
 	}
-	options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly}
-	count := 0
-	for _, v := range options {
-		if v {
-			count++
-		}
-	}
-	if count > 1 {
-		return nil, fmt.Errorf(
-			"spendable, spent, recoverable, pending and renewable filters are mutually exclusive",
-		)
-	}
-
-	filter := domain.VtxoFilter{
-		Pubkeys:         pubkeys,
-		After:           after,
-		Before:          before,
-		SpendableOnly:   spendableOnly,
-		SpentOnly:       spentOnly,
-		RecoverableOnly: recoverableOnly,
-		RenewableOnly:   renewableOnly,
-		PendingOnly:     pendingOnly,
-	}
+	filter.Pubkeys = pubkeys
 
 	// A request without a page reads the whole set and carries no page back,
 	// the contract callers had before the query was bounded, so no client has
@@ -335,6 +321,36 @@ func (i *indexerService) GetVtxosByOutpoint(
 	return &GetVtxosResp{
 		Vtxos: vtxos,
 		Page:  pageResp,
+	}, nil
+}
+
+func (i *indexerService) GetVtxosByAssets(
+	ctx context.Context, assetIDs []string,
+	spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly bool,
+	after, before int64, page *Page,
+) (*GetVtxosResp, error) {
+	filter, err := domain.NewVtxoFilter(
+		spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly, after, before,
+	)
+	if err != nil {
+		return nil, err
+	}
+	filter.AssetIDs = assetIDs
+
+	// Every page still reads all of the assets' vtxos (spent ones included)
+	// so cost grows with the assets' history. Keep an unspent flag on
+	// asset_projection table and index it if that gets slow.
+	pageNum, pageSize, offset := resolvePage(page, maxPageSizeSpendableVtxos)
+	vtxos, total, err := i.repoManager.Vtxos().GetVtxosWithAssets(
+		ctx, filter, domain.Page{Limit: pageSize, Offset: offset},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GetVtxosResp{
+		Vtxos: vtxos,
+		Page:  pageRespFor(pageNum, pageSize, total),
 	}, nil
 }
 

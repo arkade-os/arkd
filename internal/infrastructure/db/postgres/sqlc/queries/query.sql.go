@@ -2883,6 +2883,126 @@ func (q *Queries) SelectVtxosOutpointsByArkTxidRecursive(ctx context.Context, ar
 	return items, nil
 }
 
+const selectVtxosWithAssetsPage = `-- name: SelectVtxosWithAssetsPage :many
+WITH matching AS (
+    SELECT DISTINCT v.txid, v.vout, v.created_at
+    FROM asset_projection ap
+    JOIN vtxo_vw v ON v.txid = ap.txid AND v.vout = ap.vout AND v.asset_id = ap.asset_id
+    WHERE ap.asset_id = ANY($1::text[])
+        AND v.updated_at >= $2::bigint
+        AND ($3::bigint = 0 OR v.updated_at <= $3::bigint)
+        AND (NOT $4::boolean OR (
+            v.spent = false AND COALESCE(v.swept, false) = false AND v.unrolled = false
+        ))
+        AND (NOT $5::boolean OR (
+            v.spent = true OR COALESCE(v.swept, false) = true OR v.unrolled = true
+        ))
+        AND (NOT $6::boolean OR (v.spent = false AND v.unrolled = false))
+        AND (NOT $7::boolean OR (
+            v.spent = false AND v.unrolled = false AND (
+                COALESCE(v.swept, false) = true
+                OR (v.commitments = '' AND v.commitment_txid = '')
+            )
+        ))
+        AND (NOT $8::boolean OR (
+            v.spent = true AND v.unrolled = false AND COALESCE(v.settled_by, '') = ''
+            AND v.ark_txid IS NOT NULL AND NOT EXISTS (
+                SELECT 1 FROM vtxo AS o WHERE o.txid = v.ark_txid
+            )
+        ))
+), page AS (
+    SELECT m.txid, m.vout, m.created_at, COUNT(*) OVER ()::integer AS total
+    FROM matching m
+    ORDER BY m.created_at DESC, m.txid, m.vout
+    LIMIT (CASE WHEN $10::integer <= 0 THEN NULL ELSE $10::integer END)
+    OFFSET $9::integer
+)
+SELECT vtxo_vw.txid, vtxo_vw.vout, vtxo_vw.pubkey, vtxo_vw.amount, vtxo_vw.expires_at, vtxo_vw.created_at, vtxo_vw.commitment_txid, vtxo_vw.spent_by, vtxo_vw.spent, vtxo_vw.unrolled, vtxo_vw.preconfirmed, vtxo_vw.settled_by, vtxo_vw.ark_txid, vtxo_vw.intent_id, vtxo_vw.updated_at, vtxo_vw.depth, vtxo_vw.markers, vtxo_vw.commitments, vtxo_vw.swept, vtxo_vw.asset_id, vtxo_vw.asset_amount, page.total FROM vtxo_vw
+JOIN page ON vtxo_vw.txid = page.txid AND vtxo_vw.vout = page.vout
+ORDER BY page.created_at DESC, page.txid, page.vout
+`
+
+type SelectVtxosWithAssetsPageParams struct {
+	AssetIds        []string
+	After           int64
+	Before          int64
+	SpendableOnly   bool
+	SpentOnly       bool
+	RenewableOnly   bool
+	RecoverableOnly bool
+	PendingOnly     bool
+	Off             int32
+	Lim             int32
+}
+
+type SelectVtxosWithAssetsPageRow struct {
+	VtxoVw VtxoVw
+	Total  int32
+}
+
+// Paged vtxos holding any of the assets, with the same flags as SelectVtxosWithPubkeysPage.
+// Starts from asset_projection so the lookup can use its primary key index on
+// (asset_id, txid, vout). Filtering on vtxo_vw.asset_id can't use that index and
+// would scan every vtxo, because that column is a COALESCE over a LEFT JOIN.
+// Matching the view's asset_id keeps one row per vtxo and asset, so the page is
+// taken over DISTINCT outpoints to count a vtxo holding several of them once.
+func (q *Queries) SelectVtxosWithAssetsPage(ctx context.Context, arg SelectVtxosWithAssetsPageParams) ([]SelectVtxosWithAssetsPageRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectVtxosWithAssetsPage,
+		pq.Array(arg.AssetIds),
+		arg.After,
+		arg.Before,
+		arg.SpendableOnly,
+		arg.SpentOnly,
+		arg.RenewableOnly,
+		arg.RecoverableOnly,
+		arg.PendingOnly,
+		arg.Off,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectVtxosWithAssetsPageRow
+	for rows.Next() {
+		var i SelectVtxosWithAssetsPageRow
+		if err := rows.Scan(
+			&i.VtxoVw.Txid,
+			&i.VtxoVw.Vout,
+			&i.VtxoVw.Pubkey,
+			&i.VtxoVw.Amount,
+			&i.VtxoVw.ExpiresAt,
+			&i.VtxoVw.CreatedAt,
+			&i.VtxoVw.CommitmentTxid,
+			&i.VtxoVw.SpentBy,
+			&i.VtxoVw.Spent,
+			&i.VtxoVw.Unrolled,
+			&i.VtxoVw.Preconfirmed,
+			&i.VtxoVw.SettledBy,
+			&i.VtxoVw.ArkTxid,
+			&i.VtxoVw.IntentID,
+			&i.VtxoVw.UpdatedAt,
+			&i.VtxoVw.Depth,
+			&i.VtxoVw.Markers,
+			&i.VtxoVw.Commitments,
+			&i.VtxoVw.Swept,
+			&i.VtxoVw.AssetID,
+			&i.VtxoVw.AssetAmount,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectVtxosWithPubkeysPage = `-- name: SelectVtxosWithPubkeysPage :many
 WITH matching AS (
     SELECT DISTINCT v.txid, v.vout, v.created_at

@@ -125,6 +125,58 @@ func TestWithOutpoints(t *testing.T) {
 	})
 }
 
+func TestWithAssetIDs(t *testing.T) {
+	assetIDs := []string{"asset-a", "asset-b"}
+	scripts := []string{"script1"}
+	outpoints := []clientlib.Outpoint{{Txid: "abc123", VOut: 0}}
+
+	t.Run("valid", func(t *testing.T) {
+		o, err := clientlib.ApplyGetVtxosOptions(clientlib.WithAssetIDs(assetIDs))
+		require.NoError(t, err)
+		require.Equal(t, assetIDs, o.AssetIDs)
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		testCases := []struct {
+			name        string
+			opts        []clientlib.GetVtxosOption
+			expectError string
+		}{
+			{
+				name:        "asset ids already set",
+				opts:        []clientlib.GetVtxosOption{clientlib.WithAssetIDs(assetIDs), clientlib.WithAssetIDs(assetIDs)},
+				expectError: "asset ids already set",
+			},
+			{
+				name:        "scripts after asset ids",
+				opts:        []clientlib.GetVtxosOption{clientlib.WithAssetIDs(assetIDs), clientlib.WithScripts(scripts)},
+				expectError: "asset ids already set",
+			},
+			{
+				name:        "outpoints after asset ids",
+				opts:        []clientlib.GetVtxosOption{clientlib.WithAssetIDs(assetIDs), clientlib.WithOutpoints(outpoints)},
+				expectError: "asset ids already set",
+			},
+			{
+				name:        "asset ids after scripts",
+				opts:        []clientlib.GetVtxosOption{clientlib.WithScripts(scripts), clientlib.WithAssetIDs(assetIDs)},
+				expectError: "scripts already set",
+			},
+			{
+				name:        "asset ids after outpoints",
+				opts:        []clientlib.GetVtxosOption{clientlib.WithOutpoints(outpoints), clientlib.WithAssetIDs(assetIDs)},
+				expectError: "outpoints already set",
+			},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := clientlib.ApplyGetVtxosOptions(tc.opts...)
+				require.EqualError(t, err, tc.expectError)
+			})
+		}
+	})
+}
+
 func TestFormattedOutpoints(t *testing.T) {
 	outpoints := []clientlib.Outpoint{
 		{Txid: "abc123", VOut: 0},
@@ -159,6 +211,12 @@ func TestWithFilters(t *testing.T) {
 			o, err := clientlib.ApplyGetVtxosOptions(clientlib.WithPendingOnly())
 			require.NoError(t, err)
 			require.True(t, o.PendingOnly)
+		})
+
+		t.Run("renewable only", func(t *testing.T) {
+			o, err := clientlib.ApplyGetVtxosOptions(clientlib.WithRenewableOnly())
+			require.NoError(t, err)
+			require.True(t, o.RenewableOnly)
 		})
 	})
 }

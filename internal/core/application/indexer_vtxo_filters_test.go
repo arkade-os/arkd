@@ -152,6 +152,39 @@ func TestGetVtxosFilters(t *testing.T) {
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{"b1:0"}, outpointsOf(resp.Vtxos))
 	})
+
+	t.Run("asset lookup is always paged and keeps its filters", func(t *testing.T) {
+		assetIDs := []string{"asset-a", "asset-b"}
+		ctx := context.Background()
+		vtxos := []domain.Vtxo{filterTestVtxo("c1", false, false, false, false, false)}
+		firstPage := domain.Page{Limit: maxPageSizeSpendableVtxos}
+		secondPage := domain.Page{Limit: 50, Offset: 50}
+		assetFilter := domain.VtxoFilter{AssetIDs: assetIDs}
+		spendableFilter := domain.VtxoFilter{AssetIDs: assetIDs, SpendableOnly: true, After: 10}
+
+		vtxoRepo := &mockedVtxoRepo{}
+		vtxoRepo.On("GetVtxosWithAssets", mock.Anything, assetFilter, firstPage).
+			Return(vtxos, int32(250), nil)
+		vtxoRepo.On("GetVtxosWithAssets", mock.Anything, spendableFilter, secondPage).
+			Return(vtxos, int32(250), nil)
+		repoManager := &mockedRepoManager{}
+		repoManager.On("Vtxos").Return(vtxoRepo)
+		svc := &indexerService{repoManager: repoManager, txExposure: exposurePublic}
+
+		resp, err := svc.GetVtxosByAssets(ctx, assetIDs, false, false, false, false, false, 0, 0, nil)
+		require.NoError(t, err)
+		require.Equal(t, vtxos, resp.Vtxos)
+		require.Equal(t, PageResp{Current: 1, Next: 2, Total: 3}, resp.Page)
+
+		resp, err = svc.GetVtxosByAssets(
+			ctx, assetIDs, true, false, false, false, false, 10, 0, &Page{PageSize: 50, PageNum: 2},
+		)
+		require.NoError(t, err)
+		require.Equal(t, PageResp{Current: 2, Next: 3, Total: 5}, resp.Page)
+
+		_, err = svc.GetVtxosByAssets(ctx, assetIDs, true, true, false, false, false, 0, 0, nil)
+		require.ErrorContains(t, err, "mutually exclusive")
+	})
 }
 
 const filterTestPubkey = "0000000000000000000000000000000000000000000000000000000000000001"

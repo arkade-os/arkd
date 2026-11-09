@@ -59,8 +59,8 @@ type IndexerServiceClient interface {
 	// provided batch outpoint.
 	// The response may be paginated if the results span multiple pages.
 	GetVtxoTreeLeaves(ctx context.Context, in *GetVtxoTreeLeavesRequest, opts ...grpc.CallOption) (*GetVtxoTreeLeavesResponse, error)
-	// GetVtxos returns the list of vtxos based on the provided filter. Vtxos can be retrieved either
-	// by addresses or by outpoints, and optionally filtered by spendable or spent only.
+	// GetVtxos returns the list of vtxos based on the provided filter. Vtxos can be retrieved
+	// by addresses, by outpoints or by asset ids, and optionally filtered by spendable or spent only.
 	// The response may be paginated if the results span multiple pages.
 	GetVtxos(ctx context.Context, in *GetVtxosRequest, opts ...grpc.CallOption) (*GetVtxosResponse, error)
 	// GetVtxoChain returns the the chain of ark txs that starts from spending any vtxo leaf and ends
@@ -292,8 +292,8 @@ type IndexerServiceServer interface {
 	// provided batch outpoint.
 	// The response may be paginated if the results span multiple pages.
 	GetVtxoTreeLeaves(context.Context, *GetVtxoTreeLeavesRequest) (*GetVtxoTreeLeavesResponse, error)
-	// GetVtxos returns the list of vtxos based on the provided filter. Vtxos can be retrieved either
-	// by addresses or by outpoints, and optionally filtered by spendable or spent only.
+	// GetVtxos returns the list of vtxos based on the provided filter. Vtxos can be retrieved
+	// by addresses, by outpoints or by asset ids, and optionally filtered by spendable or spent only.
 	// The response may be paginated if the results span multiple pages.
 	GetVtxos(context.Context, *GetVtxosRequest) (*GetVtxosResponse, error)
 	// GetVtxoChain returns the the chain of ark txs that starts from spending any vtxo leaf and ends

@@ -429,6 +429,63 @@ func (v *vtxoRepository) selectVtxosPage(
 	return res, err
 }
 
+func (v *vtxoRepository) GetVtxosWithAssets(
+	ctx context.Context, filter domain.VtxoFilter, page domain.Page,
+) ([]domain.Vtxo, int32, error) {
+	if err := validateTimeRange(filter.After, filter.Before); err != nil {
+		return nil, 0, err
+	}
+
+	selectVtxosWithAssetsPage := func(
+		ctx context.Context, filter domain.VtxoFilter, limit, offset int32,
+	) ([]queries.SelectVtxosWithAssetsPageRow, error) {
+		return v.querier.SelectVtxosWithAssetsPage(
+			ctx, queries.SelectVtxosWithAssetsPageParams{
+				AssetIds:        filter.AssetIDs,
+				After:           filter.After,
+				Before:          filter.Before,
+				SpendableOnly:   filter.SpendableOnly,
+				SpentOnly:       filter.SpentOnly,
+				RecoverableOnly: filter.RecoverableOnly,
+				RenewableOnly:   filter.RenewableOnly,
+				PendingOnly:     filter.PendingOnly,
+				Lim:             limit,
+				Off:             offset,
+			},
+		)
+	}
+
+	res, err := selectVtxosWithAssetsPage(ctx, filter, page.Limit, page.Offset)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// The total rides on the returned rows: a page past the end needs a second
+	// read to recover it.
+	if len(res) == 0 {
+		first, err := selectVtxosWithAssetsPage(ctx, filter, 1, 0)
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(first) == 0 {
+			return nil, 0, nil
+		}
+		return nil, first[0].Total, nil
+	}
+
+	total := res[0].Total
+	rows := make([]queries.VtxoVw, 0, len(res))
+	for _, row := range res {
+		rows = append(rows, row.VtxoVw)
+	}
+
+	vtxos, err := readRows(rows)
+	if err != nil {
+		return nil, 0, err
+	}
+	return vtxos, total, nil
+}
+
 func (v *vtxoRepository) GetSweepableVtxosByCommitmentTxid(
 	ctx context.Context,
 	commitmentTxid string,

@@ -907,6 +907,11 @@ func (m *mockVtxoRepository) GetVtxosWithPubKeys(
 ) ([]domain.Vtxo, int32, error) {
 	return nil, 0, nil
 }
+func (m *mockVtxoRepository) GetVtxosWithAssets(
+	ctx context.Context, filter domain.VtxoFilter, page domain.Page,
+) ([]domain.Vtxo, int32, error) {
+	return nil, 0, nil
+}
 func (m *mockVtxoRepository) Close() {}
 
 type mockMarkerRepository struct {

@@ -2,18 +2,6 @@ package domain
 
 import "context"
 
-// VtxoFilter narrows a vtxo query. The Only flags are mutually exclusive.
-type VtxoFilter struct {
-	Pubkeys         []string
-	After           int64
-	Before          int64
-	SpendableOnly   bool
-	SpentOnly       bool
-	RecoverableOnly bool
-	RenewableOnly   bool
-	PendingOnly     bool
-}
-
 // Page bounds a query in the db layer. A Limit of 0 or less means no limit,
 // which is how a request without a page reads the whole set.
 type Page struct {
@@ -57,5 +45,6 @@ type VtxoRepository interface {
 	GetVtxosWithPubKeys(
 		ctx context.Context, filter VtxoFilter, page Page,
 	) ([]Vtxo, int32, error)
+	GetVtxosWithAssets(ctx context.Context, filter VtxoFilter, page Page) ([]Vtxo, int32, error)
 	Close()
 }

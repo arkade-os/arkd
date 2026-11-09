@@ -1369,6 +1369,14 @@ func (m *mockVtxoRepoForIndexer) GetVtxosWithPubKeys(
 ) ([]domain.Vtxo, int32, error) {
 	return nil, 0, nil
 }
+
+func (m *mockVtxoRepoForIndexer) GetVtxosWithAssets(
+	ctx context.Context,
+	filter domain.VtxoFilter,
+	page domain.Page,
+) ([]domain.Vtxo, int32, error) {
+	return nil, 0, nil
+}
 func (m *mockVtxoRepoForIndexer) Close() {}
 
 type mockMarkerRepoForIndexer struct {

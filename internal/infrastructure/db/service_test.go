@@ -180,6 +180,7 @@ func TestService(t *testing.T) {
 			testUtxoRepository(t, svc)
 			testGetVtxosBatch(t, svc)
 			testVtxosWithPubKeysPage(t, svc)
+			testVtxosWithAssetsPage(t, svc)
 			// After testVtxoRepository: the sweeps aggregate joins leaf vtxos, so
 			// the vtxo tables must exist and be writable by now.
 			testScheduledSweeps(t, svc)
@@ -4016,6 +4017,182 @@ func testVtxosWithPubKeysPage(t *testing.T, svc ports.RepoManager) {
 	})
 }
 
+func testVtxosWithAssetsPage(t *testing.T, svc ports.RepoManager) {
+	t.Run("test_get_vtxos_with_assets_page", func(t *testing.T) {
+		ctx := t.Context()
+		now := time.Now().Unix()
+		assetID := randomString(34)
+		otherAssetID := randomString(34)
+		pk := randomString(32)
+		cmtTxid := randomString(32)
+
+		count, err := svc.Assets().AddAssets(ctx, map[string][]domain.Asset{
+			randomString(32): {{Id: assetID}, {Id: otherAssetID}},
+		})
+		require.NoError(t, err)
+		require.Equal(t, 2, count)
+
+		newVtxo := func(assets ...domain.AssetDenomination) domain.Vtxo {
+			return domain.Vtxo{
+				Outpoint:           domain.Outpoint{Txid: randomString(32), VOut: 0},
+				PubKey:             pk,
+				Amount:             330,
+				ExpiresAt:          now + 3600,
+				CreatedAt:          now + 10,
+				RootCommitmentTxid: cmtTxid,
+				CommitmentTxids:    []string{cmtTxid},
+				Assets:             assets,
+			}
+		}
+
+		held := domain.AssetDenomination{AssetId: assetID, Amount: 10}
+		other := domain.AssetDenomination{AssetId: otherAssetID, Amount: 20}
+		seeded := seedFilterVtxos(t, svc, pk, now, held)
+		multi := newVtxo(held, other)
+		otherOnly := newVtxo(other)
+		require.NoError(t, svc.Vtxos().AddVtxos(ctx, []domain.Vtxo{
+			multi, otherOnly, newVtxo(),
+		}))
+
+		all, err := svc.Vtxos().GetVtxos(ctx, append(outpointsOf(seeded), multi.Outpoint))
+		require.NoError(t, err)
+		assetFilter := domain.VtxoFilter{AssetIDs: []string{assetID}}
+
+		modes := []struct {
+			name   string
+			filter domain.VtxoFilter
+		}{
+			{"no filter", domain.VtxoFilter{}},
+			{"spendable only", domain.VtxoFilter{SpendableOnly: true}},
+			{"spent only", domain.VtxoFilter{SpentOnly: true}},
+			{"recoverable only", domain.VtxoFilter{RecoverableOnly: true}},
+			{"renewable only", domain.VtxoFilter{RenewableOnly: true}},
+		}
+
+		for _, mode := range modes {
+			t.Run(mode.name, func(t *testing.T) {
+				filter := mode.filter
+				filter.AssetIDs = []string{assetID}
+
+				want := make([]domain.Vtxo, 0, len(all))
+				for _, vtxo := range all {
+					if matchesFilter(filter, vtxo) {
+						want = append(want, vtxo)
+					}
+				}
+				require.NotEmpty(t, want, "fixture must contain a vtxo for this mode")
+
+				got, total, err := svc.Vtxos().GetVtxosWithAssets(
+					ctx, filter, domain.Page{Limit: 100},
+				)
+				require.NoError(t, err)
+				require.Equal(t, int32(len(want)), total)
+				require.ElementsMatch(t, outpointsOf(want), outpointsOf(got))
+
+				for i := 1; i < len(got); i++ {
+					require.GreaterOrEqual(t, got[i-1].CreatedAt, got[i].CreatedAt)
+				}
+			})
+		}
+
+		t.Run("pending only", func(t *testing.T) {
+			want, err := svc.Vtxos().GetPendingSpentVtxosWithOutpoints(ctx, outpointsOf(seeded))
+			require.NoError(t, err)
+			require.NotEmpty(t, want, "fixture must contain a pending spent vtxo")
+
+			got, total, err := svc.Vtxos().GetVtxosWithAssets(
+				ctx,
+				domain.VtxoFilter{AssetIDs: []string{assetID}, PendingOnly: true},
+				domain.Page{Limit: 100},
+			)
+			require.NoError(t, err)
+			require.Equal(t, int32(len(want)), total)
+			require.ElementsMatch(t, outpointsOf(want), outpointsOf(got))
+		})
+
+		t.Run("time range", func(t *testing.T) {
+			hourAgo := time.Now().Add(-time.Hour).UnixMilli()
+			inAnHour := time.Now().Add(time.Hour).UnixMilli()
+			got, total, err := svc.Vtxos().GetVtxosWithAssets(
+				ctx,
+				domain.VtxoFilter{AssetIDs: []string{assetID}, After: hourAgo},
+				domain.Page{Limit: 100},
+			)
+			require.NoError(t, err)
+			require.Equal(t, int32(len(all)), total)
+			require.ElementsMatch(t, outpointsOf(all), outpointsOf(got))
+
+			for _, filter := range []domain.VtxoFilter{
+				{AssetIDs: []string{assetID}, After: inAnHour},
+				{AssetIDs: []string{assetID}, Before: hourAgo},
+			} {
+				got, total, err = svc.Vtxos().GetVtxosWithAssets(
+					ctx, filter, domain.Page{Limit: 100},
+				)
+				require.NoError(t, err)
+				require.Zero(t, total)
+				require.Empty(t, got)
+			}
+		})
+
+		t.Run("paging partitions the set", func(t *testing.T) {
+			walked := make([]domain.Outpoint, 0, len(all))
+			for offset := range int32(len(all)) {
+				page, total, err := svc.Vtxos().GetVtxosWithAssets(
+					ctx, assetFilter, domain.Page{Limit: 1, Offset: offset},
+				)
+				require.NoError(t, err)
+				require.Equal(t, int32(len(all)), total)
+				require.Len(t, page, 1)
+				walked = append(walked, page[0].Outpoint)
+			}
+			require.ElementsMatch(t, outpointsOf(all), walked)
+
+			page, total, err := svc.Vtxos().GetVtxosWithAssets(
+				ctx, assetFilter, domain.Page{Limit: 10, Offset: int32(len(all))},
+			)
+			require.NoError(t, err)
+			require.Empty(t, page)
+			require.Equal(t, int32(len(all)), total, "an out of range page still reports the total")
+		})
+
+		t.Run("a vtxo with several assets comes back once and whole", func(t *testing.T) {
+			got, _, err := svc.Vtxos().GetVtxosWithAssets(ctx, assetFilter, domain.Page{Limit: 100})
+			require.NoError(t, err)
+
+			matches := 0
+			for _, vtxo := range got {
+				if vtxo.Outpoint == multi.Outpoint {
+					matches++
+					require.ElementsMatch(t, multi.Assets, vtxo.Assets)
+				}
+			}
+			require.Equal(t, 1, matches)
+		})
+
+		t.Run("a vtxo holding several of the assets is counted once", func(t *testing.T) {
+			got, total, err := svc.Vtxos().GetVtxosWithAssets(
+				ctx,
+				domain.VtxoFilter{AssetIDs: []string{assetID, otherAssetID}},
+				domain.Page{Limit: 100},
+			)
+			require.NoError(t, err)
+			want := append(outpointsOf(all), otherOnly.Outpoint)
+			require.Equal(t, int32(len(want)), total)
+			require.ElementsMatch(t, want, outpointsOf(got))
+		})
+
+		t.Run("an unknown asset has no vtxos", func(t *testing.T) {
+			got, total, err := svc.Vtxos().GetVtxosWithAssets(
+				ctx, domain.VtxoFilter{AssetIDs: []string{randomString(34)}}, domain.Page{Limit: 100},
+			)
+			require.NoError(t, err)
+			require.Zero(t, total)
+			require.Empty(t, got)
+		})
+	})
+}
+
 func testOffchainTxRepository(t *testing.T, svc ports.RepoManager) {
 	t.Run("test_offchain_tx_repository", func(t *testing.T) {
 		ctx := context.Background()
@@ -4914,6 +5091,7 @@ func offchainTxMatch(expected, got domain.OffchainTx) assert.Comparison {
 // expired, note, spent, unrolled and swept.
 func seedFilterVtxos(
 	t *testing.T, svc ports.RepoManager, pubkey string, now int64,
+	assets ...domain.AssetDenomination,
 ) []domain.Vtxo {
 	t.Helper()
 	ctx := t.Context()
@@ -4926,6 +5104,7 @@ func seedFilterVtxos(
 			Amount:    1000,
 			ExpiresAt: expiresAt,
 			CreatedAt: createdAt,
+			Assets:    assets,
 		}
 		if !note {
 			vtxo.RootCommitmentTxid = cmtTxid

@@ -923,7 +923,7 @@
         "tags": [
           "IndexerService"
         ],
-        "description": "GetVtxos returns the list of vtxos based on the provided filter. Vtxos can be retrieved either\nby addresses or by outpoints, and optionally filtered by spendable or spent only.\nThe response may be paginated if the results span multiple pages.",
+        "description": "GetVtxos returns the list of vtxos based on the provided filter. Vtxos can be retrieved\nby addresses, by outpoints or by asset ids, and optionally filtered by spendable or spent only.\nThe response may be paginated if the results span multiple pages.",
         "operationId": "IndexerService_GetVtxos",
         "parameters": [
           {
@@ -942,7 +942,7 @@
           {
             "name": "outpoints",
             "in": "query",
-            "description": "Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.",
+            "description": "Or specify a list of vtxo outpoints. The scripts, outpoints and asset_ids filters are\nmutually exclusive.",
             "style": "simple",
             "schema": {
               "minItems": 1,
@@ -955,7 +955,7 @@
           {
             "name": "spendableOnly",
             "in": "query",
-            "description": "The spendable_only, spent_only, recoverable_only, pending_only and\nrenewable_only filters are mutually exclusive, and are applied only when\nthe scripts filter is used. They are ignored when querying by outpoints.\nRetrieve only spendable vtxos",
+            "description": "The spendable_only, spent_only, recoverable_only, pending_only and\nrenewable_only filters are mutually exclusive, and are applied only when\nthe scripts or asset_ids filter is used. They are ignored when querying by\noutpoints.\nRetrieve only spendable vtxos",
             "schema": {
               "type": "boolean"
             }
@@ -1008,6 +1008,19 @@
             "description": "Retrieve the union of the spendable and recoverable vtxos.",
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "assetIds",
+            "in": "query",
+            "description": "Or specify a list of asset ids to retrieve every vtxo that held any of them, spent ones\nincluded. Use renewable_only for the current holders. At most 10 per request.",
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           },
           {
@@ -1443,6 +1456,13 @@
             "description": "Include only vtxos with last update after the given unix time in milliseconds.\nA value of 0 means no lower bound.",
             "format": "int64"
           },
+          "assetIds": {
+            "type": "array",
+            "description": "Or specify a list of asset ids to retrieve every vtxo that held any of them, spent ones\nincluded. Use renewable_only for the current holders. At most 10 per request.",
+            "items": {
+              "type": "string"
+            }
+          },
           "before": {
             "type": "integer",
             "description": "Include only vtxos with last update before the given unix time in milliseconds,\ngreater value than the after when specified. A value of 0 means no upper bound.",
@@ -1450,7 +1470,7 @@
           },
           "outpoints": {
             "type": "array",
-            "description": "Or specify a list of vtxo outpoints. The 2 filters are mutually exclusive.",
+            "description": "Or specify a list of vtxo outpoints. The scripts, outpoints and asset_ids filters are\nmutually exclusive.",
             "items": {
               "type": "string"
             }
@@ -1479,7 +1499,7 @@
           },
           "spendableOnly": {
             "type": "boolean",
-            "description": "The spendable_only, spent_only, recoverable_only, pending_only and\nrenewable_only filters are mutually exclusive, and are applied only when\nthe scripts filter is used. They are ignored when querying by outpoints.\nRetrieve only spendable vtxos"
+            "description": "The spendable_only, spent_only, recoverable_only, pending_only and\nrenewable_only filters are mutually exclusive, and are applied only when\nthe scripts or asset_ids filter is used. They are ignored when querying by\noutpoints.\nRetrieve only spendable vtxos"
           },
           "spentOnly": {
             "type": "boolean",

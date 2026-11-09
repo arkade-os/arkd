@@ -40,6 +40,9 @@ func WithScripts(scripts []string) GetVtxosOption {
 		if o.Outpoints != nil {
 			return fmt.Errorf("outpoints already set")
 		}
+		if o.AssetIDs != nil {
+			return fmt.Errorf("asset ids already set")
+		}
 		o.Scripts = scripts
 		return nil
 	}
@@ -53,7 +56,29 @@ func WithOutpoints(outpoints []Outpoint) GetVtxosOption {
 		if o.Scripts != nil {
 			return fmt.Errorf("scripts already set")
 		}
+		if o.AssetIDs != nil {
+			return fmt.Errorf("asset ids already set")
+		}
 		o.Outpoints = outpoints
+		return nil
+	}
+}
+
+// WithAssetIDs selects every vtxo that held any of the given assets, spent ones included.
+// It only applies to GetVtxos. Combine it with WithRenewableOnly for the current holders.
+// With WithVtxosPage, the server takes at most 10 asset ids.
+func WithAssetIDs(assetIDs []string) GetVtxosOption {
+	return func(o *getVtxosOption) error {
+		if o.AssetIDs != nil {
+			return fmt.Errorf("asset ids already set")
+		}
+		if o.Scripts != nil {
+			return fmt.Errorf("scripts already set")
+		}
+		if o.Outpoints != nil {
+			return fmt.Errorf("outpoints already set")
+		}
+		o.AssetIDs = assetIDs
 		return nil
 	}
 }
@@ -82,6 +107,13 @@ func WithRecoverableOnly() GetVtxosOption {
 func WithPendingOnly() GetVtxosOption {
 	return func(o *getVtxosOption) error {
 		o.PendingOnly = true
+		return nil
+	}
+}
+
+func WithRenewableOnly() GetVtxosOption {
+	return func(o *getVtxosOption) error {
+		o.RenewableOnly = true
 		return nil
 	}
 }
@@ -117,10 +149,12 @@ type getVtxosOption struct {
 	Page            *PageRequest
 	Scripts         []string
 	Outpoints       []Outpoint
+	AssetIDs        []string
 	SpentOnly       bool
 	SpendableOnly   bool
 	RecoverableOnly bool
 	PendingOnly     bool
+	RenewableOnly   bool
 	After           int64
 	Before          int64
 }

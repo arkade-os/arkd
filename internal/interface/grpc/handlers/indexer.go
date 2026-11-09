@@ -31,10 +31,13 @@ const (
 	maxPageRequestSize  = 1000
 	maxPageRequestIndex = 1_000_000
 
-	// Caps on the GetVtxos filter sets. 1000 matches the chunk size the client
-	// splits its filter sets into (maxPageSize in pkg/client-lib/indexer).
+	// Caps on the GetVtxos filter sets. They match the chunk sizes the client
+	// splits its filter sets into (maxPageSize and maxAssetIdsPerRequest in
+	// pkg/client-lib/indexer). Asset ids are capped lower because each one reads
+	// the asset's whole history.
 	maxOutpointsPerRequest = 1000
 	maxScriptsPerRequest   = 1000
+	maxAssetIdsPerRequest  = 10
 )
 
 type indexerService struct {
@@ -67,9 +70,9 @@ func NewIndexerService(
 func (e *indexerService) GetAsset(ctx context.Context, request *arkv1.GetAssetRequest) (
 	*arkv1.GetAssetResponse, error,
 ) {
-	assetId := request.GetAssetId()
-	if assetId == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "missing asset id")
+	assetId, err := parseAssetId(request.GetAssetId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	assets, err := e.indexerSvc.GetAsset(ctx, assetId)
@@ -258,6 +261,9 @@ func (e *indexerService) GetVtxos(
 	if len(request.GetOutpoints()) > maxOutpointsPerRequest {
 		return nil, filterLimitErr("outpoints", len(request.GetOutpoints()), maxOutpointsPerRequest)
 	}
+	if len(request.GetAssetIds()) > maxAssetIdsPerRequest {
+		return nil, filterLimitErr("asset_ids", len(request.GetAssetIds()), maxAssetIdsPerRequest)
+	}
 
 	pubkeys := make([]string, 0, len(request.GetScripts()))
 	for _, script := range request.GetScripts() {
@@ -272,12 +278,30 @@ func (e *indexerService) GetVtxos(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	if len(outpoints) == 0 && len(pubkeys) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "missing outpoints or scripts filter")
+	assetIds := make([]string, 0, len(request.GetAssetIds()))
+	for _, assetId := range request.GetAssetIds() {
+		parsed, err := parseAssetId(assetId)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		assetIds = append(assetIds, parsed)
 	}
-	if len(outpoints) > 0 && len(pubkeys) > 0 {
+
+	filtersSet := 0
+	for _, isSet := range []bool{len(outpoints) > 0, len(pubkeys) > 0, len(assetIds) > 0} {
+		if isSet {
+			filtersSet++
+		}
+	}
+	if filtersSet == 0 {
 		return nil, status.Error(
-			codes.InvalidArgument, "outpoints and scripts filters are mutually exclusive",
+			codes.InvalidArgument, "missing outpoints, scripts or asset_ids filter",
+		)
+	}
+	if filtersSet > 1 {
+		return nil, status.Error(
+			codes.InvalidArgument,
+			"outpoints, scripts and asset_ids filters are mutually exclusive",
 		)
 	}
 
@@ -287,9 +311,8 @@ func (e *indexerService) GetVtxos(
 	pendingOnly := request.GetPendingOnly()
 	renewableOnly := request.GetRenewableOnly()
 
-	var resp *application.GetVtxosResp
-
-	if len(pubkeys) > 0 {
+	var after, before int64
+	if len(pubkeys) > 0 || len(assetIds) > 0 {
 		// Validate filters
 		// TODO: get rid of this and move to oneof in the protos
 		options := []bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly}
@@ -307,11 +330,15 @@ func (e *indexerService) GetVtxos(
 			)
 		}
 
-		after, before, err := parseTimeRange(request.GetAfter(), request.GetBefore())
+		after, before, err = parseTimeRange(request.GetAfter(), request.GetBefore())
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
+	}
 
+	var resp *application.GetVtxosResp
+
+	if len(pubkeys) > 0 {
 		resp, err = e.indexerSvc.GetVtxos(
 			ctx, pubkeys, spendableOnly, spentOnly, recoverableOnly,
 			pendingOnly, renewableOnly, after, before, page,
@@ -322,6 +349,12 @@ func (e *indexerService) GetVtxos(
 	}
 	if len(outpoints) > 0 {
 		resp, err = e.indexerSvc.GetVtxosByOutpoint(ctx, outpoints, page)
+	}
+	if len(assetIds) > 0 {
+		resp, err = e.indexerSvc.GetVtxosByAssets(
+			ctx, assetIds, spendableOnly, spentOnly, recoverableOnly,
+			pendingOnly, renewableOnly, after, before, page,
+		)
 	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -942,6 +975,24 @@ func filterLimitErr(filter string, got, limit int) error {
 			MaxItems: limit,
 			GotItems: got,
 		})
+}
+
+// parseAssetId returns the id in the lowercase hex form assets are stored under.
+func parseAssetId(assetId string) (string, error) {
+	if len(assetId) <= 0 {
+		return "", fmt.Errorf("missing asset id")
+	}
+	// TODO: move this check to asset.newAssetIdFromReader.
+	if len(assetId) != asset.ASSET_ID_SIZE*2 {
+		return "", fmt.Errorf(
+			"invalid asset id length: got %d bytes, want %d", len(assetId)/2, asset.ASSET_ID_SIZE,
+		)
+	}
+	parsed, err := asset.NewAssetIdFromString(assetId)
+	if err != nil {
+		return "", err
+	}
+	return parsed.String(), nil
 }
 
 func parseOutpoints(outpoints []string) ([]application.Outpoint, error) {

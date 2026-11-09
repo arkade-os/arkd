@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	stderrors "errors"
 	"fmt"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -30,6 +32,8 @@ const (
 	testScript2   = "5120c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
 	testScript3   = "5120f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9"
 	testChainTxid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	testAssetId   = testChainTxid + "0100"
+	testAssetId2  = testChainTxid + "0200"
 )
 
 func TestParsePage(t *testing.T) {
@@ -159,6 +163,15 @@ func TestGetVtxosFilterCaps(t *testing.T) {
 		requireFilterLimitErr(t, err, "scripts", maxScriptsPerRequest)
 	})
 
+	t.Run("rejects too many asset ids", func(t *testing.T) {
+		svc := newTestIndexerService(t)
+
+		_, err := svc.GetVtxos(context.Background(), &arkv1.GetVtxosRequest{
+			AssetIds: slices.Repeat([]string{testAssetId}, maxAssetIdsPerRequest+1),
+		})
+		requireFilterLimitErr(t, err, "asset_ids", maxAssetIdsPerRequest)
+	})
+
 	// A request exactly at the cap gets through to parsing.
 	t.Run("accepts the cap itself", func(t *testing.T) {
 		svc := newTestIndexerService(t)
@@ -172,6 +185,206 @@ func TestGetVtxosFilterCaps(t *testing.T) {
 		require.Error(t, err)
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
 		require.Contains(t, err.Error(), "invalid outpoint format")
+	})
+
+	// The client splits asset ids into requests of exactly the cap.
+	t.Run("accepts the asset id cap itself", func(t *testing.T) {
+		svc := newTestIndexerService(t)
+		svc.indexerSvc = newMockAssetIndexer()
+
+		_, err := svc.GetVtxos(context.Background(), &arkv1.GetVtxosRequest{
+			AssetIds: slices.Repeat([]string{testAssetId}, maxAssetIdsPerRequest),
+		})
+		require.NoError(t, err)
+	})
+}
+
+func TestGetVtxosAssetFilter(t *testing.T) {
+	t.Run("valid", func(t *testing.T) {
+		t.Run("forwards the normalized asset ids and time range", func(t *testing.T) {
+			app := newMockAssetIndexer()
+			svc := newTestIndexerService(t)
+			svc.indexerSvc = app
+
+			resp, err := svc.GetVtxos(t.Context(), &arkv1.GetVtxosRequest{
+				AssetIds: []string{strings.ToUpper(testAssetId), testAssetId2},
+				After:    10,
+				Before:   20,
+			})
+			require.NoError(t, err)
+			require.Equal(t, []string{testAssetId, testAssetId2}, app.gotAssetIds)
+			require.Equal(t, [5]bool{}, app.gotFlags)
+			require.Equal(t, int64(10), app.gotAfter)
+			require.Equal(t, int64(20), app.gotBefore)
+			require.Len(t, resp.GetVtxos(), 1)
+			require.Equal(t, int32(1), resp.GetPage().GetTotal())
+		})
+
+		t.Run("forwards each status filter", func(t *testing.T) {
+			// Cases follow the flag order of mockAssetIndexer.gotFlags.
+			tests := []struct {
+				name string
+				req  *arkv1.GetVtxosRequest
+			}{
+				{"spendable only", &arkv1.GetVtxosRequest{SpendableOnly: true}},
+				{"spent only", &arkv1.GetVtxosRequest{SpentOnly: true}},
+				{"recoverable only", &arkv1.GetVtxosRequest{RecoverableOnly: true}},
+				{"pending only", &arkv1.GetVtxosRequest{PendingOnly: true}},
+				{"renewable only", &arkv1.GetVtxosRequest{RenewableOnly: true}},
+			}
+
+			for i, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					app := newMockAssetIndexer()
+					svc := newTestIndexerService(t)
+					svc.indexerSvc = app
+
+					tt.req.AssetIds = []string{testAssetId}
+					_, err := svc.GetVtxos(t.Context(), tt.req)
+					require.NoError(t, err)
+
+					var expectedFlags [5]bool
+					expectedFlags[i] = true
+					require.Equal(t, expectedFlags, app.gotFlags)
+				})
+			}
+		})
+
+		t.Run("outpoints ignore status and time filters", func(t *testing.T) {
+			svc := newTestIndexerService(t)
+			svc.indexerSvc = newMockAssetIndexer()
+
+			_, err := svc.GetVtxos(t.Context(), &arkv1.GetVtxosRequest{
+				Outpoints:     repeatOutpoint(1),
+				SpendableOnly: true,
+				SpentOnly:     true,
+				After:         20,
+				Before:        10,
+			})
+			require.NoError(t, err)
+		})
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		t.Run("missing filter", func(t *testing.T) {
+			svc := newTestIndexerService(t)
+
+			_, err := svc.GetVtxos(t.Context(), &arkv1.GetVtxosRequest{})
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+			require.ErrorContains(t, err, "missing outpoints, scripts or asset_ids filter")
+		})
+
+		t.Run("too many filters", func(t *testing.T) {
+			tests := []struct {
+				name string
+				req  *arkv1.GetVtxosRequest
+			}{
+				{
+					name: "asset ids and scripts",
+					req: &arkv1.GetVtxosRequest{
+						AssetIds: []string{testAssetId}, Scripts: repeatScript(1),
+					},
+				},
+				{
+					name: "asset ids and outpoints",
+					req: &arkv1.GetVtxosRequest{
+						AssetIds: []string{testAssetId}, Outpoints: repeatOutpoint(1),
+					},
+				},
+				{
+					name: "scripts and outpoints",
+					req: &arkv1.GetVtxosRequest{
+						Scripts: repeatScript(1), Outpoints: repeatOutpoint(1),
+					},
+				},
+			}
+
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					svc := newTestIndexerService(t)
+
+					_, err := svc.GetVtxos(t.Context(), tt.req)
+					require.Equal(t, codes.InvalidArgument, status.Code(err))
+					require.ErrorContains(t, err, "mutually exclusive")
+				})
+			}
+		})
+
+		t.Run("too many status filters", func(t *testing.T) {
+			svc := newTestIndexerService(t)
+
+			_, err := svc.GetVtxos(t.Context(), &arkv1.GetVtxosRequest{
+				AssetIds:      []string{testAssetId},
+				SpendableOnly: true,
+				SpentOnly:     true,
+			})
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+			require.ErrorContains(
+				t,
+				err,
+				"spendable, spent, recoverable, pending and renewable filters are mutually exclusive",
+			)
+		})
+
+		t.Run("invalid time range", func(t *testing.T) {
+			svc := newTestIndexerService(t)
+
+			_, err := svc.GetVtxos(t.Context(), &arkv1.GetVtxosRequest{
+				AssetIds: []string{testAssetId},
+				After:    20,
+				Before:   10,
+			})
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+			require.ErrorContains(t, err, "before must be greater than after")
+		})
+
+		t.Run("invalid asset id filter", func(t *testing.T) {
+			tests := []struct {
+				name        string
+				assetId     string
+				expectedErr string
+			}{
+				{
+					name:        "empty",
+					assetId:     "",
+					expectedErr: "missing asset id",
+				},
+				{
+					name:        "not hex",
+					assetId:     strings.Repeat("z", 68),
+					expectedErr: "invalid asset id format",
+				},
+				{
+					name:        "too short",
+					assetId:     testChainTxid,
+					expectedErr: "invalid asset id",
+				},
+				{
+					name:        "too long",
+					assetId:     testAssetId + "00",
+					expectedErr: "invalid asset id",
+				},
+				{
+					name:        "asset id with empty txid",
+					assetId:     strings.Repeat("00", 32) + "0100",
+					expectedErr: "empty txid",
+				},
+			}
+
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					svc := newTestIndexerService(t)
+
+					resp, err := svc.GetVtxos(t.Context(), &arkv1.GetVtxosRequest{
+						AssetIds: []string{testAssetId, tt.assetId},
+					})
+					require.Nil(t, resp)
+					require.Error(t, err)
+					require.Equal(t, codes.InvalidArgument, status.Code(err))
+					require.ErrorContains(t, err, tt.expectedErr)
+				})
+			}
+		})
 	})
 }
 
@@ -2171,4 +2384,38 @@ func (m *mockAppIndexer) GetVtxoChain(
 ) (*application.VtxoChainResp, error) {
 	m.gotPageToken = pageToken
 	return m.resp, m.err
+}
+
+type mockAssetIndexer struct {
+	application.IndexerService
+	gotAssetIds []string
+	gotFlags    [5]bool
+	gotAfter    int64
+	gotBefore   int64
+	resp        *application.GetVtxosResp
+}
+
+func newMockAssetIndexer() *mockAssetIndexer {
+	return &mockAssetIndexer{resp: &application.GetVtxosResp{
+		Vtxos: []domain.Vtxo{{Outpoint: domain.Outpoint{Txid: testChainTxid}}},
+		Page:  application.PageResp{Current: 1, Next: 1, Total: 1},
+	}}
+}
+
+func (m *mockAssetIndexer) GetVtxosByAssets(
+	_ context.Context, assetIds []string,
+	spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly bool,
+	after, before int64, _ *application.Page,
+) (*application.GetVtxosResp, error) {
+	m.gotAssetIds = assetIds
+	m.gotFlags = [5]bool{spendableOnly, spentOnly, recoverableOnly, pendingOnly, renewableOnly}
+	m.gotAfter = after
+	m.gotBefore = before
+	return m.resp, nil
+}
+
+func (m *mockAssetIndexer) GetVtxosByOutpoint(
+	_ context.Context, _ []application.Outpoint, _ *application.Page,
+) (*application.GetVtxosResp, error) {
+	return m.resp, nil
 }
