@@ -1,0 +1,443 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - "**"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        with:
+          go-version-file: go.mod
+          cache: ${{ vars.CI_RUNNER_LABEL == '' }}
+
+      - name: Check go mod tidy
+        run: |
+          go mod tidy
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "Changes detected after running go mod tidy"
+            git diff
+            exit 1
+          fi
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8.0.0
+        with:
+          version: v2.15.0
+          args: --timeout 5m --tests=false
+
+      - name: gosec
+        uses: securego/gosec@deb54465fea23d19a77f037e11e6589021f8501d # v2.29.0
+        with:
+          args: '-severity high -quiet -exclude=G115 -exclude-generated ./...'
+
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          version: 1.50.0
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: buf lint
+        run: buf lint
+
+      - name: buf breaking
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # Compare against the target branch using the local checkout. A remote
+          # https input would make buf run its own unauthenticated git clone,
+          # which cannot read this private repository.
+          git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          buf breaking --against ".git#ref=origin/$BASE_REF,subdir=api-spec/protobuf"
+
+  unit:
+    name: unit
+    needs: check
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        with:
+          go-version-file: go.mod
+          cache: ${{ vars.CI_RUNNER_LABEL == '' }}
+
+      - name: arkd unit tests
+        run: make test
+
+      - name: Packages unit tests
+        run: make test-pkg
+
+  binaries:
+    name: binaries
+    needs: check
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        with:
+          go-version-file: go.mod
+          cache: ${{ vars.CI_RUNNER_LABEL == '' }}
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "version=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build binaries
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: make build-all
+
+      - name: Pack binaries
+        run: tar -czf binaries.tgz build pkg/ark-cli/build
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: binaries
+          path: binaries.tgz
+          if-no-files-found: error
+          retention-days: 5
+          compression-level: 0
+
+  images:
+    name: images
+    needs: binaries
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: binaries
+
+      - name: Unpack binaries
+        run: tar -xzf binaries.tgz
+
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build arkd image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./ci.Dockerfile
+          target: arkd
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          no-cache: true
+          tags: arkd:ci
+          outputs: type=oci,dest=arkd.oci.tar
+
+      - name: Build arkd-wallet image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./ci.Dockerfile
+          target: arkd-wallet
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          no-cache: true
+          tags: arkd-wallet:ci
+          outputs: type=oci,dest=arkd-wallet.oci.tar
+
+      - name: Build arkd-signer image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./ci.Dockerfile
+          target: arkd-signer
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          no-cache: true
+          tags: arkd-signer:ci
+          outputs: type=oci,dest=arkd-signer.oci.tar
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: images
+          path: |
+            arkd.oci.tar
+            arkd-wallet.oci.tar
+            arkd-signer.oci.tar
+          if-no-files-found: error
+          retention-days: 5
+
+  integration:
+    name: integration
+    needs: images
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    env:
+      ARKD_IMAGE: arkd:ci
+      ARKD_WALLET_IMAGE: arkd-wallet:ci
+      ARKD_SIGNER_IMAGE: arkd-signer:ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        with:
+          go-version-file: go.mod
+          cache: ${{ vars.CI_RUNNER_LABEL == '' }}
+
+      - uses: ./.github/actions/load-images
+
+      - name: Run Nigiri
+        uses: vulpemventures/nigiri-github-action@7fc63cec40cbfc113589a9ade24ab21c9107ad39 # v1
+        with:
+          use_liquid: false
+
+      - name: Run arkd, arkd-wallet and arkd-signer
+        run: make docker-run DOCKER_UP_FLAGS=--no-build
+
+      - name: Run test
+        run: make integrationtest
+
+      # arkd fails whenever any of its dependencies does, so its own log usually
+      # only shows the symptom. Capturing the whole stack is what distinguishes
+      # a genuine test failure from a dependency that never came up.
+      - name: Capture container state
+        if: failure()
+        run: |
+          echo "=== Compose services ==="
+          docker compose -f docker-compose.regtest.yml ps --all || true
+          for c in arkd arkd-wallet arkd-signer nbxplorer pg redis; do
+            echo "=== $c ==="
+            docker logs --tail 300 "$c" 2>&1 || echo "(container not present)"
+          done
+
+      - name: Tear down
+        if: always()
+        run: make docker-stop
+
+      - name: Stop Nigiri
+        if: always()
+        run: nigiri stop --delete
+
+  trivy:
+    name: trivy
+    needs: images
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/load-images
+
+      - name: Scan arkd
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        env:
+          # avoid GHCR rate limits, see https://github.com/aquasecurity/trivy-db/pull/440 and https://github.com/aquasecurity/trivy-action/issues/389
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+        with:
+          image-ref: arkd:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Scan arkd-wallet
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+        with:
+          image-ref: arkd-wallet:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Scan arkd-signer
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+        with:
+          image-ref: arkd-signer:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+  publish:
+    name: publish
+    needs: [binaries, unit, integration, trivy]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    env:
+      VERSION: ${{ needs.binaries.outputs.version }}
+      # Semver: any "-" suffix (rc, alpha, beta) marks a prerelease, so an unexpected tag never moves GHCR latest.
+      PRERELEASE: ${{ contains(github.ref_name, '-') }}
+    outputs:
+      version: ${{ needs.binaries.outputs.version }}
+      arkd_digest: ${{ steps.digests.outputs.arkd }}
+      arkd_wallet_digest: ${{ steps.digests.outputs.arkd_wallet }}
+      arkd_signer_digest: ${{ steps.digests.outputs.arkd_signer }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: binaries
+          path: ${{ runner.temp }}
+
+      - name: Unpack binaries
+        run: tar -xzf "$RUNNER_TEMP/binaries.tgz" -C "$RUNNER_TEMP"
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: images
+          path: ${{ runner.temp }}/images
+
+      - uses: ./.github/actions/setup-skopeo
+
+      - name: Resolve digests
+        id: digests
+        run: |
+          {
+            echo "arkd=sha256:$(skopeo inspect --raw "oci-archive:$RUNNER_TEMP/images/arkd.oci.tar" | sha256sum | cut -d' ' -f1)"
+            echo "arkd_wallet=sha256:$(skopeo inspect --raw "oci-archive:$RUNNER_TEMP/images/arkd-wallet.oci.tar" | sha256sum | cut -d' ' -f1)"
+            echo "arkd_signer=sha256:$(skopeo inspect --raw "oci-archive:$RUNNER_TEMP/images/arkd-signer.oci.tar" | sha256sum | cut -d' ' -f1)"
+            echo "sha=sha-$(git rev-parse --short HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=(--verify-tag --generate-notes)
+          if [[ "$PRERELEASE" == "true" ]]; then flags+=(--prerelease); fi
+          gh release view "$VERSION" >/dev/null 2>&1 || gh release create "$VERSION" "${flags[@]}"
+          gh release upload "$VERSION" --clobber "$RUNNER_TEMP"/build/* "$RUNNER_TEMP"/pkg/ark-cli/build/*
+
+      - name: Configure AWS credentials (staging)
+        if: vars.ECR_PUSH_ENABLED == 'true'
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_ROLE_ARN }}
+          aws-region: eu-central-1
+
+      - name: Login to Amazon ECR (staging)
+        if: vars.ECR_PUSH_ENABLED == 'true'
+        id: ecr-staging
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+
+      # unset-current-credentials discards the staging credentials first. Without
+      # it the action would role-chain from staging into the prod role rather than
+      # requesting a fresh OIDC token, and staging has no permission to do so.
+      - name: Configure AWS credentials (prod)
+        if: vars.ECR_PUSH_ENABLED == 'true'
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: eu-central-1
+          unset-current-credentials: true
+
+      - name: Login to Amazon ECR (prod)
+        if: vars.ECR_PUSH_ENABLED == 'true'
+        id: ecr-prod
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+
+      - name: Push images to ECR
+        if: vars.ECR_PUSH_ENABLED == 'true'
+        env:
+          STAGING_REGISTRY: ${{ steps.ecr-staging.outputs.registry }}
+          PROD_REGISTRY: ${{ steps.ecr-prod.outputs.registry }}
+          SHA_TAG: ${{ steps.digests.outputs.sha }}
+        run: |
+          for name in arkd arkd-wallet arkd-signer; do
+            for dest in "$STAGING_REGISTRY/$name-staging" "$PROD_REGISTRY/$name-prod"; do
+              for tag in "$VERSION" "$SHA_TAG"; do
+                skopeo copy --all --preserve-digests "oci-archive:$RUNNER_TEMP/images/$name.oci.tar" "docker://$dest:$tag"
+              done
+            done
+          done
+
+      - name: Login to GitHub Container Registry
+        if: vars.PUBLIC_RELEASE_ENABLED == 'true' && env.PRERELEASE == 'false'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push images to GHCR
+        if: vars.PUBLIC_RELEASE_ENABLED == 'true' && env.PRERELEASE == 'false'
+        run: |
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          wallet="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/arkd-wallet"
+          signer="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/arkd-signer"
+          for tag in "$VERSION" latest; do
+            skopeo copy --all --preserve-digests "oci-archive:$RUNNER_TEMP/images/arkd.oci.tar" "docker://$repo:$tag"
+            skopeo copy --all --preserve-digests "oci-archive:$RUNNER_TEMP/images/arkd-wallet.oci.tar" "docker://$wallet:$tag"
+            skopeo copy --all --preserve-digests "oci-archive:$RUNNER_TEMP/images/arkd-signer.oci.tar" "docker://$signer:$tag"
+          done
+
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        if: vars.PUBLIC_RELEASE_ENABLED == 'true' && env.PRERELEASE == 'false'
+        with:
+          version: 1.50.0
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish protos
+        if: vars.PUBLIC_RELEASE_ENABLED == 'true' && env.PRERELEASE == 'false'
+        env:
+          BUF_TOKEN: ${{ secrets.BUF_TOKEN }}
+        run: buf push api-spec/protobuf --error-format github-actions --create --git-metadata
+
+      - name: Summary
+        env:
+          ARKD_DIGEST: ${{ steps.digests.outputs.arkd }}
+          ARKD_WALLET_DIGEST: ${{ steps.digests.outputs.arkd_wallet }}
+          ARKD_SIGNER_DIGEST: ${{ steps.digests.outputs.arkd_signer }}
+          SHA_TAG: ${{ steps.digests.outputs.sha }}
+        run: |
+          {
+            echo "### Published $VERSION"
+            echo ""
+            echo "| Image | Digest |"
+            echo "| --- | --- |"
+            echo "| \`arkd\` | \`$ARKD_DIGEST\` |"
+            echo "| \`arkd-wallet\` | \`$ARKD_WALLET_DIGEST\` |"
+            echo "| \`arkd-signer\` | \`$ARKD_SIGNER_DIGEST\` |"
+            echo ""
+            echo "Tags: \`$VERSION\`, \`$SHA_TAG\`. Prerelease: \`$PRERELEASE\`."
+          } >> "$GITHUB_STEP_SUMMARY"

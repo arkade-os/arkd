@@ -8,7 +8,7 @@ PARENT_PATH=$(dirname $(
 ))
 
 # Set VERSION (you can modify this to get the version from a file or environment variable)
-VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "unknown")
+VERSION=${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo "unknown")}
 
 # Set GOOS and GOARCH if not already set
 if [[ -z $GOOS ]]; then
@@ -29,7 +29,7 @@ pushd "$PARENT_PATH" > /dev/null
 mkdir -p build
 
 # Build the binary with version information
-GO111MODULE=on go build -ldflags="-s -w -X 'main.Version=$VERSION'" -o build/ark-$GOOS-$GOARCH main.go
+CGO_ENABLED=0 GO111MODULE=on go build -ldflags="-s -w -X 'main.Version=$VERSION'" -o build/ark-$GOOS-$GOARCH main.go
 
 echo "Build complete: ${PARENT_PATH#$REPO_ROOT/}/build/ark-$GOOS-$GOARCH"
 

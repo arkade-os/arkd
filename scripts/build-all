@@ -8,7 +8,7 @@ PARENT_PATH=$(dirname $(
 ))
 
 # Set VERSION (you can modify this to get the version from a file or environment variable)
-VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "unknown")
+VERSION=${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo "unknown")}
 
 # Define OS and ARCH arrays
 declare -a OS=("darwin" "linux")
@@ -38,6 +38,7 @@ for os in "${OS[@]}"; do
                 echo ""
             else
                 handle_error $os $arch $?
+                exit 1
             fi
         done
 
@@ -46,6 +47,7 @@ for os in "${OS[@]}"; do
             echo ""
         else
             handle_error $os $arch $?
+            exit 1
         fi
 
         echo "------------------------"

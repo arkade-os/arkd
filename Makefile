@@ -10,6 +10,8 @@ define setup_env
     $(eval export)
 endef
 
+DOCKER_UP_FLAGS ?= --build
+
 GOLANGCI_LINT ?= $(shell \
 	echo "docker run --rm -v $$(pwd):/app -w /app golangci/golangci-lint:v2.15.0 golangci-lint"; \
 )
@@ -59,7 +61,7 @@ cov:
 ## docker-run: start docker test environment with postgres
 docker-run:
 	@echo "Running dockerized arkd and arkd wallet in test mode on regtest with postgres..."
-	@docker compose -f docker-compose.regtest.yml up --build -d
+	@docker compose -f docker-compose.regtest.yml up $(DOCKER_UP_FLAGS) -d
 
 ## docker-stop: tear down docker test environment
 docker-stop:
@@ -175,7 +177,7 @@ run-simulation:
 	@echo "Stopping any existing Docker environment..."
 	@docker compose -f docker-compose.regtest.yml down -v 2>/dev/null || true
 	@echo "Starting Docker environment..."
-	@ARKD_SESSION_DURATION=60 docker compose -f docker-compose.regtest.yml up --build -d
+	@ARKD_SESSION_DURATION=60 docker compose -f docker-compose.regtest.yml up $(DOCKER_UP_FLAGS) -d
 	@echo "Waiting for services to start..."
 	@sleep 30
 	@bash -c '\
@@ -197,7 +199,7 @@ run-vtxo-chain-simulation:
 	@echo "Stopping any existing Docker environment..."
 	@docker compose -f docker-compose.regtest.yml down -v 2>/dev/null || true
 	@echo "Starting Docker environment..."
-	@ARKD_VTXO_TREE_EXPIRY=500 docker compose -f docker-compose.regtest.yml up --build -d
+	@ARKD_VTXO_TREE_EXPIRY=500 docker compose -f docker-compose.regtest.yml up $(DOCKER_UP_FLAGS) -d
 	@echo "Waiting for services to start..."
 	@sleep 30
 	@bash -c '\

@@ -2,8 +2,7 @@
 
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/arkade-os/arkd)](https://github.com/arkade-os/arkd/releases)
 [![Docker Image](https://img.shields.io/badge/docker-ghcr.io%2Farkade--os%2Farkd-blue?logo=docker)](https://github.com/arkade-os/arkd/pkgs/container/arkd)
-[![Integration](https://github.com/arkade-os/arkd/actions/workflows/integration.yaml/badge.svg)](https://github.com/arkade-os/arkd/actions/workflows/integration.yaml)
-[![ci_unit](https://github.com/arkade-os/arkd/actions/workflows/unit.yaml/badge.svg)](https://github.com/arkade-os/arkd/actions/workflows/unit.yaml)
+[![ci](https://github.com/arkade-os/arkd/actions/workflows/ci.yaml/badge.svg)](https://github.com/arkade-os/arkd/actions/workflows/ci.yaml)
 [![GitHub](https://img.shields.io/github/license/arkade-os/arkd)](https://github.com/arkade-os/arkd/tree/master/LICENSE)
 ![Go Reference](https://pkg.go.dev/badge/github.com/arkade-os/arkd.svg)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/arkade-os/arkd)

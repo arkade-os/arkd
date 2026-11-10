@@ -1,0 +1,27 @@
+name: Load images
+description: Load arkd:ci, arkd-wallet:ci and arkd-signer:ci for the runner architecture from the images artifact.
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      with:
+        name: images
+        path: ${{ runner.temp }}/images
+
+    - uses: ./.github/actions/setup-skopeo
+
+    - name: Load images
+      shell: bash
+      env:
+        IMAGES_DIR: ${{ runner.temp }}/images
+      run: |
+        case "$RUNNER_ARCH" in
+          X64) arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *) echo "Unsupported runner arch: $RUNNER_ARCH"; exit 1 ;;
+        esac
+        for name in arkd arkd-wallet arkd-signer; do
+          skopeo copy --override-os linux --override-arch "$arch" \
+            "oci-archive:$IMAGES_DIR/$name.oci.tar" "docker-daemon:$name:ci"
+        done
+        docker image ls --filter reference='arkd*:ci'

@@ -9,7 +9,7 @@ PARENT_PATH=$(dirname $(
   pwd -P
 ))
 
-VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "unknown")
+VERSION=${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo "unknown")}
 
 GOOS=${GOOS:-$(go env GOOS)}
 GOARCH=${GOARCH:-$(go env GOARCH)}
@@ -21,7 +21,7 @@ pushd $PARENT_PATH
 
 mkdir -p build
 
-GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'main.Version=$VERSION'" -o build/$NAME-$GOOS-$GOARCH ./cmd/$NAME
+CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="-s -w -X 'main.Version=$VERSION'" -o build/$NAME-$GOOS-$GOARCH ./cmd/$NAME
 
 echo "Build complete: build/$NAME-$GOOS-$GOARCH"
 

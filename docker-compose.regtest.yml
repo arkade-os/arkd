@@ -52,6 +52,7 @@ services:
     build:
       context: .
       dockerfile: arkdwallet.Dockerfile
+    image: ${ARKD_WALLET_IMAGE:-arkd-wallet:dev}
     container_name: arkd-wallet
     depends_on:
       nbxplorer:
@@ -75,6 +76,7 @@ services:
     build:
       context: .
       dockerfile: arkdsigner.Dockerfile
+    image: ${ARKD_SIGNER_IMAGE:-arkd-signer:dev}
     container_name: arkd-signer
     # not published: the signer has no auth.
     expose:
@@ -99,6 +101,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: ${ARKD_IMAGE:-arkd:dev}
     container_name: arkd
     restart: unless-stopped
     depends_on:

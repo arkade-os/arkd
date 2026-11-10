@@ -1,0 +1,10 @@
+name: Set up skopeo
+description: Install skopeo when the runner does not have it.
+runs:
+  using: composite
+  steps:
+    - name: Install skopeo
+      shell: bash
+      run: |
+        command -v skopeo >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
+        skopeo --version
