@@ -325,7 +325,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
     permissions:
-      contents: write
+      contents: read
       packages: write
       id-token: write
     env:
@@ -344,14 +344,6 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: binaries
-          path: ${{ runner.temp }}
-
-      - name: Unpack binaries
-        run: tar -xzf "$RUNNER_TEMP/binaries.tgz" -C "$RUNNER_TEMP"
-
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
           name: images
           path: ${{ runner.temp }}/images
 
@@ -366,15 +358,6 @@ jobs:
             echo "arkd_signer=sha256:$(skopeo inspect --raw "oci-archive:$RUNNER_TEMP/images/arkd-signer.oci.tar" | sha256sum | cut -d' ' -f1)"
             echo "sha=sha-$(git rev-parse --short HEAD)"
           } >> "$GITHUB_OUTPUT"
-
-      - name: GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          flags=(--verify-tag --generate-notes)
-          if [[ "$PRERELEASE" == "true" ]]; then flags+=(--prerelease); fi
-          gh release view "$VERSION" >/dev/null 2>&1 || gh release create "$VERSION" "${flags[@]}"
-          gh release upload "$VERSION" --clobber "$RUNNER_TEMP"/build/* "$RUNNER_TEMP"/pkg/ark-cli/build/*
 
       - name: Configure AWS credentials (staging)
         if: vars.ECR_PUSH_ENABLED == 'true'
@@ -470,3 +453,32 @@ jobs:
             echo ""
             echo "Tags: \`$VERSION\`, \`$SHA_TAG\`. Prerelease: \`$PRERELEASE\`."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: release
+    needs: publish
+    if: vars.PUBLIC_RELEASE_ENABLED == 'true'
+    runs-on: ${{ vars.CI_RUNNER_LABEL || 'ubuntu-latest' }}
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.publish.outputs.version }}
+      PRERELEASE: ${{ contains(github.ref_name, '-') }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: binaries
+          path: ${{ runner.temp }}
+
+      - name: Unpack binaries
+        run: tar -xzf "$RUNNER_TEMP/binaries.tgz" -C "$RUNNER_TEMP"
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          flags=(--draft --verify-tag --generate-notes)
+          if [[ "$PRERELEASE" == "true" ]]; then flags+=(--prerelease); fi
+          gh release view "$VERSION" >/dev/null 2>&1 || gh release create "$VERSION" "${flags[@]}"
+          gh release upload "$VERSION" --clobber "$RUNNER_TEMP"/build/* "$RUNNER_TEMP"/pkg/ark-cli/build/*
