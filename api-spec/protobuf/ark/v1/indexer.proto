@@ -70,7 +70,10 @@ service IndexerService {
   // The response may be paginated if the results span multiple pages.
   rpc GetVirtualTxs(GetVirtualTxsRequest) returns (GetVirtualTxsResponse) {
     option (meshapi.gateway.http) = {
-      get: "/v1/indexer/virtualTx/{txids}"
+      get: "/v1/indexer/virtualTxs"
+      additional_bindings {
+        get: "/v1/indexer/virtualTx/{txids}"
+      }
     };
   }
 
