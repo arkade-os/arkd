@@ -12,6 +12,27 @@ endef
 
 DOCKER_UP_FLAGS ?= --build
 
+empty :=
+space := $(empty) $(empty)
+
+E2E_SHARD_1 := TestGetAssetQueryChurn TestBan TestEventListenerChurn TestUnauthenticatedCosignerSubmission TestFee TestCollaborativeExit
+E2E_SHARD_2 := TestReactToFraud TestIntent TestUnilateralExit TestDeprecatedSignerKey TestUnrolledVtxoRejoinBatch TestTxListenerChurn TestCollectedFees
+E2E_SHARDED := $(E2E_SHARD_1) $(E2E_SHARD_2)
+e2e_pattern = ^($(subst $(space),|,$(strip $(1))))$$
+
+ARKD_E2E_SHARD ?=
+ifeq ($(ARKD_E2E_SHARD),)
+E2E_SELECT :=
+else ifeq ($(ARKD_E2E_SHARD),1)
+E2E_SELECT := -run '$(call e2e_pattern,$(E2E_SHARD_1))'
+else ifeq ($(ARKD_E2E_SHARD),2)
+E2E_SELECT := -run '$(call e2e_pattern,$(E2E_SHARD_2))'
+else ifeq ($(ARKD_E2E_SHARD),3)
+E2E_SELECT := -skip '$(call e2e_pattern,$(E2E_SHARDED))'
+else
+$(error ARKD_E2E_SHARD must be empty, 1, 2 or 3)
+endif
+
 GOLANGCI_LINT ?= $(shell \
 	echo "docker run --rm -v $$(pwd):/app -w /app golangci/golangci-lint:v2.15.0 golangci-lint"; \
 )
@@ -85,10 +106,19 @@ help:
 	@echo "Usage: \n"
 	@sed -n 's/^##//p' ${MAKEFILE_LIST} | column -t -s ':' |  sed -e 's/^/ /'
 
-## integrationtest: run integration tests
+## integrationtest: run integration tests (ARKD_E2E_SHARD=1|2|3 runs one CI shard)
 integrationtest:
 	@echo "Running integration tests..."
-	@go test -v -count 1 -timeout 3600s github.com/arkade-os/arkd/internal/test/e2e
+	@go test -v -count 1 -timeout 3600s $(E2E_SELECT) github.com/arkade-os/arkd/internal/test/e2e
+
+## check-e2e-shards: check that the e2e shard lists name existing tests once
+check-e2e-shards:
+	@dupes=$$(printf '%s\n' $(E2E_SHARDED) | sort | uniq -d); \
+	if [ -n "$$dupes" ]; then echo "Listed in more than one shard: $$dupes"; exit 1; fi; \
+	for t in $(E2E_SHARDED); do \
+		grep -q "^func $$t(" internal/test/e2e/*_test.go || { echo "Unknown e2e test in shard list: $$t"; exit 1; }; \
+	done; \
+	echo "e2e shard lists OK"
 
 ## lint: lint codebase
 lint:
