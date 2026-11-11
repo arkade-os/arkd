@@ -125,7 +125,7 @@ func request_IndexerService_GetConnectors_0(ctx context.Context, marshaler gatew
 
 var (
 	query_params_IndexerService_GetVtxoTree_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("batch_outpoint.txid", "batch_outpoint.vout", "txid", "vout"),
+		Filter: trie.New("vout", "batch_outpoint.txid", "batch_outpoint.vout", "txid"),
 	}
 )
 
@@ -173,7 +173,7 @@ func request_IndexerService_GetVtxoTree_0(ctx context.Context, marshaler gateway
 
 var (
 	query_params_IndexerService_GetVtxoTreeLeaves_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("batch_outpoint.txid", "batch_outpoint.vout", "txid", "vout"),
+		Filter: trie.New("vout", "batch_outpoint.vout", "batch_outpoint.txid", "txid"),
 	}
 )
 
@@ -243,7 +243,7 @@ func request_IndexerService_GetVtxos_0(ctx context.Context, marshaler gateway.Ma
 
 var (
 	query_params_IndexerService_GetVtxoChain_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("outpoint.txid", "outpoint.vout", "txid", "vout"),
+		Filter: trie.New("vout", "outpoint.txid", "outpoint.vout", "txid"),
 	}
 )
 
@@ -291,11 +291,33 @@ func request_IndexerService_GetVtxoChain_0(ctx context.Context, marshaler gatewa
 
 var (
 	query_params_IndexerService_GetVirtualTxs_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("txids"),
+		Filter: trie.New(),
 	}
 )
 
 func request_IndexerService_GetVirtualTxs_0(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client IndexerServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
+	var protoReq GetVirtualTxsRequest
+	var metadata gateway.ServerMetadata
+
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+	if err := mux.PopulateQueryParameters(&protoReq, req.Form, query_params_IndexerService_GetVirtualTxs_0); err != nil {
+		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
+	}
+
+	msg, err := client.GetVirtualTxs(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+var (
+	query_params_IndexerService_GetVirtualTxs_1 = gateway.QueryParameterParseOptions{
+		Filter: trie.New("txids"),
+	}
+)
+
+func request_IndexerService_GetVirtualTxs_1(ctx context.Context, marshaler gateway.Marshaler, mux *gateway.ServeMux, client IndexerServiceClient, req *http.Request, pathParams gateway.Params) (proto.Message, gateway.ServerMetadata, error) {
 	var protoReq GetVirtualTxsRequest
 	var metadata gateway.ServerMetadata
 
@@ -318,7 +340,7 @@ func request_IndexerService_GetVirtualTxs_0(ctx context.Context, marshaler gatew
 	if err := req.ParseForm(); err != nil {
 		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
 	}
-	if err := mux.PopulateQueryParameters(&protoReq, req.Form, query_params_IndexerService_GetVirtualTxs_0); err != nil {
+	if err := mux.PopulateQueryParameters(&protoReq, req.Form, query_params_IndexerService_GetVirtualTxs_1); err != nil {
 		return nil, metadata, gateway.ErrInvalidQueryParameters{Err: err}
 	}
 
@@ -415,7 +437,7 @@ func request_IndexerService_UnsubscribeForScripts_0(ctx context.Context, marshal
 
 var (
 	query_params_IndexerService_GetSubscription_0 = gateway.QueryParameterParseOptions{
-		Filter: trie.New("subscriptionId", "subscription_id"),
+		Filter: trie.New("subscription_id", "subscriptionId"),
 	}
 )
 
@@ -717,6 +739,28 @@ func RegisterIndexerServiceHandlerClient(ctx context.Context, mux *gateway.Serve
 		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
 	})
 
+	mux.HandleWithParams("GET", "/v1/indexer/virtualTxs", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := mux.MarshalerForRequest(req)
+		var err error
+		var annotatedContext context.Context
+		annotatedContext, err = gateway.AnnotateContext(ctx, mux, req, "/ark.v1.IndexerService/GetVirtualTxs", gateway.WithHTTPPathPattern("/v1/indexer/virtualTxs"))
+		if err != nil {
+			mux.HTTPError(ctx, outboundMarshaler, w, req, err)
+			return
+		}
+
+		resp, md, err := request_IndexerService_GetVirtualTxs_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)
+			return
+		}
+
+		mux.ForwardResponseMessage(annotatedContext, outboundMarshaler, w, req, resp)
+	})
+
 	mux.HandleWithParams("GET", "/v1/indexer/virtualTx/:txids", func(w http.ResponseWriter, req *http.Request, pathParams gateway.Params) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
@@ -729,7 +773,7 @@ func RegisterIndexerServiceHandlerClient(ctx context.Context, mux *gateway.Serve
 			return
 		}
 
-		resp, md, err := request_IndexerService_GetVirtualTxs_0(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
+		resp, md, err := request_IndexerService_GetVirtualTxs_1(annotatedContext, inboundMarshaler, mux, client, req, pathParams)
 		annotatedContext = gateway.NewServerMetadataContext(annotatedContext, md)
 		if err != nil {
 			mux.HTTPError(annotatedContext, outboundMarshaler, w, req, err)

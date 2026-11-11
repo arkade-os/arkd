@@ -744,12 +744,95 @@
           "IndexerService"
         ],
         "description": "GetVirtualTxs returns the virtual transactions in hex format for the specified txids.\nThe response may be paginated if the results span multiple pages.",
-        "operationId": "IndexerService_GetVirtualTxs",
+        "operationId": "IndexerService_GetVirtualTxs2",
         "parameters": [
           {
             "name": "txids",
             "in": "path",
             "required": true,
+            "style": "simple",
+            "schema": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "description": "Valid auth_token can also be used if the ownership has already been proved.\nA valid token obtained from GetVtxoChain rpc can be recycled for this request.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page.size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "page.index",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "intent.proof",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "intent.message",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "a successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetVirtualTxsResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/indexer/virtualTxs": {
+      "get": {
+        "tags": [
+          "IndexerService"
+        ],
+        "description": "GetVirtualTxs returns the virtual transactions in hex format for the specified txids.\nThe response may be paginated if the results span multiple pages.",
+        "operationId": "IndexerService_GetVirtualTxs",
+        "parameters": [
+          {
+            "name": "txids",
+            "in": "query",
             "style": "simple",
             "schema": {
               "minItems": 1,
