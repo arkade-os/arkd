@@ -403,7 +403,7 @@ jobs:
           done
 
       - name: Login to GitHub Container Registry
-        if: vars.PUBLIC_RELEASE_ENABLED == 'true' && env.PRERELEASE == 'false'
+        if: vars.PUBLIC_RELEASE_ENABLED == 'true'
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
@@ -411,12 +411,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push images to GHCR
-        if: vars.PUBLIC_RELEASE_ENABLED == 'true' && env.PRERELEASE == 'false'
+        if: vars.PUBLIC_RELEASE_ENABLED == 'true'
         run: |
           repo="ghcr.io/${GITHUB_REPOSITORY,,}"
           wallet="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/arkd-wallet"
           signer="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/arkd-signer"
-          for tag in "$VERSION" latest; do
+          tags=("$VERSION")
+          if [[ "$PRERELEASE" == "false" ]]; then tags+=(latest); fi
+          for tag in "${tags[@]}"; do
             skopeo copy --all --preserve-digests "oci-archive:$RUNNER_TEMP/images/arkd.oci.tar" "docker://$repo:$tag"
             skopeo copy --all --preserve-digests "oci-archive:$RUNNER_TEMP/images/arkd-wallet.oci.tar" "docker://$wallet:$tag"
             skopeo copy --all --preserve-digests "oci-archive:$RUNNER_TEMP/images/arkd-signer.oci.tar" "docker://$signer:$tag"
