@@ -20,6 +20,8 @@ The policy applies to the source in this public repository, release artifacts an
 
 Documented alpha, testnet, or unaudited status is severity context, not a blanket exclusion. A testnet-only issue is still relevant when it exposes a flaw that can reach a supported mainnet or published release path.
 
+
+
 ## Threat Model and Trust Boundaries
 
 This repository uses the **Protocol and runtime** profile. The security boundary includes user signing authority, VTXO and settlement state, operator liquidity, contract source and compiled artifacts, VM evaluation, replay protection, and recovery from unknown outcomes.
@@ -57,7 +59,7 @@ These are context for prioritization, not a requirement that reporters assign th
 - A vulnerability only in a third-party dependency, when it cannot be exploited through this repository or a supported deployment. Report that dependency upstream as well.
 - Feature requests, non-security bugs, and reports without a concrete security impact.
 - Social engineering, physical access, or a report that requires an already compromised device or credential, unless the compromise exposes an upstream weakness.
-- Public disclosure before we have coordinated a fix and disclosure date.
+- Public disclosure of new, undisclosed technical details before we have coordinated a fix and disclosure date. A vulnerability that is already public is still reportable when it affects supported code, releases, or deployments.
 - Spam, automated low-signal reports, leaked secrets unrelated to this repository, and requests for payment in exchange for withholding disclosure.
 
 We will not treat an inference or an undocumented assumption about a deployment as an accepted risk. A known limitation becomes an accepted risk only after review and documentation by the repository owner.
