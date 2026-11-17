@@ -207,7 +207,12 @@ func bumpAnchorTx(
 	}
 
 	if amountToSelect > 0 {
-		return "", "", fmt.Errorf("not enough funds to select %d", amountToSelect)
+		if len(utxos) == 0 {
+			return "", "", fmt.Errorf("%w: none available", ErrInsufficientOnchainFunds)
+		}
+		return "", "", fmt.Errorf(
+			"%w: need %d more sat", ErrInsufficientOnchainFunds, amountToSelect,
+		)
 	}
 
 	if fees > selectedAmount {
