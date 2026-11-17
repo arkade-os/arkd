@@ -18,6 +18,10 @@ func (w *wallet) IssueAsset(
 		return nil, err
 	}
 
+	// Lock before reading the VTXOs to spend; see SendOffChain.
+	w.txLock.Lock()
+	defer w.txLock.Unlock()
+
 	vtxos, err := w.getSpendableVtxos(ctx, &getVtxosFilter{excludeRecoverableVtxos: true})
 	if err != nil {
 		return nil, err
@@ -48,9 +52,6 @@ func (w *wallet) IssueAsset(
 		return w.identity.SignTransaction(ctx, tx, nil)
 	}
 
-	w.txLock.Lock()
-	defer w.txLock.Unlock()
-
 	return offchaintx.IssueAsset(ctx, offchaintx.IssueAssetArgs{
 		Client:       w.client,
 		ServerParams: *w.ServerParams,
@@ -69,6 +70,10 @@ func (w *wallet) ReissueAsset(
 	if err := w.safeCheck(); err != nil {
 		return nil, err
 	}
+
+	// Lock before reading the VTXOs to spend; see SendOffChain.
+	w.txLock.Lock()
+	defer w.txLock.Unlock()
 
 	controlAsset, err := w.getControlAsset(ctx, assetId)
 	if err != nil {
@@ -92,9 +97,6 @@ func (w *wallet) ReissueAsset(
 		return w.identity.SignTransaction(ctx, tx, nil)
 	}
 
-	w.txLock.Lock()
-	defer w.txLock.Unlock()
-
 	return offchaintx.ReissueAsset(ctx, offchaintx.ReissueAssetArgs{
 		Client:       w.client,
 		ServerParams: *w.ServerParams,
@@ -116,6 +118,10 @@ func (w *wallet) BurnAsset(
 		return nil, err
 	}
 
+	// Lock before reading the VTXOs to spend; see SendOffChain.
+	w.txLock.Lock()
+	defer w.txLock.Unlock()
+
 	vtxos, err := w.getSpendableVtxos(ctx, &getVtxosFilter{excludeRecoverableVtxos: true})
 	if err != nil {
 		return nil, err
@@ -129,9 +135,6 @@ func (w *wallet) BurnAsset(
 	signTx := func(ctx context.Context, tx string) (string, error) {
 		return w.identity.SignTransaction(ctx, tx, nil)
 	}
-
-	w.txLock.Lock()
-	defer w.txLock.Unlock()
 
 	return offchaintx.BurnAsset(ctx, offchaintx.BurnAssetArgs{
 		Client:       w.client,
