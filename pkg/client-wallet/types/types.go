@@ -18,8 +18,16 @@ type Balance struct {
 }
 
 type OnchainBalance struct {
-	SpendableAmount uint64                 `json:"spendable_amount"`
-	LockedAmount    []LockedOnchainBalance `json:"locked_amount,omitempty"`
+	SpendableAmount uint64 `json:"spendable_amount"`
+	// SpendableRedeemAmount is the part of SpendableAmount held by unilateral exit outputs whose
+	// exit delay has elapsed. These are the funds CompleteUnroll sweeps, which SpendableAmount
+	// can't tell apart from onchain and boarding funds.
+	SpendableRedeemAmount uint64                 `json:"spendable_redeem_amount"`
+	LockedAmount          []LockedOnchainBalance `json:"locked_amount,omitempty"`
+	// LockedRedeemAmount and LockedBoardingAmount split LockedAmount by the address holding the
+	// funds, since only the former turns into SpendableRedeemAmount once its exit delay elapses.
+	LockedRedeemAmount   []LockedOnchainBalance `json:"locked_redeem_amount,omitempty"`
+	LockedBoardingAmount []LockedOnchainBalance `json:"locked_boarding_amount,omitempty"`
 }
 
 type LockedOnchainBalance struct {
