@@ -195,8 +195,11 @@ func (w *wallet) Balance(ctx context.Context) (*types.Balance, error) {
 
 	return &types.Balance{
 		OnchainBalance: types.OnchainBalance{
-			SpendableAmount: onchainSpendable + boardingSpendable + redeemSpendable,
-			LockedAmount:    lockedOnchainBalance,
+			SpendableAmount:       onchainSpendable + boardingSpendable + redeemSpendable,
+			SpendableRedeemAmount: redeemSpendable,
+			LockedAmount:          lockedOnchainBalance,
+			LockedRedeemAmount:    redeemLocked,
+			LockedBoardingAmount:  boardingLocked,
 		},
 		OffchainBalance: types.OffchainBalance{
 			Total:          offchainBalance,
