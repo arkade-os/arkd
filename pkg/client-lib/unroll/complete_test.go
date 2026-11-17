@@ -124,10 +124,14 @@ func newTestBumpAnchorArgs(
 	parent.AddTxIn(wire.NewTxIn(&wire.OutPoint{Index: 0}, nil, nil))
 	parent.AddTxOut(txutils.AnchorOutput())
 
+	pkScript, err := script.P2TRScript(bumpKey.PubKey())
+	require.NoError(t, err)
+
 	utxos := make([]clientlib.ExplorerUtxo, 0, len(utxoAmounts))
 	for i, amount := range utxoAmounts {
 		utxos = append(utxos, clientlib.ExplorerUtxo{
 			Txid: testTxid, Vout: uint32(i), Amount: amount,
+			Script: hex.EncodeToString(pkScript),
 		})
 	}
 

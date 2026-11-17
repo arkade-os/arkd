@@ -65,6 +65,8 @@ func (a UnrollArgs) validate() error {
 
 // Unroll iterates over each vtxo's redeem branch, builds a 1C1P bump package
 // (parent branch tx + child anchor-bumping tx) and broadcasts the package.
+// Packages are broadcast one by one, so on error it also returns those already
+// broadcast: they are in the mempool and the caller must keep track of them.
 func Unroll(ctx context.Context, args UnrollArgs) ([]UnrollRes, error) {
 	if err := args.validate(); err != nil {
 		return nil, fmt.Errorf("invalid args: %w", err)
@@ -121,18 +123,18 @@ func Unroll(ctx context.Context, args UnrollArgs) ([]UnrollRes, error) {
 	for _, parent := range transactions {
 		var parentTx wire.MsgTx
 		if err := parentTx.Deserialize(hex.NewDecoder(strings.NewReader(parent))); err != nil {
-			return nil, err
+			return res, err
 		}
 
 		childTxid, child, err := bumpAnchorTx(ctx, args, &parentTx)
 		if err != nil {
-			return nil, err
+			return res, err
 		}
 
 		// broadcast the package (parent + child)
 		packageResponse, err := args.Explorer.Broadcast(parent, child)
 		if err != nil {
-			return nil, err
+			return res, err
 		}
 
 		res = append(res, UnrollRes{
