@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -259,7 +260,18 @@ func (w *wallet) sendExpiredBoardingUtxos(ctx context.Context, to string) (strin
 		}
 	}
 
-	return ptx.B64Encode()
+	// Callers return the result as the sweep txid and have no broadcast step of their own.
+	tx, err := psbt.Extract(ptx)
+	if err != nil {
+		return "", err
+	}
+
+	buf := bytes.NewBuffer(nil)
+	if err := tx.Serialize(buf); err != nil {
+		return "", err
+	}
+
+	return w.explorer.Broadcast(hex.EncodeToString(buf.Bytes()))
 }
 
 func (w *wallet) getExpiredBoardingUtxos(ctx context.Context) ([]clientlib.Utxo, error) {
