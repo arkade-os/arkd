@@ -34,17 +34,46 @@ func TestCompleteUnroll(t *testing.T) {
 func TestBumpAnchorTx(t *testing.T) {
 	t.Run("invalid", func(t *testing.T) {
 		for _, tc := range []struct {
-			name    string
-			feeRate float64
+			name           string
+			utxoAmounts    []uint64
+			feeRate        float64
+			expectedErr    error
+			expectedErrMsg string
 		}{
-			{name: "negative fee", feeRate: -5},
-			{name: "NaN fee", feeRate: math.NaN()},
+			{
+				name:           "negative fee",
+				utxoAmounts:    []uint64{1000},
+				feeRate:        -5,
+				expectedErrMsg: "invalid fee amount",
+			},
+			{
+				name:           "NaN fee",
+				utxoAmounts:    []uint64{1000},
+				feeRate:        math.NaN(),
+				expectedErrMsg: "invalid fee amount",
+			},
+			{
+				name:           "no onchain funds",
+				feeRate:        10,
+				expectedErr:    ErrInsufficientOnchainFunds,
+				expectedErrMsg: "none available",
+			},
+			{
+				name:           "not enough onchain funds",
+				utxoAmounts:    []uint64{100, 200},
+				feeRate:        10,
+				expectedErr:    ErrInsufficientOnchainFunds,
+				expectedErrMsg: "more sat",
+			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				args, parent := newTestBumpAnchorArgs(t, 1000, tc.feeRate)
+				args, parent := newTestBumpAnchorArgs(t, tc.utxoAmounts, tc.feeRate)
 
-				_, _, err := bumpAnchorTx(context.Background(), args, parent)
-				require.ErrorContains(t, err, "invalid fee amount")
+				_, _, err := bumpAnchorTx(t.Context(), args, parent)
+				if tc.expectedErr != nil {
+					require.ErrorIs(t, err, tc.expectedErr)
+				}
+				require.ErrorContains(t, err, tc.expectedErrMsg)
 			})
 		}
 	})
@@ -64,7 +93,7 @@ func (e stubExplorer) GetFeeRate() (float64, error) {
 	return e.feeRate, nil
 }
 
-// bumpStubExplorer additionally serves a single utxo to the bump coin selection.
+// bumpStubExplorer additionally serves utxos to the bump coin selection.
 type bumpStubExplorer struct {
 	stubExplorer
 	utxos []clientlib.ExplorerUtxo
@@ -74,11 +103,11 @@ func (e bumpStubExplorer) GetUtxos(_ []string) ([]clientlib.ExplorerUtxo, error)
 	return e.utxos, nil
 }
 
-// newTestBumpAnchorArgs returns args holding a single utxo of the given amount
-// with the explorer stubbed to the given fee rate, plus a parent tx carrying an
-// anchor output for the bump to spend.
+// newTestBumpAnchorArgs returns args holding one utxo per given amount with the
+// explorer stubbed to the given fee rate, plus a parent tx carrying an anchor
+// output for the bump to spend.
 func newTestBumpAnchorArgs(
-	t *testing.T, amount uint64, feeRate float64,
+	t *testing.T, utxoAmounts []uint64, feeRate float64,
 ) (UnrollArgs, *wire.MsgTx) {
 	t.Helper()
 
@@ -95,12 +124,21 @@ func newTestBumpAnchorArgs(
 	parent.AddTxIn(wire.NewTxIn(&wire.OutPoint{Index: 0}, nil, nil))
 	parent.AddTxOut(txutils.AnchorOutput())
 
+	pkScript, err := script.P2TRScript(bumpKey.PubKey())
+	require.NoError(t, err)
+
+	utxos := make([]clientlib.ExplorerUtxo, 0, len(utxoAmounts))
+	for i, amount := range utxoAmounts {
+		utxos = append(utxos, clientlib.ExplorerUtxo{
+			Txid: testTxid, Vout: uint32(i), Amount: amount,
+			Script: hex.EncodeToString(pkScript),
+		})
+	}
+
 	args := UnrollArgs{
 		Explorer: bumpStubExplorer{
 			stubExplorer: stubExplorer{feeRate: feeRate},
-			utxos: []clientlib.ExplorerUtxo{
-				{Txid: testTxid, Vout: 0, Amount: amount},
-			},
+			utxos:        utxos,
 		},
 		ServerParams: clientlib.ServerParams{
 			Network: arklib.BitcoinRegTest,
